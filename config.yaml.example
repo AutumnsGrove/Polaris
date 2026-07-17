@@ -1,0 +1,38 @@
+# Copy this to config.yaml and fill in secrets via environment variables
+# (never commit real API keys — config.yaml is gitignored).
+
+server:
+  host: "127.0.0.1"   # bind to 0.0.0.0 (or the Tailscale IP) once deployed to the potato
+  port: 8899
+
+openrouter:
+  api_key: "${OPENROUTER_API_KEY}"
+  base_url: "https://openrouter.ai/api/v1"
+
+searxng:
+  base_url: "http://localhost:18888"   # local dev; point at http://100.81.103.51:8888 on the potato
+
+database:
+  path: "./localassistant.db"
+
+service:
+  label: "localassistant"
+
+default_model: "mimo"
+
+# Each model pins a specific OpenRouter provider (not just a model slug).
+# Different providers hosting the same model often have very different
+# (or no) prompt-caching support/pricing — pinning keeps caching consistent.
+models:
+  - id: "mimo"
+    name: "MiMo v2.5"
+    model: "xiaomi/mimo-v2.5"
+    provider: ["xiaomi/fp8"]
+    temperature: 0.4
+    max_tokens: 4096
+  - id: "deepseek"
+    name: "DeepSeek V4 Flash"
+    model: "deepseek/deepseek-v4-flash"
+    provider: ["deepseek"]
+    temperature: 0.4
+    max_tokens: 4096

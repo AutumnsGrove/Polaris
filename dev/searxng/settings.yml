@@ -1,0 +1,13 @@
+use_default_settings: true
+
+general:
+  instance_name: "LocalAssistant SearXNG (dev)"
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "dev-only-local-assistant-secret-change-in-prod"
+  limiter: false

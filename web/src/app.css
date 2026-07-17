@@ -1,0 +1,106 @@
+:root {
+	--color-bg: #0b0d11;
+	--color-surface: #14171c;
+	--color-surface-2: #1c2027;
+	--color-border: #262b33;
+	--color-text: #e6e8eb;
+	--color-text-dim: #8b93a1;
+	--color-accent: #6ee7b7;
+	--color-accent-2: #60a5fa;
+	--color-danger: #f87171;
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--font-sans:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-border) transparent;
+}
+
+button,
+select,
+textarea,
+input {
+	font-family: inherit;
+	color: inherit;
+}
+
+button {
+	cursor: pointer;
+}
+
+a {
+	color: var(--color-accent-2);
+}
+
+/* shared building blocks, reused across component <style> blocks */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border: 1px solid var(--color-border);
+	background: var(--color-surface-2);
+	border-radius: var(--radius-md);
+	padding: 8px 12px;
+	font-size: 13px;
+	transition: border-color 0.15s ease;
+}
+
+.btn:hover {
+	border-color: color-mix(in srgb, var(--color-accent-2) 50%, transparent);
+}
+
+.btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	background: transparent;
+	color: var(--color-text-dim);
+	padding: 4px;
+	border-radius: var(--radius-sm);
+}
+
+.icon-btn:hover {
+	color: var(--color-text);
+}
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	border: 1px solid var(--color-border);
+	background: var(--color-surface-2);
+	border-radius: 999px;
+	padding: 2px 10px;
+	font-size: 11px;
+	color: var(--color-accent-2);
+	text-decoration: none;
+}
+
+.badge:hover {
+	border-color: color-mix(in srgb, var(--color-accent-2) 50%, transparent);
+}

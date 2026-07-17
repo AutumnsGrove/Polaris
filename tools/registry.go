@@ -1,0 +1,53 @@
+// Package tools implements the agent's tool-use loop: think, web_search,
+// web_read, and reply. Each tool self-registers via init(), mirroring
+// her-go's tools/ package convention.
+package tools
+
+import (
+	"localassistant/llm"
+	"localassistant/search"
+)
+
+// Context carries dependencies shared across a single turn's tool calls,
+// plus an Emit callback the gateway uses to stream progress events
+// (thinking/tool_call/tool_result) to the browser over the websocket.
+type Context struct {
+	SearXNG *search.SearXNGClient
+	LLM     *llm.Client // the model selected for this thread; reused by web_read's optional filter pass
+
+	Emit func(eventType string, payload map[string]interface{})
+
+	// Citations accumulates every {title, url} surfaced by search/read
+	// calls during this turn, so the gateway can attach them to the
+	// final answer once the model replies.
+	Citations []Citation
+}
+
+type Citation struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+type HandlerFunc func(argsJSON string, ctx *Context) string
+
+var registry = map[string]HandlerFunc{}
+
+func Register(name string, fn HandlerFunc) {
+	registry[name] = fn
+}
+
+func Dispatch(name, argsJSON string, ctx *Context) string {
+	fn, ok := registry[name]
+	if !ok {
+		return "error: unknown tool " + name
+	}
+	return fn(argsJSON, ctx)
+}
+
+// Defs returns the tool definitions offered to the model every turn.
+// There's no explicit "reply" tool — the loop runs with tool_choice
+// "auto", so the model free-flows between calling tools and just
+// answering directly once it has enough context.
+func Defs() []llm.ToolDef {
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef}
+}

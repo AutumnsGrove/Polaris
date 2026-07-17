@@ -1,0 +1,73 @@
+// Mirrors gateway/protocol.go 1:1 — keep these in sync by hand, there's
+// no shared codegen between the Go backend and this frontend.
+
+export interface Citation {
+	title: string;
+	url: string;
+}
+
+export type ServerEvent =
+	| { type: 'thinking'; thread_id?: string; content: string }
+	| { type: 'tool_call'; thread_id?: string; tool: string; args?: Record<string, unknown> }
+	| {
+			type: 'tool_result';
+			thread_id?: string;
+			tool: string;
+			result: string;
+			citations?: Citation[];
+	  }
+	| { type: 'token'; thread_id?: string; content: string }
+	| { type: 'done'; thread_id: string; cost_usd: number; citations?: Citation[] }
+	| { type: 'error'; thread_id?: string; message: string };
+
+export interface ClientMessage {
+	type: 'message';
+	thread_id?: string;
+	content: string;
+	model: string;
+}
+
+export interface ModelOption {
+	id: string;
+	name: string;
+	default: boolean;
+}
+
+export interface Thread {
+	id: string;
+	title: string;
+	model: string;
+	cost_usd: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface StoredMessage {
+	id: number;
+	thread_id: string;
+	role: string;
+	content: string;
+	citations: string; // JSON-encoded Citation[]
+	cost_usd: number;
+	created_at: string;
+}
+
+export type TimelineItem =
+	| { kind: 'thinking'; content: string }
+	| {
+			kind: 'tool';
+			tool: string;
+			args?: Record<string, unknown>;
+			result?: string;
+			citations?: Citation[];
+			done: boolean;
+	  };
+
+export interface ChatTurn {
+	role: 'user' | 'assistant';
+	content: string;
+	timeline?: TimelineItem[];
+	citations?: Citation[];
+	costUsd?: number;
+	streaming?: boolean;
+}
