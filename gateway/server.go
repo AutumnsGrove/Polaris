@@ -18,17 +18,20 @@ import (
 	"polaris/config"
 	"polaris/llm"
 	"polaris/logger"
+	"polaris/places"
 	"polaris/search"
 	"polaris/store"
+	"polaris/tools"
 )
 
 var log = logger.WithPrefix("gateway")
 
 type Server struct {
-	cfg     *config.Config
-	db      *store.Store
-	searxng *search.SearXNGClient
-	mux     *http.ServeMux
+	cfg        *config.Config
+	db         *store.Store
+	searxng    *search.SearXNGClient
+	foursquare *places.FoursquareClient // nil if not configured
+	mux        *http.ServeMux
 }
 
 // New builds the server. staticFS is the embedded SvelteKit build (see
@@ -36,10 +39,11 @@ type Server struct {
 // does while `vite dev` serves the frontend and proxies through instead.
 func New(cfg *config.Config, db *store.Store, staticFS fs.FS) *Server {
 	s := &Server{
-		cfg:     cfg,
-		db:      db,
-		searxng: search.NewSearXNGClient(cfg.SearXNG.BaseURL),
-		mux:     http.NewServeMux(),
+		cfg:        cfg,
+		db:         db,
+		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
+		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
+		mux:        http.NewServeMux(),
 	}
 	s.routes(staticFS)
 	return s
@@ -207,10 +211,21 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		if v, ok := payload["result"].(string); ok {
 			evt.Result = v
 		}
+		if v, ok := payload["citations"].([]tools.Citation); ok {
+			evt.Citations = v
+		}
 		send(evt)
 	}
 
-	result, err := agent.Run(client, s.searxng, history, msg.Content, emit)
+	agentCtx := &tools.Context{
+		SearXNG:         s.searxng,
+		Foursquare:      s.foursquare,
+		DefaultLocation: s.cfg.DefaultLocation,
+		LLM:             client,
+		Emit:            emit,
+	}
+
+	result, err := agent.Run(agentCtx, history, msg.Content)
 	if err != nil {
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return

@@ -1,10 +1,11 @@
 // Package tools implements the agent's tool-use loop: think, web_search,
-// web_read, and reply. Each tool self-registers via init(), mirroring
-// her-go's tools/ package convention.
+// web_read, nearby_search, and reply. Each tool self-registers via init(),
+// mirroring her-go's tools/ package convention.
 package tools
 
 import (
 	"polaris/llm"
+	"polaris/places"
 	"polaris/search"
 )
 
@@ -12,14 +13,19 @@ import (
 // plus an Emit callback the gateway uses to stream progress events
 // (thinking/tool_call/tool_result) to the browser over the websocket.
 type Context struct {
-	SearXNG *search.SearXNGClient
-	LLM     *llm.Client // the model selected for this thread; reused by web_read's optional filter pass
+	SearXNG    *search.SearXNGClient
+	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
+	LLM        *llm.Client              // the model selected for this thread; reused by web_read's optional filter pass
+
+	// DefaultLocation is geocoded by nearby_search when a query omits an
+	// explicit location. Empty means "no fallback — location is required."
+	DefaultLocation string
 
 	Emit func(eventType string, payload map[string]interface{})
 
-	// Citations accumulates every {title, url} surfaced by search/read
-	// calls during this turn, so the gateway can attach them to the
-	// final answer once the model replies.
+	// Citations accumulates every {title, url} surfaced by search/read/
+	// nearby_search calls during this turn, so the gateway can attach
+	// them to the final answer once the model replies.
 	Citations []Citation
 }
 
@@ -62,5 +68,5 @@ func Dispatch(name, argsJSON string, ctx *Context) string {
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
 func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef}
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef}
 }

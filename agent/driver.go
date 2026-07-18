@@ -5,10 +5,10 @@
 package agent
 
 import (
+	"os"
 	"strings"
 
 	"polaris/llm"
-	"polaris/search"
 	"polaris/tools"
 )
 
@@ -16,17 +16,35 @@ import (
 // Hitting it forces a wrap-up answer instead of erroring out.
 const maxTurns = 6
 
-const systemPrompt = `You are Polaris, a private, self-hosted research assistant. You have three tools:
+// promptPath is read fresh on every turn — no recompiling to change how
+// Polaris behaves. Matches her-go's convention of hot-reloaded prompt
+// files living as plain text in the working directory.
+const promptPath = "prompt.md"
+
+// fallbackSystemPrompt is used only if prompt.md is missing, so a fresh
+// clone still works before the user copies prompt.md.example into place.
+const fallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have four tools:
 
 - think: reason privately about strategy before acting.
 - web_search: search the web via a private SearXNG instance.
 - web_read: fetch a URL and extract its content (optionally filtered to just what's needed).
+- nearby_search: find real-world places (restaurants, pharmacies, etc.) near a location.
 
 There is no separate "reply" tool. Once you have enough information (or the question needs none),
 just answer directly in plain text — that ends the research phase and streams straight to the user.
 
 Be concise. Cite sources inline as [Title](URL) when you used web_search or web_read to support a claim.
 Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).`
+
+// loadSystemPrompt reads prompt.md fresh every call — edit the file,
+// see the change on your very next message, no rebuild or restart.
+func loadSystemPrompt() string {
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		return fallbackSystemPrompt
+	}
+	return string(data)
+}
 
 // Result is what one turn produces, once the model settles on a
 // plain-text final answer.
@@ -38,13 +56,14 @@ type Result struct {
 
 // Run executes one turn of the agent loop: given prior conversation
 // history plus a new user message, it streams progress (thinking/
-// tool_call/tool_result/token events) via emit and returns once the
-// model has produced its final answer.
-func Run(client *llm.Client, searxng *search.SearXNGClient, history []llm.ChatMessage, userMessage string, emit func(eventType string, payload map[string]interface{})) (*Result, error) {
-	ctx := &tools.Context{SearXNG: searxng, LLM: client, Emit: emit}
+// tool_call/tool_result/token events) via ctx.Emit and returns once the
+// model has produced its final answer. ctx must have LLM and Emit set;
+// SearXNG/Foursquare/DefaultLocation are optional per-tool dependencies.
+func Run(ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
+	client := ctx.LLM
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: systemPrompt})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: loadSystemPrompt()})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 
@@ -56,7 +75,7 @@ func Run(client *llm.Client, searxng *search.SearXNGClient, history []llm.ChatMe
 		answer.Reset()
 		resp, err := client.ChatCompletionWithTools(messages, toolDefs, func(chunk string) {
 			answer.WriteString(chunk)
-			emit("token", map[string]interface{}{"content": chunk})
+			ctx.Emit("token", map[string]interface{}{"content": chunk})
 		})
 		if err != nil {
 			return nil, err
@@ -81,7 +100,7 @@ func Run(client *llm.Client, searxng *search.SearXNGClient, history []llm.ChatMe
 		Content: "Wrap up now — give your best answer with what you've gathered so far.",
 	})
 	resp, err := client.ChatCompletionStreaming(messages, func(chunk string) {
-		emit("token", map[string]interface{}{"content": chunk})
+		ctx.Emit("token", map[string]interface{}{"content": chunk})
 	})
 	if err != nil {
 		return nil, err

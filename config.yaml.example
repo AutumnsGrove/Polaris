@@ -12,6 +12,13 @@ openrouter:
 searxng:
   base_url: "http://localhost:18888"   # local dev; point at http://100.81.103.51:8888 on the potato
 
+foursquare:
+  api_key: "${FOURSQUARE_API_KEY}"   # optional — nearby_search falls back to SearXNG without it. Free tier: 10k calls/month. https://foursquare.com/developers
+
+# Geocoded when nearby_search omits a location. Optional — omit entirely
+# to require an explicit location on every nearby_search call.
+default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"
+
 database:
   path: "./polaris.db"
 

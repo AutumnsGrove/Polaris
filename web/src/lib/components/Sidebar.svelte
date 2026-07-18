@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Compass, Plus, Trash2 } from '@lucide/svelte';
+	import { Sparkles, Plus, Trash2 } from '@lucide/svelte';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -14,7 +14,7 @@
 
 <aside class="sidebar">
 	<div class="brand">
-		<Compass size={18} color="var(--color-accent)" />
+		<Sparkles size={18} color="var(--color-accent)" />
 		<span>Polaris</span>
 	</div>
 

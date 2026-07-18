@@ -9,7 +9,9 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/places"
 	"polaris/search"
+	"polaris/tools"
 )
 
 var searchModel string
@@ -41,6 +43,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &falseVal})
 
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL)
+	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
 
 	fmt.Printf("model: %s\n\n", modelCfg.Name)
 
@@ -56,13 +59,23 @@ func runSearch(cmd *cobra.Command, args []string) error {
 				fmt.Printf("searching: %v\n", toolArgs["query"])
 			case "web_read":
 				fmt.Printf("reading: %v\n", toolArgs["url"])
+			case "nearby_search":
+				fmt.Printf("finding nearby: %v near %v\n", toolArgs["query"], toolArgs["location"])
 			}
 		case "token":
 			fmt.Print(payload["content"])
 		}
 	}
 
-	result, err := agent.Run(client, searxng, nil, query, emit)
+	agentCtx := &tools.Context{
+		SearXNG:         searxng,
+		Foursquare:      foursquare,
+		DefaultLocation: cfg.DefaultLocation,
+		LLM:             client,
+		Emit:            emit,
+	}
+
+	result, err := agent.Run(agentCtx, nil, query)
 	if err != nil {
 		return fmt.Errorf("agent run failed: %w", err)
 	}
