@@ -21,9 +21,11 @@ import (
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/places"
+	"polaris/procmgr"
 	"polaris/search"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/updater"
 	"polaris/voice"
 )
 
@@ -65,6 +67,9 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
 	s.mux.HandleFunc("POST /api/speak", s.handleSpeak)
+	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	s.mux.HandleFunc("POST /api/update", s.handleUpdate)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {
@@ -99,11 +104,140 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		Name    string `json:"name"`
 		Default bool   `json:"default"`
 	}
+	defaultID := s.effectiveDefaultModel()
 	out := make([]modelOut, 0, len(s.cfg.Models))
 	for _, m := range s.cfg.Models {
-		out = append(out, modelOut{ID: m.ID, Name: m.Name, Default: m.ID == s.cfg.DefaultModel})
+		out = append(out, modelOut{ID: m.ID, Name: m.Name, Default: m.ID == defaultID})
 	}
 	writeJSON(w, out)
+}
+
+// effectiveDefaultModel is the settings-panel override if one's been set,
+// otherwise config.yaml's default_model. Settings panel changes take
+// effect immediately (no restart); config.yaml is the factory default.
+func (s *Server) effectiveDefaultModel() string {
+	if v, err := s.db.GetSetting("default_model"); err == nil && v != "" {
+		return v
+	}
+	return s.cfg.DefaultModel
+}
+
+const (
+	settingTheme        = "theme"       // "dark" or "light"
+	settingShowPrices   = "show_prices" // "true" or "false"
+	settingDefaultModel = "default_model"
+)
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	all, err := s.db.AllSettings()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	theme := all[settingTheme]
+	if theme == "" {
+		theme = "dark"
+	}
+	showPrices := true
+	if v, ok := all[settingShowPrices]; ok {
+		showPrices = v == "true"
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"theme":         theme,
+		"show_prices":   showPrices,
+		"default_model": s.effectiveDefaultModel(),
+	})
+}
+
+func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Theme        *string `json:"theme"`
+		ShowPrices   *bool   `json:"show_prices"`
+		DefaultModel *string `json:"default_model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Theme != nil {
+		if *req.Theme != "dark" && *req.Theme != "light" {
+			http.Error(w, "theme must be 'dark' or 'light'", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingTheme, *req.Theme); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.ShowPrices != nil {
+		value := "false"
+		if *req.ShowPrices {
+			value = "true"
+		}
+		if err := s.db.SetSetting(settingShowPrices, value); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.DefaultModel != nil {
+		if s.cfg.ModelByID(*req.DefaultModel).ID != *req.DefaultModel {
+			http.Error(w, "unknown model id", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingDefaultModel, *req.DefaultModel); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleUpdate runs the same git-pull-and-rebuild steps as `polaris
+// update`, then restarts the service — triggered from the settings
+// panel instead of an SSH session. The response is flushed to the
+// client *before* restarting: systemctl/launchctl kills this very
+// process, so the client needs its answer in hand first.
+func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	repoPath, err := updater.RepoPath()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	result, err := updater.Run(repoPath)
+	if err != nil {
+		writeJSON(w, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+			"log":     result.PullOutput + "\n" + result.BuildOutput,
+		})
+		return
+	}
+
+	mgr, mgrErr := procmgr.New(s.cfg.Service.Label)
+	restarting := mgrErr == nil && mgr.IsManaged()
+
+	writeJSON(w, map[string]interface{}{
+		"success":    true,
+		"log":        result.PullOutput + "\nbuild successful",
+		"restarting": restarting,
+	})
+
+	if restarting {
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		go func() {
+			time.Sleep(300 * time.Millisecond) // give the response time to reach the client
+			if err := mgr.Restart(); err != nil {
+				log.Error("self-update restart failed", "err", err)
+			}
+		}()
+	}
 }
 
 func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +402,11 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		}
 	}
 
-	modelCfg := s.cfg.ModelByID(msg.Model)
+	requestedModel := msg.Model
+	if requestedModel == "" {
+		requestedModel = s.effectiveDefaultModel()
+	}
+	modelCfg := s.cfg.ModelByID(requestedModel)
 	client := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
 		WithSessionID(threadID) // sticky routing — same provider endpoint across the thread, for cache hits

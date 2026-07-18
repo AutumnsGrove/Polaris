@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 
 	let { children } = $props();
 
@@ -10,6 +11,7 @@
 		appState.connect();
 		void appState.loadModels();
 		void appState.loadThreads();
+		void appState.loadSettings();
 
 		// Start collapsed on phones (the primary use case) so the chat is
 		// what you see first, not a full-screen thread list.
@@ -32,6 +34,10 @@
 		{@render children()}
 	</main>
 </div>
+
+{#if appState.settingsOpen}
+	<SettingsPanel />
+{/if}
 
 <style>
 	.shell {

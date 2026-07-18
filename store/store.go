@@ -36,6 +36,17 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
+
+-- User-adjustable UI preferences (theme, default model, price visibility).
+-- Deliberately separate from config.yaml: those are operator-level
+-- settings (API keys, the model catalog, ports) meant to be edited by
+-- hand and version-controlled via .example files; these are day-to-day
+-- toggles that should update instantly from the settings panel without
+-- touching a file or restarting anything.
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 `
 
 func Open(path string) (*Store, error) {
@@ -189,6 +200,46 @@ func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// GetSetting returns the stored value for key, or "" if unset — callers
+// fall back to a config.yaml/hardcoded default in that case.
+func (s *Store) GetSetting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+// AllSettings returns every stored key/value pair, for the settings panel
+// to populate in one request instead of one round-trip per field.
+func (s *Store) AllSettings() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT key, value FROM settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+// SetSetting upserts a single key/value pair.
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, value,
+	)
+	return err
 }
 
 func (s *Store) GetMessages(threadID string) ([]Message, error) {

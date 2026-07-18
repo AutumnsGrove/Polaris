@@ -16,6 +16,20 @@
 		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* Applied via document.documentElement.setAttribute('data-theme', ...) in
+   state.svelte.ts, driven by the settings panel. */
+:root[data-theme='light'] {
+	--color-bg: #f7f8fa;
+	--color-surface: #ffffff;
+	--color-surface-2: #eef0f3;
+	--color-border: #dde1e6;
+	--color-text: #1a1d21;
+	--color-text-dim: #62676f;
+	--color-accent: #0f9d63;
+	--color-accent-2: #2563eb;
+	--color-danger: #dc2626;
+}
+
 * {
 	box-sizing: border-box;
 }
@@ -27,6 +41,7 @@ body {
 	background: var(--color-bg);
 	color: var(--color-text);
 	font-family: var(--font-sans);
+	transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 * {

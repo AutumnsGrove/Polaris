@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Sparkles, Plus, Trash2, PanelLeftClose } from '@lucide/svelte';
+	import { Sparkles, Plus, Trash2, PanelLeftClose, Settings } from '@lucide/svelte';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -38,7 +38,9 @@
 			>
 				<div class="thread-meta">
 					<div class="thread-title">{thread.title || 'Untitled'}</div>
-					<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
+					{#if appState.showPrices}
+						<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
+					{/if}
 				</div>
 				<button class="icon-btn delete-btn" onclick={(e) => handleDelete(e, thread.id)}>
 					<Trash2 size={14} />
@@ -49,7 +51,10 @@
 
 	<div class="status">
 		<span class="dot" class:connected={appState.connected}></span>
-		{appState.connected ? 'connected' : 'reconnecting…'}
+		<span class="status-text">{appState.connected ? 'connected' : 'reconnecting…'}</span>
+		<button class="icon-btn settings-btn" onclick={() => appState.toggleSettings()} title="Settings">
+			<Settings size={15} />
+		</button>
 	</div>
 </aside>
 
@@ -153,6 +158,14 @@
 		font-size: 12px;
 		color: var(--color-text-dim);
 		white-space: nowrap;
+	}
+
+	.status-text {
+		flex: 1;
+	}
+
+	.settings-btn {
+		flex-shrink: 0;
 	}
 
 	.dot {

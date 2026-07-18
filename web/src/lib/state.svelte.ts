@@ -25,6 +25,11 @@ class AppState {
 	// +layout.svelte sets the initial value from viewport width on mount.
 	sidebarOpen = $state(true);
 
+	settingsOpen = $state(false);
+	theme = $state<'dark' | 'light'>('dark');
+	showPrices = $state(true);
+	defaultModel = $state('');
+
 	// Per-turn read-aloud is manual (see readAloud below). speakingIndex is
 	// set the instant synthesis starts (fetching); isPlaying flips true
 	// only once audio actually starts playing — the button needs both to
@@ -126,6 +131,57 @@ class AppState {
 		this.models = (await res.json()) ?? [];
 		const def = this.models.find((m) => m.default);
 		this.selectedModel = def?.id ?? this.models[0]?.id ?? '';
+	}
+
+	async loadSettings() {
+		const res = await fetch('/api/settings');
+		if (!res.ok) return;
+		const data = await res.json();
+		this.theme = data.theme === 'light' ? 'light' : 'dark';
+		this.showPrices = data.show_prices ?? true;
+		this.defaultModel = data.default_model ?? '';
+		this.applyTheme();
+	}
+
+	private applyTheme() {
+		if (typeof document !== 'undefined') {
+			document.documentElement.setAttribute('data-theme', this.theme);
+		}
+	}
+
+	async setTheme(theme: 'dark' | 'light') {
+		this.theme = theme;
+		this.applyTheme();
+		await this.putSettings({ theme });
+	}
+
+	async setShowPrices(show: boolean) {
+		this.showPrices = show;
+		await this.putSettings({ show_prices: show });
+	}
+
+	async setDefaultModel(modelId: string) {
+		this.defaultModel = modelId;
+		await this.putSettings({ default_model: modelId });
+		await this.loadModels();
+	}
+
+	private async putSettings(body: Record<string, unknown>) {
+		await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+	}
+
+	toggleSettings() {
+		this.settingsOpen = !this.settingsOpen;
+	}
+
+	/** Runs the same git-pull-and-rebuild the CLI's `polaris update` does. */
+	async pushUpdate(): Promise<{ success: boolean; log: string; restarting?: boolean; error?: string }> {
+		const res = await fetch('/api/update', { method: 'POST' });
+		return res.json();
 	}
 
 	async loadThreads() {

@@ -52,9 +52,11 @@
 		<ModelSelector />
 	</div>
 	<div class="header-right">
-		<div class="cost">
-			Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
-		</div>
+		{#if appState.showPrices}
+			<div class="cost">
+				Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
+			</div>
+		{/if}
 	</div>
 </header>
 
