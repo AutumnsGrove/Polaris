@@ -33,6 +33,14 @@ type Config struct {
 	// Optional; without it, nearby_search requires a location argument.
 	DefaultLocation string `yaml:"default_location"`
 
+	Voice struct {
+		// STTModel/STTFallbackModel are OpenRouter model slugs for push-to-talk
+		// transcription. Whisper Turbo is fast but occasionally times out under
+		// load; the fallback (plain whisper-large-v3) is slower but more reliable.
+		STTModel         string `yaml:"stt_model"`
+		STTFallbackModel string `yaml:"stt_fallback_model"`
+	} `yaml:"voice"`
+
 	Database struct {
 		Path string `yaml:"path"`
 	} `yaml:"database"`
@@ -89,6 +97,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Service.Label == "" {
 		cfg.Service.Label = "polaris"
+	}
+	if cfg.Voice.STTModel == "" {
+		cfg.Voice.STTModel = "openai/whisper-large-v3-turbo"
+	}
+	if cfg.Voice.STTFallbackModel == "" {
+		cfg.Voice.STTFallbackModel = "openai/whisper-large-v3"
 	}
 	if len(cfg.Models) == 0 {
 		return nil, fmt.Errorf("config: at least one entry required under models")

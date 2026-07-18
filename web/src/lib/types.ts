@@ -23,13 +23,15 @@ export type ServerEvent =
 
 // edit_from_id turns this into a retry/edit: the server deletes every
 // message in the thread with id >= edit_from_id before treating content
-// as the new user message at that point.
+// as the new user message at that point. voice_mode nudges the model
+// toward a brief, speakable answer (it's about to be read aloud via TTS).
 export interface ClientMessage {
 	type: 'message';
 	thread_id?: string;
 	content: string;
 	model: string;
 	edit_from_id?: number;
+	voice_mode?: boolean;
 }
 
 export interface ModelOption {

@@ -20,6 +20,10 @@ type ClientMessage struct {
 	Content    string `json:"content"`
 	Model      string `json:"model"` // config.ModelConfig.ID
 	EditFromID int64  `json:"edit_from_id,omitempty"`
+	// VoiceMode, when true, tells the driver this answer will be read
+	// aloud (browser TTS) — it nudges the model toward a brief,
+	// speakable answer instead of a long markdown-formatted one.
+	VoiceMode bool `json:"voice_mode,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

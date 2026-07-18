@@ -19,6 +19,13 @@ foursquare:
 # to require an explicit location on every nearby_search call.
 default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"
 
+# Push-to-talk transcription (via OpenRouter, no local STT sidecar).
+# Text-to-speech uses the browser's built-in Web Speech API instead —
+# no server-side TTS engine, so nothing to configure for that half.
+voice:
+  stt_model: "openai/whisper-large-v3-turbo"
+  stt_fallback_model: "openai/whisper-large-v3"   # tried once if turbo times out under load
+
 database:
   path: "./polaris.db"
 

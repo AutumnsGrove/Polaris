@@ -36,14 +36,26 @@ just answer directly in plain text — that ends the research phase and streams 
 Be concise. Cite sources inline as [Title](URL) when you used web_search or web_read to support a claim.
 Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).`
 
+// voiceModeInstruction is appended when the turn will be read aloud —
+// long markdown-formatted answers with citation lists read terribly via
+// TTS, so voice mode gets a stronger brevity/plain-text nudge than the
+// base prompt asks for.
+const voiceModeInstruction = "\n\nVoice mode is active: this answer will be read aloud, not just displayed. " +
+	"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
+	"bullet lists, or reciting citations inline — sources will still be shown in the UI regardless."
+
 // loadSystemPrompt reads prompt.md fresh every call — edit the file,
 // see the change on your very next message, no rebuild or restart.
-func loadSystemPrompt() string {
+func loadSystemPrompt(voiceMode bool) string {
 	data, err := os.ReadFile(promptPath)
-	if err != nil {
-		return fallbackSystemPrompt
+	prompt := fallbackSystemPrompt
+	if err == nil {
+		prompt = string(data)
 	}
-	return string(data)
+	if voiceMode {
+		prompt += voiceModeInstruction
+	}
+	return prompt
 }
 
 // Result is what one turn produces, once the model settles on a
@@ -63,7 +75,7 @@ func Run(ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Re
 	client := ctx.LLM
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: loadSystemPrompt()})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: loadSystemPrompt(ctx.VoiceMode)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 

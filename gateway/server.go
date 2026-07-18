@@ -6,6 +6,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"polaris/search"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/voice"
 )
 
 var log = logger.WithPrefix("gateway")
@@ -31,6 +33,7 @@ type Server struct {
 	db         *store.Store
 	searxng    *search.SearXNGClient
 	foursquare *places.FoursquareClient // nil if not configured
+	stt        *voice.STTClient
 	mux        *http.ServeMux
 }
 
@@ -43,6 +46,7 @@ func New(cfg *config.Config, db *store.Store, staticFS fs.FS) *Server {
 		db:         db,
 		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
+		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		mux:        http.NewServeMux(),
 	}
 	s.routes(staticFS)
@@ -56,6 +60,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
+	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {
@@ -131,6 +136,44 @@ func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxAudioBytes caps push-to-talk uploads at ~15MB — generous for a
+// voice memo (webm/opus at typical bitrates runs well under 1MB/minute),
+// tight enough to not let a stuck recording flood the server.
+const maxAudioBytes = 15 << 20
+
+// handleTranscribe accepts a raw audio body from the browser's
+// MediaRecorder (format given via ?format=webm, matching the blob's
+// mime type) and returns the transcribed text via OpenRouter Whisper.
+func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "webm"
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxAudioBytes+1))
+	if err != nil {
+		http.Error(w, "reading audio body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body) > maxAudioBytes {
+		http.Error(w, "audio too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if len(body) == 0 {
+		http.Error(w, "empty audio body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.stt.Transcribe(body, format)
+	if err != nil {
+		log.Warn("transcription failed", "err", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{"text": result.Text, "cost_usd": result.Cost})
 }
 
 var upgrader = websocket.Upgrader{
@@ -240,6 +283,7 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		SearXNG:         s.searxng,
 		Foursquare:      s.foursquare,
 		DefaultLocation: s.cfg.DefaultLocation,
+		VoiceMode:       msg.VoiceMode,
 		LLM:             client,
 		Emit:            emit,
 	}

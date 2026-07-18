@@ -2,7 +2,9 @@
 	import { appState } from '$lib/state.svelte';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
-	import { Send, PanelLeft } from '@lucide/svelte';
+	import VoiceButton from '$lib/components/VoiceButton.svelte';
+	import { stopSpeaking } from '$lib/speech';
+	import { Send, PanelLeft, Volume2, VolumeX } from '@lucide/svelte';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement;
@@ -18,6 +20,11 @@
 			e.preventDefault();
 			submit();
 		}
+	}
+
+	function toggleVoiceMode() {
+		appState.toggleVoiceMode();
+		if (!appState.voiceMode) stopSpeaking();
 	}
 
 	$effect(() => {
@@ -50,8 +57,21 @@
 		{/if}
 		<ModelSelector />
 	</div>
-	<div class="cost">
-		Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
+	<div class="header-right">
+		<button
+			class="icon-btn"
+			onclick={toggleVoiceMode}
+			title={appState.voiceMode ? 'Voice mode on — answers are read aloud' : 'Voice mode off'}
+		>
+			{#if appState.voiceMode}
+				<Volume2 size={18} color="var(--color-accent)" />
+			{:else}
+				<VolumeX size={18} />
+			{/if}
+		</button>
+		<div class="cost">
+			Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
+		</div>
 	</div>
 </header>
 
@@ -77,6 +97,7 @@
 		bind:value={input}
 		onkeydown={onKeydown}
 	></textarea>
+	<VoiceButton />
 	<button type="submit" class="send-btn" disabled={appState.busy || !input.trim()}>
 		<Send size={16} />
 	</button>
@@ -97,6 +118,13 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
 	}
 
 	.cost {

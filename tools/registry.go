@@ -21,6 +21,11 @@ type Context struct {
 	// explicit location. Empty means "no fallback — location is required."
 	DefaultLocation string
 
+	// VoiceMode, when true, tells the driver to keep the final answer
+	// short and speakable — it's about to be read aloud via the browser's
+	// TTS, not just displayed.
+	VoiceMode bool
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/

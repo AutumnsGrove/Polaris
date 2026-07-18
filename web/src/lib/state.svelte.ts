@@ -1,5 +1,6 @@
 import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation } from './types';
 import { AgentSocket } from './ws';
+import { speak } from './speech';
 
 function safeParseCitations(json: string): Citation[] {
 	try {
@@ -24,6 +25,11 @@ class AppState {
 	// +layout.svelte sets the initial value from viewport width on mount.
 	sidebarOpen = $state(true);
 
+	// Full voice mode: nudges the model toward brief/speakable answers
+	// (see agent.loadSystemPrompt's voiceModeInstruction) and reads the
+	// finished answer aloud via the browser's TTS once it lands.
+	voiceMode = $state(false);
+
 	private socket: AgentSocket;
 
 	constructor() {
@@ -43,6 +49,10 @@ class AppState {
 
 	closeSidebar() {
 		this.sidebarOpen = false;
+	}
+
+	toggleVoiceMode() {
+		this.voiceMode = !this.voiceMode;
 	}
 
 	async loadModels() {
@@ -135,7 +145,8 @@ class AppState {
 			thread_id: this.currentThreadId ?? undefined,
 			content,
 			model: this.selectedModel,
-			edit_from_id: editFromId
+			edit_from_id: editFromId,
+			voice_mode: this.voiceMode
 		});
 	}
 
@@ -193,6 +204,7 @@ class AppState {
 				this.totalCost += e.cost_usd;
 				this.currentThreadId = e.thread_id;
 				this.busy = false;
+				if (this.voiceMode && turn.content) speak(turn.content);
 				void this.loadThreads();
 				break;
 
