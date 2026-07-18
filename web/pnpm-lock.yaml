@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/asimovian':
+        specifier: ^5.2.2
+        version: 5.2.2
+      '@fontsource/lexend':
+        specifier: ^5.2.11
+        version: 5.2.11
       '@lucide/svelte':
         specifier: ^1.25.0
         version: 1.25.0(svelte@5.56.6)
@@ -53,6 +59,12 @@ packages:
 
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
+
+  '@fontsource/asimovian@5.2.2':
+    resolution: {integrity: sha512-i9XimbgI4imHSdK45qGtwkiSxoe/JZdLzrBraNQ9MPS6rxzzHthXzM3a64hsw5brt1SHQO1xmgu2OTffkTug5w==}
+
+  '@fontsource/lexend@5.2.11':
+    resolution: {integrity: sha512-bShbQr2g2sWl7GJNyIxdllZST1faVbebXN6H7AEEDCRms/g4orDLxWnmTVodOtiErdZVUJURq4jpafZ34nIkTw==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -553,6 +565,10 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@fontsource/asimovian@5.2.2': {}
+
+  '@fontsource/lexend@5.2.11': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

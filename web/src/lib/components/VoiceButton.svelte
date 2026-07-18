@@ -134,16 +134,38 @@
 		height: 38px;
 		color: var(--color-text-dim);
 		flex-shrink: 0;
+		transition:
+			border-color 0.15s var(--ease-out-expo),
+			background-color 0.15s var(--ease-out-expo),
+			color 0.15s var(--ease-out-expo),
+			box-shadow 0.2s var(--ease-out-expo);
+	}
+
+	.mic-btn:hover:not(:disabled):not(.recording) {
+		border-color: var(--color-border-strong);
+		background: var(--color-surface-3);
+		color: var(--color-text);
 	}
 
 	.mic-btn.recording {
 		background: var(--color-danger);
 		border-color: var(--color-danger);
 		color: white;
+		animation: mic-pulse 1.4s var(--ease-out-expo) infinite;
 	}
 
 	.mic-btn:disabled {
 		opacity: 0.4;
+		cursor: default;
+	}
+
+	@keyframes mic-pulse {
+		0%, 100% {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 50%, transparent);
+		}
+		50% {
+			box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-danger) 0%, transparent);
+		}
 	}
 
 	:global(.spin) {

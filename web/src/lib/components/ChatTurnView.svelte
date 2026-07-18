@@ -163,14 +163,20 @@
 	}
 
 	.bubble-user {
-		background: color-mix(in srgb, var(--color-accent-2) 15%, transparent);
-		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
 		padding: 10px 14px;
+		color: var(--color-text);
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 
 	.bubble-assistant {
 		width: 100%;
-		max-width: 640px;
+		max-width: 680px;
+		font-size: 15px;
+		line-height: 1.65;
 	}
 
 	.edit-trigger {
@@ -225,36 +231,100 @@
 	.turn-footer {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin-top: 4px;
+		gap: 4px;
+		margin-top: 6px;
 	}
 
 	.turn-cost {
 		font-size: 11px;
 		color: var(--color-text-dim);
+		margin-right: 4px;
 	}
 
 	.prose :global(p) {
-		margin: 0 0 10px 0;
+		margin: 0 0 12px 0;
+	}
+
+	.prose :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.prose :global(h1),
+	.prose :global(h2),
+	.prose :global(h3) {
+		font-family: var(--font-serif);
+		font-weight: 600;
+		line-height: 1.25;
+		margin: 20px 0 8px;
+		color: var(--color-text);
+	}
+
+	.prose :global(h1) {
+		font-size: 22px;
+	}
+
+	.prose :global(h2) {
+		font-size: 19px;
+	}
+
+	.prose :global(h3) {
+		font-size: 16px;
+	}
+
+	.prose :global(h1:first-child),
+	.prose :global(h2:first-child),
+	.prose :global(h3:first-child) {
+		margin-top: 0;
+	}
+
+	.prose :global(ul),
+	.prose :global(ol) {
+		margin: 0 0 12px 0;
+		padding-left: 22px;
+	}
+
+	.prose :global(li) {
+		margin-bottom: 4px;
+	}
+
+	.prose :global(blockquote) {
+		margin: 12px 0;
+		padding: 2px 0 2px 14px;
+		border-left: 2px solid var(--color-border-strong);
+		color: var(--color-text-dim);
+		font-style: italic;
 	}
 
 	.prose :global(pre) {
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-sm);
-		padding: 10px;
+		padding: 10px 12px;
 		overflow-x: auto;
+		font-size: 13px;
+		line-height: 1.5;
+	}
+
+	.prose :global(pre code) {
+		background: transparent;
+		padding: 0;
+		font-size: inherit;
 	}
 
 	.prose :global(code) {
 		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
 		border-radius: 4px;
-		padding: 1px 4px;
+		padding: 1px 5px;
 		font-size: 13px;
 	}
 
 	.prose :global(a) {
 		color: var(--color-accent-2);
+	}
+
+	.prose :global(a:hover) {
+		color: var(--color-accent-2-strong);
 	}
 
 	:global(.spin) {

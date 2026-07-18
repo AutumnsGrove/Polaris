@@ -87,7 +87,7 @@
 	     empty screen. Switches to the normal scrolling-history layout the
 	     instant the first message is sent. -->
 	<div class="welcome">
-		<h1>Ask Polaris anything</h1>
+		<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
 		<p class="subtitle">Search and reading happen automatically when needed.</p>
 		<div class="welcome-composer">
 			{@render composerForm()}
@@ -108,7 +108,8 @@
 		align-items: center;
 		justify-content: space-between;
 		border-bottom: 1px solid var(--color-border);
-		padding: 12px 16px;
+		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+		padding: 10px 16px;
 		gap: 12px;
 	}
 
@@ -128,12 +129,15 @@
 
 	.cost {
 		flex-shrink: 0;
-		font-size: 13px;
+		font-size: 12px;
 		color: var(--color-text-dim);
+		letter-spacing: 0.01em;
 	}
 
 	.cost-value {
-		color: var(--color-accent);
+		color: var(--color-text);
+		font-variant-numeric: tabular-nums;
+		margin-left: 2px;
 	}
 
 	.welcome {
@@ -142,22 +146,34 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 4px;
+		gap: 6px;
 		padding: 24px;
 		text-align: center;
 		overflow-y: auto;
 	}
 
-	.welcome h1 {
+	.welcome-heading {
 		margin: 0;
-		font-size: 22px;
-		font-weight: 600;
+		font-family: var(--font-serif);
+		font-size: clamp(28px, 5vw, 38px);
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		line-height: 1.15;
+		color: var(--color-text);
+	}
+
+	.welcome-heading .wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		font-size: 0.9em;
+		letter-spacing: 0.01em;
 	}
 
 	.welcome .subtitle {
-		margin: 0 0 20px 0;
+		margin: 6px 0 24px 0;
 		color: var(--color-text-dim);
 		font-size: 14px;
+		line-height: 1.5;
 	}
 
 	.welcome-composer {
@@ -167,16 +183,16 @@
 
 	.welcome-composer :global(.composer) {
 		border-top: none;
-		padding-bottom: 12px;
+		padding: 0 0 12px 0;
 	}
 
 	.timeline-scroll {
 		flex: 1;
 		overflow-y: auto;
-		padding: 16px;
+		padding: 20px 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 18px;
 	}
 
 	.composer {
@@ -196,28 +212,47 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
-		padding: 10px 12px;
+		padding: 10px 14px;
 		font-size: 14px;
+		line-height: 1.5;
+		font-family: var(--font-sans);
+		color: var(--color-text);
 		outline: none;
+		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+	}
+
+	textarea::placeholder {
+		color: var(--color-text-dim);
+	}
+
+	textarea:hover {
+		border-color: var(--color-border-strong);
 	}
 
 	textarea:focus {
-		border-color: color-mix(in srgb, var(--color-accent-2) 50%, transparent);
+		border-color: var(--color-accent);
+		background: var(--color-surface);
 	}
 
 	.send-btn {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border: none;
-		background: var(--color-accent-2);
-		color: var(--color-bg);
+		border: 1px solid transparent;
+		background: var(--color-accent);
+		color: oklch(18% 0.02 75);
 		border-radius: var(--radius-md);
 		width: 38px;
 		height: 38px;
+		transition: background-color 0.15s var(--ease-out-expo), opacity 0.15s var(--ease-out-expo);
+	}
+
+	.send-btn:hover:not(:disabled) {
+		background: var(--color-accent-strong);
 	}
 
 	.send-btn:disabled {
-		opacity: 0.4;
+		opacity: 0.35;
+		cursor: default;
 	}
 </style>

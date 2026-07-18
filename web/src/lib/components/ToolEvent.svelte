@@ -37,22 +37,23 @@
 
 <style>
 	.thinking {
-		border: 1px solid var(--color-border);
-		background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
 		padding: 6px 10px;
 		margin-bottom: 4px;
 		font-size: 12px;
 		font-style: italic;
 		color: var(--color-text-dim);
+		line-height: 1.5;
 	}
 
 	.tool-event {
 		border: 1px solid var(--color-border);
-		background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
 		margin-bottom: 4px;
 		font-size: 12px;
+		overflow: hidden;
 	}
 
 	.tool-header {
@@ -64,6 +65,13 @@
 		background: transparent;
 		padding: 6px 10px;
 		text-align: left;
+		color: var(--color-text-dim);
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+	}
+
+	.tool-header:hover {
+		background: var(--color-surface-2);
+		color: var(--color-text);
 	}
 
 	.tool-label {
@@ -72,7 +80,6 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: var(--color-text-dim);
 	}
 
 	.tool-result {
@@ -83,6 +90,10 @@
 		margin: 0;
 		color: var(--color-text-dim);
 		font-family: inherit;
+		font-size: 11.5px;
+		line-height: 1.5;
+		max-height: 240px;
+		overflow-y: auto;
 	}
 
 	:global(.spin) {

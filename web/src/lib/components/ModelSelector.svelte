@@ -19,18 +19,33 @@
 		gap: 6px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
-		border-radius: var(--radius-md);
-		padding: 4px 10px;
+		border-radius: 999px;
+		padding: 4px 10px 4px 12px;
+		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+	}
+
+	.model-selector:hover {
+		border-color: var(--color-border-strong);
+		background: var(--color-surface-3);
+	}
+
+	.model-selector:focus-within {
+		border-color: var(--color-accent-2);
 	}
 
 	select {
 		border: none;
 		background: transparent;
 		font-size: 13px;
+		font-family: var(--font-sans);
+		color: var(--color-text);
 		outline: none;
+		cursor: pointer;
+		padding: 2px 0;
 	}
 
 	select option {
-		background: var(--color-surface-2);
+		background: var(--color-surface);
+		color: var(--color-text);
 	}
 </style>
