@@ -42,7 +42,12 @@
 <style>
 	.shell {
 		display: flex;
-		height: 100vh;
+		/* 100vh is the *largest possible* viewport on iOS Safari — it
+		   doesn't shrink when the address bar/toolbar are visible, so
+		   anything pinned to the bottom of a 100vh container ends up
+		   hidden behind that chrome. 100dvh tracks the actual visible
+		   viewport as it collapses/expands. */
+		height: 100dvh;
 		width: 100vw;
 		overflow: hidden;
 		position: relative;

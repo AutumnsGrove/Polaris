@@ -146,6 +146,9 @@
 		gap: 8px;
 		border-top: 1px solid var(--color-border);
 		padding: 12px;
+		/* Clears iOS Safari's bottom toolbar / home-indicator area — falls
+		   back to the plain 12px on browsers without safe-area support. */
+		padding-bottom: max(12px, env(safe-area-inset-bottom));
 	}
 
 	textarea {
