@@ -14,12 +14,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	"localassistant/agent"
-	"localassistant/config"
-	"localassistant/llm"
-	"localassistant/logger"
-	"localassistant/search"
-	"localassistant/store"
+	"polaris/agent"
+	"polaris/config"
+	"polaris/llm"
+	"polaris/logger"
+	"polaris/search"
+	"polaris/store"
 )
 
 var log = logger.WithPrefix("gateway")

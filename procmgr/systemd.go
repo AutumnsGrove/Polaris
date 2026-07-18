@@ -27,7 +27,7 @@ func (m *SystemdManager) Install(cfg ServiceConfig) error {
 	}
 
 	data := unitData{
-		Description: "LocalAssistant search agent",
+		Description: "Polaris search agent",
 		User:        cfg.User,
 		WorkDir:     cfg.WorkDir,
 		BinaryPath:  cfg.BinaryPath,

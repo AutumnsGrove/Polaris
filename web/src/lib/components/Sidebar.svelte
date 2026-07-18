@@ -15,7 +15,7 @@
 <aside class="sidebar">
 	<div class="brand">
 		<Compass size={18} color="var(--color-accent)" />
-		<span>LocalAssistant</span>
+		<span>Polaris</span>
 	</div>
 
 	<button class="btn new-thread" onclick={() => appState.newThread()}>

@@ -3,7 +3,7 @@ package tools
 import (
 	"encoding/json"
 
-	"localassistant/llm"
+	"polaris/llm"
 )
 
 var thinkDef = llm.ToolDef{

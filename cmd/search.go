@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"localassistant/agent"
-	"localassistant/config"
-	"localassistant/llm"
-	"localassistant/search"
+	"polaris/agent"
+	"polaris/config"
+	"polaris/llm"
+	"polaris/search"
 )
 
 var searchModel string

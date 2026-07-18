@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"localassistant/logger"
-	"localassistant/procmgr"
+	"polaris/logger"
+	"polaris/procmgr"
 )
 
 var updateCmd = &cobra.Command{
@@ -20,7 +20,7 @@ restarts the service — no scp'd binaries, no manual redeploy steps.
 
 Steps:
   1. git pull origin main
-  2. go build -o localassistant
+  2. go build -o polaris
   3. Restart service (systemd on the potato, launchd for local dev)`,
 	RunE: runUpdate,
 }
@@ -36,7 +36,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
-	binaryPath := filepath.Join(repoPath, "localassistant")
+	binaryPath := filepath.Join(repoPath, "polaris")
 
 	log.Info("pulling changes from origin/main...")
 	pullCmd := exec.Command("git", "pull", "origin", "main")
@@ -49,7 +49,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s\n", string(pullOut))
 
 	log.Info("building...")
-	buildCmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", "localassistant", ".")
+	buildCmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", "polaris", ".")
 	buildCmd.Dir = repoPath
 	buildOut, err := buildCmd.CombinedOutput()
 	if err != nil {
@@ -59,7 +59,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Println("build successful")
 
 	log.Info("restarting service...")
-	mgr, err := procmgr.New("localassistant")
+	mgr, err := procmgr.New("polaris")
 	if err != nil {
 		return fmt.Errorf("failed to create process manager: %w", err)
 	}

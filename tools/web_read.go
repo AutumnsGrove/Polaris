@@ -15,7 +15,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"localassistant/llm"
+	"polaris/llm"
 )
 
 var webReadDef = llm.ToolDef{
@@ -104,7 +104,7 @@ func fetchAndExtract(rawURL string) (title, text string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; LocalAssistant/1.0; +https://github.com/AutumnsGrove/LocalAssistant)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Polaris/1.0; +https://github.com/AutumnsGrove/Polaris)")
 
 	resp, err := client.Do(req)
 	if err != nil {

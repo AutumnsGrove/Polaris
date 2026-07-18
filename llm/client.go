@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"localassistant/logger"
+	"polaris/logger"
 )
 
 var log = logger.WithPrefix("llm")
@@ -230,8 +230,8 @@ func (c *Client) doStreamRequest(messages []ChatMessage, tools []ToolDef, toolCh
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/LocalAssistant")
-	req.Header.Set("X-Title", "LocalAssistant")
+	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/Polaris")
+	req.Header.Set("X-Title", "Polaris")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("X-OpenRouter-Metadata", "enabled")
 
@@ -389,8 +389,8 @@ func (c *Client) doStreamingChat(messages []ChatMessage, onChunk func(string)) (
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/LocalAssistant")
-	req.Header.Set("X-Title", "LocalAssistant")
+	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/Polaris")
+	req.Header.Set("X-Title", "Polaris")
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.httpClient.Do(req)

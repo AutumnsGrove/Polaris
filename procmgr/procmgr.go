@@ -14,7 +14,7 @@ import (
 	"os/user"
 	"runtime"
 
-	"localassistant/logger"
+	"polaris/logger"
 )
 
 var log = logger.WithPrefix("procmgr")

@@ -13,13 +13,13 @@ searxng:
   base_url: "http://localhost:18888"   # local dev; point at http://100.81.103.51:8888 on the potato
 
 database:
-  path: "./localassistant.db"
+  path: "./polaris.db"
 
 logging:
   dir: "./logs"   # one file per day (YYYY-MM-DD.log), 90-day retention, pruned automatically
 
 service:
-  label: "localassistant"
+  label: "polaris"
 
 default_model: "mimo"
 

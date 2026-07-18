@@ -73,13 +73,13 @@ func Load(path string) (*Config, error) {
 		cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
 	}
 	if cfg.Database.Path == "" {
-		cfg.Database.Path = "./localassistant.db"
+		cfg.Database.Path = "./polaris.db"
 	}
 	if cfg.Logging.Dir == "" {
 		cfg.Logging.Dir = "./logs"
 	}
 	if cfg.Service.Label == "" {
-		cfg.Service.Label = "localassistant"
+		cfg.Service.Label = "polaris"
 	}
 	if len(cfg.Models) == 0 {
 		return nil, fmt.Errorf("config: at least one entry required under models")

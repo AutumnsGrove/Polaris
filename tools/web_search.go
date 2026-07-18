@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"localassistant/llm"
+	"polaris/llm"
 )
 
 var webSearchDef = llm.ToolDef{

@@ -4,8 +4,8 @@
 package tools
 
 import (
-	"localassistant/llm"
-	"localassistant/search"
+	"polaris/llm"
+	"polaris/search"
 )
 
 // Context carries dependencies shared across a single turn's tool calls,

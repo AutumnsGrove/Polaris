@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"localassistant/cmd"
+	"polaris/cmd"
 )
 
 func main() {

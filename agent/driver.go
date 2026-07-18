@@ -7,16 +7,16 @@ package agent
 import (
 	"strings"
 
-	"localassistant/llm"
-	"localassistant/search"
-	"localassistant/tools"
+	"polaris/llm"
+	"polaris/search"
+	"polaris/tools"
 )
 
 // maxTurns bounds runaway tool-use loops (a model stuck re-searching).
 // Hitting it forces a wrap-up answer instead of erroring out.
 const maxTurns = 6
 
-const systemPrompt = `You are LocalAssistant, a private, self-hosted research assistant. You have three tools:
+const systemPrompt = `You are Polaris, a private, self-hosted research assistant. You have three tools:
 
 - think: reason privately about strategy before acting.
 - web_search: search the web via a private SearXNG instance.

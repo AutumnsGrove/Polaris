@@ -4,7 +4,7 @@
 // mirror this file 1:1.
 package gateway
 
-import "localassistant/tools"
+import "polaris/tools"
 
 // ClientMessage is sent by the browser over /ws to start (or continue) a turn.
 // ThreadID empty means "start a new thread".

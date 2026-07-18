@@ -1,4 +1,4 @@
-module localassistant
+module polaris
 
 go 1.26.1
 

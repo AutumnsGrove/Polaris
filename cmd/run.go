@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"localassistant/config"
-	"localassistant/gateway"
-	"localassistant/logger"
-	"localassistant/store"
-	"localassistant/web"
+	"polaris/config"
+	"polaris/gateway"
+	"polaris/logger"
+	"polaris/store"
+	"polaris/web"
 )
 
 var log = logger.WithPrefix("cmd")
@@ -21,7 +21,7 @@ var devMode bool
 
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "Start the LocalAssistant server",
+	Short: "Start the Polaris server",
 	RunE:  runRun,
 }
 

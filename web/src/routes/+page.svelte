@@ -52,7 +52,7 @@
 	}}
 >
 	<textarea
-		placeholder="Ask LocalAssistant…"
+		placeholder="Ask Polaris…"
 		rows="1"
 		bind:value={input}
 		onkeydown={onKeydown}
