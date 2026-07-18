@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -13,10 +12,6 @@
 		void appState.loadThreads();
 	});
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 <div class="shell">
 	<Sidebar />

@@ -26,7 +26,20 @@
 		for (const t of appState.turns) t.content;
 		queueMicrotask(() => scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' }));
 	});
+
+	// Tab title mirrors the current query while a thread is active, Google-style
+	// ("query — Polaris Search"), falling back to the plain app name otherwise.
+	let pageTitle = $derived.by(() => {
+		const lastUser = [...appState.turns].reverse().find((t) => t.role === 'user');
+		if (!lastUser?.content) return 'Polaris Search';
+		const query = lastUser.content.length > 60 ? lastUser.content.slice(0, 60) + '…' : lastUser.content;
+		return `${query} — Polaris Search`;
+	});
 </script>
+
+<svelte:head>
+	<title>{pageTitle}</title>
+</svelte:head>
 
 <header class="header">
 	<ModelSelector />
