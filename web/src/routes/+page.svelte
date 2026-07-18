@@ -6,7 +6,7 @@
 	import { Send, PanelLeft } from '@lucide/svelte';
 
 	let input = $state('');
-	let scrollEl: HTMLDivElement;
+	let scrollEl: HTMLDivElement | undefined = $state();
 
 	function submit() {
 		const text = input;
@@ -38,6 +38,27 @@
 	});
 </script>
 
+{#snippet composerForm()}
+	<form
+		class="composer"
+		onsubmit={(e) => {
+			e.preventDefault();
+			submit();
+		}}
+	>
+		<textarea
+			placeholder="Ask Polaris…"
+			rows="1"
+			bind:value={input}
+			onkeydown={onKeydown}
+		></textarea>
+		<VoiceButton />
+		<button type="submit" class="send-btn" disabled={appState.busy || !input.trim()}>
+			<Send size={16} />
+		</button>
+	</form>
+{/snippet}
+
 <svelte:head>
 	<title>{pageTitle}</title>
 </svelte:head>
@@ -60,33 +81,26 @@
 	</div>
 </header>
 
-<div class="timeline-scroll" bind:this={scrollEl}>
-	{#if appState.turns.length === 0}
-		<div class="empty">Ask anything — search and reading happen automatically when needed.</div>
-	{/if}
-	{#each appState.turns as turn, i (i)}
-		<ChatTurnView {turn} index={i} />
-	{/each}
-</div>
-
-<form
-	class="composer"
-	onsubmit={(e) => {
-		e.preventDefault();
-		submit();
-	}}
->
-	<textarea
-		placeholder="Ask Polaris…"
-		rows="1"
-		bind:value={input}
-		onkeydown={onKeydown}
-	></textarea>
-	<VoiceButton />
-	<button type="submit" class="send-btn" disabled={appState.busy || !input.trim()}>
-		<Send size={16} />
-	</button>
-</form>
+{#if appState.turns.length === 0}
+	<!-- Empty state: composer floats centered, like Claude/OpenWebUI's
+	     landing view, instead of sitting pinned at the bottom of a mostly
+	     empty screen. Switches to the normal scrolling-history layout the
+	     instant the first message is sent. -->
+	<div class="welcome">
+		<h1>Ask Polaris anything</h1>
+		<p class="subtitle">Search and reading happen automatically when needed.</p>
+		<div class="welcome-composer">
+			{@render composerForm()}
+		</div>
+	</div>
+{:else}
+	<div class="timeline-scroll" bind:this={scrollEl}>
+		{#each appState.turns as turn, i (i)}
+			<ChatTurnView {turn} index={i} />
+		{/each}
+	</div>
+	{@render composerForm()}
+{/if}
 
 <style>
 	.header {
@@ -122,6 +136,40 @@
 		color: var(--color-accent);
 	}
 
+	.welcome {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		padding: 24px;
+		text-align: center;
+		overflow-y: auto;
+	}
+
+	.welcome h1 {
+		margin: 0;
+		font-size: 22px;
+		font-weight: 600;
+	}
+
+	.welcome .subtitle {
+		margin: 0 0 20px 0;
+		color: var(--color-text-dim);
+		font-size: 14px;
+	}
+
+	.welcome-composer {
+		width: 100%;
+		max-width: 640px;
+	}
+
+	.welcome-composer :global(.composer) {
+		border-top: none;
+		padding-bottom: 12px;
+	}
+
 	.timeline-scroll {
 		flex: 1;
 		overflow-y: auto;
@@ -129,15 +177,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
-	}
-
-	.empty {
-		display: flex;
-		height: 100%;
-		align-items: center;
-		justify-content: center;
-		color: var(--color-text-dim);
-		font-size: 14px;
 	}
 
 	.composer {

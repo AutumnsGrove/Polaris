@@ -7,6 +7,17 @@
 
 	let { children } = $props();
 
+	// iOS Safari's dvh support has been inconsistent across versions and
+	// doesn't always update as the toolbar animates open/closed — the
+	// reliable fix is tracking window.visualViewport directly and
+	// exposing it as a CSS variable, which .shell falls back to dvh
+	// without (desktop browsers, or before this runs).
+	function updateViewportHeight() {
+		const vv = window.visualViewport;
+		const height = vv ? vv.height : window.innerHeight;
+		document.documentElement.style.setProperty('--app-height', `${height}px`);
+	}
+
 	onMount(() => {
 		appState.connect();
 		void appState.loadModels();
@@ -18,6 +29,17 @@
 		if (window.innerWidth < 768) {
 			appState.sidebarOpen = false;
 		}
+
+		updateViewportHeight();
+		window.visualViewport?.addEventListener('resize', updateViewportHeight);
+		window.visualViewport?.addEventListener('scroll', updateViewportHeight);
+		window.addEventListener('orientationchange', updateViewportHeight);
+
+		return () => {
+			window.visualViewport?.removeEventListener('resize', updateViewportHeight);
+			window.visualViewport?.removeEventListener('scroll', updateViewportHeight);
+			window.removeEventListener('orientationchange', updateViewportHeight);
+		};
 	});
 </script>
 
@@ -42,12 +64,12 @@
 <style>
 	.shell {
 		display: flex;
-		/* 100vh is the *largest possible* viewport on iOS Safari — it
-		   doesn't shrink when the address bar/toolbar are visible, so
-		   anything pinned to the bottom of a 100vh container ends up
-		   hidden behind that chrome. 100dvh tracks the actual visible
-		   viewport as it collapses/expands. */
-		height: 100dvh;
+		/* --app-height (set from window.visualViewport in +layout.svelte)
+		   is the reliable source of truth on iOS Safari, where the
+		   collapsing toolbar makes 100vh too tall and 100dvh support has
+		   been inconsistent across versions. Falls back to dvh before
+		   that JS runs, then to vh on anything without dvh support. */
+		height: var(--app-height, 100dvh);
 		width: 100vw;
 		overflow: hidden;
 		position: relative;
