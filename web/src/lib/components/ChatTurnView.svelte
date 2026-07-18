@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2 } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square } from '@lucide/svelte';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
@@ -107,11 +107,18 @@
 					<button
 						class="icon-btn"
 						onclick={() => appState.readAloud(index)}
-						disabled={appState.speakingIndex !== null}
-						title="Read aloud"
+						title={appState.speakingIndex === index
+							? appState.isPlaying
+								? 'Stop'
+								: 'Loading…'
+							: 'Read aloud'}
 					>
 						{#if appState.speakingIndex === index}
-							<Loader2 size={13} class="spin" />
+							{#if appState.isPlaying}
+								<Square size={13} fill="currentColor" />
+							{:else}
+								<Loader2 size={13} class="spin" />
+							{/if}
 						{:else}
 							<Volume2 size={13} />
 						{/if}

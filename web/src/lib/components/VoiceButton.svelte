@@ -15,29 +15,22 @@
 		? 'audio/webm;codecs=opus'
 		: 'audio/webm';
 
-	// Cached and reused across recordings: getUserMedia's permission
-	// prompt is async, and if the user starts speaking while it's still
-	// showing, the recording hasn't actually started yet — the classic
-	// cause of Whisper's "thank you" hallucination on near-silent audio.
-	// Requesting once and reusing the stream means that race can only
-	// ever happen on the very first recording, not every time.
-	async function ensureStream(): Promise<MediaStream> {
-		if (!stream) {
-			stream = await navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-			});
-		}
-		return stream;
-	}
-
+	// A fresh getUserMedia call per recording — NOT cached. Holding a
+	// stream open between recordings keeps the mic track live the whole
+	// session, which browsers surface as "this tab is always recording"
+	// in the tab/OS indicator. Once permission is granted the first time,
+	// later calls resolve near-instantly (no dialog), so there's no real
+	// cost to requesting fresh each time — and tracks are always stopped
+	// the instant a recording ends (see onstop below).
 	async function startRecording() {
 		if (appState.busy || recording) return;
 		recording = true;
 		pendingStop = false;
 
-		let activeStream: MediaStream;
 		try {
-			activeStream = await ensureStream();
+			stream = await navigator.mediaDevices.getUserMedia({
+				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+			});
 		} catch (err) {
 			console.error('microphone access denied or unavailable', err);
 			recording = false;
@@ -46,11 +39,13 @@
 
 		chunks = [];
 		startedAt = Date.now();
-		mediaRecorder = new MediaRecorder(activeStream, { mimeType });
+		mediaRecorder = new MediaRecorder(stream, { mimeType });
 		mediaRecorder.ondataavailable = (e) => {
 			if (e.data.size > 0) chunks.push(e.data);
 		};
 		mediaRecorder.onstop = () => {
+			stream?.getTracks().forEach((t) => t.stop());
+			stream = null;
 			const durationMs = Date.now() - startedAt;
 			const blob = new Blob(chunks, { type: mimeType });
 			void transcribeAndSend(blob, durationMs);
@@ -59,6 +54,10 @@
 
 		// The user already released the button while getUserMedia was
 		// still resolving — stop right away instead of recording forever.
+		// This is the actual fix for Whisper's "thank you" hallucination:
+		// without this guard, releasing early during the permission
+		// prompt meant the recording either never started or captured
+		// near-silence, and Whisper hallucinates filler phrases on that.
 		if (pendingStop) stopRecording();
 	}
 

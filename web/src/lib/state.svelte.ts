@@ -1,6 +1,6 @@
 import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation } from './types';
 import { AgentSocket } from './ws';
-import { speak } from './speech';
+import { synthesize } from './speech';
 
 function safeParseCitations(json: string): Citation[] {
 	try {
@@ -25,12 +25,15 @@ class AppState {
 	// +layout.svelte sets the initial value from viewport width on mount.
 	sidebarOpen = $state(true);
 
-	// Per-turn read-aloud is manual (see readAloud below) — this tracks
-	// which assistant turn index is currently being synthesized/played,
-	// so its button can show a loading state. A future full "voice mode"
-	// session (auto-speak every reply, brief-answer prompt hint) can
-	// build on the same speech.ts/backend plumbing later.
+	// Per-turn read-aloud is manual (see readAloud below). speakingIndex is
+	// set the instant synthesis starts (fetching); isPlaying flips true
+	// only once audio actually starts playing — the button needs both to
+	// distinguish "loading" from "playing, click to stop" from "idle".
+	// A future full "voice mode" session (auto-speak every reply, a
+	// brief-answer prompt hint) can build on the same plumbing later.
 	speakingIndex = $state<number | null>(null);
+	isPlaying = $state(false);
+	private currentAudio: HTMLAudioElement | null = null;
 
 	private socket: AgentSocket;
 
@@ -54,18 +57,55 @@ class AppState {
 	}
 
 	// Manual per-message read-aloud, triggered from the speaker icon next
-	// to a turn's retry button.
+	// to a turn's retry button. Clicking the turn that's already active
+	// (loading OR playing) stops it — a toggle, not just a one-way trigger.
 	async readAloud(assistantTurnIndex: number) {
-		const turn = this.turns[assistantTurnIndex];
-		if (!turn || turn.role !== 'assistant' || !turn.content || this.speakingIndex !== null) return;
+		if (this.speakingIndex === assistantTurnIndex) {
+			this.stopReadAloud();
+			return;
+		}
 
+		const turn = this.turns[assistantTurnIndex];
+		if (!turn || turn.role !== 'assistant' || !turn.content) return;
+
+		this.stopReadAloud(); // only one read-aloud plays at a time
 		this.speakingIndex = assistantTurnIndex;
+
+		const result = await synthesize(turn.content, this.currentThreadId ?? undefined);
+		if (!result) {
+			if (this.speakingIndex === assistantTurnIndex) this.speakingIndex = null;
+			return;
+		}
+		// Stopped (or a different turn started) while we were still fetching.
+		if (this.speakingIndex !== assistantTurnIndex) return;
+
+		if (result.cost) this.totalCost += result.cost;
+		this.currentAudio = result.audio;
+		result.audio.onended = () => {
+			if (this.currentAudio === result.audio) {
+				this.currentAudio = null;
+				this.isPlaying = false;
+				this.speakingIndex = null;
+			}
+		};
+
 		try {
-			const cost = await speak(turn.content, this.currentThreadId ?? undefined);
-			if (cost) this.totalCost += cost;
-		} finally {
+			await result.audio.play();
+			this.isPlaying = true;
+		} catch (err) {
+			console.error('audio playback failed', err);
 			this.speakingIndex = null;
 		}
+	}
+
+	stopReadAloud() {
+		if (this.currentAudio) {
+			this.currentAudio.onended = null;
+			this.currentAudio.pause();
+			this.currentAudio = null;
+		}
+		this.isPlaying = false;
+		this.speakingIndex = null;
 	}
 
 	async loadModels() {
