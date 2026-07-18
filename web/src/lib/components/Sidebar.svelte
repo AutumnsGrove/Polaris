@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Sparkles, Plus, Trash2 } from '@lucide/svelte';
+	import { Sparkles, Plus, Trash2, PanelLeftClose } from '@lucide/svelte';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -12,10 +12,13 @@
 	}
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" class:open={appState.sidebarOpen}>
 	<div class="brand">
 		<Sparkles size={18} color="var(--color-accent)" />
 		<span>Polaris</span>
+		<button class="icon-btn collapse-btn" onclick={() => appState.toggleSidebar()} title="Collapse sidebar">
+			<PanelLeftClose size={16} />
+		</button>
 	</div>
 
 	<button class="btn new-thread" onclick={() => appState.newThread()}>
@@ -58,6 +61,15 @@
 		flex-direction: column;
 		border-right: 1px solid var(--color-border);
 		background: var(--color-surface);
+		overflow: hidden;
+		transition: width 0.2s ease;
+	}
+
+	/* Desktop: collapsing shrinks the column to nothing, main content
+	   expands to fill — no overlay needed since there's room to spare. */
+	.sidebar:not(.open) {
+		width: 0;
+		border-right: none;
 	}
 
 	.brand {
@@ -67,10 +79,16 @@
 		padding: 16px;
 		border-bottom: 1px solid var(--color-border);
 		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.collapse-btn {
+		margin-left: auto;
 	}
 
 	.new-thread {
 		margin: 12px;
+		white-space: nowrap;
 	}
 
 	.thread-list {
@@ -134,6 +152,7 @@
 		padding: 12px;
 		font-size: 12px;
 		color: var(--color-text-dim);
+		white-space: nowrap;
 	}
 
 	.dot {
@@ -141,9 +160,36 @@
 		height: 8px;
 		border-radius: 50%;
 		background: var(--color-danger);
+		flex-shrink: 0;
 	}
 
 	.dot.connected {
 		background: var(--color-accent);
+	}
+
+	/* Mobile: the sidebar becomes a fixed-position overlay drawer that
+	   slides in over the content instead of squeezing it — collapsing
+	   the chat down to a sliver on a phone-width screen looks broken. */
+	@media (max-width: 768px) {
+		.sidebar {
+			position: fixed;
+			inset: 0 auto 0 0;
+			width: 280px;
+			z-index: 50;
+			transform: translateX(-100%);
+			transition: transform 0.2s ease;
+			box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);
+		}
+
+		.sidebar.open {
+			width: 280px;
+			transform: translateX(0);
+		}
+
+		.sidebar:not(.open) {
+			width: 280px;
+			border-right: 1px solid var(--color-border);
+			transform: translateX(-100%);
+		}
 	}
 </style>

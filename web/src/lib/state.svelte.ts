@@ -19,6 +19,11 @@ class AppState {
 	busy = $state(false);
 	totalCost = $state(0);
 
+	// Desktop: sidebar sits inline, open by default. Mobile: it's an
+	// overlay drawer, closed by default so the chat is visible first.
+	// +layout.svelte sets the initial value from viewport width on mount.
+	sidebarOpen = $state(true);
+
 	private socket: AgentSocket;
 
 	constructor() {
@@ -30,6 +35,14 @@ class AppState {
 
 	connect() {
 		this.socket.connect();
+	}
+
+	toggleSidebar() {
+		this.sidebarOpen = !this.sidebarOpen;
+	}
+
+	closeSidebar() {
+		this.sidebarOpen = false;
 	}
 
 	async loadModels() {
@@ -57,12 +70,23 @@ class AppState {
 			costUsd: m.cost_usd,
 			id: m.role === 'user' ? m.id : undefined
 		}));
+		this.closeSidebarIfMobile();
 	}
 
 	newThread() {
 		this.currentThreadId = null;
 		this.turns = [];
 		this.totalCost = 0;
+		this.closeSidebarIfMobile();
+	}
+
+	// Picking a thread (or starting a new one) should dismiss the drawer
+	// on mobile so the chat is immediately visible, but leave the sidebar
+	// alone on desktop where it's pinned inline, not an overlay.
+	private closeSidebarIfMobile() {
+		if (typeof window !== 'undefined' && window.innerWidth < 768) {
+			this.sidebarOpen = false;
+		}
 	}
 
 	async deleteThread(id: string) {

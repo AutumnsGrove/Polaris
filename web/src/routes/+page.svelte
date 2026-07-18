@@ -2,7 +2,7 @@
 	import { appState } from '$lib/state.svelte';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
-	import { Send } from '@lucide/svelte';
+	import { Send, PanelLeft } from '@lucide/svelte';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement;
@@ -42,7 +42,14 @@
 </svelte:head>
 
 <header class="header">
-	<ModelSelector />
+	<div class="header-left">
+		{#if !appState.sidebarOpen}
+			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
+				<PanelLeft size={18} />
+			</button>
+		{/if}
+		<ModelSelector />
+	</div>
 	<div class="cost">
 		Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
 	</div>
@@ -82,9 +89,18 @@
 		justify-content: space-between;
 		border-bottom: 1px solid var(--color-border);
 		padding: 12px 16px;
+		gap: 12px;
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
 	}
 
 	.cost {
+		flex-shrink: 0;
 		font-size: 13px;
 		color: var(--color-text-dim);
 	}
