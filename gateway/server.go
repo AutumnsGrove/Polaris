@@ -175,6 +175,15 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		threadID = uuid.NewString()
 	}
 
+	// Retry/edit: wipe the message being replaced and everything after it
+	// (no branching history) before persisting the new/unchanged content.
+	if msg.EditFromID != 0 {
+		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
+			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+			return
+		}
+	}
+
 	modelCfg := s.cfg.ModelByID(msg.Model)
 	client := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
@@ -196,6 +205,16 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		send(ServerEvent{Type: "error", Message: err.Error()})
 		return
 	}
+
+	// Persist the user message before running the agent, not after — so
+	// it (and its ID, needed for retry/edit) survives even if the turn
+	// below errors out. Previously a failed turn left no record at all.
+	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", 0)
+	if err != nil {
+		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+		return
+	}
+	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
 	emit := func(eventType string, payload map[string]interface{}) {
 		evt := ServerEvent{Type: eventType, ThreadID: threadID}
@@ -227,23 +246,21 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 
 	result, err := agent.Run(agentCtx, history, msg.Content)
 	if err != nil {
-		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}
 
 	citationsJSON, _ := json.Marshal(result.Citations)
-	if err := s.db.AddMessage(threadID, "user", msg.Content, "[]", 0); err != nil {
-		log.Warn("failed to persist user message", "err", err)
-	}
-	if err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), result.CostUSD); err != nil {
+	if _, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), result.CostUSD); err != nil {
 		log.Warn("failed to persist assistant message", "err", err)
 	}
 
 	send(ServerEvent{
-		Type:      "done",
-		ThreadID:  threadID,
-		Citations: result.Citations,
-		CostUSD:   result.CostUSD,
+		Type:          "done",
+		ThreadID:      threadID,
+		UserMessageID: userMsgID,
+		Citations:     result.Citations,
+		CostUSD:       result.CostUSD,
 	})
 }
 

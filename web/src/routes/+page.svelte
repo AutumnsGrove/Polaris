@@ -53,7 +53,7 @@
 		<div class="empty">Ask anything — search and reading happen automatically when needed.</div>
 	{/if}
 	{#each appState.turns as turn, i (i)}
-		<ChatTurnView {turn} />
+		<ChatTurnView {turn} index={i} />
 	{/each}
 </div>
 

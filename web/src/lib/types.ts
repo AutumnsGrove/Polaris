@@ -17,14 +17,19 @@ export type ServerEvent =
 			citations?: Citation[];
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
-	| { type: 'done'; thread_id: string; cost_usd: number; citations?: Citation[] }
-	| { type: 'error'; thread_id?: string; message: string };
+	| { type: 'user_message'; thread_id: string; user_message_id: number }
+	| { type: 'done'; thread_id: string; cost_usd: number; citations?: Citation[]; user_message_id?: number }
+	| { type: 'error'; thread_id?: string; message: string; user_message_id?: number };
 
+// edit_from_id turns this into a retry/edit: the server deletes every
+// message in the thread with id >= edit_from_id before treating content
+// as the new user message at that point.
 export interface ClientMessage {
 	type: 'message';
 	thread_id?: string;
 	content: string;
 	model: string;
+	edit_from_id?: number;
 }
 
 export interface ModelOption {
@@ -70,4 +75,7 @@ export interface ChatTurn {
 	citations?: Citation[];
 	costUsd?: number;
 	streaming?: boolean;
+	// DB message id. Only ever set on 'user' turns — needed to retry/edit
+	// from this point. Undefined until the server confirms it's persisted.
+	id?: number;
 }

@@ -123,8 +123,40 @@ func (s *Store) DeleteThread(id string) error {
 
 // AddMessage inserts a message and bumps the thread's running cost and
 // updated_at in one transaction, so ListThreads' ordering and the
-// header's cost display stay consistent.
-func (s *Store) AddMessage(threadID, role, content, citationsJSON string, costUSD float64) error {
+// header's cost display stay consistent. Returns the new message's ID,
+// which the frontend needs later to retry/edit from this point.
+func (s *Store) AddMessage(threadID, role, content, citationsJSON string, costUSD float64) (int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
+		`INSERT INTO messages (thread_id, role, content, citations, cost_usd) VALUES (?, ?, ?, ?, ?)`,
+		threadID, role, content, citationsJSON, costUSD,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		costUSD, threadID,
+	); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// DeleteMessagesFrom removes every message in threadID with id >= fromID
+// (the message being edited/retried, plus everything after it — there's
+// no branching history, so anything downstream of an edit is invalidated)
+// and recomputes the thread's running cost from what's left, since a
+// simple subtraction would drift if this is called more than once.
+func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -132,14 +164,16 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON string, costUS
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, cost_usd) VALUES (?, ?, ?, ?, ?)`,
-		threadID, role, content, citationsJSON, costUSD,
+		`DELETE FROM messages WHERE thread_id = ? AND id >= ?`,
+		threadID, fromID,
 	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(
-		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		costUSD, threadID,
+		`UPDATE threads SET cost_usd = (
+			SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE thread_id = ?
+		), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		threadID, threadID,
 	); err != nil {
 		return err
 	}

@@ -54,7 +54,8 @@ class AppState {
 			role: m.role,
 			content: m.content,
 			citations: safeParseCitations(m.citations),
-			costUsd: m.cost_usd
+			costUsd: m.cost_usd,
+			id: m.role === 'user' ? m.id : undefined
 		}));
 	}
 
@@ -73,16 +74,44 @@ class AppState {
 	send(content: string) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
+		this.dispatch(trimmed);
+	}
 
-		this.turns.push({ role: 'user', content: trimmed });
+	// Re-runs an assistant turn using the same preceding user message —
+	// most useful after a transient error (network blip, provider hiccup).
+	retry(assistantTurnIndex: number) {
+		const userTurn = this.turns[assistantTurnIndex - 1];
+		if (!userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
+		this.dispatch(userTurn.content, userTurn.id, assistantTurnIndex - 1);
+	}
+
+	// Replaces a user message with revised text and re-runs from there.
+	editMessage(userTurnIndex: number, newContent: string) {
+		const trimmed = newContent.trim();
+		const userTurn = this.turns[userTurnIndex];
+		if (!trimmed || !userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
+		this.dispatch(trimmed, userTurn.id, userTurnIndex);
+	}
+
+	// Shared by send/retry/editMessage: truncate everything from
+	// truncateFromIndex onward (if this is a retry/edit), push a fresh
+	// user + streaming-assistant pair, and send over the socket.
+	// editFromId tells the server which persisted message (and everything
+	// after it) to delete before treating content as the replacement.
+	private dispatch(content: string, editFromId?: number, truncateFromIndex?: number) {
+		if (truncateFromIndex !== undefined) {
+			this.turns = this.turns.slice(0, truncateFromIndex);
+		}
+		this.turns.push({ role: 'user', content });
 		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
 		this.busy = true;
 
 		this.socket.send({
 			type: 'message',
 			thread_id: this.currentThreadId ?? undefined,
-			content: trimmed,
-			model: this.selectedModel
+			content,
+			model: this.selectedModel,
+			edit_from_id: editFromId
 		});
 	}
 
@@ -90,7 +119,17 @@ class AppState {
 		return this.turns[this.turns.length - 1];
 	}
 
+	private currentUserTurn(): ChatTurn | undefined {
+		return this.turns[this.turns.length - 2];
+	}
+
 	private handleEvent(e: ServerEvent) {
+		if (e.type === 'user_message') {
+			const userTurn = this.currentUserTurn();
+			if (userTurn && userTurn.role === 'user') userTurn.id = e.user_message_id;
+			return;
+		}
+
 		const turn = this.currentAssistantTurn();
 		if (!turn) return;
 
