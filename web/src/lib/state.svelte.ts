@@ -35,6 +35,19 @@ class AppState {
 	isPlaying = $state(false);
 	private currentAudio: HTMLAudioElement | null = null;
 
+	// Identifies which thread + turn object an in-flight response belongs
+	// to — distinct from currentThreadId/turns, which reflect what's
+	// currently *displayed*. Navigating to a different thread mid-stream
+	// doesn't cancel anything server-side (there's no cancellation), so
+	// without this, stray token/tool events kept landing on whatever was
+	// last in the newly-displayed array — including appending an
+	// assistant's reply straight into a user bubble. pendingThreadId is
+	// null until the first event reveals it, for a brand-new thread.
+	private pendingTurn: ChatTurn | null = null;
+	private pendingUserTurn: ChatTurn | null = null;
+	private pendingThreadId: string | null = null;
+	private pendingIsNewThread = false;
+
 	private socket: AgentSocket;
 
 	constructor() {
@@ -192,9 +205,16 @@ class AppState {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
-		this.turns.push({ role: 'user', content });
-		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
+		const userTurn: ChatTurn = { role: 'user', content };
+		const assistantTurn: ChatTurn = { role: 'assistant', content: '', timeline: [], streaming: true };
+		this.turns.push(userTurn);
+		this.turns.push(assistantTurn);
 		this.busy = true;
+
+		this.pendingUserTurn = userTurn;
+		this.pendingTurn = assistantTurn;
+		this.pendingThreadId = this.currentThreadId;
+		this.pendingIsNewThread = this.currentThreadId === null;
 
 		this.socket.send({
 			type: 'message',
@@ -206,22 +226,27 @@ class AppState {
 		});
 	}
 
-	private currentAssistantTurn(): ChatTurn | undefined {
-		return this.turns[this.turns.length - 1];
-	}
-
-	private currentUserTurn(): ChatTurn | undefined {
-		return this.turns[this.turns.length - 2];
-	}
-
 	private handleEvent(e: ServerEvent) {
+		const eventThreadId = 'thread_id' in e ? e.thread_id : undefined;
+
+		// A brand-new thread's ID isn't known until the server assigns one.
+		if (this.pendingIsNewThread && this.pendingThreadId === null && eventThreadId) {
+			this.pendingThreadId = eventThreadId;
+		}
+
+		// Not for the turn we're tracking — most likely a late event for a
+		// turn the user has since navigated away from. The backend is
+		// still persisting it independently regardless; reopening that
+		// thread later will show the finished result. Just don't let it
+		// touch whatever's currently on screen.
+		if (eventThreadId && eventThreadId !== this.pendingThreadId) return;
+
 		if (e.type === 'user_message') {
-			const userTurn = this.currentUserTurn();
-			if (userTurn && userTurn.role === 'user') userTurn.id = e.user_message_id;
+			if (this.pendingUserTurn) this.pendingUserTurn.id = e.user_message_id;
 			return;
 		}
 
-		const turn = this.currentAssistantTurn();
+		const turn = this.pendingTurn;
 		if (!turn) return;
 
 		switch (e.type) {
@@ -253,20 +278,33 @@ class AppState {
 				turn.content += e.content;
 				break;
 
-			case 'done':
+			case 'done': {
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.costUsd = e.cost_usd;
-				this.totalCost += e.cost_usd;
-				this.currentThreadId = e.thread_id;
 				this.busy = false;
+				// Only adopt the thread id / bump the visible total if the
+				// user is still looking at this thread (or it just became
+				// one) — not if they've since navigated elsewhere.
+				const stillWatching = this.currentThreadId === null || this.currentThreadId === this.pendingThreadId;
+				if (stillWatching) {
+					this.currentThreadId = e.thread_id;
+					this.totalCost += e.cost_usd;
+				}
+				this.pendingTurn = null;
+				this.pendingUserTurn = null;
+				this.pendingThreadId = null;
 				void this.loadThreads();
 				break;
+			}
 
 			case 'error':
 				turn.streaming = false;
 				if (!turn.content) turn.content = `Error: ${e.message}`;
 				this.busy = false;
+				this.pendingTurn = null;
+				this.pendingUserTurn = null;
+				this.pendingThreadId = null;
 				break;
 		}
 	}
