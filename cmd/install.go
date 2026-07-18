@@ -31,9 +31,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	u, err := user.Current()
-	if err != nil {
-		return fmt.Errorf("failed to get current user: %w", err)
+	// Writing the systemd unit to /etc requires sudo, but the service
+	// itself shouldn't run as root — a network-facing process with API
+	// keys and a database has no business needing root privileges. sudo
+	// re-execs this binary as root, so user.Current() would report
+	// "root" here; SUDO_USER (set by sudo itself) is how a privileged
+	// process recovers who actually invoked it.
+	username := os.Getenv("SUDO_USER")
+	if username == "" {
+		u, err := user.Current()
+		if err != nil {
+			return fmt.Errorf("failed to get current user: %w", err)
+		}
+		username = u.Username
 	}
 
 	mgr, err := procmgr.New("polaris")
@@ -46,7 +56,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		BinaryPath: filepath.Join(repoPath, "polaris"),
 		WorkDir:    repoPath,
 		LogDir:     filepath.Join(repoPath, "logs"),
-		User:       u.Username,
+		User:       username,
 		Path:       os.Getenv("PATH"),
 	}
 
