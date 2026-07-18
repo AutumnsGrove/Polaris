@@ -77,7 +77,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		// already succeeded, no reason to throw that away.
 	}
 
-	ctx.Citations = append(ctx.Citations, Citation{Title: title, URL: args.URL})
+	ctx.AddCitation(Citation{Title: title, URL: args.URL})
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",
 		"result":    result,

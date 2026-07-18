@@ -66,7 +66,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	var sb strings.Builder
 	for i, r := range resp.Results {
 		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.URL, r.Content)
-		ctx.Citations = append(ctx.Citations, Citation{Title: r.Title, URL: r.URL})
+		ctx.AddCitation(Citation{Title: r.Title, URL: r.URL})
 	}
 	formatted := sb.String()
 

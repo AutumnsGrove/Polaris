@@ -28,6 +28,19 @@ type Citation struct {
 	URL   string `json:"url"`
 }
 
+// AddCitation appends a citation unless its URL is already present —
+// web_search and web_read routinely surface the same URL (a search hit
+// that then gets read in full), and duplicate source badges in the UI
+// look like a bug rather than an accurate source list.
+func (c *Context) AddCitation(cit Citation) {
+	for _, existing := range c.Citations {
+		if existing.URL == cit.URL {
+			return
+		}
+	}
+	c.Citations = append(c.Citations, cit)
+}
+
 type HandlerFunc func(argsJSON string, ctx *Context) string
 
 var registry = map[string]HandlerFunc{}
