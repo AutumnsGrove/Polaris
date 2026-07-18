@@ -15,6 +15,9 @@ searxng:
 database:
   path: "./localassistant.db"
 
+logging:
+  dir: "./logs"   # one file per day (YYYY-MM-DD.log), 90-day retention, pruned automatically
+
 service:
   label: "localassistant"
 

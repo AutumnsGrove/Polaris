@@ -37,6 +37,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := logger.Init(cfg.Logging.Dir); err != nil {
+		return fmt.Errorf("initializing logger: %w", err)
+	}
+
 	db, err := store.Open(cfg.Database.Path)
 	if err != nil {
 		return err

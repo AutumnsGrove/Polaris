@@ -28,6 +28,10 @@ type Config struct {
 		Path string `yaml:"path"`
 	} `yaml:"database"`
 
+	Logging struct {
+		Dir string `yaml:"dir"` // daily-rotated files (YYYY-MM-DD.log), 90-day retention
+	} `yaml:"logging"`
+
 	Service struct {
 		Label string `yaml:"label"`
 	} `yaml:"service"`
@@ -70,6 +74,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./localassistant.db"
+	}
+	if cfg.Logging.Dir == "" {
+		cfg.Logging.Dir = "./logs"
 	}
 	if cfg.Service.Label == "" {
 		cfg.Service.Label = "localassistant"

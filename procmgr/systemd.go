@@ -119,8 +119,13 @@ RestartSec=10
 StartLimitIntervalSec=600
 StartLimitBurst=5
 
-StandardOutput=append:{{.WorkDir}}/logs/localassistant.log
-StandardError=append:{{.WorkDir}}/logs/localassistant.log
+
+# The app's own logger writes daily-rotated files (logs/YYYY-MM-DD.log,
+# 90-day retention — see logger.Init in cmd/run.go). This catches only
+# what bypasses that logger entirely: Go runtime panics, output before
+# logger.Init runs, etc.
+StandardOutput=append:{{.WorkDir}}/logs/service-fallback.log
+StandardError=append:{{.WorkDir}}/logs/service-fallback.log
 
 [Install]
 WantedBy=multi-user.target
