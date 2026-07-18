@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { Mic, Loader2 } from '@lucide/svelte';
 	import { appState } from '$lib/state.svelte';
 
@@ -7,48 +8,81 @@
 	let mediaRecorder: MediaRecorder | null = null;
 	let chunks: BlobPart[] = [];
 	let stream: MediaStream | null = null;
+	let pendingStop = false;
+	let startedAt = 0;
+
+	const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+		? 'audio/webm;codecs=opus'
+		: 'audio/webm';
+
+	// Cached and reused across recordings: getUserMedia's permission
+	// prompt is async, and if the user starts speaking while it's still
+	// showing, the recording hasn't actually started yet — the classic
+	// cause of Whisper's "thank you" hallucination on near-silent audio.
+	// Requesting once and reusing the stream means that race can only
+	// ever happen on the very first recording, not every time.
+	async function ensureStream(): Promise<MediaStream> {
+		if (!stream) {
+			stream = await navigator.mediaDevices.getUserMedia({
+				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+			});
+		}
+		return stream;
+	}
 
 	async function startRecording() {
 		if (appState.busy || recording) return;
+		recording = true;
+		pendingStop = false;
+
+		let activeStream: MediaStream;
 		try {
-			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			activeStream = await ensureStream();
 		} catch (err) {
 			console.error('microphone access denied or unavailable', err);
+			recording = false;
 			return;
 		}
+
 		chunks = [];
-		mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+		startedAt = Date.now();
+		mediaRecorder = new MediaRecorder(activeStream, { mimeType });
 		mediaRecorder.ondataavailable = (e) => {
 			if (e.data.size > 0) chunks.push(e.data);
 		};
 		mediaRecorder.onstop = () => {
-			stream?.getTracks().forEach((t) => t.stop());
-			stream = null;
-			const blob = new Blob(chunks, { type: 'audio/webm' });
-			void transcribeAndSend(blob);
+			const durationMs = Date.now() - startedAt;
+			const blob = new Blob(chunks, { type: mimeType });
+			void transcribeAndSend(blob, durationMs);
 		};
 		mediaRecorder.start();
-		recording = true;
+
+		// The user already released the button while getUserMedia was
+		// still resolving — stop right away instead of recording forever.
+		if (pendingStop) stopRecording();
 	}
 
 	function stopRecording() {
-		if (mediaRecorder && recording) {
-			mediaRecorder.stop();
-			recording = false;
+		if (!recording) return;
+		if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+			pendingStop = true;
+			return;
 		}
+		mediaRecorder.stop();
+		recording = false;
 	}
 
-	async function transcribeAndSend(blob: Blob) {
-		// Recordings under ~300ms are almost always an accidental tap, not
-		// a memo — skip the round-trip rather than sending empty audio.
-		if (blob.size < 1000) return;
+	async function transcribeAndSend(blob: Blob, durationMs: number) {
+		// Anything under ~300ms is almost always an accidental tap, not a
+		// memo — skip the round-trip rather than sending near-silent audio.
+		if (durationMs < 300 || blob.size < 500) return;
 
 		transcribing = true;
 		try {
-			const res = await fetch('/api/transcribe?format=webm', { method: 'POST', body: blob });
+			const res = await fetch(`/api/transcribe?format=webm`, { method: 'POST', body: blob });
 			if (res.ok) {
 				const data = await res.json();
-				if (data.text) appState.send(data.text);
+				if (data.text) appState.send(data.text, data.cost_usd);
 			} else {
 				console.error('transcription failed', await res.text());
 			}
@@ -58,6 +92,10 @@
 			transcribing = false;
 		}
 	}
+
+	onDestroy(() => {
+		stream?.getTracks().forEach((t) => t.stop());
+	});
 </script>
 
 <button

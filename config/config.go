@@ -35,10 +35,15 @@ type Config struct {
 
 	Voice struct {
 		// STTModel/STTFallbackModel are OpenRouter model slugs for push-to-talk
-		// transcription. Whisper Turbo is fast but occasionally times out under
-		// load; the fallback (plain whisper-large-v3) is slower but more reliable.
+		// transcription.
 		STTModel         string `yaml:"stt_model"`
 		STTFallbackModel string `yaml:"stt_fallback_model"`
+
+		// TTSModel/TTSVoice/TTSFormat drive spoken replies in voice mode.
+		// Kokoro-82M via OpenRouter's dedicated /audio/speech endpoint.
+		TTSModel  string `yaml:"tts_model"`
+		TTSVoice  string `yaml:"tts_voice"`
+		TTSFormat string `yaml:"tts_format"` // "mp3" or "pcm" — only two OpenRouter documents for this endpoint
 	} `yaml:"voice"`
 
 	Database struct {
@@ -99,10 +104,19 @@ func Load(path string) (*Config, error) {
 		cfg.Service.Label = "polaris"
 	}
 	if cfg.Voice.STTModel == "" {
-		cfg.Voice.STTModel = "openai/whisper-large-v3-turbo"
+		cfg.Voice.STTModel = "mistralai/voxtral-mini-transcribe"
 	}
 	if cfg.Voice.STTFallbackModel == "" {
 		cfg.Voice.STTFallbackModel = "openai/whisper-large-v3"
+	}
+	if cfg.Voice.TTSModel == "" {
+		cfg.Voice.TTSModel = "hexgrad/kokoro-82m"
+	}
+	if cfg.Voice.TTSVoice == "" {
+		cfg.Voice.TTSVoice = "bf_lily"
+	}
+	if cfg.Voice.TTSFormat == "" {
+		cfg.Voice.TTSFormat = "mp3"
 	}
 	if len(cfg.Models) == 0 {
 		return nil, fmt.Errorf("config: at least one entry required under models")

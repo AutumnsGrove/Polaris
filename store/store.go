@@ -121,6 +121,17 @@ func (s *Store) DeleteThread(id string) error {
 	return err
 }
 
+// AddCost bumps a thread's running cost without inserting a message row —
+// for spend that isn't itself a stored turn, like a read-aloud TTS call
+// against an existing assistant message.
+func (s *Store) AddCost(threadID string, costUSD float64) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		costUSD, threadID,
+	)
+	return err
+}
+
 // AddMessage inserts a message and bumps the thread's running cost and
 // updated_at in one transaction, so ListThreads' ordering and the
 // header's cost display stay consistent. Returns the new message's ID,

@@ -1,32 +1,53 @@
-// Text-to-speech via the browser's built-in Web Speech API — zero extra
-// RAM on the potato, no server round-trip, works offline once the page
-// is loaded. Deliberately not using a server-side TTS engine (Piper,
-// etc.) here: this is a stateless web app, not a persistent process
-// where spawning a TTS sidecar would make sense.
+// Text-to-speech via the backend's /api/speak endpoint (Kokoro-82M on
+// OpenRouter, not the browser's built-in SpeechSynthesis — that defaults
+// to a low-quality robotic voice on most systems).
 
-function stripMarkdownForSpeech(md: string): string {
-	return md
-		.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url) -> text
-		.replace(/[*_#`]/g, '')
-		.replace(/^\s*[-•]\s+/gm, '')
-		.replace(/\n{2,}/g, '. ')
-		.trim();
-}
+let currentAudio: HTMLAudioElement | null = null;
+let currentUrl: string | null = null;
 
-export function speak(text: string) {
-	if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-	const cleaned = stripMarkdownForSpeech(text);
-	if (!cleaned) return;
+/**
+ * Synthesizes text and plays it back. Returns the USD cost reported by
+ * the server (via the X-Tts-Cost-Usd header) so callers can fold it into
+ * a running total — the raw-audio response has no JSON body to carry it.
+ */
+export async function speak(text: string, threadId?: string): Promise<number> {
+	stopSpeaking();
 
-	// Cancel anything already playing — a new answer shouldn't queue
-	// behind a stale one.
-	window.speechSynthesis.cancel();
-	const utterance = new SpeechSynthesisUtterance(cleaned);
-	window.speechSynthesis.speak(utterance);
+	const res = await fetch('/api/speak', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ text, thread_id: threadId })
+	});
+	if (!res.ok) {
+		console.error('TTS request failed', await res.text());
+		return 0;
+	}
+
+	const costHeader = res.headers.get('X-Tts-Cost-Usd');
+	const cost = costHeader ? parseFloat(costHeader) : 0;
+
+	const blob = await res.blob();
+	const url = URL.createObjectURL(blob);
+	currentUrl = url;
+	currentAudio = new Audio(url);
+	currentAudio.onended = () => {
+		if (currentUrl === url) {
+			URL.revokeObjectURL(url);
+			currentUrl = null;
+		}
+	};
+	await currentAudio.play().catch((err) => console.error('audio playback failed', err));
+
+	return cost;
 }
 
 export function stopSpeaking() {
-	if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-		window.speechSynthesis.cancel();
+	if (currentAudio) {
+		currentAudio.pause();
+		currentAudio = null;
+	}
+	if (currentUrl) {
+		URL.revokeObjectURL(currentUrl);
+		currentUrl = null;
 	}
 }

@@ -19,12 +19,15 @@ foursquare:
 # to require an explicit location on every nearby_search call.
 default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"
 
-# Push-to-talk transcription (via OpenRouter, no local STT sidecar).
-# Text-to-speech uses the browser's built-in Web Speech API instead —
-# no server-side TTS engine, so nothing to configure for that half.
+# Push-to-talk transcription and read-aloud replies, both via OpenRouter
+# (no local sidecar processes — this is a stateless web app, not a
+# persistent companion process like her-go).
 voice:
-  stt_model: "openai/whisper-large-v3-turbo"
-  stt_fallback_model: "openai/whisper-large-v3"   # tried once if turbo times out under load
+  stt_model: "mistralai/voxtral-mini-transcribe"
+  stt_fallback_model: "openai/whisper-large-v3"   # tried once if the primary model times out/errors
+  tts_model: "hexgrad/kokoro-82m"
+  tts_voice: "bf_lily"   # British female "Lily" — see hexgrad/Kokoro-82M's VOICES.md for the full list
+  tts_format: "mp3"      # OpenRouter's Kokoro endpoint only documents mp3/pcm
 
 database:
   path: "./polaris.db"

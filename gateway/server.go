@@ -6,6 +6,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -34,6 +35,7 @@ type Server struct {
 	searxng    *search.SearXNGClient
 	foursquare *places.FoursquareClient // nil if not configured
 	stt        *voice.STTClient
+	tts        *voice.TTSClient
 	mux        *http.ServeMux
 }
 
@@ -47,6 +49,7 @@ func New(cfg *config.Config, db *store.Store, staticFS fs.FS) *Server {
 		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
+		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat),
 		mux:        http.NewServeMux(),
 	}
 	s.routes(staticFS)
@@ -61,6 +64,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
+	s.mux.HandleFunc("POST /api/speak", s.handleSpeak)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {
@@ -176,6 +180,43 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"text": result.Text, "cost_usd": result.Cost})
 }
 
+// handleSpeak synthesizes text via Kokoro and returns raw audio bytes.
+// The cost (computed manually — this endpoint's response has no JSON
+// usage field to read it from) is folded into the thread's running total
+// via the X-Tts-Cost-Usd response header, since the body is audio, not JSON.
+func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text     string `json:"text"`
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Text == "" {
+		http.Error(w, "text is required", http.StatusBadRequest)
+		return
+	}
+
+	audio, err := s.tts.Speak(req.Text)
+	if err != nil {
+		log.Warn("TTS failed", "err", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	cost := s.tts.EstimateCost(req.Text)
+	if req.ThreadID != "" {
+		if err := s.db.AddCost(req.ThreadID, cost); err != nil {
+			log.Warn("failed to record TTS cost", "err", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", s.tts.ContentType())
+	w.Header().Set("X-Tts-Cost-Usd", fmt.Sprintf("%.6f", cost))
+	w.Write(audio)
+}
+
 var upgrader = websocket.Upgrader{
 	// Tailscale-only deployment (like every other service in this
 	// homelab) — no public exposure, so a permissive origin check is
@@ -252,7 +293,9 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 	// Persist the user message before running the agent, not after — so
 	// it (and its ID, needed for retry/edit) survives even if the turn
 	// below errors out. Previously a failed turn left no record at all.
-	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", 0)
+	// SttCostUSD folds in push-to-talk transcription cost, if this
+	// message originated from a voice memo.
+	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", msg.SttCostUSD)
 	if err != nil {
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
@@ -299,12 +342,15 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		log.Warn("failed to persist assistant message", "err", err)
 	}
 
+	// Total cost added to the thread this turn: the agent's LLM/tool
+	// spend plus any STT cost from a voice memo — both were just
+	// persisted above, so the frontend's running total should reflect both.
 	send(ServerEvent{
 		Type:          "done",
 		ThreadID:      threadID,
 		UserMessageID: userMsgID,
 		Citations:     result.Citations,
-		CostUSD:       result.CostUSD,
+		CostUSD:       result.CostUSD + msg.SttCostUSD,
 	})
 }
 

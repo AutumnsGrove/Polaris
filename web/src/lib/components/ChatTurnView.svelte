@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2 } from '@lucide/svelte';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
@@ -104,6 +104,18 @@
 					{#if turn.costUsd !== undefined}
 						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
 					{/if}
+					<button
+						class="icon-btn"
+						onclick={() => appState.readAloud(index)}
+						disabled={appState.speakingIndex !== null}
+						title="Read aloud"
+					>
+						{#if appState.speakingIndex === index}
+							<Loader2 size={13} class="spin" />
+						{:else}
+							<Volume2 size={13} />
+						{/if}
+					</button>
 					<button
 						class="icon-btn retry-btn"
 						onclick={() => appState.retry(index)}
@@ -236,5 +248,15 @@
 
 	.prose :global(a) {
 		color: var(--color-accent-2);
+	}
+
+	:global(.spin) {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>

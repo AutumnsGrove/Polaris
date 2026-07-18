@@ -25,10 +25,12 @@ class AppState {
 	// +layout.svelte sets the initial value from viewport width on mount.
 	sidebarOpen = $state(true);
 
-	// Full voice mode: nudges the model toward brief/speakable answers
-	// (see agent.loadSystemPrompt's voiceModeInstruction) and reads the
-	// finished answer aloud via the browser's TTS once it lands.
-	voiceMode = $state(false);
+	// Per-turn read-aloud is manual (see readAloud below) — this tracks
+	// which assistant turn index is currently being synthesized/played,
+	// so its button can show a loading state. A future full "voice mode"
+	// session (auto-speak every reply, brief-answer prompt hint) can
+	// build on the same speech.ts/backend plumbing later.
+	speakingIndex = $state<number | null>(null);
 
 	private socket: AgentSocket;
 
@@ -51,8 +53,19 @@ class AppState {
 		this.sidebarOpen = false;
 	}
 
-	toggleVoiceMode() {
-		this.voiceMode = !this.voiceMode;
+	// Manual per-message read-aloud, triggered from the speaker icon next
+	// to a turn's retry button.
+	async readAloud(assistantTurnIndex: number) {
+		const turn = this.turns[assistantTurnIndex];
+		if (!turn || turn.role !== 'assistant' || !turn.content || this.speakingIndex !== null) return;
+
+		this.speakingIndex = assistantTurnIndex;
+		try {
+			const cost = await speak(turn.content, this.currentThreadId ?? undefined);
+			if (cost) this.totalCost += cost;
+		} finally {
+			this.speakingIndex = null;
+		}
 	}
 
 	async loadModels() {
@@ -105,10 +118,13 @@ class AppState {
 		await this.loadThreads();
 	}
 
-	send(content: string) {
+	// sttCostUsd is set when content came from a transcribed voice memo
+	// (already billed via /api/transcribe) so it gets folded into the
+	// thread's running total instead of silently untracked.
+	send(content: string, sttCostUsd?: number) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
-		this.dispatch(trimmed);
+		this.dispatch(trimmed, undefined, undefined, sttCostUsd);
 	}
 
 	// Re-runs an assistant turn using the same preceding user message —
@@ -132,7 +148,7 @@ class AppState {
 	// user + streaming-assistant pair, and send over the socket.
 	// editFromId tells the server which persisted message (and everything
 	// after it) to delete before treating content as the replacement.
-	private dispatch(content: string, editFromId?: number, truncateFromIndex?: number) {
+	private dispatch(content: string, editFromId?: number, truncateFromIndex?: number, sttCostUsd?: number) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
@@ -146,7 +162,7 @@ class AppState {
 			content,
 			model: this.selectedModel,
 			edit_from_id: editFromId,
-			voice_mode: this.voiceMode
+			stt_cost_usd: sttCostUsd
 		});
 	}
 
@@ -204,7 +220,6 @@ class AppState {
 				this.totalCost += e.cost_usd;
 				this.currentThreadId = e.thread_id;
 				this.busy = false;
-				if (this.voiceMode && turn.content) speak(turn.content);
 				void this.loadThreads();
 				break;
 

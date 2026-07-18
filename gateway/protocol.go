@@ -20,10 +20,16 @@ type ClientMessage struct {
 	Content    string `json:"content"`
 	Model      string `json:"model"` // config.ModelConfig.ID
 	EditFromID int64  `json:"edit_from_id,omitempty"`
-	// VoiceMode, when true, tells the driver this answer will be read
-	// aloud (browser TTS) — it nudges the model toward a brief,
-	// speakable answer instead of a long markdown-formatted one.
+	// VoiceMode, when true, tells the driver this answer is likely to be
+	// read aloud — nudges the model toward a brief, speakable answer
+	// instead of a long markdown-formatted one. Not wired to any UI toggle
+	// yet (that's the planned full voice-mode session, built later); for
+	// now, read-aloud is a per-message opt-in that doesn't set this.
 	VoiceMode bool `json:"voice_mode,omitempty"`
+	// SttCostUSD carries the transcription cost from a push-to-talk memo
+	// (already billed via /api/transcribe) so it gets folded into the
+	// thread's running total instead of being tracked nowhere.
+	SttCostUSD float64 `json:"stt_cost_usd,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend
