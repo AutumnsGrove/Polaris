@@ -82,10 +82,19 @@ func (m *SystemdManager) unitPath() string {
 	return filepath.Join("/etc/systemd/system", m.label+".service")
 }
 
+// systemctl always goes through sudo. The service itself runs as a
+// non-root user (deliberately — see cmd/install.go), so a bare
+// `systemctl restart` from the running process gets rejected by polkit
+// with "Access denied" even when sudoers grants that user NOPASSWD sudo
+// for everything: polkit's authorization check is tied to actually
+// invoking as root, not to what sudoers permits. `sudo -n` (never
+// prompt) fails fast with a clear error instead of hanging forever
+// waiting for a password that can never arrive in a headless service.
 func (m *SystemdManager) systemctl(args ...string) error {
-	out, err := exec.Command("systemctl", args...).CombinedOutput()
+	cmdArgs := append([]string{"-n", "systemctl"}, args...)
+	out, err := exec.Command("sudo", cmdArgs...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl %s (%s): %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("sudo systemctl %s (%s): %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
