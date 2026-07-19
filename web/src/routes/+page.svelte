@@ -94,7 +94,7 @@
 		<ModelSelector />
 	</div>
 	<div class="header-right">
-		{#if appState.contextTokens > 0}
+		{#if appState.turns.length > 0}
 			<div class="context-usage" class:hot={contextPercent >= 90} title="Context window used">
 				<Gauge size={12} />
 				<span class="label">Context:</span>
