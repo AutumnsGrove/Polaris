@@ -4,9 +4,14 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight } from '@lucide/svelte';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
+
+	// Sources start collapsed — a 15-result answer was burying the actual
+	// answer under a wall of full-width pills. Count-only toggle up front,
+	// full list is one click away instead of forced on every reader.
+	let sourcesOpen = $state(false);
 
 	// Content can originate from fetched web pages (via web_read) as well
 	// as the model itself, so sanitize before injecting as HTML — treat
@@ -90,12 +95,31 @@
 			{/if}
 
 			{#if turn.citations?.length}
-				<div class="citations">
-					{#each turn.citations as c (c.url)}
-						<a class="badge" href={c.url} target="_blank" rel="noreferrer">
-							{c.title || hostname(c.url)}
-						</a>
-					{/each}
+				<div class="sources">
+					<button class="sources-toggle" onclick={() => (sourcesOpen = !sourcesOpen)}>
+						<span class="sources-count">{turn.citations.length}</span>
+						<span>{turn.citations.length === 1 ? 'Source' : 'Sources'}</span>
+						<ChevronRight size={12} class={sourcesOpen ? 'chevron open' : 'chevron'} />
+					</button>
+					{#if sourcesOpen}
+						<div class="citations">
+							{#each turn.citations as c, i (c.url)}
+								<a
+									class="source-chip"
+									href={c.url}
+									target="_blank"
+									rel="noreferrer"
+									title={c.title || c.url}
+								>
+									<span class="source-index">{i + 1}</span>
+									<span class="source-text">
+										<span class="source-title">{c.title || hostname(c.url)}</span>
+										<span class="source-domain">{hostname(c.url)}</span>
+									</span>
+								</a>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/if}
 
@@ -221,11 +245,106 @@
 		color: var(--color-text-dim);
 	}
 
+	.sources {
+		margin-top: 10px;
+	}
+
+	.sources-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		border: none;
+		background: transparent;
+		padding: 2px 0;
+		font-size: 12px;
+		color: var(--color-text-dim);
+		transition: color 0.15s var(--ease-out-expo);
+	}
+
+	.sources-toggle:hover {
+		color: var(--color-text);
+	}
+
+	.sources-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 16px;
+		height: 16px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--color-surface-3);
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-dim);
+	}
+
 	.citations {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
 		margin-top: 8px;
+	}
+
+	/* Fixed max-width + ellipsis is the whole fix — a 90-character arXiv
+	   title no longer forces its own pill to the width of the page. Index
+	   badge gives a stable visual anchor since these aren't referenced by
+	   number anywhere else in the answer text (the model just hyperlinks
+	   inline); it's a scan aid, not a citation marker. */
+	.source-chip {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		max-width: 220px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		border-radius: var(--radius-sm);
+		padding: 5px 9px;
+		text-decoration: none;
+		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+	}
+
+	.source-chip:hover {
+		border-color: var(--color-accent-2);
+		background: var(--color-surface-3);
+	}
+
+	.source-index {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 15px;
+		height: 15px;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--color-accent-2) 20%, transparent);
+		color: var(--color-accent-2);
+		font-size: 9.5px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.source-text {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.source-title {
+		font-size: 12px;
+		color: var(--color-text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.source-domain {
+		font-size: 10px;
+		color: var(--color-text-dim);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.turn-footer {
@@ -343,6 +462,14 @@
 
 	:global(.spin) {
 		animation: spin 1s linear infinite;
+	}
+
+	:global(.chevron) {
+		transition: transform 0.15s ease;
+	}
+
+	:global(.chevron.open) {
+		transform: rotate(90deg);
 	}
 
 	@keyframes spin {
