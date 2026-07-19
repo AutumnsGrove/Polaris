@@ -26,6 +26,9 @@ export type ServerEvent =
 			citations?: Citation[];
 			user_message_id?: number;
 			context_tokens?: number;
+			// Up to 3 follow-up questions for the answer that just finished.
+			// Not persisted — a fresh set every turn, gone on thread switch.
+			suggestions?: string[];
 	  }
 	// The thread just crossed the context-window threshold and was
 	// auto-summarized — content is the summary, shown as a collapsible

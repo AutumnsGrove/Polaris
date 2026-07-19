@@ -27,6 +27,12 @@ class AppState {
 	contextTokens = $state(0);
 	contextWindowTokens = $state(100_000);
 
+	// Follow-up suggestions for the most recent answer — ephemeral, not
+	// persisted (see the ServerEvent 'done' doc comment in protocol.go),
+	// so these are cleared on every new dispatch/thread switch rather
+	// than restored when reopening a thread.
+	suggestions = $state<string[]>([]);
+
 	// Desktop: sidebar sits inline, open by default. Mobile: it's an
 	// overlay drawer, closed by default so the chat is visible first.
 	// +layout.svelte sets the initial value from viewport width on mount.
@@ -239,6 +245,7 @@ class AppState {
 		this.currentThreadId = id;
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
+		this.suggestions = [];
 		this.turns = (data.messages ?? []).map((m: any) => ({
 			role: m.role,
 			content: m.content,
@@ -254,6 +261,7 @@ class AppState {
 		this.turns = [];
 		this.totalCost = 0;
 		this.contextTokens = 0;
+		this.suggestions = [];
 		this.closeSidebarIfMobile();
 	}
 
@@ -315,6 +323,7 @@ class AppState {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
+		this.suggestions = [];
 		this.turns.push({ role: 'user', content });
 		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
 		this.busy = true;
@@ -446,6 +455,7 @@ class AppState {
 					this.currentThreadId = e.thread_id;
 					this.totalCost += e.cost_usd;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
+					this.suggestions = e.suggestions ?? [];
 				}
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;

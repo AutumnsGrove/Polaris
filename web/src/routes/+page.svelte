@@ -128,6 +128,15 @@
 		{#each appState.turns as turn, i (i)}
 			<ChatTurnView {turn} index={i} />
 		{/each}
+		{#if !appState.busy && appState.suggestions.length > 0}
+			<div class="suggestions">
+				{#each appState.suggestions as suggestion}
+					<button class="suggestion-chip" onclick={() => appState.send(suggestion)}>
+						{suggestion}
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 	{@render composerForm()}
 {/if}
@@ -300,6 +309,39 @@
 		display: flex;
 		flex-direction: column;
 		gap: 18px;
+	}
+
+	/* Sits right below the last answer, inside the scrolling timeline —
+	   not pinned near the composer, since these are about that specific
+	   answer, not a persistent app-level control. */
+	.suggestions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: -6px;
+	}
+
+	.suggestion-chip {
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		color: var(--color-text-dim);
+		border-radius: 999px;
+		padding: 7px 14px;
+		font-size: 12.5px;
+		font-family: var(--font-sans);
+		text-align: left;
+		transition:
+			border-color 0.15s var(--ease-out-expo),
+			color 0.15s var(--ease-out-expo),
+			background-color 0.15s var(--ease-out-expo),
+			transform 0.15s var(--ease-out-expo);
+	}
+
+	.suggestion-chip:hover {
+		border-color: var(--color-accent-2);
+		color: var(--color-text);
+		background: var(--color-surface-3);
+		transform: translateY(-1px);
 	}
 
 	.composer {

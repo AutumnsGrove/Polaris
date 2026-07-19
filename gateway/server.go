@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -562,10 +563,25 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	// Follow-up suggestions, Perplexity-style — skipped on a stopped
+	// generation (ctx.Err() != nil) since suggesting where to go next from
+	// an answer the user just cut off isn't useful. Not persisted: these
+	// are a one-turn UI aid, not part of the conversation record, so they
+	// just vanish on thread switch and get regenerated fresh next time.
+	var suggestions []string
+	if ctx.Err() == nil && result.Answer != "" {
+		if sug, sugCost, err := s.generateSuggestions(client, msg.Content, result.Answer); err != nil {
+			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
+		} else {
+			suggestions = sug
+			result.CostUSD += sugCost
+		}
+	}
+
 	// Total cost added to the thread this turn: the agent's LLM/tool
 	// spend plus any STT cost from a voice memo, plus compaction's own
-	// cost if it just ran — all three were just persisted above, so the
-	// frontend's running total should reflect all of them.
+	// cost if it just ran, plus follow-up suggestions — all persisted
+	// above, so the frontend's running total should reflect all of them.
 	send(ServerEvent{
 		Type:          "done",
 		ThreadID:      threadID,
@@ -573,7 +589,48 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Citations:     result.Citations,
 		CostUSD:       result.CostUSD + msg.SttCostUSD,
 		ContextTokens: contextTokens,
+		Suggestions:   suggestions,
 	})
+}
+
+// suggestionListPrefix strips list-style prefixes ("1. ", "- ", "• ") the
+// model sometimes adds despite being told not to — deliberately narrow
+// (requires the punctuation/space right after digits) so it never eats a
+// genuine leading number in a question, e.g. "2024 election results?".
+var suggestionListPrefix = regexp.MustCompile(`^(?:[-*•]\s+|\d+[.)]\s+)`)
+
+// generateSuggestions asks for up to 3 short follow-up questions based on
+// the exchange that just finished — one extra cheap, non-streamed LLM call,
+// same pattern as compactThread below. Only the last exchange is given as
+// context (not the full thread history): follow-ups are about "where could
+// this conversation go next", not a function of everything said earlier.
+func (s *Server) generateSuggestions(client *llm.Client, userMessage, answer string) ([]string, float64, error) {
+	prompt := []llm.ChatMessage{
+		{Role: "system", Content: "Based on this question-and-answer exchange, suggest exactly 3 short, " +
+			"natural follow-up questions the user might ask next. One per line, no numbering, no quotes, " +
+			"no preamble or extra commentary."},
+		{Role: "user", Content: userMessage},
+		{Role: "assistant", Content: answer},
+	}
+
+	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var suggestions []string
+	for _, line := range strings.Split(resp.Content, "\n") {
+		line = suggestionListPrefix.ReplaceAllString(strings.TrimSpace(line), "")
+		line = strings.Trim(line, "\"")
+		if line == "" {
+			continue
+		}
+		suggestions = append(suggestions, line)
+		if len(suggestions) == 3 {
+			break
+		}
+	}
+	return suggestions, resp.CostUSD, nil
 }
 
 // compactThread summarizes every message up to and including throughID,

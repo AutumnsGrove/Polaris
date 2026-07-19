@@ -45,8 +45,10 @@ type ClientMessage struct {
 //	"user_message"  — user_message_id: the persisted ID of the user message that started this
 //	                  turn, sent as soon as it's saved (even if the turn later errors) so the
 //	                  frontend can retry/edit from it
-//	"done"          — thread_id + cost_usd + context_tokens: turn complete, persisted, safe to
-//	                  re-enable input
+//	"done"          — thread_id + cost_usd + context_tokens + suggestions: turn complete,
+//	                  persisted, safe to re-enable input; suggestions is up to 3 follow-up
+//	                  questions for the just-finished answer, regenerated fresh each turn and
+//	                  not persisted — stale ones are just dropped on thread switch
 //	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
 //	                  and was auto-summarized; content is the summary, shown as a collapsible
 //	                  timeline note like a tool call, not a normal answer
@@ -63,4 +65,5 @@ type ServerEvent struct {
 	ContextTokens int              `json:"context_tokens,omitempty"`
 	Message       string           `json:"message,omitempty"`
 	UserMessageID int64            `json:"user_message_id,omitempty"`
+	Suggestions   []string         `json:"suggestions,omitempty"`
 }
