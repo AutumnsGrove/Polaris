@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +82,19 @@ func (s *Server) routes(staticFS fs.FS) {
 // spaHandler serves the embedded static build, falling back to
 // index.html for any path that isn't a real file — adapter-static's
 // SPA mode expects the server to do this for client-side routing.
+//
+// Explicit Cache-Control matters more than usual here: after a
+// self-update rebuilds and restarts the binary, the browser has no way
+// to know the server-side files changed unless told. Vite/SvelteKit's
+// build hashes every filename under _app/immutable/ from its content, so
+// those are safe to cache forever — a changed file gets a new URL,
+// never the same one with different bytes. Everything else (index.html
+// above all, since it's what points at the current hashes) must never
+// be cached at all, or a stale index.html keeps requesting
+// long-since-deleted hashed asset files after an update. Without this,
+// browsers fall back to heuristic caching — Safari in particular caches
+// aggressively enough that only a hard-refresh (impossible on mobile)
+// would ever see a new build.
 func spaHandler(staticFS fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(staticFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +102,13 @@ func spaHandler(staticFS fs.FS) http.Handler {
 		if path == "/" {
 			path = "/index.html"
 		}
+
+		if strings.HasPrefix(path, "/_app/immutable/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		}
+
 		if _, err := fs.Stat(staticFS, path[1:]); err != nil {
 			r2 := new(http.Request)
 			*r2 = *r
