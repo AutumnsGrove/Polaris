@@ -26,8 +26,9 @@ export type ServerEvent =
 			citations?: Citation[];
 			user_message_id?: number;
 			context_tokens?: number;
-			// Up to 3 follow-up questions for the answer that just finished.
-			// Not persisted — a fresh set every turn, gone on thread switch.
+			// Up to 3 follow-up questions for the answer that just finished,
+			// persisted alongside it (see StoredMessage.suggestions) — still
+			// there when this thread is reopened later.
 			suggestions?: string[];
 	  }
 	// The thread just crossed the context-window threshold and was
@@ -79,6 +80,7 @@ export interface StoredMessage {
 	role: string;
 	content: string;
 	citations: string; // JSON-encoded Citation[]
+	suggestions: string; // JSON-encoded string[], assistant messages only
 	cost_usd: number;
 	created_at: string;
 }

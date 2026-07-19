@@ -47,8 +47,9 @@ type ClientMessage struct {
 //	                  frontend can retry/edit from it
 //	"done"          — thread_id + cost_usd + context_tokens + suggestions: turn complete,
 //	                  persisted, safe to re-enable input; suggestions is up to 3 follow-up
-//	                  questions for the just-finished answer, regenerated fresh each turn and
-//	                  not persisted — stale ones are just dropped on thread switch
+//	                  questions for the just-finished answer, persisted alongside the assistant
+//	                  message (see store.Message.Suggestions) so reopening the thread later
+//	                  still shows them
 //	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
 //	                  and was auto-summarized; content is the summary, shown as a collapsible
 //	                  timeline note like a tool call, not a normal answer

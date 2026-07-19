@@ -2,7 +2,7 @@ import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation } from './typ
 import { AgentSocket } from './ws';
 import { synthesize } from './speech';
 
-function safeParseCitations(json: string): Citation[] {
+function safeParseJSON<T>(json: string): T[] {
 	try {
 		return JSON.parse(json) ?? [];
 	} catch {
@@ -27,10 +27,10 @@ class AppState {
 	contextTokens = $state(0);
 	contextWindowTokens = $state(100_000);
 
-	// Follow-up suggestions for the most recent answer — ephemeral, not
-	// persisted (see the ServerEvent 'done' doc comment in protocol.go),
-	// so these are cleared on every new dispatch/thread switch rather
-	// than restored when reopening a thread.
+	// Follow-up suggestions for the most recent answer — persisted on the
+	// last assistant message (see StoredMessage.suggestions), so openThread
+	// restores them; cleared on new dispatch/new thread since there's no
+	// "most recent answer" yet at that point.
 	suggestions = $state<string[]>([]);
 
 	// Desktop: sidebar sits inline, open by default. Mobile: it's an
@@ -245,14 +245,18 @@ class AppState {
 		this.currentThreadId = id;
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
-		this.suggestions = [];
-		this.turns = (data.messages ?? []).map((m: any) => ({
+		const messages = data.messages ?? [];
+		this.turns = messages.map((m: any) => ({
 			role: m.role,
 			content: m.content,
-			citations: safeParseCitations(m.citations),
+			citations: safeParseJSON<Citation>(m.citations),
 			costUsd: m.cost_usd,
 			id: m.role === 'user' ? m.id : undefined
 		}));
+		// Suggestions are a "what's next" prompt for the last answer, so
+		// only the most recent assistant message's set is relevant here.
+		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
+		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 		this.closeSidebarIfMobile();
 	}
 

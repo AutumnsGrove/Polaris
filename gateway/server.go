@@ -495,7 +495,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// below errors out. Previously a failed turn left no record at all.
 	// SttCostUSD folds in push-to-talk transcription cost, if this
 	// message originated from a voice memo.
-	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", msg.SttCostUSD)
+	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD)
 	if err != nil {
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
@@ -537,8 +537,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		return
 	}
 
+	// Follow-up suggestions, Perplexity-style — generated before persisting
+	// so they're saved alongside the answer, same as citations, instead of
+	// living only in this turn's live event stream. Skipped on a stopped
+	// generation (ctx.Err() != nil) since suggesting where to go next from
+	// an answer the user just cut off isn't useful.
+	var suggestions []string
+	if ctx.Err() == nil && result.Answer != "" {
+		if sug, sugCost, err := s.generateSuggestions(client, msg.Content, result.Answer); err != nil {
+			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
+		} else {
+			suggestions = sug
+			result.CostUSD += sugCost
+		}
+	}
+	suggestionsJSON, _ := json.Marshal(suggestions)
+
 	citationsJSON, _ := json.Marshal(result.Citations)
-	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), result.CostUSD)
+	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD)
 	if err != nil {
 		log.Warn("failed to persist assistant message", "err", err)
 	}
@@ -560,21 +576,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			contextTokens = estimateTokens(summary)
 			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
 			result.CostUSD += compactCost
-		}
-	}
-
-	// Follow-up suggestions, Perplexity-style — skipped on a stopped
-	// generation (ctx.Err() != nil) since suggesting where to go next from
-	// an answer the user just cut off isn't useful. Not persisted: these
-	// are a one-turn UI aid, not part of the conversation record, so they
-	// just vanish on thread switch and get regenerated fresh next time.
-	var suggestions []string
-	if ctx.Err() == nil && result.Answer != "" {
-		if sug, sugCost, err := s.generateSuggestions(client, msg.Content, result.Answer); err != nil {
-			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-		} else {
-			suggestions = sug
-			result.CostUSD += sugCost
 		}
 	}
 

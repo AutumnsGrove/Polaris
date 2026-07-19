@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS messages (
 	role TEXT NOT NULL,
 	content TEXT NOT NULL,
 	citations TEXT NOT NULL DEFAULT '[]',
+	-- suggestions: up to 3 follow-up questions generated for this answer
+	-- (assistant messages only, '[]' for user messages) — persisted so
+	-- reopening a thread still shows them, not just the live turn that
+	-- generated them.
+	suggestions TEXT NOT NULL DEFAULT '[]',
 	cost_usd REAL NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -71,6 +76,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN compacted_summary TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN compacted_through_id INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]'`,
 }
 
 func Open(path string) (*Store, error) {
@@ -92,28 +98,29 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 type Thread struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	Model     string  `json:"model"`
-	CostUSD   float64 `json:"cost_usd"`
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Model   string  `json:"model"`
+	CostUSD float64 `json:"cost_usd"`
 	// ContextTokens is exposed to the frontend for the context-usage %
 	// display. CompactedSummary/CompactedThroughID are internal —
 	// history-building only, never sent to the frontend.
-	ContextTokens       int       `json:"context_tokens"`
-	CompactedSummary    string    `json:"-"`
-	CompactedThroughID  int64     `json:"-"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ContextTokens      int       `json:"context_tokens"`
+	CompactedSummary   string    `json:"-"`
+	CompactedThroughID int64     `json:"-"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type Message struct {
-	ID        int64     `json:"id"`
-	ThreadID  string    `json:"thread_id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	Citations string    `json:"citations"` // JSON-encoded []tools.Citation
-	CostUSD   float64   `json:"cost_usd"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	ThreadID    string    `json:"thread_id"`
+	Role        string    `json:"role"`
+	Content     string    `json:"content"`
+	Citations   string    `json:"citations"`   // JSON-encoded []tools.Citation
+	Suggestions string    `json:"suggestions"` // JSON-encoded []string
+	CostUSD     float64   `json:"cost_usd"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -184,7 +191,7 @@ func (s *Store) AddCost(threadID string, costUSD float64) error {
 // updated_at in one transaction, so ListThreads' ordering and the
 // header's cost display stay consistent. Returns the new message's ID,
 // which the frontend needs later to retry/edit from this point.
-func (s *Store) AddMessage(threadID, role, content, citationsJSON string, costUSD float64) (int64, error) {
+func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJSON string, costUSD float64) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -192,8 +199,8 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON string, costUS
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, cost_usd) VALUES (?, ?, ?, ?, ?)`,
-		threadID, role, content, citationsJSON, costUSD,
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd) VALUES (?, ?, ?, ?, ?, ?)`,
+		threadID, role, content, citationsJSON, suggestionsJSON, costUSD,
 	)
 	if err != nil {
 		return 0, err
@@ -305,7 +312,7 @@ func (s *Store) SetSetting(key, value string) error {
 
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, citations, cost_usd, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
+		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
 	if err != nil {
@@ -316,7 +323,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.CostUSD, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
