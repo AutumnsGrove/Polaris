@@ -36,6 +36,14 @@
 		const query = lastUser.content.length > 60 ? lastUser.content.slice(0, 60) + '…' : lastUser.content;
 		return `${query} — Polaris Search`;
 	});
+
+	// Context-usage %, next to thread cost — same threshold the backend
+	// auto-compacts at, so this doubles as a warning before that happens.
+	let contextPercent = $derived(
+		appState.contextWindowTokens > 0
+			? Math.min(100, Math.round((appState.contextTokens / appState.contextWindowTokens) * 100))
+			: 0
+	);
 </script>
 
 {#snippet composerForm()}
@@ -86,6 +94,11 @@
 		<ModelSelector />
 	</div>
 	<div class="header-right">
+		{#if appState.contextTokens > 0}
+			<div class="context-usage" class:hot={contextPercent >= 90}>
+				Context: <span class="context-value">{contextPercent}%</span>
+			</div>
+		{/if}
 		{#if appState.showPrices}
 			<div class="cost">
 				Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
@@ -151,6 +164,28 @@
 		color: var(--color-text);
 		font-variant-numeric: tabular-nums;
 		margin-left: 2px;
+	}
+
+	.context-usage {
+		flex-shrink: 0;
+		font-size: 12px;
+		color: var(--color-text-dim);
+		letter-spacing: 0.01em;
+		padding-right: 12px;
+		border-right: 1px solid var(--color-border);
+	}
+
+	.context-value {
+		color: var(--color-text);
+		font-variant-numeric: tabular-nums;
+		margin-left: 2px;
+	}
+
+	/* Approaching the auto-compaction threshold — a quiet heads-up before
+	   it fires, not an alarm; still just text weight/color, no icon. */
+	.context-usage.hot .context-value {
+		color: var(--color-danger);
+		font-weight: 600;
 	}
 
 	/* The welcome state is the ONE screen in the app allowed a committed

@@ -6,6 +6,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -22,7 +23,19 @@ CREATE TABLE IF NOT EXISTS threads (
 	model TEXT NOT NULL,
 	cost_usd REAL NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- context_tokens: last known prompt+completion token count for this
+	-- thread, per the LLM's own usage numbers — drives the context-usage %
+	-- shown next to thread cost, and the auto-compaction threshold check.
+	context_tokens INTEGER NOT NULL DEFAULT 0,
+	-- compacted_summary/compacted_through_id: once a thread crosses the
+	-- compaction threshold, everything up to compacted_through_id gets
+	-- replaced by this summary when rebuilding history for the LLM — the
+	-- messages table itself is never touched, so the visible transcript
+	-- stays the true, complete record; only what's sent back to the model
+	-- shrinks.
+	compacted_summary TEXT NOT NULL DEFAULT '',
+	compacted_through_id INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -49,6 +62,17 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `
 
+// migrations adds columns to a threads table created before they existed.
+// CREATE TABLE IF NOT EXISTS above only helps brand-new databases — an
+// existing polaris.db needs these added explicitly. Each is run
+// independently and a "duplicate column" error is expected and ignored
+// once a given database already has it; any other error is real.
+var migrations = []string{
+	`ALTER TABLE threads ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN compacted_summary TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE threads ADD COLUMN compacted_through_id INTEGER NOT NULL DEFAULT 0`,
+}
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
 	if err != nil {
@@ -57,18 +81,29 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return nil, fmt.Errorf("applying migration %q: %w", m, err)
+		}
+	}
 	return &Store{db: db}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 type Thread struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Model     string    `json:"model"`
-	CostUSD   float64   `json:"cost_usd"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Model     string  `json:"model"`
+	CostUSD   float64 `json:"cost_usd"`
+	// ContextTokens is exposed to the frontend for the context-usage %
+	// display. CompactedSummary/CompactedThroughID are internal —
+	// history-building only, never sent to the frontend.
+	ContextTokens       int       `json:"context_tokens"`
+	CompactedSummary    string    `json:"-"`
+	CompactedThroughID  int64     `json:"-"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -94,8 +129,9 @@ func (s *Store) CreateThread(id, title, model string) error {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, created_at, updated_at FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.CreatedAt, &t.UpdatedAt)
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, created_at, updated_at
+		 FROM threads WHERE id = ?`, id,
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +144,8 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, created_at, updated_at FROM threads ORDER BY updated_at DESC LIMIT ?`,
+		`SELECT id, title, model, cost_usd, context_tokens, created_at, updated_at
+		 FROM threads ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -119,7 +156,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
@@ -200,6 +237,30 @@ func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetContextTokens records the thread's current context size (prompt +
+// completion tokens from the LLM's own usage numbers) — drives the
+// context-usage % in the UI and the auto-compaction check.
+func (s *Store) SetContextTokens(threadID string, tokens int) error {
+	_, err := s.db.Exec(`UPDATE threads SET context_tokens = ? WHERE id = ?`, tokens, threadID)
+	return err
+}
+
+// CompactThread records a fresh summary of everything up to throughID —
+// history built for the LLM from here on substitutes this summary for
+// every message at or below throughID, instead of the full raw text.
+// Deliberately does NOT touch the messages table: the visible transcript
+// stays the complete, true record, only what's sent back to the model
+// shrinks. cost is the summarization call's own cost, added to the
+// thread's running total like any other LLM call.
+func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
+		 context_tokens = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		summary, throughID, cost, contextTokensEstimate, threadID,
+	)
+	return err
 }
 
 // GetSetting returns the stored value for key, or "" if unset — callers

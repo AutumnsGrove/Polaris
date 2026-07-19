@@ -83,6 +83,11 @@ type Result struct {
 	Answer    string
 	Citations []tools.Citation
 	CostUSD   float64
+	// ContextTokens is the prompt+completion token count of the LAST LLM
+	// call this turn made — the best available estimate of how much
+	// context this thread now occupies, since it reflects every message,
+	// tool result, and reasoning pass accumulated through the whole loop.
+	ContextTokens int
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -123,7 +128,12 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		if len(resp.ToolCalls) == 0 {
 			// Plain content = the final answer. It was already streamed
 			// token-by-token via the onChunk callback above.
-			return &Result{Answer: resp.Content, Citations: ctx.Citations, CostUSD: totalCost}, nil
+			return &Result{
+				Answer:        resp.Content,
+				Citations:     ctx.Citations,
+				CostUSD:       totalCost,
+				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
+			}, nil
 		}
 
 		call := resp.ToolCalls[0]
@@ -147,5 +157,10 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	}
 	totalCost += resp.CostUSD
 
-	return &Result{Answer: resp.Content, Citations: ctx.Citations, CostUSD: totalCost}, nil
+	return &Result{
+		Answer:        resp.Content,
+		Citations:     ctx.Citations,
+		CostUSD:       totalCost,
+		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
+	}, nil
 }

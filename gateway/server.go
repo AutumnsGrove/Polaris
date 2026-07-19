@@ -146,9 +146,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"theme":         theme,
-		"show_prices":   showPrices,
-		"default_model": s.effectiveDefaultModel(),
+		"theme":                 theme,
+		"show_prices":           showPrices,
+		"default_model":         s.effectiveDefaultModel(),
+		"context_window_tokens": s.cfg.ContextWindowTokens,
 	})
 }
 
@@ -515,31 +516,106 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 
 	citationsJSON, _ := json.Marshal(result.Citations)
-	if _, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), result.CostUSD); err != nil {
+	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), result.CostUSD)
+	if err != nil {
 		log.Warn("failed to persist assistant message", "err", err)
 	}
 
+	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
+		log.Warn("failed to record context tokens", "err", err)
+	}
+
+	// Auto-compact once this thread crosses the configured threshold: the
+	// model summarizes everything covered so far, and future turns build
+	// history from that summary instead of the full raw text. The
+	// messages table itself is untouched — only what gets sent back to
+	// the LLM shrinks, the visible transcript stays the true record.
+	contextTokens := result.ContextTokens
+	if result.ContextTokens >= s.cfg.ContextWindowTokens && assistantMsgID != 0 {
+		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
+			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
+		} else {
+			contextTokens = estimateTokens(summary)
+			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
+			result.CostUSD += compactCost
+		}
+	}
+
 	// Total cost added to the thread this turn: the agent's LLM/tool
-	// spend plus any STT cost from a voice memo — both were just
-	// persisted above, so the frontend's running total should reflect both.
+	// spend plus any STT cost from a voice memo, plus compaction's own
+	// cost if it just ran — all three were just persisted above, so the
+	// frontend's running total should reflect all of them.
 	send(ServerEvent{
 		Type:          "done",
 		ThreadID:      threadID,
 		UserMessageID: userMsgID,
 		Citations:     result.Citations,
 		CostUSD:       result.CostUSD + msg.SttCostUSD,
+		ContextTokens: contextTokens,
 	})
 }
 
+// compactThread summarizes every message up to and including throughID,
+// via one extra (non-streamed, not shown as a normal answer) LLM call,
+// and records that summary so loadHistory substitutes it for the raw
+// messages it covers on every subsequent turn.
+func (s *Server) compactThread(client *llm.Client, threadID string, throughID int64) (summary string, cost float64, err error) {
+	history, err := s.loadHistory(threadID)
+	if err != nil {
+		return "", 0, err
+	}
+	prompt := []llm.ChatMessage{
+		{Role: "system", Content: "Summarize the following conversation concisely but completely: preserve " +
+			"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
+			"fully replace the conversation history, so omitting something means it's gone for good. Write " +
+			"it as plain prose, not a transcript."},
+	}
+	prompt = append(prompt, history...)
+
+	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if err := s.db.CompactThread(threadID, resp.Content, throughID, resp.CostUSD, estimateTokens(resp.Content)); err != nil {
+		return "", 0, err
+	}
+	return resp.Content, resp.CostUSD, nil
+}
+
+// estimateTokens is a rough tokens-per-character heuristic (English text
+// averages ~4 chars/token) used only to seed context_tokens right after a
+// compaction, before the next real LLM call reports an actual count.
+func estimateTokens(s string) int {
+	return len(s) / 4
+}
+
 // loadHistory reconstructs prior turns as ChatMessage pairs so a
-// resumed/continued thread has full context.
+// resumed/continued thread has full context. If the thread has been
+// auto-compacted, everything at or below compacted_through_id is replaced
+// by a single summary message instead of being sent in full.
 func (s *Server) loadHistory(threadID string) ([]llm.ChatMessage, error) {
+	thread, err := s.db.GetThread(threadID)
+	if err != nil {
+		return nil, err
+	}
 	msgs, err := s.db.GetMessages(threadID)
 	if err != nil {
 		return nil, err
 	}
-	history := make([]llm.ChatMessage, 0, len(msgs))
+
+	history := make([]llm.ChatMessage, 0, len(msgs)+1)
+	if thread.CompactedSummary != "" {
+		history = append(history, llm.ChatMessage{
+			Role: "assistant",
+			Content: "(Summary of earlier conversation, compacted to save context — the full history " +
+				"is no longer available, only this summary)\n\n" + thread.CompactedSummary,
+		})
+	}
 	for _, m := range msgs {
+		if m.ID <= thread.CompactedThroughID {
+			continue // covered by the summary above
+		}
 		history = append(history, llm.ChatMessage{Role: m.Role, Content: m.Content})
 	}
 	return history, nil

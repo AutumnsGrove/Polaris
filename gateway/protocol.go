@@ -45,7 +45,11 @@ type ClientMessage struct {
 //	"user_message"  — user_message_id: the persisted ID of the user message that started this
 //	                  turn, sent as soon as it's saved (even if the turn later errors) so the
 //	                  frontend can retry/edit from it
-//	"done"          — thread_id + cost_usd: turn complete, persisted, safe to re-enable input
+//	"done"          — thread_id + cost_usd + context_tokens: turn complete, persisted, safe to
+//	                  re-enable input
+//	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
+//	                  and was auto-summarized; content is the summary, shown as a collapsible
+//	                  timeline note like a tool call, not a normal answer
 //	"error"         — message: something failed
 type ServerEvent struct {
 	Type          string           `json:"type"`
@@ -56,6 +60,7 @@ type ServerEvent struct {
 	Result        string           `json:"result,omitempty"`
 	Citations     []tools.Citation `json:"citations,omitempty"`
 	CostUSD       float64          `json:"cost_usd,omitempty"`
+	ContextTokens int              `json:"context_tokens,omitempty"`
 	Message       string           `json:"message,omitempty"`
 	UserMessageID int64            `json:"user_message_id,omitempty"`
 }

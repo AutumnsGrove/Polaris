@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Brain, Loader2, ChevronRight } from '@lucide/svelte';
+	import { Search, FileText, Brain, Archive, Loader2, ChevronRight } from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 	// Tool calls start collapsed (their result is secondary detail) but a
@@ -34,6 +34,17 @@
 		</button>
 		{#if open && item.content}
 			<pre class="tool-result">{item.content}</pre>
+		{/if}
+	</div>
+{:else if item.kind === 'compacted'}
+	<div class="tool-event compacted">
+		<button class="tool-header" onclick={() => (open = !open)}>
+			<Archive size={13} color="var(--color-accent)" />
+			<span class="tool-label">Compacted conversation to save context</span>
+			<ChevronRight size={13} color="var(--color-text-dim)" class={open ? 'chevron open' : 'chevron'} />
+		</button>
+		{#if open}
+			<pre class="tool-result">{item.summary}</pre>
 		{/if}
 	</div>
 {:else}
@@ -94,6 +105,13 @@
 	.tool-header:hover {
 		background: var(--color-surface-2);
 		color: var(--color-text);
+	}
+
+	/* Compaction is a system-level event, not a research step — a subtle
+	   accent tint (not a decorative side-stripe, just the existing
+	   full-border treatment) sets it apart from ordinary tool chips. */
+	.tool-event.compacted {
+		border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
 	}
 
 	.tool-label {

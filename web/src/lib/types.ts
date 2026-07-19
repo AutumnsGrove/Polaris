@@ -19,7 +19,18 @@ export type ServerEvent =
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
 	| { type: 'user_message'; thread_id: string; user_message_id: number }
-	| { type: 'done'; thread_id: string; cost_usd: number; citations?: Citation[]; user_message_id?: number }
+	| {
+			type: 'done';
+			thread_id: string;
+			cost_usd: number;
+			citations?: Citation[];
+			user_message_id?: number;
+			context_tokens?: number;
+	  }
+	// The thread just crossed the context-window threshold and was
+	// auto-summarized — content is the summary, shown as a collapsible
+	// timeline note like a tool call, not a normal answer.
+	| { type: 'compacted'; thread_id?: string; content: string }
 	| { type: 'error'; thread_id?: string; message: string; user_message_id?: number };
 
 // edit_from_id turns this into a retry/edit: the server deletes every
@@ -54,6 +65,7 @@ export interface Thread {
 	title: string;
 	model: string;
 	cost_usd: number;
+	context_tokens: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -71,6 +83,7 @@ export interface StoredMessage {
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
 	| { kind: 'reasoning'; content: string; done: boolean }
+	| { kind: 'compacted'; summary: string }
 	| {
 			kind: 'tool';
 			tool: string;

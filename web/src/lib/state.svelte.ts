@@ -20,6 +20,13 @@ class AppState {
 	busy = $state(false);
 	totalCost = $state(0);
 
+	// Context-usage display, next to thread cost. contextWindowTokens is
+	// the auto-compaction threshold from config.yaml (loaded once via
+	// loadSettings); contextTokens is the current thread's last-known
+	// prompt+completion size, from the LLM's own usage numbers.
+	contextTokens = $state(0);
+	contextWindowTokens = $state(100_000);
+
 	// Desktop: sidebar sits inline, open by default. Mobile: it's an
 	// overlay drawer, closed by default so the chat is visible first.
 	// +layout.svelte sets the initial value from viewport width on mount.
@@ -175,6 +182,7 @@ class AppState {
 		this.theme = data.theme === 'light' ? 'light' : 'dark';
 		this.showPrices = data.show_prices ?? true;
 		this.defaultModel = data.default_model ?? '';
+		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
 		this.applyTheme();
 	}
 
@@ -230,6 +238,7 @@ class AppState {
 		const data = await res.json();
 		this.currentThreadId = id;
 		this.totalCost = data.cost_usd ?? 0;
+		this.contextTokens = data.context_tokens ?? 0;
 		this.turns = (data.messages ?? []).map((m: any) => ({
 			role: m.role,
 			content: m.content,
@@ -244,6 +253,7 @@ class AppState {
 		this.currentThreadId = null;
 		this.turns = [];
 		this.totalCost = 0;
+		this.contextTokens = 0;
 		this.closeSidebarIfMobile();
 	}
 
@@ -412,6 +422,11 @@ class AppState {
 				break;
 			}
 
+			case 'compacted':
+				this.closeOpenReasoning(turn);
+				turn.timeline = [...(turn.timeline ?? []), { kind: 'compacted', summary: e.content }];
+				break;
+
 			case 'token':
 				this.closeOpenReasoning(turn);
 				turn.content += e.content;
@@ -430,6 +445,7 @@ class AppState {
 				if (stillWatching) {
 					this.currentThreadId = e.thread_id;
 					this.totalCost += e.cost_usd;
+					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
 				}
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;

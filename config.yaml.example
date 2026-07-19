@@ -38,6 +38,12 @@ logging:
 service:
   label: "polaris"
 
+# Threshold (prompt + completion tokens) at which a thread auto-compacts:
+# the model summarizes everything so far and future turns continue from
+# that summary instead of the full raw history. Also the denominator for
+# the context-usage % shown next to thread cost in the UI.
+context_window_tokens: 100000
+
 default_model: "mimo"
 
 # Each model pins a specific OpenRouter provider (not just a model slug).

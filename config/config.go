@@ -60,6 +60,13 @@ type Config struct {
 
 	DefaultModel string        `yaml:"default_model"`
 	Models       []ModelConfig `yaml:"models"`
+
+	// ContextWindowTokens is the threshold (prompt + completion tokens,
+	// per the LLM's own usage numbers) at which a thread auto-compacts:
+	// the model summarizes everything so far, and future turns continue
+	// from that summary instead of the full raw history. Also the
+	// denominator for the context-usage % shown next to thread cost.
+	ContextWindowTokens int `yaml:"context_window_tokens"`
 }
 
 // ModelConfig describes one entry in the model selector. Provider pins
@@ -139,6 +146,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.DefaultModel == "" {
 		cfg.DefaultModel = cfg.Models[0].ID
+	}
+	if cfg.ContextWindowTokens <= 0 {
+		cfg.ContextWindowTokens = 100_000
 	}
 
 	return &cfg, nil
