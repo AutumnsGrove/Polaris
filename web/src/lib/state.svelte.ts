@@ -305,14 +305,22 @@ class AppState {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
-		const userTurn: ChatTurn = { role: 'user', content };
-		const assistantTurn: ChatTurn = { role: 'assistant', content: '', timeline: [], streaming: true };
-		this.turns.push(userTurn);
-		this.turns.push(assistantTurn);
+		this.turns.push({ role: 'user', content });
+		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
 		this.busy = true;
 
-		this.pendingUserTurn = userTurn;
-		this.pendingTurn = assistantTurn;
+		// Read the pushed turns back out of the reactive array instead of
+		// holding the plain object literals passed to push() — Svelte 5's
+		// $state wraps array contents in a reactive proxy, and mutating the
+		// pre-wrap object reference (what push() was originally given)
+		// bypasses that proxy entirely: the mutation "succeeds" in that the
+		// data is technically correct, but no re-render is ever scheduled
+		// for it, since Svelte only tracks writes made *through* the proxy.
+		// The whole point of pendingTurn is to be mutated live from
+		// handleEvent below, so it must be the proxied element, not the
+		// literal that was pushed.
+		this.pendingUserTurn = this.turns[this.turns.length - 2];
+		this.pendingTurn = this.turns[this.turns.length - 1];
 		this.pendingThreadId = this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
 
