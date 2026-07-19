@@ -5,8 +5,11 @@
 package agent
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"polaris/llm"
 	"polaris/tools"
@@ -58,6 +61,22 @@ func loadSystemPrompt(voiceMode bool) string {
 	return prompt
 }
 
+// currentContextPreamble grounds the model in real wall-clock time, computed
+// fresh on every turn — without this, a model has no way to know "today"
+// beyond its training cutoff, and will confidently answer with a stale
+// date or search for news anchored to the wrong week. Prepended ahead of
+// the rest of the system prompt so it's the first thing the model reads.
+func currentContextPreamble() string {
+	now := time.Now()
+	return fmt.Sprintf(
+		"Current date and time: %s (timezone: %s). Treat this as ground truth for anything "+
+			"relative — \"today\", \"this week\", \"latest\", \"currently\", how old something is "+
+			"— rather than any date you might otherwise assume from training. If it conflicts with "+
+			"a date implied by the user or a search result, trust this line.\n\n",
+		now.Format("Monday, January 2, 2006, 15:04"), now.Location(),
+	)
+}
+
 // Result is what one turn produces, once the model settles on a
 // plain-text final answer.
 type Result struct {
@@ -71,11 +90,16 @@ type Result struct {
 // tool_call/tool_result/token events) via ctx.Emit and returns once the
 // model has produced its final answer. ctx must have LLM and Emit set;
 // SearXNG/Foursquare/DefaultLocation are optional per-tool dependencies.
-func Run(ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
+//
+// reqCtx cancels the whole turn (the "stop" button) — a cancellation
+// isn't treated as an error, since the LLM client already turns it into a
+// graceful early finish with whatever content streamed so far.
+func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
 	client := ctx.LLM
+	ctx.Ctx = reqCtx
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: loadSystemPrompt(ctx.VoiceMode)})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 
@@ -85,9 +109,11 @@ func Run(ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Re
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
-		resp, err := client.ChatCompletionWithTools(messages, toolDefs, func(chunk string) {
+		resp, err := client.ChatCompletionWithTools(reqCtx, messages, toolDefs, func(chunk string) {
 			answer.WriteString(chunk)
 			ctx.Emit("token", map[string]interface{}{"content": chunk})
+		}, func(chunk string) {
+			ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 		})
 		if err != nil {
 			return nil, err
@@ -111,8 +137,10 @@ func Run(ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Re
 		Role:    "user",
 		Content: "Wrap up now — give your best answer with what you've gathered so far.",
 	})
-	resp, err := client.ChatCompletionStreaming(messages, func(chunk string) {
+	resp, err := client.ChatCompletionStreaming(reqCtx, messages, func(chunk string) {
 		ctx.Emit("token", map[string]interface{}{"content": chunk})
+	}, func(chunk string) {
+		ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 	})
 	if err != nil {
 		return nil, err

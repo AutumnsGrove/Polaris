@@ -6,6 +6,7 @@
 package places
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,7 +36,7 @@ var coordPattern = regexp.MustCompile(`^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$`)
 // Geocode converts a text location into coordinates: raw "lat, lon" pairs
 // are parsed directly (no API call); everything else goes through
 // Nominatim. Returns nil (no error) if the query is empty or unresolvable.
-func Geocode(query string) (*GeoResult, error) {
+func Geocode(ctx context.Context, query string) (*GeoResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
@@ -52,7 +53,7 @@ func Geocode(query string) (*GeoResult, error) {
 	endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=1",
 		url.QueryEscape(query))
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating geocode request: %w", err)
 	}

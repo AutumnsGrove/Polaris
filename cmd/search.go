@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -41,6 +42,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	falseVal := false
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &falseVal})
+	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
+		client = client.WithReasoning(&llm.ReasoningParams{Enabled: true, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+	}
 
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL)
 	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
@@ -51,6 +55,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		switch eventType {
 		case "thinking":
 			fmt.Printf("\033[2m(thinking) %v\033[0m\n", payload["content"])
+		case "reasoning":
+			fmt.Printf("\033[2m%v\033[0m", payload["content"])
 		case "tool_call":
 			tool, _ := payload["tool"].(string)
 			toolArgs, _ := payload["args"].(map[string]interface{})
@@ -75,7 +81,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		Emit:            emit,
 	}
 
-	result, err := agent.Run(agentCtx, nil, query)
+	result, err := agent.Run(context.Background(), agentCtx, nil, query)
 	if err != nil {
 		return fmt.Errorf("agent run failed: %w", err)
 	}

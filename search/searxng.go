@@ -3,6 +3,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,14 +55,14 @@ type searxngResult struct {
 // Search performs a web search via SearXNG and returns up to maxResults
 // relevance-ranked results. SearXNG doesn't produce an AI-generated
 // answer summary, so Answer is always empty here (unlike Tavily).
-func (c *SearXNGClient) Search(query string, maxResults int) (*SearchResponse, error) {
+func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int) (*SearchResponse, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 
 	u := fmt.Sprintf("%s/search?format=json&q=%s", c.baseURL, url.QueryEscape(query))
 
-	req, err := http.NewRequest("GET", u, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

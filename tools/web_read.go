@@ -6,6 +6,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,7 +62,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{"url": args.URL, "instructions": args.Instructions},
 	})
 
-	title, text, err := fetchAndExtract(args.URL)
+	title, text, err := fetchAndExtract(ctx.Ctx, args.URL)
 	if err != nil {
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
@@ -69,7 +70,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 
 	result := text
 	if args.Instructions != "" && ctx.LLM != nil {
-		if filtered, ferr := filterExtractedText(ctx.LLM, text, args.Instructions); ferr == nil {
+		if filtered, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, text, args.Instructions); ferr == nil {
 			result = filtered
 		}
 		// On filter failure, silently fall back to the full extracted
@@ -98,9 +99,9 @@ const maxExtractedChars = 12000
 // not a full Readability.js port — good enough for article/listing pages,
 // weaker on heavily JS-rendered SPAs (those need a headless browser, which
 // we're deliberately not running to keep this light on the potato).
-func fetchAndExtract(rawURL string) (title, text string, err error) {
+func fetchAndExtract(ctx context.Context, rawURL string) (title, text string, err error) {
 	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest("GET", rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -157,7 +158,7 @@ func fetchAndExtract(rawURL string) (title, text string, err error) {
 // step. Reuses the thread's selected model/client rather than spinning up
 // a separate one, since the provider pin (and its prompt-cache pricing)
 // is already configured on it.
-func filterExtractedText(client *llm.Client, pageText, instructions string) (string, error) {
+func filterExtractedText(ctx context.Context, client *llm.Client, pageText, instructions string) (string, error) {
 	messages := []llm.ChatMessage{
 		{
 			Role: "system",
@@ -171,7 +172,7 @@ func filterExtractedText(client *llm.Client, pageText, instructions string) (str
 		},
 	}
 
-	resp, err := client.ChatCompletionStreaming(messages, func(string) {})
+	resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)
 	if err != nil {
 		return "", err
 	}

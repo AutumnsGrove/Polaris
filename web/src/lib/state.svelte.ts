@@ -58,8 +58,43 @@ class AppState {
 	constructor() {
 		this.socket = new AgentSocket(
 			(e) => this.handleEvent(e),
-			(connected) => (this.connected = connected)
+			(connected) => (this.connected = connected),
+			() => this.resyncAfterReconnect()
 		);
+	}
+
+	// Fires after the socket drops and reconnects. If a turn was in flight
+	// when that happened, its events are gone — the backend finished the
+	// work and persisted the result independently of whether anyone was
+	// still listening, so the fix is to go re-fetch the thread from the
+	// database rather than wait for a stream that's never coming.
+	private async resyncAfterReconnect() {
+		if (!this.busy) return;
+
+		const threadId = this.pendingThreadId ?? this.currentThreadId;
+		if (!threadId) {
+			// Disconnected before the server even acknowledged the user
+			// message (no thread id yet) — nothing to fetch. Surface it as
+			// a retryable error rather than leaving the UI stuck mid-"…".
+			if (this.pendingTurn) {
+				this.pendingTurn.streaming = false;
+				if (!this.pendingTurn.content) {
+					this.pendingTurn.content = 'Connection was lost before this could be confirmed. Please retry.';
+				}
+			}
+			this.busy = false;
+			this.pendingTurn = null;
+			this.pendingUserTurn = null;
+			this.pendingThreadId = null;
+			return;
+		}
+
+		await this.openThread(threadId);
+		this.busy = false;
+		this.pendingTurn = null;
+		this.pendingUserTurn = null;
+		this.pendingThreadId = null;
+		void this.loadThreads();
 	}
 
 	connect() {
@@ -227,6 +262,15 @@ class AppState {
 		await this.loadThreads();
 	}
 
+	// Cancels the in-flight turn. The backend aborts its LLM/tool calls
+	// mid-flight and still sends a normal 'done' with whatever streamed so
+	// far — no separate "stopped" event type needed, the existing done
+	// handler already finalizes the turn correctly.
+	stopGeneration() {
+		if (!this.busy) return;
+		this.socket.send({ type: 'stop' });
+	}
+
 	// sttCostUsd is set when content came from a transcribed voice memo
 	// (already billed via /api/transcribe) so it gets folded into the
 	// thread's running total instead of silently untracked.
@@ -282,6 +326,20 @@ class AppState {
 		});
 	}
 
+	// Reasoning always finishes before the visible answer (or a tool call)
+	// starts, per OpenRouter's ordering guarantee — so whenever something
+	// else is about to land on the timeline, mark any still-open reasoning
+	// item done first, so its UI stops showing a live/streaming state.
+	private closeOpenReasoning(turn: ChatTurn) {
+		const items = turn.timeline;
+		if (!items || items.length === 0) return;
+		const last = items[items.length - 1];
+		if (last.kind === 'reasoning' && !last.done) {
+			last.done = true;
+			turn.timeline = [...items];
+		}
+	}
+
 	private handleEvent(e: ServerEvent) {
 		const eventThreadId = 'thread_id' in e ? e.thread_id : undefined;
 
@@ -307,10 +365,26 @@ class AppState {
 
 		switch (e.type) {
 			case 'thinking':
+				this.closeOpenReasoning(turn);
 				turn.timeline = [...(turn.timeline ?? []), { kind: 'thinking', content: e.content }];
 				break;
 
+			case 'reasoning': {
+				const items = turn.timeline ?? [];
+				const last = items[items.length - 1];
+				if (last && last.kind === 'reasoning' && !last.done) {
+					// Still the same reasoning pass — append to it in place
+					// rather than spawning a new timeline item per chunk.
+					last.content += e.content;
+					turn.timeline = [...items];
+				} else {
+					turn.timeline = [...items, { kind: 'reasoning', content: e.content, done: false }];
+				}
+				break;
+			}
+
 			case 'tool_call':
+				this.closeOpenReasoning(turn);
 				turn.timeline = [
 					...(turn.timeline ?? []),
 					{ kind: 'tool', tool: e.tool, args: e.args, done: false }
@@ -331,10 +405,12 @@ class AppState {
 			}
 
 			case 'token':
+				this.closeOpenReasoning(turn);
 				turn.content += e.content;
 				break;
 
 			case 'done': {
+				this.closeOpenReasoning(turn);
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.costUsd = e.cost_usd;
@@ -355,6 +431,7 @@ class AppState {
 			}
 
 			case 'error':
+				this.closeOpenReasoning(turn);
 				turn.streaming = false;
 				if (!turn.content) turn.content = `Error: ${e.message}`;
 				this.busy = false;

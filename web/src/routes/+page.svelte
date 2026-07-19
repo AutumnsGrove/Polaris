@@ -3,7 +3,7 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, PanelLeft } from '@lucide/svelte';
+	import { Send, Square, PanelLeft } from '@lucide/svelte';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
@@ -53,8 +53,21 @@
 			onkeydown={onKeydown}
 		></textarea>
 		<VoiceButton />
-		<button type="submit" class="send-btn" disabled={appState.busy || !input.trim()}>
-			<Send size={16} />
+		<button
+			type={appState.busy ? 'button' : 'submit'}
+			class="send-btn"
+			class:stop={appState.busy}
+			disabled={!appState.busy && !input.trim()}
+			title={appState.busy ? 'Stop generating' : 'Send'}
+			onclick={() => {
+				if (appState.busy) appState.stopGeneration();
+			}}
+		>
+			{#if appState.busy}
+				<Square size={14} fill="currentColor" />
+			{:else}
+				<Send size={16} />
+			{/if}
 		</button>
 	</form>
 {/snippet}
@@ -140,37 +153,72 @@
 		margin-left: 2px;
 	}
 
+	/* The welcome state is the ONE screen in the app allowed a committed
+	   color treatment — a subtle off-center radial wash of the starlight
+	   accent behind the heading. Not a card, not glass, not a gradient
+	   applied to text. Just a soft distant-sun cast on the ground the
+	   composer sits on. Positioned above/left of center so it feels
+	   observed rather than staged. */
 	.welcome {
+		position: relative;
 		flex: 1;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		padding: 24px;
+		padding: 48px 24px;
 		text-align: center;
 		overflow-y: auto;
+		isolation: isolate;
+	}
+
+	.welcome::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background:
+			radial-gradient(
+				ellipse 60% 45% at 38% 34%,
+				color-mix(in srgb, var(--color-accent) 22%, transparent) 0%,
+				color-mix(in srgb, var(--color-accent) 8%, transparent) 35%,
+				transparent 70%
+			);
+		pointer-events: none;
+	}
+
+	:root[data-theme='light'] .welcome::before {
+		background:
+			radial-gradient(
+				ellipse 60% 45% at 38% 34%,
+				color-mix(in srgb, var(--color-accent) 14%, transparent) 0%,
+				color-mix(in srgb, var(--color-accent) 5%, transparent) 40%,
+				transparent 70%
+			);
 	}
 
 	.welcome-heading {
-		margin: 0;
+		margin: 0 0 4px 0;
 		font-family: var(--font-serif);
-		font-size: clamp(28px, 5vw, 38px);
-		font-weight: 500;
-		letter-spacing: -0.01em;
-		line-height: 1.15;
+		/* Real hero scale — this is the one heading in the app allowed to
+		   run large, since there's no competing content on this screen. */
+		font-size: clamp(36px, 6vw, 56px);
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		line-height: 1.1;
 		color: var(--color-text);
 	}
 
 	.welcome-heading .wordmark {
 		font-family: var(--font-wordmark);
 		font-weight: 400;
-		font-size: 0.9em;
+		font-size: 0.88em;
 		letter-spacing: 0.01em;
 	}
 
 	.welcome .subtitle {
-		margin: 6px 0 24px 0;
+		margin: 10px 0 40px 0;
 		color: var(--color-text-dim);
 		font-size: 14px;
 		line-height: 1.5;
@@ -184,6 +232,13 @@
 	.welcome-composer :global(.composer) {
 		border-top: none;
 		padding: 0 0 12px 0;
+	}
+
+	/* Composer inside the welcome state gets a touch more presence —
+	   a soft accent ring on focus that ties back to the hero glow.
+	   Regular in-conversation composer stays plain. */
+	.welcome-composer :global(textarea:focus) {
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
 	}
 
 	.timeline-scroll {
@@ -244,15 +299,51 @@
 		border-radius: var(--radius-md);
 		width: 38px;
 		height: 38px;
-		transition: background-color 0.15s var(--ease-out-expo), opacity 0.15s var(--ease-out-expo);
+		box-shadow: 0 1px 2px rgba(15, 10, 5, 0.25);
+		transition:
+			background-color 0.18s var(--ease-out-expo),
+			transform 0.18s var(--ease-out-expo),
+			box-shadow 0.18s var(--ease-out-expo),
+			opacity 0.15s var(--ease-out-expo);
+	}
+
+	:root[data-theme='light'] .send-btn {
+		color: oklch(98% 0.005 80);
+		box-shadow: 0 1px 2px rgba(60, 48, 32, 0.14);
 	}
 
 	.send-btn:hover:not(:disabled) {
 		background: var(--color-accent-strong);
+		transform: translateY(-1px);
+		box-shadow:
+			0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent),
+			0 2px 4px rgba(15, 10, 5, 0.3);
+	}
+
+	.send-btn:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 0 1px 2px rgba(15, 10, 5, 0.25);
 	}
 
 	.send-btn:disabled {
 		opacity: 0.35;
 		cursor: default;
+		box-shadow: none;
+	}
+
+	/* Stop mode: deliberately not the accent gold — that's reserved for
+	   the primary "send" action, and a stop control shouldn't read as
+	   another CTA competing with it. A quiet neutral chip that stays
+	   legible without stealing attention from the streaming answer. */
+	.send-btn.stop {
+		background: var(--color-surface-3);
+		color: var(--color-text);
+		box-shadow: none;
+	}
+
+	.send-btn.stop:hover {
+		background: var(--color-border-strong);
+		transform: none;
+		box-shadow: none;
 	}
 </style>

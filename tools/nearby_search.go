@@ -82,7 +82,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{"query": args.Query, "location": locationQuery},
 	})
 
-	geo, err := places.Geocode(locationQuery)
+	geo, err := places.Geocode(ctx.Ctx, locationQuery)
 	if err != nil || geo == nil {
 		result := fmt.Sprintf("error: couldn't resolve location %q", locationQuery)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result})
@@ -90,7 +90,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 	}
 
 	if ctx.Foursquare != nil {
-		matches, err := ctx.Foursquare.SearchNearby(geo.Latitude, geo.Longitude, args.Query, radiusM, args.Limit)
+		matches, err := ctx.Foursquare.SearchNearby(ctx.Ctx, geo.Latitude, geo.Longitude, args.Query, radiusM, args.Limit)
 		if err == nil {
 			matches = places.FilterByRelevance(matches, args.Query)
 			for _, p := range matches {
@@ -109,7 +109,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 
 	// No Foursquare (or it errored): plain web search for the same intent.
 	if ctx.SearXNG != nil {
-		resp, err := ctx.SearXNG.Search(args.Query+" near "+geo.DisplayName, args.Limit)
+		resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query+" near "+geo.DisplayName, args.Limit)
 		if err == nil {
 			var summary string
 			for i, r := range resp.Results {

@@ -249,22 +249,36 @@
 		margin-bottom: 0;
 	}
 
+	/* Weight contrast is the whole game here — serif headings at 700
+	   against Lexend body copy at 400 creates real hierarchy without
+	   raising the body-text floor. Tighter tracking on the biggest
+	   heading; H3 stays sans + uppercase-caps feel via letter-spacing
+	   so three levels of hierarchy actually feel distinct. */
 	.prose :global(h1),
-	.prose :global(h2),
+	.prose :global(h2) {
+		font-family: var(--font-serif);
+		font-weight: 700;
+		line-height: 1.2;
+		letter-spacing: -0.01em;
+		margin: 22px 0 8px;
+		color: var(--color-text);
+	}
+
 	.prose :global(h3) {
 		font-family: var(--font-serif);
-		font-weight: 600;
-		line-height: 1.25;
-		margin: 20px 0 8px;
+		font-weight: 700;
+		line-height: 1.3;
+		margin: 18px 0 6px;
 		color: var(--color-text);
 	}
 
 	.prose :global(h1) {
-		font-size: 22px;
+		font-size: 24px;
+		letter-spacing: -0.015em;
 	}
 
 	.prose :global(h2) {
-		font-size: 19px;
+		font-size: 20px;
 	}
 
 	.prose :global(h3) {

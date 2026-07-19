@@ -39,6 +39,7 @@
 				role="button"
 				tabindex="0"
 			>
+				<span class="thread-dot" aria-hidden="true"></span>
 				<div class="thread-meta">
 					<div class="thread-title">{thread.title || 'Untitled'}</div>
 					{#if appState.showPrices}
@@ -99,9 +100,12 @@
 
 	.wordmark {
 		font-family: var(--font-wordmark);
-		font-size: 17px;
+		font-size: 18px;
 		font-weight: 400;
-		letter-spacing: 0.02em;
+		letter-spacing: 0.04em;
+		/* Lexend body sits at 400 — the wordmark's single available weight
+		   is also 400, so contrast comes from the display face itself
+		   plus a hair more tracking, not from raising weight. */
 	}
 
 	.collapse-btn {
@@ -131,19 +135,47 @@
 		align-items: center;
 		gap: 8px;
 		border-radius: var(--radius-sm);
-		padding: 8px;
+		padding: 8px 10px;
 		margin-bottom: 2px;
 		cursor: pointer;
-		transition: background-color 0.15s var(--ease-out-expo);
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			color 0.15s var(--ease-out-expo);
 	}
 
 	.thread-item:hover {
 		background: var(--color-surface-2);
 	}
 
+	/* Small leading dot that only lights up for the current thread.
+	   Reads as a "you are here" pin rather than a decorative side rule. */
+	.thread-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: transparent;
+		flex-shrink: 0;
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			box-shadow 0.15s var(--ease-out-expo);
+	}
+
+	/* Active state: filled accent-soft ground + bolder title weight +
+	   the leading dot lit. No side stripe, no gradient — just a clearly
+	   selected surface with a real weight contrast against the rest of
+	   the list (400 dim titles vs. 600 lit title). */
 	.thread-item.active {
-		background: var(--color-surface-2);
-		box-shadow: inset 2px 0 0 var(--color-accent);
+		background: var(--color-accent-soft);
+	}
+
+	.thread-item.active .thread-dot {
+		background: var(--color-accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+	}
+
+	.thread-item.active .thread-title {
+		font-weight: 600;
+		color: var(--color-text);
 	}
 
 	.thread-meta {
@@ -153,6 +185,7 @@
 
 	.thread-title {
 		font-size: 13px;
+		font-weight: 400;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;

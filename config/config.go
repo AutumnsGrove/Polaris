@@ -73,6 +73,22 @@ type ModelConfig struct {
 	Provider    []string `yaml:"provider"`
 	Temperature float64  `yaml:"temperature"`
 	MaxTokens   int      `yaml:"max_tokens"`
+
+	// Reasoning turns on OpenRouter's unified reasoning-token support for
+	// models that do internal "thinking" before answering (DeepSeek's
+	// reasoning line, Xiaomi MiMo, etc). Without this, some providers
+	// still reason internally but don't surface it in the response at
+	// all — nil/omitted means "don't ask for it".
+	Reasoning *ReasoningConfig `yaml:"reasoning"`
+}
+
+// ReasoningConfig mirrors OpenRouter's `reasoning` request field
+// (https://openrouter.ai/docs/use-cases/reasoning-tokens). Effort and
+// MaxTokens are mutually exclusive per OpenRouter's API — set at most one.
+type ReasoningConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Effort    string `yaml:"effort"`     // "low" | "medium" | "high"
+	MaxTokens int    `yaml:"max_tokens"` // token budget for reasoning, if not using Effort
 }
 
 func Load(path string) (*Config, error) {

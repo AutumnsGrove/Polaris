@@ -36,6 +36,9 @@ type ClientMessage struct {
 // renders it:
 //
 //	"thinking"     — content: a think-tool thought, shown as a collapsible reasoning step
+//	"reasoning"     — content: one chunk of a reasoning-capable model's native "thinking" stream
+//	                  (DeepSeek/MiMo-style), appended live — distinct from the think tool, which
+//	                  the model calls explicitly; this is the model's own hidden reasoning pass
 //	"tool_call"     — tool + args: a search/read call just started
 //	"tool_result"   — tool + result + citations: that call finished
 //	"token"         — content: one chunk of the final answer, appended live

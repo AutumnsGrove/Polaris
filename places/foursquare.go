@@ -6,6 +6,7 @@
 package places
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -70,7 +71,7 @@ type placeSearchResponse struct {
 
 // SearchNearby finds places near (lat, lon) matching query, sorted by
 // distance. The caller is responsible for geocoding text locations first.
-func (c *FoursquareClient) SearchNearby(lat, lon float64, query string, radiusM, limit int) ([]Place, error) {
+func (c *FoursquareClient) SearchNearby(ctx context.Context, lat, lon float64, query string, radiusM, limit int) ([]Place, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
@@ -88,7 +89,7 @@ func (c *FoursquareClient) SearchNearby(lat, lon float64, query string, radiusM,
 	}
 	endpoint += "&fields=fsq_place_id,name,location,categories,distance,latitude,longitude"
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

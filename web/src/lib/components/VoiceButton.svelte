@@ -135,9 +135,10 @@
 		color: var(--color-text-dim);
 		flex-shrink: 0;
 		transition:
-			border-color 0.15s var(--ease-out-expo),
-			background-color 0.15s var(--ease-out-expo),
-			color 0.15s var(--ease-out-expo),
+			border-color 0.18s var(--ease-out-expo),
+			background-color 0.18s var(--ease-out-expo),
+			color 0.18s var(--ease-out-expo),
+			transform 0.18s var(--ease-out-expo),
 			box-shadow 0.2s var(--ease-out-expo);
 	}
 
@@ -145,6 +146,11 @@
 		border-color: var(--color-border-strong);
 		background: var(--color-surface-3);
 		color: var(--color-text);
+		transform: translateY(-1px);
+	}
+
+	.mic-btn:active:not(:disabled):not(.recording) {
+		transform: translateY(0);
 	}
 
 	.mic-btn.recording {

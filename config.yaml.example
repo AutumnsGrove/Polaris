@@ -50,9 +50,18 @@ models:
     provider: ["xiaomi/fp8"]
     temperature: 0.4
     max_tokens: 4096
+    # Both models below reason internally before answering — without
+    # requesting it explicitly, OpenRouter won't surface those tokens at
+    # all, so the UI has no way to show what's actually happening.
+    reasoning:
+      enabled: true
+      effort: "medium"   # low | medium | high — mutually exclusive with max_tokens
   - id: "deepseek"
     name: "DeepSeek V4 Flash"
     model: "deepseek/deepseek-v4-flash"
     provider: ["deepseek"]
     temperature: 0.4
     max_tokens: 4096
+    reasoning:
+      enabled: true
+      effort: "medium"

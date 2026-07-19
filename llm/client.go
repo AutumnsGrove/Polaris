@@ -39,6 +39,11 @@ type Client struct {
 	// same session_id are pinned to the same provider endpoint, maximizing
 	// prompt cache hits across a thread.
 	sessionID string
+
+	// reasoning requests OpenRouter's unified reasoning-token stream for
+	// models that support it — nil means don't ask for it (the provider
+	// may still reason internally, it just won't be surfaced to us).
+	reasoning *ReasoningParams
 }
 
 type ProviderRouting struct {
@@ -47,6 +52,14 @@ type ProviderRouting struct {
 	Ignore         []string `json:"ignore,omitempty"`
 	AllowFallbacks *bool    `json:"allow_fallbacks,omitempty"`
 	Sort           string   `json:"sort,omitempty"`
+}
+
+// ReasoningParams mirrors OpenRouter's `reasoning` request field. Effort
+// and MaxTokens are mutually exclusive per their API — set at most one.
+type ReasoningParams struct {
+	Enabled   bool   `json:"enabled,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
 }
 
 type ChatMessage struct {
@@ -103,6 +116,7 @@ type chatRequest struct {
 	Provider          *ProviderRouting `json:"provider,omitempty"`
 	SessionID         string        `json:"session_id,omitempty"`
 	Stream            bool          `json:"stream,omitempty"`
+	Reasoning         *ReasoningParams `json:"reasoning,omitempty"`
 }
 
 type promptTokensDetails struct {
@@ -120,6 +134,7 @@ type sseChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content   string             `json:"content"`
+			Reasoning string             `json:"reasoning"`
 			ToolCalls []sseToolCallDelta `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
@@ -173,6 +188,11 @@ func (c *Client) WithSessionID(id string) *Client {
 	return c
 }
 
+func (c *Client) WithReasoning(r *ReasoningParams) *Client {
+	c.reasoning = r
+	return c
+}
+
 // ChatCompletionWithTools sends a conversation with tool definitions using
 // tool_choice "auto" — the model free-flows between calling tools and
 // answering directly once it has enough context. When it streams plain
@@ -184,18 +204,27 @@ func (c *Client) WithSessionID(id string) *Client {
 // the model tries to batch a second tool call — this enforces strictly
 // sequential tool execution even if the model ignores
 // parallel_tool_calls:false.
-func (c *Client) ChatCompletionWithTools(messages []ChatMessage, tools []ToolDef, onChunk func(string)) (*ChatResponse, error) {
-	return c.doStreamRequest(messages, tools, "auto", onChunk)
+//
+// onReasoning delivers a reasoning-capable model's internal "thinking"
+// tokens as they stream, separately from onChunk's visible answer tokens
+// — nil-safe, pass nil if the caller doesn't care.
+//
+// reqCtx cancels the in-flight HTTP request the instant it's cancelled
+// (the "stop" button) — a cancellation is treated as a graceful early
+// finish, not an error: whatever content/reasoning streamed before the
+// cancel is still returned rather than discarded.
+func (c *Client) ChatCompletionWithTools(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
+	return c.doStreamRequest(reqCtx, messages, tools, "auto", onChunk, onReasoning)
 }
 
 // ChatCompletionStreaming sends a plain (no-tools) conversation and
 // streams tokens to onChunk as they arrive. Used for the final
 // user-facing answer once the tool loop is done gathering context.
-func (c *Client) ChatCompletionStreaming(messages []ChatMessage, onChunk func(string)) (*ChatResponse, error) {
-	return c.doStreamingChat(messages, onChunk)
+func (c *Client) ChatCompletionStreaming(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
+	return c.doStreamingChat(reqCtx, messages, onChunk, onReasoning)
 }
 
-func (c *Client) doStreamRequest(messages []ChatMessage, tools []ToolDef, toolChoice interface{}, onChunk func(string)) (*ChatResponse, error) {
+func (c *Client) doStreamRequest(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, toolChoice interface{}, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
 	reqBody := chatRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -215,13 +244,16 @@ func (c *Client) doStreamRequest(messages []ChatMessage, tools []ToolDef, toolCh
 	if c.sessionID != "" {
 		reqBody.SessionID = c.sessionID
 	}
+	if c.reasoning != nil {
+		reqBody.Reasoning = c.reasoning
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(reqCtx, 3*time.Minute)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
@@ -300,6 +332,9 @@ readLoop:
 		if chunk.Choices[0].FinishReason != "" {
 			finishReason = chunk.Choices[0].FinishReason
 		}
+		if delta.Reasoning != "" && onReasoning != nil {
+			onReasoning(delta.Reasoning)
+		}
 		if delta.Content != "" {
 			contentBuilder.WriteString(delta.Content)
 			if onChunk != nil {
@@ -328,21 +363,31 @@ readLoop:
 			p.arguments.WriteString(tc.Function.Arguments)
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		return nil, fmt.Errorf("reading SSE stream: %w", err)
 	}
+	// ctx.Err() != nil means this ended because the caller stopped it (the
+	// "stop" button, or its own timeout) — not a real failure. Whatever
+	// streamed before the cancel is still a valid, if partial, response.
 
 	var toolCalls []ToolCall
 	if p, ok := partials[0]; ok && p.name != "" {
 		args := p.arguments.String()
 		if args != "" && !json.Valid([]byte(args)) {
-			return nil, fmt.Errorf("truncated tool call arguments: %.100s", args)
+			if ctx.Err() != nil {
+				// Cancelled mid-argument-stream — nothing salvageable for
+				// this tool call. Drop it rather than error: agent.Run
+				// treats "no tool calls" as a normal (if early) finish.
+			} else {
+				return nil, fmt.Errorf("truncated tool call arguments: %.100s", args)
+			}
+		} else {
+			callType := p.callType
+			if callType == "" {
+				callType = "function"
+			}
+			toolCalls = []ToolCall{{ID: p.id, Type: callType, Function: FunctionCall{Name: p.name, Arguments: args}}}
 		}
-		callType := p.callType
-		if callType == "" {
-			callType = "function"
-		}
-		toolCalls = []ToolCall{{ID: p.id, Type: callType, Function: FunctionCall{Name: p.name, Arguments: args}}}
 	}
 	if finishReason == "" && len(toolCalls) > 0 {
 		finishReason = "tool_calls"
@@ -363,7 +408,7 @@ readLoop:
 	}, nil
 }
 
-func (c *Client) doStreamingChat(messages []ChatMessage, onChunk func(string)) (*ChatResponse, error) {
+func (c *Client) doStreamingChat(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
 	reqBody := chatRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -377,13 +422,16 @@ func (c *Client) doStreamingChat(messages []ChatMessage, onChunk func(string)) (
 	if c.sessionID != "" {
 		reqBody.SessionID = c.sessionID
 	}
+	if c.reasoning != nil {
+		reqBody.Reasoning = c.reasoning
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(reqCtx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -448,13 +496,16 @@ func (c *Client) doStreamingChat(messages []ChatMessage, onChunk func(string)) (
 		if chunk.Choices[0].FinishReason != "" {
 			finishReason = chunk.Choices[0].FinishReason
 		}
+		if r := chunk.Choices[0].Delta.Reasoning; r != "" && onReasoning != nil {
+			onReasoning(r)
+		}
 		token := chunk.Choices[0].Delta.Content
 		if token != "" {
 			contentBuilder.WriteString(token)
 			onChunk(token)
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && reqCtx.Err() == nil {
 		return nil, fmt.Errorf("reading SSE stream: %w", err)
 	}
 

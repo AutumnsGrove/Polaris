@@ -4,6 +4,8 @@
 package tools
 
 import (
+	"context"
+
 	"polaris/llm"
 	"polaris/places"
 	"polaris/search"
@@ -13,6 +15,12 @@ import (
 // plus an Emit callback the gateway uses to stream progress events
 // (thinking/tool_call/tool_result) to the browser over the websocket.
 type Context struct {
+	// Ctx is the request-scoped context for this turn — cancelled when the
+	// user hits "stop" mid-generation. Tool handlers thread it into their
+	// outbound HTTP calls so a stop actually aborts in-flight network
+	// requests instead of only taking effect at the next LLM call.
+	Ctx context.Context
+
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
 	LLM        *llm.Client              // the model selected for this thread; reused by web_read's optional filter pass

@@ -5,6 +5,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -377,16 +378,51 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		_ = conn.WriteJSON(evt)
 	}
 
+	// Only one turn runs at a time per connection (the frontend disables
+	// the composer while busy), so a single cancel slot is enough to
+	// support "stop". Each turn now runs in its own goroutine so this read
+	// loop can keep pulling frames off the wire concurrently — otherwise a
+	// "stop" message sent mid-turn would just sit unread until the turn
+	// finished on its own, defeating the point.
+	var cancelMu sync.Mutex
+	var cancelTurn context.CancelFunc
+
 	for {
 		var msg ClientMessage
 		if err := conn.ReadJSON(&msg); err != nil {
+			cancelMu.Lock()
+			if cancelTurn != nil {
+				cancelTurn()
+			}
+			cancelMu.Unlock()
 			return // client disconnected or sent garbage
 		}
-		s.handleTurn(msg, send)
+
+		if msg.Type == "stop" {
+			cancelMu.Lock()
+			if cancelTurn != nil {
+				cancelTurn()
+			}
+			cancelMu.Unlock()
+			continue
+		}
+
+		turnCtx, cancel := context.WithCancel(context.Background())
+		cancelMu.Lock()
+		cancelTurn = cancel
+		cancelMu.Unlock()
+
+		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
+			defer cancel()
+			s.handleTurn(ctx, msg, send)
+			cancelMu.Lock()
+			cancelTurn = nil
+			cancelMu.Unlock()
+		}(turnCtx, cancel, msg)
 	}
 }
 
-func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
+func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(ServerEvent)) {
 	threadID := msg.ThreadID
 	isNewThread := threadID == ""
 	if isNewThread {
@@ -410,6 +446,9 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 	client := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
 		WithSessionID(threadID) // sticky routing — same provider endpoint across the thread, for cache hits
+	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
+		client = client.WithReasoning(&llm.ReasoningParams{Enabled: true, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+	}
 
 	if isNewThread {
 		title := msg.Content
@@ -469,7 +508,7 @@ func (s *Server) handleTurn(msg ClientMessage, send func(ServerEvent)) {
 		Emit:            emit,
 	}
 
-	result, err := agent.Run(agentCtx, history, msg.Content)
+	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
 	if err != nil {
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return

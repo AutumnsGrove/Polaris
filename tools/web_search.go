@@ -52,7 +52,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{"query": args.Query},
 	})
 
-	resp, err := ctx.SearXNG.Search(args.Query, args.MaxResults)
+	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults)
 	if err != nil {
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
 		return "error: " + err.Error()

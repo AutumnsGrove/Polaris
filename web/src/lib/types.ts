@@ -8,6 +8,7 @@ export interface Citation {
 
 export type ServerEvent =
 	| { type: 'thinking'; thread_id?: string; content: string }
+	| { type: 'reasoning'; thread_id?: string; content: string }
 	| { type: 'tool_call'; thread_id?: string; tool: string; args?: Record<string, unknown> }
 	| {
 			type: 'tool_result';
@@ -27,15 +28,20 @@ export type ServerEvent =
 // memo's transcription cost so it's folded into the thread total. Not
 // set from the frontend yet: voice_mode nudges the model toward a brief,
 // speakable answer — reserved for a future always-on voice session.
-export interface ClientMessage {
-	type: 'message';
-	thread_id?: string;
-	content: string;
-	model: string;
-	edit_from_id?: number;
-	voice_mode?: boolean;
-	stt_cost_usd?: number;
-}
+export type ClientMessage =
+	| {
+			type: 'message';
+			thread_id?: string;
+			content: string;
+			model: string;
+			edit_from_id?: number;
+			voice_mode?: boolean;
+			stt_cost_usd?: number;
+	  }
+	// Cancels whatever turn is currently in flight on this connection — the
+	// server only ever runs one turn at a time per socket, so this needs
+	// no thread_id to target it.
+	| { type: 'stop' };
 
 export interface ModelOption {
 	id: string;
@@ -64,6 +70,7 @@ export interface StoredMessage {
 
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
+	| { kind: 'reasoning'; content: string; done: boolean }
 	| {
 			kind: 'tool';
 			tool: string;

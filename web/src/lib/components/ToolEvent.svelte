@@ -1,9 +1,16 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Loader2, ChevronRight } from '@lucide/svelte';
+	import { Search, FileText, Brain, Loader2, ChevronRight } from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
-	let open = $state(false);
+	// Tool calls start collapsed (their result is secondary detail) but a
+	// reasoning block starts open — the whole point is watching it happen
+	// live, so the user can tell "still thinking" apart from "stuck". Read
+	// once via untrack: each TimelineItem is a stable, never-replaced
+	// object for the lifetime of this component instance (keyed by index
+	// in the {#each} above), so there's no later prop change to react to.
+	let open = $state(untrack(() => item.kind === 'reasoning'));
 
 	function label(item: Extract<TimelineItem, { kind: 'tool' }>): string {
 		if (item.tool === 'web_search') return `Searching: ${item.args?.query ?? ''}`;
@@ -14,6 +21,21 @@
 
 {#if item.kind === 'thinking'}
 	<div class="thinking">{item.content}</div>
+{:else if item.kind === 'reasoning'}
+	<div class="tool-event">
+		<button class="tool-header" onclick={() => (open = !open)}>
+			<Brain size={13} color="var(--color-accent-2)" />
+			<span class="tool-label">{item.done ? 'Reasoned' : 'Reasoning…'}</span>
+			{#if !item.done}
+				<Loader2 size={13} color="var(--color-text-dim)" class="spin" />
+			{:else}
+				<ChevronRight size={13} color="var(--color-text-dim)" class={open ? 'chevron open' : 'chevron'} />
+			{/if}
+		</button>
+		{#if open && item.content}
+			<pre class="tool-result">{item.content}</pre>
+		{/if}
+	</div>
 {:else}
 	<div class="tool-event">
 		<button class="tool-header" onclick={() => (open = !open)}>

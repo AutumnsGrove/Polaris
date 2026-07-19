@@ -153,9 +153,13 @@
 		inset: 0;
 		border: none;
 		padding: 0;
-		background: rgba(0, 0, 0, 0.5);
-		backdrop-filter: blur(6px);
-		-webkit-backdrop-filter: blur(6px);
+		/* Darker backdrop for stronger separation between modal and
+		   the ground behind it — this is the one modal in the app and
+		   can afford real contrast when it opens. Blur stays purposeful,
+		   not decorative (banned as content-surface treatment). */
+		background: rgba(0, 0, 0, 0.62);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
 		cursor: default;
 	}
 
@@ -165,11 +169,25 @@
 		max-width: 440px;
 		max-height: 85vh;
 		overflow-y: auto;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
+		/* Slightly lifted surface color so the modal reads as elevated
+		   above the sidebar/main. */
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border-strong);
 		border-radius: var(--radius-lg);
-		box-shadow: var(--shadow-lg);
-		padding: 22px 22px 18px;
+		/* Substantially deeper shadow than any inline element — this is
+		   the only floating panel in the app, so it can afford to feel
+		   heavy on entry. */
+		box-shadow:
+			0 32px 80px -20px rgba(0, 0, 0, 0.6),
+			0 12px 32px -12px rgba(0, 0, 0, 0.45),
+			0 0 0 1px rgba(0, 0, 0, 0.2);
+		padding: 24px 24px 20px;
+	}
+
+	:root[data-theme='light'] .panel {
+		box-shadow:
+			0 32px 80px -20px rgba(50, 40, 28, 0.28),
+			0 12px 32px -12px rgba(50, 40, 28, 0.18);
 	}
 
 	.panel-header {
@@ -182,9 +200,9 @@
 	.panel-header h2 {
 		margin: 0;
 		font-family: var(--font-serif);
-		font-size: 20px;
-		font-weight: 600;
-		letter-spacing: 0.005em;
+		font-size: 22px;
+		font-weight: 700;
+		letter-spacing: -0.005em;
 	}
 
 	section {
@@ -199,13 +217,17 @@
 		padding-bottom: 0;
 	}
 
+	/* Small-caps section labels: heavier weight + wider tracking so the
+	   contrast against 400-weight body copy underneath reads as confident
+	   rather than timid. Text color pushed up a notch so labels aren't
+	   ghost-dim. */
 	section h3 {
 		margin: 0 0 12px 0;
 		font-size: 11px;
-		font-weight: 600;
+		font-weight: 700;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-dim);
+		letter-spacing: 0.12em;
+		color: var(--color-text);
 	}
 
 	.row {
@@ -247,8 +269,9 @@
 	}
 
 	.theme-toggle button.active {
-		background: var(--color-surface-2);
+		background: var(--color-accent-soft);
 		color: var(--color-text);
+		font-weight: 600;
 	}
 
 	select {
