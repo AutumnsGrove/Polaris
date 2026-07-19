@@ -64,6 +64,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 
 	title, text, err := fetchAndExtract(ctx.Ctx, args.URL)
 	if err != nil {
+		log.Warn("web_read failed", "url", args.URL, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
 	}
@@ -72,12 +73,15 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	if args.Instructions != "" && ctx.LLM != nil {
 		if filtered, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, text, args.Instructions); ferr == nil {
 			result = filtered
+		} else {
+			log.Warn("web_read: filter pass failed, using full extracted text", "url", args.URL, "err", ferr)
 		}
 		// On filter failure, silently fall back to the full extracted
 		// text rather than failing the whole tool call — the free path
 		// already succeeded, no reason to throw that away.
 	}
 
+	log.Info("web_read", "url", args.URL, "title", title, "extracted_chars", len(text), "instructions", args.Instructions)
 	ctx.AddCitation(Citation{Title: title, URL: args.URL})
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",

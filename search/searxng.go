@@ -55,12 +55,22 @@ type searxngResult struct {
 // Search performs a web search via SearXNG and returns up to maxResults
 // relevance-ranked results. SearXNG doesn't produce an AI-generated
 // answer summary, so Answer is always empty here (unlike Tavily).
-func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int) (*SearchResponse, error) {
+// category filters which SearXNG engines answer the query — "" (SearXNG's
+// default "general" category) searches ordinary web-indexed pages, which
+// for broad queries like "atlanta ga news" routinely surface each outlet's
+// homepage rather than a specific story, since the homepage's title/text
+// matches a broad phrase just as well as any article does. "news" routes
+// to dedicated news-search engines (Google News, Bing News, etc.), which
+// index actual articles rather than static pages.
+func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string) (*SearchResponse, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 
 	u := fmt.Sprintf("%s/search?format=json&q=%s", c.baseURL, url.QueryEscape(query))
+	if category != "" {
+		u += "&categories=" + url.QueryEscape(category)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {

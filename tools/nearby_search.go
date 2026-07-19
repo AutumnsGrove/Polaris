@@ -85,6 +85,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 	geo, err := places.Geocode(ctx.Ctx, locationQuery)
 	if err != nil || geo == nil {
 		result := fmt.Sprintf("error: couldn't resolve location %q", locationQuery)
+		log.Warn("nearby_search: geocode failed", "location", locationQuery, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result})
 		return result
 	}
@@ -99,17 +100,19 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 				}
 			}
 			summary := "Searching near: " + geo.DisplayName + "\n\n" + places.FormatPlaces(matches)
+			log.Info("nearby_search (foursquare)", "query", args.Query, "location", geo.DisplayName, "matches", len(matches))
 			ctx.Emit("tool_result", map[string]interface{}{
 				"tool": "nearby_search", "result": summary, "citations": ctx.Citations,
 			})
 			return summary
 		}
 		// Foursquare call failed — fall through to the SearXNG fallback below.
+		log.Warn("nearby_search: foursquare failed, falling back to web search", "query", args.Query, "err", err)
 	}
 
 	// No Foursquare (or it errored): plain web search for the same intent.
 	if ctx.SearXNG != nil {
-		resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query+" near "+geo.DisplayName, args.Limit)
+		resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query+" near "+geo.DisplayName, args.Limit, "")
 		if err == nil {
 			var summary string
 			for i, r := range resp.Results {
@@ -119,6 +122,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 			if summary == "" {
 				summary = "No places found nearby."
 			}
+			log.Info("nearby_search (searxng fallback)", "query", args.Query, "location", geo.DisplayName, "results", len(resp.Results))
 			ctx.Emit("tool_result", map[string]interface{}{
 				"tool": "nearby_search", "result": summary, "citations": ctx.Citations,
 			})
@@ -127,6 +131,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 	}
 
 	result := "error: nearby search failed (Foursquare not configured or unreachable, and web search fallback also failed)"
+	log.Warn("nearby_search: all paths failed", "query", args.Query, "location", locationQuery)
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result})
 	return result
 }

@@ -7,9 +7,12 @@ import (
 	"context"
 
 	"polaris/llm"
+	"polaris/logger"
 	"polaris/places"
 	"polaris/search"
 )
+
+var log = logger.WithPrefix("tools")
 
 // Context carries dependencies shared across a single turn's tool calls,
 // plus an Emit callback the gateway uses to stream progress events
