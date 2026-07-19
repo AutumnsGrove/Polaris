@@ -48,4 +48,15 @@
 		background: var(--color-surface);
 		color: var(--color-text);
 	}
+
+	/* A long model name ("DeepSeek V4 Flash") can otherwise push the
+	   context/cost chips clean off a phone-width header. */
+	@media (max-width: 480px) {
+		select {
+			max-width: 92px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+	}
 </style>

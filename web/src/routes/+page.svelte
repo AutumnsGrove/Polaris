@@ -3,7 +3,7 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Gauge, Coins } from '@lucide/svelte';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
@@ -95,13 +95,17 @@
 	</div>
 	<div class="header-right">
 		{#if appState.contextTokens > 0}
-			<div class="context-usage" class:hot={contextPercent >= 90}>
-				Context: <span class="context-value">{contextPercent}%</span>
+			<div class="context-usage" class:hot={contextPercent >= 90} title="Context window used">
+				<Gauge size={12} />
+				<span class="label">Context:</span>
+				<span class="context-value">{contextPercent}%</span>
 			</div>
 		{/if}
 		{#if appState.showPrices}
-			<div class="cost">
-				Thread cost: <span class="cost-value">${appState.totalCost.toFixed(4)}</span>
+			<div class="cost" title="Thread cost">
+				<Coins size={12} />
+				<span class="label">Thread cost:</span>
+				<span class="cost-value">${appState.totalCost.toFixed(4)}</span>
 			</div>
 		{/if}
 	</div>
@@ -153,39 +157,52 @@
 		flex-shrink: 0;
 	}
 
-	.cost {
+	.cost,
+	.context-usage {
+		display: flex;
+		align-items: center;
+		gap: 4px;
 		flex-shrink: 0;
 		font-size: 12px;
 		color: var(--color-text-dim);
 		letter-spacing: 0.01em;
-	}
-
-	.cost-value {
-		color: var(--color-text);
-		font-variant-numeric: tabular-nums;
-		margin-left: 2px;
 	}
 
 	.context-usage {
-		flex-shrink: 0;
-		font-size: 12px;
-		color: var(--color-text-dim);
-		letter-spacing: 0.01em;
-		padding-right: 12px;
+		padding-right: 10px;
 		border-right: 1px solid var(--color-border);
 	}
 
+	.cost-value,
 	.context-value {
 		color: var(--color-text);
 		font-variant-numeric: tabular-nums;
-		margin-left: 2px;
 	}
 
 	/* Approaching the auto-compaction threshold — a quiet heads-up before
-	   it fires, not an alarm; still just text weight/color, no icon. */
+	   it fires, not an alarm; still just text weight/color, no icon change. */
 	.context-usage.hot .context-value {
 		color: var(--color-danger);
 		font-weight: 600;
+	}
+
+	/* Below phone width, the label text ("Context:", "Thread cost:") is
+	   the first thing to go — the icon plus value alone still reads fine
+	   at a glance, and the header stops fighting the model selector for
+	   room. Icons stay so cost and context are still distinguishable. */
+	@media (max-width: 480px) {
+		.cost .label,
+		.context-usage .label {
+			display: none;
+		}
+
+		.header-right {
+			gap: 6px;
+		}
+
+		.context-usage {
+			padding-right: 6px;
+		}
 	}
 
 	/* The welcome state is the ONE screen in the app allowed a committed
