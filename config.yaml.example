@@ -52,51 +52,15 @@ max_agent_turns: 50
 
 default_model: "mimo-pro"
 
-# Each model pins a specific OpenRouter provider (not just a model slug).
-# Different providers hosting the same model often have very different
-# (or no) prompt-caching support/pricing — pinning keeps caching consistent.
-# For the MiMo models specifically, pinning to "xiaomi/fp8" isn't just
-# about caching: per OpenRouter's own endpoint list, it's the only host
-# whose supported_parameters actually include "tools"/"tool_choice" —
-# an unpinned request could silently land somewhere that can't call
-# web_search/web_read/nearby_search at all.
-models:
-  - id: "mimo-pro"
-    name: "MiMo v2.5 Pro"
-    model: "xiaomi/mimo-v2.5-pro"
-    provider: ["xiaomi/fp8"]
-    temperature: 0.4
-    max_tokens: 32000
-    reasoning:
-      enabled: true
-      effort: "medium"   # low | medium | high — mutually exclusive with max_tokens
-  - id: "mimo"
-    name: "MiMo v2.5"
-    model: "xiaomi/mimo-v2.5"
-    provider: ["xiaomi/fp8"]
-    temperature: 0.4
-    max_tokens: 32000
-    # Both models below reason internally before answering — without
-    # requesting it explicitly, OpenRouter won't surface those tokens at
-    # all, so the UI has no way to show what's actually happening.
-    reasoning:
-      enabled: true
-      effort: "medium"   # low | medium | high — mutually exclusive with max_tokens
-  - id: "deepseek-pro"
-    name: "DeepSeek V4 Pro"
-    model: "deepseek/deepseek-v4-pro"
-    provider: ["deepseek"]
-    temperature: 0.4
-    max_tokens: 32000
-    reasoning:
-      enabled: true
-      effort: "medium"
-  - id: "deepseek"
-    name: "DeepSeek V4 Flash"
-    model: "deepseek/deepseek-v4-flash"
-    provider: ["deepseek"]
-    temperature: 0.4
-    max_tokens: 32000
-    reasoning:
-      enabled: true
-      effort: "medium"
+# Optional: override per-model settings from the registry (models/models.go).
+# The available models are defined in code and deployed with the binary —
+# config is for tuning their behavior, not declaring what exists.
+# All fields are optional; unset fields inherit from the code defaults.
+#
+# model_overrides:
+#   mimo-pro:
+#     temperature: 0.7
+#     max_tokens: 16000
+#   deepseek:
+#     reasoning:
+#       effort: "high"

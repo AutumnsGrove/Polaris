@@ -11,6 +11,7 @@ import (
 	"polaris/config"
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/models"
 )
 
 func TestCompactThread(t *testing.T) {
@@ -116,7 +117,7 @@ func fakeLLMServer(t *testing.T, systemPrompt, answer string) *httptest.Server {
 
 func TestGenerateSuggestions(t *testing.T) {
 	srv := fakeLLMServer(t, "follow-up questions", "What is X?\nWhat is Y?\n1. What is Z?")
-	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL))
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestGenerateSuggestions(t *testing.T) {
 
 func TestGenerateTitle(t *testing.T) {
 	srv := fakeLLMServer(t, "thread title", `"France's Capital City."`)
-	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL))
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestGenerateTitle(t *testing.T) {
 func TestGenerateTitle_TruncatesOverlongTitle(t *testing.T) {
 	huge := strings.Repeat("word ", 30)
 	srv := fakeLLMServer(t, "thread title", huge)
-	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL))
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}

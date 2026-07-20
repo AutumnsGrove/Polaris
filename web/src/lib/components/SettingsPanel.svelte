@@ -119,6 +119,12 @@
 
 		<section>
 			<h3>Updates</h3>
+			{#if appState.version}
+				<div class="row version-row">
+					<span>Version</span>
+					<code class="version">{appState.version}</code>
+				</div>
+			{/if}
 			<button class="btn update-btn" onclick={handlePushUpdate} disabled={updateState !== 'idle' && updateState !== 'error'}>
 				<RefreshCw size={14} class={updateState === 'updating' || updateState === 'restarting' ? 'spin' : ''} />
 				{#if updateState === 'updating'}
@@ -326,6 +332,20 @@
 	.switch input:checked + .slider::before {
 		transform: translateX(16px);
 		background: var(--color-accent);
+	}
+
+	.version-row {
+		margin-bottom: 12px;
+	}
+
+	.version {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-size: 12px;
+		color: var(--color-text-dim);
+		background: var(--color-bg);
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border);
 	}
 
 	.update-btn {

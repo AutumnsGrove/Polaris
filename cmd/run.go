@@ -10,6 +10,7 @@ import (
 	"polaris/config"
 	"polaris/gateway"
 	"polaris/logger"
+	"polaris/models"
 	"polaris/store"
 	"polaris/web"
 )
@@ -37,7 +38,7 @@ func init() {
 }
 
 func runRun(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
 		return err
 	}

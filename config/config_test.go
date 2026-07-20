@@ -16,20 +16,21 @@ func writeTestConfig(t *testing.T, contents string) string {
 	return path
 }
 
-const minimalModels = `
-models:
-  - id: "test-model"
-    name: "Test Model"
-    model: "test/model"
-    provider: ["test"]
-    temperature: 0.4
-    max_tokens: 1000
-`
+var testRegistry = []ModelConfig{
+	{
+		ID:          "test-model",
+		Name:        "Test Model",
+		Model:       "test/model",
+		Provider:    []string{"test"},
+		Temperature: 0.4,
+		MaxTokens:   1000,
+	},
+}
 
 func TestLoad_AppliesDefaults(t *testing.T) {
-	path := writeTestConfig(t, minimalModels)
+	path := writeTestConfig(t, "")
 
-	cfg, err := Load(path)
+	cfg, err := Load(path, testRegistry)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -57,17 +58,17 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestLoad_NoModelsIsAnError(t *testing.T) {
+func TestLoad_NoRegistryIsAnError(t *testing.T) {
 	path := writeTestConfig(t, `server:
   port: 8899
 `)
-	if _, err := Load(path); err == nil {
-		t.Fatal("expected an error when config.yaml has no models entries")
+	if _, err := Load(path, nil); err == nil {
+		t.Fatal("expected an error when model registry is empty")
 	}
 }
 
 func TestLoad_MissingFileIsAnError(t *testing.T) {
-	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
+	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"), testRegistry); err == nil {
 		t.Fatal("expected an error for a missing config file")
 	}
 }
@@ -76,14 +77,36 @@ func TestLoad_ExpandsEnvVars(t *testing.T) {
 	t.Setenv("POLARIS_TEST_API_KEY", "sk-test-123")
 	path := writeTestConfig(t, `openrouter:
   api_key: "${POLARIS_TEST_API_KEY}"
-`+minimalModels)
+`)
 
-	cfg, err := Load(path)
+	cfg, err := Load(path, testRegistry)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if cfg.OpenRouter.APIKey != "sk-test-123" {
 		t.Errorf("APIKey = %q, want the expanded env var", cfg.OpenRouter.APIKey)
+	}
+}
+
+func TestLoad_AppliesModelOverrides(t *testing.T) {
+	path := writeTestConfig(t, `
+model_overrides:
+  test-model:
+    temperature: 0.7
+    max_tokens: 2000
+`)
+
+	cfg, err := Load(path, testRegistry)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	model := cfg.ModelByID("test-model")
+	if model.Temperature != 0.7 {
+		t.Errorf("Temperature = %f, want 0.7 from override", model.Temperature)
+	}
+	if model.MaxTokens != 2000 {
+		t.Errorf("MaxTokens = %d, want 2000 from override", model.MaxTokens)
 	}
 }
 

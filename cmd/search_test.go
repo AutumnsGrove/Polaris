@@ -36,14 +36,7 @@ func writeSearchTestConfig(t *testing.T, llmBaseURL string) string {
 openrouter:
   api_key: "test-key"
   base_url: %q
-default_model: "test-model"
-models:
-  - id: "test-model"
-    name: "Test Model"
-    model: "test/model"
-    provider: ["test"]
-    temperature: 0.4
-    max_tokens: 1000
+default_model: "mimo-pro"
 `, llmBaseURL)
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing test config: %v", err)
@@ -87,7 +80,7 @@ func TestRunSearch_HappyPath(t *testing.T) {
 	if !strings.Contains(output, "Paris is the capital of France.") {
 		t.Errorf("output = %q, want the answer printed", output)
 	}
-	if !strings.Contains(output, "model: Test Model") {
+	if !strings.Contains(output, "model: MiMo v2.5 Pro") {
 		t.Errorf("output = %q, want the model name printed", output)
 	}
 	if !strings.Contains(output, "cost: $0.0002") {

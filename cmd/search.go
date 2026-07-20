@@ -10,6 +10,7 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/models"
 	"polaris/places"
 	"polaris/search"
 	"polaris/tools"
@@ -33,7 +34,7 @@ func init() {
 func runSearch(cmd *cobra.Command, args []string) error {
 	query := strings.Join(args, " ")
 
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
 		return err
 	}

@@ -23,6 +23,8 @@ export class AppState {
 	connected = $state(false);
 	busy = $state(false);
 	totalCost = $state(0);
+	version = $state<string>('');
+	versionCheckInterval: number | null = null;
 
 	// contextTokens is the current thread's last-known prompt+completion
 	// size, from the LLM's own usage numbers — settings.contextWindowTokens
@@ -103,6 +105,37 @@ export class AppState {
 
 	connect() {
 		this.socket.connect();
+		void this.startVersionCheck();
+	}
+
+	async startVersionCheck() {
+		// Check version immediately on connect
+		await this.checkVersion();
+
+		// Then poll every 30 seconds
+		if (typeof window !== 'undefined') {
+			this.versionCheckInterval = window.setInterval(() => {
+				void this.checkVersion();
+			}, 30000);
+		}
+	}
+
+	async checkVersion() {
+		try {
+			const res = await fetch('/api/version');
+			const data = await res.json();
+			const newVersion = data.version ?? '';
+
+			if (this.version && newVersion && this.version !== newVersion) {
+				// Version changed - reload to get new frontend code
+				if (typeof window !== 'undefined') {
+					window.location.reload();
+				}
+			}
+			this.version = newVersion;
+		} catch (err) {
+			// Silently ignore - don't spam errors for version checks
+		}
 	}
 
 	toggleSidebar() {

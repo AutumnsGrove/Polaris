@@ -58,8 +58,17 @@ type Config struct {
 		Label string `yaml:"label"`
 	} `yaml:"service"`
 
-	DefaultModel string        `yaml:"default_model"`
-	Models       []ModelConfig `yaml:"models"`
+	DefaultModel string `yaml:"default_model"`
+
+	// ModelOverrides allows config.yaml to tune per-model settings
+	// (temperature, max_tokens, reasoning effort) without declaring the
+	// full model catalog. The registry is the source of truth for what
+	// models exist; config is for deployment-specific tuning.
+	ModelOverrides map[string]ModelOverride `yaml:"model_overrides"`
+
+	// Models is the final merged model list (registry + overrides),
+	// populated by Load. Not part of the YAML schema.
+	Models []ModelConfig `yaml:"-"`
 
 	// ContextWindowTokens is the threshold (prompt + completion tokens,
 	// per the LLM's own usage numbers) at which a thread auto-compacts:
@@ -105,7 +114,18 @@ type ReasoningConfig struct {
 	MaxTokens int    `yaml:"max_tokens"` // token budget for reasoning, if not using Effort
 }
 
-func Load(path string) (*Config, error) {
+// ModelOverride specifies per-model tuning in config.yaml. All fields
+// optional; unset fields inherit from the registry default.
+type ModelOverride struct {
+	Temperature *float64          `yaml:"temperature"`
+	MaxTokens   *int              `yaml:"max_tokens"`
+	Reasoning   *ReasoningConfig  `yaml:"reasoning"`
+}
+
+// Load reads config.yaml and applies defaults. The registry parameter
+// provides the base model catalog; config.yaml can tune per-model
+// settings via model_overrides but doesn't declare new models.
+func Load(path string, registry []ModelConfig) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
@@ -148,12 +168,6 @@ func Load(path string) (*Config, error) {
 	if cfg.Voice.TTSFormat == "" {
 		cfg.Voice.TTSFormat = "mp3"
 	}
-	if len(cfg.Models) == 0 {
-		return nil, fmt.Errorf("config: at least one entry required under models")
-	}
-	if cfg.DefaultModel == "" {
-		cfg.DefaultModel = cfg.Models[0].ID
-	}
 	if cfg.ContextWindowTokens <= 0 {
 		cfg.ContextWindowTokens = 100_000
 	}
@@ -161,7 +175,36 @@ func Load(path string) (*Config, error) {
 		cfg.MaxAgentTurns = 50
 	}
 
+	// Apply registry as base, then merge config overrides
+	if len(registry) == 0 {
+		return nil, fmt.Errorf("config: model registry is empty")
+	}
+	cfg.Models = applyOverrides(registry, cfg.ModelOverrides)
+
+	if cfg.DefaultModel == "" {
+		cfg.DefaultModel = cfg.Models[0].ID
+	}
+
 	return &cfg, nil
+}
+
+func applyOverrides(registry []ModelConfig, overrides map[string]ModelOverride) []ModelConfig {
+	result := make([]ModelConfig, len(registry))
+	for i, base := range registry {
+		result[i] = base
+		if override, ok := overrides[base.ID]; ok {
+			if override.Temperature != nil {
+				result[i].Temperature = *override.Temperature
+			}
+			if override.MaxTokens != nil {
+				result[i].MaxTokens = *override.MaxTokens
+			}
+			if override.Reasoning != nil {
+				result[i].Reasoning = override.Reasoning
+			}
+		}
+	}
+	return result
 }
 
 // ModelByID looks up a model config by its selector ID. Falls back to
@@ -180,4 +223,20 @@ func (c *Config) ModelByID(id string) ModelConfig {
 		}
 	}
 	return c.Models[0]
+}
+
+// DefaultModelOrFirst returns the configured default model ID, falling
+// back to the first model if default_model is unset or invalid.
+func (c *Config) DefaultModelOrFirst() string {
+	if c.DefaultModel != "" {
+		for _, m := range c.Models {
+			if m.ID == c.DefaultModel {
+				return c.DefaultModel
+			}
+		}
+	}
+	if len(c.Models) > 0 {
+		return c.Models[0].ID
+	}
+	return ""
 }

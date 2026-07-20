@@ -17,6 +17,7 @@ import (
 
 	"polaris/config"
 	"polaris/logger"
+	"polaris/models"
 	"polaris/places"
 	"polaris/search"
 	"polaris/store"
@@ -62,6 +63,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes(staticFS fs.FS) {
+	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
@@ -82,23 +84,24 @@ func (s *Server) routes(staticFS fs.FS) {
 }
 
 // liveConfig re-reads config.yaml from disk before returning it, so
-// day-to-day edits — adding a model, raising context_window_tokens —
-// take effect on the very next request instead of requiring a restart.
-// The file is a few KB of YAML, so re-parsing it per request is cheap
-// relative to the LLM call every one of these handlers is either serving
-// or about to kick off.
+// day-to-day edits — raising context_window_tokens, tuning model
+// settings — take effect on the very next request instead of requiring
+// a restart. The file is a few KB of YAML, so re-parsing it per request
+// is cheap relative to the LLM call every one of these handlers is
+// either serving or about to kick off.
 //
 // Fields that construct long-lived clients at startup (OpenRouter creds
 // baked into s.searxng/s.foursquare/s.stt/s.tts, the listen address) are
 // NOT picked up by this — those clients would need to be rebuilt, which
-// is what a restart is for. Everything else (models, default_model,
-// context_window_tokens, max_agent_turns, default_location, service
-// label) is read fresh via this on every request that needs it.
+// is what a restart is for. Everything else (model overrides,
+// default_model, context_window_tokens, max_agent_turns,
+// default_location, service label) is read fresh via this on every
+// request that needs it.
 //
 // Falls back to the last good config if the file is momentarily
 // unreadable or invalid, rather than failing the request outright.
 func (s *Server) liveConfig() *config.Config {
-	if fresh, err := config.Load(s.cfgPath); err != nil {
+	if fresh, err := config.Load(s.cfgPath, models.Registry); err != nil {
 		log.Warn("config reload failed, using last known config", "err", err)
 		// Not thread-scoped — a bad edit to config.yaml affects every
 		// thread going forward, so it belongs in the global event log

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"polaris/config"
+	"polaris/models"
 	"polaris/store"
 )
 
@@ -37,20 +38,7 @@ openrouter:
   base_url: %q
 database:
   path: %q
-default_model: "test-model"
-models:
-  - id: "test-model"
-    name: "Test Model One"
-    model: "test/model-one"
-    provider: ["test"]
-    temperature: 0.4
-    max_tokens: 1000
-  - id: "other-model"
-    name: "Other Model"
-    model: "test/other-model"
-    provider: ["test"]
-    temperature: 0.5
-    max_tokens: 1000
+default_model: "mimo-pro"
 `, llmBaseURL, filepath.Join(dir, "test.db"))
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing test config: %v", err)
@@ -63,7 +51,7 @@ func newTestHarness(t *testing.T, llmBaseURL string) *testHarness {
 	dir := t.TempDir()
 	cfgPath := writeTestConfig(t, dir, llmBaseURL)
 
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.Load(cfgPath, models.Registry)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
@@ -98,22 +86,30 @@ openrouter:
   base_url: %q
 database:
   path: %q
-default_model: "test-model"
-models:
-  - id: "test-model"
-    name: "Test Model One"
-    model: "test/model-one"
-    provider: ["test"]
-    temperature: 0.4
-    max_tokens: 1000
-  - id: %q
-    name: "Freshly Added Model"
-    model: "test/new-model"
-    provider: ["test"]
-    temperature: 0.4
-    max_tokens: 1000
-`, h.llmBaseURL, filepath.Join(dir, "test.db"), extraModel)
+default_model: "mimo-pro"
+`, h.llmBaseURL, filepath.Join(dir, "test.db"))
 	if err := os.WriteFile(h.cfgPath, []byte(contents), 0o644); err != nil {
 		t.Fatalf("rewriting test config: %v", err)
+	}
+}
+
+func (h *testHarness) rewriteConfigWithOverride(t *testing.T, modelID string, temperature float64) {
+	t.Helper()
+	dir := filepath.Dir(h.cfgPath)
+	contents := fmt.Sprintf(`
+server:
+  port: 0
+openrouter:
+  api_key: "test-key"
+  base_url: %q
+database:
+  path: %q
+default_model: "mimo-pro"
+model_overrides:
+  %s:
+    temperature: %.1f
+`, h.llmBaseURL, filepath.Join(dir, "test.db"), modelID, temperature)
+	if err := os.WriteFile(h.cfgPath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("rewriting test config with override: %v", err)
 	}
 }
