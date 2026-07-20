@@ -618,9 +618,13 @@ const maxSuggestionLen = 140
 // Deliberately builds its own client from modelCfg rather than reusing the
 // thread's tool-capable client — a fully separate call with no tools
 // offered and a tight token cap, so it can never wander into producing a
-// real answer instead of short questions.
+// real answer instead of short questions. Still pins the provider the
+// same way the main client does: leaving that off routes to whatever
+// OpenRouter picks by default, which can land on a degraded/no-reasoning
+// endpoint for the same model slug and come back with near-empty content.
 func (s *Server) generateSuggestions(modelCfg config.ModelConfig, userMessage, answer string) ([]string, float64, error) {
-	sugClient := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150)
+	sugClient := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150).
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
 		{Role: "system", Content: "Based on this question-and-answer exchange, suggest exactly 3 short, " +
