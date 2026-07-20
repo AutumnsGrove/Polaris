@@ -140,13 +140,32 @@ class AppState {
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		const messages = data.messages ?? [];
-		this.turns = messages.map((m: any) => ({
+		let turns: ChatTurn[] = messages.map((m: any) => ({
 			role: m.role,
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			costUsd: m.cost_usd,
 			id: m.role === 'user' ? m.id : undefined
 		}));
+
+		// A turn is still streaming for this exact thread — the user
+		// navigated away mid-generation and came back. The fetch above only
+		// has what's persisted (the user's question; the assistant reply
+		// doesn't persist until the turn finishes), so without this the
+		// reopened thread would show a permanently "…" placeholder even
+		// after the real answer finishes server-side, since handleEvent
+		// would keep mutating pendingTurn — an object no longer part of
+		// whatever array openThread just replaced turns with. Splice the
+		// live pair back in (replacing the fetch's last message, which is
+		// that same in-flight user question) so it keeps updating live and
+		// resolves normally once "done" arrives.
+		if (id === this.pendingThreadId && this.pendingTurn) {
+			turns = this.pendingUserTurn
+				? [...turns.slice(0, -1), this.pendingUserTurn, this.pendingTurn]
+				: [...turns, this.pendingTurn];
+		}
+		this.turns = turns;
+
 		// Suggestions are a "what's next" prompt for the last answer, so
 		// only the most recent assistant message's set is relevant here.
 		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
@@ -282,6 +301,13 @@ class AppState {
 
 		if (e.type === 'user_message') {
 			if (this.pendingUserTurn) this.pendingUserTurn.id = e.user_message_id;
+			// The thread row (and this user message) are already persisted
+			// server-side by the time this event fires — well before the LLM
+			// call even starts, let alone finishes. Refresh the sidebar now
+			// instead of waiting for "done", so a brand-new thread appears
+			// (and an existing one jumps to the top) within one round trip
+			// of hitting send, not after the whole answer streams in.
+			void this.loadThreads();
 			return;
 		}
 
