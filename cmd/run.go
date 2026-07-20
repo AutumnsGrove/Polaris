@@ -55,7 +55,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	srv := gateway.New(cfg, db, staticFS)
+	srv := gateway.New(cfg, configPath, db, staticFS)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Infof("listening on %s (dev=%v)", addr, devMode)

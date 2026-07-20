@@ -42,7 +42,7 @@
 				<span class="thread-dot" aria-hidden="true"></span>
 				<div class="thread-meta">
 					<div class="thread-title">{thread.title || 'Untitled'}</div>
-					{#if appState.showPrices}
+					{#if appState.settings.showPrices}
 						<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
 					{/if}
 				</div>
@@ -56,7 +56,7 @@
 	<div class="status">
 		<span class="dot" class:connected={appState.connected}></span>
 		<span class="status-text">{appState.connected ? 'connected' : 'reconnecting…'}</span>
-		<button class="icon-btn settings-btn" onclick={() => appState.toggleSettings()} title="Settings">
+		<button class="icon-btn settings-btn" onclick={() => appState.settings.toggle()} title="Settings">
 			<Settings size={15} />
 		</button>
 	</div>

@@ -125,20 +125,20 @@
 
 			{#if !turn.streaming}
 				<div class="turn-footer">
-					{#if appState.showPrices && turn.costUsd !== undefined}
+					{#if appState.settings.showPrices && turn.costUsd !== undefined}
 						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
 					{/if}
 					<button
 						class="icon-btn"
 						onclick={() => appState.readAloud(index)}
-						title={appState.speakingIndex === index
-							? appState.isPlaying
+						title={appState.audio.speakingIndex === index
+							? appState.audio.isPlaying
 								? 'Stop'
 								: 'Loading…'
 							: 'Read aloud'}
 					>
-						{#if appState.speakingIndex === index}
-							{#if appState.isPlaying}
+						{#if appState.audio.speakingIndex === index}
+							{#if appState.audio.isPlaying}
 								<Square size={13} fill="currentColor" />
 							{:else}
 								<Loader2 size={13} class="spin" />

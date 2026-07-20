@@ -7,14 +7,14 @@
 	let updateLog = $state('');
 
 	function close() {
-		appState.settingsOpen = false;
+		appState.settings.open = false;
 	}
 
 	async function handlePushUpdate() {
 		updateState = 'updating';
 		updateLog = '';
 		try {
-			const result = await appState.pushUpdate();
+			const result = await appState.settings.pushUpdate();
 			updateLog = result.log ?? '';
 			if (!result.success) {
 				updateState = 'error';
@@ -72,14 +72,14 @@
 				<span>Theme</span>
 				<div class="theme-toggle">
 					<button
-						class:active={appState.theme === 'dark'}
-						onclick={() => appState.setTheme('dark')}
+						class:active={appState.settings.theme === 'dark'}
+						onclick={() => appState.settings.setTheme('dark')}
 					>
 						<Moon size={14} /> Dark
 					</button>
 					<button
-						class:active={appState.theme === 'light'}
-						onclick={() => appState.setTheme('light')}
+						class:active={appState.settings.theme === 'light'}
+						onclick={() => appState.settings.setTheme('light')}
 					>
 						<Sun size={14} /> Light
 					</button>
@@ -91,8 +91,8 @@
 				<label class="switch">
 					<input
 						type="checkbox"
-						checked={appState.showPrices}
-						onchange={(e) => appState.setShowPrices(e.currentTarget.checked)}
+						checked={appState.settings.showPrices}
+						onchange={(e) => appState.settings.setShowPrices(e.currentTarget.checked)}
 					/>
 					<span class="slider"></span>
 				</label>
@@ -104,8 +104,8 @@
 			<div class="row">
 				<span>Default model</span>
 				<select
-					value={appState.defaultModel}
-					onchange={(e) => appState.setDefaultModel(e.currentTarget.value)}
+					value={appState.settings.defaultModel}
+					onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
 				>
 					{#each appState.models as model (model.id)}
 						<option value={model.id}>{model.name}</option>
