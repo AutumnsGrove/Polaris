@@ -50,7 +50,7 @@ context_window_tokens: 100000
 # agentic models routinely use 5-8 calls on a real multi-part question.
 max_agent_turns: 50
 
-default_model: "mimo-pro"
+default_model: "deepseek"
 
 # Optional: override per-model settings from the registry (models/models.go).
 # The available models are defined in code and deployed with the binary —
