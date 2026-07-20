@@ -22,6 +22,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := updater.Run(repoPath)
 	if err != nil {
+		s.db.LogEvent("", "error", "update", "self-update build failed", map[string]interface{}{
+			"err": err.Error(), "pull_output": result.PullOutput, "build_output": result.BuildOutput,
+		})
 		writeJSON(w, map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
@@ -33,6 +36,10 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	cfg := s.liveConfig()
 	mgr, mgrErr := procmgr.New(cfg.Service.Label)
 	restarting := mgrErr == nil && mgr.IsManaged()
+
+	s.db.LogEvent("", "info", "update", "self-update built successfully", map[string]interface{}{
+		"pull_output": result.PullOutput, "restarting": restarting,
+	})
 
 	writeJSON(w, map[string]interface{}{
 		"success":    true,
@@ -48,6 +55,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(300 * time.Millisecond) // give the response time to reach the client
 			if err := mgr.Restart(); err != nil {
 				log.Error("self-update restart failed", "err", err)
+				s.db.LogEvent("", "error", "update", "self-update restart failed", map[string]interface{}{"err": err.Error()})
 			}
 		}()
 	}

@@ -38,6 +38,9 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	result, err := s.stt.Transcribe(body, format)
 	if err != nil {
 		log.Warn("transcription failed", "err", err)
+		// No thread_id yet — transcription happens before the message it
+		// becomes is ever sent, so this can only be a global event.
+		s.db.LogEvent("", "warn", "voice.transcribe", "transcription failed", map[string]interface{}{"err": err.Error(), "format": format})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -66,6 +69,7 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 	audio, err := s.tts.Speak(req.Text)
 	if err != nil {
 		log.Warn("TTS failed", "err", err)
+		s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "TTS failed", map[string]interface{}{"err": err.Error()})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -74,6 +78,7 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 	if req.ThreadID != "" {
 		if err := s.db.AddCost(req.ThreadID, cost); err != nil {
 			log.Warn("failed to record TTS cost", "err", err)
+			s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "recording TTS cost failed", map[string]interface{}{"err": err.Error()})
 		}
 	}
 

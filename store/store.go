@@ -65,6 +65,27 @@ CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+-- events is the structured, queryable audit trail described in events.go:
+-- every tool call/result, turn start/finish/failure, compaction, config
+-- reload, and self-update, persisted here (not just to the log files) so
+-- there's durable evidence of what happened even if the process crashed
+-- mid-turn or the log directory was never checked.
+CREATE TABLE IF NOT EXISTS events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- thread_id is NULL for events with no single thread to attach to
+	-- (startup, self-update, a config reload failure). NULL passes SQLite's
+	-- foreign-key check regardless of the referenced table's contents.
+	thread_id TEXT REFERENCES threads(id) ON DELETE CASCADE,
+	level     TEXT NOT NULL, -- "info" | "warn" | "error"
+	source    TEXT NOT NULL, -- e.g. "turn", "tool.web_search", "compaction", "update"
+	message   TEXT NOT NULL,
+	data      TEXT NOT NULL DEFAULT '{}', -- JSON-encoded structured detail (args, error, cost, etc.)
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_thread ON events(thread_id);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 `
 
 // migrations adds columns to a threads table created before they existed.

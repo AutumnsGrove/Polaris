@@ -19,6 +19,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Warn("websocket upgrade failed", "err", err)
+		s.db.LogEvent("", "warn", "ws", "websocket upgrade failed", map[string]interface{}{"err": err.Error()})
 		return
 	}
 	defer conn.Close()

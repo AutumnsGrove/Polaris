@@ -66,6 +66,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
+	s.mux.HandleFunc("GET /api/threads/{id}/events", s.handleThreadEvents)
+	s.mux.HandleFunc("GET /api/events", s.handleRecentEvents)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
 	s.mux.HandleFunc("POST /api/speak", s.handleSpeak)
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
@@ -97,6 +99,10 @@ func (s *Server) routes(staticFS fs.FS) {
 func (s *Server) liveConfig() *config.Config {
 	if fresh, err := config.Load(s.cfgPath); err != nil {
 		log.Warn("config reload failed, using last known config", "err", err)
+		// Not thread-scoped — a bad edit to config.yaml affects every
+		// thread going forward, so it belongs in the global event log
+		// rather than attached to whichever request happened to trigger it.
+		s.db.LogEvent("", "error", "config", "config reload failed, using last known config", map[string]interface{}{"err": err.Error()})
 	} else {
 		s.cfgMu.Lock()
 		s.cfg = fresh

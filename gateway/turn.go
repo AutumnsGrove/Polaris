@@ -27,6 +27,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// (no branching history) before persisting the new/unchanged content.
 	if msg.EditFromID != 0 {
 		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
+			s.db.LogEvent(threadID, "error", "turn", "deleting messages for edit/retry failed", map[string]interface{}{"err": err.Error()})
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
 		}
@@ -50,6 +51,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			title = title[:80] + "…"
 		}
 		if err := s.db.CreateThread(threadID, title, modelCfg.ID); err != nil {
+			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()})
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
@@ -57,6 +59,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	history, err := s.loadHistory(threadID)
 	if err != nil {
+		s.db.LogEvent(threadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()})
 		send(ServerEvent{Type: "error", Message: err.Error()})
 		return
 	}
@@ -68,11 +71,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// message originated from a voice memo.
 	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD)
 	if err != nil {
+		s.db.LogEvent(threadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()})
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
 	}
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
+	s.db.LogEvent(threadID, "info", "turn", "turn started", map[string]interface{}{
+		"model":         modelCfg.ID,
+		"is_new_thread": isNewThread,
+		"voice_mode":    msg.VoiceMode,
+		"is_retry":      msg.EditFromID != 0,
+	})
+
+	// emit both streams the event to the browser (send) and, for the
+	// subset worth keeping as durable evidence, persists it to the events
+	// table — "token"/"reasoning" are deliberately excluded: they arrive
+	// as dozens-to-hundreds of small chunks per turn, and the assembled
+	// final answer is already persisted in full as the assistant message.
 	emit := func(eventType string, payload map[string]interface{}) {
 		evt := ServerEvent{Type: eventType, ThreadID: threadID}
 		if v, ok := payload["content"].(string); ok {
@@ -91,6 +107,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			evt.Citations = v
 		}
 		send(evt)
+		s.logTurnEvent(threadID, eventType, evt)
 	}
 
 	agentCtx := &tools.Context{
@@ -105,6 +122,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
 	if err != nil {
+		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID})
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}
@@ -118,6 +136,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if ctx.Err() == nil && result.Answer != "" {
 		if sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer); err != nil {
 			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
+			s.db.LogEvent(threadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()})
 		} else {
 			suggestions = sug
 			result.CostUSD += sugCost
@@ -129,10 +148,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD)
 	if err != nil {
 		log.Warn("failed to persist assistant message", "err", err)
+		s.db.LogEvent(threadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()})
 	}
 
 	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
 		log.Warn("failed to record context tokens", "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()})
 	}
 
 	// Auto-compact once this thread crosses the configured threshold: the
@@ -144,9 +165,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if result.ContextTokens >= cfg.ContextWindowTokens && assistantMsgID != 0 {
 		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
+			s.db.LogEvent(threadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()})
 		} else {
 			contextTokens = estimateTokens(summary)
 			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
+			s.db.LogEvent(threadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
+				"through_message_id": assistantMsgID,
+				"cost_usd":           compactCost,
+				"summary":            summary,
+			})
 			result.CostUSD += compactCost
 		}
 	}
@@ -155,15 +182,46 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// spend plus any STT cost from a voice memo, plus compaction's own
 	// cost if it just ran, plus follow-up suggestions — all persisted
 	// above, so the frontend's running total should reflect all of them.
+	totalCost := result.CostUSD + msg.SttCostUSD
+	s.db.LogEvent(threadID, "info", "turn", "turn completed", map[string]interface{}{
+		"model":          modelCfg.ID,
+		"cost_usd":       totalCost,
+		"context_tokens": contextTokens,
+		"citations":      len(result.Citations),
+		"stopped":        ctx.Err() != nil,
+	})
+
 	send(ServerEvent{
 		Type:          "done",
 		ThreadID:      threadID,
 		UserMessageID: userMsgID,
 		Citations:     result.Citations,
-		CostUSD:       result.CostUSD + msg.SttCostUSD,
+		CostUSD:       totalCost,
 		ContextTokens: contextTokens,
 		Suggestions:   suggestions,
 	})
+}
+
+// logTurnEvent persists the subset of streamed turn events worth keeping
+// as durable evidence — thinking steps and tool calls/results, so "what
+// happened during this turn" survives even if the process crashed before
+// the turn finished normally. Errors surfaced mid-stream (a tool
+// dispatch failure, still wrapped as a normal "tool_result" whose result
+// string starts with "error:") are logged at warn instead of info so they
+// stand out when scanning a thread's event history.
+func (s *Server) logTurnEvent(threadID, eventType string, evt ServerEvent) {
+	switch eventType {
+	case "thinking":
+		s.db.LogEvent(threadID, "info", "turn", "thinking", map[string]interface{}{"content": evt.Content})
+	case "tool_call":
+		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args})
+	case "tool_result":
+		level := "info"
+		if strings.HasPrefix(evt.Result, "error:") {
+			level = "warn"
+		}
+		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result})
+	}
 }
 
 // suggestionListPrefix strips list-style prefixes ("1. ", "- ", "• ") the
