@@ -11,7 +11,10 @@ function safeParseJSON<T>(json: string): T[] {
 	}
 }
 
-class AppState {
+// Exported (not just the singleton below) so tests can construct fresh,
+// isolated instances instead of sharing the one live during a real
+// session.
+export class AppState {
 	turns = $state<ChatTurn[]>([]);
 	threads = $state<Thread[]>([]);
 	models = $state<ModelOption[]>([]);

@@ -33,6 +33,13 @@ type nominatimResult struct {
 // coordPattern matches raw coordinates like "40.7128, -74.0060".
 var coordPattern = regexp.MustCompile(`^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$`)
 
+// nominatimBaseURL is a var (not a const) so tests can point it at a
+// fake server instead of hitting the real, rate-limited Nominatim
+// service — Geocode has no client struct to inject a baseURL into the
+// way FoursquareClient/SearXNGClient/llm.Client do, since it's a bare
+// function with no per-call configuration otherwise.
+var nominatimBaseURL = "https://nominatim.openstreetmap.org"
+
 // Geocode converts a text location into coordinates: raw "lat, lon" pairs
 // are parsed directly (no API call); everything else goes through
 // Nominatim. Returns nil (no error) if the query is empty or unresolvable.
@@ -50,8 +57,8 @@ func Geocode(ctx context.Context, query string) (*GeoResult, error) {
 		}
 	}
 
-	endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=1",
-		url.QueryEscape(query))
+	endpoint := fmt.Sprintf("%s/search?q=%s&format=json&limit=1",
+		nominatimBaseURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
