@@ -21,6 +21,20 @@ import (
 
 var log = logger.WithPrefix("llm")
 
+// ChatClient is the subset of *Client that callers (agent.Run,
+// tools.web_read's optional filter pass, gateway's compaction/suggestion
+// calls) actually depend on. Extracted as an interface so tests can
+// substitute a fake instead of a real *Client — see llm/llmtest for one.
+type ChatClient interface {
+	// ChatCompletionWithTools sends a conversation with tool definitions,
+	// tool_choice "auto" — see *Client's doc comment for the full contract.
+	ChatCompletionWithTools(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error)
+	// ChatCompletionStreaming sends a plain (no-tools) conversation.
+	ChatCompletionStreaming(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error)
+}
+
+var _ ChatClient = (*Client)(nil)
+
 // Client talks to an OpenAI-compatible chat completions API.
 type Client struct {
 	baseURL     string

@@ -26,7 +26,7 @@ type Context struct {
 
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
-	LLM        *llm.Client              // the model selected for this thread; reused by web_read's optional filter pass
+	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
 
 	// DefaultLocation is geocoded by nearby_search when a query omits an
 	// explicit location. Empty means "no fallback — location is required."

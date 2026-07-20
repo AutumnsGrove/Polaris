@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -71,6 +72,20 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
 			defer cancel()
+			// net/http recovers a panic in a handler running synchronously
+			// under ServeHTTP, but this goroutine runs outside that call
+			// stack — an unrecovered panic here (a bug three tool calls
+			// deep, say) would otherwise crash the entire process, taking
+			// down every other in-flight thread with it. Turn it into a
+			// normal error event instead: the user sees a failed turn, not
+			// a dead server.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic in turn goroutine", "thread", msg.ThreadID, "panic", r)
+					s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)})
+					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
+				}
+			}()
 			s.handleTurn(ctx, msg, send)
 			cancelMu.Lock()
 			cancelTurn = nil

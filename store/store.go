@@ -101,7 +101,14 @@ var migrations = []string{
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+	// _busy_timeout: SQLite allows only one writer at a time; without this,
+	// a second concurrent writer (routine now, since every turn does
+	// several writes — the message, context tokens, and multiple event-log
+	// inserts — across goroutines) gets an immediate SQLITE_BUSY error
+	// instead of waiting its turn. _journal_mode=WAL lets readers proceed
+	// without blocking on a writer at all, which is what actually makes
+	// the busy_timeout the common case rather than the exception.
+	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -202,7 +209,7 @@ func (s *Store) DeleteThread(id string) error {
 // against an existing assistant message.
 func (s *Store) AddCost(threadID string, costUSD float64) error {
 	_, err := s.db.Exec(
-		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		costUSD, threadID,
 	)
 	return err
@@ -227,7 +234,7 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 		return 0, err
 	}
 	if _, err := tx.Exec(
-		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		costUSD, threadID,
 	); err != nil {
 		return 0, err
@@ -259,7 +266,7 @@ func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 	if _, err := tx.Exec(
 		`UPDATE threads SET cost_usd = (
 			SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE thread_id = ?
-		), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		), updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		threadID, threadID,
 	); err != nil {
 		return err
@@ -285,7 +292,7 @@ func (s *Store) SetContextTokens(threadID string, tokens int) error {
 func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
 	_, err := s.db.Exec(
 		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
-		 context_tokens = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		 context_tokens = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		summary, throughID, cost, contextTokensEstimate, threadID,
 	)
 	return err

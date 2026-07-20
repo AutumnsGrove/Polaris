@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -52,6 +53,12 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic in self-update restart goroutine", "panic", r)
+					s.db.LogEvent("", "error", "update", "panic during self-update restart", map[string]interface{}{"panic": fmt.Sprint(r)})
+				}
+			}()
 			time.Sleep(300 * time.Millisecond) // give the response time to reach the client
 			if err := mgr.Restart(); err != nil {
 				log.Error("self-update restart failed", "err", err)

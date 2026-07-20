@@ -289,7 +289,7 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 // via one extra (non-streamed, not shown as a normal answer) LLM call,
 // and records that summary so loadHistory substitutes it for the raw
 // messages it covers on every subsequent turn.
-func (s *Server) compactThread(client *llm.Client, threadID string, throughID int64) (summary string, cost float64, err error) {
+func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID int64) (summary string, cost float64, err error) {
 	history, err := s.loadHistory(threadID)
 	if err != nil {
 		return "", 0, err
