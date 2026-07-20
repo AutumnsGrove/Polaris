@@ -40,8 +40,8 @@
 	// Context-usage %, next to thread cost — same threshold the backend
 	// auto-compacts at, so this doubles as a warning before that happens.
 	let contextPercent = $derived(
-		appState.contextWindowTokens > 0
-			? Math.min(100, Math.round((appState.contextTokens / appState.contextWindowTokens) * 100))
+		appState.settings.contextWindowTokens > 0
+			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
 			: 0
 	);
 </script>
@@ -101,7 +101,7 @@
 				<span class="context-value">{contextPercent}%</span>
 			</div>
 		{/if}
-		{#if appState.showPrices}
+		{#if appState.settings.showPrices}
 			<div class="cost" title="Thread cost">
 				<Coins size={12} />
 				<span class="label">Thread cost:</span>

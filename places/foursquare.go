@@ -18,8 +18,9 @@ import (
 )
 
 type FoursquareClient struct {
-	apiKey string
-	http   *http.Client
+	apiKey  string
+	baseURL string
+	http    *http.Client
 }
 
 // NewFoursquareClient returns nil if apiKey is empty — callers check for
@@ -28,7 +29,7 @@ func NewFoursquareClient(apiKey string) *FoursquareClient {
 	if apiKey == "" {
 		return nil
 	}
-	return &FoursquareClient{apiKey: apiKey, http: &http.Client{Timeout: 15 * time.Second}}
+	return &FoursquareClient{apiKey: apiKey, baseURL: foursquareBaseURL, http: &http.Client{Timeout: 15 * time.Second}}
 }
 
 const foursquareBaseURL = "https://places-api.foursquare.com"
@@ -83,7 +84,7 @@ func (c *FoursquareClient) SearchNearby(ctx context.Context, lat, lon float64, q
 	}
 
 	endpoint := fmt.Sprintf("%s/places/search?ll=%f,%f&radius=%d&limit=%d&sort=DISTANCE",
-		foursquareBaseURL, lat, lon, radiusM, limit)
+		c.baseURL, lat, lon, radiusM, limit)
 	if query != "" {
 		endpoint += "&query=" + url.QueryEscape(query)
 	}

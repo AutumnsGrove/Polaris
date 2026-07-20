@@ -2,40 +2,36 @@
 // frontend talks to: a REST surface for model/thread listing, and a
 // single /ws endpoint that drives one agent turn per client message,
 // streaming think/tool_call/tool_result/token/done events as they happen.
+//
+// Handlers live grouped by resource in separate files (models.go,
+// settings.go, threads.go, voice_handlers.go, ws.go, turn.go) — this file
+// is just the Server type, wiring, and the live-config helper they all
+// share.
 package gateway
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
-
-	"polaris/agent"
 	"polaris/config"
-	"polaris/llm"
 	"polaris/logger"
 	"polaris/places"
-	"polaris/procmgr"
 	"polaris/search"
 	"polaris/store"
-	"polaris/tools"
-	"polaris/updater"
 	"polaris/voice"
 )
 
 var log = logger.WithPrefix("gateway")
 
 type Server struct {
-	cfg        *config.Config
+	// cfg is the last config.yaml load, refreshed on demand by liveConfig
+	// rather than read once at startup — see liveConfig for why.
+	cfg     *config.Config
+	cfgPath string
+	cfgMu   sync.RWMutex
+
 	db         *store.Store
 	searxng    *search.SearXNGClient
 	foursquare *places.FoursquareClient // nil if not configured
@@ -44,12 +40,14 @@ type Server struct {
 	mux        *http.ServeMux
 }
 
-// New builds the server. staticFS is the embedded SvelteKit build (see
+// New builds the server. cfgPath is kept around so liveConfig can re-read
+// config.yaml on demand; staticFS is the embedded SvelteKit build (see
 // web/embed.go) — pass nil to run API/WS-only, which is what local dev
 // does while `vite dev` serves the frontend and proxies through instead.
-func New(cfg *config.Config, db *store.Store, staticFS fs.FS) *Server {
+func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *Server {
 	s := &Server{
 		cfg:        cfg,
+		cfgPath:    cfgPath,
 		db:         db,
 		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
@@ -67,7 +65,10 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
+	s.mux.HandleFunc("PATCH /api/threads/{id}", s.handleRenameThread)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
+	s.mux.HandleFunc("GET /api/threads/{id}/events", s.handleThreadEvents)
+	s.mux.HandleFunc("GET /api/events", s.handleRecentEvents)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
 	s.mux.HandleFunc("POST /api/speak", s.handleSpeak)
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
@@ -78,6 +79,49 @@ func (s *Server) routes(staticFS fs.FS) {
 	if staticFS != nil {
 		s.mux.Handle("/", spaHandler(staticFS))
 	}
+}
+
+// liveConfig re-reads config.yaml from disk before returning it, so
+// day-to-day edits — adding a model, raising context_window_tokens —
+// take effect on the very next request instead of requiring a restart.
+// The file is a few KB of YAML, so re-parsing it per request is cheap
+// relative to the LLM call every one of these handlers is either serving
+// or about to kick off.
+//
+// Fields that construct long-lived clients at startup (OpenRouter creds
+// baked into s.searxng/s.foursquare/s.stt/s.tts, the listen address) are
+// NOT picked up by this — those clients would need to be rebuilt, which
+// is what a restart is for. Everything else (models, default_model,
+// context_window_tokens, max_agent_turns, default_location, service
+// label) is read fresh via this on every request that needs it.
+//
+// Falls back to the last good config if the file is momentarily
+// unreadable or invalid, rather than failing the request outright.
+func (s *Server) liveConfig() *config.Config {
+	if fresh, err := config.Load(s.cfgPath); err != nil {
+		log.Warn("config reload failed, using last known config", "err", err)
+		// Not thread-scoped — a bad edit to config.yaml affects every
+		// thread going forward, so it belongs in the global event log
+		// rather than attached to whichever request happened to trigger it.
+		s.db.LogEvent("", "error", "config", "config reload failed, using last known config", map[string]interface{}{"err": err.Error()})
+	} else {
+		s.cfgMu.Lock()
+		s.cfg = fresh
+		s.cfgMu.Unlock()
+	}
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
+// effectiveDefaultModel is the settings-panel override if one's been set,
+// otherwise cfg's default_model. Settings panel changes take effect
+// immediately (no restart); config.yaml is the factory default.
+func (s *Server) effectiveDefaultModel(cfg *config.Config) string {
+	if v, err := s.db.GetSetting("default_model"); err == nil && v != "" {
+		return v
+	}
+	return cfg.DefaultModel
 }
 
 // spaHandler serves the embedded static build, falling back to
@@ -120,613 +164,3 @@ func spaHandler(staticFS fs.FS) http.Handler {
 		fileServer.ServeHTTP(w, r)
 	})
 }
-
-func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	type modelOut struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Default bool   `json:"default"`
-	}
-	defaultID := s.effectiveDefaultModel()
-	out := make([]modelOut, 0, len(s.cfg.Models))
-	for _, m := range s.cfg.Models {
-		out = append(out, modelOut{ID: m.ID, Name: m.Name, Default: m.ID == defaultID})
-	}
-	writeJSON(w, out)
-}
-
-// effectiveDefaultModel is the settings-panel override if one's been set,
-// otherwise config.yaml's default_model. Settings panel changes take
-// effect immediately (no restart); config.yaml is the factory default.
-func (s *Server) effectiveDefaultModel() string {
-	if v, err := s.db.GetSetting("default_model"); err == nil && v != "" {
-		return v
-	}
-	return s.cfg.DefaultModel
-}
-
-const (
-	settingTheme        = "theme"       // "dark" or "light"
-	settingShowPrices   = "show_prices" // "true" or "false"
-	settingDefaultModel = "default_model"
-)
-
-func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	all, err := s.db.AllSettings()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	theme := all[settingTheme]
-	if theme == "" {
-		theme = "dark"
-	}
-	showPrices := true
-	if v, ok := all[settingShowPrices]; ok {
-		showPrices = v == "true"
-	}
-
-	writeJSON(w, map[string]interface{}{
-		"theme":                 theme,
-		"show_prices":           showPrices,
-		"default_model":         s.effectiveDefaultModel(),
-		"context_window_tokens": s.cfg.ContextWindowTokens,
-	})
-}
-
-func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Theme        *string `json:"theme"`
-		ShowPrices   *bool   `json:"show_prices"`
-		DefaultModel *string `json:"default_model"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if req.Theme != nil {
-		if *req.Theme != "dark" && *req.Theme != "light" {
-			http.Error(w, "theme must be 'dark' or 'light'", http.StatusBadRequest)
-			return
-		}
-		if err := s.db.SetSetting(settingTheme, *req.Theme); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if req.ShowPrices != nil {
-		value := "false"
-		if *req.ShowPrices {
-			value = "true"
-		}
-		if err := s.db.SetSetting(settingShowPrices, value); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if req.DefaultModel != nil {
-		if s.cfg.ModelByID(*req.DefaultModel).ID != *req.DefaultModel {
-			http.Error(w, "unknown model id", http.StatusBadRequest)
-			return
-		}
-		if err := s.db.SetSetting(settingDefaultModel, *req.DefaultModel); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// handleUpdate runs the same git-pull-and-rebuild steps as `polaris
-// update`, then restarts the service — triggered from the settings
-// panel instead of an SSH session. The response is flushed to the
-// client *before* restarting: systemctl/launchctl kills this very
-// process, so the client needs its answer in hand first.
-func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	repoPath, err := updater.RepoPath()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	result, err := updater.Run(repoPath)
-	if err != nil {
-		writeJSON(w, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-			"log":     result.PullOutput + "\n" + result.BuildOutput,
-		})
-		return
-	}
-
-	mgr, mgrErr := procmgr.New(s.cfg.Service.Label)
-	restarting := mgrErr == nil && mgr.IsManaged()
-
-	writeJSON(w, map[string]interface{}{
-		"success":    true,
-		"log":        result.PullOutput + "\nbuild successful",
-		"restarting": restarting,
-	})
-
-	if restarting {
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
-		go func() {
-			time.Sleep(300 * time.Millisecond) // give the response time to reach the client
-			if err := mgr.Restart(); err != nil {
-				log.Error("self-update restart failed", "err", err)
-			}
-		}()
-	}
-}
-
-func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request) {
-	threads, err := s.db.ListThreads(100)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, threads)
-}
-
-func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	thread, err := s.db.GetThread(id)
-	if err != nil {
-		http.Error(w, "thread not found", http.StatusNotFound)
-		return
-	}
-	messages, err := s.db.GetMessages(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, struct {
-		*store.Thread
-		Messages []store.Message `json:"messages"`
-	}{thread, messages})
-}
-
-func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := s.db.DeleteThread(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// maxAudioBytes caps push-to-talk uploads at ~15MB — generous for a
-// voice memo (webm/opus at typical bitrates runs well under 1MB/minute),
-// tight enough to not let a stuck recording flood the server.
-const maxAudioBytes = 15 << 20
-
-// handleTranscribe accepts a raw audio body from the browser's
-// MediaRecorder (format given via ?format=webm, matching the blob's
-// mime type) and returns the transcribed text via OpenRouter Whisper.
-func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
-	format := r.URL.Query().Get("format")
-	if format == "" {
-		format = "webm"
-	}
-
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxAudioBytes+1))
-	if err != nil {
-		http.Error(w, "reading audio body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(body) > maxAudioBytes {
-		http.Error(w, "audio too large", http.StatusRequestEntityTooLarge)
-		return
-	}
-	if len(body) == 0 {
-		http.Error(w, "empty audio body", http.StatusBadRequest)
-		return
-	}
-
-	result, err := s.stt.Transcribe(body, format)
-	if err != nil {
-		log.Warn("transcription failed", "err", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	writeJSON(w, map[string]interface{}{"text": result.Text, "cost_usd": result.Cost})
-}
-
-// handleSpeak synthesizes text via Kokoro and returns raw audio bytes.
-// The cost (computed manually — this endpoint's response has no JSON
-// usage field to read it from) is folded into the thread's running total
-// via the X-Tts-Cost-Usd response header, since the body is audio, not JSON.
-func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Text     string `json:"text"`
-		ThreadID string `json:"thread_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if req.Text == "" {
-		http.Error(w, "text is required", http.StatusBadRequest)
-		return
-	}
-
-	audio, err := s.tts.Speak(req.Text)
-	if err != nil {
-		log.Warn("TTS failed", "err", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	cost := s.tts.EstimateCost(req.Text)
-	if req.ThreadID != "" {
-		if err := s.db.AddCost(req.ThreadID, cost); err != nil {
-			log.Warn("failed to record TTS cost", "err", err)
-		}
-	}
-
-	w.Header().Set("Content-Type", s.tts.ContentType())
-	w.Header().Set("X-Tts-Cost-Usd", fmt.Sprintf("%.6f", cost))
-	w.Write(audio)
-}
-
-var upgrader = websocket.Upgrader{
-	// Tailscale-only deployment (like every other service in this
-	// homelab) — no public exposure, so a permissive origin check is
-	// fine here rather than maintaining an allowlist.
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
-func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Warn("websocket upgrade failed", "err", err)
-		return
-	}
-	defer conn.Close()
-
-	// gorilla/websocket connections aren't safe for concurrent writes;
-	// emit() is called synchronously from the agent loop on this same
-	// goroutine, so a mutex is defensive but cheap insurance against
-	// future concurrent use (e.g. a heartbeat goroutine).
-	var writeMu sync.Mutex
-	send := func(evt ServerEvent) {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		_ = conn.WriteJSON(evt)
-	}
-
-	// Only one turn runs at a time per connection (the frontend disables
-	// the composer while busy), so a single cancel slot is enough to
-	// support "stop". Each turn now runs in its own goroutine so this read
-	// loop can keep pulling frames off the wire concurrently — otherwise a
-	// "stop" message sent mid-turn would just sit unread until the turn
-	// finished on its own, defeating the point.
-	var cancelMu sync.Mutex
-	var cancelTurn context.CancelFunc
-
-	for {
-		var msg ClientMessage
-		if err := conn.ReadJSON(&msg); err != nil {
-			cancelMu.Lock()
-			if cancelTurn != nil {
-				cancelTurn()
-			}
-			cancelMu.Unlock()
-			return // client disconnected or sent garbage
-		}
-
-		if msg.Type == "stop" {
-			cancelMu.Lock()
-			if cancelTurn != nil {
-				cancelTurn()
-			}
-			cancelMu.Unlock()
-			continue
-		}
-
-		turnCtx, cancel := context.WithCancel(context.Background())
-		cancelMu.Lock()
-		cancelTurn = cancel
-		cancelMu.Unlock()
-
-		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
-			defer cancel()
-			s.handleTurn(ctx, msg, send)
-			cancelMu.Lock()
-			cancelTurn = nil
-			cancelMu.Unlock()
-		}(turnCtx, cancel, msg)
-	}
-}
-
-func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(ServerEvent)) {
-	threadID := msg.ThreadID
-	isNewThread := threadID == ""
-	if isNewThread {
-		threadID = uuid.NewString()
-	}
-
-	// Retry/edit: wipe the message being replaced and everything after it
-	// (no branching history) before persisting the new/unchanged content.
-	if msg.EditFromID != 0 {
-		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
-			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
-			return
-		}
-	}
-
-	requestedModel := msg.Model
-	if requestedModel == "" {
-		requestedModel = s.effectiveDefaultModel()
-	}
-	modelCfg := s.cfg.ModelByID(requestedModel)
-	client := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
-		WithSessionID(threadID) // sticky routing — same provider endpoint across the thread, for cache hits
-	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
-		client = client.WithReasoning(&llm.ReasoningParams{Enabled: true, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
-	}
-
-	if isNewThread {
-		title := msg.Content
-		if len(title) > 80 {
-			title = title[:80] + "…"
-		}
-		if err := s.db.CreateThread(threadID, title, modelCfg.ID); err != nil {
-			send(ServerEvent{Type: "error", Message: err.Error()})
-			return
-		}
-	}
-
-	history, err := s.loadHistory(threadID)
-	if err != nil {
-		send(ServerEvent{Type: "error", Message: err.Error()})
-		return
-	}
-
-	// Persist the user message before running the agent, not after — so
-	// it (and its ID, needed for retry/edit) survives even if the turn
-	// below errors out. Previously a failed turn left no record at all.
-	// SttCostUSD folds in push-to-talk transcription cost, if this
-	// message originated from a voice memo.
-	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD)
-	if err != nil {
-		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
-		return
-	}
-	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
-
-	emit := func(eventType string, payload map[string]interface{}) {
-		evt := ServerEvent{Type: eventType, ThreadID: threadID}
-		if v, ok := payload["content"].(string); ok {
-			evt.Content = v
-		}
-		if v, ok := payload["tool"].(string); ok {
-			evt.Tool = v
-		}
-		if v, ok := payload["args"].(map[string]interface{}); ok {
-			evt.Args = v
-		}
-		if v, ok := payload["result"].(string); ok {
-			evt.Result = v
-		}
-		if v, ok := payload["citations"].([]tools.Citation); ok {
-			evt.Citations = v
-		}
-		send(evt)
-	}
-
-	agentCtx := &tools.Context{
-		SearXNG:         s.searxng,
-		Foursquare:      s.foursquare,
-		DefaultLocation: s.cfg.DefaultLocation,
-		VoiceMode:       msg.VoiceMode,
-		LLM:             client,
-		Emit:            emit,
-		MaxTurns:        s.cfg.MaxAgentTurns,
-	}
-
-	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
-	if err != nil {
-		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
-		return
-	}
-
-	// Follow-up suggestions, Perplexity-style — generated before persisting
-	// so they're saved alongside the answer, same as citations, instead of
-	// living only in this turn's live event stream. Skipped on a stopped
-	// generation (ctx.Err() != nil) since suggesting where to go next from
-	// an answer the user just cut off isn't useful.
-	var suggestions []string
-	if ctx.Err() == nil && result.Answer != "" {
-		if sug, sugCost, err := s.generateSuggestions(modelCfg, msg.Content, result.Answer); err != nil {
-			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-		} else {
-			suggestions = sug
-			result.CostUSD += sugCost
-		}
-	}
-	suggestionsJSON, _ := json.Marshal(suggestions)
-
-	citationsJSON, _ := json.Marshal(result.Citations)
-	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD)
-	if err != nil {
-		log.Warn("failed to persist assistant message", "err", err)
-	}
-
-	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
-		log.Warn("failed to record context tokens", "err", err)
-	}
-
-	// Auto-compact once this thread crosses the configured threshold: the
-	// model summarizes everything covered so far, and future turns build
-	// history from that summary instead of the full raw text. The
-	// messages table itself is untouched — only what gets sent back to
-	// the LLM shrinks, the visible transcript stays the true record.
-	contextTokens := result.ContextTokens
-	if result.ContextTokens >= s.cfg.ContextWindowTokens && assistantMsgID != 0 {
-		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
-			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
-		} else {
-			contextTokens = estimateTokens(summary)
-			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
-			result.CostUSD += compactCost
-		}
-	}
-
-	// Total cost added to the thread this turn: the agent's LLM/tool
-	// spend plus any STT cost from a voice memo, plus compaction's own
-	// cost if it just ran, plus follow-up suggestions — all persisted
-	// above, so the frontend's running total should reflect all of them.
-	send(ServerEvent{
-		Type:          "done",
-		ThreadID:      threadID,
-		UserMessageID: userMsgID,
-		Citations:     result.Citations,
-		CostUSD:       result.CostUSD + msg.SttCostUSD,
-		ContextTokens: contextTokens,
-		Suggestions:   suggestions,
-	})
-}
-
-// suggestionListPrefix strips list-style prefixes ("1. ", "- ", "• ") the
-// model sometimes adds despite being told not to — deliberately narrow
-// (requires the punctuation/space right after digits) so it never eats a
-// genuine leading number in a question, e.g. "2024 election results?".
-var suggestionListPrefix = regexp.MustCompile(`^(?:[-*•]\s+|\d+[.)]\s+)`)
-
-// maxSuggestionLen caps how long a parsed line can be and still count as
-// a follow-up question — a real one reads like "Which company has built
-// the most transformer models so far?" (well under this), not a paragraph.
-// Belt-and-suspenders against ever showing a runaway response as a chip
-// again: the tight MaxTokens below should already prevent it, but this
-// means a formatting slip can't leak a full answer into the UI either.
-const maxSuggestionLen = 140
-
-// generateSuggestions asks for up to 3 short follow-up questions based on
-// the exchange that just finished — one extra cheap, non-streamed LLM
-// call, same pattern as compactThread below. Only the last exchange is
-// given as context (not the full thread history): follow-ups are about
-// "where could this conversation go next", not a function of everything
-// said earlier.
-//
-// Deliberately builds its own client from modelCfg rather than reusing the
-// thread's tool-capable client — a fully separate call with no tools
-// offered and a tight token cap, so it can never wander into producing a
-// real answer instead of short questions. Still pins the provider the
-// same way the main client does: leaving that off routes to whatever
-// OpenRouter picks by default, which can land on a degraded/no-reasoning
-// endpoint for the same model slug and come back with near-empty content.
-func (s *Server) generateSuggestions(modelCfg config.ModelConfig, userMessage, answer string) ([]string, float64, error) {
-	sugClient := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
-
-	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Based on this question-and-answer exchange, suggest exactly 3 short, " +
-			"natural follow-up questions the user might ask next. One per line, no numbering, no quotes, " +
-			"no preamble or extra commentary. Each question must be a single short line — never a paragraph, " +
-			"never an actual answer to anything."},
-		{Role: "user", Content: userMessage},
-		{Role: "assistant", Content: answer},
-	}
-
-	resp, err := sugClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var suggestions []string
-	for _, line := range strings.Split(resp.Content, "\n") {
-		line = suggestionListPrefix.ReplaceAllString(strings.TrimSpace(line), "")
-		line = strings.Trim(line, "\"")
-		if line == "" || len(line) > maxSuggestionLen {
-			continue
-		}
-		suggestions = append(suggestions, line)
-		if len(suggestions) == 3 {
-			break
-		}
-	}
-	return suggestions, resp.CostUSD, nil
-}
-
-// compactThread summarizes every message up to and including throughID,
-// via one extra (non-streamed, not shown as a normal answer) LLM call,
-// and records that summary so loadHistory substitutes it for the raw
-// messages it covers on every subsequent turn.
-func (s *Server) compactThread(client *llm.Client, threadID string, throughID int64) (summary string, cost float64, err error) {
-	history, err := s.loadHistory(threadID)
-	if err != nil {
-		return "", 0, err
-	}
-	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Summarize the following conversation concisely but completely: preserve " +
-			"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
-			"fully replace the conversation history, so omitting something means it's gone for good. Write " +
-			"it as plain prose, not a transcript."},
-	}
-	prompt = append(prompt, history...)
-
-	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
-	if err != nil {
-		return "", 0, err
-	}
-
-	if err := s.db.CompactThread(threadID, resp.Content, throughID, resp.CostUSD, estimateTokens(resp.Content)); err != nil {
-		return "", 0, err
-	}
-	return resp.Content, resp.CostUSD, nil
-}
-
-// estimateTokens is a rough tokens-per-character heuristic (English text
-// averages ~4 chars/token) used only to seed context_tokens right after a
-// compaction, before the next real LLM call reports an actual count.
-func estimateTokens(s string) int {
-	return len(s) / 4
-}
-
-// loadHistory reconstructs prior turns as ChatMessage pairs so a
-// resumed/continued thread has full context. If the thread has been
-// auto-compacted, everything at or below compacted_through_id is replaced
-// by a single summary message instead of being sent in full.
-func (s *Server) loadHistory(threadID string) ([]llm.ChatMessage, error) {
-	thread, err := s.db.GetThread(threadID)
-	if err != nil {
-		return nil, err
-	}
-	msgs, err := s.db.GetMessages(threadID)
-	if err != nil {
-		return nil, err
-	}
-
-	history := make([]llm.ChatMessage, 0, len(msgs)+1)
-	if thread.CompactedSummary != "" {
-		history = append(history, llm.ChatMessage{
-			Role: "assistant",
-			Content: "(Summary of earlier conversation, compacted to save context — the full history " +
-				"is no longer available, only this summary)\n\n" + thread.CompactedSummary,
-		})
-	}
-	for _, m := range msgs {
-		if m.ID <= thread.CompactedThroughID {
-			continue // covered by the summary above
-		}
-		history = append(history, llm.ChatMessage{Role: m.Role, Content: m.Content})
-	}
-	return history, nil
-}
-
-func writeJSON(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func boolPtr(b bool) *bool { return &b }
-
-var _ = time.Second // reserved for future request timeouts

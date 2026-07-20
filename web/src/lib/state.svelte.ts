@@ -1,6 +1,7 @@
 import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation } from './types';
 import { AgentSocket } from './ws';
-import { synthesize } from './speech';
+import { AudioPlayer } from './audio.svelte';
+import { SettingsState } from './settings.svelte';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -10,7 +11,10 @@ function safeParseJSON<T>(json: string): T[] {
 	}
 }
 
-class AppState {
+// Exported (not just the singleton below) so tests can construct fresh,
+// isolated instances instead of sharing the one live during a real
+// session.
+export class AppState {
 	turns = $state<ChatTurn[]>([]);
 	threads = $state<Thread[]>([]);
 	models = $state<ModelOption[]>([]);
@@ -20,12 +24,11 @@ class AppState {
 	busy = $state(false);
 	totalCost = $state(0);
 
-	// Context-usage display, next to thread cost. contextWindowTokens is
-	// the auto-compaction threshold from config.yaml (loaded once via
-	// loadSettings); contextTokens is the current thread's last-known
-	// prompt+completion size, from the LLM's own usage numbers.
+	// contextTokens is the current thread's last-known prompt+completion
+	// size, from the LLM's own usage numbers — settings.contextWindowTokens
+	// (the auto-compaction threshold) is the denominator for the % shown
+	// next to it in +page.svelte.
 	contextTokens = $state(0);
-	contextWindowTokens = $state(100_000);
 
 	// Follow-up suggestions for the most recent answer — persisted on the
 	// last assistant message (see StoredMessage.suggestions), so openThread
@@ -38,20 +41,8 @@ class AppState {
 	// +layout.svelte sets the initial value from viewport width on mount.
 	sidebarOpen = $state(true);
 
-	settingsOpen = $state(false);
-	theme = $state<'dark' | 'light'>('dark');
-	showPrices = $state(true);
-	defaultModel = $state('');
-
-	// Per-turn read-aloud is manual (see readAloud below). speakingIndex is
-	// set the instant synthesis starts (fetching); isPlaying flips true
-	// only once audio actually starts playing — the button needs both to
-	// distinguish "loading" from "playing, click to stop" from "idle".
-	// A future full "voice mode" session (auto-speak every reply, a
-	// brief-answer prompt hint) can build on the same plumbing later.
-	speakingIndex = $state<number | null>(null);
-	isPlaying = $state(false);
-	private currentAudio: HTMLAudioElement | null = null;
+	settings = new SettingsState();
+	audio = new AudioPlayer();
 
 	// Identifies which thread + turn object an in-flight response belongs
 	// to — distinct from currentThreadId/turns, which reflect what's
@@ -123,55 +114,13 @@ class AppState {
 	}
 
 	// Manual per-message read-aloud, triggered from the speaker icon next
-	// to a turn's retry button. Clicking the turn that's already active
-	// (loading OR playing) stops it — a toggle, not just a one-way trigger.
+	// to a turn's retry button — delegates to AudioPlayer, which owns the
+	// playback state; this just supplies the turn data it needs and takes
+	// the resulting cost.
 	async readAloud(assistantTurnIndex: number) {
-		if (this.speakingIndex === assistantTurnIndex) {
-			this.stopReadAloud();
-			return;
-		}
-
-		const turn = this.turns[assistantTurnIndex];
-		if (!turn || turn.role !== 'assistant' || !turn.content) return;
-
-		this.stopReadAloud(); // only one read-aloud plays at a time
-		this.speakingIndex = assistantTurnIndex;
-
-		const result = await synthesize(turn.content, this.currentThreadId ?? undefined);
-		if (!result) {
-			if (this.speakingIndex === assistantTurnIndex) this.speakingIndex = null;
-			return;
-		}
-		// Stopped (or a different turn started) while we were still fetching.
-		if (this.speakingIndex !== assistantTurnIndex) return;
-
-		if (result.cost) this.totalCost += result.cost;
-		this.currentAudio = result.audio;
-		result.audio.onended = () => {
-			if (this.currentAudio === result.audio) {
-				this.currentAudio = null;
-				this.isPlaying = false;
-				this.speakingIndex = null;
-			}
-		};
-
-		try {
-			await result.audio.play();
-			this.isPlaying = true;
-		} catch (err) {
-			console.error('audio playback failed', err);
-			this.speakingIndex = null;
-		}
-	}
-
-	stopReadAloud() {
-		if (this.currentAudio) {
-			this.currentAudio.onended = null;
-			this.currentAudio.pause();
-			this.currentAudio = null;
-		}
-		this.isPlaying = false;
-		this.speakingIndex = null;
+		await this.audio.readAloud(this.turns, assistantTurnIndex, this.currentThreadId, (cost) => {
+			this.totalCost += cost;
+		});
 	}
 
 	async loadModels() {
@@ -179,58 +128,6 @@ class AppState {
 		this.models = (await res.json()) ?? [];
 		const def = this.models.find((m) => m.default);
 		this.selectedModel = def?.id ?? this.models[0]?.id ?? '';
-	}
-
-	async loadSettings() {
-		const res = await fetch('/api/settings');
-		if (!res.ok) return;
-		const data = await res.json();
-		this.theme = data.theme === 'light' ? 'light' : 'dark';
-		this.showPrices = data.show_prices ?? true;
-		this.defaultModel = data.default_model ?? '';
-		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
-		this.applyTheme();
-	}
-
-	private applyTheme() {
-		if (typeof document !== 'undefined') {
-			document.documentElement.setAttribute('data-theme', this.theme);
-		}
-	}
-
-	async setTheme(theme: 'dark' | 'light') {
-		this.theme = theme;
-		this.applyTheme();
-		await this.putSettings({ theme });
-	}
-
-	async setShowPrices(show: boolean) {
-		this.showPrices = show;
-		await this.putSettings({ show_prices: show });
-	}
-
-	async setDefaultModel(modelId: string) {
-		this.defaultModel = modelId;
-		await this.putSettings({ default_model: modelId });
-		await this.loadModels();
-	}
-
-	private async putSettings(body: Record<string, unknown>) {
-		await fetch('/api/settings', {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
-	}
-
-	toggleSettings() {
-		this.settingsOpen = !this.settingsOpen;
-	}
-
-	/** Runs the same git-pull-and-rebuild the CLI's `polaris update` does. */
-	async pushUpdate(): Promise<{ success: boolean; log: string; restarting?: boolean; error?: string }> {
-		const res = await fetch('/api/update', { method: 'POST' });
-		return res.json();
 	}
 
 	async loadThreads() {
@@ -246,13 +143,32 @@ class AppState {
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		const messages = data.messages ?? [];
-		this.turns = messages.map((m: any) => ({
+		let turns: ChatTurn[] = messages.map((m: any) => ({
 			role: m.role,
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			costUsd: m.cost_usd,
 			id: m.role === 'user' ? m.id : undefined
 		}));
+
+		// A turn is still streaming for this exact thread — the user
+		// navigated away mid-generation and came back. The fetch above only
+		// has what's persisted (the user's question; the assistant reply
+		// doesn't persist until the turn finishes), so without this the
+		// reopened thread would show a permanently "…" placeholder even
+		// after the real answer finishes server-side, since handleEvent
+		// would keep mutating pendingTurn — an object no longer part of
+		// whatever array openThread just replaced turns with. Splice the
+		// live pair back in (replacing the fetch's last message, which is
+		// that same in-flight user question) so it keeps updating live and
+		// resolves normally once "done" arrives.
+		if (id === this.pendingThreadId && this.pendingTurn) {
+			turns = this.pendingUserTurn
+				? [...turns.slice(0, -1), this.pendingUserTurn, this.pendingTurn]
+				: [...turns, this.pendingTurn];
+		}
+		this.turns = turns;
+
 		// Suggestions are a "what's next" prompt for the last answer, so
 		// only the most recent assistant message's set is relevant here.
 		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
@@ -281,6 +197,20 @@ class AppState {
 	async deleteThread(id: string) {
 		await fetch(`/api/threads/${id}`, { method: 'DELETE' });
 		if (this.currentThreadId === id) this.newThread();
+		await this.loadThreads();
+	}
+
+	// Manual rename from the sidebar — always wins over the one-time
+	// LLM-generated title a new thread gets after its first turn,
+	// whether the rename happens before or after that.
+	async renameThread(id: string, title: string) {
+		const trimmed = title.trim();
+		if (!trimmed) return;
+		await fetch(`/api/threads/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: trimmed })
+		});
 		await this.loadThreads();
 	}
 
@@ -388,6 +318,13 @@ class AppState {
 
 		if (e.type === 'user_message') {
 			if (this.pendingUserTurn) this.pendingUserTurn.id = e.user_message_id;
+			// The thread row (and this user message) are already persisted
+			// server-side by the time this event fires — well before the LLM
+			// call even starts, let alone finishes. Refresh the sidebar now
+			// instead of waiting for "done", so a brand-new thread appears
+			// (and an existing one jumps to the top) within one round trip
+			// of hitting send, not after the whole answer streams in.
+			void this.loadThreads();
 			return;
 		}
 

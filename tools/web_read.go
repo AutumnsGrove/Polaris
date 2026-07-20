@@ -162,7 +162,7 @@ func fetchAndExtract(ctx context.Context, rawURL string) (title, text string, er
 // step. Reuses the thread's selected model/client rather than spinning up
 // a separate one, since the provider pin (and its prompt-cache pricing)
 // is already configured on it.
-func filterExtractedText(ctx context.Context, client *llm.Client, pageText, instructions string) (string, error) {
+func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, instructions string) (string, error) {
 	messages := []llm.ChatMessage{
 		{
 			Role: "system",

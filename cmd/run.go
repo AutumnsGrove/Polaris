@@ -19,6 +19,11 @@ var log = logger.WithPrefix("cmd")
 var configPath string
 var devMode bool
 
+// eventRetentionDays mirrors the log files' own 90-day retention (see
+// logger.rotatingWriter) so the events table's durable evidence trail
+// doesn't grow forever on a long-running install.
+const eventRetentionDays = 90
+
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the Polaris server",
@@ -47,6 +52,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	if err := db.PruneEvents(eventRetentionDays); err != nil {
+		log.Warn("pruning old events failed", "err", err)
+	}
+	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode})
+
 	var staticFS fs.FS
 	if !devMode {
 		staticFS, err = fs.Sub(web.Assets, "build")
@@ -55,7 +65,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	srv := gateway.New(cfg, db, staticFS)
+	srv := gateway.New(cfg, configPath, db, staticFS)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Infof("listening on %s (dev=%v)", addr, devMode)

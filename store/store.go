@@ -65,6 +65,27 @@ CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+-- events is the structured, queryable audit trail described in events.go:
+-- every tool call/result, turn start/finish/failure, compaction, config
+-- reload, and self-update, persisted here (not just to the log files) so
+-- there's durable evidence of what happened even if the process crashed
+-- mid-turn or the log directory was never checked.
+CREATE TABLE IF NOT EXISTS events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- thread_id is NULL for events with no single thread to attach to
+	-- (startup, self-update, a config reload failure). NULL passes SQLite's
+	-- foreign-key check regardless of the referenced table's contents.
+	thread_id TEXT REFERENCES threads(id) ON DELETE CASCADE,
+	level     TEXT NOT NULL, -- "info" | "warn" | "error"
+	source    TEXT NOT NULL, -- e.g. "turn", "tool.web_search", "compaction", "update"
+	message   TEXT NOT NULL,
+	data      TEXT NOT NULL DEFAULT '{}', -- JSON-encoded structured detail (args, error, cost, etc.)
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_thread ON events(thread_id);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -80,7 +101,14 @@ var migrations = []string{
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+	// _busy_timeout: SQLite allows only one writer at a time; without this,
+	// a second concurrent writer (routine now, since every turn does
+	// several writes — the message, context tokens, and multiple event-log
+	// inserts — across goroutines) gets an immediate SQLITE_BUSY error
+	// instead of waiting its turn. _journal_mode=WAL lets readers proceed
+	// without blocking on a writer at all, which is what actually makes
+	// the busy_timeout the common case rather than the exception.
+	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -133,6 +161,20 @@ func (s *Store) CreateThread(id, title, model string) error {
 	return err
 }
 
+// SetThreadTitle updates a thread's title — used both for the one-time
+// LLM-generated title after a new thread's first turn finishes, and for
+// a user-initiated rename from the sidebar. Either one replaces
+// whatever title was there before; there's no separate "locked" flag,
+// since a rename happening at all is itself the signal that the title
+// is no longer just the auto-generated placeholder.
+func (s *Store) SetThreadTitle(id, title string) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET title = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
+		title, id,
+	)
+	return err
+}
+
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
@@ -181,7 +223,7 @@ func (s *Store) DeleteThread(id string) error {
 // against an existing assistant message.
 func (s *Store) AddCost(threadID string, costUSD float64) error {
 	_, err := s.db.Exec(
-		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		costUSD, threadID,
 	)
 	return err
@@ -206,7 +248,7 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 		return 0, err
 	}
 	if _, err := tx.Exec(
-		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		`UPDATE threads SET cost_usd = cost_usd + ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		costUSD, threadID,
 	); err != nil {
 		return 0, err
@@ -238,7 +280,7 @@ func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 	if _, err := tx.Exec(
 		`UPDATE threads SET cost_usd = (
 			SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE thread_id = ?
-		), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		), updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		threadID, threadID,
 	); err != nil {
 		return err
@@ -264,7 +306,7 @@ func (s *Store) SetContextTokens(threadID string, tokens int) error {
 func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
 	_, err := s.db.Exec(
 		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
-		 context_tokens = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		 context_tokens = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		summary, throughID, cost, contextTokensEstimate, threadID,
 	)
 	return err

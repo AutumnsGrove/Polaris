@@ -22,7 +22,7 @@
 		appState.connect();
 		void appState.loadModels();
 		void appState.loadThreads();
-		void appState.loadSettings();
+		void appState.settings.load();
 
 		// Start collapsed on phones (the primary use case) so the chat is
 		// what you see first, not a full-screen thread list.
@@ -57,7 +57,7 @@
 	</main>
 </div>
 
-{#if appState.settingsOpen}
+{#if appState.settings.open}
 	<SettingsPanel />
 {/if}
 

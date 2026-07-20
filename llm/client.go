@@ -21,6 +21,20 @@ import (
 
 var log = logger.WithPrefix("llm")
 
+// ChatClient is the subset of *Client that callers (agent.Run,
+// tools.web_read's optional filter pass, gateway's compaction/suggestion
+// calls) actually depend on. Extracted as an interface so tests can
+// substitute a fake instead of a real *Client — see llm/llmtest for one.
+type ChatClient interface {
+	// ChatCompletionWithTools sends a conversation with tool definitions,
+	// tool_choice "auto" — see *Client's doc comment for the full contract.
+	ChatCompletionWithTools(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error)
+	// ChatCompletionStreaming sends a plain (no-tools) conversation.
+	ChatCompletionStreaming(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error)
+}
+
+var _ ChatClient = (*Client)(nil)
+
 // Client talks to an OpenAI-compatible chat completions API.
 type Client struct {
 	baseURL     string
@@ -106,16 +120,16 @@ type ChatResponse struct {
 }
 
 type chatRequest struct {
-	Model             string        `json:"model"`
-	Messages          []ChatMessage `json:"messages"`
-	Temperature       float64       `json:"temperature"`
-	MaxTokens         int           `json:"max_tokens"`
-	Tools             []ToolDef     `json:"tools,omitempty"`
-	ToolChoice        interface{}   `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool         `json:"parallel_tool_calls,omitempty"`
+	Model             string           `json:"model"`
+	Messages          []ChatMessage    `json:"messages"`
+	Temperature       float64          `json:"temperature"`
+	MaxTokens         int              `json:"max_tokens"`
+	Tools             []ToolDef        `json:"tools,omitempty"`
+	ToolChoice        interface{}      `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool            `json:"parallel_tool_calls,omitempty"`
 	Provider          *ProviderRouting `json:"provider,omitempty"`
-	SessionID         string        `json:"session_id,omitempty"`
-	Stream            bool          `json:"stream,omitempty"`
+	SessionID         string           `json:"session_id,omitempty"`
+	Stream            bool             `json:"stream,omitempty"`
 	Reasoning         *ReasoningParams `json:"reasoning,omitempty"`
 }
 
@@ -167,6 +181,14 @@ type partialToolCall struct {
 	arguments strings.Builder
 }
 
+// requestTimeout bounds a single OpenRouter call. Deliberately NOT set as
+// an http.Client.Timeout — that applies to the entire round trip
+// including streaming the response body, so a client-level timeout would
+// cut off a long-but-healthy stream at exactly the same point every time.
+// A per-request context deadline (applied in doRequest) achieves the same
+// "don't hang forever" goal without that footgun.
+const requestTimeout = 3 * time.Minute
+
 func NewClient(baseURL, apiKey, model string, temperature float64, maxTokens int) *Client {
 	return &Client{
 		baseURL:     baseURL,
@@ -174,7 +196,7 @@ func NewClient(baseURL, apiKey, model string, temperature float64, maxTokens int
 		model:       model,
 		temperature: temperature,
 		maxTokens:   maxTokens,
-		httpClient:  &http.Client{Timeout: 60 * time.Second},
+		httpClient:  &http.Client{},
 	}
 }
 
@@ -214,17 +236,30 @@ func (c *Client) WithReasoning(r *ReasoningParams) *Client {
 // finish, not an error: whatever content/reasoning streamed before the
 // cancel is still returned rather than discarded.
 func (c *Client) ChatCompletionWithTools(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
-	return c.doStreamRequest(reqCtx, messages, tools, "auto", onChunk, onReasoning)
+	return c.doRequest(reqCtx, messages, tools, "auto", onChunk, onReasoning)
 }
 
 // ChatCompletionStreaming sends a plain (no-tools) conversation and
 // streams tokens to onChunk as they arrive. Used for the final
 // user-facing answer once the tool loop is done gathering context.
 func (c *Client) ChatCompletionStreaming(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
-	return c.doStreamingChat(reqCtx, messages, onChunk, onReasoning)
+	return c.doRequest(reqCtx, messages, nil, nil, onChunk, onReasoning)
 }
 
-func (c *Client) doStreamRequest(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, toolChoice interface{}, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
+// doRequest sends one chat-completions call and streams the SSE response,
+// shared by both the tool-calling and plain-answer paths above — they
+// differ only in whether tools/toolChoice are set, everything about
+// building the request and parsing the response back is identical.
+//
+// toolChoice is nil for a plain (no-tools) call; "auto" for a
+// tool-calling one, letting the model free-flow between calling a tool
+// and answering directly.
+//
+// Every call gets requestTimeout via reqCtx regardless of whether tools
+// were offered — previously only the tool-calling path had this, so a
+// long compaction/suggestion call (ChatCompletionStreaming) had no bound
+// beyond an idle TCP connection ever timing out.
+func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools []ToolDef, toolChoice interface{}, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
 	reqBody := chatRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -253,7 +288,7 @@ func (c *Client) doStreamRequest(reqCtx context.Context, messages []ChatMessage,
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(reqCtx, 3*time.Minute)
+	ctx, cancel := context.WithTimeout(reqCtx, requestTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
@@ -307,6 +342,7 @@ readLoop:
 		}
 		var chunk sseChunk
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &chunk); err != nil {
+			log.Debug("skipping malformed SSE chunk", "err", err)
 			continue
 		}
 		if chunk.Model != "" {
@@ -407,120 +443,3 @@ readLoop:
 		Provider:         respProvider,
 	}, nil
 }
-
-func (c *Client) doStreamingChat(reqCtx context.Context, messages []ChatMessage, onChunk func(string), onReasoning func(string)) (*ChatResponse, error) {
-	reqBody := chatRequest{
-		Model:       c.model,
-		Messages:    messages,
-		Temperature: c.temperature,
-		MaxTokens:   c.maxTokens,
-		Stream:      true,
-	}
-	if c.provider != nil {
-		reqBody.Provider = c.provider
-	}
-	if c.sessionID != "" {
-		reqBody.SessionID = c.sessionID
-	}
-	if c.reasoning != nil {
-		reqBody.Reasoning = c.reasoning
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/Polaris")
-	req.Header.Set("X-Title", "Polaris")
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("calling LLM API (stream): %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("LLM API returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	var contentBuilder strings.Builder
-	var finishReason string
-	var promptTokens, completionTokens, totalTokens int
-	var cacheReadTokens, cacheWriteTokens int
-	var costUSD float64
-	var respModel, respProvider string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "data: [DONE]" {
-			break
-		}
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		var chunk sseChunk
-		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &chunk); err != nil {
-			continue
-		}
-		if chunk.Model != "" {
-			respModel = chunk.Model
-		}
-		if chunk.Provider != "" {
-			respProvider = chunk.Provider
-		}
-		if chunk.Usage != nil {
-			promptTokens = chunk.Usage.PromptTokens
-			completionTokens = chunk.Usage.CompletionTokens
-			totalTokens = chunk.Usage.TotalTokens
-			costUSD = chunk.Usage.Cost
-			if d := chunk.Usage.PromptTokensDetails; d != nil {
-				cacheReadTokens = d.CachedTokens
-				cacheWriteTokens = d.CacheWriteTokens
-			}
-		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-		if chunk.Choices[0].FinishReason != "" {
-			finishReason = chunk.Choices[0].FinishReason
-		}
-		if r := chunk.Choices[0].Delta.Reasoning; r != "" && onReasoning != nil {
-			onReasoning(r)
-		}
-		token := chunk.Choices[0].Delta.Content
-		if token != "" {
-			contentBuilder.WriteString(token)
-			onChunk(token)
-		}
-	}
-	if err := scanner.Err(); err != nil && reqCtx.Err() == nil {
-		return nil, fmt.Errorf("reading SSE stream: %w", err)
-	}
-
-	return &ChatResponse{
-		Content:          contentBuilder.String(),
-		FinishReason:     finishReason,
-		PromptTokens:     promptTokens,
-		CompletionTokens: completionTokens,
-		TotalTokens:      totalTokens,
-		CostUSD:          costUSD,
-		Model:            respModel,
-		CacheReadTokens:  cacheReadTokens,
-		CacheWriteTokens: cacheWriteTokens,
-		Provider:         respProvider,
-	}, nil
-}
-
-var _ = log // keep logger import even if unused for now
