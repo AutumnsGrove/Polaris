@@ -6,8 +6,11 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,6 +80,93 @@ func currentContextPreamble() string {
 	)
 }
 
+// pseudoToolCallRe matches a tool call some providers (MiMo, observed in
+// practice) emit as literal text in the content field instead of
+// populating the API's structured tool_calls array — the model was
+// clearly trained on a ReAct/Qwen-Agent-style XML tool-call format and
+// falls back to writing it out as prose when the provider's function-
+// calling translation doesn't intercept it. Without this, that raw XML
+// gets treated as the final answer and shown to the user verbatim.
+var pseudoToolCallRe = regexp.MustCompile(`(?s)<tool_call>\s*<function=([^>]+)>(.*?)</function>\s*</tool_call>`)
+var pseudoParamRe = regexp.MustCompile(`(?s)<parameter=([^>]+)>(.*?)</parameter>`)
+
+// parsePseudoToolCall recognizes that fallback format and converts it into
+// the same (name, argsJSON) shape tools.Dispatch expects from a real tool
+// call. Parameter values that parse as integers are kept numeric (not
+// stringified) since tool arg structs like web_search's max_results
+// expect a JSON number, not a numeric string.
+func parsePseudoToolCall(content string) (name string, argsJSON string, ok bool) {
+	m := pseudoToolCallRe.FindStringSubmatch(content)
+	if m == nil {
+		return "", "", false
+	}
+	name = strings.TrimSpace(m[1])
+	if name == "" {
+		return "", "", false
+	}
+	args := make(map[string]interface{})
+	for _, p := range pseudoParamRe.FindAllStringSubmatch(m[2], -1) {
+		key := strings.TrimSpace(p[1])
+		val := strings.TrimSpace(p[2])
+		if n, err := strconv.Atoi(val); err == nil {
+			args[key] = n
+		} else {
+			args[key] = val
+		}
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return "", "", false
+	}
+	return name, string(b), true
+}
+
+// streamSniffer buffers the first few chunks of a streamed response just
+// long enough to tell whether it's about to be a pseudoToolCallRe match —
+// once resolved, either forwards chunks live as normal (the common case)
+// or stays silent because the caller will dispatch it as a tool call
+// instead, so the user never sees the raw <tool_call> XML flash on screen.
+type streamSniffer struct {
+	emit     func(string)
+	prefix   string
+	buf      strings.Builder
+	resolved bool
+	isPseudo bool
+}
+
+func (s *streamSniffer) onChunk(chunk string) {
+	if s.resolved {
+		if !s.isPseudo {
+			s.emit(chunk)
+		}
+		return
+	}
+	s.buf.WriteString(chunk)
+	if s.buf.Len() < len(s.prefix) {
+		return
+	}
+	s.resolved = true
+	s.isPseudo = strings.HasPrefix(s.buf.String(), s.prefix)
+	if !s.isPseudo {
+		s.emit(s.buf.String())
+	}
+}
+
+// flush handles a response that ended before enough chunks arrived to
+// resolve — a very short plain answer, most likely. Whatever's buffered
+// clearly isn't a full <tool_call> block at that point, so it's real
+// content that still needs to reach the user.
+func (s *streamSniffer) flush() {
+	if s.resolved {
+		return
+	}
+	s.resolved = true
+	s.isPseudo = strings.HasPrefix(s.buf.String(), s.prefix)
+	if !s.isPseudo {
+		s.emit(s.buf.String())
+	}
+}
+
 // Result is what one turn produces, once the model settles on a
 // plain-text final answer.
 type Result struct {
@@ -114,18 +204,33 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
+		sniff := &streamSniffer{
+			emit:   func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
+			prefix: "<tool_call>",
+		}
 		resp, err := client.ChatCompletionWithTools(reqCtx, messages, toolDefs, func(chunk string) {
 			answer.WriteString(chunk)
-			ctx.Emit("token", map[string]interface{}{"content": chunk})
+			sniff.onChunk(chunk)
 		}, func(chunk string) {
 			ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 		})
 		if err != nil {
 			return nil, err
 		}
+		sniff.flush()
 		totalCost += resp.CostUSD
 
 		if len(resp.ToolCalls) == 0 {
+			if name, argsJSON, ok := parsePseudoToolCall(resp.Content); ok {
+				result := tools.Dispatch(name, argsJSON, ctx)
+				messages = append(messages, llm.ChatMessage{
+					Role: "user",
+					Content: fmt.Sprintf("[%s result]\n%s\n\nContinue answering the original question using this — "+
+						"don't write out another <tool_call> block, use the real tool-calling mechanism if you need "+
+						"to search again.", name, result),
+				})
+				continue
+			}
 			// Plain content = the final answer. It was already streamed
 			// token-by-token via the onChunk callback above.
 			return &Result{

@@ -544,7 +544,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// an answer the user just cut off isn't useful.
 	var suggestions []string
 	if ctx.Err() == nil && result.Answer != "" {
-		if sug, sugCost, err := s.generateSuggestions(client, msg.Content, result.Answer); err != nil {
+		if sug, sugCost, err := s.generateSuggestions(modelCfg, msg.Content, result.Answer); err != nil {
 			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
 		} else {
 			suggestions = sug
@@ -600,21 +600,38 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 // genuine leading number in a question, e.g. "2024 election results?".
 var suggestionListPrefix = regexp.MustCompile(`^(?:[-*•]\s+|\d+[.)]\s+)`)
 
+// maxSuggestionLen caps how long a parsed line can be and still count as
+// a follow-up question — a real one reads like "Which company has built
+// the most transformer models so far?" (well under this), not a paragraph.
+// Belt-and-suspenders against ever showing a runaway response as a chip
+// again: the tight MaxTokens below should already prevent it, but this
+// means a formatting slip can't leak a full answer into the UI either.
+const maxSuggestionLen = 140
+
 // generateSuggestions asks for up to 3 short follow-up questions based on
-// the exchange that just finished — one extra cheap, non-streamed LLM call,
-// same pattern as compactThread below. Only the last exchange is given as
-// context (not the full thread history): follow-ups are about "where could
-// this conversation go next", not a function of everything said earlier.
-func (s *Server) generateSuggestions(client *llm.Client, userMessage, answer string) ([]string, float64, error) {
+// the exchange that just finished — one extra cheap, non-streamed LLM
+// call, same pattern as compactThread below. Only the last exchange is
+// given as context (not the full thread history): follow-ups are about
+// "where could this conversation go next", not a function of everything
+// said earlier.
+//
+// Deliberately builds its own client from modelCfg rather than reusing the
+// thread's tool-capable client — a fully separate call with no tools
+// offered and a tight token cap, so it can never wander into producing a
+// real answer instead of short questions.
+func (s *Server) generateSuggestions(modelCfg config.ModelConfig, userMessage, answer string) ([]string, float64, error) {
+	sugClient := llm.NewClient(s.cfg.OpenRouter.BaseURL, s.cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150)
+
 	prompt := []llm.ChatMessage{
 		{Role: "system", Content: "Based on this question-and-answer exchange, suggest exactly 3 short, " +
 			"natural follow-up questions the user might ask next. One per line, no numbering, no quotes, " +
-			"no preamble or extra commentary."},
+			"no preamble or extra commentary. Each question must be a single short line — never a paragraph, " +
+			"never an actual answer to anything."},
 		{Role: "user", Content: userMessage},
 		{Role: "assistant", Content: answer},
 	}
 
-	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	resp, err := sugClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -623,7 +640,7 @@ func (s *Server) generateSuggestions(client *llm.Client, userMessage, answer str
 	for _, line := range strings.Split(resp.Content, "\n") {
 		line = suggestionListPrefix.ReplaceAllString(strings.TrimSpace(line), "")
 		line = strings.Trim(line, "\"")
-		if line == "" {
+		if line == "" || len(line) > maxSuggestionLen {
 			continue
 		}
 		suggestions = append(suggestions, line)
