@@ -21,7 +21,7 @@ import (
 // defaultMaxTurns is used when a caller doesn't set ctx.MaxTurns — the
 // real value normally comes from config.Config.MaxAgentTurns, configurable
 // so this can be raised without a rebuild if a model needs more room.
-const defaultMaxTurns = 32
+const defaultMaxTurns = 50
 
 // promptPath is read fresh on every turn — no recompiling to change how
 // Polaris behaves. Matches her-go's convention of hot-reloaded prompt

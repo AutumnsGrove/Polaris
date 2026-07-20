@@ -158,7 +158,7 @@ func Load(path string) (*Config, error) {
 		cfg.ContextWindowTokens = 100_000
 	}
 	if cfg.MaxAgentTurns <= 0 {
-		cfg.MaxAgentTurns = 32
+		cfg.MaxAgentTurns = 50
 	}
 
 	return &cfg, nil

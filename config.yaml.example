@@ -48,7 +48,7 @@ context_window_tokens: 100000
 # the model is forced to wrap up with whatever it's gathered so far. Only
 # meant to stop a genuinely stuck model from looping forever — the more
 # agentic models routinely use 5-8 calls on a real multi-part question.
-max_agent_turns: 32
+max_agent_turns: 50
 
 default_model: "mimo-pro"
 
