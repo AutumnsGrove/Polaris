@@ -18,9 +18,10 @@ import (
 	"polaris/tools"
 )
 
-// maxTurns bounds runaway tool-use loops (a model stuck re-searching).
-// Hitting it forces a wrap-up answer instead of erroring out.
-const maxTurns = 6
+// defaultMaxTurns is used when a caller doesn't set ctx.MaxTurns — the
+// real value normally comes from config.Config.MaxAgentTurns, configurable
+// so this can be raised without a rebuild if a model needs more room.
+const defaultMaxTurns = 32
 
 // promptPath is read fresh on every turn — no recompiling to change how
 // Polaris behaves. Matches her-go's convention of hot-reloaded prompt
@@ -80,34 +81,44 @@ func currentContextPreamble() string {
 	)
 }
 
-// pseudoToolCallRe matches a tool call some providers (MiMo, observed in
-// practice) emit as literal text in the content field instead of
-// populating the API's structured tool_calls array — the model was
-// clearly trained on a ReAct/Qwen-Agent-style XML tool-call format and
-// falls back to writing it out as prose when the provider's function-
-// calling translation doesn't intercept it. Without this, that raw XML
-// gets treated as the final answer and shown to the user verbatim.
-var pseudoToolCallRe = regexp.MustCompile(`(?s)<tool_call>\s*<function=([^>]+)>(.*?)</function>\s*</tool_call>`)
-var pseudoParamRe = regexp.MustCompile(`(?s)<parameter=([^>]+)>(.*?)</parameter>`)
+// Some providers emit a tool call as literal text in the content field
+// instead of populating the API's structured tool_calls array — the model
+// was clearly trained on some ReAct/agent-framework XML tool-call
+// convention and falls back to writing it out as prose when the
+// provider's function-calling translation doesn't intercept it. Without
+// detecting this, that raw XML gets treated as the final answer and shown
+// to the user verbatim. Two distinct formats observed in practice so far,
+// from two different providers — pseudoToolCallPrefixes below must list
+// every format's opening tag so streamSniffer knows what to watch for.
+var (
+	// MiMo/Qwen-Agent style: <tool_call><function=NAME><parameter=KEY>VAL</parameter>...</function></tool_call>
+	mimoToolCallRe = regexp.MustCompile(`(?s)<tool_call>\s*<function=([^>]+)>(.*?)</function>\s*</tool_call>`)
+	mimoParamRe    = regexp.MustCompile(`(?s)<parameter=([^>]+)>(.*?)</parameter>`)
 
-// parsePseudoToolCall recognizes that fallback format and converts it into
-// the same (name, argsJSON) shape tools.Dispatch expects from a real tool
-// call. Parameter values that parse as integers are kept numeric (not
-// stringified) since tool arg structs like web_search's max_results
-// expect a JSON number, not a numeric string.
-func parsePseudoToolCall(content string) (name string, argsJSON string, ok bool) {
-	m := pseudoToolCallRe.FindStringSubmatch(content)
-	if m == nil {
-		return "", "", false
-	}
-	name = strings.TrimSpace(m[1])
-	if name == "" {
-		return "", "", false
-	}
-	args := make(map[string]interface{})
-	for _, p := range pseudoParamRe.FindAllStringSubmatch(m[2], -1) {
-		key := strings.TrimSpace(p[1])
-		val := strings.TrimSpace(p[2])
+	// DeepSeek's "DSML" style: one <tool_calls> block can contain several
+	// <invoke name="NAME">...</invoke> entries, each answered separately.
+	dsmlInvokeRe = regexp.MustCompile(`(?s)<｜｜DSML｜｜invoke name="([^"]+)">(.*?)</｜｜DSML｜｜invoke>`)
+	dsmlParamRe  = regexp.MustCompile(`(?s)<｜｜DSML｜｜parameter name="([^"]+)"[^>]*>(.*?)</｜｜DSML｜｜parameter>`)
+)
+
+// pseudoToolCallPrefixes is what streamSniffer buffers up to before
+// deciding whether a response is about to be one of the formats above —
+// every prefix here must be a literal opening tag from a regex above.
+var pseudoToolCallPrefixes = []string{"<tool_call>", "<｜｜DSML｜｜"}
+
+type pseudoCall struct {
+	name     string
+	argsJSON string
+}
+
+// buildArgsJSON turns key/value string pairs into the same JSON shape a
+// real tool call's Function.Arguments would be. Values that parse as
+// integers are kept numeric (not stringified) since tool arg structs like
+// web_search's max_results expect a JSON number, not a numeric string.
+func buildArgsJSON(pairs [][2]string) (string, bool) {
+	args := make(map[string]interface{}, len(pairs))
+	for _, kv := range pairs {
+		key, val := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
 		if n, err := strconv.Atoi(val); err == nil {
 			args[key] = n
 		} else {
@@ -116,22 +127,85 @@ func parsePseudoToolCall(content string) (name string, argsJSON string, ok bool)
 	}
 	b, err := json.Marshal(args)
 	if err != nil {
-		return "", "", false
+		return "", false
 	}
-	return name, string(b), true
+	return string(b), true
 }
 
-// streamSniffer buffers the first few chunks of a streamed response just
-// long enough to tell whether it's about to be a pseudoToolCallRe match —
+// parsePseudoToolCalls tries each known fallback format in turn and
+// returns every call found in the first one that matches. DSML blocks can
+// contain multiple invokes (a model batching several tool calls at once
+// in text form since it has no structured field to put them in); the
+// MiMo format has only ever been observed with one call per block.
+func parsePseudoToolCalls(content string) []pseudoCall {
+	if m := mimoToolCallRe.FindStringSubmatch(content); m != nil {
+		name := strings.TrimSpace(m[1])
+		if name == "" {
+			return nil
+		}
+		var pairs [][2]string
+		for _, p := range mimoParamRe.FindAllStringSubmatch(m[2], -1) {
+			pairs = append(pairs, [2]string{p[1], p[2]})
+		}
+		argsJSON, ok := buildArgsJSON(pairs)
+		if !ok {
+			return nil
+		}
+		return []pseudoCall{{name: name, argsJSON: argsJSON}}
+	}
+
+	var calls []pseudoCall
+	for _, inv := range dsmlInvokeRe.FindAllStringSubmatch(content, -1) {
+		name := strings.TrimSpace(inv[1])
+		if name == "" {
+			continue
+		}
+		var pairs [][2]string
+		for _, p := range dsmlParamRe.FindAllStringSubmatch(inv[2], -1) {
+			pairs = append(pairs, [2]string{p[1], p[2]})
+		}
+		argsJSON, ok := buildArgsJSON(pairs)
+		if !ok {
+			continue
+		}
+		calls = append(calls, pseudoCall{name: name, argsJSON: argsJSON})
+	}
+	return calls
+}
+
+// streamSniffer buffers the first chunks of a streamed response just long
+// enough to tell whether it's about to be one of pseudoToolCallPrefixes —
 // once resolved, either forwards chunks live as normal (the common case)
-// or stays silent because the caller will dispatch it as a tool call
-// instead, so the user never sees the raw <tool_call> XML flash on screen.
+// or stays silent because the caller will parse and dispatch it as a tool
+// call instead, so the raw pseudo-syntax never flashes on screen.
 type streamSniffer struct {
 	emit     func(string)
-	prefix   string
+	prefixes []string
 	buf      strings.Builder
 	resolved bool
 	isPseudo bool
+}
+
+func (s *streamSniffer) maxPrefixLen() int {
+	max := 0
+	for _, p := range s.prefixes {
+		if len(p) > max {
+			max = len(p)
+		}
+	}
+	return max
+}
+
+func (s *streamSniffer) resolve() {
+	s.resolved = true
+	buf := s.buf.String()
+	for _, p := range s.prefixes {
+		if strings.HasPrefix(buf, p) {
+			s.isPseudo = true
+			return
+		}
+	}
+	s.emit(buf)
 }
 
 func (s *streamSniffer) onChunk(chunk string) {
@@ -142,29 +216,21 @@ func (s *streamSniffer) onChunk(chunk string) {
 		return
 	}
 	s.buf.WriteString(chunk)
-	if s.buf.Len() < len(s.prefix) {
+	if s.buf.Len() < s.maxPrefixLen() {
 		return
 	}
-	s.resolved = true
-	s.isPseudo = strings.HasPrefix(s.buf.String(), s.prefix)
-	if !s.isPseudo {
-		s.emit(s.buf.String())
-	}
+	s.resolve()
 }
 
 // flush handles a response that ended before enough chunks arrived to
 // resolve — a very short plain answer, most likely. Whatever's buffered
-// clearly isn't a full <tool_call> block at that point, so it's real
-// content that still needs to reach the user.
+// clearly can't be a full pseudo-tool-call block at that point, so it's
+// real content that still needs to reach the user.
 func (s *streamSniffer) flush() {
 	if s.resolved {
 		return
 	}
-	s.resolved = true
-	s.isPseudo = strings.HasPrefix(s.buf.String(), s.prefix)
-	if !s.isPseudo {
-		s.emit(s.buf.String())
-	}
+	s.resolve()
 }
 
 // Result is what one turn produces, once the model settles on a
@@ -202,11 +268,16 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	var totalCost float64
 	var answer strings.Builder
 
+	maxTurns := ctx.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = defaultMaxTurns
+	}
+
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
 		sniff := &streamSniffer{
-			emit:   func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
-			prefix: "<tool_call>",
+			emit:     func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
+			prefixes: pseudoToolCallPrefixes,
 		}
 		resp, err := client.ChatCompletionWithTools(reqCtx, messages, toolDefs, func(chunk string) {
 			answer.WriteString(chunk)
@@ -221,14 +292,16 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		totalCost += resp.CostUSD
 
 		if len(resp.ToolCalls) == 0 {
-			if name, argsJSON, ok := parsePseudoToolCall(resp.Content); ok {
-				result := tools.Dispatch(name, argsJSON, ctx)
-				messages = append(messages, llm.ChatMessage{
-					Role: "user",
-					Content: fmt.Sprintf("[%s result]\n%s\n\nContinue answering the original question using this — "+
-						"don't write out another <tool_call> block, use the real tool-calling mechanism if you need "+
-						"to search again.", name, result),
-				})
+			if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
+				for _, pc := range calls {
+					result := tools.Dispatch(pc.name, pc.argsJSON, ctx)
+					messages = append(messages, llm.ChatMessage{
+						Role: "user",
+						Content: fmt.Sprintf("[%s result]\n%s\n\nContinue answering the original question using this — "+
+							"use the real tool-calling mechanism if you need to search again, not text-formatted "+
+							"tool call syntax.", pc.name, result),
+					})
+				}
 				continue
 			}
 			// Plain content = the final answer. It was already streamed
@@ -247,23 +320,43 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		messages = append(messages, llm.ChatMessage{Role: "tool", Content: result, ToolCallID: call.ID})
 	}
 
-	// Ran out of turns — force a wrap-up instead of failing outright.
+	// Ran out of turns — force a wrap-up instead of failing outright. No
+	// more tool dispatching allowed past this point (that's the whole
+	// point of the bound), so if the model still tries to emit a pseudo
+	// tool call here, that's treated as "couldn't produce a real answer
+	// in time" rather than given yet another turn.
 	messages = append(messages, llm.ChatMessage{
 		Role:    "user",
-		Content: "Wrap up now — give your best answer with what you've gathered so far.",
+		Content: "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools.",
 	})
+	wrapSniff := &streamSniffer{
+		emit:     func(s string) { ctx.Emit("token", map[string]interface{}{"content": s}) },
+		prefixes: pseudoToolCallPrefixes,
+	}
 	resp, err := client.ChatCompletionStreaming(reqCtx, messages, func(chunk string) {
-		ctx.Emit("token", map[string]interface{}{"content": chunk})
+		wrapSniff.onChunk(chunk)
 	}, func(chunk string) {
 		ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 	})
 	if err != nil {
 		return nil, err
 	}
+	wrapSniff.flush()
 	totalCost += resp.CostUSD
 
+	answerText := resp.Content
+	if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
+		// Even told explicitly not to, the model tried to call a tool one
+		// more time — it genuinely doesn't have enough to answer yet, and
+		// there's no turn budget left to give it. An honest "couldn't
+		// finish in time" beats showing raw pseudo-tool-call syntax.
+		answerText = "I wasn't able to finish researching this in time to give a complete answer — " +
+			"try asking again, or narrow the question a bit."
+		ctx.Emit("token", map[string]interface{}{"content": answerText})
+	}
+
 	return &Result{
-		Answer:        resp.Content,
+		Answer:        answerText,
 		Citations:     ctx.Citations,
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,

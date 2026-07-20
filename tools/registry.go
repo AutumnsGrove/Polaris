@@ -32,6 +32,11 @@ type Context struct {
 	// explicit location. Empty means "no fallback — location is required."
 	DefaultLocation string
 
+	// MaxTurns bounds one turn's tool-use loop — see config.Config.MaxAgentTurns.
+	// Zero means "caller didn't set it", which agent.Run treats as its own
+	// fallback default rather than looping forever.
+	MaxTurns int
+
 	// VoiceMode, when true, tells the driver to keep the final answer
 	// short and speakable — it's about to be read aloud via the browser's
 	// TTS, not just displayed.

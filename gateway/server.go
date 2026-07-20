@@ -529,6 +529,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		VoiceMode:       msg.VoiceMode,
 		LLM:             client,
 		Emit:            emit,
+		MaxTurns:        s.cfg.MaxAgentTurns,
 	}
 
 	result, err := agent.Run(ctx, agentCtx, history, msg.Content)

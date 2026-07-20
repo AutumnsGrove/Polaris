@@ -67,6 +67,13 @@ type Config struct {
 	// from that summary instead of the full raw history. Also the
 	// denominator for the context-usage % shown next to thread cost.
 	ContextWindowTokens int `yaml:"context_window_tokens"`
+
+	// MaxAgentTurns bounds one turn's tool-use loop (search/read/nearby_search
+	// calls) before the model is forced to wrap up with whatever it's
+	// gathered so far. Exists to stop a genuinely stuck model from looping
+	// forever, not to rush a thorough one — the more agentic models
+	// routinely use 5-8 calls on a real multi-part research question.
+	MaxAgentTurns int `yaml:"max_agent_turns"`
 }
 
 // ModelConfig describes one entry in the model selector. Provider pins
@@ -149,6 +156,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.ContextWindowTokens <= 0 {
 		cfg.ContextWindowTokens = 100_000
+	}
+	if cfg.MaxAgentTurns <= 0 {
+		cfg.MaxAgentTurns = 32
 	}
 
 	return &cfg, nil

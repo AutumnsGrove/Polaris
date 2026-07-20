@@ -79,6 +79,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		DefaultLocation: cfg.DefaultLocation,
 		LLM:             client,
 		Emit:            emit,
+		MaxTurns:        cfg.MaxAgentTurns,
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)

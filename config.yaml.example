@@ -44,6 +44,12 @@ service:
 # the context-usage % shown next to thread cost in the UI.
 context_window_tokens: 100000
 
+# Bounds one turn's tool-use loop (search/read/nearby_search calls) before
+# the model is forced to wrap up with whatever it's gathered so far. Only
+# meant to stop a genuinely stuck model from looping forever — the more
+# agentic models routinely use 5-8 calls on a real multi-part question.
+max_agent_turns: 32
+
 default_model: "mimo-pro"
 
 # Each model pins a specific OpenRouter provider (not just a model slug).
@@ -60,7 +66,7 @@ models:
     model: "xiaomi/mimo-v2.5-pro"
     provider: ["xiaomi/fp8"]
     temperature: 0.4
-    max_tokens: 4096
+    max_tokens: 32000
     reasoning:
       enabled: true
       effort: "medium"   # low | medium | high — mutually exclusive with max_tokens
@@ -69,19 +75,28 @@ models:
     model: "xiaomi/mimo-v2.5"
     provider: ["xiaomi/fp8"]
     temperature: 0.4
-    max_tokens: 4096
+    max_tokens: 32000
     # Both models below reason internally before answering — without
     # requesting it explicitly, OpenRouter won't surface those tokens at
     # all, so the UI has no way to show what's actually happening.
     reasoning:
       enabled: true
       effort: "medium"   # low | medium | high — mutually exclusive with max_tokens
+  - id: "deepseek-pro"
+    name: "DeepSeek V4 Pro"
+    model: "deepseek/deepseek-v4-pro"
+    provider: ["deepseek"]
+    temperature: 0.4
+    max_tokens: 32000
+    reasoning:
+      enabled: true
+      effort: "medium"
   - id: "deepseek"
     name: "DeepSeek V4 Flash"
     model: "deepseek/deepseek-v4-flash"
     provider: ["deepseek"]
     temperature: 0.4
-    max_tokens: 4096
+    max_tokens: 32000
     reasoning:
       enabled: true
       effort: "medium"
