@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Plus, Trash2, PanelLeftClose, Settings } from '@lucide/svelte';
+	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings } from '@lucide/svelte';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -9,6 +9,44 @@
 	function handleDelete(e: MouseEvent, id: string) {
 		e.stopPropagation();
 		void appState.deleteThread(id);
+	}
+
+	// Rename is inline, mirroring how editing a user message works in the
+	// chat itself (ChatTurnView) rather than a separate modal/prompt().
+	let renamingId = $state<string | null>(null);
+	let renameValue = $state('');
+
+	function startRename(e: MouseEvent, id: string, currentTitle: string) {
+		e.stopPropagation();
+		renamingId = id;
+		renameValue = currentTitle;
+	}
+
+	function cancelRename(e?: MouseEvent) {
+		e?.stopPropagation();
+		renamingId = null;
+	}
+
+	function saveRename(e?: MouseEvent) {
+		e?.stopPropagation();
+		if (renamingId) void appState.renameThread(renamingId, renameValue);
+		renamingId = null;
+	}
+
+	function onRenameKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			saveRename();
+		} else if (e.key === 'Escape') {
+			cancelRename();
+		}
+	}
+
+	// Focuses and selects the rename input the instant it's mounted, so
+	// typing a new title doesn't need an extra click first.
+	function focusOnMount(node: HTMLInputElement) {
+		node.focus();
+		node.select();
 	}
 </script>
 
@@ -31,25 +69,47 @@
 			<p class="thread-empty">No threads yet. Ask something to start.</p>
 		{/if}
 		{#each appState.threads as thread (thread.id)}
-			<div
-				class="thread-item"
-				class:active={appState.currentThreadId === thread.id}
-				onclick={() => appState.openThread(thread.id)}
-				onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
-				role="button"
-				tabindex="0"
-			>
-				<span class="thread-dot" aria-hidden="true"></span>
-				<div class="thread-meta">
-					<div class="thread-title">{thread.title || 'Untitled'}</div>
-					{#if appState.settings.showPrices}
-						<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
-					{/if}
+			{#if renamingId === thread.id}
+				<div class="thread-item renaming">
+					<span class="thread-dot" aria-hidden="true"></span>
+					<input
+						class="thread-rename-input"
+						bind:value={renameValue}
+						onkeydown={onRenameKeydown}
+						onclick={(e) => e.stopPropagation()}
+						use:focusOnMount
+					/>
+					<button class="icon-btn" onclick={cancelRename} title="Cancel"><X size={13} /></button>
+					<button class="icon-btn" onclick={saveRename} title="Save"><Check size={13} /></button>
 				</div>
-				<button class="icon-btn delete-btn" onclick={(e) => handleDelete(e, thread.id)}>
-					<Trash2 size={14} />
-				</button>
-			</div>
+			{:else}
+				<div
+					class="thread-item"
+					class:active={appState.currentThreadId === thread.id}
+					onclick={() => appState.openThread(thread.id)}
+					onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
+					role="button"
+					tabindex="0"
+				>
+					<span class="thread-dot" aria-hidden="true"></span>
+					<div class="thread-meta">
+						<div class="thread-title">{thread.title || 'Untitled'}</div>
+						{#if appState.settings.showPrices}
+							<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
+						{/if}
+					</div>
+					<button
+						class="icon-btn rename-btn"
+						onclick={(e) => startRename(e, thread.id, thread.title)}
+						title="Rename"
+					>
+						<Pencil size={13} />
+					</button>
+					<button class="icon-btn delete-btn" onclick={(e) => handleDelete(e, thread.id)} title="Delete">
+						<Trash2 size={14} />
+					</button>
+				</div>
+			{/if}
 		{/each}
 	</div>
 
@@ -206,6 +266,38 @@
 
 	.delete-btn:hover {
 		color: var(--color-danger);
+	}
+
+	.rename-btn {
+		opacity: 0;
+	}
+
+	.thread-item:hover .rename-btn {
+		opacity: 1;
+	}
+
+	.rename-btn:hover {
+		color: var(--color-text);
+	}
+
+	/* Renaming state swaps the whole row for an inline input — same
+	   shape/padding as the normal row so nothing shifts, just not
+	   clickable like the rest of the list. */
+	.thread-item.renaming {
+		cursor: default;
+	}
+
+	.thread-rename-input {
+		flex: 1;
+		min-width: 0;
+		border: 1px solid var(--color-accent-2);
+		background: var(--color-surface-2);
+		border-radius: var(--radius-sm);
+		padding: 3px 6px;
+		font-size: 13px;
+		font-family: inherit;
+		color: var(--color-text);
+		outline: none;
 	}
 
 	.status {

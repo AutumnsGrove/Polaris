@@ -197,6 +197,20 @@ class AppState {
 		await this.loadThreads();
 	}
 
+	// Manual rename from the sidebar — always wins over the one-time
+	// LLM-generated title a new thread gets after its first turn,
+	// whether the rename happens before or after that.
+	async renameThread(id: string, title: string) {
+		const trimmed = title.trim();
+		if (!trimmed) return;
+		await fetch(`/api/threads/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: trimmed })
+		});
+		await this.loadThreads();
+	}
+
 	// Cancels the in-flight turn. The backend aborts its LLM/tool calls
 	// mid-flight and still sends a normal 'done' with whatever streamed so
 	// far — no separate "stopped" event type needed, the existing done

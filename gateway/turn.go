@@ -144,6 +144,28 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	suggestionsJSON, _ := json.Marshal(suggestions)
 
+	// One-time LLM-generated thread title, replacing the truncated-first-
+	// message placeholder CreateThread set above — only on a brand-new
+	// thread's first turn, never again after (a manual rename, or just
+	// leaving the placeholder, both take precedence over ever
+	// regenerating this). Same completion-gating as suggestions: skip on
+	// a stopped generation or an empty answer, where the placeholder is
+	// already the more sensible title anyway.
+	if isNewThread && ctx.Err() == nil && result.Answer != "" {
+		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content, result.Answer); err != nil {
+			log.Warn("thread title generation failed", "thread", threadID, "err", err)
+			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()})
+		} else if title != "" {
+			if err := s.db.SetThreadTitle(threadID, title); err != nil {
+				log.Warn("failed to persist generated thread title", "err", err)
+				s.db.LogEvent(threadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()})
+			} else {
+				result.CostUSD += titleCost
+				s.db.LogEvent(threadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost})
+			}
+		}
+	}
+
 	citationsJSON, _ := json.Marshal(result.Citations)
 	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD)
 	if err != nil {
@@ -283,6 +305,55 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 		}
 	}
 	return suggestions, resp.CostUSD, nil
+}
+
+// titleQuotePrefix strips a leading/trailing quote mark the model
+// sometimes wraps the title in despite being told not to — trimmed
+// separately from strings.Trim below since that would also eat a quote
+// that's genuinely part of the title (e.g. a title ending in "quotes").
+var titleQuotePrefix = regexp.MustCompile(`^["'“‘]+|["'”’]+$`)
+
+// maxTitleLen caps the generated title's length — a good one reads like
+// "Capital of France" or "Debugging a Go goroutine leak" (well under
+// this), not a restated question. Same belt-and-suspenders reasoning as
+// maxSuggestionLen: the tight MaxTokens below should already prevent a
+// runaway response, this just means a formatting slip can't leak one
+// into the sidebar as a "title" anyway — falls back to the
+// truncated-first-message placeholder in that case instead.
+const maxTitleLen = 60
+
+// generateTitle asks for a short thread title based on the exchange that
+// just finished — one extra cheap, non-streamed LLM call, same pattern
+// as generateSuggestions/compactThread. Only called once, right after a
+// brand-new thread's first turn (see handleTurn's isNewThread gate);
+// deliberately given both the question and the answer, not just the
+// question, since a vague opener ("help me with this") often only
+// reveals what the thread is actually about once the answer (and
+// whatever it found via search) comes back.
+func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage, answer string) (string, float64, error) {
+	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 60).
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
+
+	prompt := []llm.ChatMessage{
+		{Role: "system", Content: "Based on this question-and-answer exchange, write a short thread title " +
+			"summarizing what it's about — 3 to 6 words, plain text, no quotes, no trailing punctuation, " +
+			"no preamble or extra commentary. Title Case is fine but not required."},
+		{Role: "user", Content: userMessage},
+		{Role: "assistant", Content: answer},
+	}
+
+	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	if err != nil {
+		return "", 0, err
+	}
+
+	title := strings.TrimSpace(resp.Content)
+	title = strings.TrimSpace(titleQuotePrefix.ReplaceAllString(title, ""))
+	title = strings.TrimRight(title, ".!。")
+	if len(title) > maxTitleLen {
+		title = title[:maxTitleLen]
+	}
+	return title, resp.CostUSD, nil
 }
 
 // compactThread summarizes every message up to and including throughID,

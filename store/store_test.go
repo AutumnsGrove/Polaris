@@ -38,6 +38,38 @@ func TestCreateAndGetThread(t *testing.T) {
 	}
 }
 
+func TestSetThreadTitle(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "placeholder title", "test-model"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	if err := s.SetThreadTitle("t1", "Capital of France"); err != nil {
+		t.Fatalf("SetThreadTitle: %v", err)
+	}
+
+	thread, err := s.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.Title != "Capital of France" {
+		t.Errorf("Title = %q, want %q", thread.Title, "Capital of France")
+	}
+
+	// A second rename must simply overwrite — no "locked" state, whether
+	// the first title came from the LLM or a previous manual rename.
+	if err := s.SetThreadTitle("t1", "Renamed Again"); err != nil {
+		t.Fatalf("SetThreadTitle (second): %v", err)
+	}
+	thread, err = s.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.Title != "Renamed Again" {
+		t.Errorf("Title = %q, want %q", thread.Title, "Renamed Again")
+	}
+}
+
 func TestGetThread_NotFound(t *testing.T) {
 	s := openTestStore(t)
 	if _, err := s.GetThread("does-not-exist"); err == nil {

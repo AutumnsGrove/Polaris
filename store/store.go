@@ -161,6 +161,20 @@ func (s *Store) CreateThread(id, title, model string) error {
 	return err
 }
 
+// SetThreadTitle updates a thread's title — used both for the one-time
+// LLM-generated title after a new thread's first turn finishes, and for
+// a user-initiated rename from the sidebar. Either one replaces
+// whatever title was there before; there's no separate "locked" flag,
+// since a rename happening at all is itself the signal that the title
+// is no longer just the auto-generated placeholder.
+func (s *Store) SetThreadTitle(id, title string) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET title = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
+		title, id,
+	)
+	return err
+}
+
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
