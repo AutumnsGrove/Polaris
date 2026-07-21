@@ -285,6 +285,11 @@
 		line-height: 1.5;
 	}
 
+	.welcome .subtitle .wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+	}
+
 	.welcome-composer {
 		width: 100%;
 		max-width: 640px;
