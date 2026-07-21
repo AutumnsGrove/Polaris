@@ -14,33 +14,90 @@ import (
 // Result holds combined stdout/stderr from each step, for display in
 // whichever UI triggered the update — a CLI or the settings panel.
 type Result struct {
-	PullOutput  string
-	BuildOutput string
-	BinaryPath  string
+	PullOutput     string
+	FrontendOutput string
+	BuildOutput    string
+	BinaryPath     string
 }
 
-// Run pulls origin/main and rebuilds the binary in repoPath. It does NOT
-// restart anything — the caller decides how (procmgr.Restart for the
-// CLI; the gateway handler needs to flush its HTTP response first, since
-// restarting kills the very process serving it).
+// Run pulls origin/main, rebuilds the frontend (if pnpm is available),
+// and rebuilds the Go binary in repoPath. It does NOT restart anything —
+// the caller decides how (procmgr.Restart for the CLI; the gateway
+// handler needs to flush its HTTP response first, since restarting kills
+// the very process serving it).
 func Run(repoPath string) (*Result, error) {
 	binaryPath := filepath.Join(repoPath, "polaris")
+	result := &Result{}
 
+	// Step 1: git pull
 	pullCmd := exec.Command("git", "pull", "origin", "main")
 	pullCmd.Dir = repoPath
 	pullOut, err := pullCmd.CombinedOutput()
+	result.PullOutput = string(pullOut)
 	if err != nil {
-		return &Result{PullOutput: string(pullOut)}, fmt.Errorf("git pull failed: %w", err)
+		return result, fmt.Errorf("git pull failed: %w", err)
 	}
 
+	// Step 2: Rebuild frontend if pnpm is available AND web/ exists (optional)
+	// If pnpm isn't installed or web/ doesn't exist, skip this step — the
+	// committed web/build/ from the local dev machine is still embedded.
+	webDir := filepath.Join(repoPath, "web")
+	if hasPnpm() && dirExists(webDir) {
+		frontendOut, err := rebuildFrontend(repoPath)
+		result.FrontendOutput = frontendOut
+		if err != nil {
+			return result, fmt.Errorf("frontend rebuild failed: %w", err)
+		}
+	} else {
+		result.FrontendOutput = "(skipped - pnpm not installed or web/ not present, using committed web/build/)"
+	}
+
+	// Step 3: go build
 	buildCmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", "polaris", ".")
 	buildCmd.Dir = repoPath
 	buildOut, err := buildCmd.CombinedOutput()
+	result.BuildOutput = string(buildOut)
+	result.BinaryPath = binaryPath
 	if err != nil {
-		return &Result{PullOutput: string(pullOut), BuildOutput: string(buildOut)}, fmt.Errorf("go build failed: %w", err)
+		return result, fmt.Errorf("go build failed: %w", err)
 	}
 
-	return &Result{PullOutput: string(pullOut), BuildOutput: string(buildOut), BinaryPath: binaryPath}, nil
+	return result, nil
+}
+
+// hasPnpm checks if pnpm is available in PATH.
+func hasPnpm() bool {
+	_, err := exec.LookPath("pnpm")
+	return err == nil
+}
+
+// dirExists checks if a directory exists.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// rebuildFrontend runs pnpm install && pnpm run build in web/.
+func rebuildFrontend(repoPath string) (string, error) {
+	webDir := filepath.Join(repoPath, "web")
+
+	// pnpm install (ensure deps are up to date)
+	installCmd := exec.Command("pnpm", "install")
+	installCmd.Dir = webDir
+	installOut, err := installCmd.CombinedOutput()
+	if err != nil {
+		return string(installOut), fmt.Errorf("pnpm install: %w", err)
+	}
+
+	// pnpm run build
+	buildCmd := exec.Command("pnpm", "run", "build")
+	buildCmd.Dir = webDir
+	buildOut, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return string(installOut) + "\n" + string(buildOut), fmt.Errorf("pnpm run build: %w", err)
+	}
+
+	return string(installOut) + "\n" + string(buildOut), nil
 }
 
 // RepoPath is just os.Getwd, wrapped for a clearer call site — both
