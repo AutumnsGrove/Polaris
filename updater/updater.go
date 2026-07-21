@@ -5,6 +5,8 @@
 package updater
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -89,16 +91,57 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// rebuildFrontend runs pnpm install && pnpm run build in web/.
+// lockfileHashPath lives inside node_modules (already gitignored) rather
+// than tracked anywhere — it's a local cache marker, not state anyone
+// else needs to see.
+func lockfileHashPath(webDir string) string {
+	return filepath.Join(webDir, "node_modules", ".pnpm-lock-hash")
+}
+
+// hashFile returns the hex sha256 of a file's contents, or "" if it
+// can't be read (missing lockfile, etc — callers treat that as "no
+// cached install to compare against").
+func hashFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// rebuildFrontend runs pnpm install (skipped if pnpm-lock.yaml is
+// unchanged since the last successful install and node_modules already
+// exists — on the potato's ARM board, `pnpm install`'s resolve step
+// alone costs real time even when it ends up a no-op) followed by pnpm
+// run build.
 func rebuildFrontend(repoPath string) (string, error) {
 	webDir := filepath.Join(repoPath, "web")
+	lockPath := filepath.Join(webDir, "pnpm-lock.yaml")
+	hashPath := lockfileHashPath(webDir)
 
-	// pnpm install (ensure deps are up to date)
-	installCmd := exec.Command("pnpm", "install")
-	installCmd.Dir = webDir
-	installOut, err := installCmd.CombinedOutput()
-	if err != nil {
-		return string(installOut), fmt.Errorf("pnpm install: %w", err)
+	currentHash := hashFile(lockPath)
+	cachedHashBytes, _ := os.ReadFile(hashPath)
+	cachedHash := string(cachedHashBytes)
+	nodeModulesOK := dirExists(filepath.Join(webDir, "node_modules"))
+
+	var installOut string
+	if currentHash != "" && currentHash == cachedHash && nodeModulesOK {
+		installOut = "pnpm-lock.yaml unchanged, node_modules present — skipping pnpm install"
+	} else {
+		installCmd := exec.Command("pnpm", "install")
+		installCmd.Dir = webDir
+		out, err := installCmd.CombinedOutput()
+		installOut = string(out)
+		if err != nil {
+			return installOut, fmt.Errorf("pnpm install: %w", err)
+		}
+		// Record what we just installed against, so the next run can skip
+		// cleanly. Best-effort: a write failure here just means the next
+		// run reinstalls unnecessarily, not a broken build.
+		if currentHash != "" {
+			_ = os.WriteFile(hashPath, []byte(currentHash), 0o644)
+		}
 	}
 
 	// pnpm run build
@@ -106,10 +149,10 @@ func rebuildFrontend(repoPath string) (string, error) {
 	buildCmd.Dir = webDir
 	buildOut, err := buildCmd.CombinedOutput()
 	if err != nil {
-		return string(installOut) + "\n" + string(buildOut), fmt.Errorf("pnpm run build: %w", err)
+		return installOut + "\n" + string(buildOut), fmt.Errorf("pnpm run build: %w", err)
 	}
 
-	return string(installOut) + "\n" + string(buildOut), nil
+	return installOut + "\n" + string(buildOut), nil
 }
 
 // RepoPath is just os.Getwd, wrapped for a clearer call site — both

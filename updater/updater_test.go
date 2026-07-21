@@ -85,6 +85,75 @@ func TestRun_GitPullFailureStopsBeforeBuild(t *testing.T) {
 	}
 }
 
+func TestHashFile_SameContentSameHash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lockfile")
+	if err := os.WriteFile(path, []byte("dependencies: foo@1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("writing test file: %v", err)
+	}
+
+	h1 := hashFile(path)
+	h2 := hashFile(path)
+	if h1 == "" {
+		t.Fatal("hashFile returned empty string for an existing file")
+	}
+	if h1 != h2 {
+		t.Errorf("hashFile(%q) = %q then %q, want identical hashes for unchanged content", path, h1, h2)
+	}
+}
+
+func TestHashFile_DifferentContentDifferentHash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lockfile")
+
+	os.WriteFile(path, []byte("dependencies: foo@1.0.0\n"), 0o644)
+	h1 := hashFile(path)
+
+	os.WriteFile(path, []byte("dependencies: foo@2.0.0\n"), 0o644)
+	h2 := hashFile(path)
+
+	if h1 == h2 {
+		t.Errorf("hashFile returned the same hash %q for different content", h1)
+	}
+}
+
+func TestHashFile_MissingFileReturnsEmpty(t *testing.T) {
+	if got := hashFile(filepath.Join(t.TempDir(), "does-not-exist")); got != "" {
+		t.Errorf("hashFile(missing) = %q, want empty string", got)
+	}
+}
+
+func TestRebuildFrontend_SkipsInstallWhenLockfileUnchanged(t *testing.T) {
+	if _, err := exec.LookPath("pnpm"); err != nil {
+		t.Skip("pnpm not on PATH")
+	}
+
+	dir := t.TempDir()
+	webDir := filepath.Join(dir, "web")
+	if err := os.MkdirAll(filepath.Join(webDir, "node_modules"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	lockPath := filepath.Join(webDir, "pnpm-lock.yaml")
+	os.WriteFile(lockPath, []byte("lockfileVersion: '9.0'\n"), 0o644)
+
+	// Prime the cache marker as if a prior install already ran against
+	// this exact lockfile content.
+	os.WriteFile(lockfileHashPath(webDir), []byte(hashFile(lockPath)), 0o644)
+
+	// package.json is required for `pnpm run build` to resolve a script,
+	// but since we're only exercising the install-skip decision here (not
+	// asserting a successful build), a script that just exits 0 is enough.
+	os.WriteFile(filepath.Join(webDir, "package.json"), []byte(`{"scripts":{"build":"true"}}`), 0o644)
+
+	out, err := rebuildFrontend(dir)
+	if err != nil {
+		t.Fatalf("rebuildFrontend returned error: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "skipping pnpm install") {
+		t.Errorf("output = %q, want it to report skipping the install step", out)
+	}
+}
+
 func TestRepoPath_ReturnsWorkingDirectory(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
