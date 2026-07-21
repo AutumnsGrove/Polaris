@@ -118,7 +118,7 @@
 	     instant the first message is sent. -->
 	<div class="welcome">
 		<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-		<p class="subtitle">Search and reading happen automatically when needed.</p>
+		<p class="subtitle">Your <span class="wordmark">questions</span>, answered with <span class="wordmark">sources</span> from the web.</p>
 		<div class="welcome-composer">
 			{@render composerForm()}
 		</div>
