@@ -24,12 +24,12 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	result, err := updater.Run(repoPath)
 	if err != nil {
 		s.db.LogEvent("", "error", "update", "self-update build failed", map[string]interface{}{
-			"err": err.Error(), "pull_output": result.PullOutput, "frontend_output": result.FrontendOutput, "build_output": result.BuildOutput,
+			"err": err.Error(), "pull_output": result.PullOutput, "build_output": result.BuildOutput,
 		})
 		writeJSON(w, map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
-			"log":     result.PullOutput + "\n" + result.FrontendOutput + "\n" + result.BuildOutput,
+			"log":     result.PullOutput + "\n" + result.BuildOutput,
 		})
 		return
 	}
@@ -39,18 +39,12 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	restarting := mgrErr == nil && mgr.IsManaged()
 
 	s.db.LogEvent("", "info", "update", "self-update built successfully", map[string]interface{}{
-		"pull_output": result.PullOutput, "frontend_output": result.FrontendOutput, "restarting": restarting,
+		"pull_output": result.PullOutput, "restarting": restarting,
 	})
-
-	logOutput := result.PullOutput
-	if result.FrontendOutput != "" {
-		logOutput += "\n" + result.FrontendOutput
-	}
-	logOutput += "\nbuild successful"
 
 	writeJSON(w, map[string]interface{}{
 		"success":    true,
-		"log":        logOutput,
+		"log":        result.PullOutput + "\nbuild successful",
 		"restarting": restarting,
 	})
 

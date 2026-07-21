@@ -8,8 +8,8 @@ web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/
 
-# web/build/ is a build artifact (Vite output isn't byte-reproducible
-# across runs, so committing it just churns the tree on every rebuild).
-# Both local dev and the potato's self-update flow run `pnpm run build`
-# before `go build` — see updater/updater.go.
-web/build/
+# web/build/ is intentionally committed — the potato is a Le Potato SBC,
+# too weak to run pnpm install + vite build in any reasonable time on
+# every self-update. Built locally instead; the .githooks/pre-commit
+# hook rebuilds it automatically whenever web/src/ changes, so it can't
+# drift from source. See gitconfig core.hooksPath and README.

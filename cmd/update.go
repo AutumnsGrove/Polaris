@@ -18,9 +18,8 @@ restarts the service — no scp'd binaries, no manual redeploy steps.
 
 Steps:
   1. git pull origin main
-  2. pnpm run build (if pnpm is installed)
-  3. go build -o polaris
-  4. Restart service (systemd on the potato, launchd for local dev)
+  2. go build -o polaris
+  3. Restart service (systemd on the potato, launchd for local dev)
 
 The settings panel's "push update now" button does the same thing over
 HTTP (POST /api/update) — this CLI command is for SSH access.`,
@@ -42,14 +41,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	log.Info("pulling changes from origin/main...")
 	result, err := updater.Run(repoPath)
 	if err != nil {
-		fmt.Printf("%s\n%s\n%s\n", result.PullOutput, result.FrontendOutput, result.BuildOutput)
+		fmt.Printf("%s\n%s\n", result.PullOutput, result.BuildOutput)
 		return err
 	}
-	output := result.PullOutput
-	if result.FrontendOutput != "" {
-		output += "\n" + result.FrontendOutput
-	}
-	fmt.Printf("%s\nbuild successful\n", output)
+	fmt.Printf("%s\nbuild successful\n", result.PullOutput)
 
 	log.Info("restarting service...")
 	mgr, err := procmgr.New("polaris")

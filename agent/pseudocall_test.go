@@ -129,3 +129,24 @@ func TestStreamSniffer_ShortResponseBelowPrefixLen(t *testing.T) {
 		t.Errorf("emitted = %q, want %q", emitted, "ok")
 	}
 }
+
+func TestStreamSniffer_FlushOnEmptyBufferEmitsNothing(t *testing.T) {
+	// A tool-calling response streams zero content chunks (all its tokens
+	// go into the structured tool_calls field, not content) — driver.go's
+	// loop calls flush() unconditionally every iteration regardless, so
+	// this is the common case for any tool-call turn, not an edge case.
+	// emit must never fire with an empty string here: ServerEvent's
+	// omitempty JSON tag would drop the content field entirely, and the
+	// frontend's `turn.content += e.content` would append the literal
+	// text "undefined" for every tool call in the turn.
+	calls := 0
+	s := &streamSniffer{
+		emit:     func(chunk string) { calls++ },
+		prefixes: pseudoToolCallPrefixes,
+	}
+	s.flush()
+
+	if calls != 0 {
+		t.Errorf("emit was called %d times on an empty buffer, want 0", calls)
+	}
+}

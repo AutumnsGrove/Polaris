@@ -412,7 +412,11 @@ export class AppState {
 
 			case 'token':
 				this.closeOpenReasoning(turn);
-				turn.content += e.content;
+				// e.content can be absent (not just empty) — ServerEvent's
+				// omitempty JSON tag drops the field entirely for an empty
+				// string, so a plain `turn.content += e.content` would
+				// string-concatenate the literal text "undefined" here.
+				turn.content += e.content ?? '';
 				break;
 
 			case 'done': {

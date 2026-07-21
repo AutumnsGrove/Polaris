@@ -84,7 +84,7 @@ cd Polaris
 cp config.yaml.example config.yaml
 # edit config.yaml: OpenRouter API key, your SearXNG URL, model choices
 
-cd web && pnpm install && pnpm run build && cd ..
+git config core.hooksPath .githooks   # once — auto-rebuilds web/build/ on commit, see below
 go build -o polaris .
 ./polaris run
 ```
@@ -101,16 +101,20 @@ docker run -d --name searxng-dev -p 18888:8080 \
 
 ### Frontend development
 
-The Go binary embeds the frontend's built static output (`web/build/`) via `go:embed` — it's a
-build artifact, not committed to the repo (Vite's output isn't byte-reproducible across runs, so
-committing it just churns the tree). Both a fresh clone and the potato's self-update flow need
-`pnpm run build` to run before `go build`.
+The Go binary embeds the frontend's built static output (`web/build/`), which is committed to
+this repo — the potato is a Le Potato SBC, too weak to run `pnpm install` + `vite build` in any
+reasonable time on every self-update, so that cost stays on a real dev machine instead.
+
+`git config core.hooksPath .githooks` (once, see Quick start) enables a pre-commit hook that
+rebuilds `web/build/` automatically and stages it whenever a commit touches `web/src/` or the
+frontend's dependency manifests — so it's structurally impossible to commit a stale build. You
+don't need to remember to run `pnpm run build` yourself; the hook does it for you.
 
 ```bash
 cd web
 pnpm install
 pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go backend on :8899
-pnpm run build        # rebuild the static output that go:embed picks up
+pnpm run build        # manual rebuild, if you ever need one outside of committing
 ```
 
 ## Configuration

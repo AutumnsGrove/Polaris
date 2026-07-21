@@ -131,7 +131,18 @@ func (s *streamSniffer) resolve() {
 			return
 		}
 	}
-	s.emit(buf)
+	// A tool-calling response normally streams zero content chunks (all
+	// its tokens go into the structured tool_calls field instead) — the
+	// caller's flush() still runs unconditionally every loop iteration,
+	// so an empty buffer here is the common case, not an edge case.
+	// Emitting it anyway would send a "token" event with content: "",
+	// which ServerEvent's `omitempty` JSON tag then drops entirely,
+	// leaving the frontend with an event that has no content field at
+	// all — string-concatenating that onto the answer literally appends
+	// the text "undefined".
+	if buf != "" {
+		s.emit(buf)
+	}
 }
 
 func (s *streamSniffer) onChunk(chunk string) {

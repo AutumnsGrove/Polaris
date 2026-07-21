@@ -135,7 +135,7 @@
 					Push update now
 				{/if}
 			</button>
-			<p class="hint">Pulls the latest code, rebuilds the frontend and binary, then restarts.</p>
+			<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>
 			{#if updateLog}
 				<pre class="log">{updateLog}</pre>
 			{/if}

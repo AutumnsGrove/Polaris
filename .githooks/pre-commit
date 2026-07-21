@@ -1,0 +1,18 @@
+#!/bin/sh
+# Rebuilds the frontend before any commit that touches web/src/ (or its
+# dependency manifests), and stages the result — so web/build/ (the
+# static output go:embed bakes into the Go binary) can never drift from
+# web/src/. The potato is a Le Potato SBC: too weak to run pnpm install +
+# vite build in any reasonable time, so that cost belongs here, once, on
+# a real machine, not on every self-update.
+#
+# Enabled via: git config core.hooksPath .githooks
+
+if git diff --cached --name-only | grep -qE '^web/(src/|package\.json$|pnpm-lock\.yaml$)'; then
+	echo "web/ changed — rebuilding frontend before commit..."
+	if ! (cd web && pnpm run build); then
+		echo "Frontend build failed — aborting commit." >&2
+		exit 1
+	fi
+	git add web/build
+fi
