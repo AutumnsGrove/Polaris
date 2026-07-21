@@ -118,7 +118,7 @@
 	     instant the first message is sent. -->
 	<div class="welcome">
 		<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-		<p class="subtitle">Your <span class="wordmark">questions</span>, answered with <span class="wordmark">sources</span> from the web.</p>
+		<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
 		<div class="welcome-composer">
 			{@render composerForm()}
 		</div>
@@ -281,13 +281,15 @@
 	.welcome .subtitle {
 		margin: 10px 0 40px 0;
 		color: var(--color-text-dim);
-		font-size: 14px;
 		line-height: 1.5;
 	}
 
-	.welcome .subtitle .wordmark {
+	.welcome .subtitle.wordmark {
 		font-family: var(--font-wordmark);
 		font-weight: 400;
+		font-style: italic;
+		font-size: 17px;
+		letter-spacing: 0.01em;
 	}
 
 	.welcome-composer {
