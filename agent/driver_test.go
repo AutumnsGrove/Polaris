@@ -249,6 +249,135 @@ func TestRun_InjectsResearchCheckInAfterInterval(t *testing.T) {
 	}
 }
 
+// fakeSearXNGFixedURL always returns the same single result, regardless
+// of query — every web_search call "finds" a source ctx.Citations has
+// already deduplicated away, so len(ctx.Citations) never grows past 1.
+// Simulates the real "echo chamber retrieval" failure: distinct
+// rephrased queries that keep surfacing the same source.
+func fakeSearXNGFixedURL(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"title": "Same Result", "url": "https://example.com/always-the-same", "content": "text", "score": 5.0},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestRun_InjectsStaleStreakMessageWhenCitationsDontGrow(t *testing.T) {
+	srv := fakeSearXNGFixedURL(t)
+
+	// The first call always "discovers" a citation (there's nothing to
+	// compare against yet), so the stale streak only starts accumulating
+	// from the second call onward — staleStreakThreshold+1 total calls
+	// are needed to actually trip it.
+	totalCalls := staleStreakThreshold + 1
+	responses := make([]llmtest.Response, 0, totalCalls+1)
+	for i := 0; i < totalCalls; i++ {
+		responses = append(responses, llmtest.Response{
+			Resp: &llm.ChatResponse{
+				ToolCalls: []llm.ToolCall{{
+					ID: "call-1", Type: "function",
+					Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"q"}`},
+				}},
+			},
+		})
+	}
+	responses = append(responses, llmtest.Response{
+		Resp:   &llm.ChatResponse{Content: "Final answer"},
+		Chunks: []string{"Final answer"},
+	})
+
+	mock := &llmtest.MockClient{Responses: responses}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, totalCalls+5)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+
+	if _, err := Run(context.Background(), ctx, nil, "a question that keeps finding the same source"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// After staleStreakThreshold consecutive calls that added no new
+	// citations, the very next LLM call must have been warned about it.
+	msgs := mock.Calls[totalCalls].Messages
+	found := false
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, "zero new sources") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("messages before call %d = %+v, want a stale-streak warning", totalCalls, msgs)
+	}
+}
+
+func TestRun_CheckInAndStaleStreakCanCoexistOnSameCall(t *testing.T) {
+	// First 3 queries each surface a genuinely new URL; the last 2 reuse
+	// the 3rd query's URL, so by researchCheckInInterval (5) calls, the
+	// stale streak (threshold 2) has also just tripped — both signals
+	// measure different things and neither should suppress the other.
+	if researchCheckInInterval != 5 || staleStreakThreshold != 2 {
+		t.Skip("test assumes researchCheckInInterval=5 and staleStreakThreshold=2")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"title": "Result", "url": "https://example.com/" + r.URL.Query().Get("q"), "content": "text", "score": 5.0},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	queries := []string{"q1", "q2", "q3", "q3", "q3"} // last two repeat q3's URL
+	responses := make([]llmtest.Response, 0, len(queries)+1)
+	for _, q := range queries {
+		responses = append(responses, llmtest.Response{
+			Resp: &llm.ChatResponse{
+				ToolCalls: []llm.ToolCall{{
+					ID: "call-1", Type: "function",
+					Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"` + q + `"}`},
+				}},
+			},
+		})
+	}
+	responses = append(responses, llmtest.Response{
+		Resp:   &llm.ChatResponse{Content: "Final answer"},
+		Chunks: []string{"Final answer"},
+	})
+
+	mock := &llmtest.MockClient{Responses: responses}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, len(queries)+5)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+
+	if _, err := Run(context.Background(), ctx, nil, "a question"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	msgs := mock.Calls[len(queries)].Messages
+	var sawCheckpoint, sawStaleStreak bool
+	for _, m := range msgs {
+		if m.Role != "user" {
+			continue
+		}
+		if strings.Contains(m.Content, "Checkpoint") {
+			sawCheckpoint = true
+		}
+		if strings.Contains(m.Content, "zero new sources") {
+			sawStaleStreak = true
+		}
+	}
+	if !sawCheckpoint || !sawStaleStreak {
+		t.Errorf("messages before call %d = %+v, want BOTH a Checkpoint and a stale-streak warning present together", len(queries), msgs)
+	}
+}
+
 func TestRun_LLMErrorPropagates(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{

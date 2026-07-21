@@ -55,6 +55,63 @@ func researchCheckInMessage(citationCount, callCount int) string {
 	)
 }
 
+// staleStreakThreshold is how many consecutive research calls with zero
+// new citations trigger the stronger stale-streak warning below —
+// independent of researchCheckInInterval, and evaluated every call (not
+// just on the interval), since "you're re-finding the same sources" is a
+// much less arguable signal than "you've made N calls" and deserves to
+// interrupt sooner. tools.Context.Citations already dedupes by URL (see
+// TestContext_AddCitation_DeduplicatesByURL), so a citation count that
+// doesn't grow after a search/read call means it turned up nothing this
+// loop hadn't already seen — the exact "echo chamber retrieval" failure
+// mode observed live: 15+ calls, three interval check-ins acknowledged
+// in the model's own reasoning, and it kept searching anyway.
+const staleStreakThreshold = 2
+
+// staleStreakMessage is deliberately blunter than researchCheckInMessage —
+// evidence of repetition, not a time-based nudge the model can always
+// rationalize past with "just one more search."
+func staleStreakMessage(streak, citationCount int) string {
+	return fmt.Sprintf(
+		"Your last %d searches found zero new sources — you're re-finding the same %d source(s) "+
+			"you already have. Searching again with a similar query will not help. Either answer now "+
+			"with what you've gathered, or try a meaningfully different angle (a different tool, a "+
+			"very different search term, or a specific named source) — not a reworded version of a "+
+			"query you've already tried.",
+		streak, citationCount,
+	)
+}
+
+// trackResearchCall updates the running research-call/citation-novelty
+// state after a single research tool dispatch and returns whichever
+// steering message(s) are warranted. The two signals are deliberately
+// independent and can both fire on the same call — one measures elapsed
+// effort (researchCheckInInterval), the other measures actual
+// productivity (citation growth via staleStreakThreshold) — so neither
+// resets or suppresses the other; a call that's both the 5th research
+// call AND the 2nd stale one in a row genuinely warrants both nudges.
+func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCount, staleStreak *int) []string {
+	*researchCalls++
+	current := len(citations)
+
+	var nudges []string
+	if current > *lastCitationCount {
+		*staleStreak = 0
+	} else {
+		*staleStreak++
+		if *staleStreak >= staleStreakThreshold {
+			nudges = append(nudges, staleStreakMessage(*staleStreak, current))
+			*staleStreak = 0 // fire once per streak, not every call past the threshold
+		}
+	}
+	*lastCitationCount = current
+
+	if *researchCalls%researchCheckInInterval == 0 {
+		nudges = append(nudges, researchCheckInMessage(current, *researchCalls))
+	}
+	return nudges
+}
+
 // promptPath is read fresh on every turn — no recompiling to change how
 // Polaris behaves. Matches her-go's convention of hot-reloaded prompt
 // files living as plain text in the working directory.
@@ -153,6 +210,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		maxTurns = defaultMaxTurns
 	}
 	researchCalls := 0
+	lastCitationCount := 0
+	staleStreak := 0
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
@@ -183,14 +242,10 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 							"tool call syntax.", pc.name, result),
 					})
 					if isResearchTool(pc.name) {
-						researchCalls++
+						for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
+							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+						}
 					}
-				}
-				if researchCalls > 0 && researchCalls%researchCheckInInterval == 0 {
-					messages = append(messages, llm.ChatMessage{
-						Role:    "user",
-						Content: researchCheckInMessage(len(ctx.Citations), researchCalls),
-					})
 				}
 				continue
 			}
@@ -210,12 +265,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		messages = append(messages, llm.ChatMessage{Role: "tool", Content: result, ToolCallID: call.ID})
 
 		if isResearchTool(call.Function.Name) {
-			researchCalls++
-			if researchCalls%researchCheckInInterval == 0 {
-				messages = append(messages, llm.ChatMessage{
-					Role:    "user",
-					Content: researchCheckInMessage(len(ctx.Citations), researchCalls),
-				})
+			for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
+				messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 			}
 		}
 	}
