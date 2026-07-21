@@ -2,12 +2,16 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/search"
 	"polaris/tools"
 )
 
@@ -193,6 +197,55 @@ func TestRun_PseudoToolCallDetectedAndDispatched(t *testing.T) {
 	}
 	if mock.CallCount() != 2 {
 		t.Errorf("CallCount = %d, want 2 (pseudo call dispatched, then a real answer)", mock.CallCount())
+	}
+}
+
+func TestRun_InjectsResearchCheckInAfterInterval(t *testing.T) {
+	// A fake SearXNG that always returns one distinct result — enough for
+	// handleWebSearch to succeed and add a citation each time, so
+	// len(ctx.Citations) is meaningfully non-zero by the check-in point.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"title": "Result", "url": "https://example.com/" + r.URL.Query().Get("q"), "content": "text", "score": 5.0},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	// researchCheckInInterval calls to web_search, then a plain final answer.
+	responses := make([]llmtest.Response, 0, researchCheckInInterval+1)
+	for i := 0; i < researchCheckInInterval; i++ {
+		responses = append(responses, llmtest.Response{
+			Resp: &llm.ChatResponse{
+				ToolCalls: []llm.ToolCall{{
+					ID: "call-1", Type: "function",
+					Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"q"}`},
+				}},
+			},
+		})
+	}
+	responses = append(responses, llmtest.Response{
+		Resp:   &llm.ChatResponse{Content: "Final answer"},
+		Chunks: []string{"Final answer"},
+	})
+
+	mock := &llmtest.MockClient{Responses: responses}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, researchCheckInInterval+5)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+
+	if _, err := Run(context.Background(), ctx, nil, "a question needing several searches"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// The call right after the researchCheckInInterval-th web_search must
+	// include the check-in nudge as the last message.
+	checkInCallMsgs := mock.Calls[researchCheckInInterval].Messages
+	last := checkInCallMsgs[len(checkInCallMsgs)-1]
+	if last.Role != "user" || !strings.Contains(last.Content, "Checkpoint") {
+		t.Errorf("message before call %d = %+v, want a Checkpoint check-in", researchCheckInInterval, last)
 	}
 }
 

@@ -20,6 +20,41 @@ import (
 // so this can be raised without a rebuild if a model needs more room.
 const defaultMaxTurns = 50
 
+// researchCheckInInterval is how often (in research tool calls) the loop
+// injects a sufficiency check-in — real-time steering rather than a hard
+// cap. Smaller/flash-tier models especially don't reliably self-monitor
+// "have I converged yet?" from a general prompt instruction alone (seen
+// in practice: 39-70+ search calls on one question, endlessly rephrasing
+// after the model's own reasoning trace had already settled on an
+// answer). Forcing an explicit, isolated check-in every few calls gives
+// it a concrete chance to course-correct without ever blocking a
+// genuinely hard multi-part question from digging as deep as it needs —
+// nothing here stops the model from searching again if it decides to.
+const researchCheckInInterval = 5
+
+// isResearchTool is which tools count toward researchCheckInInterval —
+// the ones that gather sources (and so plausibly reach a point of
+// diminishing returns), not "think" (private reasoning, not research).
+func isResearchTool(name string) bool {
+	return name == "web_search" || name == "web_read" || name == "nearby_search"
+}
+
+// researchCheckInMessage nudges the model to consider answering instead
+// of continuing to search, grounded in what it's actually gathered
+// (citation count) rather than a vague "are you sure?" — mirrors the
+// literature's finding that structured, externally-grounded check-ins
+// beat asking a model to self-assess confidence in free text.
+func researchCheckInMessage(citationCount, callCount int) string {
+	return fmt.Sprintf(
+		"Checkpoint: you've made %d research tool calls and gathered %d source(s) so far. "+
+			"If you already have enough to answer confidently, stop searching and state your "+
+			"conclusion now, citing what you've found — don't keep searching just to double-check "+
+			"an answer you've already reasoned out. Only continue if there's a specific, concrete "+
+			"gap in what you know that a further search could plausibly fill.",
+		callCount, citationCount,
+	)
+}
+
 // promptPath is read fresh on every turn — no recompiling to change how
 // Polaris behaves. Matches her-go's convention of hot-reloaded prompt
 // files living as plain text in the working directory.
@@ -117,6 +152,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
 	}
+	researchCalls := 0
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
@@ -146,6 +182,15 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 							"use the real tool-calling mechanism if you need to search again, not text-formatted "+
 							"tool call syntax.", pc.name, result),
 					})
+					if isResearchTool(pc.name) {
+						researchCalls++
+					}
+				}
+				if researchCalls > 0 && researchCalls%researchCheckInInterval == 0 {
+					messages = append(messages, llm.ChatMessage{
+						Role:    "user",
+						Content: researchCheckInMessage(len(ctx.Citations), researchCalls),
+					})
 				}
 				continue
 			}
@@ -163,6 +208,16 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		messages = append(messages, llm.ChatMessage{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
 		result := tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx)
 		messages = append(messages, llm.ChatMessage{Role: "tool", Content: result, ToolCallID: call.ID})
+
+		if isResearchTool(call.Function.Name) {
+			researchCalls++
+			if researchCalls%researchCheckInInterval == 0 {
+				messages = append(messages, llm.ChatMessage{
+					Role:    "user",
+					Content: researchCheckInMessage(len(ctx.Citations), researchCalls),
+				})
+			}
+		}
 	}
 
 	// Ran out of turns — force a wrap-up instead of failing outright. No
