@@ -38,18 +38,30 @@ func Run(repoPath string) (*Result, error) {
 		return result, fmt.Errorf("git pull failed: %w", err)
 	}
 
-	// Step 2: Rebuild frontend if pnpm is available AND web/ exists (optional)
-	// If pnpm isn't installed or web/ doesn't exist, skip this step — the
-	// committed web/build/ from the local dev machine is still embedded.
+	// Step 2: Rebuild the frontend. web/build/ is gitignored (Vite's output
+	// isn't byte-reproducible across runs, so committing it just churns the
+	// tree on every self-update) — this is the only way the embedded
+	// frontend gets built at all, not an optional refresh.
+	//
+	// The test fixture repo has no web/ directory at all (it's testing the
+	// git+go-build plumbing, not the frontend), so that case still skips
+	// cleanly. A real deployment without web/ would be a broken checkout.
 	webDir := filepath.Join(repoPath, "web")
-	if hasPnpm() && dirExists(webDir) {
+	switch {
+	case !dirExists(webDir):
+		result.FrontendOutput = "(skipped - no web/ directory in this checkout)"
+	case !hasPnpm():
+		if dirExists(filepath.Join(webDir, "build")) {
+			result.FrontendOutput = "(skipped - pnpm not installed; embedding the existing, possibly stale, web/build/)"
+		} else {
+			return result, fmt.Errorf("pnpm not installed and web/build/ doesn't exist — nothing for go:embed to embed")
+		}
+	default:
 		frontendOut, err := rebuildFrontend(repoPath)
 		result.FrontendOutput = frontendOut
 		if err != nil {
 			return result, fmt.Errorf("frontend rebuild failed: %w", err)
 		}
-	} else {
-		result.FrontendOutput = "(skipped - pnpm not installed or web/ not present, using committed web/build/)"
 	}
 
 	// Step 3: go build

@@ -8,6 +8,8 @@ web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/
 
-# web/build/ is intentionally committed — it's the static SvelteKit
-# output, embedded into the Go binary via web/embed.go. The potato never
-# runs Node; rebuild and commit this locally whenever the frontend changes.
+# web/build/ is a build artifact (Vite output isn't byte-reproducible
+# across runs, so committing it just churns the tree on every rebuild).
+# Both local dev and the potato's self-update flow run `pnpm run build`
+# before `go build` — see updater/updater.go.
+web/build/

@@ -84,6 +84,7 @@ cd Polaris
 cp config.yaml.example config.yaml
 # edit config.yaml: OpenRouter API key, your SearXNG URL, model choices
 
+cd web && pnpm install && pnpm run build && cd ..
 go build -o polaris .
 ./polaris run
 ```
@@ -100,14 +101,16 @@ docker run -d --name searxng-dev -p 18888:8080 \
 
 ### Frontend development
 
-The Go binary embeds the frontend's built static output (`web/build/`), which is committed to
-this repo — you don't need Node.js just to run Polaris. To change the frontend itself:
+The Go binary embeds the frontend's built static output (`web/build/`) via `go:embed` — it's a
+build artifact, not committed to the repo (Vite's output isn't byte-reproducible across runs, so
+committing it just churns the tree). Both a fresh clone and the potato's self-update flow need
+`pnpm run build` to run before `go build`.
 
 ```bash
 cd web
 pnpm install
 pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go backend on :8899
-pnpm run build        # rebuild the static output — commit web/build/ afterward
+pnpm run build        # rebuild the static output that go:embed picks up
 ```
 
 ## Configuration
