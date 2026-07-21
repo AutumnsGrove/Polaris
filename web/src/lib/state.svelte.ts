@@ -423,7 +423,7 @@ export class AppState {
 				this.closeOpenReasoning(turn);
 				turn.streaming = false;
 				turn.citations = e.citations;
-				turn.costUsd = e.cost_usd;
+				turn.costUsd = e.cost_usd ?? 0;
 				this.busy = false;
 				// Only adopt the thread id / bump the visible total if the
 				// user is still looking at this thread (or it just became
@@ -431,7 +431,12 @@ export class AppState {
 				const stillWatching = this.currentThreadId === null || this.currentThreadId === this.pendingThreadId;
 				if (stillWatching) {
 					this.currentThreadId = e.thread_id;
-					this.totalCost += e.cost_usd;
+					// ?? 0 guards against a missing cost_usd (e.g. an older
+					// cached frontend bundle talking to a newer backend, or
+					// vice versa) turning totalCost into a sticky NaN that
+					// poisons every subsequent addition for the rest of the
+					// session — this exact bug shipped once already.
+					this.totalCost += e.cost_usd ?? 0;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
 					this.suggestions = e.suggestions ?? [];
 				}

@@ -117,9 +117,9 @@ type ReasoningConfig struct {
 // ModelOverride specifies per-model tuning in config.yaml. All fields
 // optional; unset fields inherit from the registry default.
 type ModelOverride struct {
-	Temperature *float64          `yaml:"temperature"`
-	MaxTokens   *int              `yaml:"max_tokens"`
-	Reasoning   *ReasoningConfig  `yaml:"reasoning"`
+	Temperature *float64         `yaml:"temperature"`
+	MaxTokens   *int             `yaml:"max_tokens"`
+	Reasoning   *ReasoningConfig `yaml:"reasoning"`
 }
 
 // Load reads config.yaml and applies defaults. The registry parameter

@@ -55,16 +55,24 @@ type ClientMessage struct {
 //	                  timeline note like a tool call, not a normal answer
 //	"error"         — message: something failed
 type ServerEvent struct {
-	Type          string           `json:"type"`
-	ThreadID      string           `json:"thread_id,omitempty"`
-	Content       string           `json:"content,omitempty"`
-	Tool          string           `json:"tool,omitempty"`
-	Args          map[string]any   `json:"args,omitempty"`
-	Result        string           `json:"result,omitempty"`
-	Citations     []tools.Citation `json:"citations,omitempty"`
-	CostUSD       float64          `json:"cost_usd,omitempty"`
-	ContextTokens int              `json:"context_tokens,omitempty"`
-	Message       string           `json:"message,omitempty"`
-	UserMessageID int64            `json:"user_message_id,omitempty"`
-	Suggestions   []string         `json:"suggestions,omitempty"`
+	Type      string           `json:"type"`
+	ThreadID  string           `json:"thread_id,omitempty"`
+	Content   string           `json:"content,omitempty"`
+	Tool      string           `json:"tool,omitempty"`
+	Args      map[string]any   `json:"args,omitempty"`
+	Result    string           `json:"result,omitempty"`
+	Citations []tools.Citation `json:"citations,omitempty"`
+	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
+	// legitimate value for both (a stopped turn that never reached an LLM
+	// call costs exactly $0), and omitempty would drop the field from the
+	// JSON entirely in that case rather than sending 0. The frontend's
+	// `this.totalCost += e.cost_usd` would then add `undefined`, silently
+	// and permanently turning totalCost into NaN for the rest of the
+	// session — this bit us once already with the analogous "token"
+	// event's content field (see streamSniffer.resolve in agent/pseudocall.go).
+	CostUSD       float64  `json:"cost_usd"`
+	ContextTokens int      `json:"context_tokens"`
+	Message       string   `json:"message,omitempty"`
+	UserMessageID int64    `json:"user_message_id,omitempty"`
+	Suggestions   []string `json:"suggestions,omitempty"`
 }
