@@ -50,7 +50,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if len(title) > 80 {
 			title = title[:80] + "…"
 		}
-		if err := s.db.CreateThread(threadID, title, modelCfg.ID); err != nil {
+		source := msg.Source
+		if source == "" {
+			source = "web"
+		}
+		if err := s.db.CreateThread(threadID, title, modelCfg.ID, source); err != nil {
 			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()})
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return

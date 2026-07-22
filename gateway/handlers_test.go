@@ -156,7 +156,7 @@ func TestHandlePutSettings_RejectsUnknownModel(t *testing.T) {
 func TestThreadsCRUD(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
-	if err := h.db.CreateThread("t1", "Original Title", "test-model"); err != nil {
+	if err := h.db.CreateThread("t1", "Original Title", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	if _, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0); err != nil {
@@ -252,7 +252,7 @@ func TestHandleGetThread_NotFound(t *testing.T) {
 
 func TestEvents_ThreadAndRecent(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
-	if err := h.db.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	h.db.LogEvent("", "info", "startup", "server started", nil)

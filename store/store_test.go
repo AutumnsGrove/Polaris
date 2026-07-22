@@ -22,7 +22,7 @@ func openTestStore(t *testing.T) *Store {
 func TestCreateAndGetThread(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.CreateThread("t1", "My Thread", "test-model"); err != nil {
+	if err := s.CreateThread("t1", "My Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread returned error: %v", err)
 	}
 
@@ -40,7 +40,7 @@ func TestCreateAndGetThread(t *testing.T) {
 
 func TestSetThreadTitle(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "placeholder title", "test-model"); err != nil {
+	if err := s.CreateThread("t1", "placeholder title", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestGetThread_NotFound(t *testing.T) {
 
 func TestAddMessage_AccumulatesThreadCost(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestAddMessage_AccumulatesThreadCost(t *testing.T) {
 
 func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
 
 func TestCompactThread(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	msgID, err := s.AddMessage("t1", "assistant", "some answer", "[]", "[]", 0)
@@ -213,10 +213,10 @@ func TestSettings_GetSetAndListAll(t *testing.T) {
 
 func TestListThreads_NewestFirst(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("older", "Older", "m"); err != nil {
+	if err := s.CreateThread("older", "Older", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	if err := s.CreateThread("newer", "Newer", "m"); err != nil {
+	if err := s.CreateThread("newer", "Newer", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	// Bump "older"'s updated_at so ordering isn't just insertion order.
@@ -235,7 +235,7 @@ func TestListThreads_NewestFirst(t *testing.T) {
 
 func TestDeleteThread_CascadesMessages(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "m"); err != nil {
+	if err := s.CreateThread("t1", "Thread", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	if _, err := s.AddMessage("t1", "user", "hi", "[]", "[]", 0); err != nil {

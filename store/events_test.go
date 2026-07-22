@@ -9,7 +9,7 @@ import (
 
 func TestLogEvent_GlobalAndThreadScoped(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "m"); err != nil {
+	if err := s.CreateThread("t1", "Thread", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 

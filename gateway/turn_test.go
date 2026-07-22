@@ -16,7 +16,7 @@ import (
 
 func TestCompactThread(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
-	if err := h.db.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	msgID, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0)
@@ -51,7 +51,7 @@ func TestCompactThread(t *testing.T) {
 
 func TestLoadHistory_SubstitutesCompactedSummary(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
-	if err := h.db.CreateThread("t1", "Thread", "test-model"); err != nil {
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
 	if _, err := h.db.AddMessage("t1", "user", "old question", "[]", "[]", 0); err != nil {

@@ -30,6 +30,11 @@ type ClientMessage struct {
 	// (already billed via /api/transcribe) so it gets folded into the
 	// thread's running total instead of being tracked nowhere.
 	SttCostUSD float64 `json:"stt_cost_usd,omitempty"`
+	// Source tags a brand-new thread's origin (see store.Thread.Source) —
+	// empty means "web", the normal chat UI. Only read on thread creation;
+	// ignored on every later turn in the same thread. The WebSocket client
+	// never sets this; it's populated by handleAsk for API-originated threads.
+	Source string `json:"source,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

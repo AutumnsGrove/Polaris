@@ -76,6 +76,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	s.mux.HandleFunc("POST /api/update", s.handleUpdate)
+	s.mux.HandleFunc("POST /api/ask", s.handleAsk)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

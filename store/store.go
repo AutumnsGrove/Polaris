@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- stays the true, complete record; only what's sent back to the model
 	-- shrinks.
 	compacted_summary TEXT NOT NULL DEFAULT '',
-	compacted_through_id INTEGER NOT NULL DEFAULT 0
+	compacted_through_id INTEGER NOT NULL DEFAULT 0,
+	-- source: who started this thread — "web" for the normal chat UI,
+	-- or a caller-supplied label (e.g. "her-go") for threads created via
+	-- POST /api/ask. Purely informational: never changes how a thread
+	-- behaves, just lets future tooling/queries tell them apart.
+	source TEXT NOT NULL DEFAULT 'web'
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -98,6 +103,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN compacted_summary TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN compacted_through_id INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE threads ADD COLUMN source TEXT NOT NULL DEFAULT 'web'`,
 }
 
 func Open(path string) (*Store, error) {
@@ -136,8 +142,12 @@ type Thread struct {
 	ContextTokens      int       `json:"context_tokens"`
 	CompactedSummary   string    `json:"-"`
 	CompactedThroughID int64     `json:"-"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	// Source is informational only (see schema comment in Open) — "web"
+	// for the normal chat UI, or a caller-supplied label for threads
+	// created via POST /api/ask.
+	Source    string    `json:"source"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -152,11 +162,13 @@ type Message struct {
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
-// first user message (truncated) and can be renamed later.
-func (s *Store) CreateThread(id, title, model string) error {
+// first user message (truncated) and can be renamed later. source tags
+// where the thread came from (see schema comment above) — pass "web" for
+// the normal chat UI.
+func (s *Store) CreateThread(id, title, model, source string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO threads (id, title, model) VALUES (?, ?, ?)`,
-		id, title, model,
+		`INSERT INTO threads (id, title, model, source) VALUES (?, ?, ?, ?)`,
+		id, title, model, source,
 	)
 	return err
 }
@@ -178,9 +190,9 @@ func (s *Store) SetThreadTitle(id, title string) error {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +205,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, created_at, updated_at
 		 FROM threads ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -205,7 +217,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
