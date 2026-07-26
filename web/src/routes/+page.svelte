@@ -4,6 +4,7 @@
 	import ModelSelector from '$lib/components/ModelSelector.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
 	import { Send, Square, PanelLeft, Gauge, Coins } from '@lucide/svelte';
+	import { autoResize } from '$lib/actions/autoResize';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
@@ -59,6 +60,7 @@
 			rows="1"
 			bind:value={input}
 			onkeydown={onKeydown}
+			use:autoResize={{ value: input, maxHeight: 200 }}
 		></textarea>
 		<VoiceButton />
 		<button
@@ -369,11 +371,20 @@
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
 		padding: 10px 14px;
-		font-size: 14px;
+		/* 16px, not 14 — anything smaller makes iOS Safari zoom the whole
+		   page in on focus (it does this for any input/textarea under
+		   16px), which is what was pushing the send button out of the
+		   viewport. autoResize (see the action import above) handles
+		   height, growing with content up to its maxHeight before
+		   scrolling — same shape as Claude's composer, instead of a
+		   fixed single row that just scrolls its own content out of view. */
+		font-size: 16px;
 		line-height: 1.5;
 		font-family: var(--font-sans);
 		color: var(--color-text);
 		outline: none;
+		max-height: 200px;
+		overflow-y: auto;
 		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
 	}
 

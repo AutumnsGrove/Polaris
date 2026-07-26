@@ -5,6 +5,7 @@
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight } from '@lucide/svelte';
+	import { autoResize } from '$lib/actions/autoResize';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
@@ -55,10 +56,15 @@
 
 {#if turn.role === 'user'}
 	<div class="row row-user">
-		<div class="user-block">
+		<div class="user-block" class:editing>
 			{#if editing}
 				<div class="edit-box">
-					<textarea bind:value={editValue} onkeydown={onEditKeydown} rows="2"></textarea>
+					<textarea
+						bind:value={editValue}
+						onkeydown={onEditKeydown}
+						rows="2"
+						use:autoResize={{ value: editValue, maxHeight: 320 }}
+					></textarea>
 					<div class="edit-actions">
 						<button class="icon-btn" onclick={cancelEdit} title="Cancel"><X size={14} /></button>
 						<button class="icon-btn" onclick={saveEdit} title="Save and re-run"><Check size={14} /></button>
@@ -181,6 +187,17 @@
 		max-width: 640px;
 	}
 
+	/* Editing needs real room to type in, not the width of whatever short
+	   bubble it's replacing — a one-line "what's the capital of france"
+	   would otherwise hand the edit box a cramped ~250px, the opposite of
+	   Claude.ai's full-width editor. Widens to the same max-width the main
+	   composer uses instead of shrink-wrapping to the original message. */
+	.user-block.editing {
+		width: 100%;
+		max-width: 640px;
+		align-items: flex-start;
+	}
+
 	.bubble {
 		font-size: 14px;
 		line-height: 1.5;
@@ -225,10 +242,18 @@
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
 		padding: 10px 12px;
-		font-size: 14px;
+		/* 16px, matching the main composer — anything smaller triggers
+		   iOS Safari's zoom-on-focus. autoResize (see the action import
+		   above) grows this with content instead of squeezing multi-line
+		   text into a fixed 2-row box. */
+		font-size: 16px;
+		line-height: 1.5;
 		font-family: inherit;
 		color: var(--color-text);
 		outline: none;
+		min-height: 60px;
+		max-height: 320px;
+		overflow-y: auto;
 	}
 
 	.edit-actions {
