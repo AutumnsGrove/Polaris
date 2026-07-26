@@ -39,6 +39,11 @@ type Server struct {
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
 	mux        *http.ServeMux
+
+	// updateStatus tracks the one self-update that can run at a time —
+	// see its doc comment in update.go for why this needs to survive
+	// past the single request that triggered it.
+	updateStatus updateStatus
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -76,6 +81,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	s.mux.HandleFunc("POST /api/update", s.handleUpdate)
+	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
 	s.mux.HandleFunc("POST /api/ask", s.handleAsk)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

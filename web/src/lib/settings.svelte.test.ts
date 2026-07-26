@@ -96,14 +96,80 @@ describe('SettingsState.toggle', () => {
 });
 
 describe('SettingsState.pushUpdate', () => {
-	it('posts to /api/update and returns the parsed result', async () => {
-		const fetchSpy = fakeFetch({ success: true, log: 'ok', restarting: true });
+	// updateState/updateLog live on SettingsState itself (not a component)
+	// specifically so they survive the settings panel closing and
+	// reopening mid-update — the panel unmounts entirely when closed,
+	// which used to throw local component state away.
+	it('lands on idle when the rebuild succeeds but nothing restarts it', async () => {
+		const fetchSpy = fakeFetch({ success: true, log: 'build successful', restarting: false });
 		vi.stubGlobal('fetch', fetchSpy);
 
 		const settings = new SettingsState();
-		const result = await settings.pushUpdate();
+		await settings.pushUpdate();
 
 		expect(fetchSpy).toHaveBeenCalledWith('/api/update', { method: 'POST' });
-		expect(result).toEqual({ success: true, log: 'ok', restarting: true });
+		expect(settings.updateState).toBe('idle');
+		expect(settings.updateLog).toBe('build successful');
+	});
+
+	it('surfaces a failed build as an error with its log', async () => {
+		vi.stubGlobal('fetch', fakeFetch({ success: false, error: 'go build failed', log: 'pull ok\nbuild failed' }));
+
+		const settings = new SettingsState();
+		await settings.pushUpdate();
+
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toBe('pull ok\nbuild failed');
+	});
+
+	it('surfaces the server rejecting a second overlapping update', async () => {
+		vi.stubGlobal(
+			'fetch',
+			fakeFetch({ success: false, already_running: true, error: 'an update is already in progress' })
+		);
+
+		const settings = new SettingsState();
+		await settings.pushUpdate();
+
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toBe('an update is already in progress');
+	});
+});
+
+describe('SettingsState.checkUpdateStatus', () => {
+	it('resumes showing "updating" if the server reports one still running', async () => {
+		// First poll (inside checkUpdateStatus): still running. Second poll
+		// (inside the pollUntilFinished loop it kicks off): finished, idle.
+		const fetchSpy = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => ({ running: true, done: false }) })
+			.mockResolvedValueOnce({ ok: true, json: async () => ({ running: false, done: true, success: true, log: 'done' }) });
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		await settings.checkUpdateStatus();
+
+		expect(settings.updateState).toBe('idle');
+		expect(settings.updateLog).toBe('done');
+	});
+
+	it('leaves state untouched when nothing is running and nothing finished', async () => {
+		vi.stubGlobal('fetch', fakeFetch({ running: false, done: false }));
+
+		const settings = new SettingsState();
+		await settings.checkUpdateStatus();
+
+		expect(settings.updateState).toBe('idle');
+	});
+
+	it('does not re-check while already tracking an in-progress update', async () => {
+		const fetchSpy = vi.fn();
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		settings.updateState = 'updating';
+		await settings.checkUpdateStatus();
+
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 });

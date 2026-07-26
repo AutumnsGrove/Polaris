@@ -23,6 +23,7 @@
 		void appState.loadModels();
 		void appState.loadThreads();
 		void appState.settings.load();
+		void appState.settings.checkUpdateStatus();
 
 		// Start collapsed on phones (the primary use case) so the chat is
 		// what you see first, not a full-screen thread list.

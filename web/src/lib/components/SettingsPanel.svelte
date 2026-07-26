@@ -2,60 +2,14 @@
 	import { appState } from '$lib/state.svelte';
 	import { X, Moon, Sun, RefreshCw } from '@lucide/svelte';
 
-	type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
-	let updateState = $state<UpdateState>('idle');
-	let updateLog = $state('');
-
 	function close() {
 		appState.settings.open = false;
 	}
 
-	async function handlePushUpdate() {
-		updateState = 'updating';
-		updateLog = '';
-		try {
-			const result = await appState.settings.pushUpdate();
-			updateLog = result.log ?? '';
-			if (!result.success) {
-				updateState = 'error';
-				return;
-			}
-			if (!result.restarting) {
-				// Not running under systemd/launchd — rebuilt, but nothing
-				// will restart it automatically.
-				updateState = 'idle';
-				return;
-			}
-			updateState = 'restarting';
-			await waitForServerAndReload();
-		} catch (err) {
-			updateLog = String(err);
-			updateState = 'error';
-		}
-	}
-
-	// The build (go build on the potato's ARM CPU can take a while) and
-	// restart happen out from under this request, so poll until the
-	// server answers again, then hard-reload — a normal client-side nav
-	// would keep running the *old* JS bundle even after the backend and
-	// its embedded frontend assets have updated.
-	async function waitForServerAndReload() {
-		const deadline = Date.now() + 120_000;
-		while (Date.now() < deadline) {
-			await new Promise((r) => setTimeout(r, 1500));
-			try {
-				const res = await fetch('/api/models', { cache: 'no-store' });
-				if (res.ok) {
-					window.location.reload();
-					return;
-				}
-			} catch {
-				// still down — keep polling
-			}
-		}
-		updateState = 'error';
-		updateLog += '\n\nServer did not come back within 2 minutes — check it manually.';
-	}
+	// Re-check on every open, not just once at app startup — catches an
+	// update that finished (or started, from another tab/device) since
+	// the panel was last open, without waiting for a full page reload.
+	void appState.settings.checkUpdateStatus();
 </script>
 
 <div class="backdrop" role="presentation">
@@ -125,19 +79,28 @@
 					<code class="version">{appState.version}</code>
 				</div>
 			{/if}
-			<button class="btn update-btn" onclick={handlePushUpdate} disabled={updateState !== 'idle' && updateState !== 'error'}>
-				<RefreshCw size={14} class={updateState === 'updating' || updateState === 'restarting' ? 'spin' : ''} />
-				{#if updateState === 'updating'}
+			<button
+				class="btn update-btn"
+				onclick={() => appState.settings.pushUpdate()}
+				disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+			>
+				<RefreshCw
+					size={14}
+					class={appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting'
+						? 'spin'
+						: ''}
+				/>
+				{#if appState.settings.updateState === 'updating'}
 					Pulling & building…
-				{:else if updateState === 'restarting'}
+				{:else if appState.settings.updateState === 'restarting'}
 					Restarting…
 				{:else}
 					Push update now
 				{/if}
 			</button>
 			<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>
-			{#if updateLog}
-				<pre class="log">{updateLog}</pre>
+			{#if appState.settings.updateLog}
+				<pre class="log">{appState.settings.updateLog}</pre>
 			{/if}
 		</section>
 	</div>
