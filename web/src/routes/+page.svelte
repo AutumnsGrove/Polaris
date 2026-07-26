@@ -232,7 +232,16 @@
 		gap: 6px;
 		padding: 48px 24px;
 		text-align: center;
-		overflow-y: auto;
+		/* No overflow-y: auto here — that would make this the nearest
+		   scrollable ancestor of the composer's textarea, and mobile
+		   browsers auto-scroll the nearest scrollable ancestor to bring a
+		   newly-focused input into view. .shell already shrinks to the
+		   post-keyboard visual viewport height (--app-height in
+		   +layout.svelte), so the heading/subtitle/composer just need to
+		   fit that smaller flex space, not get scrolled past to reveal it —
+		   scrolling here is exactly what was shoving the branding
+		   off-screen and leaving the composer pinned at the very top. */
+		overflow: hidden;
 		isolation: isolate;
 	}
 
