@@ -245,16 +245,17 @@
 		gap: 6px;
 		padding: 48px 24px;
 		text-align: center;
-		/* No overflow-y: auto here — that would make this the nearest
-		   scrollable ancestor of the composer's textarea, and mobile
-		   browsers auto-scroll the nearest scrollable ancestor to bring a
-		   newly-focused input into view. .shell already shrinks to the
-		   post-keyboard visual viewport height (--app-height in
-		   +layout.svelte), so the heading/subtitle/composer just need to
-		   fit that smaller flex space, not get scrolled past to reveal it —
-		   scrolling here is exactly what was shoving the branding
-		   off-screen and leaving the composer pinned at the very top. */
-		overflow: hidden;
+		/* A first attempt here removed this entirely to stop mobile
+		   browsers from auto-scrolling this container to bring a
+		   newly-focused input into view — but that just traded one bug
+		   for another: with nowhere to scroll, the keyboard shrinking
+		   available height clipped the heading/composer instead of
+		   scrolling them, a squashed/"crunched" look. The real fix for
+		   the page-jumping was locking body itself (see app.css) — once
+		   the *page* can't scroll, a local scrollable container here is
+		   exactly as safe as .timeline-scroll already is in the
+		   conversation view, which never had this problem. */
+		overflow-y: auto;
 		isolation: isolate;
 	}
 
