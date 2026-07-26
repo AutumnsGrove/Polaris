@@ -159,7 +159,7 @@ func TestThreadsCRUD(t *testing.T) {
 	if err := h.db.CreateThread("t1", "Original Title", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	if _, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0); err != nil {
+	if _, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
 
@@ -255,8 +255,8 @@ func TestEvents_ThreadAndRecent(t *testing.T) {
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	h.db.LogEvent("", "info", "startup", "server started", nil)
-	h.db.LogEvent("t1", "info", "turn", "turn started", nil)
+	h.db.LogEvent("", "info", "startup", "server started", nil, "")
+	h.db.LogEvent("t1", "info", "turn", "turn started", nil, "")
 
 	threadResp, err := http.Get(h.url("/api/threads/t1/events"))
 	if err != nil {

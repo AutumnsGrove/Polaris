@@ -1,4 +1,4 @@
-import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation } from './types';
+import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation, StoredEvent, TimelineItem } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
@@ -9,6 +9,45 @@ function safeParseJSON<T>(json: string): T[] {
 	} catch {
 		return [];
 	}
+}
+
+function safeParseObject(json: string): Record<string, any> {
+	try {
+		return JSON.parse(json) ?? {};
+	} catch {
+		return {};
+	}
+}
+
+// Rebuilds one turn's timeline from its persisted events (thinking steps,
+// tool call start/finish pairs, compaction) — the same shape handleEvent
+// builds live while a turn streams, so a reopened thread renders
+// identically to one that's still on screen. events must be this turn's
+// slice only, oldest-first (see ListEvents' ORDER BY id ASC).
+function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
+	const timeline: TimelineItem[] = [];
+	for (const evt of events) {
+		const data = safeParseObject(evt.data);
+		if (evt.source === 'turn' && evt.message === 'thinking') {
+			timeline.push({ kind: 'thinking', content: data.content ?? '' });
+		} else if (evt.source === 'compaction' && evt.message === 'thread auto-compacted') {
+			timeline.push({ kind: 'compacted', summary: data.summary ?? '' });
+		} else if (evt.source.startsWith('tool.')) {
+			const tool = evt.source.slice('tool.'.length);
+			if (evt.message === 'tool call started') {
+				timeline.push({ kind: 'tool', tool, args: data.args, done: false });
+			} else if (evt.message === 'tool call finished') {
+				for (let i = timeline.length - 1; i >= 0; i--) {
+					const item = timeline[i];
+					if (item.kind === 'tool' && item.tool === tool && !item.done) {
+						timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
+						break;
+					}
+				}
+			}
+		}
+	}
+	return timeline;
 }
 
 // Exported (not just the singleton below) so tests can construct fresh,
@@ -169,19 +208,43 @@ export class AppState {
 	}
 
 	async openThread(id: string) {
-		const res = await fetch(`/api/threads/${id}`);
+		const [res, eventsRes] = await Promise.all([
+			fetch(`/api/threads/${id}`),
+			fetch(`/api/threads/${id}/events`)
+		]);
 		if (!res.ok) return;
 		const data = await res.json();
 		this.currentThreadId = id;
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		const messages = data.messages ?? [];
+
+		// Group persisted events by turn_id so each assistant message's
+		// timeline (thinking steps, tool calls) can be reattached below —
+		// otherwise reopening a thread shows only the bare final answer,
+		// with everything that led up to it gone. Older messages predating
+		// this feature have turn_id "" and simply get no timeline back.
+		const eventsByTurn = new Map<string, StoredEvent[]>();
+		if (eventsRes.ok) {
+			const events: StoredEvent[] = (await eventsRes.json()) ?? [];
+			for (const evt of events) {
+				if (!evt.turn_id) continue;
+				const group = eventsByTurn.get(evt.turn_id);
+				if (group) group.push(evt);
+				else eventsByTurn.set(evt.turn_id, [evt]);
+			}
+		}
+
 		let turns: ChatTurn[] = messages.map((m: any) => ({
 			role: m.role,
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			costUsd: m.cost_usd,
-			id: m.role === 'user' ? m.id : undefined
+			id: m.role === 'user' ? m.id : undefined,
+			timeline:
+				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
+					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
+					: undefined
 		}));
 
 		// A turn is still streaming for this exact thread — the user

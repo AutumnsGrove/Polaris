@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- generated them.
 	suggestions TEXT NOT NULL DEFAULT '[]',
 	cost_usd REAL NOT NULL DEFAULT 0,
+	-- turn_id: shared by the user message and assistant message that make
+	-- up one turn, and by every event (see events.turn_id below) logged
+	-- while that turn ran — the join key that lets a reopened thread
+	-- reconstruct which tool calls/thinking steps belong to which answer.
+	turn_id TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -86,6 +91,10 @@ CREATE TABLE IF NOT EXISTS events (
 	source    TEXT NOT NULL, -- e.g. "turn", "tool.web_search", "compaction", "update"
 	message   TEXT NOT NULL,
 	data      TEXT NOT NULL DEFAULT '{}', -- JSON-encoded structured detail (args, error, cost, etc.)
+	-- turn_id: "" for events with no single turn to attach to (startup,
+	-- self-update, thread rename, voice TTS/STT) — see messages.turn_id
+	-- above for the shared join key within one turn.
+	turn_id   TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -104,6 +113,8 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN compacted_through_id INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE threads ADD COLUMN source TEXT NOT NULL DEFAULT 'web'`,
+	`ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -158,7 +169,11 @@ type Message struct {
 	Citations   string    `json:"citations"`   // JSON-encoded []tools.Citation
 	Suggestions string    `json:"suggestions"` // JSON-encoded []string
 	CostUSD     float64   `json:"cost_usd"`
-	CreatedAt   time.Time `json:"created_at"`
+	// TurnID joins this message to the events (see store.Event.TurnID)
+	// logged while the turn that produced it ran, so a reopened thread
+	// can reconstruct that turn's tool calls/thinking steps.
+	TurnID    string    `json:"turn_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -245,7 +260,7 @@ func (s *Store) AddCost(threadID string, costUSD float64) error {
 // updated_at in one transaction, so ListThreads' ordering and the
 // header's cost display stay consistent. Returns the new message's ID,
 // which the frontend needs later to retry/edit from this point.
-func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJSON string, costUSD float64) (int64, error) {
+func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJSON string, costUSD float64, turnID string) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -253,8 +268,8 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd) VALUES (?, ?, ?, ?, ?, ?)`,
-		threadID, role, content, citationsJSON, suggestionsJSON, costUSD,
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		threadID, role, content, citationsJSON, suggestionsJSON, costUSD, turnID,
 	)
 	if err != nil {
 		return 0, err
@@ -366,7 +381,7 @@ func (s *Store) SetSetting(key, value string) error {
 
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
+		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
 	if err != nil {
@@ -377,7 +392,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)

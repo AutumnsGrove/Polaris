@@ -10,8 +10,18 @@ function fireEvent(state: AppState, e: ServerEvent) {
 	(state as any).handleEvent(e);
 }
 
+// openThread fetches both the thread itself and its persisted events in
+// parallel — a bare mockResolvedValue would hand the events call the same
+// payload as the thread call, breaking `for (const evt of events)`. Any
+// URL ending in "/events" gets an empty array instead, since none of
+// these tests care about timeline reconstruction specifically.
 function fakeFetch(data: unknown, ok = true) {
-	return vi.fn().mockResolvedValue({ ok, json: async () => data });
+	return vi.fn((url: string) => {
+		if (typeof url === 'string' && url.endsWith('/events')) {
+			return Promise.resolve({ ok: true, json: async () => [] });
+		}
+		return Promise.resolve({ ok, json: async () => data });
+	});
 }
 
 describe('AppState.send / dispatch', () => {
@@ -227,6 +237,52 @@ describe('AppState.openThread', () => {
 		expect(state.turns).toHaveLength(2);
 		expect(state.turns[1].content).toBe('a');
 		expect(state.totalCost).toBe(0.01);
+	});
+
+	it('reconstructs a reopened turn timeline from persisted events', async () => {
+		// Mirrors exactly what gateway/turn.go's logTurnEvent persists for
+		// one turn_id: a thinking step, then a tool call's start/finish
+		// pair — the durable trail that used to be fetched and discarded
+		// on every page reload before openThread learned to read it back.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (url.endsWith('/events')) {
+					return Promise.resolve({
+						ok: true,
+						json: async () => [
+							{ id: 1, level: 'info', source: 'turn', message: 'thinking', data: '{"content":"considering the question"}', turn_id: 'turn-1', created_at: '' },
+							{ id: 2, level: 'info', source: 'tool.web_search', message: 'tool call started', data: '{"args":{"query":"capital of france"}}', turn_id: 'turn-1', created_at: '' },
+							{ id: 3, level: 'info', source: 'tool.web_search', message: 'tool call finished', data: '{"result":"Paris","citations":[{"title":"France","url":"https://example.com"}]}', turn_id: 'turn-1', created_at: '' }
+						]
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0.01,
+						context_tokens: 10,
+						messages: [
+							{ id: 1, role: 'user', content: 'what is the capital of france', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-1' },
+							{ id: 2, role: 'assistant', content: 'Paris', citations: '[]', suggestions: '[]', cost_usd: 0.01, turn_id: 'turn-1' }
+						]
+					})
+				});
+			})
+		);
+
+		await state.openThread('t1');
+
+		const assistantTurn = state.turns[1];
+		expect(assistantTurn.timeline).toHaveLength(2);
+		expect(assistantTurn.timeline?.[0]).toMatchObject({ kind: 'thinking', content: 'considering the question' });
+		expect(assistantTurn.timeline?.[1]).toMatchObject({
+			kind: 'tool',
+			tool: 'web_search',
+			result: 'Paris',
+			citations: [{ title: 'France', url: 'https://example.com' }],
+			done: true
+		});
 	});
 
 	it('splices the live in-flight turn back in when reopening a still-generating thread', async () => {

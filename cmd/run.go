@@ -56,7 +56,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if err := db.PruneEvents(eventRetentionDays); err != nil {
 		log.Warn("pruning old events failed", "err", err)
 	}
-	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode})
+	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
 	var staticFS fs.FS
 	if !devMode {

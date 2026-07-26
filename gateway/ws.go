@@ -20,7 +20,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Warn("websocket upgrade failed", "err", err)
-		s.db.LogEvent("", "warn", "ws", "websocket upgrade failed", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent("", "warn", "ws", "websocket upgrade failed", map[string]interface{}{"err": err.Error()}, "")
 		return
 	}
 	defer conn.Close()
@@ -82,7 +82,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic in turn goroutine", "thread", msg.ThreadID, "panic", r)
-					s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)})
+					s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
 					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
 				}
 			}()

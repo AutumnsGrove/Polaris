@@ -19,12 +19,17 @@ import (
 var log = logger.WithPrefix("store")
 
 type Event struct {
-	ID        int64     `json:"id"`
-	ThreadID  string    `json:"thread_id,omitempty"` // "" for events with no single thread (startup, self-update)
-	Level     string    `json:"level"`               // "info" | "warn" | "error"
-	Source    string    `json:"source"`              // e.g. "turn", "tool.web_search", "compaction", "update"
-	Message   string    `json:"message"`
-	Data      string    `json:"data"` // JSON-encoded structured detail, "{}" if none
+	ID       int64  `json:"id"`
+	ThreadID string `json:"thread_id,omitempty"` // "" for events with no single thread (startup, self-update)
+	Level    string `json:"level"`               // "info" | "warn" | "error"
+	Source   string `json:"source"`              // e.g. "turn", "tool.web_search", "compaction", "update"
+	Message  string `json:"message"`
+	Data     string `json:"data"` // JSON-encoded structured detail, "{}" if none
+	// TurnID joins this event to the messages.turn_id of the user/assistant
+	// message pair it happened during — "" for events with no single turn
+	// (startup, self-update, thread rename, voice TTS/STT). Lets a reopened
+	// thread regroup tool calls/thinking steps by which answer they belong to.
+	TurnID    string    `json:"turn_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -41,7 +46,7 @@ const maxEventDataBytes = 4000
 // logger rather than returned — callers instrument code paths that are
 // often themselves error-handling, so a broken event log shouldn't ever
 // mask or interrupt the thing it's trying to record.
-func (s *Store) LogEvent(threadID, level, source, message string, data map[string]interface{}) {
+func (s *Store) LogEvent(threadID, level, source, message string, data map[string]interface{}, turnID string) {
 	dataJSON := "{}"
 	if len(data) > 0 {
 		truncateEventStrings(data)
@@ -56,8 +61,8 @@ func (s *Store) LogEvent(threadID, level, source, message string, data map[strin
 	}
 
 	if _, err := s.db.Exec(
-		`INSERT INTO events (thread_id, level, source, message, data) VALUES (?, ?, ?, ?, ?)`,
-		tid, level, source, message, dataJSON,
+		`INSERT INTO events (thread_id, level, source, message, data, turn_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		tid, level, source, message, dataJSON, turnID,
 	); err != nil {
 		log.Warn("failed to persist event", "source", source, "err", err)
 	}
@@ -81,7 +86,7 @@ func (s *Store) ListEvents(threadID string, limit int) ([]Event, error) {
 		limit = 500
 	}
 	rows, err := s.db.Query(
-		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, created_at
+		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, turn_id, created_at
 		 FROM events WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		threadID, limit,
 	)
@@ -100,7 +105,7 @@ func (s *Store) ListRecentEvents(limit int) ([]Event, error) {
 		limit = 200
 	}
 	rows, err := s.db.Query(
-		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, created_at
+		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, turn_id, created_at
 		 FROM events ORDER BY id DESC LIMIT ?`,
 		limit,
 	)
@@ -115,7 +120,7 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.ThreadID, &e.Level, &e.Source, &e.Message, &e.Data, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ThreadID, &e.Level, &e.Source, &e.Message, &e.Data, &e.TurnID, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

@@ -83,10 +83,10 @@ func TestAddMessage_AccumulatesThreadCost(t *testing.T) {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
-	if _, err := s.AddMessage("t1", "user", "hello", "[]", "[]", 0); err != nil {
+	if _, err := s.AddMessage("t1", "user", "hello", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage (user): %v", err)
 	}
-	if _, err := s.AddMessage("t1", "assistant", "hi there", "[]", "[]", 0.0025); err != nil {
+	if _, err := s.AddMessage("t1", "assistant", "hi there", "[]", "[]", 0.0025, ""); err != nil {
 		t.Fatalf("AddMessage (assistant): %v", err)
 	}
 
@@ -116,17 +116,17 @@ func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
-	if _, err := s.AddMessage("t1", "user", "q1", "[]", "[]", 0); err != nil {
+	if _, err := s.AddMessage("t1", "user", "q1", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	a1ID, err := s.AddMessage("t1", "assistant", "a1", "[]", "[]", 0.01)
+	a1ID, err := s.AddMessage("t1", "assistant", "a1", "[]", "[]", 0.01, "")
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	if _, err := s.AddMessage("t1", "user", "q2 (retry target)", "[]", "[]", 0); err != nil {
+	if _, err := s.AddMessage("t1", "user", "q2 (retry target)", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	if _, err := s.AddMessage("t1", "assistant", "a2", "[]", "[]", 0.02); err != nil {
+	if _, err := s.AddMessage("t1", "assistant", "a2", "[]", "[]", 0.02, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
 
@@ -157,7 +157,7 @@ func TestCompactThread(t *testing.T) {
 	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	msgID, err := s.AddMessage("t1", "assistant", "some answer", "[]", "[]", 0)
+	msgID, err := s.AddMessage("t1", "assistant", "some answer", "[]", "[]", 0, "")
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestDeleteThread_CascadesMessages(t *testing.T) {
 	if err := s.CreateThread("t1", "Thread", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	if _, err := s.AddMessage("t1", "user", "hi", "[]", "[]", 0); err != nil {
+	if _, err := s.AddMessage("t1", "user", "hi", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
 	if err := s.DeleteThread("t1"); err != nil {

@@ -13,9 +13,9 @@ func TestLogEvent_GlobalAndThreadScoped(t *testing.T) {
 		t.Fatalf("CreateThread: %v", err)
 	}
 
-	s.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": false})
-	s.LogEvent("t1", "info", "turn", "turn started", map[string]interface{}{"model": "test-model"})
-	s.LogEvent("t1", "error", "turn", "turn failed", map[string]interface{}{"err": "boom"})
+	s.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": false}, "")
+	s.LogEvent("t1", "info", "turn", "turn started", map[string]interface{}{"model": "test-model"}, "")
+	s.LogEvent("t1", "error", "turn", "turn failed", map[string]interface{}{"err": "boom"}, "")
 
 	threadEvents, err := s.ListEvents("t1", 0)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestLogEvent_GlobalAndThreadScoped(t *testing.T) {
 
 func TestLogEvent_NilDataProducesEmptyObject(t *testing.T) {
 	s := openTestStore(t)
-	s.LogEvent("", "info", "startup", "server started", nil)
+	s.LogEvent("", "info", "startup", "server started", nil, "")
 
 	events, err := s.ListRecentEvents(0)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestLogEvent_NilDataProducesEmptyObject(t *testing.T) {
 func TestLogEvent_TruncatesOversizedStringFields(t *testing.T) {
 	s := openTestStore(t)
 	huge := strings.Repeat("x", maxEventDataBytes+500)
-	s.LogEvent("", "info", "tool.web_read", "tool call finished", map[string]interface{}{"result": huge})
+	s.LogEvent("", "info", "tool.web_read", "tool call finished", map[string]interface{}{"result": huge}, "")
 
 	events, err := s.ListRecentEvents(0)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestLogEvent_TruncatesOversizedStringFields(t *testing.T) {
 
 func TestPruneEvents_RemovesOnlyOldEvents(t *testing.T) {
 	s := openTestStore(t)
-	s.LogEvent("", "info", "startup", "recent event", nil)
+	s.LogEvent("", "info", "startup", "recent event", nil, "")
 
 	// Backdate a second event directly, since LogEvent always stamps "now".
 	if _, err := s.db.Exec(

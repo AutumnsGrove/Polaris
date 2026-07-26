@@ -107,7 +107,7 @@ func (s *Server) liveConfig() *config.Config {
 		// Not thread-scoped — a bad edit to config.yaml affects every
 		// thread going forward, so it belongs in the global event log
 		// rather than attached to whichever request happened to trigger it.
-		s.db.LogEvent("", "error", "config", "config reload failed, using last known config", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent("", "error", "config", "config reload failed, using last known config", map[string]interface{}{"err": err.Error()}, "")
 	} else {
 		s.cfgMu.Lock()
 		s.cfg = fresh

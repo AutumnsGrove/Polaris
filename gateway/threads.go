@@ -69,7 +69,7 @@ func (s *Server) handleRenameThread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title})
+	s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title}, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

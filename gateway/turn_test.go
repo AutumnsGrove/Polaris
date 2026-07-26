@@ -19,7 +19,7 @@ func TestCompactThread(t *testing.T) {
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	msgID, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0)
+	msgID, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0, "")
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
@@ -54,14 +54,14 @@ func TestLoadHistory_SubstitutesCompactedSummary(t *testing.T) {
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	if _, err := h.db.AddMessage("t1", "user", "old question", "[]", "[]", 0); err != nil {
+	if _, err := h.db.AddMessage("t1", "user", "old question", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	oldAnswerID, err := h.db.AddMessage("t1", "assistant", "old answer", "[]", "[]", 0)
+	oldAnswerID, err := h.db.AddMessage("t1", "assistant", "old answer", "[]", "[]", 0, "")
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	if _, err := h.db.AddMessage("t1", "user", "new question after compaction", "[]", "[]", 0); err != nil {
+	if _, err := h.db.AddMessage("t1", "user", "new question after compaction", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
 

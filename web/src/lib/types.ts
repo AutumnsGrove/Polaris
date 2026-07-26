@@ -82,6 +82,22 @@ export interface StoredMessage {
 	citations: string; // JSON-encoded Citation[]
 	suggestions: string; // JSON-encoded string[], assistant messages only
 	cost_usd: number;
+	// Shared by the user/assistant message pair from one turn, and by
+	// every StoredEvent logged while that turn ran — the join key
+	// openThread uses to regroup a past turn's timeline.
+	turn_id: string;
+	created_at: string;
+}
+
+// Mirrors store.Event 1:1 — one row from GET /api/threads/{id}/events.
+export interface StoredEvent {
+	id: number;
+	thread_id?: string;
+	level: string;
+	source: string; // "turn" | "tool.<name>" | "compaction" | ...
+	message: string;
+	data: string; // JSON-encoded structured detail
+	turn_id?: string;
 	created_at: string;
 }
 

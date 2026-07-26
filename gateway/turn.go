@@ -23,11 +23,20 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		threadID = uuid.NewString()
 	}
 
+	// turnID ties together the user message, the assistant message it
+	// produces, and every event (thinking/tool call/tool result) logged
+	// while this turn runs — the join key loadHistory's sibling on the
+	// frontend (openThread) uses to regroup a past turn's timeline after
+	// a page reload, instead of that history being stranded in the
+	// events table with no way to tell one turn's events from another's
+	// in the same thread.
+	turnID := uuid.NewString()
+
 	// Retry/edit: wipe the message being replaced and everything after it
 	// (no branching history) before persisting the new/unchanged content.
 	if msg.EditFromID != 0 {
 		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "deleting messages for edit/retry failed", map[string]interface{}{"err": err.Error()})
+			s.db.LogEvent(threadID, "error", "turn", "deleting messages for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
 		}
@@ -55,7 +64,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			source = "web"
 		}
 		if err := s.db.CreateThread(threadID, title, modelCfg.ID, source); err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()})
+			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
@@ -63,7 +72,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	history, err := s.loadHistory(threadID)
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent(threadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{Type: "error", Message: err.Error()})
 		return
 	}
@@ -73,9 +82,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// below errors out. Previously a failed turn left no record at all.
 	// SttCostUSD folds in push-to-talk transcription cost, if this
 	// message originated from a voice memo.
-	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD)
+	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent(threadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
 	}
@@ -86,7 +95,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"is_new_thread": isNewThread,
 		"voice_mode":    msg.VoiceMode,
 		"is_retry":      msg.EditFromID != 0,
-	})
+	}, turnID)
 
 	// emit both streams the event to the browser (send) and, for the
 	// subset worth keeping as durable evidence, persists it to the events
@@ -111,7 +120,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			evt.Citations = v
 		}
 		send(evt)
-		s.logTurnEvent(threadID, eventType, evt)
+		s.logTurnEvent(threadID, turnID, eventType, evt)
 	}
 
 	agentCtx := &tools.Context{
@@ -126,7 +135,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID})
+		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}
@@ -140,7 +149,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if ctx.Err() == nil && result.Answer != "" {
 		if sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer); err != nil {
 			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()})
+			s.db.LogEvent(threadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else {
 			suggestions = sug
 			result.CostUSD += sugCost
@@ -158,28 +167,28 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if isNewThread && ctx.Err() == nil && result.Answer != "" {
 		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content, result.Answer); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()})
+			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {
 			if err := s.db.SetThreadTitle(threadID, title); err != nil {
 				log.Warn("failed to persist generated thread title", "err", err)
-				s.db.LogEvent(threadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()})
+				s.db.LogEvent(threadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			} else {
 				result.CostUSD += titleCost
-				s.db.LogEvent(threadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost})
+				s.db.LogEvent(threadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
 			}
 		}
 	}
 
 	citationsJSON, _ := json.Marshal(result.Citations)
-	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD)
+	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD, turnID)
 	if err != nil {
 		log.Warn("failed to persist assistant message", "err", err)
-		s.db.LogEvent(threadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent(threadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
 		log.Warn("failed to record context tokens", "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()})
+		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	// Auto-compact once this thread crosses the configured threshold: the
@@ -191,7 +200,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if result.ContextTokens >= cfg.ContextWindowTokens && assistantMsgID != 0 {
 		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()})
+			s.db.LogEvent(threadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else {
 			contextTokens = estimateTokens(summary)
 			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
@@ -199,7 +208,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				"through_message_id": assistantMsgID,
 				"cost_usd":           compactCost,
 				"summary":            summary,
-			})
+			}, turnID)
 			result.CostUSD += compactCost
 		}
 	}
@@ -215,7 +224,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"context_tokens": contextTokens,
 		"citations":      len(result.Citations),
 		"stopped":        ctx.Err() != nil,
-	})
+	}, turnID)
 
 	send(ServerEvent{
 		Type:          "done",
@@ -235,18 +244,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 // dispatch failure, still wrapped as a normal "tool_result" whose result
 // string starts with "error:") are logged at warn instead of info so they
 // stand out when scanning a thread's event history.
-func (s *Server) logTurnEvent(threadID, eventType string, evt ServerEvent) {
+func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEvent) {
 	switch eventType {
 	case "thinking":
-		s.db.LogEvent(threadID, "info", "turn", "thinking", map[string]interface{}{"content": evt.Content})
+		s.db.LogEvent(threadID, "info", "turn", "thinking", map[string]interface{}{"content": evt.Content}, turnID)
 	case "tool_call":
-		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args})
+		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args}, turnID)
 	case "tool_result":
 		level := "info"
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result})
+		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result, "citations": evt.Citations}, turnID)
 	}
 }
 
