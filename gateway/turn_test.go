@@ -139,6 +139,32 @@ func TestGenerateSuggestions(t *testing.T) {
 	}
 }
 
+// TestGenerateSuggestions_RejectsContinuationSentences reproduces a real
+// production failure: asked to suggest follow-ups after a PaLM/dense-LLM
+// answer, the model instead returned a single sentence continuing the
+// answer itself ("The model was never open-sourced, but the architecture
+// and results were published.") — no question mark, not a question at
+// all. The parse loop's trailing-"?" filter must drop it rather than
+// surface it as a "suggestion".
+func TestGenerateSuggestions_RejectsContinuationSentences(t *testing.T) {
+	srv := fakeLLMServer(t, "follow-up questions",
+		"The model was never open-sourced, but the architecture and results were published.")
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
+
+	s := &Server{}
+	suggestions, _, err := s.generateSuggestions(cfg, modelCfg, "question", "answer")
+	if err != nil {
+		t.Fatalf("generateSuggestions returned error: %v", err)
+	}
+	if len(suggestions) != 0 {
+		t.Errorf("suggestions = %+v, want none — a non-question continuation sentence must be dropped, not shown as a suggestion", suggestions)
+	}
+}
+
 func TestGenerateTitle(t *testing.T) {
 	srv := fakeLLMServer(t, "thread title", `"France's Capital City."`)
 	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
@@ -148,7 +174,7 @@ func TestGenerateTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france", "Paris")
+	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france")
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}
@@ -167,7 +193,7 @@ func TestGenerateTitle_TruncatesOverlongTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "q", "a")
+	title, _, err := s.generateTitle(cfg, modelCfg, "q")
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}

@@ -174,7 +174,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// a stopped generation or an empty answer, where the placeholder is
 	// already the more sensible title anyway.
 	if isNewThread && ctx.Err() == nil && result.Answer != "" {
-		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content, result.Answer); err != nil {
+		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {
@@ -308,13 +308,29 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 	sugClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
+	// The task instruction lives in the LAST message, as a fresh "user"
+	// turn after the exchange — not just in the system prompt above it.
+	// Ending the array on the assistant's full answer (as this used to)
+	// invites a weaker model to keep going: it reads as "continue this
+	// turn", so the model just extends/qualifies the answer instead of
+	// switching to the actual task. A real example hit this exactly —
+	// asked about the largest dense LLM, answered PaLM, and the single
+	// "suggestion" that came back was "The model was never open-sourced,
+	// but the architecture and results were published." — a continuation
+	// sentence, not a question. Putting the instruction last, with an
+	// explicit anti-continuation line and a worked example, reliably
+	// signals a context switch instead.
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Based on this question-and-answer exchange, suggest exactly 3 short, " +
-			"natural follow-up questions the user might ask next. One per line, no numbering, no quotes, " +
-			"no preamble or extra commentary. Each question must be a single short line — never a paragraph, " +
-			"never an actual answer to anything."},
+		{Role: "system", Content: "You write short follow-up-question suggestions for a Q&A search app's " +
+			"UI. You never continue, restate, or add commentary to the previous answer — your only output " +
+			"is brand-new questions the user could ask next."},
 		{Role: "user", Content: userMessage},
 		{Role: "assistant", Content: answer},
+		{Role: "user", Content: "Suggest exactly 3 short, natural follow-up questions based on the " +
+			"exchange above. One per line, no numbering, no quotes, no preamble — just the 3 questions. " +
+			"Each line must be a real question and end with a question mark. Do not continue or add to " +
+			"the previous answer.\n\nExample output:\nWhat is the population of Paris?\nHow does it " +
+			"compare to other European capitals?\nWhat other cities have served as France's capital?"},
 	}
 
 	resp, err := sugClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
@@ -326,7 +342,16 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 	for _, line := range strings.Split(resp.Content, "\n") {
 		line = suggestionListPrefix.ReplaceAllString(strings.TrimSpace(line), "")
 		line = strings.Trim(line, "\"")
+		// Requiring a trailing question mark is a belt-and-suspenders
+		// filter against exactly the continuation-sentence failure mode
+		// above: even if a model slips past the prompt's instructions, a
+		// non-question line gets dropped silently rather than shown as a
+		// "suggestion" that's actually just more of the answer. Showing
+		// 0 suggestions is far less confusing than showing a wrong one.
 		if line == "" || len(line) > maxSuggestionLen {
+			continue
+		}
+		if !strings.HasSuffix(line, "?") && !strings.HasSuffix(line, "？") {
 			continue
 		}
 		suggestions = append(suggestions, line)
@@ -352,24 +377,30 @@ var titleQuotePrefix = regexp.MustCompile(`^["'“‘]+|["'”’]+$`)
 // truncated-first-message placeholder in that case instead.
 const maxTitleLen = 60
 
-// generateTitle asks for a short thread title based on the exchange that
-// just finished — one extra cheap, non-streamed LLM call, same pattern
+// generateTitle asks for a short thread title based on the user's
+// question alone — one extra cheap, non-streamed LLM call, same pattern
 // as generateSuggestions/compactThread. Only called once, right after a
-// brand-new thread's first turn (see handleTurn's isNewThread gate);
-// deliberately given both the question and the answer, not just the
-// question, since a vague opener ("help me with this") often only
-// reveals what the thread is actually about once the answer (and
-// whatever it found via search) comes back.
-func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage, answer string) (string, float64, error) {
+// brand-new thread's first turn (see handleTurn's isNewThread gate).
+//
+// Deliberately does NOT include the answer, unlike an earlier version of
+// this function — with the answer in context, the message array ends on
+// a full assistant turn, and a weaker model reliably reads that as "keep
+// going" rather than "switch to a new task", producing a title that's
+// actually just a continuation of the answer (a real example: title came
+// back as "Unfortunately, it was never open-sourced, so while
+// available..." — a sentence fragment from the answer, not a title). A
+// search-app question is almost always self-descriptive enough on its
+// own ("what is the largest dense llm released?"), so dropping the
+// answer sidesteps the whole failure mode instead of working around it.
+func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 60).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Based on this question-and-answer exchange, write a short thread title " +
-			"summarizing what it's about — 3 to 6 words, plain text, no quotes, no trailing punctuation, " +
-			"no preamble or extra commentary. Title Case is fine but not required."},
+		{Role: "system", Content: "Based on this question, write a short thread title summarizing what " +
+			"it's about — 3 to 6 words, plain text, no quotes, no trailing punctuation, no preamble or " +
+			"extra commentary. Title Case is fine but not required."},
 		{Role: "user", Content: userMessage},
-		{Role: "assistant", Content: answer},
 	}
 
 	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
