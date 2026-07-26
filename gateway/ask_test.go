@@ -50,6 +50,12 @@ func TestHandleAsk_NewThread_PersistsSameAsChatTurn(t *testing.T) {
 	if out.CostUSD <= 0 {
 		t.Errorf("CostUSD = %v, want > 0 (answer + suggestions + title generation all cost something)", out.CostUSD)
 	}
+	if out.DurationMs <= 0 {
+		t.Errorf("DurationMs = %v, want > 0 — an API caller needs this the same as a WebSocket client does", out.DurationMs)
+	}
+	if out.Title == "" {
+		t.Error("Title is empty, want the thread's current title returned directly instead of requiring a follow-up GET /api/threads/{id}")
+	}
 
 	thread, err := h.db.GetThread(out.ThreadID)
 	if err != nil {

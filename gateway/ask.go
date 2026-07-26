@@ -34,6 +34,17 @@ type AskResponse struct {
 	Suggestions   []string         `json:"suggestions"`
 	CostUSD       float64          `json:"cost_usd"`
 	ContextTokens int              `json:"context_tokens"`
+	// DurationMs is how long agent.Run took to produce the answer — see
+	// ServerEvent.DurationMs's doc comment in protocol.go.
+	DurationMs int64 `json:"duration_ms,omitempty"`
+	// Title is the thread's current title — the LLM-generated one if
+	// this turn's generateTitle call succeeded (new threads only), or
+	// otherwise the truncated-question placeholder CreateThread set.
+	// Fetched fresh after handleTurn returns rather than threaded through
+	// ServerEvent, since title generation happens out-of-band from the
+	// normal event stream and a WebSocket client never needs it pushed —
+	// it just reads Thread.Title from GET /api/threads.
+	Title string `json:"title,omitempty"`
 }
 
 // handleAsk runs one full agent turn and blocks until it's done, unlike
@@ -83,6 +94,13 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort — a title lookup failing shouldn't fail the whole
+	// response when the answer itself already succeeded.
+	var title string
+	if thread, err := s.db.GetThread(final.ThreadID); err == nil {
+		title = thread.Title
+	}
+
 	json.NewEncoder(w).Encode(AskResponse{
 		ThreadID:      final.ThreadID,
 		Answer:        answer.String(),
@@ -90,5 +108,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		Suggestions:   final.Suggestions,
 		CostUSD:       final.CostUSD,
 		ContextTokens: final.ContextTokens,
+		DurationMs:    final.DurationMs,
+		Title:         title,
 	})
 }

@@ -193,6 +193,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		} else {
 			suggestions = sug
 			result.CostUSD += sugCost
+			// No error, but nothing usable came back either — a reasoning
+			// model can spend its whole completion budget on hidden
+			// reasoning tokens and never reach visible content (see
+			// generateTitle's doc comment for the real case that
+			// surfaced this). Otherwise this failure mode is completely
+			// silent: no error to log, no suggestions to show, no trace
+			// in the event log to explain why.
+			if len(sug) == 0 {
+				s.db.LogEvent(threadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
+			}
 		}
 	}
 	suggestionsJSON, _ := json.Marshal(suggestions)
@@ -216,6 +226,19 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				result.CostUSD += titleCost
 				s.db.LogEvent(threadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
 			}
+		} else {
+			// No error, but nothing usable came back — this exact gap is
+			// what let a real bug hide completely: generateTitle's client
+			// used to cap completions at 60 tokens, and a reasoning model
+			// (this app's own default, "deepseek") can spend that whole
+			// budget on hidden reasoning tokens before emitting any
+			// visible content, leaving resp.Content empty. Neither branch
+			// above fired, so the thread silently kept its
+			// truncated-question placeholder forever with zero trace in
+			// the event log explaining why. Logging this case (and
+			// raising generateTitle's token budget) closes both the
+			// silence and the likely cause.
+			s.db.LogEvent(threadID, "warn", "title", "model returned no usable title", nil, turnID)
 		}
 	}
 
@@ -336,7 +359,14 @@ const maxSuggestionLen = 140
 // OpenRouter picks by default, which can land on a degraded/no-reasoning
 // endpoint for the same model slug and come back with near-empty content.
 func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelConfig, userMessage, answer string) ([]string, float64, error) {
-	sugClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 150).
+	// 500, not a tighter cap — a reasoning model (this app's own default,
+	// "deepseek") spends part of any completion budget on hidden
+	// reasoning tokens before it ever emits visible content. A cap too
+	// close to what a normal short answer needs risks the reasoning
+	// alone consuming it, leaving resp.Content empty — silently, with no
+	// error to catch. See generateTitle's doc comment for the concrete
+	// case this exact failure mode caused.
+	sugClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 500).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
 	// The task instruction lives in the LAST message, as a fresh "user"
@@ -423,8 +453,18 @@ const maxTitleLen = 60
 // search-app question is almost always self-descriptive enough on its
 // own ("what is the largest dense llm released?"), so dropping the
 // answer sidesteps the whole failure mode instead of working around it.
+//
+// 300, not a tighter cap — this used to be 60, and a real production
+// thread never got a generated title at all: the default model
+// ("deepseek") is a reasoning model, and reasoning tokens count against
+// the same completion budget as visible content. 60 tokens was
+// consumed entirely by hidden reasoning, resp.Content came back empty,
+// and — since that's not an error — the code below silently did
+// nothing, leaving the truncated-question placeholder forever with no
+// trace in the event log explaining why (see handleTurn's title-gating
+// block, which now logs this case explicitly too).
 func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
-	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 60).
+	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
