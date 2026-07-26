@@ -240,6 +240,7 @@ export class AppState {
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			costUsd: m.cost_usd,
+			durationMs: m.duration_ms || undefined,
 			id: m.role === 'user' ? m.id : undefined,
 			timeline:
 				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
@@ -487,6 +488,7 @@ export class AppState {
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.costUsd = e.cost_usd ?? 0;
+				turn.durationMs = e.duration_ms;
 				this.busy = false;
 				// Only adopt the thread id / bump the visible total if the
 				// user is still looking at this thread (or it just became

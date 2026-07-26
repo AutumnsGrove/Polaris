@@ -110,6 +110,37 @@ func TestAddMessage_AccumulatesThreadCost(t *testing.T) {
 	}
 }
 
+func TestSetMessageDuration_RecordsElapsedTime(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	assistantID, err := s.AddMessage("t1", "assistant", "answer", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if msgs[0].DurationMs != 0 {
+		t.Errorf("DurationMs before SetMessageDuration = %d, want 0", msgs[0].DurationMs)
+	}
+
+	if err := s.SetMessageDuration(assistantID, 4200); err != nil {
+		t.Fatalf("SetMessageDuration: %v", err)
+	}
+
+	msgs, err = s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if msgs[0].DurationMs != 4200 {
+		t.Errorf("DurationMs = %d, want 4200", msgs[0].DurationMs)
+	}
+}
+
 func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {

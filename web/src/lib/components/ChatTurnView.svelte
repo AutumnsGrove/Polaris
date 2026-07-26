@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2 } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
@@ -51,6 +51,42 @@
 		} catch {
 			return url;
 		}
+	}
+
+	function formatDuration(ms: number): string {
+		const seconds = ms / 1000;
+		if (seconds < 1) return `${Math.round(ms)}ms`;
+		if (seconds < 60) return `${seconds.toFixed(1)}s`;
+		const minutes = Math.floor(seconds / 60);
+		return `${minutes}m ${Math.round(seconds % 60)}s`;
+	}
+
+	// Brief per-button checkmark confirmation after a successful copy —
+	// local, unlike updateState in settings.svelte.ts, since there's
+	// nothing to preserve across a remount: this turn's copy buttons
+	// don't need to "still show progress" if you navigate away mid-copy,
+	// the clipboard write is already synchronous and done.
+	let copied = $state<'answer' | 'withSources' | null>(null);
+
+	function flashCopied(which: 'answer' | 'withSources') {
+		copied = which;
+		setTimeout(() => {
+			if (copied === which) copied = null;
+		}, 1500);
+	}
+
+	async function copyAnswer() {
+		await navigator.clipboard.writeText(turn.content);
+		flashCopied('answer');
+	}
+
+	async function copyAnswerWithSources() {
+		const sources = (turn.citations ?? [])
+			.map((c, i) => `${i + 1}. ${c.title || hostname(c.url)} — ${c.url}`)
+			.join('\n');
+		const text = sources ? `${turn.content}\n\nSources:\n${sources}` : turn.content;
+		await navigator.clipboard.writeText(text);
+		flashCopied('withSources');
 	}
 </script>
 
@@ -133,6 +169,25 @@
 				<div class="turn-footer">
 					{#if appState.settings.showPrices && turn.costUsd !== undefined}
 						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
+					{/if}
+					{#if turn.durationMs !== undefined}
+						<span class="turn-duration">{formatDuration(turn.durationMs)}</span>
+					{/if}
+					<button class="icon-btn" onclick={copyAnswer} title="Copy answer">
+						{#if copied === 'answer'}
+							<Check size={13} />
+						{:else}
+							<Copy size={13} />
+						{/if}
+					</button>
+					{#if turn.citations?.length}
+						<button class="icon-btn" onclick={copyAnswerWithSources} title="Copy answer with sources">
+							{#if copied === 'withSources'}
+								<Check size={13} />
+							{:else}
+								<Link2 size={13} />
+							{/if}
+						</button>
 					{/if}
 					<button
 						class="icon-btn"
@@ -379,10 +434,12 @@
 		margin-top: 6px;
 	}
 
-	.turn-cost {
+	.turn-cost,
+	.turn-duration {
 		font-size: 11px;
 		color: var(--color-text-dim);
 		margin-right: 4px;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.prose :global(p) {

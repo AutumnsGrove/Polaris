@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- while that turn ran — the join key that lets a reopened thread
 	-- reconstruct which tool calls/thinking steps belong to which answer.
 	turn_id TEXT NOT NULL DEFAULT '',
+	-- duration_ms: wall-clock time agent.Run took to produce this answer
+	-- (assistant messages only, 0 for user messages) — set via
+	-- SetMessageDuration once the ID exists, not at insert time, same
+	-- reason context_tokens is a separate post-hoc UPDATE: the timer
+	-- can't stop until agent.Run has already returned the finished answer.
+	duration_ms INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -115,6 +121,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN source TEXT NOT NULL DEFAULT 'web'`,
 	`ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE events ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -172,8 +179,13 @@ type Message struct {
 	// TurnID joins this message to the events (see store.Event.TurnID)
 	// logged while the turn that produced it ran, so a reopened thread
 	// can reconstruct that turn's tool calls/thinking steps.
-	TurnID    string    `json:"turn_id"`
-	CreatedAt time.Time `json:"created_at"`
+	TurnID string `json:"turn_id"`
+	// DurationMs is how long agent.Run took to produce this answer —
+	// 0 for user messages, and for assistant messages until
+	// SetMessageDuration runs (see its doc comment for why that's a
+	// separate post-hoc update rather than part of AddMessage itself).
+	DurationMs int64     `json:"duration_ms"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -381,7 +393,7 @@ func (s *Store) SetSetting(key, value string) error {
 
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
+		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
 	if err != nil {
@@ -392,10 +404,20 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
+}
+
+// SetMessageDuration records how long agent.Run took to produce a given
+// assistant message — a separate post-hoc UPDATE rather than a column
+// set at AddMessage time, since the duration isn't known until agent.Run
+// has already returned (and thus after the message's ID exists to attach
+// it to). Mirrors SetContextTokens' same shape for the same reason.
+func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
+	_, err := s.db.Exec(`UPDATE messages SET duration_ms = ? WHERE id = ?`, durationMs, messageID)
+	return err
 }

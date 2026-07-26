@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -133,7 +134,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		MaxTurns:        cfg.MaxAgentTurns,
 	}
 
+	// Timed around agent.Run specifically, not the whole handler — this is
+	// "how long it took to get an answer", the number a user watching the
+	// tokens stream in actually cares about. Excludes the follow-up
+	// suggestions/title-generation calls after it, which run invisibly
+	// (the answer's already fully rendered) and would otherwise inflate a
+	// short answer's reported time with unrelated background work.
+	turnStart := time.Now()
 	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
+	durationMs := time.Since(turnStart).Milliseconds()
 	if err != nil {
 		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
@@ -191,6 +200,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
+	if assistantMsgID != 0 {
+		if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
+			log.Warn("failed to record message duration", "err", err)
+			s.db.LogEvent(threadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+	}
+
 	// Auto-compact once this thread crosses the configured threshold: the
 	// model summarizes everything covered so far, and future turns build
 	// history from that summary instead of the full raw text. The
@@ -234,6 +250,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		CostUSD:       totalCost,
 		ContextTokens: contextTokens,
 		Suggestions:   suggestions,
+		DurationMs:    durationMs,
 	})
 }
 

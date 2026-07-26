@@ -30,6 +30,9 @@ export type ServerEvent =
 			// persisted alongside it (see StoredMessage.suggestions) — still
 			// there when this thread is reopened later.
 			suggestions?: string[];
+			// How long agent.Run took to produce this answer, in
+			// milliseconds — see StoredMessage.duration_ms.
+			duration_ms?: number;
 	  }
 	// The thread just crossed the context-window threshold and was
 	// auto-summarized — content is the summary, shown as a collapsible
@@ -86,6 +89,10 @@ export interface StoredMessage {
 	// every StoredEvent logged while that turn ran — the join key
 	// openThread uses to regroup a past turn's timeline.
 	turn_id: string;
+	// How long agent.Run took to produce this answer, in milliseconds —
+	// 0 for user messages, and briefly for a not-yet-finished assistant
+	// message (see store.Store.SetMessageDuration).
+	duration_ms: number;
 	created_at: string;
 }
 
@@ -124,4 +131,8 @@ export interface ChatTurn {
 	// DB message id. Only ever set on 'user' turns — needed to retry/edit
 	// from this point. Undefined until the server confirms it's persisted.
 	id?: number;
+	// How long agent.Run took to produce this answer, in milliseconds.
+	// Assistant turns only, set once "done" arrives (or on reopening a
+	// past thread, from the persisted message).
+	durationMs?: number;
 }
