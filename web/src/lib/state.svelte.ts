@@ -30,6 +30,13 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 		const data = safeParseObject(evt.data);
 		if (evt.source === 'turn' && evt.message === 'thinking') {
 			timeline.push({ kind: 'thinking', content: data.content ?? '' });
+		} else if (evt.source === 'turn' && evt.message === 'reasoning') {
+			// Persisted as one row per burst (see gateway/turn.go's
+			// flushReasoning), already complete — done: true, unlike the
+			// live-streaming case where a burst starts as done: false and
+			// gets closed out by closeOpenReasoning once something else
+			// interrupts it.
+			timeline.push({ kind: 'reasoning', content: data.content ?? '', done: true });
 		} else if (evt.source === 'compaction' && evt.message === 'thread auto-compacted') {
 			timeline.push({ kind: 'compacted', summary: data.summary ?? '' });
 		} else if (evt.source.startsWith('tool.')) {

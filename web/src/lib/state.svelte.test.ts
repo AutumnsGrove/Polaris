@@ -285,6 +285,48 @@ describe('AppState.openThread', () => {
 		});
 	});
 
+	it('reconstructs persisted reasoning bursts as done reasoning items', async () => {
+		// Mirrors gateway/turn.go's flushReasoning — one row per reasoning
+		// burst, source "turn" message "reasoning", distinct from the
+		// explicit "thinking" tool. Reconstructed items are done: true
+		// (unlike a live-streaming burst, which starts done: false and
+		// gets closed out once something else interrupts it).
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (url.endsWith('/events')) {
+					return Promise.resolve({
+						ok: true,
+						json: async () => [
+							{ id: 1, level: 'info', source: 'turn', message: 'reasoning', data: '{"content":"Let me think about this first."}', turn_id: 'turn-1', created_at: '' }
+						]
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0.01,
+						context_tokens: 10,
+						messages: [
+							{ id: 1, role: 'user', content: 'a question', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-1' },
+							{ id: 2, role: 'assistant', content: 'an answer', citations: '[]', suggestions: '[]', cost_usd: 0.01, turn_id: 'turn-1' }
+						]
+					})
+				});
+			})
+		);
+
+		await state.openThread('t1');
+
+		const assistantTurn = state.turns[1];
+		expect(assistantTurn.timeline).toHaveLength(1);
+		expect(assistantTurn.timeline?.[0]).toMatchObject({
+			kind: 'reasoning',
+			content: 'Let me think about this first.',
+			done: true
+		});
+	});
+
 	it('splices the live in-flight turn back in when reopening a still-generating thread', async () => {
 		// A turn is mid-flight for "t1" (send() + the server confirming the
 		// thread id via user_message), but nothing assistant-side has

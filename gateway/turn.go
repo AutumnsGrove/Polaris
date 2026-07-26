@@ -98,11 +98,32 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"is_retry":      msg.EditFromID != 0,
 	}, turnID)
 
+	// reasoningBuf accumulates one "reasoning" burst — a reasoning-capable
+	// model's native hidden-thinking stream arrives as dozens-to-hundreds
+	// of tiny chunks, so persisting one DB row per chunk (like "token")
+	// would be excessive. Instead it's flushed as a single row exactly
+	// when something else interrupts it (see emit below) — the same
+	// moment the frontend's closeOpenReasoning marks the live timeline
+	// item "done" — so a reopened thread's reasoning lands in the same
+	// position in the timeline it actually streamed in, not tacked onto
+	// the end regardless of when it really happened.
+	var reasoningBuf strings.Builder
+	flushReasoning := func() {
+		if reasoningBuf.Len() == 0 {
+			return
+		}
+		s.db.LogEvent(threadID, "info", "turn", "reasoning", map[string]interface{}{"content": reasoningBuf.String()}, turnID)
+		reasoningBuf.Reset()
+	}
+
 	// emit both streams the event to the browser (send) and, for the
 	// subset worth keeping as durable evidence, persists it to the events
-	// table — "token"/"reasoning" are deliberately excluded: they arrive
-	// as dozens-to-hundreds of small chunks per turn, and the assembled
+	// table — "token" is deliberately excluded: it arrives as
+	// dozens-to-hundreds of small chunks per turn, and the assembled
 	// final answer is already persisted in full as the assistant message.
+	// "reasoning" chunks are handled separately above/below, batched into
+	// one row per burst instead of skipped entirely — unlike "token",
+	// they have no other persisted home to fall back to.
 	emit := func(eventType string, payload map[string]interface{}) {
 		evt := ServerEvent{Type: eventType, ThreadID: threadID}
 		if v, ok := payload["content"].(string); ok {
@@ -119,6 +140,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 		if v, ok := payload["citations"].([]tools.Citation); ok {
 			evt.Citations = v
+		}
+		if eventType == "reasoning" {
+			reasoningBuf.WriteString(evt.Content)
+		} else {
+			flushReasoning()
 		}
 		send(evt)
 		s.logTurnEvent(threadID, turnID, eventType, evt)
@@ -143,6 +169,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	turnStart := time.Now()
 	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
 	durationMs := time.Since(turnStart).Milliseconds()
+	// Catches a reasoning burst still open when the turn ended — normally
+	// the final answer's "token" events already triggered this via emit
+	// above, but a turn that errored or was stopped mid-reasoning
+	// wouldn't have reached that point.
+	flushReasoning()
 	if err != nil {
 		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
