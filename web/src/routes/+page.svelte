@@ -55,13 +55,26 @@
 			submit();
 		}}
 	>
-		<textarea
-			placeholder="Ask Polaris…"
-			rows="1"
-			bind:value={input}
-			onkeydown={onKeydown}
-			use:autoResize={{ value: input, maxHeight: 200 }}
-		></textarea>
+		<div class="textarea-wrap">
+			{#if !input}
+				<!-- A native placeholder attribute can't mix fonts within its
+				     text, so the "Polaris" wordmark treatment used everywhere
+				     else (see .welcome-heading .wordmark) needs this overlay
+				     instead — invisible to interaction (pointer-events: none)
+				     and hidden the instant there's real input, so it never
+				     competes with what's actually being typed. -->
+				<div class="fake-placeholder" aria-hidden="true">
+					Ask <span class="wordmark">Polaris</span>…
+				</div>
+			{/if}
+			<textarea
+				rows="1"
+				bind:value={input}
+				onkeydown={onKeydown}
+				use:autoResize={{ value: input, maxHeight: 200 }}
+				aria-label="Ask Polaris"
+			></textarea>
+		</div>
 		<VoiceButton />
 		<button
 			type={appState.busy ? 'button' : 'submit'}
@@ -373,8 +386,39 @@
 		padding-bottom: max(12px, env(safe-area-inset-bottom));
 	}
 
-	textarea {
+	.textarea-wrap {
+		position: relative;
 		flex: 1;
+		display: flex;
+	}
+
+	.fake-placeholder {
+		position: absolute;
+		inset: 0;
+		/* Not display: flex — a flex container treats a whitespace-only
+		   text node between two inline elements as display: none (per the
+		   flexbox spec's anonymous-item handling), which silently ate the
+		   space between "Ask" and the "Polaris" span. Padding alone
+		   already centers a single line of text the same height as the
+		   textarea's own single row, so flex's vertical centering was
+		   never actually needed here. */
+		padding: 10px 14px;
+		font-size: 16px;
+		line-height: 1.5;
+		font-family: var(--font-sans);
+		color: var(--color-text-dim);
+		pointer-events: none;
+		white-space: nowrap;
+		overflow: hidden;
+	}
+
+	.fake-placeholder .wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+	}
+
+	textarea {
+		width: 100%;
 		resize: none;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
@@ -395,10 +439,6 @@
 		max-height: 200px;
 		overflow-y: auto;
 		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
-	}
-
-	textarea::placeholder {
-		color: var(--color-text-dim);
 	}
 
 	textarea:hover {

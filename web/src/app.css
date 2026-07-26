@@ -104,6 +104,23 @@ body {
 	color: var(--color-text);
 	font-family: var(--font-sans);
 	transition: background-color 0.15s ease, color 0.15s ease;
+	/* Without this, focusing the composer on iOS can still scroll the
+	   whole page up regardless of any inner container's own overflow
+	   rules (see .welcome's overflow fix in +page.svelte, which closed
+	   one specific case but not this one): the keyboard opening resizes
+	   the *visual* viewport, but the *layout* viewport html/body measure
+	   against doesn't reliably shrink in sync, so the document can
+	   briefly be "tall enough" to scroll — and iOS's native
+	   scroll-focused-input-into-view behavior operates on the page
+	   itself, not just .shell. position: fixed removes html/body from
+	   the normal scroll calculation entirely, so there is no page-level
+	   scroll target left for the keyboard to hijack; every one of this
+	   app's actual scroll areas is already an explicit inner container
+	   (.timeline-scroll, a textarea's own overflow) that keeps working
+	   exactly as before. */
+	overflow: hidden;
+	position: fixed;
+	width: 100%;
 }
 
 * {
