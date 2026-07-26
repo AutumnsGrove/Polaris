@@ -5,6 +5,7 @@
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2 } from '@lucide/svelte';
+	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
@@ -76,8 +77,13 @@
 	}
 
 	async function copyAnswer() {
-		await navigator.clipboard.writeText(turn.content);
-		flashCopied('answer');
+		try {
+			await copyToClipboard(turn.content);
+			flashCopied('answer');
+			appState.showToast('Copied answer');
+		} catch (err) {
+			appState.showToast('Copy failed — clipboard access was blocked');
+		}
 	}
 
 	async function copyAnswerWithSources() {
@@ -85,8 +91,13 @@
 			.map((c, i) => `${i + 1}. ${c.title || hostname(c.url)} — ${c.url}`)
 			.join('\n');
 		const text = sources ? `${turn.content}\n\nSources:\n${sources}` : turn.content;
-		await navigator.clipboard.writeText(text);
-		flashCopied('withSources');
+		try {
+			await copyToClipboard(text);
+			flashCopied('withSources');
+			appState.showToast('Copied answer with sources');
+		} catch (err) {
+			appState.showToast('Copy failed — clipboard access was blocked');
+		}
 	}
 </script>
 

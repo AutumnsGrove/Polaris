@@ -4,6 +4,7 @@
 	import { appState } from '$lib/state.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
+	import Toast from '$lib/components/Toast.svelte';
 
 	let { children } = $props();
 
@@ -61,6 +62,8 @@
 {#if appState.settings.open}
 	<SettingsPanel />
 {/if}
+
+<Toast />
 
 <style>
 	.shell {

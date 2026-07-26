@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AppState } from './state.svelte';
 import type { ServerEvent } from './types';
 
@@ -367,6 +367,42 @@ describe('AppState.openThread', () => {
 		);
 		await state.openThread('unrelated-thread');
 		expect(state.turns).toHaveLength(1);
+	});
+});
+
+describe('AppState.showToast', () => {
+	// The copy buttons' checkmark icon-swap alone turned out not to be a
+	// clear enough "did that work" signal (clipboard writes can also fail
+	// silently over plain HTTP, where the Clipboard API isn't available) —
+	// showToast is the app-level confirmation banner that backs those.
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('adds a toast and auto-dismisses it after the given duration', () => {
+		const state = new AppState();
+		state.showToast('Copied answer', 2000);
+
+		expect(state.toasts).toHaveLength(1);
+		expect(state.toasts[0].message).toBe('Copied answer');
+
+		vi.advanceTimersByTime(2000);
+		expect(state.toasts).toHaveLength(0);
+	});
+
+	it('stacks multiple toasts independently instead of one replacing another', () => {
+		const state = new AppState();
+		state.showToast('Copied answer', 2000);
+		state.showToast('Copied answer with sources', 2000);
+
+		expect(state.toasts.map((t) => t.message)).toEqual(['Copied answer', 'Copied answer with sources']);
+
+		vi.advanceTimersByTime(2000);
+		expect(state.toasts).toHaveLength(0);
 	});
 });
 
