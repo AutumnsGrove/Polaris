@@ -13,10 +13,34 @@
 	// reliable fix is tracking window.visualViewport directly and
 	// exposing it as a CSS variable, which .shell falls back to dvh
 	// without (desktop browsers, or before this runs).
+	//
+	// height alone isn't enough: when the on-screen keyboard opens, iOS
+	// also shifts visualViewport.offsetTop as it scrolls the focused
+	// input into view — and that scroll happens at the visual-viewport
+	// layer, independent of the page's own DOM scroll position, so
+	// body's position:fixed (which only stops DOM scrolling) does
+	// nothing to prevent it. The composer ended up pinned near the top
+	// of the screen with a big blank gap above it: .shell was correctly
+	// *sized* to the shrunk height, but never *repositioned* to follow
+	// where iOS had scrolled the visible area to. Exposing offsetTop as
+	// a second variable and applying it as a translateY below cancels
+	// that shift out.
 	function updateViewportHeight() {
 		const vv = window.visualViewport;
 		const height = vv ? vv.height : window.innerHeight;
+		const offsetTop = vv ? vv.offsetTop : 0;
 		document.documentElement.style.setProperty('--app-height', `${height}px`);
+		document.documentElement.style.setProperty('--app-offset-top', `${offsetTop}px`);
+
+		// iOS has a known bug where offsetTop can fail to reset to 0 once
+		// the keyboard fully closes (height back to ~the full window
+		// height) — nudging the scroll position by 1px and back forces a
+		// recompute. Gated on the keyboard actually being closed so this
+		// never fights a still-open one.
+		if (vv && offsetTop !== 0 && height >= window.innerHeight - 1) {
+			window.scrollBy(0, -1);
+			window.scrollBy(0, 1);
+		}
 	}
 
 	onMount(() => {
@@ -77,6 +101,17 @@
 		width: 100vw;
 		overflow: hidden;
 		position: relative;
+		/* --app-offset-top compensates for visualViewport.offsetTop — iOS
+		   scrolls the focused input into view at the visual-viewport
+		   layer when the keyboard opens, which is independent of the
+		   page's own DOM scroll position (body's position:fixed only
+		   stops the latter). Without this, .shell was sized correctly to
+		   the shrunk visible height but never repositioned to follow
+		   where iOS had scrolled the visible area to, leaving the
+		   composer pinned near the screen's top with a blank gap above
+		   it. translateY re-aligns .shell with wherever iOS actually put
+		   the visible region. */
+		transform: translateY(var(--app-offset-top, 0px));
 	}
 
 	.main {
