@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/tavily"
 )
 
 func fakeHTMLPage(t *testing.T, status int, body string) *httptest.Server {
@@ -19,6 +21,26 @@ func fakeHTMLPage(t *testing.T, status int, body string) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func fakeJSONServer(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// withWaybackAPI points fetchFromWayback's archive.org call at a fake
+// server for the duration of the test, restoring the real URL after.
+func withWaybackAPI(t *testing.T, availabilityURL string) {
+	t.Helper()
+	original := waybackAvailabilityAPI
+	waybackAvailabilityAPI = availabilityURL
+	t.Cleanup(func() { waybackAvailabilityAPI = original })
 }
 
 func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
@@ -146,5 +168,160 @@ func TestFilterExtractedText(t *testing.T) {
 	}
 	if result != "extracted answer" {
 		t.Errorf("result = %q, want %q", result, "extracted answer")
+	}
+}
+
+func TestLooksLikePaywall_DetectsKnownMarker(t *testing.T) {
+	text := "Some intro text. Subscribe to continue reading this exclusive report."
+	if !looksLikePaywall(text) {
+		t.Errorf("looksLikePaywall(%q) = false, want true", text)
+	}
+}
+
+func TestLooksLikePaywall_IgnoresUnrelatedText(t *testing.T) {
+	text := "Sign up for our free weekly newsletter to get updates on new articles."
+	if looksLikePaywall(text) {
+		t.Errorf("looksLikePaywall(%q) = true, want false (newsletter CTA isn't a paywall)", text)
+	}
+}
+
+func TestLooksEmpty(t *testing.T) {
+	if !looksEmpty("short") {
+		t.Error("looksEmpty(\"short\") = false, want true")
+	}
+	if looksEmpty(strings.Repeat("word ", 100)) {
+		t.Error("looksEmpty(long text) = true, want false")
+	}
+}
+
+func TestIsPDF_ByContentType(t *testing.T) {
+	resp := &http.Response{Header: http.Header{"Content-Type": []string{"application/pdf"}}}
+	if !isPDF(resp, "https://example.com/download") {
+		t.Error("isPDF() = false, want true for application/pdf content-type")
+	}
+}
+
+func TestIsPDF_ByExtension(t *testing.T) {
+	resp := &http.Response{Header: http.Header{"Content-Type": []string{"application/octet-stream"}}}
+	if !isPDF(resp, "https://example.com/papers/2301.00234.pdf") {
+		t.Error("isPDF() = false, want true for a .pdf URL suffix")
+	}
+	if isPDF(resp, "https://example.com/papers/2301.00234") {
+		t.Error("isPDF() = true, want false for a plain octet-stream response with no .pdf suffix")
+	}
+}
+
+// minimalTestPDFBase64 is a byte-accurate minimal single-page PDF
+// ("Hello World") — its xref table's offsets must match its object
+// bytes exactly, so it's generated programmatically (not hand-typed)
+// and stored pre-encoded rather than risking a subtly-wrong literal.
+const minimalTestPDFBase64 = "JVBERi0xLjEKJcKlwrHDqwoKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCgoyIDAgb2JqCjw8IC9UeXBlIC9QYWdlcyAvS2lkcyBbMyAwIFJdIC9Db3VudCAxIC9NZWRpYUJveCBbMCAwIDMwMCAxNDRdID4+CmVuZG9iagoKMyAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuID4+ID4+ID4+IC9Db250ZW50cyA0IDAgUiA+PgplbmRvYmoKCjQgMCBvYmoKPDwgL0xlbmd0aCAzOSA+PgpzdHJlYW0KQlQgL0YxIDE4IFRmIDAgMCBUZCAoSGVsbG8gV29ybGQpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxOCAwMDAwMCBuIAowMDAwMDAwMDY4IDAwMDAwIG4gCjAwMDAwMDAxNTAgMDAwMDAgbiAKMDAwMDAwMDMwNCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDUgPj4Kc3RhcnR4cmVmCjM5NAolJUVPRg=="
+
+func TestFetchAndExtract_PDF(t *testing.T) {
+	pdfBytes, err := base64.StdEncoding.DecodeString(minimalTestPDFBase64)
+	if err != nil {
+		t.Fatalf("decoding test fixture: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.WriteHeader(http.StatusOK)
+		w.Write(pdfBytes)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, text, err := fetchAndExtract(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("fetchAndExtract returned error for a PDF: %v", err)
+	}
+	if !strings.Contains(text, "Hello World") {
+		t.Errorf("text = %q, want it to contain the PDF's text content", text)
+	}
+}
+
+func TestHandleWebRead_DeadLinkFallsBackToArchiveOrg(t *testing.T) {
+	deadServer := fakeHTMLPage(t, http.StatusNotFound, "not found")
+	snapshotServer := fakeHTMLPage(t, http.StatusOK,
+		`<html><head><title>Archived</title></head><body><article>Content recovered from the archive.</article></body></html>`)
+
+	waybackJSON := `{"archived_snapshots":{"closest":{"available":true,"url":"` + snapshotServer.URL + `"}}}`
+	waybackServer := fakeJSONServer(t, http.StatusOK, waybackJSON)
+	withWaybackAPI(t, waybackServer.URL)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+
+	if !strings.Contains(result, "Content recovered from the archive.") {
+		t.Errorf("result = %q, want the archive.org snapshot's content", result)
+	}
+}
+
+func TestHandleWebRead_NoArchiveSnapshotFallsBackToTavily(t *testing.T) {
+	deadServer := fakeHTMLPage(t, http.StatusNotFound, "not found")
+
+	waybackJSON := `{"archived_snapshots":{}}`
+	waybackServer := fakeJSONServer(t, http.StatusOK, waybackJSON)
+	withWaybackAPI(t, waybackServer.URL)
+
+	tavilyJSON := `{"results":[{"url":"x","raw_content":"` + strings.Repeat("Rendered by Tavily. ", 20) + `"}]}`
+	tavilyServer := fakeJSONServer(t, http.StatusOK, tavilyJSON)
+
+	ctx := &Context{
+		Ctx:    context.Background(),
+		Emit:   func(string, map[string]interface{}) {},
+		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
+	}
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+
+	if !strings.Contains(result, "Rendered by Tavily.") {
+		t.Errorf("result = %q, want Tavily's content once archive.org has no snapshot", result)
+	}
+}
+
+func TestHandleWebRead_EmptyBodyFallsBackToTavilyWithoutArchiveOrg(t *testing.T) {
+	// Simulates a JS-rendered SPA: HTTP 200, valid but empty HTML shell —
+	// looksEmpty(text) is true, but err is nil, so archive.org (which
+	// would just return the same empty shell) should never be tried.
+	jsRenderedServer := fakeHTMLPage(t, http.StatusOK, `<html><body><div id="root"></div></body></html>`)
+
+	waybackCalled := false
+	waybackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		waybackCalled = true
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"archived_snapshots":{}}`))
+	}))
+	t.Cleanup(waybackServer.Close)
+	withWaybackAPI(t, waybackServer.URL)
+
+	tavilyJSON := `{"results":[{"url":"x","raw_content":"` + strings.Repeat("Full SPA content via Tavily. ", 20) + `"}]}`
+	tavilyServer := fakeJSONServer(t, http.StatusOK, tavilyJSON)
+
+	ctx := &Context{
+		Ctx:    context.Background(),
+		Emit:   func(string, map[string]interface{}) {},
+		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
+	}
+	result := handleWebRead(`{"url":"`+jsRenderedServer.URL+`"}`, ctx)
+
+	if !strings.Contains(result, "Full SPA content via Tavily.") {
+		t.Errorf("result = %q, want Tavily's rendered content", result)
+	}
+	if waybackCalled {
+		t.Error("archive.org was called for a JS-render case (err == nil) — it should only be tried on dead links/paywalls")
+	}
+}
+
+func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
+	deadServer := fakeHTMLPage(t, http.StatusNotFound, "not found")
+	waybackServer := fakeJSONServer(t, http.StatusOK, `{"archived_snapshots":{}}`)
+	withWaybackAPI(t, waybackServer.URL)
+
+	// No ctx.Tavily configured at all — mirrors a deployment that hasn't
+	// set TAVILY_API_KEY.
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+
+	if !strings.HasPrefix(result, "error:") {
+		t.Errorf("result = %q, want an error when every fallback is unavailable", result)
 	}
 }

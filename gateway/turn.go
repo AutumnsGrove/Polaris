@@ -153,6 +153,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	agentCtx := &tools.Context{
 		SearXNG:         s.searxng,
 		Foursquare:      s.foursquare,
+		Tavily:          s.tavily,
 		DefaultLocation: cfg.DefaultLocation,
 		VoiceMode:       msg.VoiceMode,
 		LLM:             client,

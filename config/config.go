@@ -28,6 +28,13 @@ type Config struct {
 		APIKey string `yaml:"api_key"` // Service API Key; empty disables nearby_search's Foursquare path (falls back to SearXNG)
 	} `yaml:"foursquare"`
 
+	Tavily struct {
+		// APIKey; empty disables web_read's Tavily fallback entirely (it's
+		// only ever a fallback, never the default fetch path — see
+		// tools/web_read.go). https://tavily.com
+		APIKey string `yaml:"api_key"`
+	} `yaml:"tavily"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

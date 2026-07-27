@@ -10,6 +10,7 @@ import (
 	"polaris/logger"
 	"polaris/places"
 	"polaris/search"
+	"polaris/tavily"
 )
 
 var log = logger.WithPrefix("tools")
@@ -26,6 +27,7 @@ type Context struct {
 
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
+	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
 
 	// DefaultLocation is geocoded by nearby_search when a query omits an

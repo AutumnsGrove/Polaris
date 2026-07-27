@@ -21,6 +21,7 @@ import (
 	"polaris/places"
 	"polaris/search"
 	"polaris/store"
+	"polaris/tavily"
 	"polaris/voice"
 )
 
@@ -36,6 +37,7 @@ type Server struct {
 	db         *store.Store
 	searxng    *search.SearXNGClient
 	foursquare *places.FoursquareClient // nil if not configured
+	tavily     *tavily.Client           // nil if not configured
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
 	mux        *http.ServeMux
@@ -57,6 +59,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 		db:         db,
 		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
+		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat),
 		mux:        http.NewServeMux(),

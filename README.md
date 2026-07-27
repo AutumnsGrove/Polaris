@@ -14,7 +14,9 @@ look up a nearby place, or just answer directly — then streams the answer back
 
 - **Web search** via your own SearXNG instance (no API key, no per-query cost, no rate limits)
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
-  instruction ("just the prices") and it runs a small second LLM pass to pull out only that
+  instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
+  Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
+  then to Tavily's Extract API (optional, paid) for JS-rendered pages the free path can't see
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured
 - **Voice** — hold a button to record a memo (transcribed via Voxtral), and read any reply aloud
@@ -36,6 +38,7 @@ Go backend
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
+  ├── tavily   — Extract API client, web_read's paid fallback for JS-rendered pages
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
   ├── store    — SQLite: threads, messages, settings, running cost
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
@@ -62,6 +65,9 @@ app" is one file you can scp around if you ever needed to.
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search
+- Optional: a [Tavily](https://tavily.com) API key so `web_read` can fall back to Tavily's Extract
+  API (which actually renders JS) for JS-rendered pages the free goquery-based fetch can't see —
+  without it, those pages just fail after the free archive.org fallback also comes up empty
 
 ### SearXNG's JSON API
 
@@ -122,9 +128,9 @@ pnpm run build        # manual rebuild, if you ever need one outside of committi
 Everything behavior-affecting lives in `config.yaml` (gitignored — copy `config.yaml.example`)
 or the in-app settings panel:
 
-- **config.yaml** — API keys, the model catalog (each entry pins a specific OpenRouter provider
-  for consistent prompt-cache pricing), SearXNG/Foursquare URLs, logging, voice model choices.
-  Meant to be hand-edited; changes require a restart.
+- **config.yaml** — API keys (OpenRouter, Foursquare, Tavily), the model catalog (each entry pins
+  a specific OpenRouter provider for consistent prompt-cache pricing), SearXNG's URL, logging,
+  voice model choices. Meant to be hand-edited; changes require a restart.
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, and
   the update button. Changes apply instantly, no restart, no file editing.
 - **prompt.md** — the system prompt, read fresh on every turn. Edit it, see the change on your
