@@ -410,12 +410,25 @@
 		color: var(--color-text-dim);
 		pointer-events: none;
 		white-space: nowrap;
-		overflow: hidden;
+		/* Horizontal-only: still truncates on narrow screens the same as
+		   before. Vertical clipping is what was cutting the wordmark span
+		   below down to a thin sliver — see .fake-placeholder .wordmark. */
+		overflow-x: hidden;
+		overflow-y: visible;
 	}
 
 	.fake-placeholder .wordmark {
 		font-family: var(--font-wordmark);
 		font-weight: 400;
+		/* Asimovian's glyph metrics run taller than Lexend's at the same
+		   font-size — inherited from the 1.5 line-height above, this
+		   overflowed the placeholder's fixed-height box and, combined with
+		   overflow: hidden, rendered as a squashed sliver instead of full
+		   letterforms. A tighter line-height here (this span only — the
+		   welcome heading's much larger wordmark instance never needed
+		   this, it already has plenty of room) keeps it within the box
+		   without needing the vertical clip that caused this at all. */
+		line-height: 1.2;
 	}
 
 	textarea {
