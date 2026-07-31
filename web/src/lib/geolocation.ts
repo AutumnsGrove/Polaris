@@ -71,14 +71,19 @@ export function clearManualLocation(): void {
 }
 
 // primeLocation silently asks the browser for a position and caches it.
-// Safe to call on every app load: if permission was already denied, the
-// browser resolves the error callback immediately with no repeat prompt; if
-// it was already granted, this just refreshes the cookie. Never throws and
-// never blocks the caller — it's fire-and-forget by design, since a missing
-// location should degrade to config.yaml's default_location, not stall the
-// app waiting on a permission dialog the user might ignore.
+// Called on every app load (see state.svelte.ts's connect()), but only
+// actually hits the Geolocation API when the cookie has genuinely expired
+// — passing `maximumAge` to getCurrentPosition only tells the browser a
+// cached GPS fix is an acceptable answer, it doesn't stop the call (and
+// whatever OS-level "app wants your location" indicator comes with it)
+// from happening on literally every single refresh, which is what this
+// guard is actually for. Never throws and never blocks the caller — it's
+// fire-and-forget by design, since a missing location should degrade to
+// config.yaml's default_location, not stall the app on a permission
+// dialog the user might ignore.
 export function primeLocation(): void {
 	if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+	if (typeof document !== 'undefined' && readCookie(COOKIE_NAME)) return; // still fresh
 
 	navigator.geolocation.getCurrentPosition(
 		(pos) => {
