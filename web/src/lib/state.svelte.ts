@@ -2,6 +2,7 @@ import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation, StoredEvent,
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
+import { getUserLocation, primeLocation } from './geolocation';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -168,6 +169,10 @@ export class AppState {
 	connect() {
 		this.socket.connect();
 		void this.startVersionCheck();
+		// Fire-and-forget: silently asks for (or refreshes) the browser's
+		// location, cached in a cookie that dispatch() reads per-message —
+		// see geolocation.ts. Never blocks connect() on a permission dialog.
+		primeLocation();
 	}
 
 	async startVersionCheck() {
@@ -403,7 +408,8 @@ export class AppState {
 			content,
 			model: this.selectedModel,
 			edit_from_id: editFromId,
-			stt_cost_usd: sttCostUsd
+			stt_cost_usd: sttCostUsd,
+			user_location: getUserLocation()
 		});
 	}
 

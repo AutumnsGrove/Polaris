@@ -55,6 +55,7 @@ export type ClientMessage =
 			edit_from_id?: number;
 			voice_mode?: boolean;
 			stt_cost_usd?: number;
+			user_location?: string;
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs

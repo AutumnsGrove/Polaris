@@ -35,6 +35,14 @@ type ClientMessage struct {
 	// ignored on every later turn in the same thread. The WebSocket client
 	// never sets this; it's populated by handleAsk for API-originated threads.
 	Source string `json:"source,omitempty"`
+	// UserLocation is "lat, lon" from the browser's Geolocation API,
+	// cached client-side in a cookie so it's resent with every message
+	// without re-prompting each turn (see web/src/lib/geolocation.ts).
+	// Empty if the browser never granted permission, or on non-web
+	// sources. Used as nearby_search's location when neither the user's
+	// message nor the model's tool call names one explicitly — see
+	// handleTurn's defaultLocation precedence.
+	UserLocation string `json:"user_location,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

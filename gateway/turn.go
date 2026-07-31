@@ -150,11 +150,21 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.logTurnEvent(threadID, turnID, eventType, evt)
 	}
 
+	// The browser's geolocation (cached client-side, see protocol.go's
+	// UserLocation doc comment) takes precedence over the static
+	// config.yaml default — a "near me" query should mean where the
+	// phone actually is right now, not wherever the operator was when
+	// they first set up the potato.
+	defaultLocation := cfg.DefaultLocation
+	if msg.UserLocation != "" {
+		defaultLocation = msg.UserLocation
+	}
+
 	agentCtx := &tools.Context{
 		SearXNG:         s.searxng,
 		Foursquare:      s.foursquare,
 		Tavily:          s.tavily,
-		DefaultLocation: cfg.DefaultLocation,
+		DefaultLocation: defaultLocation,
 		VoiceMode:       msg.VoiceMode,
 		LLM:             client,
 		Emit:            emit,
