@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -222,10 +223,14 @@ func (c *Client) WithReasoning(r *ReasoningParams) *Client {
 // delivers it token by token as it arrives, so the driver loop doesn't
 // need a second call (or a "reply" signal tool) to stream the answer.
 //
-// Uses the streaming endpoint under the hood so we can abort the instant
-// the model tries to batch a second tool call — this enforces strictly
-// sequential tool execution even if the model ignores
-// parallel_tool_calls:false.
+// parallel_tool_calls is requested as true — a model that decides it needs
+// three independent web_search calls can emit all three in one turn
+// instead of round-tripping through the full loop three times. Each
+// parallel call streams as its own indexed entry in delta.tool_calls (see
+// sseToolCallDelta.Index); doRequest accumulates every index it sees, not
+// just the first, and returns them all in ChatResponse.ToolCalls in index
+// order. agent.Run dispatches that whole batch concurrently — see its
+// dispatchToolCallsConcurrently.
 //
 // onReasoning delivers a reasoning-capable model's internal "thinking"
 // tokens as they stream, separately from onChunk's visible answer tokens
@@ -270,8 +275,12 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 		Stream:      true,
 	}
 	if len(tools) > 0 {
-		f := false
-		reqBody.ParallelToolCalls = &f
+		// Explicit true, not just omitted — OpenRouter passes this through
+		// to the underlying provider (see ChatCompletionWithTools' doc
+		// comment); being explicit documents the intent rather than
+		// relying on whatever a given provider defaults to.
+		t := true
+		reqBody.ParallelToolCalls = &t
 	}
 	if c.provider != nil {
 		reqBody.Provider = c.provider
@@ -331,7 +340,6 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 	var costUSD float64
 	var respModel, respProvider string
 
-readLoop:
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "data: [DONE]" {
@@ -378,10 +386,6 @@ readLoop:
 			}
 		}
 		for _, tc := range delta.ToolCalls {
-			if tc.Index >= 1 {
-				bodyClose()
-				break readLoop
-			}
 			p, ok := partials[tc.Index]
 			if !ok {
 				p = &partialToolCall{}
@@ -406,24 +410,37 @@ readLoop:
 	// "stop" button, or its own timeout) — not a real failure. Whatever
 	// streamed before the cancel is still a valid, if partial, response.
 
+	// Collected in index order (map iteration order is random) so a
+	// multi-tool-call turn's ToolCalls slice — and therefore the assistant
+	// message agent.Run builds from it — comes back in the same order the
+	// model emitted them, deterministically across runs.
 	var toolCalls []ToolCall
-	if p, ok := partials[0]; ok && p.name != "" {
+	indices := make([]int, 0, len(partials))
+	for idx := range partials {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+	for _, idx := range indices {
+		p := partials[idx]
+		if p.name == "" {
+			continue
+		}
 		args := p.arguments.String()
 		if args != "" && !json.Valid([]byte(args)) {
 			if ctx.Err() != nil {
 				// Cancelled mid-argument-stream — nothing salvageable for
-				// this tool call. Drop it rather than error: agent.Run
-				// treats "no tool calls" as a normal (if early) finish.
-			} else {
-				return nil, fmt.Errorf("truncated tool call arguments: %.100s", args)
+				// this one call. Drop just it rather than erroring the
+				// whole batch: agent.Run treats a smaller (or empty)
+				// ToolCalls slice as a normal (if early) finish.
+				continue
 			}
-		} else {
-			callType := p.callType
-			if callType == "" {
-				callType = "function"
-			}
-			toolCalls = []ToolCall{{ID: p.id, Type: callType, Function: FunctionCall{Name: p.name, Arguments: args}}}
+			return nil, fmt.Errorf("truncated tool call arguments: %.100s", args)
 		}
+		callType := p.callType
+		if callType == "" {
+			callType = "function"
+		}
+		toolCalls = append(toolCalls, ToolCall{ID: p.id, Type: callType, Function: FunctionCall{Name: p.name, Arguments: args}})
 	}
 	if finishReason == "" && len(toolCalls) > 0 {
 		finishReason = "tool_calls"

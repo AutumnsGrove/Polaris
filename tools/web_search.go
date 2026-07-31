@@ -91,7 +91,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_search",
 		"result":    formatted,
-		"citations": ctx.Citations,
+		"citations": ctx.CitationsSnapshot(),
 	})
 
 	return formatted

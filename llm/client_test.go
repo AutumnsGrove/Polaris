@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -92,14 +94,18 @@ func TestChatCompletionWithTools_AssemblesToolCallAcrossChunks(t *testing.T) {
 	}
 }
 
-func TestChatCompletionWithTools_SecondToolCallStopsStreamEarly(t *testing.T) {
-	// doRequest enforces strictly sequential tool execution: the instant a
-	// second tool call (index >= 1) appears, it stops reading rather than
-	// waiting for [DONE] — the model tried to batch calls despite
-	// parallel_tool_calls:false.
+func TestChatCompletionWithTools_AccumulatesMultipleParallelToolCalls(t *testing.T) {
+	// A model batching independent tool calls in one turn streams each as
+	// its own indexed entry in delta.tool_calls, interleaved chunk by
+	// chunk rather than one call finishing before the next starts — real
+	// providers commonly interleave argument chunks across indices like
+	// this instead of completing index 0 before index 1 begins.
 	srv := sseServer(t, []string{
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"web_search","arguments":"{}"}}]}}]}`,
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","type":"function","function":{"name":"web_read","arguments":"{}"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"web_search","arguments":""}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","type":"function","function":{"name":"web_search","arguments":""}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"golang\"}"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"query\":\"rust\"}"}}]}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 		`data: [DONE]`,
 	})
 	defer srv.Close()
@@ -109,8 +115,37 @@ func TestChatCompletionWithTools_SecondToolCallStopsStreamEarly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatCompletionWithTools returned error: %v", err)
 	}
-	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "web_search" {
-		t.Errorf("ToolCalls = %+v, want only the first call", resp.ToolCalls)
+	if len(resp.ToolCalls) != 2 {
+		t.Fatalf("got %d tool calls, want 2: %+v", len(resp.ToolCalls), resp.ToolCalls)
+	}
+	if resp.ToolCalls[0].ID != "call_1" || resp.ToolCalls[0].Function.Arguments != `{"query":"golang"}` {
+		t.Errorf("ToolCalls[0] = %+v, want call_1 with the golang query", resp.ToolCalls[0])
+	}
+	if resp.ToolCalls[1].ID != "call_2" || resp.ToolCalls[1].Function.Arguments != `{"query":"rust"}` {
+		t.Errorf("ToolCalls[1] = %+v, want call_2 with the rust query", resp.ToolCalls[1])
+	}
+}
+
+func TestChatCompletionWithTools_RequestsParallelToolCallsTrue(t *testing.T) {
+	var captured chatRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &captured); err != nil {
+			t.Fatalf("unmarshaling request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+	_, err := client.ChatCompletionWithTools(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}},
+		[]ToolDef{{Type: "function", Function: ToolFunctionDef{Name: "web_search"}}}, nil, nil)
+	if err != nil {
+		t.Fatalf("ChatCompletionWithTools returned error: %v", err)
+	}
+	if captured.ParallelToolCalls == nil || !*captured.ParallelToolCalls {
+		t.Errorf("ParallelToolCalls = %v, want a pointer to true", captured.ParallelToolCalls)
 	}
 }
 

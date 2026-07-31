@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"polaris/llm"
@@ -16,8 +18,13 @@ import (
 )
 
 // recordingEmit collects every ctx.Emit call, keyed by event type, so
-// tests can assert on exactly what streamed to the (fake) browser.
+// tests can assert on exactly what streamed to the (fake) browser. Guarded
+// by a mutex — Run dispatches a turn's tool calls concurrently (see
+// dispatchToolCallsConcurrently), so more than one handler can call Emit
+// at the same instant; production's real emit (gateway/turn.go) has the
+// same protection for the same reason.
 type recordingEmit struct {
+	mu     sync.Mutex
 	events []emittedEvent
 }
 
@@ -27,10 +34,14 @@ type emittedEvent struct {
 }
 
 func (r *recordingEmit) emit(eventType string, payload map[string]interface{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.events = append(r.events, emittedEvent{eventType, payload})
 }
 
 func (r *recordingEmit) tokenContent() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	var b strings.Builder
 	for _, e := range r.events {
 		if e.eventType == "token" {
@@ -129,6 +140,112 @@ func TestRun_ToolCallThenAnswer(t *testing.T) {
 	}
 	if !sawThinking {
 		t.Error("expected a \"thinking\" event from the think tool dispatch")
+	}
+}
+
+func TestRun_ParallelToolCallsDispatchedAsOneBatch(t *testing.T) {
+	// Two independent tool calls in the SAME model turn — the model
+	// batched them (see llm.Client's parallel_tool_calls request field).
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{
+						{ID: "call-1", Type: "function", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"first"}`}},
+						{ID: "call-2", Type: "function", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"second"}`}},
+					},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Final answer"}, Chunks: []string{"Final answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "two independent things")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "Final answer" {
+		t.Errorf("Answer = %q, want %q", result.Answer, "Final answer")
+	}
+
+	secondCallMsgs := mock.Calls[1].Messages
+	// The last message before this call must be the assistant's
+	// tool_calls message immediately followed by BOTH tool results with
+	// nothing else interleaved between them — the exact ordering
+	// OpenRouter/DeepSeek rejects with a 400 ("insufficient tool
+	// messages following tool_calls message") if violated. Locate the
+	// assistant message carrying both calls, then assert the very next
+	// two messages are its tool results, in any order among themselves,
+	// but with no other role between them.
+	assistantIdx := -1
+	for i, m := range secondCallMsgs {
+		if m.Role == "assistant" && len(m.ToolCalls) == 2 {
+			assistantIdx = i
+			break
+		}
+	}
+	if assistantIdx == -1 {
+		t.Fatalf("expected one assistant message carrying both tool calls, got %+v", secondCallMsgs)
+	}
+	if assistantIdx+2 >= len(secondCallMsgs) {
+		t.Fatalf("not enough messages after the assistant tool_calls message: %+v", secondCallMsgs)
+	}
+	seenIDs := map[string]bool{}
+	for _, m := range secondCallMsgs[assistantIdx+1 : assistantIdx+3] {
+		if m.Role != "tool" {
+			t.Errorf("message immediately after the tool_calls batch = role %q, want \"tool\" (nothing may be interleaved): %+v", m.Role, m)
+		}
+		seenIDs[m.ToolCallID] = true
+	}
+	if !seenIDs["call-1"] || !seenIDs["call-2"] {
+		t.Errorf("tool result messages = %+v, want both call-1 and call-2 represented", secondCallMsgs[assistantIdx+1:assistantIdx+3])
+	}
+}
+
+func TestRun_ParallelToolCalls_CitationsFromBothSurvive(t *testing.T) {
+	// Two web_search calls hitting a fake SearXNG concurrently — this is
+	// the real-world shape (the model batching two independent searches)
+	// and exercises tools.Context.AddCitation's mutex under actual
+	// concurrent writers, not just sequential ones.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"results":[{"title":"Result for %s","url":"https://example.com/%s","content":"snippet"}]}`, q, q)
+	}))
+	defer srv.Close()
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{
+						{ID: "call-1", Type: "function", Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"golang"}`}},
+						{ID: "call-2", Type: "function", Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"rust"}`}},
+					},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Final answer"}, Chunks: []string{"Final answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+
+	result, err := Run(context.Background(), ctx, nil, "compare golang and rust")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(result.Citations) != 2 {
+		t.Fatalf("got %d citations, want 2 (both parallel searches' results): %+v", len(result.Citations), result.Citations)
+	}
+	urls := map[string]bool{}
+	for _, c := range result.Citations {
+		urls[c.URL] = true
+	}
+	if !urls["https://example.com/golang"] || !urls["https://example.com/rust"] {
+		t.Errorf("citation URLs = %v, want both example.com/golang and example.com/rust", urls)
 	}
 }
 

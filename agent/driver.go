@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"polaris/llm"
@@ -126,6 +127,9 @@ const fallbackSystemPrompt = `You are Polaris, a private, self-hosted research a
 - web_read: fetch a URL and extract its content (optionally filtered to just what's needed).
 - nearby_search: find real-world places (restaurants, pharmacies, etc.) near a location.
 - youtube_transcript: fetch a YouTube video's transcript, given its URL or video ID.
+
+You can call multiple tools in the same turn when they're genuinely independent of each other's
+results (they run concurrently) — don't batch when a later call depends on an earlier one's result.
 
 There is no separate "reply" tool. Once you have enough information (or the question needs none),
 just answer directly in plain text — that ends the research phase and streams straight to the user.
@@ -260,14 +264,29 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			}, nil
 		}
 
-		call := resp.ToolCalls[0]
-		messages = append(messages, llm.ChatMessage{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
-		result := tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx)
-		messages = append(messages, llm.ChatMessage{Role: "tool", Content: result, ToolCallID: call.ID})
+		// The OpenAI-compatible wire protocol requires one assistant
+		// message carrying every tool call from this turn (not one
+		// message per call), immediately followed by ALL of that batch's
+		// "tool" role result messages with nothing else interleaved
+		// between them — confirmed the hard way: DeepSeek 400s with
+		// "insufficient tool messages following tool_calls message" if a
+		// nudge (a "user" role message) lands between tool-result #2 and
+		// #3 of a 3-call batch. So every result message gets appended
+		// first, in one pass, and only THEN any nudges from the whole
+		// batch — never interleaved per-call the way a single-call turn
+		// could safely do it.
+		calls := resp.ToolCalls
+		messages = append(messages, llm.ChatMessage{Role: "assistant", ToolCalls: calls})
 
-		if isResearchTool(call.Function.Name) {
-			for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
-				messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+		results := dispatchToolCallsConcurrently(calls, ctx)
+		for _, r := range results {
+			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
+		}
+		for _, r := range results {
+			if isResearchTool(r.call.Function.Name) {
+				for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
+					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+				}
 			}
 		}
 	}
@@ -313,4 +332,46 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 	}, nil
+}
+
+// toolCallResult pairs a tool call with the string tools.Dispatch returned
+// for it, so results can be matched back up to their ToolCallID after
+// running concurrently and in unpredictable completion order.
+type toolCallResult struct {
+	call   llm.ToolCall
+	result string
+}
+
+// dispatchToolCallsConcurrently runs every tool call from one model turn
+// in parallel — three independent web_search calls the model queued up in
+// the same turn all fire their outbound requests at once instead of
+// waiting for each to finish before the next starts. Results are returned
+// in the same order as calls regardless of which finishes first, so the
+// message history Run builds from them stays deterministic across runs
+// even though the underlying dispatch order isn't.
+//
+// Each call runs in its own goroutine with its own recover: ws.go's panic
+// recovery wraps the whole turn's goroutine, which protects that
+// goroutine's own call stack, but NOT goroutines spawned underneath it —
+// an unrecovered panic in any goroutine crashes the whole process
+// regardless of a recover() elsewhere. Without this, one tool handler
+// panicking (a bug three calls deep) would take down every other in-flight
+// thread on the server instead of just failing that one call.
+func dispatchToolCallsConcurrently(calls []llm.ToolCall, ctx *tools.Context) []toolCallResult {
+	results := make([]toolCallResult, len(calls))
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		wg.Add(1)
+		go func(i int, call llm.ToolCall) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
+				}
+			}()
+			results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx)}
+		}(i, call)
+	}
+	wg.Wait()
+	return results
 }

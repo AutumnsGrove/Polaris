@@ -5,6 +5,7 @@ package tools
 
 import (
 	"context"
+	"sync"
 
 	"polaris/llm"
 	"polaris/logger"
@@ -48,8 +49,12 @@ type Context struct {
 
 	// Citations accumulates every {title, url} surfaced by search/read/
 	// nearby_search calls during this turn, so the gateway can attach
-	// them to the final answer once the model replies.
-	Citations []Citation
+	// them to the final answer once the model replies. citationsMu guards
+	// it — agent.Run dispatches every tool call from one model turn
+	// concurrently (see dispatchToolCallsConcurrently), so two handlers
+	// can call AddCitation at the same instant.
+	citationsMu sync.Mutex
+	Citations   []Citation
 }
 
 type Citation struct {
@@ -60,14 +65,33 @@ type Citation struct {
 // AddCitation appends a citation unless its URL is already present —
 // web_search and web_read routinely surface the same URL (a search hit
 // that then gets read in full), and duplicate source badges in the UI
-// look like a bug rather than an accurate source list.
+// look like a bug rather than an accurate source list. Safe to call
+// concurrently from multiple tool handlers dispatched in parallel.
 func (c *Context) AddCitation(cit Citation) {
+	c.citationsMu.Lock()
+	defer c.citationsMu.Unlock()
 	for _, existing := range c.Citations {
 		if existing.URL == cit.URL {
 			return
 		}
 	}
 	c.Citations = append(c.Citations, cit)
+}
+
+// CitationsSnapshot returns a copy of the citations gathered so far. Tool
+// handlers use this — not a direct ctx.Citations read — when building an
+// emit payload mid-dispatch, since with parallel tool calls another
+// goroutine's AddCitation could be appending at that exact instant; an
+// unsynchronized read there would race with it. A direct read of
+// ctx.Citations is still fine once all of a turn's dispatches have joined
+// (see agent.Run, after its sync.WaitGroup.Wait returns) — that point is
+// provably sequential with every AddCitation that ran before it.
+func (c *Context) CitationsSnapshot() []Citation {
+	c.citationsMu.Lock()
+	defer c.citationsMu.Unlock()
+	out := make([]Citation, len(c.Citations))
+	copy(out, c.Citations)
+	return out
 }
 
 type HandlerFunc func(argsJSON string, ctx *Context) string

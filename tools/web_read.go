@@ -138,7 +138,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",
 		"result":    result,
-		"citations": ctx.Citations,
+		"citations": ctx.CitationsSnapshot(),
 	})
 
 	return result

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -116,6 +117,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		reasoningBuf.Reset()
 	}
 
+	// emitMu serializes the whole emit() body below — reasoningBuf's
+	// mutation isn't otherwise safe for concurrent use, and neither is
+	// interleaving arbitrary tool_call/tool_result events with it. Needed
+	// now that agent.Run dispatches a turn's tool calls concurrently (see
+	// dispatchToolCallsConcurrently): several handlers can call ctx.Emit
+	// at the same instant. send() has its own separate mutex already
+	// (ws.go) for the WebSocket write specifically; this one covers
+	// everything else emit() does around that write.
+	var emitMu sync.Mutex
+
 	// emit both streams the event to the browser (send) and, for the
 	// subset worth keeping as durable evidence, persists it to the events
 	// table — "token" is deliberately excluded: it arrives as
@@ -125,6 +136,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// one row per burst instead of skipped entirely — unlike "token",
 	// they have no other persisted home to fall back to.
 	emit := func(eventType string, payload map[string]interface{}) {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+
 		evt := ServerEvent{Type: eventType, ThreadID: threadID}
 		if v, ok := payload["content"].(string); ok {
 			evt.Content = v

@@ -102,7 +102,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 			summary := "Searching near: " + geo.DisplayName + "\n\n" + places.FormatPlaces(matches)
 			log.Info("nearby_search (foursquare)", "query", args.Query, "location", geo.DisplayName, "matches", len(matches))
 			ctx.Emit("tool_result", map[string]interface{}{
-				"tool": "nearby_search", "result": summary, "citations": ctx.Citations,
+				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(),
 			})
 			return summary
 		}
@@ -124,7 +124,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 			}
 			log.Info("nearby_search (searxng fallback)", "query", args.Query, "location", geo.DisplayName, "results", len(resp.Results))
 			ctx.Emit("tool_result", map[string]interface{}{
-				"tool": "nearby_search", "result": summary, "citations": ctx.Citations,
+				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(),
 			})
 			return summary
 		}

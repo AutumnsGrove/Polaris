@@ -83,7 +83,7 @@ func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "youtube_transcript",
 		"result":    transcript,
-		"citations": ctx.Citations,
+		"citations": ctx.CitationsSnapshot(),
 	})
 	return transcript
 }
