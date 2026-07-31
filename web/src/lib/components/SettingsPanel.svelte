@@ -72,6 +72,23 @@
 		</section>
 
 		<section>
+			<h3>Location</h3>
+			<div class="row location-row">
+				<input
+					type="text"
+					placeholder="e.g. Seattle, WA"
+					value={appState.settings.manualLocation}
+					onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
+				/>
+			</div>
+			<p class="hint">
+				Used by "near me" questions when the browser can't get your real location (it needs
+				https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
+				is available.
+			</p>
+		</section>
+
+		<section>
 			<h3>Updates</h3>
 			{#if appState.version}
 				<div class="row version-row">
@@ -249,6 +266,20 @@
 		border-radius: var(--radius-md);
 		padding: 6px 10px;
 		font-size: 13px;
+	}
+
+	.location-row input {
+		flex: 1;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		border-radius: var(--radius-md);
+		padding: 6px 10px;
+		font-size: 13px;
+		color: var(--color-text);
+	}
+
+	.location-row input::placeholder {
+		color: var(--color-text-dim);
 	}
 
 	.switch {

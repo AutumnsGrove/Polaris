@@ -1,3 +1,5 @@
+import { getManualLocation, setManualLocation as persistManualLocation } from './geolocation';
+
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
 // User-adjustable UI preferences, split out of state.svelte.ts since
@@ -8,6 +10,13 @@ export class SettingsState {
 	theme = $state<'dark' | 'light'>('dark');
 	showPrices = $state(true);
 	defaultModel = $state('');
+
+	// Fallback for nearby_search when the browser's real Geolocation API
+	// isn't available (plain HTTP, permission denied) — a plain-text
+	// address/city, client-side only (a cookie, not /api/settings), since
+	// it describes this browser's location, not shared server config. See
+	// geolocation.ts's getUserLocation for the precedence over a real fix.
+	manualLocation = $state('');
 
 	// Context-usage display, next to thread cost. contextWindowTokens is
 	// the auto-compaction threshold from config.yaml (loaded once via
@@ -33,6 +42,7 @@ export class SettingsState {
 		this.showPrices = data.show_prices ?? true;
 		this.defaultModel = data.default_model ?? '';
 		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
+		this.manualLocation = getManualLocation();
 		this.applyTheme();
 	}
 
@@ -61,6 +71,12 @@ export class SettingsState {
 		this.defaultModel = modelId;
 		await this.put({ default_model: modelId });
 		await onModelChanged?.();
+	}
+
+	// Client-side only — no server round trip, unlike the settings above.
+	setManualLocation(value: string) {
+		this.manualLocation = value.trim();
+		persistManualLocation(value);
 	}
 
 	private async put(body: Record<string, unknown>) {
