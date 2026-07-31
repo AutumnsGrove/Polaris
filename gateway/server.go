@@ -81,6 +81,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/events", s.handleRecentEvents)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)
 	s.mux.HandleFunc("POST /api/speak", s.handleSpeak)
+	s.mux.HandleFunc("POST /api/speak/stream", s.handleSpeakStream)
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	s.mux.HandleFunc("POST /api/update", s.handleUpdate)
