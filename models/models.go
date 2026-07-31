@@ -45,7 +45,7 @@ var Registry = []config.ModelConfig{
 	{
 		ID:          "deepseek",
 		Name:        "DeepSeek V4 Flash",
-		Model:       "deepseek/deepseek-v4-flash",
+		Model:       "deepseek/deepseek-v4-flash-0731",
 		Provider:    []string{"deepseek"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
