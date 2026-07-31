@@ -36,7 +36,7 @@ const researchCheckInInterval = 5
 // the ones that gather sources (and so plausibly reach a point of
 // diminishing returns), not "think" (private reasoning, not research).
 func isResearchTool(name string) bool {
-	return name == "web_search" || name == "web_read" || name == "nearby_search"
+	return name == "web_search" || name == "web_read" || name == "nearby_search" || name == "youtube_transcript"
 }
 
 // researchCheckInMessage nudges the model to consider answering instead
@@ -119,12 +119,13 @@ const promptPath = "prompt.md"
 
 // fallbackSystemPrompt is used only if prompt.md is missing, so a fresh
 // clone still works before the user copies prompt.md.example into place.
-const fallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have four tools:
+const fallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have five tools:
 
 - think: reason privately about strategy before acting.
 - web_search: search the web via a private SearXNG instance.
 - web_read: fetch a URL and extract its content (optionally filtered to just what's needed).
 - nearby_search: find real-world places (restaurants, pharmacies, etc.) near a location.
+- youtube_transcript: fetch a YouTube video's transcript, given its URL or video ID.
 
 There is no separate "reply" tool. Once you have enough information (or the question needs none),
 just answer directly in plain text — that ends the research phase and streams straight to the user.

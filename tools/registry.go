@@ -1,6 +1,6 @@
 // Package tools implements the agent's tool-use loop: think, web_search,
-// web_read, nearby_search, and reply. Each tool self-registers via init(),
-// mirroring her-go's tools/ package convention.
+// web_read, nearby_search, youtube_transcript, and reply. Each tool
+// self-registers via init(), mirroring her-go's tools/ package convention.
 package tools
 
 import (
@@ -91,5 +91,5 @@ func Dispatch(name, argsJSON string, ctx *Context) string {
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
 func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef}
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef}
 }

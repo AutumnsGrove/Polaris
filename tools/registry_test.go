@@ -45,18 +45,18 @@ func TestContext_AddCitation_DeduplicatesByURL(t *testing.T) {
 	}
 }
 
-func TestDefs_ReturnsAllFourTools(t *testing.T) {
+func TestDefs_ReturnsAllFiveTools(t *testing.T) {
 	defs := Defs()
 	names := make(map[string]bool, len(defs))
 	for _, d := range defs {
 		names[d.Function.Name] = true
 	}
-	for _, want := range []string{"think", "web_search", "web_read", "nearby_search"} {
+	for _, want := range []string{"think", "web_search", "web_read", "nearby_search", "youtube_transcript"} {
 		if !names[want] {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 4 {
-		t.Errorf("got %d tool defs, want exactly 4", len(defs))
+	if len(defs) != 5 {
+		t.Errorf("got %d tool defs, want exactly 5", len(defs))
 	}
 }
