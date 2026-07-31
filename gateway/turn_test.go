@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"polaris/config"
 	"polaris/llm"
@@ -104,6 +105,17 @@ func fakeLLMServer(t *testing.T, systemPrompt, answer string) *httptest.Server {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// handleTurn measures elapsed time at millisecond resolution
+		// (time.Since(...).Milliseconds()) and TestHandleAsk_..._
+		// PersistsSameAsChatTurn asserts DurationMs > 0 — a real
+		// guarantee API callers depend on, not a testing artifact. Against
+		// this in-memory localhost server, the whole turn can otherwise
+		// complete inside the same millisecond it started, making that
+		// assertion flaky rather than the feature actually being broken.
+		// This sleep is enough to guarantee real elapsed time to measure
+		// without meaningfully slowing any test that uses this helper.
+		time.Sleep(2 * time.Millisecond)
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		fmt.Fprintf(w, "data: %s\n", chunk)
