@@ -17,10 +17,17 @@ look up a nearby place, or just answer directly — then streams the answer back
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
   then to Tavily's Extract API (optional, paid) for JS-rendered pages the free path can't see
+- **YouTube transcripts** — reads a video's captions directly from its watch page (no API key, no
+  headless browser) so a shared YouTube link is as researchable as any article
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
-  distance/category/map links, falling back to a plain web search if Foursquare isn't configured
+  distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
+  Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
+  plain Tailscale IP isn't — see [Configuration](#configuration)), with a manual location fallback
+  in Settings otherwise
 - **Voice** — hold a button to record a memo (transcribed via Voxtral), and read any reply aloud
-  in a real voice (Kokoro-82M), not the browser's default robotic TTS
+  in a real voice (Kokoro-82M), not the browser's default robotic TTS. Replies are synthesized and
+  played back sentence by sentence as they're ready, not as one call that waits for the whole
+  answer — audio starts noticeably sooner on a long reply
 - **Retry & edit** — redo a failed turn, or fix a typo and re-run from that point, without losing
   the rest of the thread
 - **Persistent threads** with per-thread and per-turn cost tracking, visible or hideable
@@ -34,7 +41,8 @@ look up a nearby place, or just answer directly — then streams the answer back
 Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
-  ├── agent    — tool-use loop: think / web_search / web_read / nearby_search, or just answer
+  ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript,
+  │              or just answer — independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
@@ -131,10 +139,17 @@ or the in-app settings panel:
 - **config.yaml** — API keys (OpenRouter, Foursquare, Tavily), the model catalog (each entry pins
   a specific OpenRouter provider for consistent prompt-cache pricing), SearXNG's URL, logging,
   voice model choices. Meant to be hand-edited; changes require a restart.
-- **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, and
-  the update button. Changes apply instantly, no restart, no file editing.
+- **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
+  location fallback for `nearby_search`, and the update button. Changes apply instantly, no
+  restart, no file editing.
 - **prompt.md** — the system prompt, read fresh on every turn. Edit it, see the change on your
   very next message.
+
+Browser geolocation (used automatically for "near me" questions, before falling back to the
+manual location above or `config.yaml`'s `default_location`) needs a secure context — it won't
+work over Polaris's default plain-HTTP Tailscale IP. [Tailscale
+Serve](https://tailscale.com/docs/features/tailscale-serve) (`tailscale serve --bg --https=8899
+http://localhost:8899`) gives it a real, tailnet-only HTTPS URL with zero cert management.
 
 ## Self-update
 
