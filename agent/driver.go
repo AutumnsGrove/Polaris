@@ -145,9 +145,46 @@ const voiceModeInstruction = "\n\nVoice mode is active: this answer will be read
 	"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
 	"bullet lists, or reciting citations inline — sources will still be shown in the UI regardless."
 
+// FocusMode values — mirrored from web/src/lib/types.ts's FocusMode union
+// (minus "off", which just means "no focus mode instruction added"); keep
+// both in sync by hand.
+const (
+	FocusModeBrief           = "brief"
+	FocusModeAcademic        = "academic"
+	FocusModeNews            = "news"
+	FocusModeFirstPrinciples = "first_principles"
+	FocusModeSocratic        = "socratic"
+)
+
+// focusModeInstructions maps each focus mode to the system-prompt addition
+// that actually implements it — pure prompt engineering, no change to the
+// tool-use loop itself. "brief" deliberately only changes the FINAL
+// answer's style, not the research loop — the composer describes it as
+// "same research, shorter replies", and that's exactly what this does:
+// Run's turn-budget/research-check-in logic never reads FocusMode, only
+// loadSystemPrompt's output differs.
+var focusModeInstructions = map[string]string{
+	FocusModeBrief: "\n\nFocus mode: Brief. Keep your final answer short — a few sentences or a tight " +
+		"paragraph, no filler or restating the question. This only changes how you write the answer, " +
+		"not how much you research: still search/read as much as the question actually needs.",
+	FocusModeAcademic: "\n\nFocus mode: Academic. Prefer academic, peer-reviewed, or primary technical " +
+		"sources (papers, journals, official documentation, standards bodies) over blogs, social media, " +
+		"or marketing pages. When you call web_search on a scientific or technical topic, pass " +
+		"category: \"science\" unless that returns nothing useful.",
+	FocusModeNews: "\n\nFocus mode: News. Prioritize current news coverage from reputable outlets over " +
+		"static reference pages. When you call web_search, pass category: \"news\" for this question.",
+	FocusModeFirstPrinciples: "\n\nFocus mode: First Principles. Don't just state conclusions or cite " +
+		"consensus/authority — explain the underlying mechanism or reasoning that makes the answer " +
+		"true, building up from fundamentals rather than asserting the result.",
+	FocusModeSocratic: "\n\nFocus mode: Socratic. Instead of only stating the answer, briefly walk " +
+		"through the reasoning step by step — as if guiding the user toward the conclusion rather than " +
+		"just handing it over. Stay concise; this is about the shape of the explanation, not padding " +
+		"it with extra questions.",
+}
+
 // loadSystemPrompt reads prompt.md fresh every call — edit the file,
 // see the change on your very next message, no rebuild or restart.
-func loadSystemPrompt(voiceMode bool) string {
+func loadSystemPrompt(voiceMode bool, focusMode string) string {
 	data, err := os.ReadFile(promptPath)
 	prompt := fallbackSystemPrompt
 	if err == nil {
@@ -155,6 +192,9 @@ func loadSystemPrompt(voiceMode bool) string {
 	}
 	if voiceMode {
 		prompt += voiceModeInstruction
+	}
+	if instr, ok := focusModeInstructions[focusMode]; ok {
+		prompt += instr
 	}
 	return prompt
 }
@@ -202,7 +242,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	ctx.Ctx = reqCtx
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode)})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode, ctx.FocusMode)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 

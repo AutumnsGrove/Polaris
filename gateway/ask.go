@@ -23,6 +23,11 @@ type AskRequest struct {
 	Model    string `json:"model,omitempty"`
 	ThreadID string `json:"thread_id,omitempty"`
 	Source   string `json:"source,omitempty"`
+	// FocusMode/DeepResearch mirror ClientMessage's fields of the same
+	// name — see protocol.go's doc comments. Optional: a programmatic
+	// caller not exercising these can just omit them.
+	FocusMode    string `json:"focus_mode,omitempty"`
+	DeepResearch bool   `json:"deep_research,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -65,11 +70,13 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := ClientMessage{
-		Type:     "message",
-		ThreadID: req.ThreadID,
-		Content:  req.Content,
-		Model:    req.Model,
-		Source:   req.Source,
+		Type:         "message",
+		ThreadID:     req.ThreadID,
+		Content:      req.Content,
+		Model:        req.Model,
+		Source:       req.Source,
+		FocusMode:    req.FocusMode,
+		DeepResearch: req.DeepResearch,
 	}
 
 	var answer strings.Builder

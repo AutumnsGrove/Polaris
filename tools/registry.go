@@ -45,6 +45,15 @@ type Context struct {
 	// TTS, not just displayed.
 	VoiceMode bool
 
+	// FocusMode is one of agent.FocusMode's values (or empty for normal
+	// behavior), set from the composer's "+" menu — see
+	// agent.focusModeInstruction for what each one actually changes.
+	FocusMode string
+
+	// DeepResearch, when true, raises this turn's research budget and
+	// check-in leniency — see agent.Run.
+	DeepResearch bool
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/

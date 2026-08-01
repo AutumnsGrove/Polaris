@@ -59,6 +59,48 @@ func newTestContext(mock *llmtest.MockClient, rec *recordingEmit, maxTurns int) 
 	}
 }
 
+func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
+	base := loadSystemPrompt(false, "")
+	brief := loadSystemPrompt(false, FocusModeBrief)
+	if brief == base {
+		t.Error("loadSystemPrompt(false, FocusModeBrief) should differ from the no-focus-mode prompt")
+	}
+	if !strings.Contains(brief, "Focus mode: Brief") {
+		t.Errorf("prompt = %q, want it to contain the Brief focus mode instruction", brief)
+	}
+}
+
+func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
+	base := loadSystemPrompt(false, "")
+	unknown := loadSystemPrompt(false, "not_a_real_mode")
+	if base != unknown {
+		t.Errorf("an unrecognized focus mode should leave the prompt unchanged, got a difference")
+	}
+}
+
+func TestRun_FocusModeInstructionReachesSystemPrompt(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "answer"}, Chunks: []string{"answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.FocusMode = FocusModeAcademic
+
+	if _, err := Run(context.Background(), ctx, nil, "what is dark matter"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	systemMsg := mock.Calls[0].Messages[0]
+	if systemMsg.Role != "system" {
+		t.Fatalf("Messages[0].Role = %q, want %q", systemMsg.Role, "system")
+	}
+	if !strings.Contains(systemMsg.Content, "Focus mode: Academic") {
+		t.Errorf("system prompt sent to the LLM doesn't contain the Academic focus mode instruction: %q", systemMsg.Content)
+	}
+}
+
 func TestRun_PlainAnswerNoToolCalls(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{

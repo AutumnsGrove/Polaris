@@ -26,7 +26,7 @@
 		const text = input;
 		input = '';
 		attachedFile = null;
-		appState.send(text);
+		appState.send(text, undefined, focusMode, deepResearch);
 	}
 
 	// The active thread's title, shown in the header now that the model

@@ -180,6 +180,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Tavily:          s.tavily,
 		DefaultLocation: defaultLocation,
 		VoiceMode:       msg.VoiceMode,
+		FocusMode:       msg.FocusMode,
+		DeepResearch:    msg.DeepResearch,
 		LLM:             client,
 		Emit:            emit,
 		MaxTurns:        cfg.MaxAgentTurns,

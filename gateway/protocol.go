@@ -43,6 +43,15 @@ type ClientMessage struct {
 	// message nor the model's tool call names one explicitly — see
 	// handleTurn's defaultLocation precedence.
 	UserLocation string `json:"user_location,omitempty"`
+	// FocusMode is set from the composer's "+" menu (see
+	// web/src/lib/components/ComposerMenu.svelte) — one of
+	// agent.FocusMode's values, or empty for normal behavior. Shapes the
+	// system prompt for this turn only; see agent.focusModeInstruction.
+	FocusMode string `json:"focus_mode,omitempty"`
+	// DeepResearch, when true, raises this turn's research budget and
+	// check-in leniency — see agent.Run's maxTurns/researchCheckInInterval
+	// handling.
+	DeepResearch bool `json:"deep_research,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

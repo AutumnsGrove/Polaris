@@ -1,4 +1,4 @@
-import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation, StoredEvent, TimelineItem } from './types';
+import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation, StoredEvent, TimelineItem, FocusMode } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
@@ -352,11 +352,15 @@ export class AppState {
 
 	// sttCostUsd is set when content came from a transcribed voice memo
 	// (already billed via /api/transcribe) so it gets folded into the
-	// thread's running total instead of silently untracked.
-	send(content: string, sttCostUsd?: number) {
+	// thread's running total instead of silently untracked. focusMode/
+	// deepResearch come from the composer's "+" menu (ComposerMenu.svelte) —
+	// only plumbed through the plain-text send path for now, not
+	// retry/editMessage below (same scope boundary sttCostUsd already
+	// draws) or VoiceButton's transcribed-memo send.
+	send(content: string, sttCostUsd?: number, focusMode?: FocusMode, deepResearch?: boolean) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
-		this.dispatch(trimmed, undefined, undefined, sttCostUsd);
+		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch);
 	}
 
 	// Re-runs an assistant turn using the same preceding user message —
@@ -380,7 +384,14 @@ export class AppState {
 	// user + streaming-assistant pair, and send over the socket.
 	// editFromId tells the server which persisted message (and everything
 	// after it) to delete before treating content as the replacement.
-	private dispatch(content: string, editFromId?: number, truncateFromIndex?: number, sttCostUsd?: number) {
+	private dispatch(
+		content: string,
+		editFromId?: number,
+		truncateFromIndex?: number,
+		sttCostUsd?: number,
+		focusMode?: FocusMode,
+		deepResearch?: boolean
+	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
@@ -411,7 +422,9 @@ export class AppState {
 			model: this.selectedModel,
 			edit_from_id: editFromId,
 			stt_cost_usd: sttCostUsd,
-			user_location: getUserLocation()
+			user_location: getUserLocation(),
+			focus_mode: focusMode && focusMode !== 'off' ? focusMode : undefined,
+			deep_research: deepResearch || undefined
 		});
 	}
 
