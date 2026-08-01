@@ -7,18 +7,48 @@
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
+	import { numberInlineCitations } from '$lib/citations';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
-	// full list is one click away instead of forced on every reader.
+	// full list is one click away instead of forced on every reader —
+	// clicking an inline citation badge (see handleProseClick) opens it
+	// automatically and scrolls straight to the matching one.
 	let sourcesOpen = $state(false);
 
 	// Content can originate from fetched web pages (via web_read) as well
 	// as the model itself, so sanitize before injecting as HTML — treat
-	// it the same as any other untrusted input.
-	let renderedHtml = $derived(DOMPurify.sanitize(marked.parse(turn.content || '') as string));
+	// it the same as any other untrusted input. numberInlineCitations runs
+	// AFTER sanitize, turning the model's inline [Title](URL) links into
+	// small numbered badges matching the source list below, for exactly
+	// the claims that actually cite one of this turn's tracked sources.
+	let renderedHtml = $derived(
+		numberInlineCitations(DOMPurify.sanitize(marked.parse(turn.content || '') as string), turn.citations ?? [], index)
+	);
+
+	// Delegated click handler on .prose (citation badges live inside
+	// {@html}-injected content, so they can't carry their own Svelte
+	// event handlers) — jump to and briefly highlight the matching chip
+	// in the source list, opening it first if it's still collapsed.
+	function handleProseClick(e: MouseEvent) {
+		const badge = (e.target as HTMLElement).closest('.citation-badge') as HTMLElement | null;
+		if (!badge) return;
+		const targetId = badge.dataset.sourceTarget;
+		if (!targetId) return;
+		e.preventDefault();
+
+		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		sourcesOpen = true;
+		requestAnimationFrame(() => {
+			const el = document.getElementById(targetId);
+			if (!el) return;
+			el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+			el.classList.add('source-chip-flash');
+			setTimeout(() => el.classList.remove('source-chip-flash'), 1200);
+		});
+	}
 
 	let editing = $state(false);
 	let editValue = $state('');
@@ -148,7 +178,7 @@
 			{/if}
 
 			{#if turn.content}
-				<div class="prose">{@html renderedHtml}</div>
+				<div class="prose" onclick={handleProseClick}>{@html renderedHtml}</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
 			{/if}
@@ -164,6 +194,7 @@
 						<div class="citations">
 							{#each turn.citations as c, i (c.url)}
 								<a
+									id={`source-${index}-${i}`}
 									class="source-chip"
 									href={c.url}
 									target="_blank"
@@ -425,6 +456,48 @@
 	.source-chip:hover {
 		border-color: var(--color-accent-2);
 		background: var(--color-surface-3);
+	}
+
+	/* Briefly flashed when an inline citation badge scrolls this chip
+	   into view (see handleProseClick) — a visual "here's the one you
+	   clicked" confirmation, not a permanent state change. Plain scoped
+	   selector, not :global — this chip is regular Svelte-templated
+	   markup (not {@html}-injected), so Svelte's scoping already applies
+	   even though the class itself is added via classList in JS. */
+	.source-chip.source-chip-flash {
+		border-color: var(--color-accent);
+		background: var(--color-accent-soft);
+		transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo);
+	}
+
+	/* Inline citation markers — same numbered-circle language as
+	   .source-index below, so a claim's badge and its entry in the
+	   source list read as visibly the same object. :global since these
+	   live inside {@html}-injected content, not Svelte-templated markup. */
+	.prose :global(.citation-badge) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 15px;
+		height: 15px;
+		padding: 0 3px;
+		margin: 0 1px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--color-accent-2) 20%, transparent);
+		color: var(--color-accent-2);
+		font-size: 9.5px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		text-decoration: none;
+		vertical-align: super;
+		line-height: 1;
+		cursor: pointer;
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+	}
+
+	.prose :global(.citation-badge:hover) {
+		background: var(--color-accent-2);
+		color: var(--color-bg);
 	}
 
 	.source-index {
