@@ -249,6 +249,93 @@ func TestRun_ParallelToolCalls_CitationsFromBothSurvive(t *testing.T) {
 	}
 }
 
+func TestRun_CommentaryBeforeToolCallEmittedAsDistinctItem(t *testing.T) {
+	// The model says something ("Let me check that.") in the SAME
+	// response as a real tool call — this used to get silently merged
+	// into the final answer's flat content string once every later turn's
+	// text piled on top of it. It should instead surface as a distinct
+	// "commentary" event, emitted before that turn's tool_call.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					Content: "Let me check that.",
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"checking"}`},
+					}},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Final answer"}, Chunks: []string{"Final answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "check something for me")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "Final answer" {
+		t.Errorf("Answer = %q, want %q (commentary shouldn't leak into the real answer)", result.Answer, "Final answer")
+	}
+
+	// "think" (the tool call used above) emits a "thinking" event, not
+	// "tool_call"/"tool_result" (those are specific to search/read/etc.
+	// tools) — using it here as the marker for "after the commentary" is
+	// just as valid a proof of ordering.
+	commentaryIdx, thinkingIdx := -1, -1
+	for i, e := range rec.events {
+		if e.eventType == "commentary" && commentaryIdx == -1 {
+			commentaryIdx = i
+			if got := e.payload["content"]; got != "Let me check that." {
+				t.Errorf("commentary content = %v, want %q", got, "Let me check that.")
+			}
+		}
+		if e.eventType == "thinking" && thinkingIdx == -1 {
+			thinkingIdx = i
+		}
+	}
+	if commentaryIdx == -1 {
+		t.Fatal("expected a \"commentary\" event, got none")
+	}
+	if thinkingIdx == -1 {
+		t.Fatal("expected a \"thinking\" event from the tool dispatch, got none")
+	}
+	if commentaryIdx > thinkingIdx {
+		t.Errorf("commentary emitted at index %d, thinking at %d — commentary should come first", commentaryIdx, thinkingIdx)
+	}
+}
+
+func TestRun_NoCommentaryEventWhenTurnHasNoLeadingContent(t *testing.T) {
+	// A tool call with no preceding text shouldn't produce an empty
+	// "commentary" event — nothing to show, nothing to emit.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"checking"}`},
+					}},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Final answer"}, Chunks: []string{"Final answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	if _, err := Run(context.Background(), ctx, nil, "do the thing"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, e := range rec.events {
+		if e.eventType == "commentary" {
+			t.Errorf("unexpected commentary event: %+v", e)
+		}
+	}
+}
+
 func TestRun_MaxTurnsExhausted_ForcesWrapUp(t *testing.T) {
 	// MaxTurns=1: the loop's single iteration is consumed by a tool call,
 	// so it should fall through to the forced wrap-up path (a second,

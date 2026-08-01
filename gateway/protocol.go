@@ -55,6 +55,12 @@ type ClientMessage struct {
 //	"tool_call"     — tool + args: a search/read call just started
 //	"tool_result"   — tool + result + citations: that call finished
 //	"token"         — content: one chunk of the final answer, appended live
+//	"commentary"    — content: what the model said before deciding to call a tool (or before an
+//	                  aborted attempt got discarded) — sent once, with the full text, right before
+//	                  that turn's tool_call events; the frontend clears whatever it had streamed
+//	                  live as "token" for that turn and shows this as its own timeline item instead,
+//	                  so it's positioned between the tool calls that came before and after it rather
+//	                  than getting silently appended to the real final answer (see agent.emitCommentary)
 //	"user_message"  — user_message_id: the persisted ID of the user message that started this
 //	                  turn, sent as soon as it's saved (even if the turn later errors) so the
 //	                  frontend can retry/edit from it

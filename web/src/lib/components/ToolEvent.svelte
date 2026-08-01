@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { marked } from 'marked';
+	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
 	import { Search, FileText, Brain, Archive, Loader2, ChevronRight } from '@lucide/svelte';
 
@@ -17,10 +19,22 @@
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
 		return item.tool;
 	}
+
+	// Commentary is genuine assistant reply text (not private reasoning),
+	// so it's rendered as real markdown — same sanitize-then-parse
+	// treatment as the final answer in ChatTurnView.svelte, duplicated
+	// here rather than shared since Svelte's per-component style scoping
+	// means that component's .prose rules can't reach markup rendered by
+	// this one regardless of class name.
+	let commentaryHtml = $derived(
+		item.kind === 'commentary' ? DOMPurify.sanitize(marked.parse(item.content) as string) : ''
+	);
 </script>
 
 {#if item.kind === 'thinking'}
 	<div class="thinking">{item.content}</div>
+{:else if item.kind === 'commentary'}
+	<div class="commentary">{@html commentaryHtml}</div>
 {:else if item.kind === 'reasoning'}
 	<div class="tool-event">
 		<button class="tool-header" onclick={() => (open = !open)}>
@@ -78,6 +92,36 @@
 		font-style: italic;
 		color: var(--color-text-dim);
 		line-height: 1.5;
+	}
+
+	/* Genuine reply prose, not a boxed/collapsible aside like .tool-event
+	   or .thinking — it reads as part of the answer, just positioned
+	   where it actually happened rather than pushed to the end. */
+	.commentary {
+		margin-bottom: 8px;
+		font-size: 14px;
+		line-height: 1.6;
+		color: var(--color-text);
+	}
+
+	.commentary :global(p) {
+		margin: 0 0 8px 0;
+	}
+
+	.commentary :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.commentary :global(a) {
+		color: var(--color-accent);
+	}
+
+	.commentary :global(code) {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-size: 0.9em;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-sm);
+		padding: 1px 4px;
 	}
 
 	.tool-event {

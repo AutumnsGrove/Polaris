@@ -31,6 +31,8 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 		const data = safeParseObject(evt.data);
 		if (evt.source === 'turn' && evt.message === 'thinking') {
 			timeline.push({ kind: 'thinking', content: data.content ?? '' });
+		} else if (evt.source === 'turn' && evt.message === 'commentary') {
+			timeline.push({ kind: 'commentary', content: data.content ?? '' });
 		} else if (evt.source === 'turn' && evt.message === 'reasoning') {
 			// Persisted as one row per burst (see gateway/turn.go's
 			// flushReasoning), already complete — done: true, unlike the
@@ -501,6 +503,21 @@ export class AppState {
 			case 'compacted':
 				this.closeOpenReasoning(turn);
 				turn.timeline = [...(turn.timeline ?? []), { kind: 'compacted', summary: e.content }];
+				break;
+
+			case 'commentary':
+				this.closeOpenReasoning(turn);
+				// Whatever just streamed in live via 'token' for this turn
+				// was this commentary, not the final answer — the server
+				// sends the same text again here as the authoritative
+				// version once it knows that for certain (see
+				// gateway/protocol.go's doc comment on this event). Drop
+				// the flat accumulation and show it as its own timeline
+				// item instead, positioned exactly where it happened
+				// relative to the tool calls before/after it, rather than
+				// letting it silently pile into the real final answer.
+				turn.content = '';
+				turn.timeline = [...(turn.timeline ?? []), { kind: 'commentary', content: e.content }];
 				break;
 
 			case 'token':

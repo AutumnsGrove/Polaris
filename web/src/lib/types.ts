@@ -18,6 +18,10 @@ export type ServerEvent =
 			citations?: Citation[];
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
+	// What the model said before deciding to call a tool (or before an
+	// aborted attempt got discarded) — see gateway/protocol.go's doc
+	// comment on this event type for the full rationale.
+	| { type: 'commentary'; thread_id?: string; content: string }
 	| { type: 'user_message'; thread_id: string; user_message_id: number }
 	| {
 			type: 'done';
@@ -113,6 +117,11 @@ export type TimelineItem =
 	| { kind: 'thinking'; content: string }
 	| { kind: 'reasoning'; content: string; done: boolean }
 	| { kind: 'compacted'; summary: string }
+	// What the model said before calling a tool — rendered as real
+	// markdown prose (it's genuine assistant reply text, not private
+	// reasoning), positioned in the timeline between the tool calls that
+	// came before and after it. See ServerEvent's 'commentary' case.
+	| { kind: 'commentary'; content: string }
 	| {
 			kind: 'tool';
 			tool: string;

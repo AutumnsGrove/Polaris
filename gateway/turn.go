@@ -344,6 +344,8 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 	switch eventType {
 	case "thinking":
 		s.db.LogEvent(threadID, "info", "turn", "thinking", map[string]interface{}{"content": evt.Content}, turnID)
+	case "commentary":
+		s.db.LogEvent(threadID, "info", "turn", "commentary", map[string]interface{}{"content": evt.Content}, turnID)
 	case "tool_call":
 		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args}, turnID)
 	case "tool_result":

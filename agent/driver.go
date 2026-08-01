@@ -238,6 +238,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 
 		if len(resp.ToolCalls) == 0 {
 			if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
+				emitCommentary(ctx, resp.Content)
 				for _, pc := range calls {
 					result := tools.Dispatch(pc.name, pc.argsJSON, ctx)
 					messages = append(messages, llm.ChatMessage{
@@ -263,6 +264,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 			}, nil
 		}
+
+		emitCommentary(ctx, resp.Content)
 
 		// The OpenAI-compatible wire protocol requires one assistant
 		// message carrying every tool call from this turn (not one
@@ -321,6 +324,13 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// more time — it genuinely doesn't have enough to answer yet, and
 		// there's no turn budget left to give it. An honest "couldn't
 		// finish in time" beats showing raw pseudo-tool-call syntax.
+		//
+		// resp.Content (the aborted attempt) was already streamed live as
+		// "token" via wrapSniff above — emitCommentary demotes it into the
+		// timeline and clears the frontend's answer buffer first, so the
+		// replacement message below starts clean instead of concatenating
+		// onto the abandoned attempt (see emitCommentary's doc comment).
+		emitCommentary(ctx, resp.Content)
 		answerText = "I wasn't able to finish researching this in time to give a complete answer — " +
 			"try asking again, or narrow the question a bit."
 		ctx.Emit("token", map[string]interface{}{"content": answerText})
@@ -332,6 +342,34 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 	}, nil
+}
+
+// emitCommentary sends whatever a turn said before deciding to call a tool
+// (or before an aborted pseudo-tool-call attempt gets discarded) as its
+// own "commentary" event, carrying the full text — not just a bare
+// marker — so the frontend can persist and reconstruct it on reload the
+// same way it already does for "thinking"/"reasoning" events.
+//
+// This content was ALREADY streamed live, chunk by chunk, as "token"
+// events during generation (see the onChunk callback above/below) — that
+// live-typing effect is intentional and shared with the true final
+// answer, since at stream time there's no way to know in advance whether
+// a given turn will end in tool_calls or not. The frontend's "commentary"
+// handler (state.svelte.ts) clears whatever it had accumulated from that
+// live stream and replaces it with this event's authoritative content as
+// a distinct timeline item, positioned in true chronological order
+// relative to the tool_call/tool_result/thinking items around it —
+// instead of what used to happen: every turn's content silently piling
+// into one flat answer string, so a multi-tool-call question read as
+// "let me search... let me try another angle... here's the answer" all
+// concatenated at the very end, in generation order but with no visual
+// separation from the real answer. No-ops on empty content (a turn that
+// went straight to a tool call with nothing said first).
+func emitCommentary(ctx *tools.Context, content string) {
+	if content == "" {
+		return
+	}
+	ctx.Emit("commentary", map[string]interface{}{"content": content})
 }
 
 // toolCallResult pairs a tool call with the string tools.Dispatch returned
