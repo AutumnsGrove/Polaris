@@ -60,10 +60,10 @@ func newTestContext(mock *llmtest.MockClient, rec *recordingEmit, maxTurns int) 
 }
 
 func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
-	base := loadSystemPrompt(false, "")
-	brief := loadSystemPrompt(false, FocusModeBrief)
+	base := loadSystemPrompt(false, "", false)
+	brief := loadSystemPrompt(false, FocusModeBrief, false)
 	if brief == base {
-		t.Error("loadSystemPrompt(false, FocusModeBrief) should differ from the no-focus-mode prompt")
+		t.Error("loadSystemPrompt(false, FocusModeBrief, false) should differ from the no-focus-mode prompt")
 	}
 	if !strings.Contains(brief, "Focus mode: Brief") {
 		t.Errorf("prompt = %q, want it to contain the Brief focus mode instruction", brief)
@@ -71,8 +71,8 @@ func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
 }
 
 func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
-	base := loadSystemPrompt(false, "")
-	unknown := loadSystemPrompt(false, "not_a_real_mode")
+	base := loadSystemPrompt(false, "", false)
+	unknown := loadSystemPrompt(false, "not_a_real_mode", false)
 	if base != unknown {
 		t.Errorf("an unrecognized focus mode should leave the prompt unchanged, got a difference")
 	}
@@ -492,6 +492,93 @@ func TestRun_InjectsResearchCheckInAfterInterval(t *testing.T) {
 	last := checkInCallMsgs[len(checkInCallMsgs)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, "Checkpoint") {
 		t.Errorf("message before call %d = %+v, want a Checkpoint check-in", researchCheckInInterval, last)
+	}
+}
+
+func TestRun_DeepResearchDelaysCheckInMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"title": "Result", "url": "https://example.com/" + r.URL.Query().Get("q"), "content": "text", "score": 5.0},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	// Deep Research doubles researchCheckInInterval — the plain interval's
+	// worth of calls should NOT trigger a check-in the way
+	// TestRun_InjectsResearchCheckInAfterInterval proves it normally would.
+	responses := make([]llmtest.Response, 0, researchCheckInInterval+1)
+	for i := 0; i < researchCheckInInterval; i++ {
+		responses = append(responses, llmtest.Response{
+			Resp: &llm.ChatResponse{
+				ToolCalls: []llm.ToolCall{{
+					ID: "call-1", Type: "function",
+					Function: llm.FunctionCall{Name: "web_search", Arguments: `{"query":"q"}`},
+				}},
+			},
+		})
+	}
+	responses = append(responses, llmtest.Response{
+		Resp:   &llm.ChatResponse{Content: "Final answer"},
+		Chunks: []string{"Final answer"},
+	})
+
+	mock := &llmtest.MockClient{Responses: responses}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, researchCheckInInterval+5)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.DeepResearch = true
+
+	if _, err := Run(context.Background(), ctx, nil, "a question needing several searches"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	checkInCallMsgs := mock.Calls[researchCheckInInterval].Messages
+	last := checkInCallMsgs[len(checkInCallMsgs)-1]
+	if last.Role == "user" && strings.Contains(last.Content, "Checkpoint") {
+		t.Errorf("check-in fired at the normal interval under Deep Research — want it delayed to %dx", deepResearchCheckInMultiplier)
+	}
+}
+
+func TestRun_DeepResearchRaisesMaxTurns(t *testing.T) {
+	// ctx.MaxTurns alone would cut the loop off after defaultMaxTurns-ish
+	// turns and force a wrap-up — set it deliberately low (3) and prove
+	// Deep Research's multiplier gives the loop enough room to run a 4th
+	// real tool-call turn instead of hitting the forced-wrapup path.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{ToolCalls: []llm.ToolCall{{ID: "1", Type: "function", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"a"}`}}}}},
+			{Resp: &llm.ChatResponse{ToolCalls: []llm.ToolCall{{ID: "2", Type: "function", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"b"}`}}}}},
+			{Resp: &llm.ChatResponse{ToolCalls: []llm.ToolCall{{ID: "3", Type: "function", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"c"}`}}}}},
+			{Resp: &llm.ChatResponse{Content: "Final answer"}, Chunks: []string{"Final answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 3)
+	ctx.DeepResearch = true
+
+	result, err := Run(context.Background(), ctx, nil, "question")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "Final answer" {
+		t.Errorf("Answer = %q, want the real final answer, not a forced wrap-up", result.Answer)
+	}
+	if mock.CallCount() != 4 {
+		t.Errorf("CallCount = %d, want 4 (3 tool-call turns + real answer) — MaxTurns=3 without the Deep Research multiplier would have forced a wrap-up instead", mock.CallCount())
+	}
+}
+
+func TestLoadSystemPrompt_AppliesDeepResearchInstruction(t *testing.T) {
+	base := loadSystemPrompt(false, "", false)
+	deep := loadSystemPrompt(false, "", true)
+	if deep == base {
+		t.Error("loadSystemPrompt(false, \"\", true) should differ from the non-deep-research prompt")
+	}
+	if !strings.Contains(deep, "Deep Research mode is active") {
+		t.Errorf("prompt = %q, want it to contain the deep research instruction", deep)
 	}
 }
 

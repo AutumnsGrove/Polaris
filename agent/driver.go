@@ -87,11 +87,15 @@ func staleStreakMessage(streak, citationCount int) string {
 // state after a single research tool dispatch and returns whichever
 // steering message(s) are warranted. The two signals are deliberately
 // independent and can both fire on the same call — one measures elapsed
-// effort (researchCheckInInterval), the other measures actual
-// productivity (citation growth via staleStreakThreshold) — so neither
-// resets or suppresses the other; a call that's both the 5th research
-// call AND the 2nd stale one in a row genuinely warrants both nudges.
-func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCount, staleStreak *int) []string {
+// effort (checkInInterval), the other measures actual productivity
+// (citation growth via staleThreshold) — so neither resets or suppresses
+// the other; a call that's both the 5th research call AND the 2nd stale
+// one in a row genuinely warrants both nudges.
+//
+// checkInInterval/staleThreshold are parameters, not the package
+// constants directly, so Run can widen them for Deep Research mode (see
+// its doc comment) without a second copy of this function.
+func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCount, staleStreak *int, checkInInterval, staleThreshold int) []string {
 	*researchCalls++
 	current := len(citations)
 
@@ -100,14 +104,14 @@ func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCo
 		*staleStreak = 0
 	} else {
 		*staleStreak++
-		if *staleStreak >= staleStreakThreshold {
+		if *staleStreak >= staleThreshold {
 			nudges = append(nudges, staleStreakMessage(*staleStreak, current))
 			*staleStreak = 0 // fire once per streak, not every call past the threshold
 		}
 	}
 	*lastCitationCount = current
 
-	if *researchCalls%researchCheckInInterval == 0 {
+	if *researchCalls%checkInInterval == 0 {
 		nudges = append(nudges, researchCheckInMessage(current, *researchCalls))
 	}
 	return nudges
@@ -184,7 +188,7 @@ var focusModeInstructions = map[string]string{
 
 // loadSystemPrompt reads prompt.md fresh every call — edit the file,
 // see the change on your very next message, no rebuild or restart.
-func loadSystemPrompt(voiceMode bool, focusMode string) string {
+func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) string {
 	data, err := os.ReadFile(promptPath)
 	prompt := fallbackSystemPrompt
 	if err == nil {
@@ -196,8 +200,30 @@ func loadSystemPrompt(voiceMode bool, focusMode string) string {
 	if instr, ok := focusModeInstructions[focusMode]; ok {
 		prompt += instr
 	}
+	if deepResearch {
+		prompt += deepResearchInstruction
+	}
 	return prompt
 }
+
+// deepResearchInstruction is appended when the composer's Deep Research
+// toggle is on — see Run's doc comment for the mechanical side (turn
+// budget, check-in leniency); this is the half that actually asks the
+// model to use that extra room instead of just having it available.
+const deepResearchInstruction = "\n\nDeep Research mode is active: prioritize thoroughness over speed. " +
+	"Cross-check important claims against more than one independent source rather than stopping at the " +
+	"first plausible answer, follow up on primary sources when a search result is vague or secondhand, " +
+	"and consider the question from more than one angle before concluding. Taking longer and costing " +
+	"more than a normal answer is expected and fine here."
+
+// deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the
+// turn budget and how rarely the check-in/stale-streak nudges fire when
+// Deep Research is on — the nudges exist to stop a model from searching
+// past the point of diminishing returns (see researchCheckInInterval's
+// doc comment), which is exactly the behavior Deep Research is asking
+// for more of, not less.
+const deepResearchTurnMultiplier = 2
+const deepResearchCheckInMultiplier = 2
 
 // currentContextPreamble grounds the model in real wall-clock time, computed
 // fresh on every turn — without this, a model has no way to know "today"
@@ -242,7 +268,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	ctx.Ctx = reqCtx
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode, ctx.FocusMode)})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 
@@ -253,6 +279,13 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	maxTurns := ctx.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
+	}
+	checkInInterval := researchCheckInInterval
+	staleThreshold := staleStreakThreshold
+	if ctx.DeepResearch {
+		maxTurns *= deepResearchTurnMultiplier
+		checkInInterval *= deepResearchCheckInMultiplier
+		staleThreshold *= deepResearchCheckInMultiplier
 	}
 	researchCalls := 0
 	lastCitationCount := 0
@@ -288,7 +321,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 							"tool call syntax.", pc.name, result),
 					})
 					if isResearchTool(pc.name) {
-						for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
+						for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 						}
 					}
@@ -327,7 +360,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		}
 		for _, r := range results {
 			if isResearchTool(r.call.Function.Name) {
-				for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak) {
+				for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 				}
 			}
