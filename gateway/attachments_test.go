@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,39 +32,23 @@ func mustDecodePDF(t *testing.T) []byte {
 
 func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, err := resolveAttachment(cfg, ClientMessage{Content: "hello"})
+	got, cost, err := resolveAttachment(context.Background(), cfg, ClientMessage{Content: "hello"})
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
 	if got != "hello" {
 		t.Errorf("got %q, want unchanged content", got)
 	}
+	if cost != 0 {
+		t.Errorf("cost = %v, want 0 with no attachment", cost)
+	}
 }
 
 func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, err := resolveAttachment(cfg, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"})
+	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"})
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
-	}
-}
-
-func TestResolveAttachment_ImagePassesContentThroughUnmodified(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
-
-	msg := ClientMessage{
-		Content:               "what is this",
-		AttachmentID:          "550e8400-e29b-41d4-a716-446655440000",
-		AttachmentContentType: "image/png",
-	}
-	got, err := resolveAttachment(cfg, msg)
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
-	}
-	if got != "what is this" {
-		t.Errorf("got %q, want unchanged content (image handling isn't wired up yet)", got)
 	}
 }
 
@@ -82,7 +68,7 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 		AttachmentFilename:    "report.pdf",
 		AttachmentContentType: "application/pdf",
 	}
-	got, err := resolveAttachment(cfg, msg)
+	got, cost, err := resolveAttachment(context.Background(), cfg, msg)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -95,19 +81,84 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 	if !bytes.Contains([]byte(got), []byte("Hello World")) {
 		t.Errorf("got %q, want it to contain the PDF's actual extracted text", got)
 	}
+	if cost != 0 {
+		t.Errorf("cost = %v, want 0 for a PDF (no model call)", cost)
+	}
 }
 
 func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Attachments.Dir = t.TempDir()
 
-	_, err := resolveAttachment(cfg, ClientMessage{
+	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{
 		Content:               "hi",
 		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
 		AttachmentContentType: "application/pdf",
 	})
 	if err == nil {
 		t.Fatal("expected an error when the attachment file doesn't exist on disk")
+	}
+}
+
+func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
+	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
+	}))
+	defer visionSrv.Close()
+
+	dir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440003"
+	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
+		t.Fatalf("writing fake image: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = dir
+	cfg.OpenRouter.BaseURL = visionSrv.URL
+	cfg.Models = []config.ModelConfig{
+		{ID: "mimo", Name: "MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
+	}
+
+	msg := ClientMessage{
+		Content:               "what's in this photo",
+		AttachmentID:          id,
+		AttachmentFilename:    "bike.jpg",
+		AttachmentContentType: "image/jpeg",
+	}
+	got, cost, err := resolveAttachment(context.Background(), cfg, msg)
+	if err != nil {
+		t.Fatalf("resolveAttachment returned error: %v", err)
+	}
+	if !bytes.Contains([]byte(got), []byte("what's in this photo")) {
+		t.Errorf("got %q, want it to still contain the original message", got)
+	}
+	if !bytes.Contains([]byte(got), []byte("red bicycle")) {
+		t.Errorf("got %q, want it to contain the vision model's description", got)
+	}
+	if cost != 0.002 {
+		t.Errorf("cost = %v, want 0.002 from the vision model's usage.cost", cost)
+	}
+}
+
+func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing.T) {
+	dir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440004"
+	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
+		t.Fatalf("writing fake image: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = dir
+	cfg.Models = []config.ModelConfig{{ID: "deepseek", Multimodal: false}}
+
+	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{
+		Content:               "what is this",
+		AttachmentID:          id,
+		AttachmentContentType: "image/png",
+	})
+	if err == nil {
+		t.Fatal("expected an error when no multimodal model is configured")
 	}
 }
 

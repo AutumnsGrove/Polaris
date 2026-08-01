@@ -9,6 +9,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -20,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"polaris/config"
+	"polaris/llm"
 	"polaris/tools"
 )
 
@@ -118,18 +121,15 @@ func firstNonEmpty(vals ...string) string {
 
 // resolveAttachment turns a ClientMessage carrying an upload into the
 // text agent.Run should actually see — msg.Content unchanged if there's
-// no attachment (or its type isn't handled yet), otherwise msg.Content
-// with the attachment's extracted content appended. Called once per turn
-// from handleTurn, before agent.Run.
-//
-// Images aren't handled here yet — that's the multimodal description
-// pipeline (a vision-capable model call ahead of the main one), landing
-// as a separate piece of work; for now an attached image is stored and
-// displayed (see store.Message.AttachmentFilename) but doesn't affect
-// what the agent sees.
-func resolveAttachment(cfg *config.Config, msg ClientMessage) (string, error) {
+// no attachment, otherwise msg.Content with the attachment's extracted
+// content (PDF text, or an image's description) appended. Called once
+// per turn from handleTurn, before agent.Run. costUSD is only ever
+// nonzero for an image (the vision-model description call has a real
+// cost); the caller folds it into the turn's total the same way a voice
+// memo's transcription cost already is.
+func resolveAttachment(ctx context.Context, cfg *config.Config, msg ClientMessage) (content string, costUSD float64, err error) {
 	if msg.AttachmentID == "" {
-		return msg.Content, nil
+		return msg.Content, 0, nil
 	}
 
 	// AttachmentID becomes a filesystem path component (see handleUpload,
@@ -137,28 +137,55 @@ func resolveAttachment(cfg *config.Config, msg ClientMessage) (string, error) {
 	// actually a UUID before joining it into a path, rather than trusting
 	// whatever a client sends here.
 	if _, err := uuid.Parse(msg.AttachmentID); err != nil {
-		return msg.Content, fmt.Errorf("invalid attachment id: %w", err)
-	}
-
-	if msg.AttachmentContentType != "application/pdf" {
-		// Images and anything else: no extraction pipeline yet, just
-		// leave the message as the user typed it.
-		return msg.Content, nil
+		return msg.Content, 0, fmt.Errorf("invalid attachment id: %w", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(cfg.Attachments.Dir, msg.AttachmentID))
 	if err != nil {
-		return msg.Content, fmt.Errorf("reading attachment: %w", err)
-	}
-
-	_, text, err := tools.ExtractPDFText(data)
-	if err != nil {
-		return msg.Content, fmt.Errorf("extracting pdf text: %w", err)
+		return msg.Content, 0, fmt.Errorf("reading attachment: %w", err)
 	}
 
 	filename := msg.AttachmentFilename
 	if filename == "" {
-		filename = "attachment.pdf"
+		filename = "attachment"
 	}
-	return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s", msg.Content, filename, text), nil
+
+	switch {
+	case msg.AttachmentContentType == "application/pdf":
+		_, text, err := tools.ExtractPDFText(data)
+		if err != nil {
+			return msg.Content, 0, fmt.Errorf("extracting pdf text: %w", err)
+		}
+		return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s", msg.Content, filename, text), 0, nil
+
+	case strings.HasPrefix(msg.AttachmentContentType, "image/"):
+		visionModel, ok := cfg.MultimodalModel()
+		if !ok {
+			return msg.Content, 0, fmt.Errorf("no multimodal model configured to describe images")
+		}
+		// Deliberately NOT pinned to visionModel.Provider the way the main
+		// chat client pins its provider — that pin exists for prompt-cache
+		// consistency across an ongoing conversation, which doesn't apply
+		// to this single one-off call, and it actively hurts here: found
+		// live that the pinned "xiaomi/fp8" endpoint 404s with "No
+		// endpoints found that support image input" even though the model
+		// itself is vision-capable — some provider-specific deployments of
+		// a multimodal model quietly drop vision support. Leaving provider
+		// routing open lets OpenRouter pick whichever endpoint actually
+		// handles image input for this model.
+		client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens)
+		description, cost, err := client.DescribeImage(ctx, base64.StdEncoding.EncodeToString(data), msg.AttachmentContentType)
+		if err != nil {
+			return msg.Content, 0, fmt.Errorf("describing image: %w", err)
+		}
+		return fmt.Sprintf("%s\n\n[Attached image: %s]\nImage description (the model itself can't see "+
+			"the image — this description is all it has to go on): %s", msg.Content, filename, description), cost, nil
+
+	default:
+		// Upload-time validation (handleUpload) only ever accepts PDF or
+		// image/*, so this shouldn't be reachable — but fail safe rather
+		// than silently drop an attachment type added there later without
+		// a matching case here.
+		return msg.Content, 0, fmt.Errorf("no extraction pipeline for content type %q", msg.AttachmentContentType)
+	}
 }

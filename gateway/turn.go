@@ -105,11 +105,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// only the in-flight prompt to the model is augmented, so reopening
 	// this thread later shows the original question, not a wall of
 	// extracted PDF text glued onto it.
-	turnMessage, err := resolveAttachment(cfg, msg)
+	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, msg)
 	if err != nil {
 		log.Warn("resolving attachment failed, continuing without it", "err", err)
 		s.db.LogEvent(threadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
 		turnMessage = msg.Content
+		attachmentCostUSD = 0
 	}
 
 	s.db.LogEvent(threadID, "info", "turn", "turn started", map[string]interface{}{
@@ -331,10 +332,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 
 	// Total cost added to the thread this turn: the agent's LLM/tool
-	// spend plus any STT cost from a voice memo, plus compaction's own
-	// cost if it just ran, plus follow-up suggestions — all persisted
-	// above, so the frontend's running total should reflect all of them.
-	totalCost := result.CostUSD + msg.SttCostUSD
+	// spend plus any STT cost from a voice memo, plus an image
+	// attachment's description call, plus compaction's own cost if it
+	// just ran, plus follow-up suggestions — all persisted above, so the
+	// frontend's running total should reflect all of them.
+	totalCost := result.CostUSD + msg.SttCostUSD + attachmentCostUSD
 	s.db.LogEvent(threadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
 		"cost_usd":       totalCost,

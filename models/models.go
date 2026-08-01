@@ -7,6 +7,13 @@ import "polaris/config"
 // adding a new model happens here, not in config.yaml.
 var Registry = []config.ModelConfig{
 	{
+		// NOT multimodal, despite the naming symmetry with "mimo" below —
+		// confirmed against OpenRouter's own live endpoint metadata
+		// (GET /api/v1/models/xiaomi/mimo-v2.5-pro/endpoints): every
+		// endpoint for this model reports input_modalities: ["text"]
+		// only. Marking it multimodal here previously broke image
+		// uploads entirely, since it's listed first and
+		// Config.MultimodalModel picks the first match.
 		ID:          "mimo-pro",
 		Name:        "MiMo v2.5 Pro",
 		Model:       "xiaomi/mimo-v2.5-pro",
@@ -19,6 +26,12 @@ var Registry = []config.ModelConfig{
 		},
 	},
 	{
+		// Genuinely vision-capable — confirmed against OpenRouter's live
+		// endpoint metadata: input_modalities includes "image" (and
+		// audio/video) across all of this model's providers, unlike
+		// mimo-pro above. Used as the describe-image step for uploads
+		// when the thread's own selected model can't see images itself
+		// (see gateway's resolveAttachment / Config.MultimodalModel).
 		ID:          "mimo",
 		Name:        "MiMo v2.5",
 		Model:       "xiaomi/mimo-v2.5",
@@ -29,6 +42,7 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
+		Multimodal: true,
 	},
 	{
 		ID:          "deepseek-pro",

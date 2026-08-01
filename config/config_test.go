@@ -164,3 +164,32 @@ func TestModelByID_UnknownDefaultFallsBackToFirstModel(t *testing.T) {
 		t.Errorf("ModelByID(\"\") with unresolvable default = %+v, want fallback to first model a", got)
 	}
 }
+
+func TestMultimodalModel_ReturnsFirstMultimodalEntry(t *testing.T) {
+	cfg := &Config{
+		Models: []ModelConfig{
+			{ID: "text-only", Multimodal: false},
+			{ID: "vision-a", Multimodal: true},
+			{ID: "vision-b", Multimodal: true},
+		},
+	}
+	got, ok := cfg.MultimodalModel()
+	if !ok {
+		t.Fatal("MultimodalModel() ok = false, want true")
+	}
+	if got.ID != "vision-a" {
+		t.Errorf("MultimodalModel() = %+v, want the first multimodal entry (vision-a)", got)
+	}
+}
+
+func TestMultimodalModel_NoneConfigured(t *testing.T) {
+	cfg := &Config{
+		Models: []ModelConfig{
+			{ID: "a", Multimodal: false},
+			{ID: "b", Multimodal: false},
+		},
+	}
+	if _, ok := cfg.MultimodalModel(); ok {
+		t.Error("MultimodalModel() ok = true, want false when no model is marked multimodal")
+	}
+}

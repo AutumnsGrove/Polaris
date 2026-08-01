@@ -118,6 +118,13 @@ type ModelConfig struct {
 	// still reason internally but don't surface it in the response at
 	// all — nil/omitted means "don't ask for it".
 	Reasoning *ReasoningConfig `yaml:"reasoning"`
+
+	// Multimodal marks a model as vision-capable — used to pick which
+	// model describes an uploaded image ahead of the main turn when the
+	// thread's own selected model isn't multimodal itself (DeepSeek, as
+	// of this registry). See gateway's resolveAttachment and
+	// Config.MultimodalModel.
+	Multimodal bool `yaml:"multimodal"`
 }
 
 // ReasoningConfig mirrors OpenRouter's `reasoning` request field
@@ -241,6 +248,20 @@ func (c *Config) ModelByID(id string) ModelConfig {
 		}
 	}
 	return c.Models[0]
+}
+
+// MultimodalModel returns the first vision-capable model in the registry
+// (see ModelConfig.Multimodal), for describing an uploaded image ahead of
+// a turn whose own selected model can't see images itself. ok is false if
+// none is configured — the caller should tell the user rather than
+// silently ignore the attachment.
+func (c *Config) MultimodalModel() (model ModelConfig, ok bool) {
+	for _, m := range c.Models {
+		if m.Multimodal {
+			return m, true
+		}
+	}
+	return ModelConfig{}, false
 }
 
 // DefaultModelOrFirst returns the configured default model ID, falling
