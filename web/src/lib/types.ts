@@ -60,11 +60,22 @@ export type ClientMessage =
 			voice_mode?: boolean;
 			stt_cost_usd?: number;
 			user_location?: string;
+			// Set from the composer's "+" sheet, not yet consumed by the
+			// backend (see agent/driver.go for where that wiring lands) —
+			// sent as plain extra JSON fields today, harmless for an older
+			// or not-yet-updated backend to receive since Go's json.Unmarshal
+			// silently ignores fields a struct doesn't declare.
+			focus_mode?: FocusMode;
+			deep_research?: boolean;
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs
 	// no thread_id to target it.
 	| { type: 'stop' };
+
+// 'off' isn't a selectable mode in the sheet — it's just what focusMode
+// resets to when the active mode is tapped again to turn it off.
+export type FocusMode = 'off' | 'brief' | 'academic' | 'news' | 'first_principles' | 'socratic';
 
 export interface ModelOption {
 	id: string;

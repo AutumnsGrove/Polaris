@@ -1,19 +1,41 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
-	import ModelSelector from '$lib/components/ModelSelector.svelte';
+	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Gauge, Coins } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
+	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
 
+	// Composer-only state, not yet threaded into appState.send()'s wire
+	// payload — the sheet UI and its local state land first; actually
+	// affecting agent behavior (focus mode prompt changes, deep research
+	// turn budget, sending the attached file) is the next round of work.
+	let focusMode = $state<FocusMode>('off');
+	let deepResearch = $state(false);
+	let attachedFile = $state<File | null>(null);
+
+	function handleAttach(file: File) {
+		attachedFile = file;
+	}
+
 	function submit() {
 		const text = input;
 		input = '';
+		attachedFile = null;
 		appState.send(text);
 	}
+
+	// The active thread's title, shown in the header now that the model
+	// selector has moved into the composer's "+" sheet — falls back to
+	// nothing for a brand-new thread whose title hasn't loaded yet (or
+	// hasn't been generated server-side).
+	let currentThreadTitle = $derived(
+		appState.threads.find((t) => t.id === appState.currentThreadId)?.title ?? ''
+	);
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -75,23 +97,38 @@
 				aria-label="Ask Polaris"
 			></textarea>
 		</div>
-		<VoiceButton />
-		<button
-			type={appState.busy ? 'button' : 'submit'}
-			class="send-btn"
-			class:stop={appState.busy}
-			disabled={!appState.busy && !input.trim()}
-			title={appState.busy ? 'Stop generating' : 'Send'}
-			onclick={() => {
-				if (appState.busy) appState.stopGeneration();
-			}}
-		>
-			{#if appState.busy}
-				<Square size={14} fill="currentColor" />
-			{:else}
-				<Send size={16} />
-			{/if}
-		</button>
+
+		{#if attachedFile}
+			<div class="attachment-chip">
+				<Paperclip size={13} />
+				<span class="attachment-name">{attachedFile.name}</span>
+				<button type="button" onclick={() => (attachedFile = null)} aria-label="Remove attachment">
+					<X size={13} />
+				</button>
+			</div>
+		{/if}
+
+		<div class="composer-toolbar">
+			<ComposerMenu bind:focusMode bind:deepResearch onAttach={handleAttach} />
+			<div class="toolbar-spacer"></div>
+			<VoiceButton />
+			<button
+				type={appState.busy ? 'button' : 'submit'}
+				class="send-btn"
+				class:stop={appState.busy}
+				disabled={!appState.busy && !input.trim()}
+				title={appState.busy ? 'Stop generating' : 'Send'}
+				onclick={() => {
+					if (appState.busy) appState.stopGeneration();
+				}}
+			>
+				{#if appState.busy}
+					<Square size={14} fill="currentColor" />
+				{:else}
+					<Send size={16} />
+				{/if}
+			</button>
+		</div>
 	</form>
 {/snippet}
 
@@ -106,7 +143,9 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<ModelSelector />
+		{#if currentThreadTitle}
+			<h1 class="thread-title" title={currentThreadTitle}>{currentThreadTitle}</h1>
+		{/if}
 	</div>
 	<div class="header-right">
 		{#if appState.turns.length > 0}
@@ -172,6 +211,25 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
+		flex: 1;
+	}
+
+	/* Replaces the model selector, which moved into the composer's "+"
+	   sheet — clamped to 2 lines since generated titles ("Debugging a
+	   Go goroutine leak in the SearXNG client") routinely run past what
+	   fits on one line at a readable size. */
+	.thread-title {
+		margin: 0;
+		min-width: 0;
+		font-family: var(--font-serif);
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1.3;
+		color: var(--color-text);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
 	.header-right {
@@ -376,9 +434,15 @@
 		transform: translateY(-1px);
 	}
 
+	/* Column now, not a single row — the textarea sits on its own line
+	   with room to breathe, the model/focus/attach controls that used to
+	   crowd it live in .composer-toolbar underneath instead (see
+	   ComposerMenu's "+" sheet, which absorbed the old inline model
+	   selector — a row of 4-5 small controls doesn't survive phone
+	   width, one thumb-reachable entry point does). */
 	.composer {
 		display: flex;
-		align-items: flex-end;
+		flex-direction: column;
 		gap: 8px;
 		border-top: 1px solid var(--color-border);
 		padding: 12px;
@@ -387,9 +451,54 @@
 		padding-bottom: max(12px, env(safe-area-inset-bottom));
 	}
 
+	.composer-toolbar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.toolbar-spacer {
+		flex: 1;
+	}
+
+	.attachment-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		align-self: flex-start;
+		max-width: 100%;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		border-radius: 999px;
+		padding: 5px 6px 5px 10px;
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+	}
+
+	.attachment-chip .attachment-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.attachment-chip button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 999px;
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+	}
+
+	.attachment-chip button:hover {
+		background: var(--color-surface-3);
+		color: var(--color-text);
+	}
+
 	.textarea-wrap {
 		position: relative;
-		flex: 1;
 		display: flex;
 	}
 
@@ -403,7 +512,7 @@
 		   already centers a single line of text the same height as the
 		   textarea's own single row, so flex's vertical centering was
 		   never actually needed here. */
-		padding: 10px 14px;
+		padding: 14px 16px;
 		font-size: 16px;
 		line-height: 1.5;
 		font-family: var(--font-sans);
@@ -436,8 +545,8 @@
 		resize: none;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
-		border-radius: var(--radius-md);
-		padding: 10px 14px;
+		border-radius: var(--radius-lg);
+		padding: 14px 16px;
 		/* 16px, not 14 — anything smaller makes iOS Safari zoom the whole
 		   page in on focus (it does this for any input/textarea under
 		   16px), which is what was pushing the send button out of the
@@ -450,6 +559,11 @@
 		font-family: var(--font-sans);
 		color: var(--color-text);
 		outline: none;
+		/* A taller resting height than the bare single-row minimum — the
+		   composer now carries its own toolbar underneath instead of
+		   cramming everything onto one line, so it can afford to feel
+		   like a real writing surface instead of a thin search bar. */
+		min-height: 56px;
 		max-height: 200px;
 		overflow-y: auto;
 		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);

@@ -11,6 +11,17 @@
 @import '@fontsource/asimovian/400.css';
 
 :root {
+	/* Tells the browser (and browser-level color tools like Dark Reader)
+	   that this page already renders its own dark theme — without this,
+	   extensions that force-invert/recolor pages with no declared
+	   color-scheme can't tell "already dark" from "needs my help", and
+	   their heuristics don't resolve oklch()/color-mix() custom
+	   properties well, producing washed-out light-gray cards on
+	   elements that have no author background of their own (a
+	   transparent .sheet-row inheriting its parent's background, for
+	   instance). Overridden to light below for the light theme. */
+	color-scheme: dark;
+
 	/* Warm, low-chroma neutrals (hue ~65, chroma 0.012-0.018) instead of the
 	   blue-black every dark-mode tool defaults to — this is meant to read
 	   as a quiet reading surface, not a cockpit. */
@@ -69,6 +80,8 @@
    state.svelte.ts, driven by the settings panel. Warm paper, not stark
    white — same tinted-neutral treatment as the dark theme. */
 :root[data-theme='light'] {
+	color-scheme: light;
+
 	--color-bg: oklch(97% 0.008 75);
 	--color-surface: oklch(99% 0.004 80);
 	--color-surface-2: oklch(95% 0.01 75);

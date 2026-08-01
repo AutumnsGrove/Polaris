@@ -10,10 +10,17 @@
 	let stream: MediaStream | null = null;
 	let pendingStop = false;
 	let startedAt = 0;
+	let recordedMimeType = 'audio/webm';
 
-	const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-		? 'audio/webm;codecs=opus'
-		: 'audio/webm';
+	// Computed lazily inside startRecording (browser-only), not at module
+	// scope — MediaRecorder doesn't exist in Node, so a top-level reference
+	// to it crashed SvelteKit's SSR render (`vite dev`/`vite preview`, and
+	// the prerender step during `vite build`) with "MediaRecorder is not
+	// defined" even though this component never actually runs during SSR
+	// in practice.
+	function pickMimeType(): string {
+		return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+	}
 
 	// A fresh getUserMedia call per recording — NOT cached. Holding a
 	// stream open between recordings keeps the mic track live the whole
@@ -39,7 +46,8 @@
 
 		chunks = [];
 		startedAt = Date.now();
-		mediaRecorder = new MediaRecorder(stream, { mimeType });
+		recordedMimeType = pickMimeType();
+		mediaRecorder = new MediaRecorder(stream, { mimeType: recordedMimeType });
 		mediaRecorder.ondataavailable = (e) => {
 			if (e.data.size > 0) chunks.push(e.data);
 		};
@@ -47,7 +55,7 @@
 			stream?.getTracks().forEach((t) => t.stop());
 			stream = null;
 			const durationMs = Date.now() - startedAt;
-			const blob = new Blob(chunks, { type: mimeType });
+			const blob = new Blob(chunks, { type: recordedMimeType });
 			void transcribeAndSend(blob, durationMs);
 		};
 		mediaRecorder.start();
@@ -123,12 +131,18 @@
 </button>
 
 <style>
+	/* Ghost/borderless like the composer toolbar's other secondary
+	   controls (see ComposerMenu's .plus-btn) — a plain outlined box read
+	   as one more form-field competing with the textarea for attention.
+	   Send stays the one solid, accent-colored control; everything else
+	   in the toolbar recedes until it's actually doing something
+	   (recording/transcribing). */
 	.mic-btn {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-2);
+		border: 1px solid transparent;
+		background: transparent;
 		border-radius: var(--radius-md);
 		width: 38px;
 		height: 38px;
@@ -143,8 +157,8 @@
 	}
 
 	.mic-btn:hover:not(:disabled):not(.recording) {
-		border-color: var(--color-border-strong);
-		background: var(--color-surface-3);
+		border-color: var(--color-border);
+		background: var(--color-surface-2);
 		color: var(--color-text);
 		transform: translateY(-1px);
 	}
