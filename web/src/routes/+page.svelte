@@ -21,6 +21,21 @@
 	let attachedFile = $state<File | null>(null);
 	let uploading = $state(false);
 
+	// Applies the Settings panel's standing default focus mode exactly
+	// once, the moment it's actually loaded (settings.load() is async,
+	// fired from +layout.svelte's onMount — this component can easily
+	// render before it resolves). Guarded so it never overwrites a
+	// manual choice made from the composer's "+" menu afterward; "off"
+	// is itself a valid loaded value, which is why this checks
+	// settings.loaded rather than the value of defaultFocusMode itself.
+	let focusModeInitialized = false;
+	$effect(() => {
+		if (appState.settings.loaded && !focusModeInitialized) {
+			focusMode = appState.settings.defaultFocusMode;
+			focusModeInitialized = true;
+		}
+	});
+
 	function handleAttach(file: File) {
 		attachedFile = file;
 	}

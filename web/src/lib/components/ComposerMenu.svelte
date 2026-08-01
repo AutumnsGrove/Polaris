@@ -1,19 +1,8 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import type { FocusMode } from '$lib/types';
-	import {
-		Plus,
-		Image as ImageIcon,
-		Cpu,
-		Zap,
-		GraduationCap,
-		Newspaper,
-		Lightbulb,
-		MessageCircleQuestion,
-		Microscope,
-		Check,
-		X
-	} from '@lucide/svelte';
+	import { FOCUS_MODES } from '$lib/focusModes';
+	import { Plus, Image as ImageIcon, Cpu, Microscope, Check, X } from '@lucide/svelte';
 
 	// Everything that used to be separate controls (model picker, focus
 	// modes, deep research, attach) is consolidated into one "+"-triggered
@@ -34,24 +23,6 @@
 
 	let open = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
-
-	const FOCUS_MODES: { id: FocusMode; label: string; description: string; icon: typeof Zap }[] = [
-		{ id: 'brief', label: 'Brief', description: 'Same research, shorter replies', icon: Zap },
-		{ id: 'academic', label: 'Academic', description: 'Prefer academic sources', icon: GraduationCap },
-		{ id: 'news', label: 'News', description: 'Prefer news sources', icon: Newspaper },
-		{
-			id: 'first_principles',
-			label: 'First Principles',
-			description: 'Reason up from fundamentals',
-			icon: Lightbulb
-		},
-		{
-			id: 'socratic',
-			label: 'Socratic',
-			description: 'Explore through guided questions',
-			icon: MessageCircleQuestion
-		}
-	];
 
 	function close() {
 		open = false;
@@ -103,10 +74,10 @@
 </button>
 
 {#if open}
-	<div class="backdrop" role="presentation">
-		<button class="backdrop-close" onclick={close} aria-label="Close"></button>
-		<div class="panel" role="dialog" aria-modal="true" aria-label="Composer options">
-			<div class="panel-header">
+	<div class="modal-backdrop" role="presentation">
+		<button class="modal-backdrop-close" onclick={close} aria-label="Close"></button>
+		<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Composer options">
+			<div class="modal-panel-header">
 				<h2>More</h2>
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 			</div>
@@ -215,67 +186,10 @@
 		background: var(--color-accent-soft);
 	}
 
-	/* Everything below mirrors SettingsPanel.svelte's modal almost
-	   verbatim (same class names, same values) — deliberately: one popup
-	   treatment for the whole app, not a bottom sheet here and a centered
-	   panel there. */
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 100;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 16px;
-	}
-
-	.backdrop-close {
-		position: absolute;
-		inset: 0;
-		border: none;
-		padding: 0;
-		background: rgba(0, 0, 0, 0.62);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		cursor: default;
-	}
-
-	.panel {
-		position: relative;
-		width: 100%;
-		max-width: 440px;
-		max-height: 85vh;
-		overflow-y: auto;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border-strong);
-		border-radius: var(--radius-lg);
-		box-shadow:
-			0 32px 80px -20px rgba(0, 0, 0, 0.6),
-			0 12px 32px -12px rgba(0, 0, 0, 0.45),
-			0 0 0 1px rgba(0, 0, 0, 0.2);
-		padding: 24px 24px 20px;
-	}
-
-	:root[data-theme='light'] .panel {
-		box-shadow:
-			0 32px 80px -20px rgba(50, 40, 28, 0.28),
-			0 12px 32px -12px rgba(50, 40, 28, 0.18);
-	}
-
-	.panel-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 18px;
-	}
-
-	.panel-header h2 {
-		margin: 0;
-		font-family: var(--font-serif);
-		font-size: 22px;
-		font-weight: 700;
-		letter-spacing: -0.005em;
-	}
+	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —
+	   shared with SettingsPanel.svelte, one popup treatment (including
+	   the mobile bottom-sheet behavior) for the whole app instead of two
+	   copies to keep in sync by hand. */
 
 	/* .icon-btn itself is a global class (app.css) shared with the sidebar
 	   toggle/settings/etc. — already resets border/background correctly,

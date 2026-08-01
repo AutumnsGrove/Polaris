@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { X, Moon, Sun, RefreshCw } from '@lucide/svelte';
+	import { FOCUS_MODES } from '$lib/focusModes';
+	import type { FocusMode } from '$lib/types';
 
 	function close() {
 		appState.settings.open = false;
@@ -12,10 +14,10 @@
 	void appState.settings.checkUpdateStatus();
 </script>
 
-<div class="backdrop" role="presentation">
-	<button class="backdrop-close" onclick={close} aria-label="Close settings"></button>
-	<div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
-		<div class="panel-header">
+<div class="modal-backdrop" role="presentation">
+	<button class="modal-backdrop-close" onclick={close} aria-label="Close settings"></button>
+	<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Settings">
+		<div class="modal-panel-header">
 			<h2>Settings</h2>
 			<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 		</div>
@@ -72,6 +74,25 @@
 		</section>
 
 		<section>
+			<h3>Focus</h3>
+			<div class="row">
+				<span>Default focus mode</span>
+				<select
+					value={appState.settings.defaultFocusMode}
+					onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
+				>
+					<option value="off">Off</option>
+					{#each FOCUS_MODES as mode (mode.id)}
+						<option value={mode.id}>{mode.label}</option>
+					{/each}
+				</select>
+			</div>
+			<p class="hint">
+				Applied to every new message until changed from the composer's "+" menu.
+			</p>
+		</section>
+
+		<section>
 			<h3>Location</h3>
 			<div class="row location-row">
 				<input
@@ -124,72 +145,10 @@
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 100;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 16px;
-	}
-
-	.backdrop-close {
-		position: absolute;
-		inset: 0;
-		border: none;
-		padding: 0;
-		/* Darker backdrop for stronger separation between modal and
-		   the ground behind it — this is the one modal in the app and
-		   can afford real contrast when it opens. Blur stays purposeful,
-		   not decorative (banned as content-surface treatment). */
-		background: rgba(0, 0, 0, 0.62);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		cursor: default;
-	}
-
-	.panel {
-		position: relative;
-		width: 100%;
-		max-width: 440px;
-		max-height: 85vh;
-		overflow-y: auto;
-		/* Slightly lifted surface color so the modal reads as elevated
-		   above the sidebar/main. */
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border-strong);
-		border-radius: var(--radius-lg);
-		/* Substantially deeper shadow than any inline element — this is
-		   the only floating panel in the app, so it can afford to feel
-		   heavy on entry. */
-		box-shadow:
-			0 32px 80px -20px rgba(0, 0, 0, 0.6),
-			0 12px 32px -12px rgba(0, 0, 0, 0.45),
-			0 0 0 1px rgba(0, 0, 0, 0.2);
-		padding: 24px 24px 20px;
-	}
-
-	:root[data-theme='light'] .panel {
-		box-shadow:
-			0 32px 80px -20px rgba(50, 40, 28, 0.28),
-			0 12px 32px -12px rgba(50, 40, 28, 0.18);
-	}
-
-	.panel-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 18px;
-	}
-
-	.panel-header h2 {
-		margin: 0;
-		font-family: var(--font-serif);
-		font-size: 22px;
-		font-weight: 700;
-		letter-spacing: -0.005em;
-	}
+	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —
+	   shared with ComposerMenu.svelte, one popup treatment (including the
+	   mobile bottom-sheet behavior) for the whole app instead of two
+	   copies to keep in sync by hand. */
 
 	section {
 		margin-bottom: 18px;

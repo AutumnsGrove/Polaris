@@ -153,6 +153,77 @@ func TestHandlePutSettings_RejectsUnknownModel(t *testing.T) {
 	}
 }
 
+func TestHandlePutSettings_DefaultFocusModeRoundTrips(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"default_focus_mode": "socratic"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	getResp, err := http.Get(h.url("/api/settings"))
+	if err != nil {
+		t.Fatalf("GET /api/settings: %v", err)
+	}
+	defer getResp.Body.Close()
+	var settings map[string]interface{}
+	json.NewDecoder(getResp.Body).Decode(&settings)
+	if settings["default_focus_mode"] != "socratic" {
+		t.Errorf("default_focus_mode = %v, want socratic", settings["default_focus_mode"])
+	}
+}
+
+func TestHandlePutSettings_DefaultFocusModeOffClearsIt(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	setBody, _ := json.Marshal(map[string]interface{}{"default_focus_mode": "brief"})
+	setReq, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(setBody))
+	http.DefaultClient.Do(setReq)
+
+	offBody, _ := json.Marshal(map[string]interface{}{"default_focus_mode": "off"})
+	offReq, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(offBody))
+	resp, err := http.DefaultClient.Do(offReq)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	getResp, err := http.Get(h.url("/api/settings"))
+	if err != nil {
+		t.Fatalf("GET /api/settings: %v", err)
+	}
+	defer getResp.Body.Close()
+	var settings map[string]interface{}
+	json.NewDecoder(getResp.Body).Decode(&settings)
+	if settings["default_focus_mode"] != "" {
+		t.Errorf("default_focus_mode = %v, want empty string after setting to off", settings["default_focus_mode"])
+	}
+}
+
+func TestHandlePutSettings_RejectsUnknownFocusMode(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"default_focus_mode": "not_a_real_mode"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an unknown focus mode", resp.StatusCode)
+	}
+}
+
 func TestThreadsCRUD(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

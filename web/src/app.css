@@ -293,3 +293,106 @@ a {
 	border-color: var(--color-accent-2);
 	background: var(--color-surface-3);
 }
+
+/* Shared centered-modal treatment for SettingsPanel and ComposerMenu —
+   one popup style for the whole app, not two hand-kept-in-sync copies.
+   Namespaced .modal-* rather than plain .backdrop/.panel — +layout.svelte
+   already has its own unrelated .backdrop (the sidebar drawer's mobile
+   scrim), and a generic global name would collide with it.
+   On mobile (<=768px, the same breakpoint Sidebar.svelte/+layout.svelte
+   already use elsewhere) it docks to the bottom edge instead of floating
+   centered — a small box adrift in a sea of backdrop reads as cramped
+   and mis-scaled on a phone; a bottom sheet is the standard mobile
+   pattern and uses the available height far more naturally. */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+}
+
+.modal-backdrop-close {
+	position: absolute;
+	inset: 0;
+	border: none;
+	padding: 0;
+	background: rgba(0, 0, 0, 0.62);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	cursor: default;
+}
+
+.modal-panel {
+	position: relative;
+	width: 100%;
+	max-width: 440px;
+	max-height: 85vh;
+	overflow-y: auto;
+	/* Slightly lifted surface color so the modal reads as elevated above
+	   the sidebar/main. */
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-lg);
+	/* Substantially deeper shadow than any inline element — these are the
+	   only floating panels in the app, so they can afford to feel heavy
+	   on entry. */
+	box-shadow:
+		0 32px 80px -20px rgba(0, 0, 0, 0.6),
+		0 12px 32px -12px rgba(0, 0, 0, 0.45),
+		0 0 0 1px rgba(0, 0, 0, 0.2);
+	padding: 24px 24px 20px;
+}
+
+:root[data-theme='light'] .modal-panel {
+	box-shadow:
+		0 32px 80px -20px rgba(50, 40, 28, 0.28),
+		0 12px 32px -12px rgba(50, 40, 28, 0.18);
+}
+
+.modal-panel-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 18px;
+}
+
+.modal-panel-header h2 {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: -0.005em;
+}
+
+@media (max-width: 768px) {
+	.modal-backdrop {
+		align-items: flex-end;
+		padding: 0;
+	}
+
+	.modal-panel {
+		max-width: 100%;
+		max-height: 82vh;
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		padding: 18px 18px max(16px, env(safe-area-inset-bottom));
+		animation: modal-sheet-up 0.2s var(--ease-out-expo);
+	}
+
+	.modal-panel-header h2 {
+		font-size: 19px;
+	}
+}
+
+@keyframes modal-sheet-up {
+	from {
+		transform: translateY(16px);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}

@@ -1,4 +1,5 @@
 import { getManualLocation, setManualLocation as persistManualLocation } from './geolocation';
+import type { FocusMode } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
@@ -10,6 +11,12 @@ export class SettingsState {
 	theme = $state<'dark' | 'light'>('dark');
 	showPrices = $state(true);
 	defaultModel = $state('');
+
+	// The composer's standing focus mode — applied to every new message
+	// until changed from the "+" menu, same "sticky until changed"
+	// semantics as defaultModel (see +page.svelte's initial focusMode).
+	// '' means "off" — no default.
+	defaultFocusMode = $state<FocusMode>('off');
 
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
@@ -34,6 +41,12 @@ export class SettingsState {
 	updateState = $state<UpdateState>('idle');
 	updateLog = $state('');
 
+	// True once load() has resolved — +page.svelte's composer uses this
+	// (not just checking defaultFocusMode's value) to apply the loaded
+	// default exactly once at startup, since 'off' is itself a valid
+	// loaded value and can't be distinguished from "hasn't loaded yet".
+	loaded = $state(false);
+
 	async load() {
 		const res = await fetch('/api/settings');
 		if (!res.ok) return;
@@ -41,9 +54,11 @@ export class SettingsState {
 		this.theme = data.theme === 'light' ? 'light' : 'dark';
 		this.showPrices = data.show_prices ?? true;
 		this.defaultModel = data.default_model ?? '';
+		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
 		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
+		this.loaded = true;
 	}
 
 	private applyTheme() {
@@ -71,6 +86,11 @@ export class SettingsState {
 		this.defaultModel = modelId;
 		await this.put({ default_model: modelId });
 		await onModelChanged?.();
+	}
+
+	async setDefaultFocusMode(mode: FocusMode) {
+		this.defaultFocusMode = mode;
+		await this.put({ default_focus_mode: mode });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.
