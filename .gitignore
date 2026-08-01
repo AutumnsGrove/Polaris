@@ -4,6 +4,7 @@ config.yaml
 *.db-wal
 polaris
 logs/
+attachments/
 web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/

@@ -52,6 +52,18 @@ type ClientMessage struct {
 	// check-in leniency — see agent.Run's maxTurns/researchCheckInInterval
 	// handling.
 	DeepResearch bool `json:"deep_research,omitempty"`
+	// AttachmentID/AttachmentFilename/AttachmentContentType describe a
+	// file uploaded via POST /api/upload ahead of this message (see
+	// gateway/attachments.go) — same two-step shape as push-to-talk voice
+	// memos. AttachmentID is the opaque name handleUpload saved the file
+	// under (config.Attachments.Dir/<id>); the other two are only for
+	// display and content-type dispatch, both already known to the
+	// frontend from the upload response, so the server doesn't need a
+	// side table to look them back up. Empty AttachmentID means no
+	// attachment on this message.
+	AttachmentID          string `json:"attachment_id,omitempty"`
+	AttachmentFilename    string `json:"attachment_filename,omitempty"`
+	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

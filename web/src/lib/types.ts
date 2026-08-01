@@ -60,13 +60,16 @@ export type ClientMessage =
 			voice_mode?: boolean;
 			stt_cost_usd?: number;
 			user_location?: string;
-			// Set from the composer's "+" sheet, not yet consumed by the
-			// backend (see agent/driver.go for where that wiring lands) —
-			// sent as plain extra JSON fields today, harmless for an older
-			// or not-yet-updated backend to receive since Go's json.Unmarshal
-			// silently ignores fields a struct doesn't declare.
+			// Set from the composer's "+" sheet — see agent/driver.go's
+			// focusModeInstructions and Run's DeepResearch handling.
 			focus_mode?: FocusMode;
 			deep_research?: boolean;
+			// Set when the composer's "+" sheet attached a file, already
+			// uploaded via POST /api/upload before this message is sent —
+			// see gateway/attachments.go's resolveAttachment.
+			attachment_id?: string;
+			attachment_filename?: string;
+			attachment_content_type?: string;
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs
@@ -76,6 +79,15 @@ export type ClientMessage =
 // 'off' isn't a selectable mode in the sheet — it's just what focusMode
 // resets to when the active mode is tapped again to turn it off.
 export type FocusMode = 'off' | 'brief' | 'academic' | 'news' | 'first_principles' | 'socratic';
+
+// The response from POST /api/upload (see gateway/attachments.go's
+// UploadResponse) — id is what rides along in the next ClientMessage.
+export interface UploadedAttachment {
+	id: string;
+	filename: string;
+	content_type: string;
+	size_bytes: number;
+}
 
 export interface ModelOption {
 	id: string;
@@ -109,6 +121,10 @@ export interface StoredMessage {
 	// 0 for user messages, and briefly for a not-yet-finished assistant
 	// message (see store.Store.SetMessageDuration).
 	duration_ms: number;
+	// Set only on a user message that carried an upload — see
+	// store.Store.SetMessageAttachment. '' on every other message.
+	attachment_filename?: string;
+	attachment_content_type?: string;
 	created_at: string;
 }
 
@@ -156,4 +172,9 @@ export interface ChatTurn {
 	// Assistant turns only, set once "done" arrives (or on reopening a
 	// past thread, from the persisted message).
 	durationMs?: number;
+	// Set only on a user turn that carried an upload (see
+	// StoredMessage.attachment_filename) — shown as a small chip above
+	// the message text.
+	attachmentFilename?: string;
+	attachmentContentType?: string;
 }

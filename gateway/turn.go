@@ -92,6 +92,26 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
+	if msg.AttachmentID != "" {
+		if err := s.db.SetMessageAttachment(userMsgID, msg.AttachmentFilename, msg.AttachmentContentType); err != nil {
+			log.Warn("failed to record attachment metadata", "err", err)
+			s.db.LogEvent(threadID, "warn", "turn", "recording attachment metadata failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+	}
+
+	// turnMessage is what the agent actually sees — msg.Content plus the
+	// attachment's extracted text, if any (see resolveAttachment). The
+	// persisted user message above stays as exactly what the user typed;
+	// only the in-flight prompt to the model is augmented, so reopening
+	// this thread later shows the original question, not a wall of
+	// extracted PDF text glued onto it.
+	turnMessage, err := resolveAttachment(cfg, msg)
+	if err != nil {
+		log.Warn("resolving attachment failed, continuing without it", "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
+		turnMessage = msg.Content
+	}
+
 	s.db.LogEvent(threadID, "info", "turn", "turn started", map[string]interface{}{
 		"model":         modelCfg.ID,
 		"is_new_thread": isNewThread,
@@ -194,7 +214,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// (the answer's already fully rendered) and would otherwise inflate a
 	// short answer's reported time with unrelated background work.
 	turnStart := time.Now()
-	result, err := agent.Run(ctx, agentCtx, history, msg.Content)
+	result, err := agent.Run(ctx, agentCtx, history, turnMessage)
 	durationMs := time.Since(turnStart).Milliseconds()
 	// Catches a reasoning burst still open when the turn ended — normally
 	// the final answer's "token" events already triggered this via emit

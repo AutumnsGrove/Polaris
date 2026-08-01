@@ -189,7 +189,7 @@ func fetchAndExtract(ctx context.Context, rawURL string) (title, text string, er
 		if err != nil {
 			return "", "", fmt.Errorf("reading pdf body: %w", err)
 		}
-		return extractPDFText(data)
+		return ExtractPDFText(data)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
@@ -253,13 +253,15 @@ func isPDF(resp *http.Response, rawURL string) bool {
 	return strings.HasSuffix(strings.ToLower(path), ".pdf")
 }
 
-// extractPDFText pulls plain text out of a fully-buffered PDF via
+// ExtractPDFText pulls plain text out of a fully-buffered PDF via
 // ledongthuc/pdf (pure Go, no cgo, no system dependency — see the doc
 // comment on tavily.Client for why that constraint matters here). PDFs
 // have no <title> tag; the first short line of extracted text is usually
 // the paper's actual title for arXiv-style academic PDFs, so that's used
-// as a best-effort title rather than leaving it blank.
-func extractPDFText(data []byte) (title, text string, err error) {
+// as a best-effort title rather than leaving it blank. Exported — also
+// used directly by gateway's attachment handling for an uploaded PDF,
+// not just PDFs reached via web_read's URL fetch.
+func ExtractPDFText(data []byte) (title, text string, err error) {
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", "", fmt.Errorf("opening pdf: %w", err)

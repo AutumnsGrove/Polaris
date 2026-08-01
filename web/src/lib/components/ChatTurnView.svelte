@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2 } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 
@@ -103,6 +103,12 @@
 
 {#if turn.role === 'user'}
 	<div class="row row-user">
+		{#if turn.attachmentFilename && !editing}
+			<div class="attachment-chip">
+				<Paperclip size={12} />
+				<span>{turn.attachmentFilename}</span>
+			</div>
+		{/if}
 		<div class="user-block" class:editing>
 			{#if editing}
 				<div class="edit-box">
@@ -239,7 +245,28 @@
 	}
 
 	.row-user {
-		justify-content: flex-end;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 6px;
+	}
+
+	.row-user .attachment-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		max-width: 640px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		border-radius: 999px;
+		padding: 4px 10px;
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.row-user .attachment-chip span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row-assistant {

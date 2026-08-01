@@ -1,4 +1,14 @@
-import type { ChatTurn, ModelOption, Thread, ServerEvent, Citation, StoredEvent, TimelineItem, FocusMode } from './types';
+import type {
+	ChatTurn,
+	ModelOption,
+	Thread,
+	ServerEvent,
+	Citation,
+	StoredEvent,
+	TimelineItem,
+	FocusMode,
+	UploadedAttachment
+} from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
@@ -272,6 +282,8 @@ export class AppState {
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
 			id: m.role === 'user' ? m.id : undefined,
+			attachmentFilename: m.attachment_filename || undefined,
+			attachmentContentType: m.attachment_content_type || undefined,
 			timeline:
 				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
 					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
@@ -353,14 +365,14 @@ export class AppState {
 	// sttCostUsd is set when content came from a transcribed voice memo
 	// (already billed via /api/transcribe) so it gets folded into the
 	// thread's running total instead of silently untracked. focusMode/
-	// deepResearch come from the composer's "+" menu (ComposerMenu.svelte) —
-	// only plumbed through the plain-text send path for now, not
-	// retry/editMessage below (same scope boundary sttCostUsd already
-	// draws) or VoiceButton's transcribed-memo send.
-	send(content: string, sttCostUsd?: number, focusMode?: FocusMode, deepResearch?: boolean) {
+	// deepResearch/attachment come from the composer's "+" menu
+	// (ComposerMenu.svelte) — only plumbed through the plain-text send
+	// path for now, not retry/editMessage below (same scope boundary
+	// sttCostUsd already draws) or VoiceButton's transcribed-memo send.
+	send(content: string, sttCostUsd?: number, focusMode?: FocusMode, deepResearch?: boolean, attachment?: UploadedAttachment) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
-		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch);
+		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch, attachment);
 	}
 
 	// Re-runs an assistant turn using the same preceding user message —
@@ -390,13 +402,19 @@ export class AppState {
 		truncateFromIndex?: number,
 		sttCostUsd?: number,
 		focusMode?: FocusMode,
-		deepResearch?: boolean
+		deepResearch?: boolean,
+		attachment?: UploadedAttachment
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
 		this.suggestions = [];
-		this.turns.push({ role: 'user', content });
+		this.turns.push({
+			role: 'user',
+			content,
+			attachmentFilename: attachment?.filename,
+			attachmentContentType: attachment?.content_type
+		});
 		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
 		this.busy = true;
 
@@ -424,7 +442,10 @@ export class AppState {
 			stt_cost_usd: sttCostUsd,
 			user_location: getUserLocation(),
 			focus_mode: focusMode && focusMode !== 'off' ? focusMode : undefined,
-			deep_research: deepResearch || undefined
+			deep_research: deepResearch || undefined,
+			attachment_id: attachment?.id,
+			attachment_filename: attachment?.filename,
+			attachment_content_type: attachment?.content_type
 		});
 	}
 

@@ -38,8 +38,10 @@ openrouter:
   base_url: %q
 database:
   path: %q
+attachments:
+  dir: %q
 default_model: "mimo-pro"
-`, llmBaseURL, filepath.Join(dir, "test.db"))
+`, llmBaseURL, filepath.Join(dir, "test.db"), filepath.Join(dir, "attachments"))
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing test config: %v", err)
 	}

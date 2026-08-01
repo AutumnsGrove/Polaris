@@ -28,6 +28,12 @@ type AskRequest struct {
 	// caller not exercising these can just omit them.
 	FocusMode    string `json:"focus_mode,omitempty"`
 	DeepResearch bool   `json:"deep_research,omitempty"`
+	// AttachmentID/AttachmentFilename/AttachmentContentType mirror
+	// ClientMessage's fields of the same name — see attachments.go. A
+	// caller uploads via POST /api/upload first, then passes its ID here.
+	AttachmentID          string `json:"attachment_id,omitempty"`
+	AttachmentFilename    string `json:"attachment_filename,omitempty"`
+	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -70,13 +76,16 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := ClientMessage{
-		Type:         "message",
-		ThreadID:     req.ThreadID,
-		Content:      req.Content,
-		Model:        req.Model,
-		Source:       req.Source,
-		FocusMode:    req.FocusMode,
-		DeepResearch: req.DeepResearch,
+		Type:                  "message",
+		ThreadID:              req.ThreadID,
+		Content:               req.Content,
+		Model:                 req.Model,
+		Source:                req.Source,
+		FocusMode:             req.FocusMode,
+		DeepResearch:          req.DeepResearch,
+		AttachmentID:          req.AttachmentID,
+		AttachmentFilename:    req.AttachmentFilename,
+		AttachmentContentType: req.AttachmentContentType,
 	}
 
 	var answer strings.Builder

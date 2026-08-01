@@ -3,30 +3,47 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X, Loader2 } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
+	import { uploadAttachment } from '$lib/upload';
 	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
 
-	// Composer-only state, not yet threaded into appState.send()'s wire
-	// payload — the sheet UI and its local state land first; actually
-	// affecting agent behavior (focus mode prompt changes, deep research
-	// turn budget, sending the attached file) is the next round of work.
+	// Composer-only state — focusMode/deepResearch ride along in every
+	// send() call already; attachedFile gets uploaded (see submit below)
+	// only at send time, not the instant it's picked, so backing out of a
+	// message with the file still attached never orphans an upload nobody
+	// ends up sending.
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
 	let attachedFile = $state<File | null>(null);
+	let uploading = $state(false);
 
 	function handleAttach(file: File) {
 		attachedFile = file;
 	}
 
-	function submit() {
+	async function submit() {
 		const text = input;
+		const file = attachedFile;
 		input = '';
 		attachedFile = null;
-		appState.send(text, undefined, focusMode, deepResearch);
+
+		if (!file) {
+			appState.send(text, undefined, focusMode, deepResearch);
+			return;
+		}
+
+		uploading = true;
+		const uploaded = await uploadAttachment(file);
+		uploading = false;
+		// Falls back to sending the text alone on a failed upload — an
+		// error toast would be nicer, but silently dropping the whole
+		// message because the attachment failed is worse than answering
+		// without it.
+		appState.send(text, undefined, focusMode, deepResearch, uploaded ?? undefined);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -102,7 +119,12 @@
 			<div class="attachment-chip">
 				<Paperclip size={13} />
 				<span class="attachment-name">{attachedFile.name}</span>
-				<button type="button" onclick={() => (attachedFile = null)} aria-label="Remove attachment">
+				<button
+					type="button"
+					onclick={() => (attachedFile = null)}
+					disabled={uploading}
+					aria-label="Remove attachment"
+				>
 					<X size={13} />
 				</button>
 			</div>
@@ -116,14 +138,16 @@
 				type={appState.busy ? 'button' : 'submit'}
 				class="send-btn"
 				class:stop={appState.busy}
-				disabled={!appState.busy && !input.trim()}
-				title={appState.busy ? 'Stop generating' : 'Send'}
+				disabled={uploading || (!appState.busy && !input.trim())}
+				title={appState.busy ? 'Stop generating' : uploading ? 'Uploading…' : 'Send'}
 				onclick={() => {
 					if (appState.busy) appState.stopGeneration();
 				}}
 			>
 				{#if appState.busy}
 					<Square size={14} fill="currentColor" />
+				{:else if uploading}
+					<Loader2 size={14} class="spin" />
 				{:else}
 					<Send size={16} />
 				{/if}
@@ -634,5 +658,15 @@
 		background: var(--color-border-strong);
 		transform: none;
 		box-shadow: none;
+	}
+
+	:global(.spin) {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>

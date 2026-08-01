@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- reason context_tokens is a separate post-hoc UPDATE: the timer
 	-- can't stop until agent.Run has already returned the finished answer.
 	duration_ms INTEGER NOT NULL DEFAULT 0,
+	-- attachment_filename/attachment_content_type: set only on a user
+	-- message that carried an upload from the composer's "+" menu — the
+	-- original filename and its detected content type, for display
+	-- ("📎 report.pdf") when the thread is reopened. The actual file
+	-- lives on disk under config.Attachments.Dir, named by an opaque ID
+	-- from the upload response, not by this filename — this column is
+	-- purely cosmetic. '' on every other message.
+	attachment_filename TEXT NOT NULL DEFAULT '',
+	attachment_content_type TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -122,6 +131,8 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE events ADD COLUMN turn_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN attachment_filename TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN attachment_content_type TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -184,8 +195,12 @@ type Message struct {
 	// 0 for user messages, and for assistant messages until
 	// SetMessageDuration runs (see its doc comment for why that's a
 	// separate post-hoc update rather than part of AddMessage itself).
-	DurationMs int64     `json:"duration_ms"`
-	CreatedAt  time.Time `json:"created_at"`
+	DurationMs int64 `json:"duration_ms"`
+	// AttachmentFilename/AttachmentContentType are set only on a user
+	// message that carried an upload — see SetMessageAttachment.
+	AttachmentFilename    string    `json:"attachment_filename,omitempty"`
+	AttachmentContentType string    `json:"attachment_content_type,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -393,7 +408,9 @@ func (s *Store) SetSetting(key, value string) error {
 
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, created_at FROM messages WHERE thread_id = ? ORDER BY id ASC`,
+		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
+			attachment_filename, attachment_content_type, created_at
+		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
 	if err != nil {
@@ -404,7 +421,8 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
@@ -419,5 +437,15 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 // it to). Mirrors SetContextTokens' same shape for the same reason.
 func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
 	_, err := s.db.Exec(`UPDATE messages SET duration_ms = ? WHERE id = ?`, durationMs, messageID)
+	return err
+}
+
+// SetMessageAttachment records the display filename/content-type for a
+// user message that carried an upload — same post-hoc-UPDATE shape as
+// SetMessageDuration, since AddMessage needs to run first for the
+// message's ID to exist.
+func (s *Store) SetMessageAttachment(messageID int64, filename, contentType string) error {
+	_, err := s.db.Exec(`UPDATE messages SET attachment_filename = ?, attachment_content_type = ? WHERE id = ?`,
+		filename, contentType, messageID)
 	return err
 }

@@ -61,6 +61,14 @@ type Config struct {
 		Dir string `yaml:"dir"` // daily-rotated files (YYYY-MM-DD.log), 90-day retention
 	} `yaml:"logging"`
 
+	Attachments struct {
+		// Dir stores uploaded files (PDFs, images) on disk next to the
+		// database — see gateway's handleUpload. Referenced by generated
+		// filename from messages.attachment_path, not by anything the
+		// client supplies directly.
+		Dir string `yaml:"dir"`
+	} `yaml:"attachments"`
+
 	Service struct {
 		Label string `yaml:"label"`
 	} `yaml:"service"`
@@ -156,6 +164,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.Logging.Dir == "" {
 		cfg.Logging.Dir = "./logs"
+	}
+	if cfg.Attachments.Dir == "" {
+		cfg.Attachments.Dir = "./attachments"
 	}
 	if cfg.Service.Label == "" {
 		cfg.Service.Label = "polaris"

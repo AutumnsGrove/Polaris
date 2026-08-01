@@ -38,6 +38,9 @@ database:
 logging:
   dir: "./logs"   # one file per day (YYYY-MM-DD.log), 90-day retention, pruned automatically
 
+attachments:
+  dir: "./attachments"   # uploaded PDFs/images from the composer's "+" menu
+
 service:
   label: "polaris"
 
