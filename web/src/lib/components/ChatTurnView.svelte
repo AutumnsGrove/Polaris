@@ -178,6 +178,17 @@
 			{/if}
 
 			{#if turn.content}
+				<!-- This is delegated click handling for the citation badges
+				     inside {@html}-injected content, not a click target in its
+				     own right — the actual interactive elements are the nested
+				     <a class="citation-badge"> tags, which are real anchors
+				     (native href + tabindex), so they're already fully
+				     keyboard-operable on their own; a native Enter-triggered
+				     click on one of them bubbles up to this handler exactly
+				     like a mouse click does. No separate keyboard handler
+				     needed on the wrapping div itself. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="prose" onclick={handleProseClick}>{@html renderedHtml}</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
@@ -460,11 +471,13 @@
 
 	/* Briefly flashed when an inline citation badge scrolls this chip
 	   into view (see handleProseClick) — a visual "here's the one you
-	   clicked" confirmation, not a permanent state change. Plain scoped
-	   selector, not :global — this chip is regular Svelte-templated
-	   markup (not {@html}-injected), so Svelte's scoping already applies
-	   even though the class itself is added via classList in JS. */
-	.source-chip.source-chip-flash {
+	   clicked" confirmation, not a permanent state change. .source-chip
+	   itself stays a normal scoped selector (it's real template markup);
+	   only .source-chip-flash needs :global(), since Svelte's compiler
+	   statically checks the template for class usage and can't see a
+	   class added at runtime via classList — without this it strips the
+	   rule as "unused". */
+	.source-chip:global(.source-chip-flash) {
 		border-color: var(--color-accent);
 		background: var(--color-accent-soft);
 		transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo);
