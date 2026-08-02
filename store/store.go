@@ -168,9 +168,9 @@ type Thread struct {
 	// ContextTokens is exposed to the frontend for the context-usage %
 	// display. CompactedSummary/CompactedThroughID are internal —
 	// history-building only, never sent to the frontend.
-	ContextTokens      int       `json:"context_tokens"`
-	CompactedSummary   string    `json:"-"`
-	CompactedThroughID int64     `json:"-"`
+	ContextTokens      int    `json:"context_tokens"`
+	CompactedSummary   string `json:"-"`
+	CompactedThroughID int64  `json:"-"`
 	// Source is informational only (see schema comment in Open) — "web"
 	// for the normal chat UI, or a caller-supplied label for threads
 	// created via POST /api/ask.
@@ -180,13 +180,13 @@ type Thread struct {
 }
 
 type Message struct {
-	ID          int64     `json:"id"`
-	ThreadID    string    `json:"thread_id"`
-	Role        string    `json:"role"`
-	Content     string    `json:"content"`
-	Citations   string    `json:"citations"`   // JSON-encoded []tools.Citation
-	Suggestions string    `json:"suggestions"` // JSON-encoded []string
-	CostUSD     float64   `json:"cost_usd"`
+	ID          int64   `json:"id"`
+	ThreadID    string  `json:"thread_id"`
+	Role        string  `json:"role"`
+	Content     string  `json:"content"`
+	Citations   string  `json:"citations"`   // JSON-encoded []tools.Citation
+	Suggestions string  `json:"suggestions"` // JSON-encoded []string
+	CostUSD     float64 `json:"cost_usd"`
 	// TurnID joins this message to the events (see store.Event.TurnID)
 	// logged while the turn that produced it ran, so a reopened thread
 	// can reconstruct that turn's tool calls/thinking steps.
