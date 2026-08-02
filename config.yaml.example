@@ -2,7 +2,9 @@
 # (never commit real API keys — config.yaml is gitignored).
 
 server:
-  host: "127.0.0.1"   # bind to 0.0.0.0 (or the Tailscale IP) once deployed to the potato
+  host: "127.0.0.1"   # loopback only, including on the potato — tailscale serve binds the
+                       # tailnet IP itself on this same port to terminate HTTPS and proxies to
+                       # localhost, so 0.0.0.0 collides with it and crash-loops on every reboot
   port: 8899
 
 openrouter:

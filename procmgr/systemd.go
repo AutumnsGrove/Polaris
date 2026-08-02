@@ -114,6 +114,8 @@ const unitTemplate = `[Unit]
 Description={{.Description}}
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -125,8 +127,6 @@ ExecStart={{.BinaryPath}} run
 
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=600
-StartLimitBurst=5
 
 
 # The app's own logger writes daily-rotated files (logs/YYYY-MM-DD.log,
