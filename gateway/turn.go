@@ -36,7 +36,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	// Retry/edit: wipe the message being replaced and everything after it
 	// (no branching history) before persisting the new/unchanged content.
+	//
+	// isFirstMessageEdit is checked before the delete below, not after —
+	// once the delete runs, every message that would prove this was the
+	// thread's opening question is gone. Only regenerating the title in
+	// this case (not on every retry) matters because the title describes
+	// the thread as a whole: editing turn 5 of an established
+	// conversation shouldn't retitle it around just that turn, but
+	// editing turn 1 means the question the current title was generated
+	// from doesn't exist anymore.
+	isFirstMessageEdit := false
 	if msg.EditFromID != 0 {
+		var err error
+		isFirstMessageEdit, err = s.db.IsFirstMessage(threadID, msg.EditFromID)
+		if err != nil {
+			s.db.LogEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+			return
+		}
 		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
 			s.db.LogEvent(threadID, "error", "turn", "deleting messages for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
@@ -69,6 +86,21 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
+		}
+	} else if isFirstMessageEdit {
+		// Same truncated-placeholder treatment as a brand-new thread above
+		// — the old title (placeholder or generated) described the
+		// question that just got deleted, so the sidebar shouldn't keep
+		// showing it while this turn runs. generateTitle below replaces
+		// this with a real title once the new answer lands, same as for
+		// a new thread.
+		title := msg.Content
+		if len(title) > 80 {
+			title = title[:80] + "…"
+		}
+		if err := s.db.SetThreadTitle(threadID, title); err != nil {
+			log.Warn("failed to reset placeholder title for first-message edit", "err", err)
+			s.db.LogEvent(threadID, "warn", "title", "resetting placeholder title for first-message edit failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 	}
 
@@ -255,14 +287,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	suggestionsJSON, _ := json.Marshal(suggestions)
 
-	// One-time LLM-generated thread title, replacing the truncated-first-
-	// message placeholder CreateThread set above — only on a brand-new
-	// thread's first turn, never again after (a manual rename, or just
-	// leaving the placeholder, both take precedence over ever
-	// regenerating this). Same completion-gating as suggestions: skip on
-	// a stopped generation or an empty answer, where the placeholder is
-	// already the more sensible title anyway.
-	if isNewThread && ctx.Err() == nil && result.Answer != "" {
+	// One-time LLM-generated thread title, replacing the truncated
+	// placeholder set above — on a brand-new thread's first turn, or on
+	// an edit/retry of that first turn (isFirstMessageEdit), since in
+	// both cases the title needs to describe a question that's only just
+	// been asked. Never regenerated on any other turn — a manual rename,
+	// or just leaving the placeholder, both take precedence there. Same
+	// completion-gating as suggestions: skip on a stopped generation or
+	// an empty answer, where the placeholder is already the more
+	// sensible title anyway.
+	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" {
 		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)

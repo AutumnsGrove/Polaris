@@ -342,6 +342,21 @@ func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
 	return tx.Commit()
 }
 
+// IsFirstMessage reports whether id is the earliest message in threadID —
+// used by handleTurn to tell an edit/retry of the thread's opening
+// question (which should regenerate the title, since the question the
+// old title was based on no longer exists) apart from an edit/retry
+// further into the conversation (which shouldn't: the title already
+// describes an established thread, not just this one turn).
+func (s *Store) IsFirstMessage(threadID string, id int64) (bool, error) {
+	var minID int64
+	err := s.db.QueryRow(`SELECT MIN(id) FROM messages WHERE thread_id = ?`, threadID).Scan(&minID)
+	if err != nil {
+		return false, err
+	}
+	return minID == id, nil
+}
+
 // SetContextTokens records the thread's current context size (prompt +
 // completion tokens from the LLM's own usage numbers) — drives the
 // context-usage % in the UI and the auto-compaction check.
