@@ -480,6 +480,20 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 // that's genuinely part of the title (e.g. a title ending in "quotes").
 var titleQuotePrefix = regexp.MustCompile(`^["'“‘]+|["'”’]+$`)
 
+// answerLikeTitle catches a title that's actually an answer to the
+// user's question instead of a description of it — a real example:
+// asked "Who did Vincent Pastore play in the Sopranos? Was it Paulie?"
+// and got back "No, Vincent Pastore played Salvatore..." as the title.
+// Unlike the earlier answer-in-context bug (see generateTitle's doc
+// comment), this happens with only the question in context: a yes/no or
+// "was it X" question is enough to pull a helpful model into answering
+// it instead of titling it, no matter how the system prompt words the
+// instruction not to. Cheaper to catch the handful of tells this
+// produces (a leading "Yes"/"No"/"Unfortunately"/etc.) than to rely on
+// prompting alone — matched titles are treated as unusable, same as an
+// empty one, and the placeholder stands instead.
+var answerLikeTitle = regexp.MustCompile(`(?i)^(yes|no|sure|actually|unfortunately|correct|indeed|according to)\b[\s,.:!—-]`)
+
 // maxTitleLen caps the generated title's length — a good one reads like
 // "Capital of France" or "Debugging a Go goroutine leak" (well under
 // this), not a restated question. Same belt-and-suspenders reasoning as
@@ -514,14 +528,27 @@ const maxTitleLen = 60
 // nothing, leaving the truncated-question placeholder forever with no
 // trace in the event log explaining why (see handleTurn's title-gating
 // block, which now logs this case explicitly too).
+//
+// Even with the answer dropped from context, a yes/no or "was it X"
+// question is enough to pull a helpful model into answering it instead
+// of titling it (real examples: "Who did Vincent Pastore play in the
+// Sopranos? Was it Paulie?" came back as "No, Vincent Pastore played
+// Salvatore..."). The system prompt now says so explicitly with
+// matching examples, and answerLikeTitle below catches whatever slips
+// through anyway.
 func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Based on this question, write a short thread title summarizing what " +
-			"it's about — 3 to 6 words, plain text, no quotes, no trailing punctuation, no preamble or " +
-			"extra commentary. Title Case is fine but not required."},
+		{Role: "system", Content: "Write a short thread title describing what the user's message below is " +
+			"about — 3 to 6 words, plain text, no quotes, no trailing punctuation, no preamble or extra " +
+			"commentary. Title Case is fine but not required.\n\n" +
+			"Name the topic, don't answer the message — this applies even to yes/no or \"was it X\" " +
+			"questions. For example:\n" +
+			"\"Who did Vincent Pastore play in the Sopranos? Was it Paulie?\" -> \"Vincent Pastore's Sopranos Role\"\n" +
+			"\"Do Planet Fitness locations still have $10 memberships?\" -> \"Planet Fitness Membership Pricing\"\n" +
+			"\"What's the tallest mountain and its height?\" -> \"Tallest Mountain and Its Height\""},
 		{Role: "user", Content: userMessage},
 	}
 
@@ -535,6 +562,9 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 	title = strings.TrimRight(title, ".!。")
 	if len(title) > maxTitleLen {
 		title = title[:maxTitleLen]
+	}
+	if answerLikeTitle.MatchString(title) {
+		return "", resp.CostUSD, nil
 	}
 	return title, resp.CostUSD, nil
 }
