@@ -10,7 +10,8 @@ triangulate against — it doesn't know things, it knows how to go find out.
 ## What it does
 
 Ask it something. It decides for itself whether it needs to search the web, read a specific page,
-look up a nearby place, or just answer directly — then streams the answer back with citations.
+look up a nearby place, check the weather, or just answer directly — then streams the answer back
+with citations.
 
 - **Web search** via your own SearXNG instance (no API key, no per-query cost, no rate limits)
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
@@ -19,6 +20,10 @@ look up a nearby place, or just answer directly — then streams the answer back
   then to Tavily's Extract API (optional, paid) for JS-rendered pages the free path can't see
 - **YouTube transcripts** — reads a video's captions directly from its watch page (no API key, no
   headless browser) so a shared YouTube link is as researchable as any article
+- **Weather** — current conditions and a short forecast via Open-Meteo (no API key), geocoded the
+  same way as `nearby_search`
+- **Wikipedia / arXiv lookup** — queries an encyclopedia summary or a paper's abstract directly from
+  its source instead of through a general web search, for a cleaner, more precise citation
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -41,8 +46,9 @@ look up a nearby place, or just answer directly — then streams the answer back
 Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
-  ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript,
-  │              or just answer — independent tool calls in the same turn run concurrently
+  ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
+  │              weather / reference_lookup, or just answer — independent tool calls in the same
+  │              turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding

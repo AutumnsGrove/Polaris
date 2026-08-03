@@ -3,7 +3,7 @@
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Brain, Archive, Loader2, ChevronRight } from '@lucide/svelte';
+	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen } from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 	// Tool calls start collapsed (their result is secondary detail) but a
@@ -17,6 +17,8 @@
 	function label(item: Extract<TimelineItem, { kind: 'tool' }>): string {
 		if (item.tool === 'web_search') return `Searching: ${item.args?.query ?? ''}`;
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
+		if (item.tool === 'weather') return `Weather: ${item.args?.location ?? ''}`;
+		if (item.tool === 'reference_lookup') return `Looking up: ${item.args?.query ?? ''}`;
 		return item.tool;
 	}
 
@@ -66,6 +68,10 @@
 		<button class="tool-header" onclick={() => (open = !open)}>
 			{#if item.tool === 'web_search'}
 				<Search size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'weather'}
+				<Cloud size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'reference_lookup'}
+				<BookOpen size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}
