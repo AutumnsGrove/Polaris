@@ -6,11 +6,20 @@
 		<meta name="text-scale" content="scale" />
 		<link rel="icon" type="image/png" href="/favicon-32.png" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+		<meta name="theme-color" content="#0f0a06" />
+		<!-- iOS ignores the manifest's display:standalone unless told separately;
+		     apple-mobile-web-app-* is the deprecated-but-still-required-by-Safari
+		     way to get a homescreen launch with no browser chrome. -->
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Polaris" />
 		<title>Polaris Search</title>
-		<link href="/_app/immutable/entry/start.DnjKbBd4.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/o2_jvaUL.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/start.HPRz3cL6.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Dl32roJU.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/p1UI1xi9.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.v8z6d6vf.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CCmW-o65.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
 		<link href="/_app/immutable/nodes/0.CI30uPWd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CRO0elrd.js" rel="modulepreload">
@@ -21,18 +30,30 @@
 		<div style="display: contents">
 			<script>
 				{
-					__sveltekit_ou9bku = {
+					__sveltekit_1judguw = {
 						base: ""
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.DnjKbBd4.js"),
-						import("/_app/immutable/entry/app.v8z6d6vf.js")
+						import("/_app/immutable/entry/start.HPRz3cL6.js"),
+						import("/_app/immutable/entry/app.CCmW-o65.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
+
+					if ('serviceWorker' in navigator) {
+						const script_url = '/service-worker.js';
+						const policy = globalThis?.window?.trustedTypes?.createPolicy(
+							'sveltekit-trusted-url',
+							{ createScriptURL(url) { return url; } }
+						);
+						const sanitised = policy?.createScriptURL(script_url) ?? script_url;
+						addEventListener('load', function () {
+							navigator.serviceWorker.register(sanitised);
+						});
+					}
 				}
 			</script>
 		</div>

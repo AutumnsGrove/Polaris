@@ -6,6 +6,15 @@
 		<meta name="text-scale" content="scale" />
 		<link rel="icon" type="image/png" href="%sveltekit.assets%/favicon-32.png" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<link rel="manifest" href="%sveltekit.assets%/manifest.json" />
+		<meta name="theme-color" content="#0f0a06" />
+		<!-- iOS ignores the manifest's display:standalone unless told separately;
+		     apple-mobile-web-app-* is the deprecated-but-still-required-by-Safari
+		     way to get a homescreen launch with no browser chrome. -->
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Polaris" />
 		<title>Polaris Search</title>
 		%sveltekit.head%
 	</head>

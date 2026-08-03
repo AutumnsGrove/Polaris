@@ -39,6 +39,8 @@ with citations.
 - **Settings panel** — dark/light theme, default model, price visibility, and a one-click
   "push update now" button that pulls, rebuilds, and restarts the service — no SSH required
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
+- **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's homescreen
+  as a standalone app (no browser chrome), since [mobile is the primary surface](PRODUCT.md)
 
 ## Architecture
 
@@ -180,6 +182,9 @@ Runs as a systemd service (Linux) or launchd agent (macOS) via the bundled `proc
 `Restart=always`, logs rotate daily with 90-day retention. Designed to run on genuinely
 resource-constrained hardware (this was built to run on a Le Potato SBC); see
 `config.yaml.example` for the full set of tunables.
+
+`GET /healthz` is an unauthenticated liveness check (confirms the process is up and the SQLite
+connection is actually reachable) for `Restart=always` or any external uptime monitor to poll.
 
 ## License
 
