@@ -149,6 +149,39 @@ func TestChatCompletionWithTools_RequestsParallelToolCallsTrue(t *testing.T) {
 	}
 }
 
+// TestWithReasoning_ExplicitlyDisabledIsSentOnTheWire guards against a
+// real regression: ReasoningParams.Enabled used to be a plain bool, so
+// WithReasoning(&ReasoningParams{Enabled: false}) — meant to explicitly
+// turn reasoning off for a cheap auxiliary call like a thread title —
+// serialized identically to leaving Enabled unset entirely, since
+// encoding/json's omitempty drops a false bool same as a zero value.
+// That silently left reasoning-native models free to reason internally
+// anyway, burning part of the completion budget on hidden tokens (see
+// gateway/turn.go's generateTitle). Enabled is now *bool specifically so
+// &false round-trips onto the wire as {"enabled":false}, distinct from a
+// nil ReasoningParams sending no reasoning field at all.
+func TestWithReasoning_ExplicitlyDisabledIsSentOnTheWire(t *testing.T) {
+	var rawBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		rawBody = string(body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 300).
+		WithReasoning(&ReasoningParams{Enabled: func() *bool { b := false; return &b }()})
+	_, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil)
+	if err != nil {
+		t.Fatalf("ChatCompletionStreaming returned error: %v", err)
+	}
+
+	if !strings.Contains(rawBody, `"reasoning":{"enabled":false}`) {
+		t.Errorf("request body = %s, want an explicit {\"enabled\":false} reasoning field", rawBody)
+	}
+}
+
 func TestChatCompletion_NonOKStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

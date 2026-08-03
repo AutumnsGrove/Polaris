@@ -44,7 +44,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &falseVal})
 	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
-		client = client.WithReasoning(&llm.ReasoningParams{Enabled: true, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+		trueVal := true
+		client = client.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
 
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL)

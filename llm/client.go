@@ -71,8 +71,22 @@ type ProviderRouting struct {
 
 // ReasoningParams mirrors OpenRouter's `reasoning` request field. Effort
 // and MaxTokens are mutually exclusive per their API — set at most one.
+//
+// Enabled is a *bool, not bool: omitting the reasoning field entirely
+// (WithReasoning(nil), i.e. c.reasoning == nil) is not the same request
+// as sending {"enabled": false}. A reasoning-native model (this app's
+// deepseek default) can still reason internally by default when the
+// field is left off altogether, burning part of MaxTokens on hidden
+// reasoning before any visible content — see generateTitle's doc comment
+// in gateway/turn.go for a real case this caused. A plain `bool` field
+// with `omitempty` couldn't express "explicitly false" at all (Go's
+// encoding/json omits a false bool the same as an unset one), so callers
+// that need reasoning genuinely off for a cheap auxiliary call (a
+// title, a suggestions list) need a real tri-state: nil field omitted
+// entirely, &false sent as {"enabled":false}, &true sent as
+// {"enabled":true}.
 type ReasoningParams struct {
-	Enabled   bool   `json:"enabled,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
 	Effort    string `json:"effort,omitempty"`
 	MaxTokens int    `json:"max_tokens,omitempty"`
 }

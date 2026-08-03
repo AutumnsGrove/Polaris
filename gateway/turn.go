@@ -70,7 +70,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
 		WithSessionID(threadID) // sticky routing — same provider endpoint across the thread, for cache hits
 	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
-		client = client.WithReasoning(&llm.ReasoningParams{Enabled: true, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+		client = client.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
 
 	if isNewThread {
@@ -452,7 +452,14 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 	// error to catch. See generateTitle's doc comment for the concrete
 	// case this exact failure mode caused.
 	sugClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 500).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// Explicitly off, not just omitted — see ReasoningParams.Enabled's
+		// doc comment. Leaving the reasoning field off entirely still lets
+		// a reasoning-native model reason internally by default, spending
+		// part of this 500-token budget on invisible thinking before any
+		// suggestion text. This is a 3-question list, not a task that
+		// benefits from it.
+		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	// The task instruction lives in the LAST message, as a fresh "user"
 	// turn after the exchange — not just in the system prompt above it.
@@ -572,7 +579,17 @@ const maxTitleLen = 60
 // through anyway.
 func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// Explicitly off, not just omitted — see ReasoningParams.Enabled's
+		// doc comment. Raising this call's budget from 60 to 300 tokens
+		// (see below) helped but didn't fully fix the silent-empty-title
+		// failure this comment used to describe alone: a real thread asking
+		// a two-part question ("news in Smyrna GA today? And the weather?")
+		// still burned the entire 300-token budget on hidden reasoning with
+		// the field left unset, and came back with zero visible content.
+		// Explicitly disabling reasoning removes the non-determinism
+		// instead of just raising the budget and hoping it's enough.
+		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
 		{Role: "system", Content: "Write a short thread title describing what the user's message below is " +
