@@ -71,6 +71,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes(staticFS fs.FS) {
+	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)

@@ -160,6 +160,11 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// Ping verifies the database connection is alive, for /healthz — a
+// dropped connection or a locked/corrupt file surfaces here rather than
+// only on the next real request.
+func (s *Store) Ping() error { return s.db.Ping() }
+
 type Thread struct {
 	ID      string  `json:"id"`
 	Title   string  `json:"title"`
