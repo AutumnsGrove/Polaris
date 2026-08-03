@@ -241,7 +241,14 @@
 		justify-content: space-between;
 		border-bottom: 1px solid var(--color-border);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		padding: 10px 16px;
+		/* Installed as a standalone PWA (apple-mobile-web-app-status-bar-style:
+		   black-translucent), iOS draws the status bar over the page instead
+		   of pushing content down like ordinary Safari does — without this,
+		   the status bar's clock/battery area sits directly on top of the
+		   sidebar toggle button, making it untappable. Falls back to the
+		   plain 10px on browsers without safe-area support, same pattern as
+		   the composer's safe-area-inset-bottom handling below. */
+		padding: max(10px, env(safe-area-inset-top)) 16px 10px;
 		gap: 12px;
 	}
 

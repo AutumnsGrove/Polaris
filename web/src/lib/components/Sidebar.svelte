@@ -145,7 +145,13 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 16px;
+		/* On mobile the sidebar becomes a fixed, full-height overlay (see the
+		   media query below) starting at the true viewport top, same as
+		   .header in +page.svelte — needs the same safe-area-inset-top
+		   clearance so the collapse button isn't under the iOS status bar
+		   in standalone PWA mode. max() collapses to the plain 16px
+		   everywhere else, where env() is 0. */
+		padding: max(16px, env(safe-area-inset-top)) 16px 16px;
 		border-bottom: 1px solid var(--color-border);
 		white-space: nowrap;
 	}
