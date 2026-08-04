@@ -180,6 +180,51 @@ func TestWebSocket_LLMErrorSurfacesAsErrorEvent(t *testing.T) {
 	}
 }
 
+// TestWebSocket_EmptyAnswerSurfacesAsErrorEvent guards against a real
+// bug: a reasoning model that spends its whole completion budget on
+// hidden reasoning tokens can return empty visible content with no
+// error at all (see generateTitle's doc comment for the concrete case
+// that surfaced this pattern). Left unchecked in the primary answer
+// path, this used to fall straight through to AddMessage and silently
+// persist a blank assistant turn — no error event, no log trace.
+func TestWebSocket_EmptyAnswerSurfacesAsErrorEvent(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "")
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "hi", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	last := events[len(events)-1]
+	if last["type"] != "error" {
+		t.Fatalf("last event = %+v, want type=error for an empty answer", last)
+	}
+
+	threadID, _ := last["thread_id"].(string)
+	msgs, err := h.db.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("messages = %+v, want only the user question — no blank assistant turn persisted", msgs)
+	}
+
+	dbEvents, err := h.db.ListEvents(threadID, 0)
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	found := false
+	for _, e := range dbEvents {
+		if e.Level == "warn" && e.Message == "model returned an empty answer" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("dbEvents = %+v, want a \"model returned an empty answer\" warn event", dbEvents)
+	}
+}
+
 func TestWebSocket_UnknownModelFallsBackToDefault(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "an answer")
 	h := newTestHarness(t, srv.URL)

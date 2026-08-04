@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -257,6 +258,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if err != nil {
 		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
+		return
+	}
+	// No error, but no answer either — same reasoning-exhaustion failure
+	// mode as generateTitle/generateSuggestions (see generateTitle's doc
+	// comment), except here it's the primary answer, not a side call: a
+	// reasoning model that spends its whole completion budget on hidden
+	// reasoning tokens returns empty visible content with no error at all.
+	// Left unchecked, this used to fall straight through to AddMessage
+	// below and persist a blank assistant turn — no error shown, no log
+	// trace, just a silently empty reply. ctx.Err() == nil excludes a
+	// user-initiated stop hit before any token streamed, which is a
+	// legitimate empty answer, not this failure mode.
+	if ctx.Err() == nil && result.Answer == "" {
+		const msg = "The model didn't return an answer — it may have spent its whole response budget on " +
+			"internal reasoning. Try again, or switch models."
+		log.Warn("turn produced an empty answer", "thread", threadID, "model", modelCfg.ID)
+		s.db.LogEvent(threadID, "warn", "turn", "model returned an empty answer", map[string]interface{}{"model": modelCfg.ID}, turnID)
+		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: msg})
 		return
 	}
 
@@ -640,6 +659,19 @@ func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID
 	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
 	if err != nil {
 		return "", 0, err
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		// No error, but nothing usable came back — same reasoning-exhaustion
+		// failure mode as generateTitle/generateSuggestions (see
+		// generateTitle's doc comment), except unchecked here it would be
+		// far worse: CompactThread below replaces the thread's ENTIRE prior
+		// history with this string and marks it as covering everything
+		// through throughID. An empty summary would silently and
+		// permanently erase that history instead of just showing a blank
+		// title/suggestion list. Treating it as an error routes through the
+		// caller's existing "auto-compaction failed" log + skip path, which
+		// already correctly leaves the thread's real messages untouched.
+		return "", resp.CostUSD, fmt.Errorf("compaction returned no usable summary")
 	}
 
 	if err := s.db.CompactThread(threadID, resp.Content, throughID, resp.CostUSD, estimateTokens(resp.Content)); err != nil {

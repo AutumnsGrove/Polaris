@@ -50,6 +50,40 @@ func TestCompactThread(t *testing.T) {
 	}
 }
 
+// TestCompactThread_EmptySummaryIsAnError guards against a real bug: an
+// empty summary used to be persisted as-is, silently and permanently
+// replacing everything through msgID with "" — a reasoning-exhaustion
+// failure mode (see generateTitle's doc comment) is far worse here than
+// in a title/suggestions call, since CompactThread marks that empty
+// string as covering the thread's whole prior history.
+func TestCompactThread_EmptySummaryIsAnError(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	msgID, err := h.db.AddMessage("t1", "user", "hello", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "   ", CostUSD: 0.002}}},
+	}
+
+	s := &Server{db: h.db}
+	if _, _, err := s.compactThread(mock, "t1", msgID); err == nil {
+		t.Fatal("compactThread returned no error for a blank summary, want an error")
+	}
+
+	thread, err := h.db.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.CompactedSummary != "" || thread.CompactedThroughID != 0 {
+		t.Errorf("thread = %+v, want compaction to have never been persisted", thread)
+	}
+}
+
 func TestLoadHistory_SubstitutesCompactedSummary(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
