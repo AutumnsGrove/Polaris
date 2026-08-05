@@ -30,6 +30,7 @@ import (
 	"github.com/ledongthuc/pdf"
 
 	"polaris/llm"
+	"polaris/prompts"
 )
 
 var webReadDef = llm.ToolDef{
@@ -374,16 +375,8 @@ func looksEmpty(text string) bool {
 // is already configured on it.
 func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, instructions string) (string, error) {
 	messages := []llm.ChatMessage{
-		{
-			Role: "system",
-			Content: "You extract specific information from web page text. Given the page content and an " +
-				"instruction, return ONLY what was asked for — no commentary, no restating the instruction. " +
-				"If the requested information isn't present, say so in one short sentence.",
-		},
-		{
-			Role:    "user",
-			Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText),
-		},
+		{Role: "system", Content: prompts.Get().Tools.WebReadFilterSystem},
+		{Role: "user", Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText)},
 	}
 
 	resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)

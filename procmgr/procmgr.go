@@ -62,4 +62,3 @@ func New(label string) (Manager, error) {
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 }
-

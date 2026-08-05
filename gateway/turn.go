@@ -14,6 +14,7 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/prompts"
 	"polaris/tools"
 )
 
@@ -510,17 +511,12 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 	// sentence, not a question. Putting the instruction last, with an
 	// explicit anti-continuation line and a worked example, reliably
 	// signals a context switch instead.
+	p := prompts.Get()
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "You write short follow-up-question suggestions for a Q&A search app's " +
-			"UI. You never continue, restate, or add commentary to the previous answer — your only output " +
-			"is brand-new questions the user could ask next."},
+		{Role: "system", Content: p.Turn.SuggestionsSystem},
 		{Role: "user", Content: userMessage},
 		{Role: "assistant", Content: answer},
-		{Role: "user", Content: "Suggest exactly 3 short, natural follow-up questions based on the " +
-			"exchange above. One per line, no numbering, no quotes, no preamble — just the 3 questions. " +
-			"Each line must be a real question and end with a question mark. Do not continue or add to " +
-			"the previous answer.\n\nExample output:\nWhat is the population of Paris?\nHow does it " +
-			"compare to other European capitals?\nWhat other cities have served as France's capital?"},
+		{Role: "user", Content: p.Turn.SuggestionsTask},
 	}
 
 	resp, err := sugClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
@@ -629,14 +625,7 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Write a short thread title describing what the user's message below is " +
-			"about — 3 to 6 words, plain text, no quotes, no trailing punctuation, no preamble or extra " +
-			"commentary. Title Case is fine but not required.\n\n" +
-			"Name the topic, don't answer the message — this applies even to yes/no or \"was it X\" " +
-			"questions. For example:\n" +
-			"\"Who did Vincent Pastore play in the Sopranos? Was it Paulie?\" -> \"Vincent Pastore's Sopranos Role\"\n" +
-			"\"Do Planet Fitness locations still have $10 memberships?\" -> \"Planet Fitness Membership Pricing\"\n" +
-			"\"What's the tallest mountain and its height?\" -> \"Tallest Mountain and Its Height\""},
+		{Role: "system", Content: prompts.Get().Turn.TitleSystem},
 		{Role: "user", Content: userMessage},
 	}
 
@@ -667,10 +656,7 @@ func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID
 		return "", 0, err
 	}
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: "Summarize the following conversation concisely but completely: preserve " +
-			"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
-			"fully replace the conversation history, so omitting something means it's gone for good. Write " +
-			"it as plain prose, not a transcript."},
+		{Role: "system", Content: prompts.Get().Turn.CompactionSystem},
 	}
 	prompt = append(prompt, history...)
 

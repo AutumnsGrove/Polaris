@@ -15,6 +15,7 @@ import (
 
 	"polaris/llm"
 	"polaris/logger"
+	"polaris/prompts"
 	"polaris/tools"
 )
 
@@ -49,16 +50,11 @@ func isResearchTool(name string) bool {
 // of continuing to search, grounded in what it's actually gathered
 // (citation count) rather than a vague "are you sure?" — mirrors the
 // literature's finding that structured, externally-grounded check-ins
-// beat asking a model to self-assess confidence in free text.
+// beat asking a model to self-assess confidence in free text. Wording
+// lives in prompts.yaml (agent.research_check_in) — see that file to
+// tune it without a rebuild.
 func researchCheckInMessage(citationCount, callCount int) string {
-	return fmt.Sprintf(
-		"Checkpoint: you've made %d research tool calls and gathered %d source(s) so far. "+
-			"If you already have enough to answer confidently, stop searching and state your "+
-			"conclusion now, citing what you've found — don't keep searching just to double-check "+
-			"an answer you've already reasoned out. Only continue if there's a specific, concrete "+
-			"gap in what you know that a further search could plausibly fill.",
-		callCount, citationCount,
-	)
+	return fmt.Sprintf(prompts.Get().Agent.ResearchCheckIn, callCount, citationCount)
 }
 
 // staleStreakThreshold is how many consecutive research calls with zero
@@ -76,16 +72,10 @@ const staleStreakThreshold = 2
 
 // staleStreakMessage is deliberately blunter than researchCheckInMessage —
 // evidence of repetition, not a time-based nudge the model can always
-// rationalize past with "just one more search."
+// rationalize past with "just one more search." Wording lives in
+// prompts.yaml (agent.stale_streak_warning).
 func staleStreakMessage(streak, citationCount int) string {
-	return fmt.Sprintf(
-		"Your last %d searches found zero new sources — you're re-finding the same %d source(s) "+
-			"you already have. Searching again with a similar query will not help. Either answer now "+
-			"with what you've gathered, or try a meaningfully different angle (a different tool, a "+
-			"very different search term, or a specific named source) — not a reworded version of a "+
-			"query you've already tried.",
-		streak, citationCount,
-	)
+	return fmt.Sprintf(prompts.Get().Agent.StaleStreakWarning, streak, citationCount)
 }
 
 // trackResearchCall updates the running research-call/citation-novelty
@@ -124,39 +114,17 @@ func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCo
 
 // promptPath is read fresh on every turn — no recompiling to change how
 // Polaris behaves. Matches her-go's convention of hot-reloaded prompt
-// files living as plain text in the working directory.
+// files living as plain text in the working directory. Kept as its own
+// plain-text file rather than folded into prompts.yaml alongside every
+// other prompt fragment: it's long-form personality/identity prose meant
+// to be written and pasted freely, and YAML string-escaping would make
+// that materially more annoying to edit for no benefit.
 const promptPath = "prompt.md"
-
-// fallbackSystemPrompt is used only if prompt.md is missing, so a fresh
-// clone still works before the user copies prompt.md.example into place.
-const fallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have five tools:
-
-- think: reason privately about strategy before acting.
-- web_search: search the web via a private SearXNG instance.
-- web_read: fetch a URL and extract its content (optionally filtered to just what's needed).
-- nearby_search: find real-world places (restaurants, pharmacies, etc.) near a location.
-- youtube_transcript: fetch a YouTube video's transcript, given its URL or video ID.
-
-You can call multiple tools in the same turn when they're genuinely independent of each other's
-results (they run concurrently) — don't batch when a later call depends on an earlier one's result.
-
-There is no separate "reply" tool. Once you have enough information (or the question needs none),
-just answer directly in plain text — that ends the research phase and streams straight to the user.
-
-Be concise. Cite sources inline as [Title](URL) when you used web_search or web_read to support a claim.
-Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).`
-
-// voiceModeInstruction is appended when the turn will be read aloud —
-// long markdown-formatted answers with citation lists read terribly via
-// TTS, so voice mode gets a stronger brevity/plain-text nudge than the
-// base prompt asks for.
-const voiceModeInstruction = "\n\nVoice mode is active: this answer will be read aloud, not just displayed. " +
-	"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
-	"bullet lists, or reciting citations inline — sources will still be shown in the UI regardless."
 
 // FocusMode values — mirrored from web/src/lib/types.ts's FocusMode union
 // (minus "off", which just means "no focus mode instruction added"); keep
-// both in sync by hand.
+// both in sync by hand. Also mirrored by prompts.yaml's agent.focus_modes
+// keys — see loadSystemPrompt.
 const (
 	FocusModeBrief           = "brief"
 	FocusModeAcademic        = "academic"
@@ -165,70 +133,43 @@ const (
 	FocusModeSocratic        = "socratic"
 )
 
-// focusModeInstructions maps each focus mode to the system-prompt addition
-// that actually implements it — pure prompt engineering, no change to the
+// loadSystemPrompt reads prompt.md fresh every call — edit the file,
+// see the change on your very next message, no rebuild or restart. The
+// voice/focus-mode/deep-research additions come from prompts.yaml (via
+// prompts.Get(), itself cached and hot-reloaded the same way) rather than
+// being hardcoded here — pure prompt engineering, no change to the
 // tool-use loop itself. "brief" deliberately only changes the FINAL
 // answer's style, not the research loop — the composer describes it as
 // "same research, shorter replies", and that's exactly what this does:
 // Run's turn-budget/research-check-in logic never reads FocusMode, only
-// loadSystemPrompt's output differs.
-var focusModeInstructions = map[string]string{
-	FocusModeBrief: "\n\nFocus mode: Brief. Keep your final answer short — a few sentences or a tight " +
-		"paragraph, no filler or restating the question. This only changes how you write the answer, " +
-		"not how much you research: still search/read as much as the question actually needs.",
-	FocusModeAcademic: "\n\nFocus mode: Academic. Prefer academic, peer-reviewed, or primary technical " +
-		"sources (papers, journals, official documentation, standards bodies) over blogs, social media, " +
-		"or marketing pages. When you call web_search on a scientific or technical topic, pass " +
-		"category: \"science\" unless that returns nothing useful.",
-	FocusModeNews: "\n\nFocus mode: News. Prioritize current news coverage from reputable outlets over " +
-		"static reference pages. When you call web_search, pass category: \"news\" for this question.",
-	FocusModeFirstPrinciples: "\n\nFocus mode: First Principles. Don't just state conclusions or cite " +
-		"consensus/authority — explain the underlying mechanism or reasoning that makes the answer " +
-		"true, building up from fundamentals rather than asserting the result.",
-	FocusModeSocratic: "\n\nFocus mode: Socratic. Instead of only stating the answer, briefly walk " +
-		"through the reasoning step by step — as if guiding the user toward the conclusion rather than " +
-		"just handing it over. Stay concise; this is about the shape of the explanation, not padding " +
-		"it with extra questions.",
-}
-
-// loadSystemPrompt reads prompt.md fresh every call — edit the file,
-// see the change on your very next message, no rebuild or restart.
+// this function's output differs.
 func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) string {
+	p := prompts.Get()
+
 	data, err := os.ReadFile(promptPath)
-	prompt := fallbackSystemPrompt
+	prompt := p.Agent.FallbackSystemPrompt
 	if err == nil {
 		prompt = string(data)
 	} else if !os.IsNotExist(err) {
-		// A missing prompt.md is the expected first-run state (see the doc
-		// comment on fallbackSystemPrompt) and not worth logging every
-		// turn — but any other error (permissions, a directory where the
-		// file should be, disk trouble) means every turn from here on
-		// silently runs on the generic fallback prompt instead of the
-		// operator's actual configured behavior, with nothing to explain
-		// why.
+		// A missing prompt.md is the expected first-run state and not
+		// worth logging every turn — but any other error (permissions, a
+		// directory where the file should be, disk trouble) means every
+		// turn from here on silently runs on the generic fallback prompt
+		// instead of the operator's actual configured behavior, with
+		// nothing to explain why.
 		log.Warn("failed to read prompt.md, using fallback system prompt", "err", err)
 	}
 	if voiceMode {
-		prompt += voiceModeInstruction
+		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
-	if instr, ok := focusModeInstructions[focusMode]; ok {
-		prompt += instr
+	if instr, ok := p.Agent.FocusModes[focusMode]; ok {
+		prompt += "\n\n" + instr
 	}
 	if deepResearch {
-		prompt += deepResearchInstruction
+		prompt += "\n\n" + p.Agent.DeepResearchInstruction
 	}
 	return prompt
 }
-
-// deepResearchInstruction is appended when the composer's Deep Research
-// toggle is on — see Run's doc comment for the mechanical side (turn
-// budget, check-in leniency); this is the half that actually asks the
-// model to use that extra room instead of just having it available.
-const deepResearchInstruction = "\n\nDeep Research mode is active: prioritize thoroughness over speed. " +
-	"Cross-check important claims against more than one independent source rather than stopping at the " +
-	"first plausible answer, follow up on primary sources when a search result is vague or secondhand, " +
-	"and consider the question from more than one angle before concluding. Taking longer and costing " +
-	"more than a normal answer is expected and fine here."
 
 // deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the
 // turn budget and how rarely the check-in/stale-streak nudges fire when

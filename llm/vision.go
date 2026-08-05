@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"polaris/prompts"
 )
 
 type visionContentBlock struct {
@@ -51,22 +53,18 @@ type visionResponse struct {
 	} `json:"usage"`
 }
 
-// describeImagePrompt asks for a thorough, literal description rather
-// than an interpretation — the result becomes the ONLY thing the main
-// model (which never sees the actual image) has to work with, so vague
-// output here directly limits what questions about the image can be
-// answered downstream.
-const describeImagePrompt = "Describe this image in thorough, literal detail: what it shows, any text " +
-	"visible in it (transcribe it exactly), notable objects/people/places, colors, layout, and anything " +
-	"else a person looking at it would notice. Someone will need to answer questions about this image " +
-	"using only your description, not the image itself — be complete rather than concise."
-
 // DescribeImage asks this client's model (expected to be vision-capable —
 // see config.ModelConfig.Multimodal) to describe an image, for the
 // multimodal-attachment pipeline: a model that isn't itself multimodal
 // still needs some way to "see" an attached photo, so a capable model
 // describes it first and that description is folded into the main
 // model's context as plain text (see gateway's resolveAttachment).
+//
+// The prompt itself (vision.describe_image in prompts.yaml) asks for a
+// thorough, literal description rather than an interpretation — the
+// result becomes the ONLY thing the main model (which never sees the
+// actual image) has to work with, so vague output there directly limits
+// what questions about the image can be answered downstream.
 func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType string) (description string, costUSD float64, err error) {
 	reqBody := visionRequest{
 		Model: c.model,
@@ -74,7 +72,7 @@ func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType string
 			{
 				Role: "user",
 				Content: []visionContentBlock{
-					{Type: "text", Text: describeImagePrompt},
+					{Type: "text", Text: prompts.Get().Vision.DescribeImage},
 					{Type: "image_url", ImageURL: &visionImageURL{URL: fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64)}},
 				},
 			},
