@@ -119,9 +119,11 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 
 // migrations adds columns to a threads table created before they existed.
 // CREATE TABLE IF NOT EXISTS above only helps brand-new databases — an
-// existing polaris.db needs these added explicitly. Each is run
-// independently and a "duplicate column" error is expected and ignored
-// once a given database already has it; any other error is real.
+// existing polaris.db needs these added explicitly. Applied in order,
+// tracked via PRAGMA user_version (see applyMigrations) rather than by
+// probing each one's error — append new entries here; never edit or
+// reorder existing ones, since a database's recorded version is just an
+// index into this slice.
 var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN compacted_summary TEXT NOT NULL DEFAULT ''`,
@@ -150,12 +152,50 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
-	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column") {
-			return nil, fmt.Errorf("applying migration %q: %w", m, err)
-		}
+	if err := applyMigrations(db); err != nil {
+		return nil, err
 	}
 	return &Store{db: db}, nil
+}
+
+// applyMigrations runs whichever entries in `migrations` haven't been
+// applied yet, tracked via SQLite's built-in PRAGMA user_version — no
+// extra table needed, it's exactly the "how far have we gotten" counter
+// this needs. Previously "already applied" was detected only by
+// string-matching each ALTER TABLE's error against "duplicate column",
+// which broke silently if that exact wording ever changed across a
+// go-sqlite3/SQLite version bump, and couldn't detect completion for any
+// migration shape other than ADD COLUMN.
+//
+// A fresh user_version of 0 covers two cases identically, and both are
+// handled correctly by just running the full list: a brand-new database
+// (the `schema` constant above already creates every column any migration
+// would add, so each one below is a harmless no-op there) and a
+// pre-versioning database from before this counter existed (every
+// migration actually needs to run there). The "duplicate column" check is
+// kept as a tolerance for exactly that transitional case — going forward,
+// user_version itself is what prevents a migration from ever being
+// re-attempted, not error-message sniffing.
+//
+// Each migration's success (real or tolerated-duplicate) is recorded
+// immediately, one at a time — so a real failure partway through the list
+// leaves user_version accurately at the last one that actually landed,
+// and the next Open() resumes from exactly there instead of re-running
+// (and re-risking) everything from the start.
+func applyMigrations(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("reading schema version: %w", err)
+	}
+	for i := version; i < len(migrations); i++ {
+		if _, err := db.Exec(migrations[i]); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("applying migration %d %q: %w", i, migrations[i], err)
+		}
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+			return fmt.Errorf("recording schema version %d: %w", i+1, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

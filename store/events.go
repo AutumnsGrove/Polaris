@@ -72,12 +72,22 @@ func (s *Store) LogEvent(threadID, level, source, message string, data map[strin
 
 // truncateEventStrings trims any string value over maxEventDataBytes in
 // place — belt-and-suspenders against a single oversized tool result
-// bloating the events table indefinitely.
+// bloating the events table indefinitely. Truncated fields get a
+// "... [truncated]" suffix for a human skimming the JSON directly, and
+// are also listed under a "_truncated_fields" key so code parsing this
+// blob later (rather than eyeballing it) has a reliable, structured
+// signal — string-matching a suffix that could in principle also occur
+// in genuine content isn't a safe way to detect this programmatically.
 func truncateEventStrings(data map[string]interface{}) {
+	var truncatedFields []string
 	for k, v := range data {
 		if s, ok := v.(string); ok && len(s) > maxEventDataBytes {
 			data[k] = s[:maxEventDataBytes] + "... [truncated]"
+			truncatedFields = append(truncatedFields, k)
 		}
+	}
+	if len(truncatedFields) > 0 {
+		data["_truncated_fields"] = truncatedFields
 	}
 }
 
@@ -134,6 +144,16 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 // startup, mirroring the log files' own 90-day retention (see
 // logger.rotatingWriter) so this durable trail doesn't grow forever on a
 // long-running install.
+//
+// Deliberately asymmetric with threads/messages, which are NEVER pruned —
+// events are disposable operational evidence (tool calls, thinking steps,
+// turn timing), rebuilt fresh on every turn, while a thread's messages are
+// the actual conversation the user is revisiting/continuing (see the
+// package doc comment). Silently deleting someone's chat history on a
+// timer would be a real, surprising data-loss feature, not a hygiene one —
+// if unbounded growth of threads/messages ever becomes a real problem for
+// a given install, that needs to be an explicit, opt-in retention policy,
+// not an assumption baked in here.
 func (s *Store) PruneEvents(olderThanDays int) error {
 	_, err := s.db.Exec(
 		`DELETE FROM events WHERE created_at < datetime('now', '-' || ? || ' days')`,
