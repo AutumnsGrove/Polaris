@@ -24,7 +24,9 @@ var weatherDef = llm.ToolDef{
 	Function: llm.ToolFunctionDef{
 		Name: "weather",
 		Description: "Get current weather conditions and a short daily forecast for a location. " +
-			"Returns temperature, conditions, precipitation chance, and wind.",
+			"Returns temperature, conditions, precipitation chance, and wind. Pass include_hourly for " +
+			"an hour-by-hour breakdown of the next 24 hours instead of (or alongside) the daily summary — " +
+			"use that for questions like 'what time will it rain today' or 'will it be warmer this afternoon'.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -36,6 +38,12 @@ var weatherDef = llm.ToolDef{
 				"forecast_days": map[string]interface{}{
 					"type":        "integer",
 					"description": "How many days ahead to forecast, including today (default 3, max 7).",
+				},
+				"include_hourly": map[string]interface{}{
+					"type": "boolean",
+					"description": "Set true to also return an hour-by-hour forecast (temperature, " +
+						"precipitation chance, conditions) for the next 24 hours. Default false — most " +
+						"questions only need the daily summary.",
 				},
 			},
 			"required": []string{},
@@ -52,8 +60,9 @@ var openMeteoBaseURL = "https://api.open-meteo.com/v1/forecast"
 
 func handleWeather(argsJSON string, ctx *Context) string {
 	var args struct {
-		Location     string `json:"location"`
-		ForecastDays int    `json:"forecast_days"`
+		Location      string `json:"location"`
+		ForecastDays  int    `json:"forecast_days"`
+		IncludeHourly bool   `json:"include_hourly"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "weather", nil, "error: "+err.Error())
@@ -84,7 +93,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		return result
 	}
 
-	forecast, err := fetchWeather(ctx.Ctx, geo.Latitude, geo.Longitude, args.ForecastDays)
+	forecast, err := fetchWeather(ctx.Ctx, geo.Latitude, geo.Longitude, args.ForecastDays, args.IncludeHourly)
 	if err != nil {
 		result := "error: " + err.Error()
 		log.Warn("weather: fetch failed", "location", geo.DisplayName, "err", err)
@@ -94,7 +103,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 
 	summary := formatWeather(geo.DisplayName, forecast)
 	ctx.AddCitation(Citation{Title: "Open-Meteo forecast", URL: "https://open-meteo.com/"})
-	log.Info("weather", "location", geo.DisplayName, "forecast_days", args.ForecastDays)
+	log.Info("weather", "location", geo.DisplayName, "forecast_days", args.ForecastDays, "include_hourly", args.IncludeHourly)
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "weather",
 		"result":    summary,
@@ -123,9 +132,27 @@ type openMeteoResponse struct {
 		TempMin       []float64 `json:"temperature_2m_min"`
 		PrecipProbMax []float64 `json:"precipitation_probability_max"`
 	} `json:"daily"`
+	// Hourly is only populated when fetchWeather is called with
+	// includeHourly true — Open-Meteo omits the whole "hourly" object
+	// from its response when the request never asked for it, so this is
+	// naturally empty (not just unused) on a normal daily-only call.
+	Hourly struct {
+		Time        []string  `json:"time"`
+		WeatherCode []int     `json:"weather_code"`
+		Temperature []float64 `json:"temperature_2m"`
+		PrecipProb  []float64 `json:"precipitation_probability"`
+	} `json:"hourly"`
 }
 
-func fetchWeather(ctx context.Context, lat, lon float64, forecastDays int) (*openMeteoResponse, error) {
+// hourlyForecastHours caps the hourly block at the next 24 hours,
+// independent of forecastDays — Open-Meteo's own "forecast_hours" param
+// (separate from "forecast_days", which drives the daily block) returns
+// exactly the next N hours starting from the current hour, rather than
+// every hour across every requested day (7 days of hourly rows would be
+// 168 lines, far more than any answer needs "hour by hour" to mean).
+const hourlyForecastHours = 24
+
+func fetchWeather(ctx context.Context, lat, lon float64, forecastDays int, includeHourly bool) (*openMeteoResponse, error) {
 	q := url.Values{}
 	q.Set("latitude", fmt.Sprintf("%.4f", lat))
 	q.Set("longitude", fmt.Sprintf("%.4f", lon))
@@ -136,6 +163,10 @@ func fetchWeather(ctx context.Context, lat, lon float64, forecastDays int) (*ope
 	q.Set("precipitation_unit", "inch")
 	q.Set("timezone", "auto")
 	q.Set("forecast_days", fmt.Sprintf("%d", forecastDays))
+	if includeHourly {
+		q.Set("hourly", "temperature_2m,precipitation_probability,weather_code")
+		q.Set("forecast_hours", fmt.Sprintf("%d", hourlyForecastHours))
+	}
 
 	endpoint := openMeteoBaseURL + "?" + q.Encode()
 
@@ -179,6 +210,19 @@ func formatWeather(displayName string, f *openMeteoResponse) string {
 			fmt.Fprintf(&sb, "- %s: %s, high %.0f°F / low %.0f°F, %.0f%% chance of precipitation\n",
 				f.Daily.Time[i], weatherCodeDescription(f.Daily.WeatherCode[i]),
 				f.Daily.TempMax[i], f.Daily.TempMin[i], f.Daily.PrecipProbMax[i])
+		}
+	}
+
+	if len(f.Hourly.Time) > 0 {
+		sb.WriteString("\nHourly (next 24h):\n")
+		for i := range f.Hourly.Time {
+			// Open-Meteo's hourly "time" is a local ISO datetime
+			// (2026-08-03T14:00) with timezone=auto already applied — just
+			// the "T" swapped for a space reads naturally without needing
+			// to parse and reformat it.
+			ts := strings.Replace(f.Hourly.Time[i], "T", " ", 1)
+			fmt.Fprintf(&sb, "- %s: %.0f°F, %s, %.0f%% chance of precipitation\n",
+				ts, f.Hourly.Temperature[i], weatherCodeDescription(f.Hourly.WeatherCode[i]), f.Hourly.PrecipProb[i])
 		}
 	}
 
