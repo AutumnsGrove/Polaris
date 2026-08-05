@@ -52,6 +52,8 @@ func (s *Store) LogEvent(threadID, level, source, message string, data map[strin
 		truncateEventStrings(data)
 		if b, err := json.Marshal(data); err == nil {
 			dataJSON = string(b)
+		} else {
+			log.Warn("failed to marshal event data, recording event without it", "source", source, "err", err)
 		}
 	}
 

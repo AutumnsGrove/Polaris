@@ -343,11 +343,31 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
-	citationsJSON, _ := json.Marshal(result.Citations)
+	citationsJSON, err := json.Marshal(result.Citations)
+	if err != nil {
+		log.Warn("failed to marshal citations, persisting message without them", "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
+		citationsJSON = []byte("[]")
+	}
 	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD, turnID)
 	if err != nil {
+		// The answer was already fully streamed live via "token" events —
+		// the browser has it. But "done" (see protocol.go's doc comment)
+		// means "persisted, safe to re-enable input assuming this thread
+		// can be reopened with it intact" — sending it here would be a lie:
+		// reopening this thread would show the question with no reply, and
+		// its cost would never be added to the thread's running total.
+		// Surfacing an explicit error instead tells the user their answer
+		// exists only in this live view and won't survive a reload.
 		log.Warn("failed to persist assistant message", "err", err)
 		s.db.LogEvent(threadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()}, turnID)
+		send(ServerEvent{
+			Type:          "error",
+			ThreadID:      threadID,
+			UserMessageID: userMsgID,
+			Message:       "Your answer was generated but couldn't be saved — copy it now if you need it, then try again.",
+		})
+		return
 	}
 
 	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
@@ -355,11 +375,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
-	if assistantMsgID != 0 {
-		if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
-			log.Warn("failed to record message duration", "err", err)
-			s.db.LogEvent(threadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
-		}
+	if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
+		log.Warn("failed to record message duration", "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	// Auto-compact once this thread crosses the configured threshold: the
@@ -368,7 +386,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// messages table itself is untouched — only what gets sent back to
 	// the LLM shrinks, the visible transcript stays the true record.
 	contextTokens := result.ContextTokens
-	if result.ContextTokens >= cfg.ContextWindowTokens && assistantMsgID != 0 {
+	if result.ContextTokens >= cfg.ContextWindowTokens {
 		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
 			s.db.LogEvent(threadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
