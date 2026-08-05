@@ -59,10 +59,10 @@ func handleReferenceLookup(argsJSON string, ctx *Context) string {
 		MaxResults int    `json:"max_results"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "reference_lookup", nil, "error: "+err.Error())
 	}
 	if args.Query == "" {
-		return "error: query is required"
+		return emitToolError(ctx, "reference_lookup", map[string]interface{}{"query": args.Query}, "error: query is required")
 	}
 	if args.MaxResults <= 0 || args.MaxResults > 10 {
 		args.MaxResults = 3

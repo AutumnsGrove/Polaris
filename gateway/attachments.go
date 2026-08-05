@@ -71,7 +71,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = mime.TypeByExtension(filepath.Ext(header.Filename))
 	}
-	contentType, _, _ = mime.ParseMediaType(firstNonEmpty(contentType, "application/octet-stream"))
+	parsedType, _, parseErr := mime.ParseMediaType(firstNonEmpty(contentType, "application/octet-stream"))
+	if parseErr != nil {
+		log.Warn("parsing upload content type failed", "filename", header.Filename, "raw_content_type", contentType, "err", parseErr)
+		s.db.LogEvent("", "warn", "upload", "parsing content type failed", map[string]interface{}{"filename": header.Filename, "err": parseErr.Error()}, "")
+		http.Error(w, fmt.Sprintf("couldn't parse content type %q", contentType), http.StatusBadRequest)
+		return
+	}
+	contentType = parsedType
 	if !allowedUploadContentType(contentType) {
 		http.Error(w, fmt.Sprintf("unsupported content type %q — only PDFs and images are accepted", contentType), http.StatusBadRequest)
 		return
@@ -79,6 +86,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	if err := os.MkdirAll(cfg.Attachments.Dir, 0o755); err != nil {
 		log.Warn("creating attachments dir failed", "dir", cfg.Attachments.Dir, "err", err)
+		s.db.LogEvent("", "error", "upload", "creating attachments dir failed", map[string]interface{}{"dir": cfg.Attachments.Dir, "err": err.Error()}, "")
 		http.Error(w, "server storage error", http.StatusInternalServerError)
 		return
 	}
@@ -88,6 +96,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	dest, err := os.Create(destPath)
 	if err != nil {
 		log.Warn("creating attachment file failed", "path", destPath, "err", err)
+		s.db.LogEvent("", "error", "upload", "creating attachment file failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, "server storage error", http.StatusInternalServerError)
 		return
 	}
@@ -95,18 +104,28 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	written, err := io.Copy(dest, io.LimitReader(file, maxUploadBytes+1))
 	if err != nil {
-		os.Remove(destPath)
+		dest.Close()
+		if rmErr := os.Remove(destPath); rmErr != nil {
+			log.Warn("cleaning up partial attachment failed", "path", destPath, "err", rmErr)
+		}
 		log.Warn("writing attachment file failed", "path", destPath, "err", err)
+		s.db.LogEvent("", "error", "upload", "writing attachment file failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, "server storage error", http.StatusInternalServerError)
 		return
 	}
 	if written > maxUploadBytes {
-		os.Remove(destPath)
+		dest.Close()
+		if rmErr := os.Remove(destPath); rmErr != nil {
+			log.Warn("cleaning up oversized attachment failed", "path", destPath, "err", rmErr)
+		}
 		http.Error(w, "attachment too large (max 20MB)", http.StatusRequestEntityTooLarge)
 		return
 	}
 
 	log.Info("attachment uploaded", "id", id, "filename", header.Filename, "content_type", contentType, "size_bytes", written)
+	s.db.LogEvent("", "info", "upload", "attachment uploaded", map[string]interface{}{
+		"id": id, "filename": header.Filename, "content_type": contentType, "size_bytes": written,
+	}, "")
 	writeJSON(w, UploadResponse{ID: id, Filename: header.Filename, ContentType: contentType, SizeBytes: written})
 }
 

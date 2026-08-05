@@ -17,6 +17,8 @@ const maxThreadTitleLen = 120
 func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request) {
 	threads, err := s.db.ListThreads(100)
 	if err != nil {
+		log.Warn("listing threads failed", "err", err)
+		s.db.LogEvent("", "error", "thread", "listing threads failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -27,11 +29,15 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	thread, err := s.db.GetThread(id)
 	if err != nil {
+		log.Warn("getting thread failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "warn", "thread", "getting thread failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, "thread not found", http.StatusNotFound)
 		return
 	}
 	messages, err := s.db.GetMessages(id)
 	if err != nil {
+		log.Warn("getting thread messages failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "error", "thread", "getting thread messages failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -76,8 +82,11 @@ func (s *Server) handleRenameThread(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.db.DeleteThread(id); err != nil {
+		log.Warn("deleting thread failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "error", "thread", "deleting thread failed", map[string]interface{}{"err": err.Error()}, "")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.db.LogEvent("", "info", "thread", "thread deleted", map[string]interface{}{"thread_id": id}, "")
 	w.WriteHeader(http.StatusNoContent)
 }

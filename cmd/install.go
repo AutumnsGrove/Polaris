@@ -61,9 +61,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := mgr.Install(cfg); err != nil {
+		log.Warn("installing service failed", "manager", mgr.Name(), "err", err)
 		return fmt.Errorf("installing service: %w", err)
 	}
 
+	log.Info("service installed", "manager", mgr.Name(), "user", username)
 	fmt.Printf("Installed and started via %s\n", mgr.Name())
 	return nil
 }

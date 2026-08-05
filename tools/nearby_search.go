@@ -56,10 +56,11 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 		Limit    int     `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "nearby_search", nil, "error: "+err.Error())
 	}
 	if args.Query == "" {
-		return "error: query is required (e.g. 'coffee shop', 'pharmacy')"
+		return emitToolError(ctx, "nearby_search", map[string]interface{}{"query": args.Query},
+			"error: query is required (e.g. 'coffee shop', 'pharmacy')")
 	}
 	if args.Limit <= 0 || args.Limit > 50 {
 		args.Limit = 5
@@ -74,7 +75,8 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 		locationQuery = ctx.DefaultLocation
 	}
 	if locationQuery == "" {
-		return "error: no location given and no default_location configured — specify a location"
+		return emitToolError(ctx, "nearby_search", map[string]interface{}{"query": args.Query},
+			"error: no location given and no default_location configured — specify a location")
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{

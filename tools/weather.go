@@ -56,7 +56,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		ForecastDays int    `json:"forecast_days"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "weather", nil, "error: "+err.Error())
 	}
 	if args.ForecastDays <= 0 || args.ForecastDays > 7 {
 		args.ForecastDays = 3
@@ -67,7 +67,8 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		locationQuery = ctx.DefaultLocation
 	}
 	if locationQuery == "" {
-		return "error: no location given and no default_location configured — specify a location"
+		return emitToolError(ctx, "weather", map[string]interface{}{"location": args.Location},
+			"error: no location given and no default_location configured — specify a location")
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{

@@ -41,6 +41,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	log.Info("pulling changes from origin/main...")
 	result, err := updater.Run(repoPath)
 	if err != nil {
+		log.Error("self-update failed", "err", err, "pull_output", result.PullOutput, "build_output", result.BuildOutput)
 		fmt.Printf("%s\n%s\n", result.PullOutput, result.BuildOutput)
 		return err
 	}

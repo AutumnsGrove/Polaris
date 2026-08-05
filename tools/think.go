@@ -33,7 +33,7 @@ func handleThink(argsJSON string, ctx *Context) string {
 		Thought string `json:"thought"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "think", nil, "error: "+err.Error())
 	}
 	ctx.Emit("thinking", map[string]interface{}{"content": args.Thought})
 	return "noted"

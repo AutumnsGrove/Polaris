@@ -115,9 +115,27 @@ func Register(name string, fn HandlerFunc) {
 func Dispatch(name, argsJSON string, ctx *Context) string {
 	fn, ok := registry[name]
 	if !ok {
-		return "error: unknown tool " + name
+		result := "error: unknown tool " + name
+		log.Warn("model called unknown tool", "tool", name)
+		ctx.Emit("tool_call", map[string]interface{}{"tool": name})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": name, "result": result})
+		return result
 	}
 	return fn(argsJSON, ctx)
+}
+
+// emitToolError reports a tool call that failed before doing any real work
+// (bad JSON args, a missing required field) — emitting both "tool_call" and
+// "tool_result" here, not just returning the error string, so it still
+// reaches the durable event log the same way a call that failed partway
+// through does (see gateway.logTurnEvent). Without this, an argument
+// validation failure was invisible in the event trail: Dispatch's return
+// value went straight back to the model with no record a call was ever
+// attempted.
+func emitToolError(ctx *Context, tool string, args map[string]interface{}, result string) string {
+	ctx.Emit("tool_call", map[string]interface{}{"tool": tool, "args": args})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": tool, "result": result})
+	return result
 }
 
 // Defs returns the tool definitions offered to the model every turn.

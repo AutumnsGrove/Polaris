@@ -75,9 +75,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.db.SetSetting(settingTheme, *req.Theme); err != nil {
+			log.Warn("saving theme setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving theme setting failed", map[string]interface{}{"err": err.Error()}, "")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.db.LogEvent("", "info", "settings", "theme changed", map[string]interface{}{"theme": *req.Theme}, "")
 	}
 	if req.ShowPrices != nil {
 		value := "false"
@@ -85,9 +88,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			value = "true"
 		}
 		if err := s.db.SetSetting(settingShowPrices, value); err != nil {
+			log.Warn("saving show_prices setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving show_prices setting failed", map[string]interface{}{"err": err.Error()}, "")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.db.LogEvent("", "info", "settings", "show_prices changed", map[string]interface{}{"show_prices": value}, "")
 	}
 	if req.DefaultModel != nil {
 		cfg := s.liveConfig()
@@ -96,9 +102,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.db.SetSetting(settingDefaultModel, *req.DefaultModel); err != nil {
+			log.Warn("saving default_model setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving default_model setting failed", map[string]interface{}{"err": err.Error()}, "")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.db.LogEvent("", "info", "settings", "default model changed", map[string]interface{}{"model": *req.DefaultModel}, "")
 	}
 	if req.DefaultFocusMode != nil {
 		mode := *req.DefaultFocusMode
@@ -110,9 +119,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			mode = "" // stored as empty — handleGetSettings already treats "" as "no default"
 		}
 		if err := s.db.SetSetting(settingDefaultFocusMode, mode); err != nil {
+			log.Warn("saving default_focus_mode setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving default_focus_mode setting failed", map[string]interface{}{"err": err.Error()}, "")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.db.LogEvent("", "info", "settings", "default focus mode changed", map[string]interface{}{"focus_mode": mode}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

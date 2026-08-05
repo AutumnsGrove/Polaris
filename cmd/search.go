@@ -36,6 +36,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
+		log.Warn("loading config failed", "path", configPath, "err", err)
 		return err
 	}
 
@@ -86,6 +87,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)
 	if err != nil {
+		log.Warn("agent run failed", "query", query, "err", err)
 		return fmt.Errorf("agent run failed: %w", err)
 	}
 

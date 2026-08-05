@@ -8,13 +8,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"polaris/llm"
+	"polaris/logger"
 	"polaris/tools"
 )
+
+var log = logger.WithPrefix("agent")
 
 // defaultMaxTurns is used when a caller doesn't set ctx.MaxTurns — the
 // real value normally comes from config.Config.MaxAgentTurns, configurable
@@ -194,6 +198,15 @@ func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) strin
 	prompt := fallbackSystemPrompt
 	if err == nil {
 		prompt = string(data)
+	} else if !os.IsNotExist(err) {
+		// A missing prompt.md is the expected first-run state (see the doc
+		// comment on fallbackSystemPrompt) and not worth logging every
+		// turn — but any other error (permissions, a directory where the
+		// file should be, disk trouble) means every turn from here on
+		// silently runs on the generic fallback prompt instead of the
+		// operator's actual configured behavior, with nothing to explain
+		// why.
+		log.Warn("failed to read prompt.md, using fallback system prompt", "err", err)
 	}
 	if voiceMode {
 		prompt += voiceModeInstruction
@@ -478,6 +491,7 @@ func dispatchToolCallsConcurrently(calls []llm.ToolCall, ctx *tools.Context) []t
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
+					log.Error("panic in tool dispatch", "tool", call.Function.Name, "panic", r, "stack", string(debug.Stack()))
 					results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
 				}
 			}()

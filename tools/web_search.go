@@ -47,10 +47,10 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		Category   string `json:"category"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "web_search", nil, "error: "+err.Error())
 	}
 	if args.Query == "" {
-		return "error: query is required"
+		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query}, "error: query is required")
 	}
 	if args.MaxResults <= 0 || args.MaxResults > 10 {
 		args.MaxResults = 5
@@ -63,6 +63,13 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		"tool": "web_search",
 		"args": map[string]interface{}{"query": args.Query},
 	})
+
+	if ctx.SearXNG == nil {
+		result := "error: web search is not configured"
+		log.Warn("web_search called with no SearXNG client configured", "query", args.Query)
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		return result
+	}
 
 	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category)
 	if err != nil {

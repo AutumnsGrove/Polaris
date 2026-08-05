@@ -64,10 +64,10 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		Instructions string `json:"instructions"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "web_read", nil, "error: "+err.Error())
 	}
 	if args.URL == "" {
-		return "error: url is required"
+		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL}, "error: url is required")
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
@@ -90,6 +90,8 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		if wbTitle, wbText, wbErr := fetchFromWayback(ctx.Ctx, args.URL); wbErr == nil {
 			title, text, err = wbTitle, wbText, nil
 			fallbackUsed = "archive.org"
+		} else {
+			log.Warn("web_read: wayback fallback failed", "url", args.URL, "err", wbErr)
 		}
 	}
 
