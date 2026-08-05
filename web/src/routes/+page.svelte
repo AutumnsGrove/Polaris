@@ -3,13 +3,39 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X, Loader2 } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X, Loader2, ArrowDown } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
 	let scrollEl: HTMLDivElement | undefined = $state();
+
+	// pinnedToBottom tracks whether the timeline should keep auto-scrolling
+	// as new content streams in, vs. leaving the view alone because the
+	// user scrolled up to read something. Without this, every streamed
+	// token yanked the view back to the bottom — reading a long answer as
+	// it streamed in was impossible, since scrolling up got immediately
+	// overridden by the next token's auto-scroll (see the content $effect
+	// below). "Near the bottom" (not "exactly" — smooth-scroll animations
+	// and sub-pixel layout mean it rarely lands on precisely 0) counts as
+	// still pinned, so a user who's basically caught up doesn't have to be
+	// pixel-perfect to stay auto-scrolling.
+	let pinnedToBottom = $state(true);
+	const bottomPinThresholdPx = 120;
+
+	function handleTimelineScroll() {
+		if (!scrollEl) return;
+		const distanceFromBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+		pinnedToBottom = distanceFromBottom < bottomPinThresholdPx;
+	}
+
+	// Explicit "jump to latest" action (button below) — re-pins and
+	// scrolls immediately, same as arriving at a freshly opened thread.
+	function scrollToBottom() {
+		pinnedToBottom = true;
+		scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+	}
 
 	// Composer-only state — focusMode/deepResearch ride along in every
 	// send() call already; attachedFile gets uploaded (see submit below)
@@ -76,11 +102,33 @@
 		}
 	}
 
+	// Re-pins to the bottom whenever a new turn is appended (a fresh
+	// question, or a retry/edit) or a different thread is opened — both
+	// should always land on the latest content regardless of where a
+	// previous read session left the scroll position. A turn count that
+	// only decreases (e.g. DeleteMessagesFrom on edit) doesn't re-pin by
+	// itself; the thread-id branch below covers a full thread switch.
+	let prevTurnCount = 0;
 	$effect(() => {
-		// Re-run whenever the turn count or streaming content changes.
+		if (appState.turns.length > prevTurnCount) pinnedToBottom = true;
+		prevTurnCount = appState.turns.length;
+	});
+	$effect(() => {
+		appState.currentThreadId;
+		pinnedToBottom = true;
+	});
+
+	$effect(() => {
+		// Re-run whenever the turn count or streaming content changes —
+		// but only actually scroll while pinnedToBottom: this is what lets
+		// a user scroll up mid-stream to read from the top without the
+		// next token yanking them back down. handleTimelineScroll updates
+		// pinnedToBottom as the user scrolls; this effect just respects it.
 		appState.turns.length;
 		for (const t of appState.turns) t.content;
-		queueMicrotask(() => scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' }));
+		if (pinnedToBottom) {
+			queueMicrotask(() => scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' }));
+		}
 	});
 
 	// Tab title mirrors the current query while a thread is active, Google-style
@@ -217,18 +265,31 @@
 		</div>
 	</div>
 {:else}
-	<div class="timeline-scroll" bind:this={scrollEl}>
-		{#each appState.turns as turn, i (i)}
-			<ChatTurnView {turn} index={i} />
-		{/each}
-		{#if !appState.busy && appState.suggestions.length > 0}
-			<div class="suggestions">
-				{#each appState.suggestions as suggestion}
-					<button class="suggestion-chip" onclick={() => appState.send(suggestion)}>
-						{suggestion}
-					</button>
-				{/each}
-			</div>
+	<div class="timeline-wrap">
+		<div class="timeline-scroll" bind:this={scrollEl} onscroll={handleTimelineScroll}>
+			{#each appState.turns as turn, i (i)}
+				<ChatTurnView {turn} index={i} />
+			{/each}
+			{#if !appState.busy && appState.suggestions.length > 0}
+				<div class="suggestions">
+					{#each appState.suggestions as suggestion}
+						<button class="suggestion-chip" onclick={() => appState.send(suggestion)}>
+							{suggestion}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		{#if !pinnedToBottom}
+			<button
+				class="jump-to-bottom"
+				onclick={scrollToBottom}
+				aria-label="Scroll to latest"
+				title="Scroll to latest"
+			>
+				<ArrowDown size={16} />
+				{#if appState.busy}<span class="jump-to-bottom-dot" aria-hidden="true"></span>{/if}
+			</button>
 		{/if}
 	</div>
 	{@render composerForm()}
@@ -438,13 +499,75 @@
 		box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
 	}
 
+	/* Wraps .timeline-scroll so .jump-to-bottom can be positioned relative
+	   to the scrolling viewport, not the whole page. */
+	.timeline-wrap {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+	}
+
 	.timeline-scroll {
 		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 		padding: 20px 16px;
 		display: flex;
 		flex-direction: column;
 		gap: 18px;
+	}
+
+	/* Appears once the user scrolls away from the bottom (see
+	   pinnedToBottom) — same "jump to latest" affordance Claude/ChatGPT
+	   show while a reply is streaming, so scrolling up to read doesn't
+	   mean losing your place once you're ready to catch up. The pulsing
+	   dot only shows while a turn is actually in flight — otherwise this
+	   is just "you're not at the bottom", not "something new is arriving". */
+	.jump-to-bottom {
+		position: absolute;
+		bottom: 16px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		border-radius: 999px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		box-shadow: 0 4px 16px color-mix(in srgb, black 20%, transparent);
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			transform 0.15s var(--ease-out-expo);
+	}
+
+	.jump-to-bottom:hover {
+		background: var(--color-surface-3);
+		transform: translateX(-50%) translateY(-1px);
+	}
+
+	.jump-to-bottom-dot {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		width: 9px;
+		height: 9px;
+		border-radius: 999px;
+		background: var(--color-accent);
+		animation: jump-to-bottom-pulse 1.4s ease-in-out infinite;
+	}
+
+	@keyframes jump-to-bottom-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
 	}
 
 	/* Sits right below the last answer, inside the scrolling timeline —
