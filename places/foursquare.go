@@ -72,7 +72,16 @@ type placeSearchResponse struct {
 
 // SearchNearby finds places near (lat, lon) matching query, sorted by
 // distance. The caller is responsible for geocoding text locations first.
+//
+// c may be nil — NewFoursquareClient returns nil when no API key is
+// configured, and every current caller already checks for that before
+// calling SearchNearby (see nearby_search.go). This guard exists so a
+// future caller that forgets the nil check gets a clear error instead of
+// a nil-pointer panic on c.apiKey below.
 func (c *FoursquareClient) SearchNearby(ctx context.Context, lat, lon float64, query string, radiusM, limit int) ([]Place, error) {
+	if c == nil {
+		return nil, fmt.Errorf("foursquare client is not configured (no api key)")
+	}
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}

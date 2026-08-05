@@ -7,7 +7,17 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"polaris/logger"
 )
+
+// log writes to stderr only until logger.Init runs (see logger.go's doc
+// comment on dynamicWriter) — Load always runs before that, since cmd/run.go
+// needs cfg.Logging.Dir to call Init in the first place. Still worth using
+// here rather than fmt.Println: it's the same timestamped/leveled format as
+// every other package, and it means a future caller that does call Init
+// earlier gets these lines in the log file too, for free.
+var log = logger.WithPrefix("config")
 
 type Config struct {
 	Server struct {
@@ -163,8 +173,25 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8899
 	}
+	if cfg.OpenRouter.APIKey == "" {
+		// Virtually every feature (chat, search, voice, titles) depends on
+		// this — without it, the first real symptom would be an opaque 401
+		// from OpenRouter deep inside a request, far from the actual
+		// misconfiguration. Failing fast here means the operator sees the
+		// real problem before the server even starts.
+		return nil, fmt.Errorf("config: openrouter.api_key is required")
+	}
 	if cfg.OpenRouter.BaseURL == "" {
 		cfg.OpenRouter.BaseURL = "https://openrouter.ai/api/v1"
+	}
+	if cfg.SearXNG.BaseURL == "" {
+		// Not fatal — web_search/nearby_search degrade gracefully without
+		// it (see tools/web_search.go's nil-ctx.SearXNG guard and
+		// nearby_search's Foursquare-first fallback) — but worth a loud
+		// warning rather than the alternative: search silently returning
+		// "unsupported protocol scheme" on first use with nothing pointing
+		// back to this being unset.
+		log.Warn("searxng.base_url is not set — web_search and nearby_search's web-search fallback will be unavailable")
 	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./polaris.db"
@@ -192,6 +219,12 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.Voice.TTSFormat == "" {
 		cfg.Voice.TTSFormat = "mp3"
+	} else if cfg.Voice.TTSFormat != "mp3" && cfg.Voice.TTSFormat != "pcm" {
+		// OpenRouter's Kokoro endpoint only documents these two — anything
+		// else would only surface as an opaque upstream error the first
+		// time /audio/speech is actually called, far from this typo.
+		log.Warn("voice.tts_format is neither \"mp3\" nor \"pcm\", falling back to \"mp3\"", "configured", cfg.Voice.TTSFormat)
+		cfg.Voice.TTSFormat = "mp3"
 	}
 	if cfg.ContextWindowTokens <= 0 {
 		cfg.ContextWindowTokens = 100_000
@@ -208,6 +241,24 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 
 	if cfg.DefaultModel == "" {
 		cfg.DefaultModel = cfg.Models[0].ID
+	} else {
+		found := false
+		for _, m := range cfg.Models {
+			if m.ID == cfg.DefaultModel {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// ModelByID/DefaultModelOrFirst already fall back to the first
+			// model whenever DefaultModel doesn't match — silently, with no
+			// trace of why the configured default was ignored. Fixing that
+			// here, at the one place that actually knows the original
+			// (invalid) value, rather than in every fallback call site.
+			log.Warn("default_model doesn't match any configured model, falling back to the first model",
+				"configured", cfg.DefaultModel, "fallback", cfg.Models[0].ID)
+			cfg.DefaultModel = cfg.Models[0].ID
+		}
 	}
 
 	return &cfg, nil

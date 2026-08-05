@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -15,6 +17,19 @@ var upgrader = websocket.Upgrader{
 	// fine here rather than maintaining an allowlist.
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
+
+// pongWait/pingPeriod implement a standard gorilla/websocket keepalive:
+// without a read deadline, a half-open connection (the client's machine
+// sleeps or loses network without sending a clean close frame) never
+// produces a ReadJSON error, so the per-connection goroutine — and the
+// read loop below — blocks forever. Sending a ping well before the
+// deadline expires, and resetting the deadline on every pong, means a
+// genuinely alive-but-quiet connection stays open while a truly dead one
+// gets noticed and cleaned up within pongWait.
+const (
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
+)
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -36,21 +51,66 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		_ = conn.WriteJSON(evt)
 	}
 
-	// Only one turn runs at a time per connection (the frontend disables
-	// the composer while busy), so a single cancel slot is enough to
-	// support "stop". Each turn now runs in its own goroutine so this read
-	// loop can keep pulling frames off the wire concurrently — otherwise a
-	// "stop" message sent mid-turn would just sit unread until the turn
-	// finished on its own, defeating the point.
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	// pingDone stops the keepalive goroutine below when this connection's
+	// read loop returns — otherwise every closed connection would leak
+	// one goroutine ticking forever.
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				writeMu.Lock()
+				err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
+				writeMu.Unlock()
+				if err != nil {
+					return // connection's already going away; ReadJSON below will notice
+				}
+			case <-pingDone:
+				return
+			}
+		}
+	}()
+
+	// cancelSlot wraps a turn's cancel func behind a pointer so the
+	// "clear the slot when this turn finishes" step below can check
+	// pointer identity — plain context.CancelFunc values aren't
+	// comparable in Go, and without this check, turn A finishing after
+	// turn B has already started (a "stop" cancelled A, but its goroutine
+	// hadn't reached this cleanup yet when B's ReadJSON returned) could
+	// null out B's still-in-flight cancel func, silently breaking "stop"
+	// for B. Only one turn runs at a time per connection (the frontend
+	// disables the composer while busy), so a single slot is enough — it
+	// just needs to be the RIGHT turn's slot being cleared.
+	type cancelSlot struct{ cancel context.CancelFunc }
 	var cancelMu sync.Mutex
-	var cancelTurn context.CancelFunc
+	var current *cancelSlot
 
 	for {
 		var msg ClientMessage
 		if err := conn.ReadJSON(&msg); err != nil {
+			var closeErr *websocket.CloseError
+			if !errors.As(err, &closeErr) {
+				// A clean close (browser tab closed, navigated away) always
+				// comes back as *websocket.CloseError — anything else is a
+				// real protocol violation (garbage frame, JSON that doesn't
+				// match ClientMessage) or a read timeout from a half-open
+				// connection, worth a trace since it's either a client bug
+				// or someone probing the endpoint.
+				log.Warn("websocket read failed", "err", err)
+				s.db.LogEvent("", "warn", "ws", "websocket read failed", map[string]interface{}{"err": err.Error()}, "")
+			}
 			cancelMu.Lock()
-			if cancelTurn != nil {
-				cancelTurn()
+			if current != nil {
+				current.cancel()
 			}
 			cancelMu.Unlock()
 			return // client disconnected or sent garbage
@@ -58,16 +118,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		if msg.Type == "stop" {
 			cancelMu.Lock()
-			if cancelTurn != nil {
-				cancelTurn()
+			if current != nil {
+				current.cancel()
 			}
 			cancelMu.Unlock()
 			continue
 		}
 
 		turnCtx, cancel := context.WithCancel(context.Background())
+		slot := &cancelSlot{cancel: cancel}
 		cancelMu.Lock()
-		cancelTurn = cancel
+		current = slot
 		cancelMu.Unlock()
 
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
@@ -88,7 +149,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			}()
 			s.handleTurn(ctx, msg, send)
 			cancelMu.Lock()
-			cancelTurn = nil
+			if current == slot {
+				current = nil
+			}
 			cancelMu.Unlock()
 		}(turnCtx, cancel, msg)
 	}

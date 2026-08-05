@@ -10,14 +10,28 @@
 package procmgr
 
 import (
+	"context"
 	"fmt"
-	"os/user"
 	"runtime"
+	"time"
 
 	"polaris/logger"
 )
 
 var log = logger.WithPrefix("procmgr")
+
+// cmdTimeout bounds every launchctl/systemctl invocation — without it, a
+// hung supervisor call (e.g. waiting on a D-Bus/polkit lock) blocks
+// install/update/restart indefinitely with no way to recover short of
+// killing the process.
+const cmdTimeout = 15 * time.Second
+
+// withCmdTimeout returns a context for one supervisor subprocess call,
+// shared by launchd.go and systemd.go so both platforms bound their
+// exec.Command calls the same way.
+func withCmdTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), cmdTimeout)
+}
 
 type Manager interface {
 	Install(cfg ServiceConfig) error
@@ -49,9 +63,3 @@ func New(label string) (Manager, error) {
 	}
 }
 
-func currentUsername() string {
-	if u, err := user.Current(); err == nil {
-		return u.Username
-	}
-	return "unknown"
-}

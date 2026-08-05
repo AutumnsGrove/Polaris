@@ -61,12 +61,19 @@ func (m *SystemdManager) Install(cfg ServiceConfig) error {
 }
 
 func (m *SystemdManager) Uninstall() error {
-	_ = m.systemctl("disable", "--now", m.label)
+	if err := m.systemctl("disable", "--now", m.label); err != nil {
+		// Not fatal to the uninstall — the unit file is still removed
+		// below — but a failed disable can mean the service keeps
+		// running/enabled after Polaris reports a clean uninstall.
+		log.Warn("disabling service before uninstall failed, continuing", "err", err)
+	}
 	dest := m.unitPath()
 	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing unit file: %w", err)
 	}
-	_ = m.systemctl("daemon-reload")
+	if err := m.systemctl("daemon-reload"); err != nil {
+		log.Warn("daemon-reload after uninstall failed, systemd's unit cache may be stale", "err", err)
+	}
 	return nil
 }
 
@@ -75,7 +82,13 @@ func (m *SystemdManager) Stop() error    { return m.systemctl("stop", m.label) }
 func (m *SystemdManager) Restart() error { return m.systemctl("restart", m.label) }
 
 func (m *SystemdManager) IsManaged() bool {
-	return exec.Command("systemctl", "is-active", "--quiet", m.label).Run() == nil
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
+	err := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", m.label).Run()
+	if err != nil && ctx.Err() != nil {
+		log.Warn("systemctl is-active timed out or was cancelled while checking IsManaged", "err", ctx.Err())
+	}
+	return err == nil
 }
 
 func (m *SystemdManager) unitPath() string {
@@ -91,8 +104,10 @@ func (m *SystemdManager) unitPath() string {
 // prompt) fails fast with a clear error instead of hanging forever
 // waiting for a password that can never arrive in a headless service.
 func (m *SystemdManager) systemctl(args ...string) error {
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
 	cmdArgs := append([]string{"-n", "systemctl"}, args...)
-	out, err := exec.Command("sudo", cmdArgs...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "sudo", cmdArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("sudo systemctl %s (%s): %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
 	}

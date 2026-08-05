@@ -28,7 +28,9 @@ var testRegistry = []ModelConfig{
 }
 
 func TestLoad_AppliesDefaults(t *testing.T) {
-	path := writeTestConfig(t, "")
+	path := writeTestConfig(t, `openrouter:
+  api_key: "sk-test"
+`)
 
 	cfg, err := Load(path, testRegistry)
 	if err != nil {
@@ -61,9 +63,21 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 func TestLoad_NoRegistryIsAnError(t *testing.T) {
 	path := writeTestConfig(t, `server:
   port: 8899
+openrouter:
+  api_key: "sk-test"
 `)
 	if _, err := Load(path, nil); err == nil {
 		t.Fatal("expected an error when model registry is empty")
+	}
+}
+
+func TestLoad_MissingAPIKeyIsAnError(t *testing.T) {
+	// Virtually every feature depends on this — catching it at Load time
+	// means a misconfigured deployment fails fast at startup instead of
+	// surfacing as an opaque 401 from OpenRouter deep inside a request.
+	path := writeTestConfig(t, "")
+	if _, err := Load(path, testRegistry); err == nil {
+		t.Fatal("expected an error when openrouter.api_key is unset")
 	}
 }
 
@@ -90,6 +104,8 @@ func TestLoad_ExpandsEnvVars(t *testing.T) {
 
 func TestLoad_AppliesModelOverrides(t *testing.T) {
 	path := writeTestConfig(t, `
+openrouter:
+  api_key: "sk-test"
 model_overrides:
   test-model:
     temperature: 0.7

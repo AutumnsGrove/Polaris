@@ -22,11 +22,3 @@ func TestNew_DispatchesByPlatform(t *testing.T) {
 		}
 	}
 }
-
-func TestCurrentUsername_NeverEmpty(t *testing.T) {
-	// Whatever the environment, this must return something usable as a
-	// unit-file User= field, never an empty string.
-	if got := currentUsername(); got == "" {
-		t.Error("currentUsername() returned empty string")
-	}
-}

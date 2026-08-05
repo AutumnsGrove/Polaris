@@ -60,7 +60,13 @@ func (m *LaunchdManager) Install(cfg ServiceConfig) error {
 }
 
 func (m *LaunchdManager) Uninstall() error {
-	_ = m.Stop()
+	if err := m.Stop(); err != nil {
+		// Not fatal to the uninstall — the plist is still removed below,
+		// which is what actually stops launchd from managing it going
+		// forward — but worth knowing about: a failed Stop here can mean
+		// the process itself keeps running, just no longer supervised.
+		log.Warn("stopping service before uninstall failed, continuing", "err", err)
+	}
 	dest, err := m.plistPath()
 	if err != nil {
 		return err
@@ -83,7 +89,9 @@ func (m *LaunchdManager) Start() error {
 }
 
 func (m *LaunchdManager) Stop() error {
-	out, err := exec.Command("launchctl", "bootout", m.serviceTarget()).CombinedOutput()
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", "bootout", m.serviceTarget()).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl bootout (%s): %w", strings.TrimSpace(string(out)), err)
 	}
@@ -91,7 +99,9 @@ func (m *LaunchdManager) Stop() error {
 }
 
 func (m *LaunchdManager) Restart() error {
-	cmd := exec.Command("launchctl", "kickstart", "-k", m.serviceTarget())
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "launchctl", "kickstart", "-k", m.serviceTarget())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl kickstart (%s): %w", strings.TrimSpace(string(out)), err)
 	}
@@ -99,7 +109,17 @@ func (m *LaunchdManager) Restart() error {
 }
 
 func (m *LaunchdManager) IsManaged() bool {
-	return exec.Command("launchctl", "print", m.serviceTarget()).Run() == nil
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
+	err := exec.CommandContext(ctx, "launchctl", "print", m.serviceTarget()).Run()
+	if err != nil && ctx.Err() != nil {
+		// Timed out or was otherwise cancelled — not the same as "service
+		// doesn't exist" (a real answer this method can't get right now).
+		// Logged since callers (e.g. cmd/update.go deciding whether to
+		// restart) treat any non-nil error identically to "not managed".
+		log.Warn("launchctl print timed out or was cancelled while checking IsManaged", "err", ctx.Err())
+	}
+	return err == nil
 }
 
 func (m *LaunchdManager) plistPath() (string, error) {
@@ -120,7 +140,9 @@ func (m *LaunchdManager) serviceTarget() string {
 
 func (m *LaunchdManager) bootstrap(plistPath string) error {
 	domain := m.domainTarget()
-	out, err := exec.Command("launchctl", "bootstrap", domain, plistPath).CombinedOutput()
+	ctx, cancel := withCmdTimeout()
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "launchctl", "bootstrap", domain, plistPath).CombinedOutput()
 	if err == nil {
 		return nil
 	}
@@ -131,8 +153,19 @@ func (m *LaunchdManager) bootstrap(plistPath string) error {
 		strings.Contains(outStr, "37:") ||
 		strings.Contains(outStr, "already loaded") {
 		log.Info("service already loaded, reloading")
-		_ = exec.Command("launchctl", "bootout", m.serviceTarget()).Run()
-		out2, err2 := exec.Command("launchctl", "bootstrap", domain, plistPath).CombinedOutput()
+		bootoutCtx, bootoutCancel := withCmdTimeout()
+		if bootoutErr := exec.CommandContext(bootoutCtx, "launchctl", "bootout", m.serviceTarget()).Run(); bootoutErr != nil {
+			// Not fatal on its own — the bootstrap retry right below is
+			// what actually matters — but if that retry also fails, this
+			// is very likely why, so it needs to be on record rather than
+			// silently discarded.
+			log.Warn("launchctl bootout before bootstrap retry failed", "err", bootoutErr)
+		}
+		bootoutCancel()
+
+		retryCtx, retryCancel := withCmdTimeout()
+		defer retryCancel()
+		out2, err2 := exec.CommandContext(retryCtx, "launchctl", "bootstrap", domain, plistPath).CombinedOutput()
 		if err2 != nil {
 			return fmt.Errorf("launchctl bootstrap retry (%s): %w", strings.TrimSpace(string(out2)), err2)
 		}
