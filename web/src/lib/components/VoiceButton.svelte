@@ -5,6 +5,7 @@
 
 	let recording = $state(false);
 	let transcribing = $state(false);
+	let toggleMode = $derived(appState.settings.voiceInputMode === 'toggle');
 	let mediaRecorder: MediaRecorder | null = null;
 	let chunks: BlobPart[] = [];
 	let stream: MediaStream | null = null;
@@ -100,6 +101,18 @@
 		}
 	}
 
+	// Toggle mode's whole point is not needing to keep a finger/mouse down
+	// for the entire memo (see settingVoiceInputMode's doc comment for
+	// why hold-to-record went mostly unused) — one click starts it, the
+	// next stops it, same as the iOS keyboard's own dictation button.
+	function handleToggleClick() {
+		if (recording) {
+			stopRecording();
+		} else {
+			void startRecording();
+		}
+	}
+
 	onDestroy(() => {
 		stream?.getTracks().forEach((t) => t.stop());
 	});
@@ -110,18 +123,27 @@
 	class="mic-btn"
 	class:recording
 	disabled={appState.busy || transcribing}
-	onmousedown={startRecording}
-	onmouseup={stopRecording}
-	onmouseleave={stopRecording}
-	ontouchstart={(e) => {
-		e.preventDefault();
-		void startRecording();
-	}}
-	ontouchend={(e) => {
-		e.preventDefault();
-		stopRecording();
-	}}
-	title="Hold to record a voice memo"
+	onclick={toggleMode ? handleToggleClick : undefined}
+	onmousedown={toggleMode ? undefined : startRecording}
+	onmouseup={toggleMode ? undefined : stopRecording}
+	onmouseleave={toggleMode ? undefined : stopRecording}
+	ontouchstart={toggleMode
+		? undefined
+		: (e) => {
+				e.preventDefault();
+				void startRecording();
+			}}
+	ontouchend={toggleMode
+		? undefined
+		: (e) => {
+				e.preventDefault();
+				stopRecording();
+			}}
+	title={toggleMode
+		? recording
+			? 'Tap to stop recording'
+			: 'Tap to record a voice memo'
+		: 'Hold to record a voice memo'}
 >
 	{#if transcribing}
 		<Loader2 size={16} class="spin" />

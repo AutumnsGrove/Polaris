@@ -94,6 +94,9 @@ func TestHandleGetSettings_Defaults(t *testing.T) {
 	if settings["default_model"] != "mimo-pro" {
 		t.Errorf("default_model = %v, want mimo-pro (config.yaml's default)", settings["default_model"])
 	}
+	if settings["voice_input_mode"] != "toggle" {
+		t.Errorf("voice_input_mode = %v, want toggle by default", settings["voice_input_mode"])
+	}
 }
 
 func TestHandlePutSettings_UpdatesAndPersists(t *testing.T) {
@@ -206,6 +209,47 @@ func TestHandlePutSettings_DefaultFocusModeOffClearsIt(t *testing.T) {
 	json.NewDecoder(getResp.Body).Decode(&settings)
 	if settings["default_focus_mode"] != "" {
 		t.Errorf("default_focus_mode = %v, want empty string after setting to off", settings["default_focus_mode"])
+	}
+}
+
+func TestHandlePutSettings_VoiceInputModeRoundTrips(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"voice_input_mode": "hold"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	getResp, err := http.Get(h.url("/api/settings"))
+	if err != nil {
+		t.Fatalf("GET /api/settings: %v", err)
+	}
+	defer getResp.Body.Close()
+	var settings map[string]interface{}
+	json.NewDecoder(getResp.Body).Decode(&settings)
+	if settings["voice_input_mode"] != "hold" {
+		t.Errorf("voice_input_mode = %v, want hold", settings["voice_input_mode"])
+	}
+}
+
+func TestHandlePutSettings_RejectsUnknownVoiceInputMode(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"voice_input_mode": "carrier_pigeon"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an unknown voice_input_mode", resp.StatusCode)
 	}
 }
 

@@ -18,6 +18,12 @@ export class SettingsState {
 	// '' means "off" — no default.
 	defaultFocusMode = $state<FocusMode>('off');
 
+	// How VoiceButton.svelte's mic button behaves — 'toggle' (tap to
+	// start, tap again to stop) or 'hold' (press and hold, release to
+	// send — the original behavior). See gateway/settings.go's
+	// settingVoiceInputMode for why 'toggle' is the default.
+	voiceInputMode = $state<'hold' | 'toggle'>('toggle');
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -55,6 +61,7 @@ export class SettingsState {
 		this.showPrices = data.show_prices ?? true;
 		this.defaultModel = data.default_model ?? '';
 		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
+		this.voiceInputMode = data.voice_input_mode === 'hold' ? 'hold' : 'toggle';
 		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
@@ -91,6 +98,11 @@ export class SettingsState {
 	async setDefaultFocusMode(mode: FocusMode) {
 		this.defaultFocusMode = mode;
 		await this.put({ default_focus_mode: mode });
+	}
+
+	async setVoiceInputMode(mode: 'hold' | 'toggle') {
+		this.voiceInputMode = mode;
+		await this.put({ voice_input_mode: mode });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

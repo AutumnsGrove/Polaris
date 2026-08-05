@@ -30,6 +30,18 @@ describe('SettingsState.load', () => {
 		expect(settings.theme).toBe('dark');
 		expect(settings.contextWindowTokens).toBe(100_000);
 	});
+
+	it('applies voice_input_mode from the server, defaulting to toggle for anything else', async () => {
+		vi.stubGlobal('fetch', fakeFetch({ voice_input_mode: 'hold' }));
+		const settings = new SettingsState();
+		await settings.load();
+		expect(settings.voiceInputMode).toBe('hold');
+
+		vi.stubGlobal('fetch', fakeFetch({ voice_input_mode: 'not_a_real_mode' }));
+		const settings2 = new SettingsState();
+		await settings2.load();
+		expect(settings2.voiceInputMode).toBe('toggle');
+	});
 });
 
 describe('SettingsState.setTheme / setShowPrices', () => {
@@ -61,6 +73,13 @@ describe('SettingsState.setTheme / setShowPrices', () => {
 		await settings.setShowPrices(false);
 		expect(settings.showPrices).toBe(false);
 		expect(putCalls).toEqual([{ url: '/api/settings', body: { show_prices: false } }]);
+	});
+
+	it('setVoiceInputMode updates local state and persists', async () => {
+		const settings = new SettingsState();
+		await settings.setVoiceInputMode('hold');
+		expect(settings.voiceInputMode).toBe('hold');
+		expect(putCalls).toEqual([{ url: '/api/settings', body: { voice_input_mode: 'hold' } }]);
 	});
 });
 

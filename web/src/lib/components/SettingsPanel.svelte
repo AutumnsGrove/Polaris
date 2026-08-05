@@ -93,6 +93,32 @@
 		</section>
 
 		<section>
+			<h3>Voice</h3>
+			<div class="row">
+				<span>Mic button</span>
+				<div class="theme-toggle">
+					<button
+						class:active={appState.settings.voiceInputMode === 'toggle'}
+						onclick={() => appState.settings.setVoiceInputMode('toggle')}
+					>
+						Tap to toggle
+					</button>
+					<button
+						class:active={appState.settings.voiceInputMode === 'hold'}
+						onclick={() => appState.settings.setVoiceInputMode('hold')}
+					>
+						Hold to talk
+					</button>
+				</div>
+			</div>
+			<p class="hint">
+				"Tap to toggle" starts recording on the first tap and stops on the second — no need to
+				keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
+				behavior.
+			</p>
+		</section>
+
+		<section>
 			<h3>Location</h3>
 			<div class="row location-row">
 				<input
