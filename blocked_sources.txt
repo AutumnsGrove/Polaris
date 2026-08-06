@@ -8,3 +8,26 @@
 # Grok-written encyclopedia — unreviewed AI-generated content prone to
 # hallucination/bias, presented with Wikipedia-style authority.
 grokipedia.com
+
+# Fabrication mills / impersonation sites — invented events, not just bias.
+# Excludes self-labeled satire (The Onion, Empire News, ClickHole, etc.),
+# since a disclosed joke isn't a false-information problem the way an
+# undisclosed fabrication is. Sourced via Wikipedia's deprecated-sources
+# list, Snopes, and MBFC — see https://en.wikipedia.org/wiki/Wikipedia:Deprecated_sources
+# and https://en.wikipedia.org/wiki/List_of_fake_news_websites.
+now8news.com
+thepeoplesvoice.tv
+realrawnews.com
+theinteldrop.org
+whatdoesitmean.com
+
+# State-sponsored/sanctioned disinformation operations (FSB-linked;
+# sanctioned by US Treasury/EU/UK) — not merely biased, actively
+# fabricated for influence purposes.
+southfront.org
+southfront.press
+newsfront.info
+
+# Deprecated by Wikipedia's editorial community for fabricated reporting —
+# the Sandy Hook coverage was found in court to be fabricated, not opinion.
+infowars.com
