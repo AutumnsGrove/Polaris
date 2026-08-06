@@ -85,6 +85,44 @@ func TestRun_GitPullFailureStopsBeforeBuild(t *testing.T) {
 	}
 }
 
+// TestRun_RejectsConcurrentCallOnSameRepo guards against a found-in-audit
+// bug: `polaris update` (SSH, cmd/update.go) and the settings panel's
+// HTTP-triggered update (gateway/update.go) are two entirely separate
+// process invocations that both call Run on the same repoPath, with no
+// coordination between them beyond gateway's own in-process mutex (which
+// only ever sees requests to one already-running server). Concurrently
+// running `git pull` and `go build -o polaris` in the same working
+// directory risks a corrupted or truncated binary.
+func TestRun_RejectsConcurrentCallOnSameRepo(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+	repoPath := setupTestRepo(t)
+
+	release, err := acquireUpdateLock(repoPath)
+	if err != nil {
+		t.Fatalf("acquireUpdateLock: %v", err)
+	}
+
+	// Simulates a second process (or a second concurrent caller in this
+	// one) trying to update the same repo while the first "holds" it.
+	_, err = Run(repoPath)
+	if err == nil {
+		t.Fatal("expected Run to reject a concurrent call while the lock is held")
+	}
+	if !strings.Contains(err.Error(), "already in progress") {
+		t.Errorf("err = %v, want it to explain another update is already in progress", err)
+	}
+
+	release()
+
+	// Once released, a normal Run must succeed exactly as if there'd been
+	// no contention at all.
+	if _, err := Run(repoPath); err != nil {
+		t.Errorf("Run after releasing the lock returned error: %v", err)
+	}
+}
+
 func TestRepoPath_ReturnsWorkingDirectory(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {

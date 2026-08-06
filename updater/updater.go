@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"polaris/logger"
@@ -47,6 +48,12 @@ type Result struct {
 // HTTP response first, since restarting kills the very process serving
 // it).
 func Run(repoPath string) (*Result, error) {
+	release, err := acquireUpdateLock(repoPath)
+	if err != nil {
+		return &Result{}, err
+	}
+	defer release()
+
 	binaryPath := filepath.Join(repoPath, "polaris")
 
 	pullCtx, pullCancel := context.WithTimeout(context.Background(), pullTimeout)
@@ -77,4 +84,38 @@ func Run(repoPath string) (*Result, error) {
 // wherever the CLI is invoked from).
 func RepoPath() (string, error) {
 	return os.Getwd()
+}
+
+// acquireUpdateLock takes an exclusive, advisory file lock on a lockfile
+// inside repoPath, so `polaris update` (SSH, cmd/update.go) and the
+// settings panel's HTTP-triggered update (gateway/update.go) can't run
+// concurrently and race two `git pull`s / two `go build -o polaris`s in
+// the same working directory into a corrupted or truncated binary.
+// gateway/update.go's updateStatus mutex only serializes concurrent
+// requests to one already-running server process — it has no way to know
+// about a second, entirely separate `polaris update` process started over
+// SSH at the same moment.
+//
+// Unlike a plain "does a lockfile exist" check, flock is released by the
+// kernel automatically if this process exits for any reason — including
+// the restart this whole flow ends with on success — so there's no stale
+// lock left behind to require manual cleanup after a crash.
+//
+// LOCK_NB (non-blocking): a second caller finding the lock already held
+// fails immediately with a clear error, rather than blocking and possibly
+// running its update at a surprising later moment.
+func acquireUpdateLock(repoPath string) (release func(), err error) {
+	lockPath := filepath.Join(repoPath, ".update.lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("opening update lock file: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("another update is already in progress: %w", err)
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
 }
