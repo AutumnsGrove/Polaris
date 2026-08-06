@@ -56,6 +56,22 @@ func TestBlocklist_NilIsSafe(t *testing.T) {
 	}
 }
 
+func TestBlocklist_MatchesTrailingDotFQDN(t *testing.T) {
+	// "grokipedia.com." (a root-relative FQDN, trailing dot) is
+	// DNS-equivalent to "grokipedia.com" and resolves/fetches identically —
+	// it must not be a way to slip past the blocklist.
+	bl, err := LoadBlocklist(writeBlocklistFile(t, "grokipedia.com\n"))
+	if err != nil {
+		t.Fatalf("LoadBlocklist returned error: %v", err)
+	}
+	if !bl.Blocked("https://grokipedia.com./page") {
+		t.Error("Blocked(trailing-dot FQDN) = false, want true")
+	}
+	if !bl.Blocked("https://www.grokipedia.com./page") {
+		t.Error("Blocked(www + trailing-dot FQDN) = false, want true")
+	}
+}
+
 func TestBlocklist_DoesNotMatchUnrelatedSuffix(t *testing.T) {
 	bl, err := LoadBlocklist(writeBlocklistFile(t, "wiki.com\n"))
 	if err != nil {

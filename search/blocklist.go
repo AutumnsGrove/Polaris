@@ -58,7 +58,8 @@ func LoadBlocklist(path string) (*Blocklist, error) {
 }
 
 func normalizeDomain(host string) string {
-	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(host)), "www.")
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	return strings.TrimPrefix(host, "www.")
 }
 
 // Blocked reports whether rawURL's host is on the blocklist — an exact

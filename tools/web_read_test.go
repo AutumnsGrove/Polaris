@@ -54,7 +54,7 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 		<footer>copyright footer</footer>
 	</body></html>`
 
-	title, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL)
+	title, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 
 func TestFetchAndExtract_FallsBackToBodyWithoutArticleOrMain(t *testing.T) {
 	html := `<html><body><p>Just a plain page with no article or main tag.</p></body></html>`
-	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL)
+	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 	huge := strings.Repeat("word ", 5000) // well over maxExtractedChars
 	html := "<html><body><article>" + huge + "</article></body></html>"
 
-	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL)
+	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -97,10 +97,50 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 }
 
 func TestFetchAndExtract_NonOKStatus(t *testing.T) {
-	_, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL)
+	_, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
 	if err == nil {
 		t.Fatal("expected an error for a 404 response")
 	}
+}
+
+// A URL that isn't itself on the blocklist but redirects to one must still
+// be rejected — otherwise the blocklist only ever protects against direct
+// links, not shorteners/old domains/anything that 302s onward. handleWebRead
+// only checks the requested URL up front; fetchAndExtract's CheckRedirect is
+// what has to catch a blocked *destination*.
+func TestFetchAndExtract_RejectsRedirectToBlockedDomain(t *testing.T) {
+	blocked := fakeHTMLPage(t, http.StatusOK, "<html><body>should never be seen</body></html>")
+	blockedURL, err := url.Parse(blocked.URL)
+	if err != nil {
+		t.Fatalf("parsing blocked server URL: %v", err)
+	}
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, blocked.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirector.Close)
+
+	bl, err := search.LoadBlocklist(writeBlocklistFile(t, blockedURL.Hostname()+"\n"))
+	if err != nil {
+		t.Fatalf("LoadBlocklist returned error: %v", err)
+	}
+
+	_, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
+	if err == nil {
+		t.Fatal("expected an error: redirect target is on the blocklist")
+	}
+	if !strings.Contains(err.Error(), "blocked") {
+		t.Errorf("err = %q, want it to mention the redirect was blocked", err.Error())
+	}
+}
+
+func writeBlocklistFile(t *testing.T, contents string) string {
+	t.Helper()
+	path := t.TempDir() + "/blocked_sources.txt"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing blocklist file: %v", err)
+	}
+	return path
 }
 
 func TestHandleWebRead_URLRequired(t *testing.T) {
@@ -123,11 +163,7 @@ func TestHandleWebRead_BlockedDomainRejectedWithoutFetching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing test server URL: %v", err)
 	}
-	blockPath := t.TempDir() + "/blocked_sources.txt"
-	if err := os.WriteFile(blockPath, []byte(parsedURL.Hostname()+"\n"), 0o644); err != nil {
-		t.Fatalf("writing blocklist file: %v", err)
-	}
-	bl, err := search.LoadBlocklist(blockPath)
+	bl, err := search.LoadBlocklist(writeBlocklistFile(t, parsedURL.Hostname()+"\n"))
 	if err != nil {
 		t.Fatalf("LoadBlocklist returned error: %v", err)
 	}
@@ -265,7 +301,7 @@ func TestFetchAndExtract_PDF(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, text, err := fetchAndExtract(context.Background(), srv.URL)
+	_, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error for a PDF: %v", err)
 	}

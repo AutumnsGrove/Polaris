@@ -50,10 +50,10 @@ func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
 		URL string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "error: " + err.Error()
+		return emitToolError(ctx, "youtube_transcript", nil, "error: "+err.Error())
 	}
 	if args.URL == "" {
-		return "error: url is required"
+		return emitToolError(ctx, "youtube_transcript", map[string]interface{}{"url": args.URL}, "error: url is required")
 	}
 
 	videoID, err := extractYouTubeID(args.URL)

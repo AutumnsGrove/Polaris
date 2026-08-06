@@ -31,6 +31,7 @@ import (
 
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/search"
 )
 
 var webReadDef = llm.ToolDef{
@@ -80,7 +81,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{"url": args.URL, "instructions": args.Instructions},
 	})
 
-	title, text, err := fetchAndExtract(ctx.Ctx, args.URL)
+	title, text, err := fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist)
 
 	// fallbackUsed is purely for logging — it doesn't change control flow,
 	// just helps tell "the free path worked" apart from "it took a paid
@@ -92,7 +93,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	// is worth trying first since it's free and frequently has a snapshot
 	// from before a paywall went up or a page got taken down.
 	if err != nil || looksLikePaywall(text) {
-		if wbTitle, wbText, wbErr := fetchFromWayback(ctx.Ctx, args.URL); wbErr == nil {
+		if wbTitle, wbText, wbErr := fetchFromWayback(ctx.Ctx, args.URL, ctx.Blocklist); wbErr == nil {
 			title, text, err = wbTitle, wbText, nil
 			fallbackUsed = "archive.org"
 		} else {
@@ -173,8 +174,29 @@ const minViableExtractedChars = 200
 // needs a real browser executing the page's JS, which is what
 // handleWebRead's Tavily fallback is for (see its doc comment). Deliberately
 // not running a headless browser locally to keep this light on the potato.
-func fetchAndExtract(ctx context.Context, rawURL string) (title, text string, err error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+//
+// blocklist is checked on every hop of a redirect chain, not just rawURL
+// itself — handleWebRead only checks the URL the model asked for before
+// calling this, so without this, a non-blocked URL (a shortener, an old
+// domain that now 302s elsewhere) that happens to redirect to a blocked
+// domain would sail straight through and fetch it anyway. May be nil.
+func fetchAndExtract(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, text string, err error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if blocklist.Blocked(req.URL.String()) {
+				return fmt.Errorf("redirected to a blocked source (%s)", req.URL.Hostname())
+			}
+			// Go's own CheckRedirect, replicated: providing a custom func
+			// overrides the default 10-redirect cap entirely, not just adds
+			// to it — without this, a redirect loop would spin forever
+			// instead of failing.
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return "", "", err
@@ -301,7 +323,7 @@ func ExtractPDFText(data []byte) (title, text string, err error) {
 // an httptest server instead of the real archive.org.
 var waybackAvailabilityAPI = "https://archive.org/wayback/available"
 
-func fetchFromWayback(ctx context.Context, rawURL string) (title, text string, err error) {
+func fetchFromWayback(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, text string, err error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	availabilityURL := waybackAvailabilityAPI + "?url=" + url.QueryEscape(rawURL)
 
@@ -335,7 +357,7 @@ func fetchFromWayback(ctx context.Context, rawURL string) (title, text string, e
 		return "", "", fmt.Errorf("no archived snapshot available for %s", rawURL)
 	}
 
-	return fetchAndExtract(ctx, avail.ArchivedSnapshots.Closest.URL)
+	return fetchAndExtract(ctx, avail.ArchivedSnapshots.Closest.URL, blocklist)
 }
 
 // paywallMarkers are phrases that show up in the *raw HTML shell* of
