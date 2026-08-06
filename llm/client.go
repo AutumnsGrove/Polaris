@@ -327,6 +327,19 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			// Cancelled (the "stop" button) or timed out before the request
+			// even got a response — same "not a real failure" treatment a
+			// cancellation gets when it lands mid-stream instead (see
+			// ctx.Err() a few lines below, past the scanner loop). Without
+			// this, a stop landing in the gap between one LLM call
+			// finishing tool dispatch and the next one starting — a real,
+			// easily-hit window, not a rare edge case — surfaced as a raw
+			// "context canceled" error instead of the graceful early finish
+			// every caller (see agent.Run's doc comment) is told a
+			// cancellation always produces, no matter where it lands.
+			return &ChatResponse{}, nil
+		}
 		return nil, fmt.Errorf("calling LLM API (stream): %w", err)
 	}
 	bodyClosed := false

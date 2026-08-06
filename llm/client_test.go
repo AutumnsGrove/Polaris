@@ -251,3 +251,33 @@ func TestChatCompletion_ContextCancelMidStreamReturnsPartialNotError(t *testing.
 		t.Errorf("Content = %q, want the content streamed before cancellation", resp.Content)
 	}
 }
+
+// TestChatCompletion_ContextCancelBeforeResponseReturnsEmptyNotError closes
+// a gap the test above didn't cover: that one only exercised cancellation
+// landing *after* httpClient.Do returned a response (mid-stream). A
+// cancellation landing *before* Do even returns — the realistic case is
+// agent.Run's loop getting stopped in the gap between one turn's tool
+// dispatch finishing and the next LLM call starting — used to fall through
+// to a hard error instead, contradicting agent.Run's own doc comment that
+// a cancellation is never treated as an error regardless of where it lands.
+func TestChatCompletion_ContextCancelBeforeResponseReturnsEmptyNotError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{"content":"should never be seen"}}]}`)
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled before the call even starts — Do() itself must fail
+
+	resp, err := client.ChatCompletionStreaming(ctx, []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil)
+	if err != nil {
+		t.Fatalf("expected an already-cancelled context to return an empty response, not an error: %v", err)
+	}
+	if resp.Content != "" {
+		t.Errorf("Content = %q, want empty — Do() must have failed before any bytes streamed", resp.Content)
+	}
+}
