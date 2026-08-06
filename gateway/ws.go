@@ -125,9 +125,27 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Only one turn runs at a time per connection — the frontend
+		// enforces this by disabling the composer while busy (see
+		// AppState.busy in state.svelte.ts), but that's a client-side
+		// courtesy, not a guarantee: a double-submit race, a buggy/stale
+		// client, or anything else that gets two "message" frames onto the
+		// wire before the first turn finishes would otherwise spawn a
+		// second handleTurn goroutine here and silently overwrite `current`
+		// with its cancel func — orphaning the first turn's "stop"
+		// capability with no way to cancel it anymore. Reject outright
+		// instead of accepting a race the rest of this file was never
+		// built to handle two of at once.
+		cancelMu.Lock()
+		if current != nil {
+			cancelMu.Unlock()
+			log.Warn("rejected a new turn while one was already in flight on this connection", "thread", msg.ThreadID)
+			s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
+			send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "a response is already in progress on this connection — please wait for it to finish"})
+			continue
+		}
 		turnCtx, cancel := context.WithCancel(context.Background())
 		slot := &cancelSlot{cancel: cancel}
-		cancelMu.Lock()
 		current = slot
 		cancelMu.Unlock()
 

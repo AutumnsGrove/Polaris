@@ -1,9 +1,12 @@
 package gateway
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,6 +226,81 @@ func TestWebSocket_EmptyAnswerSurfacesAsErrorEvent(t *testing.T) {
 	if !found {
 		t.Errorf("dbEvents = %+v, want a \"model returned an empty answer\" warn event", dbEvents)
 	}
+}
+
+// TestWebSocket_RejectsConcurrentTurnOnSameConnection guards against a
+// found-in-audit bug: handleWS spawned a goroutine per incoming "message"
+// with no check that a turn was already in flight on that connection, so
+// a second message arriving before the first turn finished silently
+// overwrote the shared cancel slot — orphaning the first turn's "stop"
+// capability with no way to cancel it. The LLM server here blocks the
+// first turn's call until the test releases it, so the race is
+// deterministic rather than timing-dependent.
+func TestWebSocket_RejectsConcurrentTurnOnSameConnection(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	first := true
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		isFirst := first
+		first = false
+		mu.Unlock()
+		if isFirst {
+			<-release
+		}
+
+		chunk, err := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "answer"}}},
+		})
+		if err != nil {
+			t.Fatalf("marshaling fake SSE chunk: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "first", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+
+	// Give handleWS's read loop time to actually process the first frame
+	// and register the cancel slot before sending the second — WriteJSON
+	// returning only means the client wrote to the socket, not that the
+	// server has read it yet. The first turn is still blocked on `release`
+	// regardless, so this only needs to outrun the read-loop's own
+	// bookkeeping, not the LLM call.
+	time.Sleep(50 * time.Millisecond)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "second", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON (second): %v", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	rejected := false
+	for !rejected {
+		var evt map[string]interface{}
+		if err := conn.ReadJSON(&evt); err != nil {
+			t.Fatalf("reading event: %v", err)
+		}
+		if evt["type"] == "done" {
+			t.Fatalf("first turn completed before the rejection was observed — race didn't trigger: %+v", evt)
+		}
+		if evt["type"] == "error" && strings.Contains(fmt.Sprint(evt["message"]), "already in progress") {
+			rejected = true
+		}
+	}
+
+	close(release) // let the first turn finish
+	readEventsUntilDone(t, conn, 5*time.Second)
 }
 
 func TestWebSocket_UnknownModelFallsBackToDefault(t *testing.T) {
