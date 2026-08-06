@@ -2,8 +2,10 @@
 	import { appState } from '$lib/state.svelte';
 	import type { FocusMode } from '$lib/types';
 	import { FOCUS_MODES } from '$lib/focusModes';
-	import { Plus, Image as ImageIcon, Cpu, Microscope, Check, X } from '@lucide/svelte';
+	import { Plus, Image as ImageIcon, Cpu, Microscope, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 
 	// Everything that used to be separate controls (model picker, focus
 	// modes, deep research, attach) is consolidated into one "+"-triggered
@@ -25,8 +27,37 @@
 	let open = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
 
+	// Root list of rows -> drill into a picker screen for the two things
+	// that are actually a *list* (Focus, Model). Showing all five focus
+	// modes with their full descriptions AND the whole model list flat, all
+	// at once, made the sheet read as a wall of text — most of a screen's
+	// worth of copy for options that are picked once and rarely revisited.
+	// The root now shows one line per category with its current value, and
+	// only the category actually being changed expands.
+	let view = $state<'root' | 'focus' | 'model'>('root');
+	// Slide direction for the {#key view} transition below — forward into a
+	// picker, backward out of one — so the motion itself reads as "going
+	// deeper" vs. "coming back", not just a generic cross-fade.
+	let direction = $state(1);
+
+	function reset() {
+		view = 'root';
+		direction = 1;
+	}
+
 	function close() {
 		open = false;
+		reset();
+	}
+
+	function drillInto(next: 'focus' | 'model') {
+		direction = 1;
+		view = next;
+	}
+
+	function backToRoot() {
+		direction = -1;
+		view = 'root';
 	}
 
 	function selectFocus(id: FocusMode) {
@@ -43,7 +74,6 @@
 
 	function toggleDeepResearch() {
 		deepResearch = !deepResearch;
-		close();
 	}
 
 	function handleFileChange(e: Event) {
@@ -61,6 +91,9 @@
 	// surfacing at a glance the way an active focus mode does) but grows
 	// small badges for whatever's actually turned on.
 	let activeFocusLabel = $derived(FOCUS_MODES.find((m) => m.id === focusMode)?.label ?? null);
+	let selectedModelName = $derived(appState.models.find((m) => m.id === appState.selectedModel)?.name ?? '');
+
+	let headerTitle = $derived(view === 'focus' ? 'Focus' : view === 'model' ? 'Model' : 'More');
 </script>
 
 <button type="button" class="trigger" onclick={() => (open = true)} aria-label="Attach, focus modes, and model">
@@ -80,53 +113,80 @@
 		<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Composer options">
 			<div class="sheet-handle" use:swipeToDismiss={close} aria-hidden="true"></div>
 			<div class="modal-panel-header">
-				<h2>More</h2>
+				<div class="header-title">
+					{#if view !== 'root'}
+						<button class="icon-btn back-btn" onclick={backToRoot} title="Back">
+							<ChevronLeft size={18} />
+						</button>
+					{/if}
+					<h2>{headerTitle}</h2>
+				</div>
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 			</div>
 
-			<section>
-				<button type="button" class="row-btn" onclick={() => fileInput?.click()}>
-					<ImageIcon size={16} />
-					<span class="row-label">Add photo or file</span>
-				</button>
-			</section>
+			<div class="view-clip">
+				{#key view}
+					<div class="view" in:fly={{ x: direction * 28, duration: 180, easing: quintOut }}>
+						{#if view === 'root'}
+							<section>
+								<button type="button" class="row-btn" onclick={() => fileInput?.click()}>
+									<ImageIcon size={16} />
+									<span class="row-label">Add photo or file</span>
+								</button>
 
-			<section>
-				<h3>Focus</h3>
-				{#each FOCUS_MODES as mode (mode.id)}
-					<button type="button" class="row-btn" onclick={() => selectFocus(mode.id)}>
-						<mode.icon size={16} />
-						<span class="row-label">
-							{mode.label}
-							<span class="row-description">{mode.description}</span>
-						</span>
-						{#if focusMode === mode.id}<Check size={14} class="row-check" />{/if}
-					</button>
-				{/each}
-			</section>
+								<button type="button" class="row-btn" onclick={() => drillInto('focus')}>
+									<SlidersHorizontal size={16} />
+									<span class="row-label">Focus</span>
+									<span class="row-value">{activeFocusLabel ?? 'Off'}</span>
+									<ChevronRight size={14} class="row-chevron" />
+								</button>
 
-			<section>
-				<h3>Deep Research</h3>
-				<button type="button" class="row-btn" onclick={toggleDeepResearch}>
-					<Microscope size={16} />
-					<span class="row-label">
-						Deep Research
-						<span class="row-description">Digs further before answering — costs more, takes longer</span>
-					</span>
-					{#if deepResearch}<Check size={14} class="row-check" />{/if}
-				</button>
-			</section>
+								<div class="row-btn row-static">
+									<Microscope size={16} />
+									<span class="row-label">
+										Deep Research
+										<span class="row-description">Digs further before answering — costs more, takes longer</span>
+									</span>
+									<label class="switch">
+										<input type="checkbox" checked={deepResearch} onchange={toggleDeepResearch} />
+										<span class="slider"></span>
+									</label>
+								</div>
 
-			<section>
-				<h3>Model</h3>
-				{#each appState.models as model (model.id)}
-					<button type="button" class="row-btn" onclick={() => selectModel(model.id)}>
-						<Cpu size={16} />
-						<span class="row-label">{model.name}</span>
-						{#if appState.selectedModel === model.id}<Check size={14} class="row-check" />{/if}
-					</button>
-				{/each}
-			</section>
+								<button type="button" class="row-btn" onclick={() => drillInto('model')}>
+									<Cpu size={16} />
+									<span class="row-label">Model</span>
+									<span class="row-value">{selectedModelName}</span>
+									<ChevronRight size={14} class="row-chevron" />
+								</button>
+							</section>
+						{:else if view === 'focus'}
+							<section>
+								{#each FOCUS_MODES as mode (mode.id)}
+									<button type="button" class="row-btn" onclick={() => selectFocus(mode.id)}>
+										<mode.icon size={16} />
+										<span class="row-label">
+											{mode.label}
+											<span class="row-description">{mode.description}</span>
+										</span>
+										{#if focusMode === mode.id}<Check size={14} class="row-check" />{/if}
+									</button>
+								{/each}
+							</section>
+						{:else if view === 'model'}
+							<section>
+								{#each appState.models as model (model.id)}
+									<button type="button" class="row-btn" onclick={() => selectModel(model.id)}>
+										<Cpu size={16} />
+										<span class="row-label">{model.name}</span>
+										{#if appState.selectedModel === model.id}<Check size={14} class="row-check" />{/if}
+									</button>
+								{/each}
+							</section>
+						{/if}
+					</div>
+				{/key}
+			</div>
 		</div>
 	</div>
 {/if}
@@ -197,25 +257,38 @@
 	   toggle/settings/etc. — already resets border/background correctly,
 	   no local override needed. */
 
+	.header-title {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.back-btn {
+		margin-left: -6px;
+	}
+
+	/* Clips the sliding root/focus/model views to the header's width so a
+	   view mid-transition doesn't spill past the panel's rounded corners
+	   or trigger a horizontal scrollbar. Height isn't fixed — the panel's
+	   own max-height + overflow-y (see app.css) handles a picker screen
+	   that's taller than the root list. */
+	.view-clip {
+		position: relative;
+		overflow-x: hidden;
+	}
+
+	.view {
+		width: 100%;
+	}
+
 	section {
 		margin-bottom: 18px;
 		padding-bottom: 18px;
-		border-bottom: 1px solid var(--color-border);
 	}
 
 	section:last-child {
-		border-bottom: none;
 		margin-bottom: 0;
 		padding-bottom: 0;
-	}
-
-	section h3 {
-		margin: 0 0 12px 0;
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-text);
 	}
 
 	.row-btn {
@@ -226,7 +299,7 @@
 		border: none;
 		background: transparent;
 		border-radius: var(--radius-md);
-		padding: 8px 6px;
+		padding: 10px 6px;
 		text-align: left;
 		font-size: 14px;
 		color: var(--color-text);
@@ -235,6 +308,18 @@
 
 	.row-btn:hover {
 		background: var(--color-surface-3);
+	}
+
+	/* The Deep Research row is a plain div, not a button — the switch is
+	   the only interactive element in it (same shape as SettingsPanel's
+	   own toggle rows), so it shouldn't hover-highlight or show a pointer
+	   cursor as if the whole row were clickable. */
+	.row-btn.row-static {
+		cursor: default;
+	}
+
+	.row-btn.row-static:hover {
+		background: transparent;
 	}
 
 	.row-btn :global(svg:first-child) {
@@ -257,5 +342,73 @@
 	.row-btn :global(.row-check) {
 		flex-shrink: 0;
 		color: var(--color-accent);
+	}
+
+	/* The current value shown on a root row that drills into a picker
+	   (Focus, Model) — muted so it reads as "here's what's set", not as a
+	   second competing label next to the row's own name. */
+	.row-value {
+		flex-shrink: 0;
+		max-width: 120px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 13px;
+		color: var(--color-text-dim);
+	}
+
+	.row-btn :global(.row-chevron) {
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+	}
+
+	/* Same switch as SettingsPanel.svelte's — duplicated rather than
+	   shared since Svelte scopes component styles per-file, but it's the
+	   same visual vocabulary everywhere a boolean setting appears, not a
+	   bespoke one just for this row (see the Deep Research row above). */
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 36px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.slider {
+		position: absolute;
+		inset: 0;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.slider::before {
+		content: '';
+		position: absolute;
+		width: 14px;
+		height: 14px;
+		left: 2px;
+		top: 2px;
+		background: var(--color-text-dim);
+		border-radius: 50%;
+		transition: transform 0.15s ease, background 0.15s ease;
+	}
+
+	.switch input:checked + .slider {
+		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+		border-color: var(--color-accent);
+	}
+
+	.switch input:checked + .slider::before {
+		transform: translateX(16px);
+		background: var(--color-accent);
 	}
 </style>
