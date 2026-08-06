@@ -34,6 +34,15 @@ type Config struct {
 		BaseURL string `yaml:"base_url"`
 	} `yaml:"searxng"`
 
+	// BlockedSourcesFile lists domains (one per line, "#" comments allowed)
+	// that web_search and web_read must never surface or fetch — for
+	// sources that are unreliable by construction (AI-generated wikis,
+	// known misinformation mills), not just low-ranked. Edit the file
+	// directly; no code changes or config reload needed beyond a restart
+	// (the blocklist, like the SearXNG client itself, is loaded once at
+	// startup — see gateway.New/cmd/search.go).
+	BlockedSourcesFile string `yaml:"blocked_sources_file"`
+
 	Foursquare struct {
 		APIKey string `yaml:"api_key"` // Service API Key; empty disables nearby_search's Foursquare path (falls back to SearXNG)
 	} `yaml:"foursquare"`
@@ -192,6 +201,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		// "unsupported protocol scheme" on first use with nothing pointing
 		// back to this being unset.
 		log.Warn("searxng.base_url is not set — web_search and nearby_search's web-search fallback will be unavailable")
+	}
+	if cfg.BlockedSourcesFile == "" {
+		cfg.BlockedSourcesFile = "./blocked_sources.txt"
 	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./polaris.db"

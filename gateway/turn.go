@@ -231,6 +231,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 
 	agentCtx := &tools.Context{
 		SearXNG:         s.searxng,
+		Blocklist:       s.blocklist,
 		Foursquare:      s.foursquare,
 		Tavily:          s.tavily,
 		DefaultLocation: defaultLocation,

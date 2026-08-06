@@ -49,7 +49,13 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
 
-	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL)
+	blocklist, err := search.LoadBlocklist(cfg.BlockedSourcesFile)
+	if err != nil {
+		log.Warn("loading source blocklist failed, continuing with no blocked sources", "path", cfg.BlockedSourcesFile, "err", err)
+		blocklist = nil
+	}
+
+	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist)
 	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
 
 	fmt.Printf("model: %s\n\n", modelCfg.Name)
@@ -78,6 +84,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	agentCtx := &tools.Context{
 		SearXNG:         searxng,
+		Blocklist:       blocklist,
 		Foursquare:      foursquare,
 		DefaultLocation: cfg.DefaultLocation,
 		LLM:             client,

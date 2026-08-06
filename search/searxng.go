@@ -28,14 +28,18 @@ type SearchResponse struct {
 }
 
 type SearXNGClient struct {
-	baseURL string
-	http    *http.Client
+	baseURL   string
+	http      *http.Client
+	blocklist *Blocklist
 }
 
-func NewSearXNGClient(baseURL string) *SearXNGClient {
+// NewSearXNGClient builds a client for the given SearXNG instance.
+// blocklist may be nil — Search then applies no filtering.
+func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 	return &SearXNGClient{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
-		http:    &http.Client{Timeout: 15 * time.Second},
+		baseURL:   strings.TrimSuffix(baseURL, "/"),
+		http:      &http.Client{Timeout: 15 * time.Second},
+		blocklist: blocklist,
 	}
 }
 
@@ -97,10 +101,16 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
-	results := make([]SearchResult, 0, len(searxngResp.Results))
-	for i, r := range searxngResp.Results {
-		if i >= maxResults {
+	results := make([]SearchResult, 0, maxResults)
+	for _, r := range searxngResp.Results {
+		if len(results) >= maxResults {
 			break
+		}
+		// Filtered out before counting toward maxResults, not after — a
+		// blocked result sitting early in SearXNG's ranking would otherwise
+		// crowd a legitimate result off the end of a maxResults-capped list.
+		if c.blocklist.Blocked(r.URL) {
+			continue
 		}
 		normalizedScore := r.Score / 10.0
 		if normalizedScore > 1.0 {

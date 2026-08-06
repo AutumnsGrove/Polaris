@@ -273,7 +273,7 @@ func TestRun_ParallelToolCalls_CitationsFromBothSurvive(t *testing.T) {
 	}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, 5)
-	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL, nil)
 
 	result, err := Run(context.Background(), ctx, nil, "compare golang and rust")
 	if err != nil {
@@ -480,7 +480,7 @@ func TestRun_InjectsResearchCheckInAfterInterval(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: responses}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, researchCheckInInterval+5)
-	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL, nil)
 
 	if _, err := Run(context.Background(), ctx, nil, "a question needing several searches"); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -528,7 +528,7 @@ func TestRun_DeepResearchDelaysCheckInMessage(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: responses}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, researchCheckInInterval+5)
-	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL, nil)
 	ctx.DeepResearch = true
 
 	if _, err := Run(context.Background(), ctx, nil, "a question needing several searches"); err != nil {
@@ -628,7 +628,7 @@ func TestRun_InjectsStaleStreakMessageWhenCitationsDontGrow(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: responses}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, totalCalls+5)
-	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL, nil)
 
 	if _, err := Run(context.Background(), ctx, nil, "a question that keeps finding the same source"); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -687,7 +687,7 @@ func TestRun_CheckInAndStaleStreakCanCoexistOnSameCall(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: responses}
 	rec := &recordingEmit{}
 	ctx := newTestContext(mock, rec, len(queries)+5)
-	ctx.SearXNG = search.NewSearXNGClient(srv.URL)
+	ctx.SearXNG = search.NewSearXNGClient(srv.URL, nil)
 
 	if _, err := Run(context.Background(), ctx, nil, "a question"); err != nil {
 		t.Fatalf("Run returned error: %v", err)

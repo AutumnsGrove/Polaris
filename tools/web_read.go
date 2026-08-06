@@ -70,6 +70,10 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	if args.URL == "" {
 		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL}, "error: url is required")
 	}
+	if ctx.Blocklist.Blocked(args.URL) {
+		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL},
+			"error: this source is blocked and cannot be read")
+	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool": "web_read",

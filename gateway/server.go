@@ -36,6 +36,7 @@ type Server struct {
 
 	db         *store.Store
 	searxng    *search.SearXNGClient
+	blocklist  *search.Blocklist
 	foursquare *places.FoursquareClient // nil if not configured
 	tavily     *tavily.Client           // nil if not configured
 	stt        *voice.STTClient
@@ -53,11 +54,18 @@ type Server struct {
 // web/embed.go) — pass nil to run API/WS-only, which is what local dev
 // does while `vite dev` serves the frontend and proxies through instead.
 func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *Server {
+	blocklist, err := search.LoadBlocklist(cfg.BlockedSourcesFile)
+	if err != nil {
+		log.Warn("loading source blocklist failed, continuing with no blocked sources", "path", cfg.BlockedSourcesFile, "err", err)
+		blocklist = nil
+	}
+
 	s := &Server{
 		cfg:        cfg,
 		cfgPath:    cfgPath,
 		db:         db,
-		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL),
+		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist),
+		blocklist:  blocklist,
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),

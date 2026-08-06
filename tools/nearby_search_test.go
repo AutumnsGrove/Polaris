@@ -37,7 +37,7 @@ func TestHandleNearbySearch_UsesDefaultLocationWhenOmitted(t *testing.T) {
 	ctx := &Context{
 		Ctx:             context.Background(),
 		DefaultLocation: "47.6062, -122.3321",
-		SearXNG:         search.NewSearXNGClient(srv.URL),
+		SearXNG:         search.NewSearXNGClient(srv.URL, nil),
 		Emit:            func(string, map[string]interface{}) {},
 	}
 	result := handleNearbySearch(`{"query":"coffee shop"}`, ctx)
@@ -55,7 +55,7 @@ func TestHandleNearbySearch_FoursquareNotConfigured_FallsBackToSearXNG(t *testin
 
 	ctx := &Context{
 		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(srv.URL),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
 		Emit:    func(string, map[string]interface{}) {},
 	}
 	// Foursquare left nil — no API key configured.

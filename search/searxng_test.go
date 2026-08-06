@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -20,7 +22,7 @@ func TestSearch_ParsesResultsAndNormalizesScore(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewSearXNGClient(srv.URL)
+	client := NewSearXNGClient(srv.URL, nil)
 	resp, err := client.Search(context.Background(), "golang", 5, "news")
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
@@ -54,7 +56,7 @@ func TestSearch_TruncatesToMaxResults(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewSearXNGClient(srv.URL)
+	client := NewSearXNGClient(srv.URL, nil)
 	resp, err := client.Search(context.Background(), "q", 2, "")
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
@@ -73,7 +75,7 @@ func TestSearch_NoCategoryOmitsParam(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewSearXNGClient(srv.URL)
+	client := NewSearXNGClient(srv.URL, nil)
 	if _, err := client.Search(context.Background(), "q", 5, ""); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -89,8 +91,49 @@ func TestSearch_NonOKStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewSearXNGClient(srv.URL)
+	client := NewSearXNGClient(srv.URL, nil)
 	if _, err := client.Search(context.Background(), "q", 5, ""); err == nil {
 		t.Fatal("expected an error for a 500 response")
 	}
+}
+
+func TestSearch_FiltersBlockedDomainsBeforeTruncating(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"blocked","url":"https://grokipedia.com/page/1"},
+			{"title":"blocked subdomain","url":"https://www.grokipedia.com/page/2"},
+			{"title":"good 1","url":"https://a.com/1"},
+			{"title":"good 2","url":"https://b.com/1"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	bl, err := LoadBlocklist(writeBlocklistFile(t, "grokipedia.com\n"))
+	if err != nil {
+		t.Fatalf("LoadBlocklist returned error: %v", err)
+	}
+
+	client := NewSearXNGClient(srv.URL, bl)
+	resp, err := client.Search(context.Background(), "q", 2, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("got %d results, want 2 (both blocked results skipped, not counted toward maxResults)", len(resp.Results))
+	}
+	for _, r := range resp.Results {
+		if strings.Contains(r.URL, "grokipedia.com") {
+			t.Errorf("blocked URL %q leaked into results", r.URL)
+		}
+	}
+}
+
+func writeBlocklistFile(t *testing.T, contents string) string {
+	t.Helper()
+	path := t.TempDir() + "/blocked_sources.txt"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing blocklist file: %v", err)
+	}
+	return path
 }

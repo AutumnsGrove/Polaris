@@ -14,6 +14,12 @@ openrouter:
 searxng:
   base_url: "http://localhost:18888"   # local dev; point at http://100.81.103.51:8888 on the potato
 
+# Domains web_search/web_read must never surface or fetch — see
+# blocked_sources.txt for the actual list (one domain per line, edit it
+# directly, no code changes needed). Defaults to ./blocked_sources.txt;
+# only set this if you want it somewhere else.
+# blocked_sources_file: "./blocked_sources.txt"
+
 foursquare:
   api_key: "${FOURSQUARE_API_KEY}"   # optional — nearby_search falls back to SearXNG without it. Free tier: 10k calls/month. https://foursquare.com/developers
 

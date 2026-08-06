@@ -31,7 +31,7 @@ func TestHandleWebSearch_FormatsResultsAndAddsCitations(t *testing.T) {
 	})
 	ctx := &Context{
 		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(srv.URL),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
@@ -48,7 +48,7 @@ func TestHandleWebSearch_NoResults(t *testing.T) {
 	srv, _ := fakeSearXNG(t, nil)
 	ctx := &Context{
 		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(srv.URL),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
 		Emit:    func(string, map[string]interface{}) {},
 	}
 

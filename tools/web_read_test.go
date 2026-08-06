@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/search"
 	"polaris/tavily"
 )
 
@@ -105,6 +108,38 @@ func TestHandleWebRead_URLRequired(t *testing.T) {
 	result := handleWebRead(`{}`, ctx)
 	if result != "error: url is required" {
 		t.Errorf("result = %q, want the url-required error", result)
+	}
+}
+
+func TestHandleWebRead_BlockedDomainRejectedWithoutFetching(t *testing.T) {
+	fetched := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetched = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	parsedURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parsing test server URL: %v", err)
+	}
+	blockPath := t.TempDir() + "/blocked_sources.txt"
+	if err := os.WriteFile(blockPath, []byte(parsedURL.Hostname()+"\n"), 0o644); err != nil {
+		t.Fatalf("writing blocklist file: %v", err)
+	}
+	bl, err := search.LoadBlocklist(blockPath)
+	if err != nil {
+		t.Fatalf("LoadBlocklist returned error: %v", err)
+	}
+
+	ctx := &Context{Ctx: context.Background(), Blocklist: bl, Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+
+	if !strings.Contains(result, "blocked") {
+		t.Errorf("result = %q, want a blocked-source error", result)
+	}
+	if fetched {
+		t.Error("handleWebRead fetched a blocked URL instead of rejecting it upfront")
 	}
 }
 

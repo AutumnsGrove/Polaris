@@ -32,6 +32,12 @@ type Context struct {
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
 
+	// Blocklist rejects web_read fetches for blocked domains directly —
+	// web_search's own filtering happens inside SearXNG (nil-safe there
+	// too), so this only needs plumbing to the one other place a URL can
+	// enter the agent loop. Nil means "nothing blocked".
+	Blocklist *search.Blocklist
+
 	// DefaultLocation is geocoded by nearby_search when a query omits an
 	// explicit location. Empty means "no fallback — location is required."
 	DefaultLocation string

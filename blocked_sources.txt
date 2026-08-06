@@ -1,0 +1,10 @@
+# Domains listed here are never surfaced by web_search and never fetched
+# by web_read, regardless of what the model asks for. One domain per line;
+# "#" starts a comment. Subdomains of a blocked domain are blocked too
+# (blocking "example.com" also blocks "www.example.com").
+#
+# Edit this file and restart the server to pick up changes.
+
+# Grok-written encyclopedia — unreviewed AI-generated content prone to
+# hallucination/bias, presented with Wikipedia-style authority.
+grokipedia.com
