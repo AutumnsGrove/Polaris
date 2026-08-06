@@ -141,5 +141,14 @@
 			-webkit-backdrop-filter: blur(4px);
 			z-index: 40;
 		}
+
+		/* The sidebar's opening edge-swipe (see edgeSwipeSidebar.ts) starts
+		   its first touch here, on the main chat view, not on the sidebar
+		   itself — it's off-screen until the drag pulls it in. Restricting
+		   horizontal panning keeps that initial touch from being read as a
+		   native scroll gesture instead. */
+		.shell {
+			touch-action: pan-y;
+		}
 	}
 </style>

@@ -323,6 +323,17 @@ a {
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
 	cursor: default;
+	/* Was appearing instantly under the panel's own entrance animation —
+	   a scrim that just snaps to full opacity while the sheet is still
+	   sliding in reads as two unrelated things happening, not one motion.
+	   Fading it in over the same rough duration ties them together. */
+	animation: modal-backdrop-in 0.2s var(--ease-out-expo);
+}
+
+@keyframes modal-backdrop-in {
+	from {
+		opacity: 0;
+	}
 }
 
 .modal-panel {
@@ -377,22 +388,61 @@ a {
 		max-width: 100%;
 		max-height: 82vh;
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-		padding: 18px 18px max(16px, env(safe-area-inset-bottom));
-		animation: modal-sheet-up 0.2s var(--ease-out-expo);
+		/* Extra top padding clears the grab handle below. */
+		padding: 26px 18px max(16px, env(safe-area-inset-bottom));
+		/* A 16px nudge with a fade read as a modal that forgot it was
+		   supposed to be a sheet — a real bottom sheet travels the full
+		   distance from off-screen, opaque the whole way, so it feels like
+		   a physical object being pulled up rather than a box fading into
+		   place. */
+		animation: modal-sheet-up 0.28s var(--ease-out-expo);
 	}
 
 	.modal-panel-header h2 {
 		font-size: 19px;
 	}
+
+	/* Grab handle: the universal "this is draggable" affordance, so a
+	   sheet with no chrome above its header doesn't look like it just
+	   floats there. A real element (not a ::before) since it's also the
+	   drag hit-target for the swipeToDismiss action — see
+	   SettingsPanel.svelte / ComposerMenu.svelte. touch-action is scoped
+	   to just this ~40px strip, not the whole panel, so dragging the
+	   handle to dismiss never fights native scrolling of a long focus-mode
+	   or model list underneath it. */
+	.sheet-handle {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 26px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		touch-action: none;
+		cursor: grab;
+	}
+
+	.sheet-handle::before {
+		content: '';
+		width: 36px;
+		height: 4px;
+		border-radius: 999px;
+		background: var(--color-border-strong);
+	}
+}
+
+@media (min-width: 769px) {
+	.sheet-handle {
+		display: none;
+	}
 }
 
 @keyframes modal-sheet-up {
 	from {
-		transform: translateY(16px);
-		opacity: 0;
+		transform: translateY(100%);
 	}
 	to {
 		transform: translateY(0);
-		opacity: 1;
 	}
 }

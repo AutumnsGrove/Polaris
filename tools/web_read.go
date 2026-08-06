@@ -81,7 +81,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{"url": args.URL, "instructions": args.Instructions},
 	})
 
-	title, text, err := fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist)
+	title, siteName, text, err := fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist)
 
 	// fallbackUsed is purely for logging — it doesn't change control flow,
 	// just helps tell "the free path worked" apart from "it took a paid
@@ -93,8 +93,8 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	// is worth trying first since it's free and frequently has a snapshot
 	// from before a paywall went up or a page got taken down.
 	if err != nil || looksLikePaywall(text) {
-		if wbTitle, wbText, wbErr := fetchFromWayback(ctx.Ctx, args.URL, ctx.Blocklist); wbErr == nil {
-			title, text, err = wbTitle, wbText, nil
+		if wbTitle, wbSiteName, wbText, wbErr := fetchFromWayback(ctx.Ctx, args.URL, ctx.Blocklist); wbErr == nil {
+			title, siteName, text, err = wbTitle, wbSiteName, wbText, nil
 			fallbackUsed = "archive.org"
 		} else {
 			log.Warn("web_read: wayback fallback failed", "url", args.URL, "err", wbErr)
@@ -142,7 +142,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	}
 
 	log.Info("web_read", "url", args.URL, "title", title, "extracted_chars", len(text), "instructions", args.Instructions)
-	ctx.AddCitation(Citation{Title: title, URL: args.URL})
+	ctx.AddCitation(Citation{Title: title, URL: args.URL, SiteName: siteName})
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",
 		"result":    result,
@@ -180,7 +180,7 @@ const minViableExtractedChars = 200
 // calling this, so without this, a non-blocked URL (a shortener, an old
 // domain that now 302s elsewhere) that happens to redirect to a blocked
 // domain would sail straight through and fetch it anyway. May be nil.
-func fetchAndExtract(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, text string, err error) {
+func fetchAndExtract(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, siteName, text string, err error) {
 	client := &http.Client{
 		Timeout: 15 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -199,34 +199,40 @@ func fetchAndExtract(ctx context.Context, rawURL string, blocklist *search.Block
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Polaris/1.0; +https://github.com/AutumnsGrove/Polaris)")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("fetching url: %w", err)
+		return "", "", "", fmt.Errorf("fetching url: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("url returned status %d", resp.StatusCode)
+		return "", "", "", fmt.Errorf("url returned status %d", resp.StatusCode)
 	}
 
 	if isPDF(resp, rawURL) {
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", "", fmt.Errorf("reading pdf body: %w", err)
+			return "", "", "", fmt.Errorf("reading pdf body: %w", err)
 		}
-		return ExtractPDFText(data)
+		title, text, err = ExtractPDFText(data)
+		return title, "", text, err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return "", "", fmt.Errorf("parsing html: %w", err)
+		return "", "", "", fmt.Errorf("parsing html: %w", err)
 	}
 
 	title = strings.TrimSpace(doc.Find("title").First().Text())
+	// The publisher-facing name a site sets for its own social-share
+	// cards — virtually universal on news/blog platforms, and a much
+	// better citation label than the article's own <title> (too long) or
+	// its hostname (rarely legible: "hollywoodreporter.com").
+	siteName = strings.TrimSpace(doc.Find(`meta[property="og:site_name"]`).First().AttrOr("content", ""))
 
 	// #wm-ipp-base/#wm-ipp-print are the Wayback Machine's own injected
 	// toolbar — only ever present when fetchFromWayback below hands this
@@ -242,7 +248,7 @@ func fetchAndExtract(ctx context.Context, rawURL string, blocklist *search.Block
 	}
 
 	text = collapseWhitespace(body.Text())
-	return title, text, nil
+	return title, siteName, text, nil
 }
 
 // collapseWhitespace turns raw extracted text (HTML or PDF) into clean,
@@ -323,23 +329,23 @@ func ExtractPDFText(data []byte) (title, text string, err error) {
 // an httptest server instead of the real archive.org.
 var waybackAvailabilityAPI = "https://archive.org/wayback/available"
 
-func fetchFromWayback(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, text string, err error) {
+func fetchFromWayback(ctx context.Context, rawURL string, blocklist *search.Blocklist) (title, siteName, text string, err error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	availabilityURL := waybackAvailabilityAPI + "?url=" + url.QueryEscape(rawURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", availabilityURL, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("wayback availability check: %w", err)
+		return "", "", "", fmt.Errorf("wayback availability check: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", fmt.Errorf("reading wayback response: %w", err)
+		return "", "", "", fmt.Errorf("reading wayback response: %w", err)
 	}
 
 	var avail struct {
@@ -351,10 +357,10 @@ func fetchFromWayback(ctx context.Context, rawURL string, blocklist *search.Bloc
 		} `json:"archived_snapshots"`
 	}
 	if err := json.Unmarshal(body, &avail); err != nil {
-		return "", "", fmt.Errorf("parsing wayback response: %w", err)
+		return "", "", "", fmt.Errorf("parsing wayback response: %w", err)
 	}
 	if !avail.ArchivedSnapshots.Closest.Available || avail.ArchivedSnapshots.Closest.URL == "" {
-		return "", "", fmt.Errorf("no archived snapshot available for %s", rawURL)
+		return "", "", "", fmt.Errorf("no archived snapshot available for %s", rawURL)
 	}
 
 	return fetchAndExtract(ctx, avail.ArchivedSnapshots.Closest.URL, blocklist)

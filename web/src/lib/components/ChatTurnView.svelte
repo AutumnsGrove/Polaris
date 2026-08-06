@@ -7,48 +7,29 @@
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
-	import { numberInlineCitations } from '$lib/citations';
+	import { renderInlineCitations } from '$lib/citations';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
-	// full list is one click away instead of forced on every reader —
-	// clicking an inline citation badge (see handleProseClick) opens it
-	// automatically and scrolls straight to the matching one.
+	// full list is one click away for anyone who wants to skim every
+	// source at once; inline citation chips (see renderInlineCitations)
+	// already open a source directly, so this isn't the only way in.
 	let sourcesOpen = $state(false);
 
 	// Content can originate from fetched web pages (via web_read) as well
 	// as the model itself, so sanitize before injecting as HTML — treat
-	// it the same as any other untrusted input. numberInlineCitations runs
+	// it the same as any other untrusted input. renderInlineCitations runs
 	// AFTER sanitize, turning the model's inline [Title](URL) links into
-	// small numbered badges matching the source list below, for exactly
-	// the claims that actually cite one of this turn's tracked sources.
+	// named source chips (e.g. "The Hollywood Reporter") for exactly the
+	// claims that actually cite one of this turn's tracked sources — each
+	// chip keeps its real href and opens the source directly, so there's
+	// no detour through the source list below to find out what a bare
+	// number pointed at.
 	let renderedHtml = $derived(
-		numberInlineCitations(DOMPurify.sanitize(marked.parse(turn.content || '') as string), turn.citations ?? [], index)
+		renderInlineCitations(DOMPurify.sanitize(marked.parse(turn.content || '') as string), turn.citations ?? [])
 	);
-
-	// Delegated click handler on .prose (citation badges live inside
-	// {@html}-injected content, so they can't carry their own Svelte
-	// event handlers) — jump to and briefly highlight the matching chip
-	// in the source list, opening it first if it's still collapsed.
-	function handleProseClick(e: MouseEvent) {
-		const badge = (e.target as HTMLElement).closest('.citation-badge') as HTMLElement | null;
-		if (!badge) return;
-		const targetId = badge.dataset.sourceTarget;
-		if (!targetId) return;
-		e.preventDefault();
-
-		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-		sourcesOpen = true;
-		requestAnimationFrame(() => {
-			const el = document.getElementById(targetId);
-			if (!el) return;
-			el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-			el.classList.add('source-chip-flash');
-			setTimeout(() => el.classList.remove('source-chip-flash'), 1200);
-		});
-	}
 
 	let editing = $state(false);
 	let editValue = $state('');
@@ -178,18 +159,7 @@
 			{/if}
 
 			{#if turn.content}
-				<!-- This is delegated click handling for the citation badges
-				     inside {@html}-injected content, not a click target in its
-				     own right — the actual interactive elements are the nested
-				     <a class="citation-badge"> tags, which are real anchors
-				     (native href + tabindex), so they're already fully
-				     keyboard-operable on their own; a native Enter-triggered
-				     click on one of them bubbles up to this handler exactly
-				     like a mouse click does. No separate keyboard handler
-				     needed on the wrapping div itself. -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="prose" onclick={handleProseClick}>{@html renderedHtml}</div>
+				<div class="prose">{@html renderedHtml}</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
 			{/if}
@@ -205,7 +175,6 @@
 						<div class="citations">
 							{#each turn.citations as c, i (c.url)}
 								<a
-									id={`source-${index}-${i}`}
 									class="source-chip"
 									href={c.url}
 									target="_blank"
@@ -401,8 +370,22 @@
 		margin-bottom: 8px;
 	}
 
+	/* A static "…" reads as stalled, not working — a slow, low-amplitude
+	   breathing fade (not a spinner; nothing here should look busy or
+	   mechanical) is enough to signal "still here" during the gap before
+	   the first token lands. */
 	.pending {
 		color: var(--color-text-dim);
+		animation: pending-breathe 1.6s ease-in-out infinite;
+	}
+
+	@keyframes pending-breathe {
+		0%, 100% {
+			opacity: 0.4;
+		}
+		50% {
+			opacity: 1;
+		}
 	}
 
 	.sources {
@@ -469,48 +452,41 @@
 		background: var(--color-surface-3);
 	}
 
-	/* Briefly flashed when an inline citation badge scrolls this chip
-	   into view (see handleProseClick) — a visual "here's the one you
-	   clicked" confirmation, not a permanent state change. .source-chip
-	   itself stays a normal scoped selector (it's real template markup);
-	   only .source-chip-flash needs :global(), since Svelte's compiler
-	   statically checks the template for class usage and can't see a
-	   class added at runtime via classList — without this it strips the
-	   rule as "unused". */
-	.source-chip:global(.source-chip-flash) {
-		border-color: var(--color-accent);
-		background: var(--color-accent-soft);
-		transition: border-color 0.2s var(--ease-out-expo), background-color 0.2s var(--ease-out-expo);
-	}
-
-	/* Inline citation markers — same numbered-circle language as
-	   .source-index below, so a claim's badge and its entry in the
-	   source list read as visibly the same object. :global since these
-	   live inside {@html}-injected content, not Svelte-templated markup. */
-	.prose :global(.citation-badge) {
+	/* Named inline citation chips — the model's [Title](URL) links land
+	   here already sanitized, and renderInlineCitations (see citations.ts)
+	   swaps in a real site name for a subset of them. Sits low and quiet
+	   in the text flow (dim, small, no underline) so it reads as
+	   attribution rather than a normal hyperlink; opens the source
+	   directly on tap since the label already says what it is — no more
+	   detour through the source list below to decode a bare number.
+	   :global since these live inside {@html}-injected content, not
+	   Svelte-templated markup. */
+	.prose :global(.citation-chip) {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		min-width: 15px;
-		height: 15px;
-		padding: 0 3px;
-		margin: 0 1px;
+		max-width: 180px;
+		margin: 0 0 0 5px;
+		padding: 1px 8px;
+		border: 1px solid var(--color-border);
 		border-radius: 999px;
-		background: color-mix(in srgb, var(--color-accent-2) 20%, transparent);
-		color: var(--color-accent-2);
-		font-size: 9.5px;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
+		background: var(--color-surface-2);
+		color: var(--color-text-dim);
+		font-size: 11.5px;
+		font-weight: 500;
 		text-decoration: none;
-		vertical-align: super;
-		line-height: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		vertical-align: middle;
+		transform: translateY(-1px);
 		cursor: pointer;
-		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
 	}
 
-	.prose :global(.citation-badge:hover) {
-		background: var(--color-accent-2);
-		color: var(--color-bg);
+	.prose :global(.citation-chip:hover) {
+		border-color: var(--color-accent-2);
+		background: var(--color-surface-3);
+		color: var(--color-text);
 	}
 
 	.source-index {

@@ -76,6 +76,13 @@ type Context struct {
 type Citation struct {
 	Title string `json:"title"`
 	URL   string `json:"url"`
+	// SiteName is the publisher/site label from the page's own
+	// og:site_name meta tag (e.g. "The Hollywood Reporter"), when web_read
+	// fetched the page and it set one — empty for citations that never
+	// went through a page fetch (web_search hits, Maps places, weather).
+	// The frontend falls back to a hostname-derived label when this is
+	// empty, see web/src/lib/citations.ts.
+	SiteName string `json:"site_name,omitempty"`
 }
 
 // AddCitation appends a citation unless its URL is already present —

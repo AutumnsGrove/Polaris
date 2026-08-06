@@ -4,6 +4,7 @@
 export interface Citation {
 	title: string;
 	url: string;
+	site_name?: string;
 }
 
 export type ServerEvent =

@@ -54,7 +54,7 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 		<footer>copyright footer</footer>
 	</body></html>`
 
-	title, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	title, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -69,9 +69,35 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 	}
 }
 
+func TestFetchAndExtract_ExtractsSiteName(t *testing.T) {
+	html := `<html><head><title>The Bard, Explained</title>
+		<meta property="og:site_name" content="The Hollywood Reporter"></head>
+		<body><article><p>content</p></article></body></html>`
+
+	_, siteName, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	if err != nil {
+		t.Fatalf("fetchAndExtract returned error: %v", err)
+	}
+	if siteName != "The Hollywood Reporter" {
+		t.Errorf("siteName = %q, want %q", siteName, "The Hollywood Reporter")
+	}
+}
+
+func TestFetchAndExtract_SiteNameEmptyWhenMissing(t *testing.T) {
+	html := `<html><head><title>No meta tag here</title></head><body><article><p>content</p></article></body></html>`
+
+	_, siteName, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	if err != nil {
+		t.Fatalf("fetchAndExtract returned error: %v", err)
+	}
+	if siteName != "" {
+		t.Errorf("siteName = %q, want empty when the page sets no og:site_name", siteName)
+	}
+}
+
 func TestFetchAndExtract_FallsBackToBodyWithoutArticleOrMain(t *testing.T) {
 	html := `<html><body><p>Just a plain page with no article or main tag.</p></body></html>`
-	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -84,7 +110,7 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 	huge := strings.Repeat("word ", 5000) // well over maxExtractedChars
 	html := "<html><body><article>" + huge + "</article></body></html>"
 
-	_, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -97,7 +123,7 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 }
 
 func TestFetchAndExtract_NonOKStatus(t *testing.T) {
-	_, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
+	_, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
 	if err == nil {
 		t.Fatal("expected an error for a 404 response")
 	}
@@ -125,7 +151,7 @@ func TestFetchAndExtract_RejectsRedirectToBlockedDomain(t *testing.T) {
 		t.Fatalf("LoadBlocklist returned error: %v", err)
 	}
 
-	_, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
+	_, _, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
 	if err == nil {
 		t.Fatal("expected an error: redirect target is on the blocklist")
 	}
@@ -301,7 +327,7 @@ func TestFetchAndExtract_PDF(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
+	_, _, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error for a PDF: %v", err)
 	}

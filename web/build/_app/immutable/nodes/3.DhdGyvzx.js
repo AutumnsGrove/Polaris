@@ -1,0 +1,1 @@
+import{B as e,W as t,it as n,rt as r}from"../chunks/CNb53Tj6.js";import"../chunks/xihTtKlq.js";import{c as i}from"../chunks/BEo3sZ9q.js";import{t as a}from"../chunks/mzKVw_qN.js";import{t as o}from"../chunks/Dj2d78Xd.js";function s(s,c){n(c,!0),t(()=>{let t=o.params.id;t&&e(()=>t!==i.currentThreadId)&&i.openThread(t)}),a(s,{}),r()}export{s as component};

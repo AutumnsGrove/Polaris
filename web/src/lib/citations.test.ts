@@ -1,46 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { numberInlineCitations } from './citations';
+import { renderInlineCitations } from './citations';
 import type { Citation } from './types';
 
 const citations: Citation[] = [
-	{ title: 'NASA Voyager overview', url: 'https://nasa.gov/voyager' },
+	{ title: 'Voyager - NASA Solar System Exploration', url: 'https://nasa.gov/voyager', site_name: 'NASA' },
 	{ title: 'Wikipedia: Voyager 1', url: 'https://en.wikipedia.org/wiki/Voyager_1' }
 ];
 
-describe('numberInlineCitations', () => {
-	it('replaces a tracked citation link with a numbered badge', () => {
+describe('renderInlineCitations', () => {
+	it('replaces a tracked citation link with a named chip that keeps its href', () => {
 		const html = '<p>Voyager 1 is the farthest spacecraft <a href="https://nasa.gov/voyager">NASA overview</a>.</p>';
-		const out = numberInlineCitations(html, citations, 0);
-		expect(out).toContain('class="citation-badge"');
-		expect(out).toContain('>1<');
-		expect(out).toContain('data-source-target="source-0-0"');
-		// Original link text is preserved as the hover title, not left inline.
-		expect(out).toContain('title="NASA overview"');
+		const out = renderInlineCitations(html, citations);
+		expect(out).toContain('class="citation-chip"');
+		expect(out).toContain('href="https://nasa.gov/voyager"');
+		expect(out).toContain('target="_blank"');
+		expect(out).toContain('>NASA<');
+		// Full article title becomes the hover tooltip, not the model's own
+		// arbitrary inline link text.
+		expect(out).toContain('title="Voyager - NASA Solar System Exploration"');
 	});
 
-	it('numbers badges by the citation\'s position in the list, not appearance order', () => {
-		const html =
-			'<p>See <a href="https://en.wikipedia.org/wiki/Voyager_1">wiki</a> and ' +
-			'<a href="https://nasa.gov/voyager">nasa</a>.</p>';
-		const out = numberInlineCitations(html, citations, 0);
-		expect(out).toContain('>2<'); // wikipedia is citations[1]
-		expect(out).toContain('>1<'); // nasa is citations[0]
+	it('prefers site_name over a hostname-derived fallback', () => {
+		const html = '<p>See <a href="https://nasa.gov/voyager">nasa</a>.</p>';
+		const out = renderInlineCitations(html, citations);
+		expect(out).toContain('>NASA<');
+	});
+
+	it('falls back to a hostname-derived name when site_name is missing', () => {
+		const html = '<p>See <a href="https://en.wikipedia.org/wiki/Voyager_1">wiki</a>.</p>';
+		const out = renderInlineCitations(html, citations);
+		expect(out).toContain('>Wikipedia<');
 	});
 
 	it('leaves a link untouched if its URL is not a tracked citation', () => {
 		const html = '<p>Unrelated <a href="https://example.com/other">link</a>.</p>';
-		const out = numberInlineCitations(html, citations, 0);
+		const out = renderInlineCitations(html, citations);
 		expect(out).toContain('href="https://example.com/other"');
-		expect(out).not.toContain('citation-badge');
+		expect(out).not.toContain('citation-chip');
 		expect(out).toContain('>link<');
 	});
 
 	it('returns html unchanged when there are no citations', () => {
 		const html = '<p>No sources here.</p>';
-		expect(numberInlineCitations(html, [], 0)).toBe(html);
+		expect(renderInlineCitations(html, [])).toBe(html);
 	});
 
 	it('handles empty html', () => {
-		expect(numberInlineCitations('', citations, 0)).toBe('');
+		expect(renderInlineCitations('', citations)).toBe('');
 	});
 });

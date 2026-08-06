@@ -3,6 +3,7 @@
 	import { X, Moon, Sun, RefreshCw } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
+	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 
 	function close() {
 		appState.settings.open = false;
@@ -17,6 +18,7 @@
 <div class="modal-backdrop" role="presentation">
 	<button class="modal-backdrop-close" onclick={close} aria-label="Close settings"></button>
 	<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Settings">
+		<div class="sheet-handle" use:swipeToDismiss={close} aria-hidden="true"></div>
 		<div class="modal-panel-header">
 			<h2>Settings</h2>
 			<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>

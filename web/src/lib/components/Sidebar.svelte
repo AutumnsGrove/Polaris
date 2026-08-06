@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings } from '@lucide/svelte';
+	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -50,7 +51,7 @@
 	}
 </script>
 
-<aside class="sidebar" class:open={appState.sidebarOpen}>
+<aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
 	<div class="brand">
 		<img class="brand-mark" src="/apple-touch-icon.png" alt="" width="22" height="22" />
 		<span class="wordmark">Polaris</span>
@@ -351,6 +352,11 @@
 			transform: translateX(-100%);
 			transition: transform 0.2s ease;
 			box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);
+			/* Vertical scrolling of the thread list stays native; horizontal
+			   panning is owned entirely by edgeSwipeSidebar (see the action
+			   import above) — without this, the browser's own touch
+			   handling can fight the JS-driven drag transform mid-gesture. */
+			touch-action: pan-y;
 		}
 
 		.sidebar.open {

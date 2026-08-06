@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
+	import { fly } from 'svelte/transition';
 </script>
 
 <div class="toast-stack">
 	{#each appState.toasts as toast (toast.id)}
-		<div class="toast">{toast.message}</div>
+		<div class="toast" in:fly={{ y: 6, duration: 200 }} out:fly={{ y: -6, duration: 150 }}>
+			{toast.message}
+		</div>
 	{/each}
 </div>
 
@@ -32,18 +35,6 @@
 		box-shadow:
 			0 12px 32px -12px rgba(0, 0, 0, 0.45),
 			0 4px 12px -4px rgba(0, 0, 0, 0.3);
-		animation: toast-in 0.2s var(--ease-out-expo);
 		white-space: nowrap;
-	}
-
-	@keyframes toast-in {
-		from {
-			opacity: 0;
-			transform: translateY(6px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
 	}
 </style>

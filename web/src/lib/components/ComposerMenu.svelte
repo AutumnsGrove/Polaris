@@ -3,6 +3,7 @@
 	import type { FocusMode } from '$lib/types';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import { Plus, Image as ImageIcon, Cpu, Microscope, Check, X } from '@lucide/svelte';
+	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 
 	// Everything that used to be separate controls (model picker, focus
 	// modes, deep research, attach) is consolidated into one "+"-triggered
@@ -77,6 +78,7 @@
 	<div class="modal-backdrop" role="presentation">
 		<button class="modal-backdrop-close" onclick={close} aria-label="Close"></button>
 		<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Composer options">
+			<div class="sheet-handle" use:swipeToDismiss={close} aria-hidden="true"></div>
 			<div class="modal-panel-header">
 				<h2>More</h2>
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
