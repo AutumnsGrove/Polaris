@@ -36,28 +36,28 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// in the same thread.
 	turnID := uuid.NewString()
 
-	// Retry/edit: wipe the message being replaced and everything after it
-	// (no branching history) before persisting the new/unchanged content.
+	// Retry/edit: the message being replaced and everything after it (no
+	// branching history) gets wiped, but not until it's atomically combined
+	// with persisting the replacement below (see DeleteMessagesFromAndAddMessage) —
+	// deleting eagerly here, in a separate transaction from that insert,
+	// used to mean a failure in between (SQLite busy/locked, a crash) could
+	// commit the delete but never persist the replacement, permanently
+	// losing the deleted messages with nothing to show for it.
 	//
-	// isFirstMessageEdit is checked before the delete below, not after —
-	// once the delete runs, every message that would prove this was the
-	// thread's opening question is gone. Only regenerating the title in
-	// this case (not on every retry) matters because the title describes
-	// the thread as a whole: editing turn 5 of an established
-	// conversation shouldn't retitle it around just that turn, but
-	// editing turn 1 means the question the current title was generated
-	// from doesn't exist anymore.
+	// isFirstMessageEdit is checked here, against current (pre-delete)
+	// state, since nothing downstream can prove this was the thread's
+	// opening question once the atomic delete+insert below actually runs.
+	// Only regenerating the title in this case (not on every retry)
+	// matters because the title describes the thread as a whole: editing
+	// turn 5 of an established conversation shouldn't retitle it around
+	// just that turn, but editing turn 1 means the question the current
+	// title was generated from doesn't exist anymore.
 	isFirstMessageEdit := false
 	if msg.EditFromID != 0 {
 		var err error
 		isFirstMessageEdit, err = s.db.IsFirstMessage(threadID, msg.EditFromID)
 		if err != nil {
 			s.db.LogEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
-			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
-			return
-		}
-		if err := s.db.DeleteMessagesFrom(threadID, msg.EditFromID); err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "deleting messages for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
 		}
@@ -106,7 +106,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
-	history, err := s.loadHistory(threadID)
+	history, err := s.loadHistory(threadID, msg.EditFromID)
 	if err != nil {
 		s.db.LogEvent(threadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{Type: "error", Message: err.Error()})
@@ -118,7 +118,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// below errors out. Previously a failed turn left no record at all.
 	// SttCostUSD folds in push-to-talk transcription cost, if this
 	// message originated from a voice memo.
-	userMsgID, err := s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
+	//
+	// For a retry/edit, this is also where the messages being replaced
+	// actually get deleted — combined with this insert in one transaction
+	// (see DeleteMessagesFromAndAddMessage's doc comment) rather than as a
+	// separate step beforehand, so a failure here can't strand the thread
+	// with the old messages gone and nothing persisted in their place.
+	var userMsgID int64
+	if msg.EditFromID != 0 {
+		userMsgID, err = s.db.DeleteMessagesFromAndAddMessage(threadID, msg.EditFromID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
+	} else {
+		userMsgID, err = s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
+	}
 	if err != nil {
 		s.db.LogEvent(threadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
@@ -652,7 +663,7 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 // and records that summary so loadHistory substitutes it for the raw
 // messages it covers on every subsequent turn.
 func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID int64) (summary string, cost float64, err error) {
-	history, err := s.loadHistory(threadID)
+	history, err := s.loadHistory(threadID, 0)
 	if err != nil {
 		return "", 0, err
 	}
@@ -696,7 +707,14 @@ func estimateTokens(s string) int {
 // resumed/continued thread has full context. If the thread has been
 // auto-compacted, everything at or below compacted_through_id is replaced
 // by a single summary message instead of being sent in full.
-func (s *Server) loadHistory(threadID string) ([]llm.ChatMessage, error) {
+//
+// excludeFromID, if nonzero, additionally skips every message with id >=
+// excludeFromID — the retry/edit path's way of getting a "post-edit" view
+// of history without the old messages having actually been deleted yet
+// (see handleTurn: the physical delete is deferred to a single atomic
+// transaction with the new message's insert, but the LLM must still see
+// history as if the edit had already happened).
+func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMessage, error) {
 	thread, err := s.db.GetThread(threadID)
 	if err != nil {
 		return nil, err
@@ -717,6 +735,9 @@ func (s *Server) loadHistory(threadID string) ([]llm.ChatMessage, error) {
 	for _, m := range msgs {
 		if m.ID <= thread.CompactedThroughID {
 			continue // covered by the summary above
+		}
+		if excludeFromID != 0 && m.ID >= excludeFromID {
+			continue
 		}
 		history = append(history, llm.ChatMessage{Role: m.Role, Content: m.Content})
 	}

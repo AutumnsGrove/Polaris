@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -301,6 +302,96 @@ func TestWebSocket_RejectsConcurrentTurnOnSameConnection(t *testing.T) {
 
 	close(release) // let the first turn finish
 	readEventsUntilDone(t, conn, 5*time.Second)
+}
+
+// TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory
+// exercises handleTurn's retry/edit path end-to-end — regression coverage
+// for the same audit finding as store's
+// TestDeleteMessagesFromAndAddMessage_* tests, but for the full wiring:
+// loadHistory's excludeFromID must still produce a "post-edit" view of
+// history even though the actual DELETE is now deferred to the same
+// transaction as the new message's INSERT (see handleTurn's comments).
+// If that exclusion logic were wrong, the edit turn's LLM call would see
+// the original (soon-to-be-replaced) question as history alongside the
+// edited one, rather than the edited one replacing it.
+func TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+
+		chunk, err := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "an answer"}}},
+		})
+		if err != nil {
+			t.Fatalf("marshaling fake SSE chunk: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "original question", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+
+	var userMsgID float64
+	for _, e := range events {
+		if e["type"] == "user_message" {
+			userMsgID, _ = e["user_message_id"].(float64)
+		}
+	}
+	if userMsgID == 0 {
+		t.Fatalf("never captured user_message_id: %+v", events)
+	}
+
+	// Everything before this point belongs to turn 1 (its main answer call
+	// plus any post-processing like suggestions/title generation, all
+	// synchronous within handleTurn before "done" fires) — a clean
+	// boundary for isolating what the edit turn alone sends the LLM.
+	mu.Lock()
+	preEditCount := len(requestBodies)
+	mu.Unlock()
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "thread_id": threadID, "content": "edited question",
+		"model": "test-model", "edit_from_id": int64(userMsgID),
+	}); err != nil {
+		t.Fatalf("WriteJSON (edit): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	msgs, err := h.db.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 2 || msgs[0].Content != "edited question" || msgs[0].Role != "user" {
+		t.Fatalf("messages = %+v, want exactly [edited question, an answer]", msgs)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requestBodies) <= preEditCount {
+		t.Fatalf("edit turn made no LLM requests at all: %d total, %d before the edit", len(requestBodies), preEditCount)
+	}
+	for _, body := range requestBodies[preEditCount:] {
+		if strings.Contains(body, "original question") {
+			t.Errorf("an edit-turn LLM request still contained the replaced question: %s", body)
+		}
+	}
 }
 
 func TestWebSocket_UnknownModelFallsBackToDefault(t *testing.T) {

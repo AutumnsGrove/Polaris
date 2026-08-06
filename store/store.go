@@ -358,33 +358,51 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 	return res.LastInsertId()
 }
 
-// DeleteMessagesFrom removes every message in threadID with id >= fromID
-// (the message being edited/retried, plus everything after it — there's
-// no branching history, so anything downstream of an edit is invalidated)
-// and recomputes the thread's running cost from what's left, since a
-// simple subtraction would drift if this is called more than once.
-func (s *Store) DeleteMessagesFrom(threadID string, fromID int64) error {
+// DeleteMessagesFromAndAddMessage atomically replaces everything in
+// threadID from fromID onward with a single new message, in one
+// transaction — the retry/edit path's "wipe what's being replaced, then
+// persist the replacement" used to be two separate transactions
+// (DeleteMessagesFrom then AddMessage). A failure between them (SQLite
+// busy/locked, a crash) could commit the delete but never persist the
+// replacement, permanently losing the deleted messages with nothing to
+// show for it. Returns the new message's ID.
+func (s *Store) DeleteMessagesFromAndAddMessage(threadID string, fromID int64, role, content, citationsJSON, suggestionsJSON string, costUSD float64, turnID string) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(
-		`DELETE FROM messages WHERE thread_id = ? AND id >= ?`,
-		threadID, fromID,
-	); err != nil {
-		return err
+	if _, err := tx.Exec(`DELETE FROM messages WHERE thread_id = ? AND id >= ?`, threadID, fromID); err != nil {
+		return 0, err
 	}
+
+	res, err := tx.Exec(
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		threadID, role, content, citationsJSON, suggestionsJSON, costUSD, turnID,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	// Recomputed from scratch (a SUM over whatever actually remains,
+	// including the row just inserted) rather than "subtract the deleted
+	// rows, then add this message's cost" — a single recompute can't drift
+	// the way two separate arithmetic adjustments could if this is ever
+	// called more than once for the same thread.
 	if _, err := tx.Exec(
 		`UPDATE threads SET cost_usd = (
 			SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE thread_id = ?
 		), updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		threadID, threadID,
 	); err != nil {
-		return err
+		return 0, err
 	}
-	return tx.Commit()
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 // IsFirstMessage reports whether id is the earliest message in threadID —

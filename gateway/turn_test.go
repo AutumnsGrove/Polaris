@@ -105,7 +105,7 @@ func TestLoadHistory_SubstitutesCompactedSummary(t *testing.T) {
 	}
 
 	s := &Server{db: h.db}
-	history, err := s.loadHistory("t1")
+	history, err := s.loadHistory("t1", 0)
 	if err != nil {
 		t.Fatalf("loadHistory returned error: %v", err)
 	}

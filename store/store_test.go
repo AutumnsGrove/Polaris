@@ -206,7 +206,7 @@ func TestSetMessageDuration_RecordsElapsedTime(t *testing.T) {
 	}
 }
 
-func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
+func TestDeleteMessagesFromAndAddMessage_RecomputesCostAndReplaces(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
@@ -226,25 +226,58 @@ func TestDeleteMessagesFrom_RecomputesCost(t *testing.T) {
 		t.Fatalf("AddMessage: %v", err)
 	}
 
-	// Editing/retrying from the first assistant message's slot deletes it
-	// and everything after — cost must drop back to whatever's left.
-	if err := s.DeleteMessagesFrom("t1", a1ID); err != nil {
-		t.Fatalf("DeleteMessagesFrom: %v", err)
+	// Editing/retrying from the first assistant message's slot replaces it
+	// (and everything after) with a single new message in one atomic
+	// operation — cost must drop back to whatever's left, plus the new
+	// message's own cost.
+	newMsgID, err := s.DeleteMessagesFromAndAddMessage("t1", a1ID, "user", "edited q1", "[]", "[]", 0.005, "")
+	if err != nil {
+		t.Fatalf("DeleteMessagesFromAndAddMessage: %v", err)
 	}
 
 	thread, err := s.GetThread("t1")
 	if err != nil {
 		t.Fatalf("GetThread: %v", err)
 	}
-	if thread.CostUSD != 0 {
-		t.Errorf("CostUSD after deleting the only-costed messages = %v, want 0", thread.CostUSD)
+	if thread.CostUSD != 0.005 {
+		t.Errorf("CostUSD = %v, want 0.005 (only the new message's cost)", thread.CostUSD)
 	}
 	msgs, err := s.GetMessages("t1")
 	if err != nil {
 		t.Fatalf("GetMessages: %v", err)
 	}
-	if len(msgs) != 1 {
-		t.Errorf("got %d messages after delete, want 1 (just the first user message)", len(msgs))
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2 (the original first user message + the new replacement)", len(msgs))
+	}
+	if msgs[1].ID != newMsgID || msgs[1].Content != "edited q1" {
+		t.Errorf("msgs[1] = %+v, want the new replacement message with id %d", msgs[1], newMsgID)
+	}
+}
+
+func TestDeleteMessagesFromAndAddMessage_RollsBackOnFailure(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	q1ID, err := s.AddMessage("t1", "user", "q1", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	// A thread_id that doesn't exist violates the messages table's foreign
+	// key, failing the INSERT after the DELETE has already run inside the
+	// same transaction — the whole thing must roll back, not leave q1
+	// deleted with nothing replacing it.
+	if _, err := s.DeleteMessagesFromAndAddMessage("does-not-exist", q1ID, "user", "x", "[]", "[]", 0, ""); err == nil {
+		t.Fatal("expected an error for a nonexistent thread")
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != q1ID {
+		t.Errorf("msgs = %+v, want q1 untouched — the failed call must not have deleted it", msgs)
 	}
 }
 
