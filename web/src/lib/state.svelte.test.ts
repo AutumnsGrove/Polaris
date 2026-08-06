@@ -423,6 +423,46 @@ describe('AppState.newThread', () => {
 		expect(state.contextTokens).toBe(0);
 		expect(state.suggestions).toEqual([]);
 	});
+
+	it('resets the URL back to /', () => {
+		window.history.replaceState({}, '', '/t/some-thread');
+		const state = new AppState();
+
+		state.newThread();
+
+		expect(window.location.pathname).toBe('/');
+	});
+});
+
+// The URL is what makes a thread survive a refresh (see routes/t/[id]) —
+// without this sync, currentThreadId lived only in memory and a reload
+// always landed back on the homescreen with no way to tell which thread
+// had been open.
+describe('AppState URL sync', () => {
+	beforeEach(() => {
+		window.history.replaceState({}, '', '/');
+	});
+
+	it('openThread updates the URL to /t/<id>', async () => {
+		const state = new AppState();
+		vi.stubGlobal('fetch', fakeFetch({ cost_usd: 0, context_tokens: 0, messages: [] }));
+
+		await state.openThread('abc-123');
+
+		expect(window.location.pathname).toBe('/t/abc-123');
+	});
+
+	it('a brand-new thread updates the URL as soon as its id is known, not just once the answer finishes', () => {
+		const state = new AppState();
+		vi.stubGlobal('fetch', fakeFetch([]));
+
+		state.send('a fresh question');
+		expect(window.location.pathname).toBe('/'); // no id yet
+
+		fireEvent(state, { type: 'user_message', thread_id: 'new-thread-id', user_message_id: 1 });
+
+		expect(window.location.pathname).toBe('/t/new-thread-id');
+	});
 });
 
 describe('AppState.stopGeneration', () => {

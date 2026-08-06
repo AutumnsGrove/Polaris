@@ -255,6 +255,7 @@ export class AppState {
 		if (!res.ok) return;
 		const data = await res.json();
 		this.currentThreadId = id;
+		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		const messages = data.messages ?? [];
@@ -321,7 +322,26 @@ export class AppState {
 		this.totalCost = 0;
 		this.contextTokens = 0;
 		this.suggestions = [];
+		this.syncURL(null);
 		this.closeSidebarIfMobile();
+	}
+
+	// Keeps the address bar's /t/<id> in step with currentThreadId, so a
+	// refresh, a backgrounded tab reloading, or just copying the URL lands
+	// back on the same thread instead of the homescreen — previously
+	// nothing about which thread was open lived in the URL at all.
+	//
+	// Deliberately the raw History API, not SvelteKit's goto()/pushState:
+	// goto() performs a real client-side navigation, which would remount
+	// routes/t/[id]/+page.svelte and re-run its openThread effect against
+	// a thread that's already loaded (or, worse, mid-stream) here in
+	// AppState — the one source of truth both routes render from (see
+	// ChatView.svelte). replaceState only touches the address bar.
+	private syncURL(threadId: string | null) {
+		if (typeof window === 'undefined') return;
+		const path = threadId ? `/t/${threadId}` : '/';
+		if (window.location.pathname === path) return;
+		window.history.replaceState(window.history.state, '', path);
 	}
 
 	// Picking a thread (or starting a new one) should dismiss the drawer
@@ -467,8 +487,13 @@ export class AppState {
 		const eventThreadId = 'thread_id' in e ? e.thread_id : undefined;
 
 		// A brand-new thread's ID isn't known until the server assigns one.
+		// Sync the URL the instant it is — not currentThreadId itself,
+		// which "done" below still gates on stillWatching — so a refresh
+		// partway through the very first answer still reopens this thread
+		// instead of losing it entirely (there'd be no ID to recover by).
 		if (this.pendingIsNewThread && this.pendingThreadId === null && eventThreadId) {
 			this.pendingThreadId = eventThreadId;
+			this.syncURL(eventThreadId);
 		}
 
 		// Not for the turn we're tracking — most likely a late event for a
