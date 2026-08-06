@@ -10,6 +10,7 @@
 package gateway
 
 import (
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -179,12 +180,32 @@ func spaHandler(staticFS fs.FS) http.Handler {
 		}
 
 		if _, err := fs.Stat(staticFS, path[1:]); err != nil {
-			r2 := new(http.Request)
-			*r2 = *r
-			r2.URL.Path = "/index.html"
-			fileServer.ServeHTTP(w, r2)
+			serveIndexHTML(w, staticFS)
 			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// serveIndexHTML writes build/index.html's bytes directly rather than
+// routing through http.FileServer with a rewritten path. FileServer treats
+// any request whose URL.Path ends in "/index.html" as needing a canonical
+// redirect that strips the suffix (Location: "./", so /index.html and /
+// never both serve identical content as two separate URLs) — for the
+// original request's path itself, not the rewritten one, so the browser
+// resolves that redirect against wherever it actually navigated (e.g.
+// "/t/<uuid>" → "/t/"). That's still not a real file, so this same
+// fallback branch fires again, and again: an infinite redirect loop the
+// browser eventually gives up on ("too many redirects"). Every client
+// route besides "/" hits this fallback, so it has to avoid FileServer's
+// redirect behavior entirely rather than just work around it once.
+func serveIndexHTML(w http.ResponseWriter, staticFS fs.FS) {
+	f, err := staticFS.Open("index.html")
+	if err != nil {
+		http.Error(w, "index.html not found", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.Copy(w, f)
 }
