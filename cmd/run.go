@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,6 +25,12 @@ var devMode bool
 // logger.rotatingWriter) so the events table's durable evidence trail
 // doesn't grow forever on a long-running install.
 const eventRetentionDays = 90
+
+// attachmentMaxAge is generous on purpose — this only ever catches an
+// upload that was written to disk but never actually sent in a message
+// (see gateway.PruneOldAttachments), so there's no cost to erring toward
+// "definitely abandoned" over risking a slow upload-then-send collision.
+const attachmentMaxAge = 24 * time.Hour
 
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -55,6 +62,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	if err := db.PruneEvents(eventRetentionDays); err != nil {
 		log.Warn("pruning old events failed", "err", err)
+	}
+	if err := gateway.PruneOldAttachments(cfg.Attachments.Dir, attachmentMaxAge); err != nil {
+		log.Warn("pruning old attachments failed", "err", err)
 	}
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 

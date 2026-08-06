@@ -17,10 +17,11 @@ import (
 // httptest.Server, plus the config path so tests can rewrite it and
 // exercise liveConfig()'s hot-reload behavior.
 type testHarness struct {
-	srv        *httptest.Server
-	cfgPath    string
-	db         *store.Store
-	llmBaseURL string
+	srv            *httptest.Server
+	cfgPath        string
+	db             *store.Store
+	llmBaseURL     string
+	attachmentsDir string
 }
 
 // writeTestConfig renders a minimal config.yaml pointing OpenRouter at
@@ -67,7 +68,7 @@ func newTestHarness(t *testing.T, llmBaseURL string) *testHarness {
 	httpSrv := httptest.NewServer(s.Handler())
 	t.Cleanup(httpSrv.Close)
 
-	return &testHarness{srv: httpSrv, cfgPath: cfgPath, db: db, llmBaseURL: llmBaseURL}
+	return &testHarness{srv: httpSrv, cfgPath: cfgPath, db: db, llmBaseURL: llmBaseURL, attachmentsDir: cfg.Attachments.Dir}
 }
 
 func (h *testHarness) url(path string) string {

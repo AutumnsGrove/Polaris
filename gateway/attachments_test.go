@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"polaris/config"
 	"polaris/models"
@@ -231,5 +232,80 @@ func TestHandleUpload_RejectsUnsupportedContentType(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for an unsupported content type", resp.StatusCode)
+	}
+}
+
+// TestHandleTurn_RemovesAttachmentFileAfterUse guards against a
+// found-in-audit bug: uploaded files were never deleted anywhere — not
+// on thread/message deletion, and (the actual root cause) not even right
+// after the one turn that used them, despite nothing ever reading the raw
+// file again afterward. Every attachment ever sent used to stay on disk
+// forever.
+func TestHandleTurn_RemovesAttachmentFileAfterUse(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "here's a summary")
+	h := newTestHarness(t, srv.URL)
+
+	body, contentType := multipartUploadBody(t, "report.pdf", "application/pdf", mustDecodePDF(t))
+	resp, err := http.Post(h.url("/api/upload"), contentType, body)
+	if err != nil {
+		t.Fatalf("POST /api/upload: %v", err)
+	}
+	defer resp.Body.Close()
+	var uploaded UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&uploaded); err != nil {
+		t.Fatalf("decoding upload response: %v", err)
+	}
+
+	attachmentPath := filepath.Join(h.attachmentsDir, uploaded.ID)
+	if _, err := os.Stat(attachmentPath); err != nil {
+		t.Fatalf("uploaded file missing before the turn even ran: %v", err)
+	}
+
+	conn := dialWS(t, h)
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "summarize this", "model": "test-model",
+		"attachment_id": uploaded.ID, "attachment_filename": "report.pdf", "attachment_content_type": "application/pdf",
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	if _, err := os.Stat(attachmentPath); !os.IsNotExist(err) {
+		t.Errorf("attachment file still exists after the turn that used it (stat err = %v), want it removed", err)
+	}
+}
+
+func TestPruneOldAttachments_RemovesOnlyFilesOlderThanMaxAge(t *testing.T) {
+	dir := t.TempDir()
+
+	oldPath := filepath.Join(dir, "old-abandoned-upload")
+	if err := os.WriteFile(oldPath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writing old file: %v", err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(oldPath, old, old); err != nil {
+		t.Fatalf("backdating old file: %v", err)
+	}
+
+	freshPath := filepath.Join(dir, "fresh-upload-about-to-be-sent")
+	if err := os.WriteFile(freshPath, []byte("y"), 0o644); err != nil {
+		t.Fatalf("writing fresh file: %v", err)
+	}
+
+	if err := PruneOldAttachments(dir, 24*time.Hour); err != nil {
+		t.Fatalf("PruneOldAttachments returned error: %v", err)
+	}
+
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("old file still exists (stat err = %v), want it pruned", err)
+	}
+	if _, err := os.Stat(freshPath); err != nil {
+		t.Errorf("fresh file was removed, want it kept: %v", err)
+	}
+}
+
+func TestPruneOldAttachments_MissingDirIsNotAnError(t *testing.T) {
+	if err := PruneOldAttachments(filepath.Join(t.TempDir(), "does-not-exist"), 24*time.Hour); err != nil {
+		t.Errorf("PruneOldAttachments returned error for a missing dir: %v", err)
 	}
 }

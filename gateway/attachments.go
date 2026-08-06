@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -207,4 +208,59 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, msg ClientMessag
 		// a matching case here.
 		return msg.Content, 0, fmt.Errorf("no extraction pipeline for content type %q", msg.AttachmentContentType)
 	}
+}
+
+// removeAttachmentFile deletes an uploaded attachment's file from disk once
+// it's been consumed by resolveAttachment — nothing else ever reads the raw
+// file again afterward. The messages table only ever stores the display
+// filename/content-type (see SetMessageAttachment), never the file's actual
+// disk name, so this is the one and only point where a file can be tied
+// back to cleanup; without it, every attachment ever sent stayed on disk
+// forever. Called regardless of whether resolveAttachment succeeded — a
+// failed extraction still means the file was fully consumed for this turn,
+// not that it'll be retried later.
+func removeAttachmentFile(cfg *config.Config, attachmentID string) {
+	if _, err := uuid.Parse(attachmentID); err != nil {
+		return // never a valid attachment id to begin with — nothing to remove
+	}
+	path := filepath.Join(cfg.Attachments.Dir, attachmentID)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Warn("removing attachment file after use failed", "path", path, "err", err)
+	}
+}
+
+// PruneOldAttachments removes files under dir older than maxAge — a safety
+// net for uploads written to disk by handleUpload but never actually sent
+// in a message (the user picked a file then removed it before hitting
+// send, or closed the tab first). Those have no other cleanup path, since
+// nothing persists a reference to an attachment until it's actually used
+// in a turn (see removeAttachmentFile). maxAge should be generous enough
+// that a slow upload-then-send never risks colliding with this — called
+// once at startup, not on a timer, so "generous" costs nothing.
+func PruneOldAttachments(dir string, maxAge time.Duration) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			log.Warn("stat'ing attachment during prune failed", "name", e.Name(), "err", err)
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+				log.Warn("pruning old attachment failed", "name", e.Name(), "err", err)
+			}
+		}
+	}
+	return nil
 }

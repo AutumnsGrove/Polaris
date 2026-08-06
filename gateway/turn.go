@@ -157,6 +157,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		turnMessage = msg.Content
 		attachmentCostUSD = 0
 	}
+	// The file's only ever read once, right above — nothing re-reads it
+	// later (see removeAttachmentFile's doc comment), so it can be removed
+	// immediately regardless of whether extraction succeeded.
+	if msg.AttachmentID != "" {
+		removeAttachmentFile(cfg, msg.AttachmentID)
+	}
 
 	s.db.LogEvent(threadID, "info", "turn", "turn started", map[string]interface{}{
 		"model":         modelCfg.ID,
