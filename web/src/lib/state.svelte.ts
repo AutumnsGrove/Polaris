@@ -134,6 +134,52 @@ export class AppState {
 	private pendingThreadId: string | null = null;
 	private pendingIsNewThread = false;
 
+	// Set when the user navigates away (openThread to a different thread,
+	// or newThread()) while a turn is still in flight for pendingThreadId.
+	// Only one turn can ever be in flight at a time from this client (busy
+	// gates every send/retry/edit globally — see send() below), but which
+	// thread that turn belongs to and which thread is on screen can
+	// diverge the moment the user switches threads mid-stream. Without
+	// this flag, the 'done' handler's stillWatching check couldn't tell
+	// "still on the brand-new thread this turn is creating" (currentThreadId
+	// still null because nothing rebound it) apart from "explicitly
+	// backed out via newThread() while a DIFFERENT pending turn was still
+	// running" (currentThreadId also null) — both looked identical, so the
+	// abandoned turn's answer silently became "current" again once it
+	// finished. Reset to false at the start of every new dispatch().
+	private pendingAbandoned = false;
+
+	// True only when the in-flight turn (if any) belongs to the thread
+	// currently on screen — unlike `busy`, which is true whenever ANY turn
+	// is in flight anywhere. `busy` is still what gates starting a second
+	// turn (send/retry/editMessage below) since only one can run at a time
+	// per connection regardless of which thread it's for; this getter is
+	// purely about what the composer's Stop button is allowed to target,
+	// so switching threads mid-stream doesn't leave a visible "Stop"
+	// control that would actually cancel a different, unrelated thread.
+	get busyOnCurrentThread(): boolean {
+		if (!this.busy || this.pendingAbandoned) return false;
+		// Mirrors handleEvent's stillWatching exactly (this getter is really
+		// "would stillWatching be true if 'done' fired right now") —
+		// currentThreadId === null covers watching a brand-new thread's own
+		// creation, where pendingThreadId has already been learned (from
+		// 'user_message') but currentThreadId is deliberately left unset
+		// until 'done' actually adopts it. Comparing pendingThreadId to
+		// currentThreadId directly here would wrongly read as "not busy on
+		// this thread" for that whole window despite the user watching it
+		// stream in real time.
+		return this.currentThreadId === null || this.currentThreadId === this.pendingThreadId;
+	}
+
+	// Bumped at the start of every openThread() call; a call whose fetch
+	// resolves after a newer one has already started discards its own
+	// result instead of overwriting it — otherwise two rapid thread
+	// switches (fast sidebar clicks, browser back/forward between two
+	// /t/<id> URLs) could resolve out of order and leave the view/URL
+	// pointed at whichever happened to respond second, not whichever was
+	// clicked last.
+	private openThreadSeq = 0;
+
 	private socket: AgentSocket;
 
 	constructor() {
@@ -151,6 +197,22 @@ export class AppState {
 	// database rather than wait for a stream that's never coming.
 	private async resyncAfterReconnect() {
 		if (!this.busy) return;
+
+		if (this.pendingAbandoned) {
+			// The in-flight turn belongs to a thread the user has since
+			// navigated away from. The server is still finishing it
+			// independently regardless (see this class's other comments on
+			// that) — but there's nothing to recover for whatever's actually
+			// on screen right now, so just drop tracking instead of
+			// re-fetching and yanking the view toward a thread nobody's
+			// looking at.
+			this.busy = false;
+			this.pendingTurn = null;
+			this.pendingUserTurn = null;
+			this.pendingThreadId = null;
+			this.pendingAbandoned = false;
+			return;
+		}
 
 		const threadId = this.pendingThreadId ?? this.currentThreadId;
 		if (!threadId) {
@@ -248,10 +310,23 @@ export class AppState {
 	}
 
 	async openThread(id: string) {
+		const seq = ++this.openThreadSeq;
+
+		// A turn is in flight for a thread other than the one we're about
+		// to show — mark it abandoned so its eventual 'done' can't silently
+		// resurrect it as current (see pendingAbandoned's doc comment).
+		// Returning to the pending thread itself (or nothing being in
+		// flight at all) un-abandons it, so navigating back before it
+		// finishes still updates live, as expected.
+		if (this.busy) {
+			this.pendingAbandoned = id !== this.pendingThreadId;
+		}
+
 		const [res, eventsRes] = await Promise.all([
 			fetch(`/api/threads/${id}`),
 			fetch(`/api/threads/${id}/events`)
 		]);
+		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
 		if (!res.ok) return;
 		const data = await res.json();
 		this.currentThreadId = id;
@@ -317,6 +392,14 @@ export class AppState {
 	}
 
 	newThread() {
+		// Same reasoning as openThread's abandonment check: navigating to
+		// "no thread selected" can never match whatever the in-flight
+		// turn's thread actually is (even a still-forming brand-new thread
+		// whose id isn't known yet, i.e. pendingThreadId is itself still
+		// null — restarting the new-thread flow explicitly abandons that
+		// one too, not just an existing thread's turn).
+		if (this.busy) this.pendingAbandoned = true;
+
 		this.currentThreadId = null;
 		this.turns = [];
 		this.totalCost = 0;
@@ -377,8 +460,14 @@ export class AppState {
 	// mid-flight and still sends a normal 'done' with whatever streamed so
 	// far — no separate "stopped" event type needed, the existing done
 	// handler already finalizes the turn correctly.
+	//
+	// Gated on busyOnCurrentThread, not just busy: the only UI that calls
+	// this is the composer's Stop button, which is only ever shown when
+	// busyOnCurrentThread is true — but guarding here too means even a
+	// stray/future call site can't send a stop that targets whatever
+	// thread happens to be pending elsewhere instead of what's on screen.
 	stopGeneration() {
-		if (!this.busy) return;
+		if (!this.busyOnCurrentThread) return;
 		this.socket.send({ type: 'stop' });
 	}
 
@@ -452,6 +541,7 @@ export class AppState {
 		this.pendingTurn = this.turns[this.turns.length - 1];
 		this.pendingThreadId = this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
+		this.pendingAbandoned = false;
 
 		this.socket.send({
 			type: 'message',
@@ -598,7 +688,14 @@ export class AppState {
 				// Only adopt the thread id / bump the visible total if the
 				// user is still looking at this thread (or it just became
 				// one) — not if they've since navigated elsewhere.
-				const stillWatching = this.currentThreadId === null || this.currentThreadId === this.pendingThreadId;
+				// pendingAbandoned is what actually distinguishes those two
+				// cases now: currentThreadId === null is true for BOTH
+				// "still on the brand-new thread this turn is creating" and
+				// "explicitly backed out via newThread() while this turn
+				// kept running" — see pendingAbandoned's doc comment.
+				const stillWatching =
+					!this.pendingAbandoned &&
+					(this.currentThreadId === null || this.currentThreadId === this.pendingThreadId);
 				if (stillWatching) {
 					this.currentThreadId = e.thread_id;
 					// ?? 0 guards against a missing cost_usd (e.g. an older

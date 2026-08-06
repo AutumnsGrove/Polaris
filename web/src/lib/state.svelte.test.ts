@@ -477,4 +477,122 @@ describe('AppState.stopGeneration', () => {
 		state.stopGeneration();
 		expect(sendSpy).toHaveBeenCalledWith({ type: 'stop' });
 	});
+
+	it('does not send a stop once the pending turn has been abandoned by navigating elsewhere', async () => {
+		const state = new AppState();
+		vi.stubGlobal('fetch', fakeFetch({ cost_usd: 0, context_tokens: 0, messages: [] }));
+		const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+		state.send('question');
+		fireEvent(state, { type: 'user_message', thread_id: 'A', user_message_id: 1 });
+		await state.openThread('B'); // navigate away while A is still generating
+
+		state.stopGeneration();
+
+		// Only the original 'message' send should be recorded — no 'stop'.
+		expect(sendSpy).not.toHaveBeenCalledWith({ type: 'stop' });
+	});
+});
+
+// These cover the three related symptoms of one root cause: busy/
+// pendingThreadId/pendingTurn track a single in-flight turn globally, with
+// no notion of "but has the user since navigated away from it?" — found in
+// a latent-bug audit, see pendingAbandoned's doc comment in state.svelte.ts
+// for the full mechanism.
+describe('AppState in-flight thread tracking across navigation', () => {
+	let state: AppState;
+
+	beforeEach(() => {
+		state = new AppState();
+		vi.stubGlobal('fetch', fakeFetch({ cost_usd: 0, context_tokens: 0, messages: [] }));
+	});
+
+	it('busyOnCurrentThread is true while watching a brand-new thread create itself', () => {
+		expect(state.busyOnCurrentThread).toBe(false);
+		state.send('question');
+		expect(state.busyOnCurrentThread).toBe(true); // currentThreadId still null, nothing navigated away
+
+		fireEvent(state, { type: 'user_message', thread_id: 'A', user_message_id: 1 });
+		expect(state.busyOnCurrentThread).toBe(true); // pendingThreadId known now, still watching it
+	});
+
+	it('newThread() while busy abandons the pending turn, so its later done event does not resurrect it as current', () => {
+		state.send('question');
+		fireEvent(state, { type: 'user_message', thread_id: 'A', user_message_id: 1 });
+
+		state.newThread();
+		expect(state.currentThreadId).toBeNull();
+		expect(state.busyOnCurrentThread).toBe(false);
+
+		fireEvent(state, { type: 'done', thread_id: 'A', cost_usd: 0.02, citations: [] });
+
+		expect(state.currentThreadId).toBeNull(); // not silently reset to 'A'
+		expect(state.totalCost).toBe(0); // A's cost never applied to this (unrelated) view
+	});
+
+	it('opening a different existing thread while busy abandons the pending turn the same way', async () => {
+		state.send('question');
+		fireEvent(state, { type: 'user_message', thread_id: 'A', user_message_id: 1 });
+
+		await state.openThread('B');
+		expect(state.busyOnCurrentThread).toBe(false);
+
+		fireEvent(state, { type: 'done', thread_id: 'A', cost_usd: 0.02, citations: [] });
+
+		expect(state.currentThreadId).toBe('B'); // not reverted to A
+	});
+
+	it('navigating back to the pending thread before it finishes un-abandons it', async () => {
+		state.send('question');
+		fireEvent(state, { type: 'user_message', thread_id: 'A', user_message_id: 1 });
+
+		await state.openThread('B'); // abandon
+		await state.openThread('A'); // come back before it's done
+		expect(state.busyOnCurrentThread).toBe(true);
+
+		fireEvent(state, { type: 'done', thread_id: 'A', cost_usd: 0.02, citations: [] });
+
+		expect(state.currentThreadId).toBe('A');
+		expect(state.totalCost).toBe(0.02);
+	});
+
+	it('a stale openThread() response cannot overwrite a newer one that resolved first', async () => {
+		let resolveFirst!: (v: unknown) => void;
+		let callCount = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (url.endsWith('/events')) return Promise.resolve({ ok: true, json: async () => [] });
+				callCount++;
+				if (callCount === 1) {
+					// First call (thread "slow") hangs until resolveFirst() is called below.
+					return new Promise((resolve) => {
+						resolveFirst = () =>
+							resolve({
+								ok: true,
+								json: async () => ({ cost_usd: 1, context_tokens: 0, messages: [] })
+							});
+					});
+				}
+				// Second call (thread "fast") resolves immediately.
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({ cost_usd: 2, context_tokens: 0, messages: [] })
+				});
+			})
+		);
+
+		const slowCall = state.openThread('slow');
+		const fastCall = state.openThread('fast');
+		await fastCall;
+		expect(state.currentThreadId).toBe('fast');
+
+		resolveFirst(undefined);
+		await slowCall;
+
+		// The slow call's stale result must not clobber "fast", which the
+		// user actually clicked last and is now looking at.
+		expect(state.currentThreadId).toBe('fast');
+		expect(state.totalCost).toBe(2);
+	});
 });

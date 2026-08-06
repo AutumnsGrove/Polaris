@@ -147,6 +147,13 @@
 			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
 			: 0
 	);
+
+	// A turn is streaming, but for some other thread — the composer here
+	// still can't send (only one turn runs at a time per connection,
+	// regardless of thread), but showing a "Stop" control that would
+	// actually cancel a different, unrelated thread would be actively
+	// wrong, not just unhelpful. See appState.busyOnCurrentThread.
+	let busyElsewhere = $derived(appState.busy && !appState.busyOnCurrentThread);
 </script>
 
 {#snippet composerForm()}
@@ -198,16 +205,22 @@
 			<div class="toolbar-spacer"></div>
 			<VoiceButton />
 			<button
-				type={appState.busy ? 'button' : 'submit'}
+				type={appState.busyOnCurrentThread ? 'button' : 'submit'}
 				class="send-btn"
-				class:stop={appState.busy}
-				disabled={uploading || (!appState.busy && !input.trim())}
-				title={appState.busy ? 'Stop generating' : uploading ? 'Uploading…' : 'Send'}
+				class:stop={appState.busyOnCurrentThread}
+				disabled={uploading || busyElsewhere || (!appState.busyOnCurrentThread && !input.trim())}
+				title={appState.busyOnCurrentThread
+					? 'Stop generating'
+					: busyElsewhere
+						? 'A response is still generating in another thread'
+						: uploading
+							? 'Uploading…'
+							: 'Send'}
 				onclick={() => {
-					if (appState.busy) appState.stopGeneration();
+					if (appState.busyOnCurrentThread) appState.stopGeneration();
 				}}
 			>
-				{#if appState.busy}
+				{#if appState.busyOnCurrentThread}
 					<Square size={14} fill="currentColor" />
 				{:else if uploading}
 					<Loader2 size={14} class="spin" />
@@ -270,7 +283,7 @@
 			{#each appState.turns as turn, i (i)}
 				<ChatTurnView {turn} index={i} />
 			{/each}
-			{#if !appState.busy && appState.suggestions.length > 0}
+			{#if !appState.busyOnCurrentThread && appState.suggestions.length > 0}
 				<div class="suggestions">
 					{#each appState.suggestions as suggestion}
 						<button class="suggestion-chip" onclick={() => appState.send(suggestion)}>
@@ -288,7 +301,7 @@
 				title="Scroll to latest"
 			>
 				<ArrowDown size={16} />
-				{#if appState.busy}<span class="jump-to-bottom-dot" aria-hidden="true"></span>{/if}
+				{#if appState.busyOnCurrentThread}<span class="jump-to-bottom-dot" aria-hidden="true"></span>{/if}
 			</button>
 		{/if}
 	</div>
