@@ -134,12 +134,12 @@
 	}
 
 	.thread-item {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		border-radius: var(--radius-sm);
-		padding: 8px 10px;
-		margin-bottom: 2px;
+		padding: 10px 10px;
 		cursor: pointer;
 		transition:
 			background-color 0.15s var(--ease-out-expo),
@@ -148,6 +148,23 @@
 
 	.thread-item:hover {
 		background: var(--color-surface-2);
+	}
+
+	/* Inset separator, not a boxed card — same idea as iOS/macOS list rows:
+	   a hairline between items, indented past the leading dot rather than
+	   spanning the full row, so it reads as "these are members of one
+	   list" instead of "these are N separate bordered elements". Skipped
+	   on the last row (nothing below it to separate from) and specifically
+	   an ::after rather than border-bottom so it can be inset independent
+	   of the row's own padding. */
+	.thread-item:not(:last-child)::after {
+		content: '';
+		position: absolute;
+		left: 24px;
+		right: 10px;
+		bottom: 0;
+		height: 1px;
+		background: color-mix(in srgb, var(--color-border) 55%, transparent);
 	}
 
 	/* Small leading dot that only lights up for the current thread.
