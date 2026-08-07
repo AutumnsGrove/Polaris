@@ -18,6 +18,14 @@ import type { Citation } from './types';
  * `<a>` tags is exactly what a DOM parser is for — html is already
  * DOMPurify-sanitized by the caller before this runs, so re-parsing it
  * here doesn't reintroduce any risk.
+ *
+ * Skips links inside table cells: the chip pattern assumes the link is a
+ * citation marker riding along inline prose, where swapping its text for a
+ * source name loses nothing since the claim it supports is right there in
+ * the same sentence. In a table cell the link text is often the entire
+ * content of that cell (an item name, a project title) — replacing it with
+ * a generic source name like "Github" destroys the one piece of data the
+ * row exists to show, with no surrounding sentence to recover it from.
  */
 export function renderInlineCitations(html: string, citations: Citation[]): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
@@ -27,6 +35,8 @@ export function renderInlineCitations(html: string, citations: Citation[]): stri
 	container.innerHTML = html;
 
 	for (const anchor of container.querySelectorAll('a[href]')) {
+		if (anchor.closest('td, th')) continue;
+
 		const href = anchor.getAttribute('href') ?? '';
 		const citation = urlToCitation.get(href);
 		if (!citation) continue;
