@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"polaris/store"
 )
 
 // dialWS connects to the harness's /ws endpoint over a real TCP
@@ -302,6 +304,142 @@ func TestWebSocket_RejectsConcurrentTurnOnSameConnection(t *testing.T) {
 
 	close(release) // let the first turn finish
 	readEventsUntilDone(t, conn, 5*time.Second)
+}
+
+// TestWebSocket_DisconnectDoesNotTruncateInFlightTurn guards against a
+// real bug: handleWS used to cancel the in-flight turn's context the
+// instant ReadJSON errored, which happens for ANY dropped connection, not
+// just a deliberate close — a backgrounded mobile tab or a brief network
+// blip closes the socket the exact same way. That silently truncated the
+// answer mid-stream while still persisting a "done" turn, so the user
+// came back to what looked like a finished response that had actually
+// been cut off. The fake LLM server here pauses mid-answer so the test
+// can close the client connection before the second chunk arrives, then
+// releases it — the turn must still run to completion and persist the
+// full, untruncated answer.
+func TestWebSocket_DisconnectDoesNotTruncateInFlightTurn(t *testing.T) {
+	// started fires once the fake LLM server is actually mid-request —
+	// the sync point for "the turn is definitely in flight", since a
+	// short first chunk like "Hello, " isn't guaranteed to surface as its
+	// own "token" event on the wire (streamSniffer buffers a few chunks
+	// before deciding whether they're the start of a pseudo tool call —
+	// see agent/pseudocall.go's streamSniffer.onChunk — so waiting for a
+	// client-visible token here would be flaky/deadlock-prone).
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only the turn's own answer call needs to pause — the
+		// follow-up suggestions/title-generation calls handleTurn fires
+		// afterward should just get a normal immediate response.
+		isFirst := false
+		once.Do(func() { isFirst = true; close(started) })
+		if isFirst {
+			<-release // give the test time to close the client connection
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+
+		if isFirst {
+			chunk1, _ := json.Marshal(map[string]interface{}{
+				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "Hello, "}}},
+			})
+			fmt.Fprintf(w, "data: %s\n", chunk1)
+			flusher.Flush()
+			chunk2, _ := json.Marshal(map[string]interface{}{
+				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "world!"}}},
+			})
+			fmt.Fprintf(w, "data: %s\n", chunk2)
+			flusher.Flush()
+		} else {
+			chunk, _ := json.Marshal(map[string]interface{}{
+				"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "n/a"}}},
+			})
+			fmt.Fprintf(w, "data: %s\n", chunk)
+			flusher.Flush()
+		}
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		flusher.Flush()
+		fmt.Fprint(w, "data: [DONE]\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "hi", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+
+	// Read until the user_message event arrives (learning the thread id),
+	// then wait for the LLM call to actually be in flight, then close the
+	// connection out from under it — simulating the tab being
+	// backgrounded/suspended mid-answer.
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var threadID string
+	for threadID == "" {
+		var evt map[string]interface{}
+		if err := conn.ReadJSON(&evt); err != nil {
+			t.Fatalf("reading events before disconnect: %v", err)
+		}
+		if evt["type"] == "user_message" {
+			threadID, _ = evt["thread_id"].(string)
+		}
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake LLM server never received the request")
+	}
+	conn.Close()
+
+	close(release) // let the fake LLM server finish streaming the rest
+
+	// Poll the DB rather than the (now-closed) socket — the whole point is
+	// that the turn finishes with nobody listening.
+	deadline := time.Now().Add(5 * time.Second)
+	var msgs []store.Message
+	for time.Now().Before(deadline) {
+		var err error
+		msgs, err = h.db.GetMessages(threadID)
+		if err != nil {
+			t.Fatalf("GetMessages: %v", err)
+		}
+		if len(msgs) == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("messages = %+v, want the user question + the assistant answer persisted after disconnect", msgs)
+	}
+	if msgs[1].Content != "Hello, world!" {
+		t.Errorf("assistant answer = %q, want the full untruncated \"Hello, world!\" — a dropped connection must not cut the turn short", msgs[1].Content)
+	}
+
+	dbEvents, err := h.db.ListEvents(threadID, 0)
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	found := false
+	for _, e := range dbEvents {
+		if e.Message == "turn completed" {
+			found = true
+			var data map[string]interface{}
+			if err := json.Unmarshal([]byte(e.Data), &data); err != nil {
+				t.Fatalf("unmarshaling turn completed event data: %v", err)
+			}
+			if stopped, _ := data["stopped"].(bool); stopped {
+				t.Errorf("turn completed event data = %+v, want stopped=false — nobody hit Stop, the connection just dropped", data)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("dbEvents = %+v, want a \"turn completed\" event", dbEvents)
+	}
 }
 
 // TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory

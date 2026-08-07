@@ -108,11 +108,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				log.Warn("websocket read failed", "err", err)
 				s.db.LogEvent("", "warn", "ws", "websocket read failed", map[string]interface{}{"err": err.Error()}, "")
 			}
-			cancelMu.Lock()
-			if current != nil {
-				current.cancel()
-			}
-			cancelMu.Unlock()
+			// Deliberately NOT cancelling `current` here. A dropped
+			// connection is not the same as the user hitting Stop — a
+			// backgrounded mobile tab or a brief network blip closes the
+			// socket the same way a deliberate close does, and used to
+			// silently truncate the in-flight turn mid-tool-call, still
+			// persisting a "done" answer with whatever partial content had
+			// streamed so far. handleTurn's turnCtx is already derived from
+			// context.Background(), not this connection's lifetime, so it's
+			// safe to just let the goroutine keep running unattended — it
+			// persists straight to the DB (see handleTurn/logTurnEvent) and
+			// a later reconnect resyncs from there (see AppState's
+			// resyncAfterReconnect). Only an explicit "stop" message, below,
+			// should ever call current.cancel().
 			return // client disconnected or sent garbage
 		}
 
