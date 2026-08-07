@@ -53,9 +53,18 @@
 	--color-danger: oklch(65% 0.19 25);
 	--color-danger-bg: oklch(28% 0.05 25);
 
+	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
 	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
 	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
 	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+	/* Recessed "carved into the surface" treatment — swaps in for flat
+	   hairline borders on inputs/readouts/code blocks so they read as a
+	   dent in the surface rather than a box drawn on top of it. */
+	--shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+	/* A hairline of light along the top inner edge, like light catching the
+	   rim of a glass panel — replaces flat borders on floating/elevated
+	   surfaces (modals, toasts) so the edge reads as refraction, not ink. */
+	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 
 	--radius-sm: 6px;
 	--radius-md: 10px;
@@ -74,6 +83,11 @@
 	--font-wordmark: 'Asimovian', var(--font-serif);
 
 	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	/* A slight overshoot-and-settle rather than a hard stop — reserved for
+	   things entering the screen (modals, staggered list/message mounts),
+	   never for routine hover/press feedback, so it reads as "arriving"
+	   rather than making the whole UI feel bouncy. */
+	--ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Applied via document.documentElement.setAttribute('data-theme', ...) in
@@ -100,9 +114,12 @@
 	--color-danger: oklch(52% 0.19 25);
 	--color-danger-bg: oklch(93% 0.04 25);
 
+	--shadow-xs: 0 1px 2px rgba(60, 48, 32, 0.1), 0 1px 1px rgba(60, 48, 32, 0.06);
 	--shadow-sm: 0 1px 2px rgba(60, 48, 32, 0.08);
 	--shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
 	--shadow-lg: 0 24px 60px -16px rgba(50, 40, 28, 0.22), 0 8px 24px -8px rgba(50, 40, 28, 0.14);
+	--shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 * {
@@ -135,6 +152,29 @@ body {
 body {
 	position: fixed;
 	width: 100%;
+}
+
+/* Fixed, viewport-covering grain — the classic fix for a flat oklch fill
+   reading as a digital gradient rather than a physical surface. Fractal
+   noise baked into a tiny inline SVG (no image request, no runtime cost),
+   tiled by the browser. mix-blend-mode: overlay means it darkens light
+   pixels and lightens dark ones instead of just washing a gray haze over
+   everything, so it stays visible on both themes without needing two
+   separate assets. z-index sits above ordinary content but well below
+   modals (100) and toasts (200) — texture on the page, never on the UI. */
+body::after {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+	opacity: 0.05;
+	mix-blend-mode: overlay;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-theme='light'] body::after {
+	opacity: 0.035;
 }
 
 * {
@@ -182,27 +222,29 @@ a {
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	border: 1px solid var(--color-border);
+	border: none;
 	background: var(--color-surface-2);
 	border-radius: var(--radius-md);
 	padding: 8px 14px;
 	font-size: 13px;
 	font-weight: 500;
 	color: var(--color-text);
+	box-shadow: var(--shadow-xs);
 	transition:
-		border-color 0.18s var(--ease-out-expo),
 		background-color 0.18s var(--ease-out-expo),
 		transform 0.18s var(--ease-out-expo),
 		box-shadow 0.18s var(--ease-out-expo);
 }
 
 .btn:hover {
-	border-color: var(--color-border-strong);
 	background: var(--color-surface-3);
+	transform: translateY(-1px);
+	box-shadow: var(--shadow-sm);
 }
 
 .btn:active:not(:disabled) {
 	transform: translateY(0);
+	box-shadow: var(--shadow-xs);
 }
 
 .btn:disabled {
@@ -279,19 +321,20 @@ a {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	border: 1px solid var(--color-border);
+	border: none;
 	background: var(--color-surface-2);
 	border-radius: 999px;
 	padding: 3px 10px;
 	font-size: 11px;
 	color: var(--color-accent-2-strong);
 	text-decoration: none;
-	transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+	box-shadow: var(--shadow-xs);
+	transition: background-color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
 }
 
 .badge:hover {
-	border-color: var(--color-accent-2);
 	background: var(--color-surface-3);
+	box-shadow: var(--shadow-sm);
 }
 
 /* Shared centered-modal treatment for SettingsPanel and ComposerMenu —
@@ -320,8 +363,8 @@ a {
 	border: none;
 	padding: 0;
 	background: rgba(0, 0, 0, 0.62);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
 	cursor: default;
 	/* Was appearing instantly under the panel's own entrance animation —
 	   a scrim that just snaps to full opacity while the sheet is still
@@ -342,32 +385,34 @@ a {
 	max-width: 440px;
 	max-height: 85vh;
 	overflow-y: auto;
-	/* Slightly lifted surface color so the modal reads as elevated above
-	   the sidebar/main. */
-	background: var(--color-surface-2);
-	border: 1px solid var(--color-border-strong);
-	border-radius: var(--radius-lg);
-	/* Substantially deeper shadow than any inline element — these are the
-	   only floating panels in the app, so they can afford to feel heavy
-	   on entry. */
+	/* True glass, not a flat card: a step up to the deepest surface tone
+	   (rather than a border) does the elevating, an inset highlight along
+	   the top edge stands in for a border to suggest light catching the
+	   rim of the panel, and the shadow stack carries real weight since
+	   this is one of only two floating surfaces in the whole app. */
+	background: var(--color-surface-3);
+	border: none;
+	border-radius: var(--radius-xl);
 	box-shadow:
 		0 32px 80px -20px rgba(0, 0, 0, 0.6),
 		0 12px 32px -12px rgba(0, 0, 0, 0.45),
-		0 0 0 1px rgba(0, 0, 0, 0.2);
-	padding: 24px 24px 20px;
+		0 0 0 1px rgba(0, 0, 0, 0.2),
+		var(--shadow-glass-edge);
+	padding: 28px 28px 24px;
 }
 
 :root[data-theme='light'] .modal-panel {
 	box-shadow:
 		0 32px 80px -20px rgba(50, 40, 28, 0.28),
-		0 12px 32px -12px rgba(50, 40, 28, 0.18);
+		0 12px 32px -12px rgba(50, 40, 28, 0.18),
+		var(--shadow-glass-edge);
 }
 
 .modal-panel-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	margin-bottom: 18px;
+	margin-bottom: 20px;
 }
 
 .modal-panel-header h2 {
@@ -387,7 +432,7 @@ a {
 	.modal-panel {
 		max-width: 100%;
 		max-height: 82vh;
-		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 		/* Extra top padding clears the grab handle below. */
 		padding: 26px 18px max(16px, env(safe-area-inset-bottom));
 		/* A 16px nudge with a fade read as a modal that forgot it was
@@ -435,6 +480,23 @@ a {
 @media (min-width: 769px) {
 	.sheet-handle {
 		display: none;
+	}
+
+	/* Desktop's equivalent of the mobile sheet-up entrance — previously
+	   only the backdrop faded in and the panel itself just appeared,
+	   which is exactly the "static, only alive while tokens stream"
+	   problem: nothing about opening Settings or the composer's "+" menu
+	   felt like it happened. A light scale+rise settle with a spring
+	   overshoot reads as the panel actually arriving. */
+	.modal-panel {
+		animation: modal-panel-in 0.32s var(--ease-spring);
+	}
+}
+
+@keyframes modal-panel-in {
+	from {
+		opacity: 0;
+		transform: scale(0.95) translateY(10px);
 	}
 }
 

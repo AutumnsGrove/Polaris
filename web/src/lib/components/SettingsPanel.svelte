@@ -178,16 +178,16 @@
 	   mobile bottom-sheet behavior) for the whole app instead of two
 	   copies to keep in sync by hand. */
 
+	/* Whitespace does the separating instead of a rule line — a wider gap
+	   between sections reads as more considered than a hairline, and pairs
+	   with the modal's own step up to a deeper, glass-like surface. */
 	section {
-		margin-bottom: 18px;
-		padding-bottom: 18px;
-		border-bottom: 1px solid var(--color-border);
+		margin-bottom: 26px;
+		padding-bottom: 0;
 	}
 
 	section:last-child {
-		border-bottom: none;
 		margin-bottom: 0;
-		padding-bottom: 0;
 	}
 
 	/* Small-caps section labels: heavier weight + wider tracking so the
@@ -218,11 +218,20 @@
 		margin: 6px 0 0 0;
 	}
 
+	/* Real segmented-control construction, not a bordered box of buttons:
+	   a recessed track (the well shadow reused from inputs/readouts) with
+	   a floating pill for whichever option is active — this is how
+	   Apple's own UISegmentedControl is actually built, track + thumb,
+	   not "button, button, divider, button". The thumb's radius is a
+	   couple px tighter than the track's so it visibly nests inside it
+	   rather than sharing one uniform radius throughout. */
 	.theme-toggle {
 		display: flex;
-		border: 1px solid var(--color-border);
+		gap: 2px;
+		background: var(--color-bg);
 		border-radius: var(--radius-md);
-		overflow: hidden;
+		box-shadow: var(--shadow-well);
+		padding: 3px;
 	}
 
 	.theme-toggle button {
@@ -231,10 +240,11 @@
 		gap: 6px;
 		border: none;
 		background: transparent;
+		border-radius: calc(var(--radius-md) - 3px);
 		padding: 6px 12px;
 		font-size: 13px;
 		color: var(--color-text-dim);
-		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	.theme-toggle button:hover {
@@ -242,25 +252,28 @@
 	}
 
 	.theme-toggle button.active {
-		background: var(--color-accent-soft);
+		background: var(--color-surface-3);
 		color: var(--color-text);
 		font-weight: 600;
+		box-shadow: var(--shadow-xs);
 	}
 
 	select {
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-well);
 		padding: 6px 10px;
 		font-size: 13px;
 	}
 
 	.location-row input {
 		flex: 1;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
-		padding: 6px 10px;
+		box-shadow: var(--shadow-well);
+		padding: 7px 10px;
 		font-size: 13px;
 		color: var(--color-text);
 	}
@@ -326,7 +339,8 @@
 		background: var(--color-bg);
 		padding: 4px 8px;
 		border-radius: var(--radius-sm);
-		border: 1px solid var(--color-border);
+		border: none;
+		box-shadow: var(--shadow-well);
 	}
 
 	.update-btn {
@@ -337,7 +351,8 @@
 		margin-top: 12px;
 		padding: 10px 12px;
 		background: var(--color-bg);
-		border: 1px solid var(--color-border);
+		border: none;
+		box-shadow: var(--shadow-well);
 		border-radius: var(--radius-sm);
 		font-size: 11px;
 		line-height: 1.5;

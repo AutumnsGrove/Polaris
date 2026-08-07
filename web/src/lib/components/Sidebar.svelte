@@ -2,6 +2,8 @@
 	import { appState } from '$lib/state.svelte';
 	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
@@ -69,7 +71,7 @@
 		{#if appState.threads.length === 0}
 			<p class="thread-empty">No threads yet. Ask something to start.</p>
 		{/if}
-		{#each appState.threads as thread (thread.id)}
+		{#each appState.threads as thread, i (thread.id)}
 			{#if renamingId === thread.id}
 				<div class="thread-item renaming">
 					<span class="thread-dot" aria-hidden="true"></span>
@@ -91,6 +93,7 @@
 					onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
 					role="button"
 					tabindex="0"
+					in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 				>
 					<span class="thread-dot" aria-hidden="true"></span>
 					<div class="thread-meta">
@@ -129,8 +132,13 @@
 		width: 260px;
 		flex-shrink: 0;
 		flex-direction: column;
-		border-right: 1px solid var(--color-border);
 		background: var(--color-surface);
+		/* A directional shadow reading as "this panel sits above the main
+		   content" instead of a hairline drawn between two flat fills —
+		   same light-source logic as the header/composer shadows in
+		   ChatView.svelte, just cast rightward since the sidebar is the
+		   elevated element here. */
+		box-shadow: 6px 0 24px -16px rgba(0, 0, 0, 0.45);
 		overflow: hidden;
 		transition: width 0.2s ease;
 	}
@@ -139,7 +147,7 @@
 	   expands to fill — no overlay needed since there's room to spare. */
 	.sidebar:not(.open) {
 		width: 0;
-		border-right: none;
+		box-shadow: none;
 	}
 
 	.brand {
@@ -153,7 +161,6 @@
 		   in standalone PWA mode. max() collapses to the plain 16px
 		   everywhere else, where env() is 0. */
 		padding: max(16px, env(safe-area-inset-top)) 16px 16px;
-		border-bottom: 1px solid var(--color-border);
 		white-space: nowrap;
 	}
 
@@ -311,7 +318,11 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		border-top: 1px solid var(--color-border);
+		/* Recessed strip rather than a border line — the whole footer reads
+		   as a shallow well the connection dot and settings button sit in,
+		   consistent with the "carved, not drawn" treatment used on inputs
+		   and readouts elsewhere (see --shadow-well in app.css). */
+		box-shadow: var(--shadow-well);
 		padding: 12px;
 		font-size: 12px;
 		color: var(--color-text-dim);

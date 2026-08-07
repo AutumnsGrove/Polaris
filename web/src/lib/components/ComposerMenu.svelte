@@ -202,22 +202,23 @@
 		gap: 6px;
 		min-width: 0;
 		max-width: 100%;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: 999px;
 		padding: 8px 12px 8px 10px;
 		height: 38px;
 		color: var(--color-text-dim);
+		box-shadow: var(--shadow-xs);
 		transition:
-			border-color 0.15s var(--ease-out-expo),
 			background-color 0.15s var(--ease-out-expo),
-			color 0.15s var(--ease-out-expo);
+			color 0.15s var(--ease-out-expo),
+			box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	.trigger:hover {
-		border-color: var(--color-border-strong);
 		background: var(--color-surface-3);
 		color: var(--color-text);
+		box-shadow: var(--shadow-sm);
 	}
 
 	.trigger :global(svg:first-child) {

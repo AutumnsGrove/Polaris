@@ -8,6 +8,8 @@
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
 
@@ -113,7 +115,7 @@
 </script>
 
 {#if turn.role === 'user'}
-	<div class="row row-user">
+	<div class="row row-user" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		{#if turn.attachmentFilename && !editing}
 			<div class="attachment-chip">
 				<Paperclip size={12} />
@@ -148,7 +150,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="row row-assistant">
+	<div class="row row-assistant" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		<div class="bubble bubble-assistant">
 			{#if turn.timeline?.length}
 				<div class="timeline">
@@ -266,12 +268,13 @@
 		align-items: center;
 		gap: 5px;
 		max-width: 640px;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: 999px;
 		padding: 4px 10px;
 		font-size: 12px;
 		color: var(--color-text-dim);
+		box-shadow: var(--shadow-xs);
 	}
 
 	.row-user .attachment-chip span {
@@ -309,9 +312,14 @@
 
 	.bubble-user {
 		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		padding: 10px 14px;
+		border: none;
+		border-radius: var(--radius-lg);
+		/* A real lift instead of a hairline — this is the one bubble shape
+		   in the timeline, so it can afford to read as a small floating
+		   card rather than a bordered box. Padding grown a notch too; the
+		   original 10/14 read tight enough to feel like a form field. */
+		box-shadow: var(--shadow-sm);
+		padding: 11px 16px;
 		color: var(--color-text);
 		white-space: pre-wrap;
 		word-break: break-word;
@@ -439,17 +447,18 @@
 		align-items: center;
 		gap: 7px;
 		max-width: 220px;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-sm);
 		padding: 5px 9px;
 		text-decoration: none;
-		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+		box-shadow: var(--shadow-xs);
+		transition: background-color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	.source-chip:hover {
-		border-color: var(--color-accent-2);
 		background: var(--color-surface-3);
+		box-shadow: var(--shadow-sm);
 	}
 
 	/* Named inline citation chips — the model's [Title](URL) links land
@@ -467,7 +476,7 @@
 		max-width: 180px;
 		margin: 0 0 0 5px;
 		padding: 1px 8px;
-		border: 1px solid var(--color-border);
+		border: none;
 		border-radius: 999px;
 		background: var(--color-surface-2);
 		color: var(--color-text-dim);
@@ -480,13 +489,14 @@
 		vertical-align: middle;
 		transform: translateY(-1px);
 		cursor: pointer;
-		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+		box-shadow: var(--shadow-xs);
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	.prose :global(.citation-chip:hover) {
-		border-color: var(--color-accent-2);
 		background: var(--color-surface-3);
 		color: var(--color-text);
+		box-shadow: var(--shadow-sm);
 	}
 
 	.source-index {
@@ -612,8 +622,9 @@
 
 	.prose :global(pre) {
 		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
+		border: none;
 		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-well);
 		padding: 10px 12px;
 		overflow-x: auto;
 		font-size: 13px;
@@ -628,8 +639,9 @@
 
 	.prose :global(code) {
 		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
+		border: none;
 		border-radius: 4px;
+		box-shadow: var(--shadow-well);
 		padding: 1px 5px;
 		font-size: 13px;
 	}

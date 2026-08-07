@@ -131,9 +131,10 @@
 	}
 
 	.tool-event {
-		border: 1px solid var(--color-border);
+		border: none;
 		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-xs);
 		margin-bottom: 4px;
 		font-size: 12px;
 		overflow: hidden;
@@ -158,10 +159,10 @@
 	}
 
 	/* Compaction is a system-level event, not a research step — a subtle
-	   accent tint (not a decorative side-stripe, just the existing
-	   full-border treatment) sets it apart from ordinary tool chips. */
+	   accent-tinted glow (in place of the old border tint, now that flat
+	   borders are gone) sets it apart from ordinary tool chips. */
 	.tool-event.compacted {
-		border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent), var(--shadow-xs);
 	}
 
 	.tool-label {
@@ -175,7 +176,11 @@
 	.tool-result {
 		white-space: pre-wrap;
 		word-break: break-word;
-		border-top: 1px solid var(--color-border);
+		/* A tonal step down instead of a rule line — separates the result
+		   from the header by being a visibly different depth, the same
+		   "recessed" language used for inputs/readouts elsewhere. */
+		background: color-mix(in srgb, black 12%, transparent);
+		box-shadow: var(--shadow-well);
 		padding: 8px 10px;
 		margin: 0;
 		color: var(--color-text-dim);

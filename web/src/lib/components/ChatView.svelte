@@ -313,7 +313,10 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		border-bottom: 1px solid var(--color-border);
+		/* Directional shadow instead of a rule — the header floats a hair
+		   above the timeline scrolling underneath it, same light-source
+		   logic as the sidebar's own right-edge shadow. */
+		box-shadow: 0 8px 16px -14px rgba(0, 0, 0, 0.5);
 		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 		/* Installed as a standalone PWA (apple-mobile-web-app-status-bar-style:
 		   black-translucent), iOS draws the status bar over the page instead
@@ -372,7 +375,7 @@
 
 	.context-usage {
 		padding-right: 10px;
-		border-right: 1px solid var(--color-border);
+		margin-right: 2px;
 	}
 
 	.cost-value,
@@ -525,10 +528,10 @@
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
-		padding: 20px 16px;
+		padding: 28px 20px;
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
+		gap: 24px;
 	}
 
 	/* Appears once the user scrolls away from the bottom (see
@@ -548,10 +551,10 @@
 		width: 36px;
 		height: 36px;
 		border-radius: 999px;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		color: var(--color-text);
-		box-shadow: 0 4px 16px color-mix(in srgb, black 20%, transparent);
+		box-shadow: 0 4px 16px color-mix(in srgb, black 20%, transparent), var(--shadow-glass-edge);
 		transition:
 			background-color 0.15s var(--ease-out-expo),
 			transform 0.15s var(--ease-out-expo);
@@ -594,7 +597,7 @@
 	}
 
 	.suggestion-chip {
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		color: var(--color-text-dim);
 		border-radius: 999px;
@@ -602,18 +605,19 @@
 		font-size: 12.5px;
 		font-family: var(--font-sans);
 		text-align: left;
+		box-shadow: var(--shadow-xs);
 		transition:
-			border-color 0.15s var(--ease-out-expo),
 			color 0.15s var(--ease-out-expo),
 			background-color 0.15s var(--ease-out-expo),
-			transform 0.15s var(--ease-out-expo);
+			transform 0.15s var(--ease-out-expo),
+			box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	.suggestion-chip:hover {
-		border-color: var(--color-accent-2);
 		color: var(--color-text);
 		background: var(--color-surface-3);
 		transform: translateY(-1px);
+		box-shadow: var(--shadow-sm);
 	}
 
 	/* Column now, not a single row — the textarea sits on its own line
@@ -626,8 +630,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		border-top: 1px solid var(--color-border);
-		padding: 12px;
+		box-shadow: 0 -8px 16px -14px rgba(0, 0, 0, 0.5);
+		padding: 16px;
 		/* Clears iOS Safari's bottom toolbar / home-indicator area — falls
 		   back to the plain 12px on browsers without safe-area support. */
 		padding-bottom: max(12px, env(safe-area-inset-bottom));
@@ -649,12 +653,13 @@
 		gap: 6px;
 		align-self: flex-start;
 		max-width: 100%;
-		border: 1px solid var(--color-border);
+		border: none;
 		background: var(--color-surface-2);
 		border-radius: 999px;
 		padding: 5px 6px 5px 10px;
 		font-size: 12.5px;
 		color: var(--color-text-dim);
+		box-shadow: var(--shadow-xs);
 	}
 
 	.attachment-chip .attachment-name {
@@ -725,8 +730,12 @@
 	textarea {
 		width: 100%;
 		resize: none;
-		border: 1px solid var(--color-border);
+		/* Carved-in well at rest instead of a flat hairline box — the accent
+		   border only appears on focus (below), so idle the composer reads
+		   as a soft trough in the surface, not a form field. */
+		border: 1px solid transparent;
 		background: var(--color-surface-2);
+		box-shadow: var(--shadow-well);
 		border-radius: var(--radius-lg);
 		padding: 14px 16px;
 		/* 16px, not 14 — anything smaller makes iOS Safari zoom the whole
@@ -748,16 +757,20 @@
 		min-height: 56px;
 		max-height: 200px;
 		overflow-y: auto;
-		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+		transition:
+			border-color 0.15s var(--ease-out-expo),
+			background-color 0.15s var(--ease-out-expo),
+			box-shadow 0.15s var(--ease-out-expo);
 	}
 
 	textarea:hover {
-		border-color: var(--color-border-strong);
+		background: var(--color-surface-3);
 	}
 
 	textarea:focus {
 		border-color: var(--color-accent);
 		background: var(--color-surface);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
 	}
 
 	.send-btn {

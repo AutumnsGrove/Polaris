@@ -28,13 +28,14 @@
 	.toast {
 		background: var(--color-surface-3);
 		color: var(--color-text);
-		border: 1px solid var(--color-border-strong);
+		border: none;
 		border-radius: var(--radius-md);
 		padding: 9px 16px;
 		font-size: 13px;
 		box-shadow:
 			0 12px 32px -12px rgba(0, 0, 0, 0.45),
-			0 4px 12px -4px rgba(0, 0, 0, 0.3);
+			0 4px 12px -4px rgba(0, 0, 0, 0.3),
+			var(--shadow-glass-edge);
 		white-space: nowrap;
 	}
 </style>
