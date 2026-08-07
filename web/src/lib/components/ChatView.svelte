@@ -3,10 +3,12 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown, TriangleAlert, RotateCcw } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
+	import { fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
@@ -94,6 +96,26 @@
 	// hasn't been generated server-side).
 	let currentThread = $derived(appState.threads.find((t) => t.id === appState.currentThreadId));
 	let currentThreadTitle = $derived(currentThread?.title ?? '');
+
+	// A turn ending in a lone user message with nothing after it is never
+	// a valid "finished" state — dispatch() always pushes the user turn
+	// and its streaming assistant placeholder together, so the only way
+	// the timeline ends on a bare user turn is a turn that never got a
+	// reply: the connection dropped mid-generation, the tab closed, the
+	// server restarted, or (the bug this was built for) navigating away
+	// mid-stream orphaned it. Whatever the cause, showing nothing here
+	// looks identical to a message vanishing into the void — this is the
+	// signal to offer a real way out instead of the composer just quietly
+	// sitting there idle.
+	let lastTurnInterrupted = $derived(
+		appState.turns.length > 0 &&
+			appState.turns[appState.turns.length - 1].role === 'user' &&
+			!appState.busyOnCurrentThread
+	);
+
+	function retryInterrupted() {
+		appState.retry(appState.turns.length);
+	}
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -268,7 +290,18 @@
 			{#each appState.turns as turn, i (i)}
 				<ChatTurnView {turn} index={i} />
 			{/each}
-			{#if !appState.busyOnCurrentThread && appState.suggestions.length > 0}
+			{#if lastTurnInterrupted}
+				<div class="interrupted" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
+					<div class="interrupted-message">
+						<TriangleAlert size={15} />
+						<span>This response didn't finish — the connection dropped or the session was interrupted.</span>
+					</div>
+					<button class="btn btn-accent" onclick={retryInterrupted}>
+						<RotateCcw size={15} />
+						Retry
+					</button>
+				</div>
+			{:else if !appState.busyOnCurrentThread && appState.suggestions.length > 0}
 				<div class="suggestions">
 					{#each appState.suggestions as suggestion}
 						<button class="suggestion-chip" onclick={() => appState.send(suggestion)}>
@@ -521,6 +554,42 @@
 		50% {
 			opacity: 0.4;
 		}
+	}
+
+	/* A real recovery moment, not a quiet dead end — sized and weighted
+	   like an actual interruption in the conversation (full-width card,
+	   a real .btn-accent, same size as the send button) rather than a
+	   small icon tucked into a footer. Warm/amber rather than the harsh
+	   danger red — nothing failed destructively, the connection just
+	   dropped; this should read as "pick up where you left off," not
+	   "something broke." */
+	.interrupted {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+		max-width: 680px;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-sm);
+		padding: 16px 18px;
+	}
+
+	.interrupted-message {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 1;
+		min-width: 220px;
+		font-size: 13.5px;
+		line-height: 1.4;
+		color: var(--color-text-dim);
+	}
+
+	.interrupted-message :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-accent);
 	}
 
 	/* Sits right below the last answer, inside the scrolling timeline —
