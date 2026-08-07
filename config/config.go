@@ -54,6 +54,17 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"tavily"`
 
+	GitHub struct {
+		// Token is an optional personal access token attached to
+		// github_repo's API calls. Unlike Foursquare/Tavily's API keys,
+		// this doesn't gate the tool on/off — GitHub's REST API works fine
+		// unauthenticated, just capped at 60 requests/hour instead of
+		// 5000. A no-scope token is enough (only public read endpoints are
+		// used); needs at least public repo read to see private repos it
+		// was granted access to. https://github.com/settings/tokens
+		Token string `yaml:"token"`
+	} `yaml:"github"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

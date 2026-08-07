@@ -24,6 +24,9 @@ with citations.
   same way as `nearby_search`
 - **Wikipedia / arXiv lookup** — queries an encyclopedia summary or a paper's abstract directly from
   its source instead of through a general web search, for a cleaner, more precise citation
+- **GitHub repo stats** — star/fork counts, license, repo age, first/most recent commit dates,
+  total commit count, and open issue/PR counts, straight from GitHub's API, plus the README. No API
+  key required (an optional token just raises the rate limit)
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -49,8 +52,8 @@ Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
   ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
-  │              weather / reference_lookup, or just answer — independent tool calls in the same
-  │              turn run concurrently
+  │              weather / reference_lookup / github_repo, or just answer — independent tool calls
+  │              in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
@@ -84,6 +87,9 @@ app" is one file you can scp around if you ever needed to.
 - Optional: a [Tavily](https://tavily.com) API key so `web_read` can fall back to Tavily's Extract
   API (which actually renders JS) for JS-rendered pages the free goquery-based fetch can't see —
   without it, those pages just fail after the free archive.org fallback also comes up empty
+- Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
+  can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — it works fine with
+  no token at all for occasional lookups
 
 ### SearXNG's JSON API
 

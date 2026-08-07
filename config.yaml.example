@@ -26,6 +26,9 @@ foursquare:
 tavily:
   api_key: "${TAVILY_API_KEY}"   # optional — web_read's last-resort fallback for JS-rendered/paywalled pages that goquery and archive.org can't get through. Costs credits per call, so it's never the default fetch path. https://tavily.com
 
+github:
+  token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens
+
 # Geocoded when nearby_search omits a location. Optional — omit entirely
 # to require an explicit location on every nearby_search call.
 default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"

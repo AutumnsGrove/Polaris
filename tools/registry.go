@@ -1,7 +1,7 @@
 // Package tools implements the agent's tool-use loop: think, web_search,
 // web_read, nearby_search, youtube_transcript, weather, reference_lookup,
-// and reply. Each tool self-registers via init(), mirroring her-go's
-// tools/ package convention.
+// github_repo, and reply. Each tool self-registers via init(), mirroring
+// her-go's tools/ package convention.
 package tools
 
 import (
@@ -31,6 +31,14 @@ type Context struct {
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+
+	// GitHubToken is an optional personal access token attached to
+	// github_repo's API calls as a bearer token. Empty means "call
+	// unauthenticated" — GitHub's REST API works fine without one, just
+	// capped at 60 requests/hour instead of 5000, so unlike
+	// Foursquare/Tavily this is never a hard requirement for the tool to
+	// function at all.
+	GitHubToken string
 
 	// Blocklist rejects web_read fetches for blocked domains directly —
 	// web_search's own filtering happens inside SearXNG (nil-safe there
@@ -156,5 +164,5 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
 func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef}
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef}
 }
