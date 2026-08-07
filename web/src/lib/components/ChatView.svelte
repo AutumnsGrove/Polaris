@@ -6,6 +6,7 @@
 	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X, Loader2, ArrowDown } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
+	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
 	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
@@ -261,6 +262,9 @@
 				<span class="label">Thread cost:</span>
 				<span class="cost-value">${appState.totalCost.toFixed(4)}</span>
 			</div>
+		{/if}
+		{#if appState.currentThreadId}
+			<ThreadMenu threadId={appState.currentThreadId} threadTitle={currentThreadTitle} />
 		{/if}
 	</div>
 </header>
