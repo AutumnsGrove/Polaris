@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Store struct {
@@ -145,7 +145,7 @@ func Open(path string) (*Store, error) {
 	// instead of waiting its turn. _journal_mode=WAL lets readers proceed
 	// without blocking on a writer at all, which is what actually makes
 	// the busy_timeout the common case rather than the exception.
-	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
