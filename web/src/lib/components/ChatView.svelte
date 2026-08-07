@@ -92,9 +92,8 @@
 	// selector has moved into the composer's "+" sheet — falls back to
 	// nothing for a brand-new thread whose title hasn't loaded yet (or
 	// hasn't been generated server-side).
-	let currentThreadTitle = $derived(
-		appState.threads.find((t) => t.id === appState.currentThreadId)?.title ?? ''
-	);
+	let currentThread = $derived(appState.threads.find((t) => t.id === appState.currentThreadId));
+	let currentThreadTitle = $derived(currentThread?.title ?? '');
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -242,7 +241,11 @@
 	</div>
 	<div class="header-right">
 		{#if appState.currentThreadId}
-			<ThreadMenu threadId={appState.currentThreadId} threadTitle={currentThreadTitle} />
+			<ThreadMenu
+				threadId={appState.currentThreadId}
+				threadTitle={currentThreadTitle}
+				favorite={currentThread?.favorite ?? false}
+			/>
 		{/if}
 	</div>
 </header>

@@ -335,6 +335,41 @@ func TestThreadsCRUD(t *testing.T) {
 		t.Errorf("empty-title rename status = %d, want 400", emptyResp.StatusCode)
 	}
 
+	// Favorite — independent of title, doesn't require one in the body
+	favBody, _ := json.Marshal(map[string]interface{}{"favorite": true})
+	favReq, _ := http.NewRequest(http.MethodPatch, h.url("/api/threads/t1"), bytes.NewReader(favBody))
+	favResp, err := http.DefaultClient.Do(favReq)
+	if err != nil {
+		t.Fatalf("PATCH favorite: %v", err)
+	}
+	favResp.Body.Close()
+	if favResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("favorite status = %d, want 204", favResp.StatusCode)
+	}
+	favThread, err := h.db.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread after favorite: %v", err)
+	}
+	if !favThread.Favorite {
+		t.Error("expected favorite to be true after PATCH")
+	}
+
+	// Un-favorite
+	unfavBody, _ := json.Marshal(map[string]interface{}{"favorite": false})
+	unfavReq, _ := http.NewRequest(http.MethodPatch, h.url("/api/threads/t1"), bytes.NewReader(unfavBody))
+	unfavResp, err := http.DefaultClient.Do(unfavReq)
+	if err != nil {
+		t.Fatalf("PATCH un-favorite: %v", err)
+	}
+	unfavResp.Body.Close()
+	unfavThread, err := h.db.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread after un-favorite: %v", err)
+	}
+	if unfavThread.Favorite {
+		t.Error("expected favorite to be false after un-favoriting")
+	}
+
 	// Delete
 	delReq, _ := http.NewRequest(http.MethodDelete, h.url("/api/threads/t1"), nil)
 	delResp, err := http.DefaultClient.Do(delReq)

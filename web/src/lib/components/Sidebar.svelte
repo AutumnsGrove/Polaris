@@ -1,10 +1,35 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Plus, PanelLeftClose, Settings } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
+	import type { Thread } from '$lib/types';
+
+	// Pinned to the top, same shape as the Claude app — favorited threads
+	// move out of the plain recency list into their own section instead of
+	// just being flagged in place, so favoriting something actually
+	// changes where it lives, not just how it looks.
+	let favorites = $derived(appState.threads.filter((t) => t.favorite));
+	let recents = $derived(appState.threads.filter((t) => !t.favorite));
 </script>
+
+{#snippet threadRow(thread: Thread, i: number)}
+	<div
+		class="thread-item"
+		class:active={appState.currentThreadId === thread.id}
+		onclick={() => appState.openThread(thread.id)}
+		onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
+		role="button"
+		tabindex="0"
+		in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
+	>
+		<span class="thread-dot" aria-hidden="true"></span>
+		<div class="thread-meta">
+			<div class="thread-title">{thread.title || 'Untitled'}</div>
+		</div>
+	</div>
+{/snippet}
 
 <aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
 	<div class="brand">
@@ -28,21 +53,20 @@
 		     moved to ThreadMenu.svelte (the "..." menu in the chat header)
 		     since managing the thread you're actually looking at fits there
 		     better than a list row whose whole job is just "open this". -->
-		{#each appState.threads as thread, i (thread.id)}
-			<div
-				class="thread-item"
-				class:active={appState.currentThreadId === thread.id}
-				onclick={() => appState.openThread(thread.id)}
-				onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
-				role="button"
-				tabindex="0"
-				in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
-			>
-				<span class="thread-dot" aria-hidden="true"></span>
-				<div class="thread-meta">
-					<div class="thread-title">{thread.title || 'Untitled'}</div>
-				</div>
+		{#if favorites.length > 0}
+			<div class="section-label">
+				<Star size={11} fill="currentColor" />
+				Favorites
 			</div>
+			{#each favorites as thread, i (thread.id)}
+				{@render threadRow(thread, i)}
+			{/each}
+			{#if recents.length > 0}
+				<div class="section-label">Recents</div>
+			{/if}
+		{/if}
+		{#each recents as thread, i (thread.id)}
+			{@render threadRow(thread, i)}
 		{/each}
 	</div>
 
@@ -131,6 +155,28 @@
 		font-size: 12px;
 		line-height: 1.5;
 		color: var(--color-text-dim);
+	}
+
+	/* Small-caps section labels, same vocabulary as SettingsPanel's h3 —
+	   text alone doing the organizing, no boxed header/pill. */
+	.section-label {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		margin: 14px 10px 6px;
+		font-size: 10.5px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--color-text-dim);
+	}
+
+	.section-label:first-child {
+		margin-top: 4px;
+	}
+
+	.section-label :global(svg) {
+		color: var(--color-accent);
 	}
 
 	.thread-item {

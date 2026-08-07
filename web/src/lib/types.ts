@@ -102,6 +102,7 @@ export interface Thread {
 	model: string;
 	cost_usd: number;
 	context_tokens: number;
+	favorite: boolean;
 	created_at: string;
 	updated_at: string;
 }

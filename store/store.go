@@ -46,7 +46,11 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- messages/events) stay in the database as a durable record, they're
 	-- just excluded from ListThreads/GetThread so a disabled thread is
 	-- indistinguishable from a genuinely absent one to every API caller.
-	disabled INTEGER NOT NULL DEFAULT 0
+	disabled INTEGER NOT NULL DEFAULT 0,
+	-- favorite: user-pinned via the thread menu's Favorite toggle — drives
+	-- the sidebar's pinned Favorites section (see ListThreads). Purely a
+	-- display flag, unrelated to disabled/soft-delete.
+	favorite INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -142,6 +146,7 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN attachment_filename TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN attachment_content_type TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -226,7 +231,10 @@ type Thread struct {
 	// Source is informational only (see schema comment in Open) — "web"
 	// for the normal chat UI, or a caller-supplied label for threads
 	// created via POST /api/ask.
-	Source    string    `json:"source"`
+	Source string `json:"source"`
+	// Favorite drives the sidebar's pinned Favorites section — see the
+	// schema comment in Open.
+	Favorite  bool      `json:"favorite"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -281,6 +289,15 @@ func (s *Store) SetThreadTitle(id, title string) error {
 	return err
 }
 
+// SetThreadFavorite pins/unpins a thread to the sidebar's Favorites
+// section. Deliberately does not touch updated_at — favoriting isn't
+// "activity" on a thread the way a rename or a new message is, and
+// shouldn't reorder it within its section.
+func (s *Store) SetThreadFavorite(id string, favorite bool) error {
+	_, err := s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id)
+	return err
+}
+
 // GetThread looks up a thread by id. A disabled (soft-deleted) thread is
 // excluded — same sql.ErrNoRows a caller gets for an id that never
 // existed at all, so a stale tab/bookmark pointed at a deleted thread
@@ -289,9 +306,9 @@ func (s *Store) SetThreadTitle(id, title string) error {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -299,13 +316,15 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 }
 
 // ListThreads returns non-disabled threads newest-first, for the
-// sidebar/history view.
+// sidebar/history view. Favorite/non-favorite are interleaved here in one
+// recency order — the frontend splits them into the pinned Favorites
+// section and the rest, each keeping this same relative ordering.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, source, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
 		 FROM threads WHERE disabled = 0 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -317,7 +336,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)

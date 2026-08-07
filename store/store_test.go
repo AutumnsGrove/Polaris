@@ -135,6 +135,43 @@ func TestSetThreadTitle(t *testing.T) {
 	}
 }
 
+func TestSetThreadFavorite(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "placeholder title", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	thread, err := s.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.Favorite {
+		t.Error("expected a new thread to default to not favorited")
+	}
+
+	if err := s.SetThreadFavorite("t1", true); err != nil {
+		t.Fatalf("SetThreadFavorite(true): %v", err)
+	}
+	thread, err = s.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if !thread.Favorite {
+		t.Error("expected Favorite to be true after SetThreadFavorite(true)")
+	}
+
+	if err := s.SetThreadFavorite("t1", false); err != nil {
+		t.Fatalf("SetThreadFavorite(false): %v", err)
+	}
+	thread, err = s.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.Favorite {
+		t.Error("expected Favorite to be false after SetThreadFavorite(false)")
+	}
+}
+
 func TestGetThread_NotFound(t *testing.T) {
 	s := openTestStore(t)
 	if _, err := s.GetThread("does-not-exist"); err == nil {

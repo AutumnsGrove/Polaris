@@ -456,6 +456,19 @@ export class AppState {
 		await this.loadThreads();
 	}
 
+	// Toggling favorite doesn't touch updated_at server-side (see
+	// store.SetThreadFavorite's doc comment), so re-fetching the list
+	// afterward moves the thread between the Favorites/rest sections in
+	// Sidebar.svelte without reshuffling its position within either one.
+	async favoriteThread(id: string, favorite: boolean) {
+		await fetch(`/api/threads/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ favorite })
+		});
+		await this.loadThreads();
+	}
+
 	// Cancels the in-flight turn. The backend aborts its LLM/tool calls
 	// mid-flight and still sends a normal 'done' with whatever streamed so
 	// far — no separate "stopped" event type needed, the existing done

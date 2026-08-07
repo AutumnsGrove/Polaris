@@ -47,35 +47,47 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 	}{thread, messages})
 }
 
-// handleRenameThread lets the sidebar rename a thread directly — the
-// only other way a title changes is the one-time LLM-generated title
-// right after a new thread's first turn (see turn.go's generateTitle);
-// this always wins over that, whether it happens before or after.
-func (s *Server) handleRenameThread(w http.ResponseWriter, r *http.Request) {
+// handleUpdateThread applies a partial update to a thread — rename
+// and/or favorite, either or both in one request. The only other way a
+// title changes is the one-time LLM-generated title right after a new
+// thread's first turn (see turn.go's generateTitle); a manual rename
+// here always wins over that, whether it happens before or after.
+func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	var req struct {
-		Title string `json:"title"`
+		Title    *string `json:"title"`
+		Favorite *bool   `json:"favorite"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		http.Error(w, "title is required", http.StatusBadRequest)
-		return
-	}
-	if len(title) > maxThreadTitleLen {
-		title = title[:maxThreadTitleLen]
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			http.Error(w, "title is required", http.StatusBadRequest)
+			return
+		}
+		if len(title) > maxThreadTitleLen {
+			title = title[:maxThreadTitleLen]
+		}
+		if err := s.db.SetThreadTitle(id, title); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title}, "")
 	}
 
-	if err := s.db.SetThreadTitle(id, title); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	if req.Favorite != nil {
+		if err := s.db.SetThreadFavorite(id, *req.Favorite); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent(id, "info", "thread", "thread favorite changed", map[string]interface{}{"favorite": *req.Favorite}, "")
 	}
-	s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title}, "")
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

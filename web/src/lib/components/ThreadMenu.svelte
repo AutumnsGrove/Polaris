@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert, Gauge, Coins } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -10,7 +10,13 @@
 	// the sidebar is collapsed, where there's no row to hover at all).
 	// Cost/context also live here now, not as always-on header chrome —
 	// they're useful to check, not useful to stare at constantly.
-	let { threadId, threadTitle }: { threadId: string; threadTitle: string } = $props();
+	let { threadId, threadTitle, favorite }: { threadId: string; threadTitle: string; favorite: boolean } =
+		$props();
+
+	function toggleFavorite() {
+		void appState.favoriteThread(threadId, !favorite);
+		close();
+	}
 
 	// Same threshold the backend auto-compacts at, so this doubles as a
 	// warning before that happens.
@@ -123,6 +129,10 @@
 					</div>
 				</div>
 			{:else}
+				<button class="dropdown-item" onclick={toggleFavorite} role="menuitem">
+					<Star size={14} fill={favorite ? 'currentColor' : 'none'} class={favorite ? 'favorited' : ''} />
+					<span>{favorite ? 'Unfavorite' : 'Favorite'}</span>
+				</button>
 				<button class="dropdown-item" onclick={startRename} role="menuitem">
 					<Pencil size={14} />
 					<span>Rename</span>
@@ -188,6 +198,10 @@
 	.dropdown-item :global(svg) {
 		flex-shrink: 0;
 		color: var(--color-text-dim);
+	}
+
+	.dropdown-item :global(svg.favorited) {
+		color: var(--color-accent);
 	}
 
 	.dropdown-item.danger {
