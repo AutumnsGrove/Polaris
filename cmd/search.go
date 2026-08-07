@@ -86,6 +86,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		SearXNG:         searxng,
 		Blocklist:       blocklist,
 		Foursquare:      foursquare,
+		GitHubToken:     cfg.GitHub.Token,
 		DefaultLocation: cfg.DefaultLocation,
 		LLM:             client,
 		Emit:            emit,

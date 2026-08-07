@@ -251,6 +251,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Blocklist:       s.blocklist,
 		Foursquare:      s.foursquare,
 		Tavily:          s.tavily,
+		GitHubToken:     cfg.GitHub.Token,
 		DefaultLocation: defaultLocation,
 		VoiceMode:       msg.VoiceMode,
 		FocusMode:       msg.FocusMode,
