@@ -105,6 +105,16 @@ search:
 
 ## Quick start
 
+One-liner (macOS/Linux): clones the repo, builds the binary, brings up a local SearXNG via
+Docker (installing Docker itself if it's missing), and opens `config.yaml` for you to drop in
+an OpenRouter key. Doesn't start the server — that's still on you, once the key's in.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AutumnsGrove/Polaris/main/install.sh | bash
+```
+
+Or by hand:
+
 ```bash
 git clone https://github.com/AutumnsGrove/Polaris.git
 cd Polaris
