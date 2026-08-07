@@ -113,6 +113,15 @@ an OpenRouter key. Doesn't start the server — that's still on you, once the ke
 curl -fsSL https://raw.githubusercontent.com/AutumnsGrove/Polaris/main/install.sh | bash
 ```
 
+Once `config.yaml` has a real OpenRouter key in it, start the server:
+
+```bash
+cd ~/Polaris   # or wherever POLARIS_INSTALL_DIR pointed, if you set it
+./polaris run
+```
+
+Open `http://localhost:8899`.
+
 Or by hand:
 
 ```bash
