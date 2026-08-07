@@ -40,6 +40,25 @@ describe('renderInlineCitations', () => {
 		expect(out).toContain('>link<');
 	});
 
+	it('leaves links inside table cells untouched, even when tracked', () => {
+		const html =
+			'<table><tr><td><a href="https://nasa.gov/voyager">Voyager Program</a></td><td>Active</td></tr></table>';
+		const out = renderInlineCitations(html, citations);
+		expect(out).not.toContain('citation-chip');
+		expect(out).toContain('>Voyager Program<');
+		expect(out).toContain('href="https://nasa.gov/voyager"');
+	});
+
+	it('still converts a citation chip outside a table even when other tracked links sit inside one', () => {
+		const html =
+			'<p>Voyager 1 is the farthest spacecraft <a href="https://nasa.gov/voyager">NASA overview</a>.</p>' +
+			'<table><tr><td><a href="https://en.wikipedia.org/wiki/Voyager_1">Voyager 1</a></td></tr></table>';
+		const out = renderInlineCitations(html, citations);
+		expect(out).toContain('class="citation-chip"');
+		expect(out).toContain('>NASA<');
+		expect(out).toContain('>Voyager 1<');
+	});
+
 	it('returns html unchanged when there are no citations', () => {
 		const html = '<p>No sources here.</p>';
 		expect(renderInlineCitations(html, [])).toBe(html);

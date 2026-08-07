@@ -634,6 +634,37 @@
 		font-size: 13px;
 	}
 
+	/* GitHub's table-scroll trick: display:block on the <table> itself (not
+	   a wrapper div) turns it into a scrollable block box while its
+	   tbody/tr/td children still get anonymous table boxes from the
+	   browser, so the grid layout is untouched — width:max-content lets it
+	   size to its natural content width, capped by max-width so overflow-x
+	   kicks in instead of the table squeezing columns or blowing past the
+	   bubble edge. */
+	.prose :global(table) {
+		display: block;
+		width: max-content;
+		max-width: 100%;
+		overflow-x: auto;
+		border-collapse: collapse;
+		margin: 0 0 12px 0;
+		font-size: 13.5px;
+	}
+
+	.prose :global(th),
+	.prose :global(td) {
+		border: 1px solid var(--color-border);
+		padding: 6px 10px;
+		text-align: left;
+		vertical-align: top;
+	}
+
+	.prose :global(th) {
+		background: var(--color-surface-2);
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
 	.prose :global(a) {
 		color: var(--color-accent-2);
 	}
