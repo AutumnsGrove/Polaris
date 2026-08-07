@@ -1,74 +1,12 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings, TriangleAlert } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
 	function formatCost(c: number) {
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
-	}
-
-	// Delete is a two-step confirm, not a single click — a bare trash icon
-	// right next to rename in a hover-only strip was too easy to fire by
-	// accident. Same shape as renaming: a per-id flag swaps just that row
-	// into a confirm state, everything else in the list stays interactive.
-	let confirmingDeleteId = $state<string | null>(null);
-
-	function askDelete(e: MouseEvent, id: string) {
-		e.stopPropagation();
-		renamingId = null;
-		confirmingDeleteId = id;
-	}
-
-	function cancelDelete(e?: MouseEvent) {
-		e?.stopPropagation();
-		confirmingDeleteId = null;
-	}
-
-	function confirmDelete(e: MouseEvent, id: string) {
-		e.stopPropagation();
-		confirmingDeleteId = null;
-		void appState.deleteThread(id);
-	}
-
-	// Rename is inline, mirroring how editing a user message works in the
-	// chat itself (ChatTurnView) rather than a separate modal/prompt().
-	let renamingId = $state<string | null>(null);
-	let renameValue = $state('');
-
-	function startRename(e: MouseEvent, id: string, currentTitle: string) {
-		e.stopPropagation();
-		confirmingDeleteId = null;
-		renamingId = id;
-		renameValue = currentTitle;
-	}
-
-	function cancelRename(e?: MouseEvent) {
-		e?.stopPropagation();
-		renamingId = null;
-	}
-
-	function saveRename(e?: MouseEvent) {
-		e?.stopPropagation();
-		if (renamingId) void appState.renameThread(renamingId, renameValue);
-		renamingId = null;
-	}
-
-	function onRenameKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			saveRename();
-		} else if (e.key === 'Escape') {
-			cancelRename();
-		}
-	}
-
-	// Focuses and selects the rename input the instant it's mounted, so
-	// typing a new title doesn't need an extra click first.
-	function focusOnMount(node: HTMLInputElement) {
-		node.focus();
-		node.select();
 	}
 </script>
 
@@ -90,62 +28,28 @@
 		{#if appState.threads.length === 0}
 			<p class="thread-empty">No threads yet. Ask something to start.</p>
 		{/if}
+		<!-- Rename/delete used to live here as hover-revealed row icons —
+		     moved to ThreadMenu.svelte (the "..." menu in the chat header)
+		     since managing the thread you're actually looking at fits there
+		     better than a list row whose whole job is just "open this". -->
 		{#each appState.threads as thread, i (thread.id)}
-			{#if renamingId === thread.id}
-				<div class="thread-item renaming">
-					<span class="thread-dot" aria-hidden="true"></span>
-					<input
-						class="thread-rename-input"
-						bind:value={renameValue}
-						onkeydown={onRenameKeydown}
-						onclick={(e) => e.stopPropagation()}
-						use:focusOnMount
-					/>
-					<button class="icon-btn" onclick={cancelRename} title="Cancel"><X size={13} /></button>
-					<button class="icon-btn" onclick={saveRename} title="Save"><Check size={13} /></button>
+			<div
+				class="thread-item"
+				class:active={appState.currentThreadId === thread.id}
+				onclick={() => appState.openThread(thread.id)}
+				onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
+				role="button"
+				tabindex="0"
+				in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
+			>
+				<span class="thread-dot" aria-hidden="true"></span>
+				<div class="thread-meta">
+					<div class="thread-title">{thread.title || 'Untitled'}</div>
+					{#if appState.settings.showPrices}
+						<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
+					{/if}
 				</div>
-			{:else if confirmingDeleteId === thread.id}
-				<div class="thread-item confirming-delete">
-					<TriangleAlert size={14} />
-					<span class="confirm-delete-text">Delete this thread?</span>
-					<button class="icon-btn" onclick={cancelDelete} title="Cancel"><X size={13} /></button>
-					<button
-						class="icon-btn confirm-delete-btn"
-						onclick={(e) => confirmDelete(e, thread.id)}
-						title="Confirm delete"
-					>
-						<Check size={13} />
-					</button>
-				</div>
-			{:else}
-				<div
-					class="thread-item"
-					class:active={appState.currentThreadId === thread.id}
-					onclick={() => appState.openThread(thread.id)}
-					onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
-					role="button"
-					tabindex="0"
-					in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
-				>
-					<span class="thread-dot" aria-hidden="true"></span>
-					<div class="thread-meta">
-						<div class="thread-title">{thread.title || 'Untitled'}</div>
-						{#if appState.settings.showPrices}
-							<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
-						{/if}
-					</div>
-					<button
-						class="icon-btn rename-btn"
-						onclick={(e) => startRename(e, thread.id, thread.title)}
-						title="Rename"
-					>
-						<Pencil size={13} />
-					</button>
-					<button class="icon-btn delete-btn" onclick={(e) => askDelete(e, thread.id)} title="Delete">
-						<Trash2 size={14} />
-					</button>
-				</div>
-			{/if}
+			</div>
 		{/each}
 	</div>
 
@@ -300,74 +204,6 @@
 	.thread-cost {
 		font-size: 11px;
 		color: var(--color-text-dim);
-	}
-
-	.delete-btn {
-		opacity: 0;
-	}
-
-	.thread-item:hover .delete-btn {
-		opacity: 1;
-	}
-
-	.delete-btn:hover {
-		color: var(--color-danger);
-	}
-
-	.rename-btn {
-		opacity: 0;
-	}
-
-	.thread-item:hover .rename-btn {
-		opacity: 1;
-	}
-
-	.rename-btn:hover {
-		color: var(--color-text);
-	}
-
-	/* Renaming state swaps the whole row for an inline input — same
-	   shape/padding as the normal row so nothing shifts, just not
-	   clickable like the rest of the list. */
-	.thread-item.renaming {
-		cursor: default;
-	}
-
-	.thread-rename-input {
-		flex: 1;
-		min-width: 0;
-		border: 1px solid var(--color-accent-2);
-		background: var(--color-surface-2);
-		border-radius: var(--radius-sm);
-		padding: 3px 6px;
-		font-size: 13px;
-		font-family: inherit;
-		color: var(--color-text);
-		outline: none;
-	}
-
-	/* Same shape/padding as a normal row, same reasoning as .renaming —
-	   swaps in place rather than opening a separate confirm dialog, since
-	   this is a single low-stakes action (the thread is only disabled,
-	   not actually erased) that doesn't warrant a full modal interruption. */
-	.thread-item.confirming-delete {
-		cursor: default;
-		color: var(--color-danger);
-	}
-
-	.thread-item.confirming-delete :global(svg:first-child) {
-		flex-shrink: 0;
-	}
-
-	.confirm-delete-text {
-		flex: 1;
-		min-width: 0;
-		font-size: 12.5px;
-		color: var(--color-text);
-	}
-
-	.confirm-delete-btn:hover {
-		color: var(--color-danger);
 	}
 
 	.status {
