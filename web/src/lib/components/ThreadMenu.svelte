@@ -72,7 +72,19 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<div class="thread-menu" bind:this={rootEl}>
+<!-- stopPropagation here, not on each individual button inside — a click
+     on e.g. "Delete" swaps the dropdown's content synchronously (renaming
+     view -> confirm view), which can detach the very button that was
+     clicked from the DOM before the event finishes bubbling. At that
+     point rootEl.contains(e.target) sees a node no longer attached to
+     anything and reports false, so handleWindowClick closed the menu on
+     its own click before the confirm state ever had a chance to show.
+     Stopping propagation at this single outer boundary means the click
+     never reaches the window listener at all, regardless of what the
+     click handler does to the DOM underneath it. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="thread-menu" bind:this={rootEl} onclick={(e) => e.stopPropagation()}>
 	<button class="icon-btn" onclick={toggle} title="Thread options" aria-label="Thread options" aria-haspopup="menu" aria-expanded={open}>
 		<MoreHorizontal size={17} />
 	</button>
