@@ -79,6 +79,9 @@ func (s *Server) handleRenameThread(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteThread soft-deletes a thread — see store.DeleteThread's
+// doc comment. The row and its messages/events stay in the database;
+// this just stops it from showing up anywhere in the API.
 func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.db.DeleteThread(id); err != nil {
@@ -87,6 +90,6 @@ func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.db.LogEvent("", "info", "thread", "thread deleted", map[string]interface{}{"thread_id": id}, "")
+	s.db.LogEvent("", "info", "thread", "thread disabled (soft delete)", map[string]interface{}{"thread_id": id}, "")
 	w.WriteHeader(http.StatusNoContent)
 }

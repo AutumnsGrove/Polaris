@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, Trash2, Check, X } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -12,17 +12,20 @@
 
 	let open = $state(false);
 	let renaming = $state(false);
+	let confirmingDelete = $state(false);
 	let renameValue = $state('');
 	let rootEl: HTMLDivElement | undefined = $state();
 
 	function toggle() {
 		open = !open;
 		renaming = false;
+		confirmingDelete = false;
 	}
 
 	function close() {
 		open = false;
 		renaming = false;
+		confirmingDelete = false;
 	}
 
 	function startRename() {
@@ -44,7 +47,11 @@
 		}
 	}
 
-	function handleDelete() {
+	function askDelete() {
+		confirmingDelete = true;
+	}
+
+	function confirmDelete() {
 		void appState.deleteThread(threadId);
 		close();
 	}
@@ -82,12 +89,23 @@
 					<button class="icon-btn" onclick={close} title="Cancel"><X size={13} /></button>
 					<button class="icon-btn" onclick={saveRename} title="Save"><Check size={13} /></button>
 				</div>
+			{:else if confirmingDelete}
+				<div class="confirm">
+					<div class="confirm-message">
+						<TriangleAlert size={14} />
+						<span>Delete this thread?</span>
+					</div>
+					<div class="confirm-actions">
+						<button class="dropdown-item" onclick={close}>Cancel</button>
+						<button class="dropdown-item danger" onclick={confirmDelete}>Delete</button>
+					</div>
+				</div>
 			{:else}
 				<button class="dropdown-item" onclick={startRename} role="menuitem">
 					<Pencil size={14} />
 					<span>Rename</span>
 				</button>
-				<button class="dropdown-item danger" onclick={handleDelete} role="menuitem">
+				<button class="dropdown-item danger" onclick={askDelete} role="menuitem">
 					<Trash2 size={14} />
 					<span>Delete</span>
 				</button>
@@ -149,6 +167,46 @@
 
 	.dropdown-item.danger :global(svg) {
 		color: var(--color-danger);
+	}
+
+	.confirm {
+		padding: 8px 8px 6px;
+	}
+
+	.confirm-message {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		margin-bottom: 10px;
+		font-size: 13px;
+		color: var(--color-text);
+	}
+
+	.confirm-message :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-danger);
+	}
+
+	.confirm-actions {
+		display: flex;
+		gap: 6px;
+	}
+
+	.confirm-actions .dropdown-item {
+		width: auto;
+		flex: 1;
+		justify-content: center;
+		background: var(--color-surface-2);
+		box-shadow: var(--shadow-xs);
+	}
+
+	.confirm-actions .dropdown-item.danger:hover {
+		background: var(--color-danger);
+		color: var(--color-bg);
+	}
+
+	.confirm-actions .dropdown-item.danger:hover :global(svg) {
+		color: var(--color-bg);
 	}
 
 	.rename-row {

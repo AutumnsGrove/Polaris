@@ -362,7 +362,11 @@ func TestListThreads_NewestFirst(t *testing.T) {
 	}
 }
 
-func TestDeleteThread_CascadesMessages(t *testing.T) {
+// TestDeleteThread_SoftDeletePreservesMessages verifies DeleteThread is a
+// soft delete: the thread disappears from every read path (GetThread,
+// ListThreads) but its messages survive untouched, since the row itself
+// is never actually removed — only flagged disabled.
+func TestDeleteThread_SoftDeletePreservesMessages(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateThread("t1", "Thread", "m", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
@@ -374,13 +378,22 @@ func TestDeleteThread_CascadesMessages(t *testing.T) {
 		t.Fatalf("DeleteThread: %v", err)
 	}
 	if _, err := s.GetThread("t1"); err == nil {
-		t.Error("expected GetThread to fail after delete")
+		t.Error("expected GetThread to fail after delete (soft-deleted threads are hidden)")
+	}
+	threads, err := s.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	for _, th := range threads {
+		if th.ID == "t1" {
+			t.Error("expected ListThreads to omit a soft-deleted thread")
+		}
 	}
 	msgs, err := s.GetMessages("t1")
 	if err != nil {
 		t.Fatalf("GetMessages: %v", err)
 	}
-	if len(msgs) != 0 {
-		t.Errorf("got %d messages for a deleted thread, want 0 (cascade delete)", len(msgs))
+	if len(msgs) != 1 {
+		t.Errorf("got %d messages for a soft-deleted thread, want 1 (messages must survive)", len(msgs))
 	}
 }

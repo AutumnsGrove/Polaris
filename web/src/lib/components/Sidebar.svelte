@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings } from '@lucide/svelte';
+	import { Plus, Trash2, Pencil, Check, X, PanelLeftClose, Settings, TriangleAlert } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -9,8 +9,26 @@
 		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
 	}
 
-	function handleDelete(e: MouseEvent, id: string) {
+	// Delete is a two-step confirm, not a single click — a bare trash icon
+	// right next to rename in a hover-only strip was too easy to fire by
+	// accident. Same shape as renaming: a per-id flag swaps just that row
+	// into a confirm state, everything else in the list stays interactive.
+	let confirmingDeleteId = $state<string | null>(null);
+
+	function askDelete(e: MouseEvent, id: string) {
 		e.stopPropagation();
+		renamingId = null;
+		confirmingDeleteId = id;
+	}
+
+	function cancelDelete(e?: MouseEvent) {
+		e?.stopPropagation();
+		confirmingDeleteId = null;
+	}
+
+	function confirmDelete(e: MouseEvent, id: string) {
+		e.stopPropagation();
+		confirmingDeleteId = null;
 		void appState.deleteThread(id);
 	}
 
@@ -21,6 +39,7 @@
 
 	function startRename(e: MouseEvent, id: string, currentTitle: string) {
 		e.stopPropagation();
+		confirmingDeleteId = null;
 		renamingId = id;
 		renameValue = currentTitle;
 	}
@@ -85,6 +104,19 @@
 					<button class="icon-btn" onclick={cancelRename} title="Cancel"><X size={13} /></button>
 					<button class="icon-btn" onclick={saveRename} title="Save"><Check size={13} /></button>
 				</div>
+			{:else if confirmingDeleteId === thread.id}
+				<div class="thread-item confirming-delete">
+					<TriangleAlert size={14} />
+					<span class="confirm-delete-text">Delete this thread?</span>
+					<button class="icon-btn" onclick={cancelDelete} title="Cancel"><X size={13} /></button>
+					<button
+						class="icon-btn confirm-delete-btn"
+						onclick={(e) => confirmDelete(e, thread.id)}
+						title="Confirm delete"
+					>
+						<Check size={13} />
+					</button>
+				</div>
 			{:else}
 				<div
 					class="thread-item"
@@ -109,7 +141,7 @@
 					>
 						<Pencil size={13} />
 					</button>
-					<button class="icon-btn delete-btn" onclick={(e) => handleDelete(e, thread.id)} title="Delete">
+					<button class="icon-btn delete-btn" onclick={(e) => askDelete(e, thread.id)} title="Delete">
 						<Trash2 size={14} />
 					</button>
 				</div>
@@ -312,6 +344,30 @@
 		font-family: inherit;
 		color: var(--color-text);
 		outline: none;
+	}
+
+	/* Same shape/padding as a normal row, same reasoning as .renaming —
+	   swaps in place rather than opening a separate confirm dialog, since
+	   this is a single low-stakes action (the thread is only disabled,
+	   not actually erased) that doesn't warrant a full modal interruption. */
+	.thread-item.confirming-delete {
+		cursor: default;
+		color: var(--color-danger);
+	}
+
+	.thread-item.confirming-delete :global(svg:first-child) {
+		flex-shrink: 0;
+	}
+
+	.confirm-delete-text {
+		flex: 1;
+		min-width: 0;
+		font-size: 12.5px;
+		color: var(--color-text);
+	}
+
+	.confirm-delete-btn:hover {
+		color: var(--color-danger);
 	}
 
 	.status {

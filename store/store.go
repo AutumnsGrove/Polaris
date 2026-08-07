@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- or a caller-supplied label (e.g. "her-go") for threads created via
 	-- POST /api/ask. Purely informational: never changes how a thread
 	-- behaves, just lets future tooling/queries tell them apart.
-	source TEXT NOT NULL DEFAULT 'web'
+	source TEXT NOT NULL DEFAULT 'web',
+	-- disabled: soft-delete flag. "Deleting" a thread from the UI just
+	-- sets this rather than issuing a real DELETE — the row (and its
+	-- messages/events) stay in the database as a durable record, they're
+	-- just excluded from ListThreads/GetThread so a disabled thread is
+	-- indistinguishable from a genuinely absent one to every API caller.
+	disabled INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -135,6 +141,7 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN attachment_filename TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN attachment_content_type TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE threads ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -274,11 +281,16 @@ func (s *Store) SetThreadTitle(id, title string) error {
 	return err
 }
 
+// GetThread looks up a thread by id. A disabled (soft-deleted) thread is
+// excluded — same sql.ErrNoRows a caller gets for an id that never
+// existed at all, so a stale tab/bookmark pointed at a deleted thread
+// fails the same way as a bad id, not with some visibly different
+// "this was deleted" response.
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
 		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, created_at, updated_at
-		 FROM threads WHERE id = ?`, id,
+		 FROM threads WHERE id = ? AND disabled = 0`, id,
 	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -286,14 +298,15 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 	return &t, nil
 }
 
-// ListThreads returns threads newest-first, for the sidebar/history view.
+// ListThreads returns non-disabled threads newest-first, for the
+// sidebar/history view.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, created_at, updated_at
-		 FROM threads ORDER BY updated_at DESC LIMIT ?`,
+		 FROM threads WHERE disabled = 0 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -312,8 +325,16 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	return threads, rows.Err()
 }
 
+// DeleteThread soft-deletes a thread: it flips disabled rather than
+// issuing a real DELETE, so the row and every message/event still
+// referencing it survive as a durable record — ListThreads/GetThread
+// simply stop returning it, which is indistinguishable from a real
+// deletion to every existing API caller.
 func (s *Store) DeleteThread(id string) error {
-	_, err := s.db.Exec(`DELETE FROM threads WHERE id = ?`, id)
+	_, err := s.db.Exec(
+		`UPDATE threads SET disabled = 1, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
+		id,
+	)
 	return err
 }
 
