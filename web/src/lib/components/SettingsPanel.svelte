@@ -43,18 +43,6 @@
 					</button>
 				</div>
 			</div>
-
-			<div class="row">
-				<span>Show prices</span>
-				<label class="switch">
-					<input
-						type="checkbox"
-						checked={appState.settings.showPrices}
-						onchange={(e) => appState.settings.setShowPrices(e.currentTarget.checked)}
-					/>
-					<span class="slider"></span>
-				</label>
-			</div>
 		</section>
 
 		<section>
@@ -280,52 +268,6 @@
 
 	.location-row input::placeholder {
 		color: var(--color-text-dim);
-	}
-
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: 999px;
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition: transform 0.15s ease, background 0.15s ease;
-	}
-
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
 	}
 
 	.version-row {

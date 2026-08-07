@@ -9,7 +9,6 @@ export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 export class SettingsState {
 	open = $state(false);
 	theme = $state<'dark' | 'light'>('dark');
-	showPrices = $state(true);
 	defaultModel = $state('');
 
 	// The composer's standing focus mode — applied to every new message
@@ -58,7 +57,6 @@ export class SettingsState {
 		if (!res.ok) return;
 		const data = await res.json();
 		this.theme = data.theme === 'light' ? 'light' : 'dark';
-		this.showPrices = data.show_prices ?? true;
 		this.defaultModel = data.default_model ?? '';
 		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
 		this.voiceInputMode = data.voice_input_mode === 'hold' ? 'hold' : 'toggle';
@@ -78,11 +76,6 @@ export class SettingsState {
 		this.theme = theme;
 		this.applyTheme();
 		await this.put({ theme });
-	}
-
-	async setShowPrices(show: boolean) {
-		this.showPrices = show;
-		await this.put({ show_prices: show });
 	}
 
 	// onModelChanged lets the caller (AppState) refresh its model list's

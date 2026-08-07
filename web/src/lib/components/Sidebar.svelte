@@ -4,10 +4,6 @@
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-
-	function formatCost(c: number) {
-		return c < 1 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
-	}
 </script>
 
 <aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
@@ -45,9 +41,6 @@
 				<span class="thread-dot" aria-hidden="true"></span>
 				<div class="thread-meta">
 					<div class="thread-title">{thread.title || 'Untitled'}</div>
-					{#if appState.settings.showPrices}
-						<div class="thread-cost">{formatCost(thread.cost_usd)}</div>
-					{/if}
 				</div>
 			</div>
 		{/each}
@@ -199,11 +192,6 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-
-	.thread-cost {
-		font-size: 11px;
-		color: var(--color-text-dim);
 	}
 
 	.status {

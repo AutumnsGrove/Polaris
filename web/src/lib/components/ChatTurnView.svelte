@@ -197,7 +197,7 @@
 
 			{#if !turn.streaming}
 				<div class="turn-footer">
-					{#if appState.settings.showPrices && turn.costUsd !== undefined}
+					{#if turn.costUsd !== undefined}
 						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
 					{/if}
 					{#if turn.durationMs !== undefined}

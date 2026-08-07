@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert, Gauge, Coins } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -8,7 +8,17 @@
 	// same two actions, surfaced here for whoever's already looking at the
 	// thread instead of hunting for its row in the list (especially once
 	// the sidebar is collapsed, where there's no row to hover at all).
+	// Cost/context also live here now, not as always-on header chrome —
+	// they're useful to check, not useful to stare at constantly.
 	let { threadId, threadTitle }: { threadId: string; threadTitle: string } = $props();
+
+	// Same threshold the backend auto-compacts at, so this doubles as a
+	// warning before that happens.
+	let contextPercent = $derived(
+		appState.settings.contextWindowTokens > 0
+			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
+			: 0
+	);
 
 	let open = $state(false);
 	let renaming = $state(false);
@@ -121,6 +131,17 @@
 					<Trash2 size={14} />
 					<span>Delete</span>
 				</button>
+				<div class="divider" role="separator"></div>
+				<div class="info-row" class:hot={contextPercent >= 90}>
+					<Gauge size={14} />
+					<span>Context</span>
+					<span class="info-value">{contextPercent}%</span>
+				</div>
+				<div class="info-row">
+					<Coins size={14} />
+					<span>Thread cost</span>
+					<span class="info-value">${appState.totalCost.toFixed(4)}</span>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -137,7 +158,7 @@
 		top: calc(100% + 8px);
 		right: 0;
 		z-index: 60;
-		min-width: 160px;
+		min-width: 190px;
 		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
 		padding: 6px;
@@ -179,6 +200,42 @@
 
 	.dropdown-item.danger :global(svg) {
 		color: var(--color-danger);
+	}
+
+	/* Whitespace-only rows below, not buttons — matches the "no rule
+	   lines" treatment used everywhere else (see SettingsPanel.svelte's
+	   section spacing), just a tonal step instead of a line. */
+	.divider {
+		height: 1px;
+		margin: 6px 4px;
+		background: color-mix(in srgb, var(--color-border) 60%, transparent);
+	}
+
+	.info-row {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding: 7px 10px;
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+	}
+
+	.info-row :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+	}
+
+	.info-row .info-value {
+		margin-left: auto;
+		color: var(--color-text);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Approaching the auto-compaction threshold — a quiet heads-up before
+	   it fires, not an alarm; still just text weight/color, no icon change. */
+	.info-row.hot .info-value {
+		color: var(--color-danger);
+		font-weight: 600;
 	}
 
 	.confirm {

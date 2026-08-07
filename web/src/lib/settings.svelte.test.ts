@@ -9,14 +9,13 @@ describe('SettingsState.load', () => {
 	it('applies server values and the data-theme attribute', async () => {
 		vi.stubGlobal(
 			'fetch',
-			fakeFetch({ theme: 'light', show_prices: false, default_model: 'm1', context_window_tokens: 50000 })
+			fakeFetch({ theme: 'light', default_model: 'm1', context_window_tokens: 50000 })
 		);
 
 		const settings = new SettingsState();
 		await settings.load();
 
 		expect(settings.theme).toBe('light');
-		expect(settings.showPrices).toBe(false);
 		expect(settings.defaultModel).toBe('m1');
 		expect(settings.contextWindowTokens).toBe(50000);
 		expect(document.documentElement.getAttribute('data-theme')).toBe('light');
@@ -44,7 +43,7 @@ describe('SettingsState.load', () => {
 	});
 });
 
-describe('SettingsState.setTheme / setShowPrices', () => {
+describe('SettingsState.setTheme', () => {
 	let putCalls: Array<{ url: string; body: unknown }>;
 
 	beforeEach(() => {
@@ -66,13 +65,6 @@ describe('SettingsState.setTheme / setShowPrices', () => {
 		expect(settings.theme).toBe('light');
 		expect(document.documentElement.getAttribute('data-theme')).toBe('light');
 		expect(putCalls).toEqual([{ url: '/api/settings', body: { theme: 'light' } }]);
-	});
-
-	it('setShowPrices updates local state and persists', async () => {
-		const settings = new SettingsState();
-		await settings.setShowPrices(false);
-		expect(settings.showPrices).toBe(false);
-		expect(putCalls).toEqual([{ url: '/api/settings', body: { show_prices: false } }]);
 	});
 
 	it('setVoiceInputMode updates local state and persists', async () => {

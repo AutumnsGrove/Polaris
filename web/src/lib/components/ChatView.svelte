@@ -3,7 +3,7 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Gauge, Coins, Paperclip, X, Loader2, ArrowDown } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
@@ -141,14 +141,6 @@
 		return `${query} — Polaris Search`;
 	});
 
-	// Context-usage %, next to thread cost — same threshold the backend
-	// auto-compacts at, so this doubles as a warning before that happens.
-	let contextPercent = $derived(
-		appState.settings.contextWindowTokens > 0
-			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
-			: 0
-	);
-
 	// A turn is streaming, but for some other thread — the composer here
 	// still can't send (only one turn runs at a time per connection,
 	// regardless of thread), but showing a "Stop" control that would
@@ -249,20 +241,6 @@
 		{/if}
 	</div>
 	<div class="header-right">
-		{#if appState.turns.length > 0}
-			<div class="context-usage" class:hot={contextPercent >= 90} title="Context window used">
-				<Gauge size={12} />
-				<span class="label">Context:</span>
-				<span class="context-value">{contextPercent}%</span>
-			</div>
-		{/if}
-		{#if appState.settings.showPrices}
-			<div class="cost" title="Thread cost">
-				<Coins size={12} />
-				<span class="label">Thread cost:</span>
-				<span class="cost-value">${appState.totalCost.toFixed(4)}</span>
-			</div>
-		{/if}
 		{#if appState.currentThreadId}
 			<ThreadMenu threadId={appState.currentThreadId} threadTitle={currentThreadTitle} />
 		{/if}
@@ -364,54 +342,6 @@
 		align-items: center;
 		gap: 8px;
 		flex-shrink: 0;
-	}
-
-	.cost,
-	.context-usage {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		flex-shrink: 0;
-		font-size: 12px;
-		color: var(--color-text-dim);
-		letter-spacing: 0.01em;
-	}
-
-	.context-usage {
-		padding-right: 10px;
-		margin-right: 2px;
-	}
-
-	.cost-value,
-	.context-value {
-		color: var(--color-text);
-		font-variant-numeric: tabular-nums;
-	}
-
-	/* Approaching the auto-compaction threshold — a quiet heads-up before
-	   it fires, not an alarm; still just text weight/color, no icon change. */
-	.context-usage.hot .context-value {
-		color: var(--color-danger);
-		font-weight: 600;
-	}
-
-	/* Below phone width, the label text ("Context:", "Thread cost:") is
-	   the first thing to go — the icon plus value alone still reads fine
-	   at a glance, and the header stops fighting the model selector for
-	   room. Icons stay so cost and context are still distinguishable. */
-	@media (max-width: 480px) {
-		.cost .label,
-		.context-usage .label {
-			display: none;
-		}
-
-		.header-right {
-			gap: 6px;
-		}
-
-		.context-usage {
-			padding-right: 6px;
-		}
 	}
 
 	/* The welcome state is the ONE screen in the app allowed a committed

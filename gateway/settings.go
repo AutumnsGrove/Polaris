@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	settingTheme        = "theme"       // "dark" or "light"
-	settingShowPrices   = "show_prices" // "true" or "false"
+	settingTheme        = "theme" // "dark" or "light"
 	settingDefaultModel = "default_model"
 	// settingDefaultFocusMode is the composer's standing focus mode —
 	// applied to every new message until changed, same "sticky until
@@ -54,10 +53,6 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if theme == "" {
 		theme = "dark"
 	}
-	showPrices := true
-	if v, ok := all[settingShowPrices]; ok {
-		showPrices = v == "true"
-	}
 	voiceInputMode := all[settingVoiceInputMode]
 	if !validVoiceInputModes[voiceInputMode] {
 		voiceInputMode = "toggle"
@@ -65,7 +60,6 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]interface{}{
 		"theme":                 theme,
-		"show_prices":           showPrices,
 		"default_model":         s.effectiveDefaultModel(cfg),
 		"default_focus_mode":    all[settingDefaultFocusMode],
 		"voice_input_mode":      voiceInputMode,
@@ -76,7 +70,6 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Theme            *string `json:"theme"`
-		ShowPrices       *bool   `json:"show_prices"`
 		DefaultModel     *string `json:"default_model"`
 		DefaultFocusMode *string `json:"default_focus_mode"`
 		VoiceInputMode   *string `json:"voice_input_mode"`
@@ -98,19 +91,6 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "theme changed", map[string]interface{}{"theme": *req.Theme}, "")
-	}
-	if req.ShowPrices != nil {
-		value := "false"
-		if *req.ShowPrices {
-			value = "true"
-		}
-		if err := s.db.SetSetting(settingShowPrices, value); err != nil {
-			log.Warn("saving show_prices setting failed", "err", err)
-			s.db.LogEvent("", "error", "settings", "saving show_prices setting failed", map[string]interface{}{"err": err.Error()}, "")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		s.db.LogEvent("", "info", "settings", "show_prices changed", map[string]interface{}{"show_prices": value}, "")
 	}
 	if req.DefaultModel != nil {
 		cfg := s.liveConfig()

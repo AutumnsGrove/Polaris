@@ -88,9 +88,6 @@ func TestHandleGetSettings_Defaults(t *testing.T) {
 	if settings["theme"] != "dark" {
 		t.Errorf("theme = %v, want dark by default", settings["theme"])
 	}
-	if settings["show_prices"] != true {
-		t.Errorf("show_prices = %v, want true by default", settings["show_prices"])
-	}
 	if settings["default_model"] != "mimo-pro" {
 		t.Errorf("default_model = %v, want mimo-pro (config.yaml's default)", settings["default_model"])
 	}
@@ -102,7 +99,7 @@ func TestHandleGetSettings_Defaults(t *testing.T) {
 func TestHandlePutSettings_UpdatesAndPersists(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
-	body, _ := json.Marshal(map[string]interface{}{"theme": "light", "show_prices": false, "default_model": "deepseek"})
+	body, _ := json.Marshal(map[string]interface{}{"theme": "light", "default_model": "deepseek"})
 	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -121,7 +118,7 @@ func TestHandlePutSettings_UpdatesAndPersists(t *testing.T) {
 	defer getResp.Body.Close()
 	var settings map[string]interface{}
 	json.NewDecoder(getResp.Body).Decode(&settings)
-	if settings["theme"] != "light" || settings["show_prices"] != false || settings["default_model"] != "deepseek" {
+	if settings["theme"] != "light" || settings["default_model"] != "deepseek" {
 		t.Errorf("settings after PUT = %+v, want the updated values", settings)
 	}
 }
