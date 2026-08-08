@@ -3,7 +3,7 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown, TriangleAlert, RotateCcw } from '@lucide/svelte';
+	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown, TriangleAlert, RotateCcw, MessageCirclePlus } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
@@ -263,6 +263,14 @@
 	</div>
 	<div class="header-right">
 		{#if appState.currentThreadId}
+			<button
+				class="icon-btn new-thread-btn"
+				onclick={() => appState.newThread()}
+				title="New thread"
+				aria-label="New thread"
+			>
+				<MessageCirclePlus size={17} />
+			</button>
 			<ThreadMenu
 				threadId={appState.currentThreadId}
 				threadTitle={currentThreadTitle}
@@ -378,6 +386,21 @@
 		align-items: center;
 		gap: 8px;
 		flex-shrink: 0;
+	}
+
+	/* Amber-tinted like the send button, but mixed down to about half
+	   strength against the surface rather than the full solid accent —
+	   this needs to read as "available" without competing with the send
+	   button for the eye, since it's not the primary action in this
+	   header the way send is in the composer. */
+	.new-thread-btn {
+		background: color-mix(in srgb, var(--color-accent) 45%, var(--color-surface-2));
+		color: var(--color-text);
+	}
+
+	.new-thread-btn:hover {
+		background: color-mix(in srgb, var(--color-accent) 65%, var(--color-surface-2));
+		color: var(--color-text);
 	}
 
 	/* The welcome state is the ONE screen in the app allowed a committed
