@@ -264,7 +264,7 @@
 	<div class="header-right">
 		{#if appState.currentThreadId}
 			<button
-				class="icon-btn new-thread-btn"
+				class="icon-btn"
 				onclick={() => appState.newThread()}
 				title="New thread"
 				aria-label="New thread"
@@ -388,20 +388,11 @@
 		flex-shrink: 0;
 	}
 
-	/* Amber-tinted like the send button, but mixed down to about half
-	   strength against the surface rather than the full solid accent —
-	   this needs to read as "available" without competing with the send
-	   button for the eye, since it's not the primary action in this
-	   header the way send is in the composer. */
-	.new-thread-btn {
-		background: color-mix(in srgb, var(--color-accent) 45%, var(--color-surface-2));
-		color: var(--color-text);
-	}
-
-	.new-thread-btn:hover {
-		background: color-mix(in srgb, var(--color-accent) 65%, var(--color-surface-2));
-		color: var(--color-text);
-	}
+	/* A filled amber background here (first attempt) read as shouting for
+	   a header action that isn't actually the primary one — plain
+	   .icon-btn, same quiet treatment as the sidebar toggle and the "..."
+	   trigger right next to it, so the icon's shape alone communicates
+	   what it does instead of a competing pill of color. */
 
 	/* The welcome state is the ONE screen in the app allowed a committed
 	   color treatment — a subtle off-center radial wash of the starlight
