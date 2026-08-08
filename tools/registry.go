@@ -46,9 +46,22 @@ type Context struct {
 	// enter the agent loop. Nil means "nothing blocked".
 	Blocklist *search.Blocklist
 
-	// DefaultLocation is geocoded by nearby_search when a query omits an
-	// explicit location. Empty means "no fallback — location is required."
+	// DefaultLocation is the static fallback geocoded by nearby_search/
+	// weather when a query omits an explicit location and RequestLocation
+	// (below) is nil, returns nothing, or isn't set at all — config.yaml's
+	// default_location, or the browser's last cached fix if the client
+	// sent one with this message (see ClientMessage.UserLocation). Empty
+	// means "no fallback at all — location is required."
 	DefaultLocation string
+
+	// RequestLocation, when non-nil, asks the connected browser for a
+	// live GPS fix right now, blocking until it answers or a timeout
+	// passes — the on-demand counterpart to DefaultLocation's static
+	// value. See ResolveLocation below for how the two combine. Nil on
+	// turns with no live client to ask (e.g. POST /api/ask). Wrapped by
+	// handleTurn so it only ever does the actual round trip once per
+	// turn, however many location-hungry tool calls ask for it.
+	RequestLocation func() (string, bool)
 
 	// MaxTurns bounds one turn's tool-use loop — see config.Config.MaxAgentTurns.
 	// Zero means "caller didn't set it", which agent.Run treats as its own
@@ -79,6 +92,26 @@ type Context struct {
 	// can call AddCitation at the same instant.
 	citationsMu sync.Mutex
 	Citations   []Citation
+}
+
+// ResolveLocation is the one place nearby_search and weather figure out
+// what location to use, in order: explicit (whatever the query itself
+// named — always wins, it's what the user actually asked for), a live
+// round trip to the browser via RequestLocation, then DefaultLocation's
+// static fallback. Doing the live round trip here, not proactively when
+// the turn starts, is the whole point — it's only attempted when a tool
+// call is actually about to need a location, not on every message
+// regardless of whether one ever gets used.
+func (c *Context) ResolveLocation(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if c.RequestLocation != nil {
+		if loc, ok := c.RequestLocation(); ok && loc != "" {
+			return loc
+		}
+	}
+	return c.DefaultLocation
 }
 
 type Citation struct {

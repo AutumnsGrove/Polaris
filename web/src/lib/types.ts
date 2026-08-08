@@ -47,6 +47,13 @@ export type ServerEvent =
 	// auto-summarized — content is the summary, shown as a collapsible
 	// timeline note like a tool call, not a normal answer.
 	| { type: 'compacted'; thread_id?: string; content: string }
+	// nearby_search or weather wants a live GPS fix for this turn and none
+	// of the cheaper sources (query text, the cookie from last time) had
+	// one — see gateway/protocol.go's doc comment. Reply with a
+	// 'location_response' ClientMessage; there's no need to correlate a
+	// request ID since the server only ever has one of these outstanding
+	// per connection at a time.
+	| { type: 'location_request'; thread_id?: string }
 	| { type: 'error'; thread_id?: string; message: string; user_message_id?: number };
 
 // edit_from_id turns this into a retry/edit: the server deletes every
@@ -79,7 +86,14 @@ export type ClientMessage =
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs
 	// no thread_id to target it.
-	| { type: 'stop' };
+	| { type: 'stop' }
+	// Reply to a 'location_request' ServerEvent. user_location is a fresh
+	// "lat, lon" fix, or omitted/empty if the browser couldn't get one
+	// (denied, unavailable, or the request timed out client-side) — either
+	// way the server treats "no answer" as normal and falls back to its
+	// own default, so this should be sent promptly rather than held back
+	// waiting for a "good" answer.
+	| { type: 'location_response'; user_location?: string };
 
 // 'off' isn't a selectable mode in the sheet — it's just what focusMode
 // resets to when the active mode is tapped again to turn it off.

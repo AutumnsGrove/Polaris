@@ -92,6 +92,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	var final ServerEvent
 	var turnErr string
 
+	// No live WebSocket on this path — nil requestLocation means
+	// ResolveLocation just falls straight through to DefaultLocation, same
+	// as before this feature existed.
 	s.handleTurn(r.Context(), msg, func(evt ServerEvent) {
 		switch evt.Type {
 		case "token":
@@ -101,7 +104,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		case "error":
 			turnErr = evt.Message
 		}
-	})
+	}, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	if turnErr != "" {

@@ -18,7 +18,11 @@ import (
 	"polaris/tools"
 )
 
-func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(ServerEvent)) {
+// requestLocation, when non-nil, asks the connected browser for a live
+// GPS fix and blocks (bounded by locationRequestTimeout, or waitCtx being
+// cancelled) for its answer — see location_broker.go. Nil on turns with
+// no live client to ask, e.g. POST /api/ask (see ask.go).
+func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(ServerEvent), requestLocation func(waitCtx context.Context, threadID string) (string, bool)) {
 	cfg := s.liveConfig()
 
 	threadID := msg.ThreadID
@@ -264,14 +268,36 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.logTurnEvent(storageThreadID, turnID, eventType, evt)
 	}
 
-	// The browser's geolocation (cached client-side, see protocol.go's
-	// UserLocation doc comment) takes precedence over the static
-	// config.yaml default — a "near me" query should mean where the
-	// phone actually is right now, not wherever the operator was when
-	// they first set up the potato.
+	// The browser's last-known cached fix (see protocol.go's UserLocation
+	// doc comment) takes precedence over the static config.yaml default as
+	// the bottom rung of the fallback chain — resolveLiveLocation below,
+	// wired in as RequestLocation, sits above both of these and is what a
+	// tool call actually gets first crack at (see tools.Context.
+	// ResolveLocation): a live fix beats a stale cookie, which beats
+	// wherever the operator was when they first set up the potato.
 	defaultLocation := cfg.DefaultLocation
 	if msg.UserLocation != "" {
 		defaultLocation = msg.UserLocation
+	}
+
+	// requestLocation asks a specific browser for a fix; resolveLiveLocation
+	// is the tool-facing wrapper handed to tools.Context — sync.Once means
+	// however many location-hungry tool calls this turn makes (nearby_search
+	// and weather both could, concurrently, via dispatchToolCallsConcurrently),
+	// the browser only ever gets interrupted for its GPS once. Nil when
+	// requestLocation itself is nil (no live client — see ask.go), so
+	// ResolveLocation's nil check skips straight to defaultLocation above.
+	var resolveLiveLocation func() (string, bool)
+	if requestLocation != nil {
+		var locationOnce sync.Once
+		var liveLocation string
+		var liveLocationOK bool
+		resolveLiveLocation = func() (string, bool) {
+			locationOnce.Do(func() {
+				liveLocation, liveLocationOK = requestLocation(ctx, threadID)
+			})
+			return liveLocation, liveLocationOK
+		}
 	}
 
 	agentCtx := &tools.Context{
@@ -281,6 +307,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Tavily:          s.tavily,
 		GitHubToken:     cfg.GitHub.Token,
 		DefaultLocation: defaultLocation,
+		RequestLocation: resolveLiveLocation,
 		VoiceMode:       msg.VoiceMode,
 		FocusMode:       msg.FocusMode,
 		DeepResearch:    msg.DeepResearch,

@@ -71,10 +71,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		args.ForecastDays = 3
 	}
 
-	locationQuery := args.Location
-	if locationQuery == "" {
-		locationQuery = ctx.DefaultLocation
-	}
+	locationQuery := ctx.ResolveLocation(args.Location)
 	if locationQuery == "" {
 		return emitToolError(ctx, "weather", map[string]interface{}{"location": args.Location},
 			"error: no location given and no default_location configured — specify a location")

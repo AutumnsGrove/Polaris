@@ -94,6 +94,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	var cancelMu sync.Mutex
 	var current *cancelSlot
 
+	// One broker per connection, reused across every turn sent on it —
+	// see location_broker.go. A turn that never calls RequestLocation
+	// just never touches it.
+	var locationBroker connLocationBroker
+
 	for {
 		var msg ClientMessage
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -133,6 +138,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if msg.Type == "location_response" {
+			locationBroker.deliver(msg.UserLocation)
+			continue
+		}
+
 		// Only one turn runs at a time per connection — the frontend
 		// enforces this by disabling the composer while busy (see
 		// AppState.busy in state.svelte.ts), but that's a client-side
@@ -157,6 +167,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		current = slot
 		cancelMu.Unlock()
 
+		// requestLocation lets handleTurn ask this specific browser for a
+		// live GPS fix mid-turn, keyed to whatever thread ID that turn
+		// actually resolves (a brand-new thread's ID isn't known yet at
+		// this point — msg.ThreadID is empty — so handleTurn passes its
+		// own resolved threadID through at call time rather than this
+		// closure capturing the wrong one).
+		requestLocation := func(waitCtx context.Context, threadID string) (string, bool) {
+			return locationBroker.request(waitCtx, send, threadID)
+		}
+
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
 			defer cancel()
 			// net/http recovers a panic in a handler running synchronously
@@ -173,7 +193,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
 				}
 			}()
-			s.handleTurn(ctx, msg, send)
+			s.handleTurn(ctx, msg, send, requestLocation)
 			cancelMu.Lock()
 			if current == slot {
 				current = nil

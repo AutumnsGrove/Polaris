@@ -13,7 +13,7 @@ import type {
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
-import { getUserLocation, refreshLocation } from './geolocation';
+import { getUserLocation, requestFreshLocation } from './geolocation';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -631,14 +631,6 @@ export class AppState {
 			attachment_filename: attachment?.filename,
 			attachment_content_type: attachment?.content_type
 		});
-
-		// Fire-and-forget, and deliberately *after* the send above: this
-		// message goes out with whatever location was already cached, and
-		// only the next one benefits from the fresh fix. Asking the GPS
-		// only when a message is actually going out — never on a timer,
-		// never just because the tab is open — is what keeps this from
-		// draining the battery for a session that's just sitting idle.
-		refreshLocation();
 	}
 
 	// Reasoning always finishes before the visible answer (or a tool call)
@@ -699,6 +691,22 @@ export class AppState {
 			// (and an existing one jumps to the top) within one round trip
 			// of hitting send, not after the whole answer streams in.
 			void this.loadThreads();
+			return;
+		}
+
+		// nearby_search or weather wants a live GPS fix mid-turn (see
+		// geolocation.ts's requestFreshLocation and gateway/protocol.go's
+		// "location_request" doc comment). This is the only place the app
+		// ever touches navigator.geolocation — no page-load prime, no
+		// timer — so the browser's location is asked for exactly when a
+		// tool call actually needs it, not for as long as the tab happens
+		// to be open. Always reply, even empty: the server is already
+		// waiting on this and treats "no answer" as a normal fallback, not
+		// something worth stalling the turn over.
+		if (e.type === 'location_request') {
+			void requestFreshLocation().then((loc) => {
+				this.socket.send({ type: 'location_response', user_location: loc || undefined });
+			});
 			return;
 		}
 
