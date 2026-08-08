@@ -36,11 +36,12 @@ with citations.
   in a real voice (Kokoro-82M), not the browser's default robotic TTS. Replies are synthesized and
   played back sentence by sentence as they're ready, not as one call that waits for the whole
   answer — audio starts noticeably sooner on a long reply
-- **Retry & edit** — redo a failed turn, or fix a typo and re-run from that point, without losing
-  the rest of the thread
-- **Persistent threads** with per-thread and per-turn cost tracking, visible or hideable
-- **Settings panel** — dark/light theme, default model, price visibility, and a one-click
-  "push update now" button that pulls, rebuilds, and restarts the service — no SSH required
+- **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
+  the old version is never deleted, just tucked behind a `‹ 2/3 ›` switcher on the reply, so you can
+  browse back to it (or keep going from it) without losing whichever branch you're not looking at
+- **Persistent threads** with per-thread and per-turn cost tracking
+- **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
+  that pulls, rebuilds, and restarts the service — no SSH required
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's homescreen
   as a standalone app (no browser chrome), since [mobile is the primary surface](PRODUCT.md)
