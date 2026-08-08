@@ -15,7 +15,12 @@ import "polaris/tools"
 // treating Content as the new user message at that point. Retry re-sends
 // the original content unchanged; editing sends the revised text.
 type ClientMessage struct {
-	Type       string `json:"type"` // always "message" for now
+	// Type is "message" for a normal turn, "stop" to cancel one in flight,
+	// or "location_response" replying to a server-initiated
+	// "location_request" (see ServerEvent's doc comment below) — only
+	// UserLocation is read for that last one, empty meaning denied/
+	// unavailable/timed out rather than "field omitted".
+	Type       string `json:"type"`
 	ThreadID   string `json:"thread_id,omitempty"`
 	Content    string `json:"content"`
 	Model      string `json:"model"` // config.ModelConfig.ID
@@ -35,13 +40,16 @@ type ClientMessage struct {
 	// ignored on every later turn in the same thread. The WebSocket client
 	// never sets this; it's populated by handleAsk for API-originated threads.
 	Source string `json:"source,omitempty"`
-	// UserLocation is "lat, lon" from the browser's Geolocation API,
-	// cached client-side in a cookie so it's resent with every message
-	// without re-prompting each turn (see web/src/lib/geolocation.ts).
-	// Empty if the browser never granted permission, or on non-web
-	// sources. Used as nearby_search's location when neither the user's
-	// message nor the model's tool call names one explicitly — see
-	// handleTurn's defaultLocation precedence.
+	// UserLocation is "lat, lon" from the browser's Geolocation API. On a
+	// "message" frame it's whatever fix the browser had cached client-side
+	// last (see web/src/lib/geolocation.ts) — a fallback of last resort,
+	// used as nearby_search/weather's location only if neither the user's
+	// message, the model's tool call, nor a live "location_request" round
+	// trip (see ServerEvent's doc comment, and tools.Context.RequestLocation)
+	// produced one. On a "location_response" frame it's that round trip's
+	// actual answer instead: a fresh fix if the browser got one, empty if
+	// denied/unavailable/the user's tab was backgrounded. Empty on either
+	// frame just means "nothing usable" — never a hard error.
 	UserLocation string `json:"user_location,omitempty"`
 	// FocusMode is set from the composer's "+" menu (see
 	// web/src/lib/components/ComposerMenu.svelte) — one of
@@ -103,6 +111,16 @@ type ClientMessage struct {
 //	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
 //	                  and was auto-summarized; content is the summary, shown as a collapsible
 //	                  timeline note like a tool call, not a normal answer
+//	"location_request" — thread_id only: nearby_search or weather wants a live GPS fix for this
+//	                  turn and none of the cheaper sources (query text, cached cookie) had one —
+//	                  see tools.Context.RequestLocation. The frontend should call
+//	                  getCurrentPosition() right then (permission is already granted at this
+//	                  point, or the tool wouldn't be running at all) and reply with a
+//	                  "location_response" ClientMessage. Sent at most once per turn even if
+//	                  multiple tool calls want a location — see handleTurn's requestLocation
+//	                  wrapping. Never blocks the rest of the turn indefinitely: a client that
+//	                  never replies (denied, tab backgrounded, closed) just times out and the
+//	                  tool falls back to config.yaml's default_location like before.
 //	"error"         — message: something failed
 type ServerEvent struct {
 	Type      string           `json:"type"`

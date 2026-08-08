@@ -70,10 +70,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 	}
 	radiusM := int(args.RadiusKM * 1000)
 
-	locationQuery := args.Location
-	if locationQuery == "" {
-		locationQuery = ctx.DefaultLocation
-	}
+	locationQuery := ctx.ResolveLocation(args.Location)
 	if locationQuery == "" {
 		return emitToolError(ctx, "nearby_search", map[string]interface{}{"query": args.Query},
 			"error: no location given and no default_location configured — specify a location")

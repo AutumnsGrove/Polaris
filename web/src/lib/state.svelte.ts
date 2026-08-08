@@ -13,7 +13,7 @@ import type {
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
-import { getUserLocation, primeLocation } from './geolocation';
+import { getUserLocation, requestFreshLocation } from './geolocation';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -252,10 +252,6 @@ export class AppState {
 	connect() {
 		this.socket.connect();
 		void this.startVersionCheck();
-		// Fire-and-forget: silently asks for (or refreshes) the browser's
-		// location, cached in a cookie that dispatch() reads per-message —
-		// see geolocation.ts. Never blocks connect() on a permission dialog.
-		primeLocation();
 	}
 
 	async startVersionCheck() {
@@ -695,6 +691,22 @@ export class AppState {
 			// (and an existing one jumps to the top) within one round trip
 			// of hitting send, not after the whole answer streams in.
 			void this.loadThreads();
+			return;
+		}
+
+		// nearby_search or weather wants a live GPS fix mid-turn (see
+		// geolocation.ts's requestFreshLocation and gateway/protocol.go's
+		// "location_request" doc comment). This is the only place the app
+		// ever touches navigator.geolocation — no page-load prime, no
+		// timer — so the browser's location is asked for exactly when a
+		// tool call actually needs it, not for as long as the tab happens
+		// to be open. Always reply, even empty: the server is already
+		// waiting on this and treats "no answer" as a normal fallback, not
+		// something worth stalling the turn over.
+		if (e.type === 'location_request') {
+			void requestFreshLocation().then((loc) => {
+				this.socket.send({ type: 'location_response', user_location: loc || undefined });
+			});
 			return;
 		}
 
