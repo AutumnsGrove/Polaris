@@ -13,7 +13,7 @@ import type {
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
-import { getUserLocation, primeLocation } from './geolocation';
+import { getUserLocation, watchLocation } from './geolocation';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -252,10 +252,11 @@ export class AppState {
 	connect() {
 		this.socket.connect();
 		void this.startVersionCheck();
-		// Fire-and-forget: silently asks for (or refreshes) the browser's
-		// location, cached in a cookie that dispatch() reads per-message —
-		// see geolocation.ts. Never blocks connect() on a permission dialog.
-		primeLocation();
+		// Opens a standing background subscription to the browser's location
+		// (permission-gated once, then silent) that keeps a cookie fresh for
+		// dispatch() to read per-message — see geolocation.ts. Never blocks
+		// connect() on a permission dialog.
+		watchLocation();
 	}
 
 	async startVersionCheck() {
