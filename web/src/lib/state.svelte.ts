@@ -445,6 +445,17 @@ export class AppState {
 		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 	}
 
+	// Re-fetches just the variants map for id — used after a live edit/
+	// retry finishes (see handleEvent's 'done' case), where the turns
+	// array is already correct from live streaming and only the variants
+	// map (which ServerEvent never carries) can be stale.
+	private async refreshVariants(id: string) {
+		const res = await fetch(`/api/threads/${id}`);
+		if (!res.ok || id !== this.currentThreadId) return; // stale — navigated away mid-request
+		const data = await res.json();
+		this.variants = data.variants ?? {};
+	}
+
 	newThread() {
 		// Same reasoning as openThread's abandonment check: navigating to
 		// "no thread selected" can never match whatever the in-flight
@@ -773,6 +784,16 @@ export class AppState {
 					this.totalCost += e.cost_usd ?? 0;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
 					this.suggestions = e.suggestions ?? [];
+					// An edit/retry that just finished may have forked a new
+					// variant into existence — ServerEvent carries no
+					// variants field (openThread/swapVariant are the only
+					// other places appState.variants gets set), so without
+					// this the switcher stayed invisible until the thread
+					// was closed and reopened, even though the fork existed
+					// correctly server-side the whole time. Harmless no-op
+					// for a plain send: the variants map just comes back
+					// the same as before.
+					void this.refreshVariants(e.thread_id);
 				}
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
