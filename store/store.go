@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
 
@@ -50,7 +51,23 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- favorite: user-pinned via the thread menu's Favorite toggle — drives
 	-- the sidebar's pinned Favorites section (see ListThreads). Purely a
 	-- display flag, unrelated to disabled/soft-delete.
-	favorite INTEGER NOT NULL DEFAULT 0
+	favorite INTEGER NOT NULL DEFAULT 0,
+	-- fork_root_id/fork_at_index/active_variant_id implement message
+	-- variants (editing or regenerating a reply no longer destroys the
+	-- old one — see ForkThread's doc comment for the full model). A
+	-- thread with fork_root_id set is a hidden variant, never surfaced by
+	-- ListThreads/GetThread directly: it only exists to be pointed at by
+	-- its root's active_variant_id or listed by VariantsAt.
+	fork_root_id TEXT NOT NULL DEFAULT '',
+	-- fork_at_index: the 0-based position in the message list where this
+	-- variant's content starts differing from its siblings — the anchor
+	-- VariantsAt groups by to find every alternative at the same spot.
+	fork_at_index INTEGER NOT NULL DEFAULT 0,
+	-- active_variant_id: only meaningful on a root thread (fork_root_id
+	-- ''). Empty means the root's own messages are what's shown; otherwise
+	-- it's the id of whichever variant (a thread ForkThread created) is
+	-- currently the effective content — see EffectiveThreadID.
+	active_variant_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -147,6 +164,9 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN attachment_content_type TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN fork_root_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE threads ADD COLUMN fork_at_index INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN active_variant_id TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -298,16 +318,163 @@ func (s *Store) SetThreadFavorite(id string, favorite bool) error {
 	return err
 }
 
-// GetThread looks up a thread by id. A disabled (soft-deleted) thread is
-// excluded — same sql.ErrNoRows a caller gets for an id that never
-// existed at all, so a stale tab/bookmark pointed at a deleted thread
-// fails the same way as a bad id, not with some visibly different
-// "this was deleted" response.
+// EffectiveThreadID resolves which thread's messages are actually shown
+// for rootID right now — rootID's own, unless SetActiveVariant last
+// pointed it at a different variant (a thread ForkThread previously
+// created). Every read (GetMessages, GetThreadEvents, loadHistory) and
+// every new message (a plain send, or the shared prefix an edit/retry
+// branches from) goes through this first, so continuing a conversation
+// after browsing to an older variant just keeps building on that variant
+// — no special-casing needed anywhere else.
+func (s *Store) EffectiveThreadID(rootID string) (string, error) {
+	var active string
+	if err := s.db.QueryRow(`SELECT active_variant_id FROM threads WHERE id = ?`, rootID).Scan(&active); err != nil {
+		return "", err
+	}
+	if active == "" {
+		return rootID, nil
+	}
+	return active, nil
+}
+
+// ForkThread is what makes editing/regenerating non-destructive: instead
+// of deleting whatever's being replaced (the old DeleteMessagesFromAndAdd
+// Message behavior), the turn about to overwrite srcID's content first
+// gets a permanent home of its own. This creates that new hidden thread —
+// fork_root_id=rootID, fork_at_index=atIndex — and copies srcID's first
+// atIndex messages into it (the shared prefix both branches have in
+// common). srcID's own messages are never touched here; the caller is
+// expected to write the new content into the returned thread, and
+// srcID's row stays exactly as reachable afterward (via VariantsAt) as
+// it was before this ran.
+//
+// atIndex is a position (0-based index into the message list ordered by
+// id), not a message id — it's what lets VariantsAt group multiple
+// threads as "alternatives at the same spot" even though each fork's own
+// copied messages get entirely new autoincrement ids.
+func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
+	forkID := uuid.NewString()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	var model, source string
+	if err := tx.QueryRow(`SELECT model, source FROM threads WHERE id = ?`, srcID).Scan(&model, &source); err != nil {
+		return "", err
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO threads (id, title, model, source, fork_root_id, fork_at_index) VALUES (?, '', ?, ?, ?, ?)`,
+		forkID, model, source, rootID, atIndex,
+	); err != nil {
+		return "", err
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, created_at
+		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
+		forkID, srcID, atIndex,
+	); err != nil {
+		return "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return forkID, nil
+}
+
+// SetActiveVariant points rootID at a different variant of its own
+// conversation. targetID is either rootID itself (show its own original
+// content) or a thread ForkThread previously returned. Swapping is O(1)
+// regardless of conversation length — it never moves or copies data,
+// just repoints which existing thread EffectiveThreadID resolves to.
+func (s *Store) SetActiveVariant(rootID, targetID string) error {
+	active := targetID
+	if targetID == rootID {
+		active = ""
+	}
+	_, err := s.db.Exec(`UPDATE threads SET active_variant_id = ? WHERE id = ?`, active, rootID)
+	return err
+}
+
+// VariantsAt lists every variant available at message index atIndex for
+// rootID's conversation, oldest-created first: rootID's own original
+// content (if its own history reaches that far — it's the implicit
+// "slot 0" that predates any forking) followed by every fork branching at
+// that exact index. A single-element result means nothing's actually
+// been edited/regenerated at this position, so the caller shouldn't show
+// a switcher for it at all.
+func (s *Store) VariantsAt(rootID string, atIndex int) ([]string, error) {
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE thread_id = ?`, rootID).Scan(&count); err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	if count > atIndex {
+		ids = append(ids, rootID)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id FROM threads WHERE fork_root_id = ? AND fork_at_index = ? ORDER BY created_at ASC`,
+		rootID, atIndex,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// VariantIndices returns every position rootID has ever been
+// edited/regenerated at, so the caller can build the full variants map
+// for a GetThread response with one query per position instead of
+// probing every possible index.
+func (s *Store) VariantIndices(rootID string) ([]int, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT fork_at_index FROM threads WHERE fork_root_id = ? ORDER BY fork_at_index`,
+		rootID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var indices []int
+	for rows.Next() {
+		var i int
+		if err := rows.Scan(&i); err != nil {
+			return nil, err
+		}
+		indices = append(indices, i)
+	}
+	return indices, rows.Err()
+}
+
+// GetThread looks up a thread by id. A disabled (soft-deleted) thread or a
+// hidden variant (fork_root_id set — see ForkThread) is excluded — same
+// sql.ErrNoRows a caller gets for an id that never existed at all, so a
+// stale tab/bookmark pointed at a deleted thread (or a variant id, which
+// was never meant to be addressable on its own) fails the same way as a
+// bad id. Internal callers that need to read a variant thread directly
+// use GetThreadRaw instead.
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
 		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
-		 FROM threads WHERE id = ? AND disabled = 0`, id,
+		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
 	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -315,9 +482,26 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 	return &t, nil
 }
 
-// ListThreads returns non-disabled threads newest-first, for the
-// sidebar/history view. Favorite/non-favorite are interleaved here in one
-// recency order — the frontend splits them into the pinned Favorites
+// GetThreadRaw looks up any thread by id, including a hidden variant or a
+// disabled one — for internal use (loadHistory, ForkThread) where the id
+// in hand is known to be legitimate (resolved via EffectiveThreadID, not
+// taken from an untrusted request), not the public GetThread's job of
+// rejecting ids that shouldn't be individually addressable.
+func (s *Store) GetThreadRaw(id string) (*Thread, error) {
+	var t Thread
+	err := s.db.QueryRow(
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
+		 FROM threads WHERE id = ?`, id,
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ListThreads returns non-disabled, non-variant threads newest-first, for
+// the sidebar/history view. Favorite/non-favorite are interleaved here in
+// one recency order — the frontend splits them into the pinned Favorites
 // section and the rest, each keeping this same relative ordering.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
@@ -325,7 +509,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	}
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
-		 FROM threads WHERE disabled = 0 ORDER BY updated_at DESC LIMIT ?`,
+		 FROM threads WHERE disabled = 0 AND fork_root_id = '' ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -398,53 +582,6 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 	return res.LastInsertId()
 }
 
-// DeleteMessagesFromAndAddMessage atomically replaces everything in
-// threadID from fromID onward with a single new message, in one
-// transaction — the retry/edit path's "wipe what's being replaced, then
-// persist the replacement" used to be two separate transactions
-// (DeleteMessagesFrom then AddMessage). A failure between them (SQLite
-// busy/locked, a crash) could commit the delete but never persist the
-// replacement, permanently losing the deleted messages with nothing to
-// show for it. Returns the new message's ID.
-func (s *Store) DeleteMessagesFromAndAddMessage(threadID string, fromID int64, role, content, citationsJSON, suggestionsJSON string, costUSD float64, turnID string) (int64, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.Exec(`DELETE FROM messages WHERE thread_id = ? AND id >= ?`, threadID, fromID); err != nil {
-		return 0, err
-	}
-
-	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		threadID, role, content, citationsJSON, suggestionsJSON, costUSD, turnID,
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	// Recomputed from scratch (a SUM over whatever actually remains,
-	// including the row just inserted) rather than "subtract the deleted
-	// rows, then add this message's cost" — a single recompute can't drift
-	// the way two separate arithmetic adjustments could if this is ever
-	// called more than once for the same thread.
-	if _, err := tx.Exec(
-		`UPDATE threads SET cost_usd = (
-			SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE thread_id = ?
-		), updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
-		threadID, threadID,
-	); err != nil {
-		return 0, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
-}
-
 // IsFirstMessage reports whether id is the earliest message in threadID —
 // used by handleTurn to tell an edit/retry of the thread's opening
 // question (which should regenerate the title, since the question the
@@ -458,6 +595,16 @@ func (s *Store) IsFirstMessage(threadID string, id int64) (bool, error) {
 		return false, err
 	}
 	return minID == id, nil
+}
+
+// MessageIndex returns the 0-based position of message id within
+// threadID's own message list — the atIndex ForkThread needs to know how
+// much of the shared prefix to copy for an edit/retry landing on this
+// message.
+func (s *Store) MessageIndex(threadID string, id int64) (int, error) {
+	var index int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE thread_id = ? AND id < ?`, threadID, id).Scan(&index)
+	return index, err
 }
 
 // SetContextTokens records the thread's current context size (prompt +

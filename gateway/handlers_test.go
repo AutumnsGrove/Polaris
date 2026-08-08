@@ -397,6 +397,189 @@ func TestHandleGetThread_NotFound(t *testing.T) {
 	}
 }
 
+// TestHandleGetThread_IncludesVariantsMapAndAppliesActiveContent builds a
+// forked thread directly at the store layer (no need to go through a full
+// WS turn for this) and checks the HTTP response: messages/cost/context
+// come from whichever variant is active, not necessarily root's own row,
+// and the variants map correctly lists both alternatives with the right
+// one marked active.
+func TestHandleGetThread_IncludesVariantsMapAndAppliesActiveContent(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	if err := h.db.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := h.db.AddMessage("root", "user", "q1", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := h.db.AddMessage("root", "assistant", "original answer", "[]", "[]", 0.01, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	forkID, err := h.db.ForkThread("root", "root", 1)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if _, err := h.db.AddMessage(forkID, "assistant", "regenerated answer", "[]", "[]", 0.02, ""); err != nil {
+		t.Fatalf("AddMessage(fork): %v", err)
+	}
+	if err := h.db.SetActiveVariant("root", forkID); err != nil {
+		t.Fatalf("SetActiveVariant: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/threads/root"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got struct {
+		store.Thread
+		Messages []store.Message      `json:"messages"`
+		Variants map[string]struct {
+			IDs    []string `json:"ids"`
+			Active string   `json:"active"`
+		} `json:"variants"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if got.ID != "root" {
+		t.Errorf("id = %q, want %q (root's own identity, not the fork's)", got.ID, "root")
+	}
+	if len(got.Messages) != 2 || got.Messages[1].Content != "regenerated answer" {
+		t.Fatalf("messages = %+v, want the active fork's content", got.Messages)
+	}
+	if got.CostUSD != 0.02 {
+		t.Errorf("cost_usd = %v, want the active variant's own 0.02, not root's 0.01", got.CostUSD)
+	}
+
+	group, ok := got.Variants["1"]
+	if !ok {
+		t.Fatalf("variants = %+v, want an entry at position 1", got.Variants)
+	}
+	if len(group.IDs) != 2 || group.IDs[0] != "root" || group.IDs[1] != forkID {
+		t.Errorf("variants[1].ids = %v, want [root, %s]", group.IDs, forkID)
+	}
+	if group.Active != forkID {
+		t.Errorf("variants[1].active = %q, want the fork %q", group.Active, forkID)
+	}
+}
+
+// TestHandleGetThread_NoVariantsMapWhenNothingForked confirms an ordinary
+// thread that's never been edited/regenerated gets no variants key at
+// all — the frontend uses its absence to decide not to render a switcher
+// anywhere in the timeline.
+func TestHandleGetThread_NoVariantsMapWhenNothingForked(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/threads/t1"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var got struct {
+		Variants map[string]interface{} `json:"variants"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(got.Variants) != 0 {
+		t.Errorf("variants = %+v, want none for a never-forked thread", got.Variants)
+	}
+}
+
+// TestHandleSwapVariant_SwitchesActiveContent exercises the swap endpoint
+// end-to-end: switching to the fork must make GetThread show its content,
+// and switching back to root must restore root's own.
+func TestHandleSwapVariant_SwitchesActiveContent(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	if err := h.db.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := h.db.AddMessage("root", "assistant", "original", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	forkID, err := h.db.ForkThread("root", "root", 0)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if _, err := h.db.AddMessage(forkID, "assistant", "regenerated", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(fork): %v", err)
+	}
+
+	swapTo := func(variantID string) []store.Message {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"variant_id": variantID})
+		resp, err := http.Post(h.url("/api/threads/root/variant"), "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /api/threads/root/variant: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("swap to %q status = %d, want 200", variantID, resp.StatusCode)
+		}
+		var got struct {
+			Messages []store.Message `json:"messages"`
+		}
+		json.NewDecoder(resp.Body).Decode(&got)
+		return got.Messages
+	}
+
+	msgs := swapTo(forkID)
+	if len(msgs) != 1 || msgs[0].Content != "regenerated" {
+		t.Fatalf("after swapping to fork, messages = %+v, want [regenerated]", msgs)
+	}
+
+	msgs = swapTo("root")
+	if len(msgs) != 1 || msgs[0].Content != "original" {
+		t.Fatalf("after swapping back to root, messages = %+v, want [original]", msgs)
+	}
+}
+
+// TestHandleSwapVariant_RejectsUnrelatedThreadID is the important
+// security-adjacent case: swapping must only ever accept an id VariantsAt
+// actually returned for THIS thread, never an arbitrary client-supplied
+// thread id — otherwise one thread's turn could be pointed at a
+// completely unrelated thread's content.
+func TestHandleSwapVariant_RejectsUnrelatedThreadID(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	if err := h.db.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if err := h.db.CreateThread("unrelated", "Someone else's thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread(unrelated): %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"variant_id": "unrelated"})
+	resp, err := http.Post(h.url("/api/threads/root/variant"), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an id that was never one of root's own variants", resp.StatusCode)
+	}
+
+	effective, err := h.db.EffectiveThreadID("root")
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effective != "root" {
+		t.Errorf("EffectiveThreadID = %q, want root untouched after the rejected swap", effective)
+	}
+}
+
 func TestEvents_ThreadAndRecent(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
@@ -425,5 +608,54 @@ func TestEvents_ThreadAndRecent(t *testing.T) {
 	json.NewDecoder(recentResp.Body).Decode(&recentEvents)
 	if len(recentEvents) != 2 {
 		t.Errorf("recent events = %+v, want both (global + thread-scoped)", recentEvents)
+	}
+}
+
+// TestHandleThreadEvents_ResolvesActiveVariant verifies GET
+// /api/threads/{id}/events follows EffectiveThreadID the same way
+// GetThread does — events for a turn that ran on a forked variant are
+// logged under the fork's own id (see turn.go's storageThreadID), so
+// fetching by root's raw id while that variant is active must still find
+// them, not silently return nothing.
+func TestHandleThreadEvents_ResolvesActiveVariant(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	h.db.LogEvent("root", "info", "turn", "root's own turn", nil, "")
+
+	forkID, err := h.db.ForkThread("root", "root", 0)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	h.db.LogEvent(forkID, "info", "turn", "the fork's own turn", nil, "")
+
+	// While root's own content is active, only root's own event should
+	// come back.
+	resp, err := http.Get(h.url("/api/threads/root/events"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	var events []store.Event
+	json.NewDecoder(resp.Body).Decode(&events)
+	resp.Body.Close()
+	if len(events) != 1 || events[0].Message != "root's own turn" {
+		t.Fatalf("events (root active) = %+v, want just root's own", events)
+	}
+
+	// After browsing to the fork, the same URL (still root's id — the
+	// client never learns the fork's id directly) must return the
+	// fork's events instead.
+	if err := h.db.SetActiveVariant("root", forkID); err != nil {
+		t.Fatalf("SetActiveVariant: %v", err)
+	}
+	resp, err = http.Get(h.url("/api/threads/root/events"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	json.NewDecoder(resp.Body).Decode(&events)
+	if len(events) != 1 || events[0].Message != "the fork's own turn" {
+		t.Fatalf("events (fork active) = %+v, want just the fork's own", events)
 	}
 }

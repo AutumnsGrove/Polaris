@@ -10,9 +10,21 @@ import (
 // compaction) oldest-first — the durable record of exactly what happened
 // during it, independent of whether the turn ever reached a normal
 // "done" and independent of the log files' own retention.
+//
+// Resolves through EffectiveThreadID first — turn.go logs a turn's
+// events under storageThreadID (see its doc comment), which is a hidden
+// fork's own id whenever the active variant isn't root's own content.
+// Querying by the raw path id in that case would silently return no
+// events at all for that variant's tool calls/reasoning, even though
+// they're fully persisted.
 func (s *Server) handleThreadEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	events, err := s.db.ListEvents(id, parseLimit(r, 500))
+	effectiveID, err := s.db.EffectiveThreadID(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	events, err := s.db.ListEvents(effectiveID, parseLimit(r, 500))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

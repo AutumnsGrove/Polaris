@@ -442,17 +442,16 @@ func TestWebSocket_DisconnectDoesNotTruncateInFlightTurn(t *testing.T) {
 	}
 }
 
-// TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory
-// exercises handleTurn's retry/edit path end-to-end — regression coverage
-// for the same audit finding as store's
-// TestDeleteMessagesFromAndAddMessage_* tests, but for the full wiring:
-// loadHistory's excludeFromID must still produce a "post-edit" view of
-// history even though the actual DELETE is now deferred to the same
-// transaction as the new message's INSERT (see handleTurn's comments).
-// If that exclusion logic were wrong, the edit turn's LLM call would see
-// the original (soon-to-be-replaced) question as history alongside the
-// edited one, rather than the edited one replacing it.
-func TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory(t *testing.T) {
+// TestWebSocket_EditFirstMessage_PreservesOriginalAsVariant exercises
+// handleTurn's retry/edit path end-to-end. Editing/regenerating no longer
+// destroys anything (the old DeleteMessagesFromAndAddMessage behavior) —
+// the original exchange must survive completely untouched under the
+// thread's own id, with the edited version living in a forked thread that
+// EffectiveThreadID now resolves to. It also re-covers the original
+// regression this test existed for: loadHistory must build the edit
+// turn's LLM call from the forked thread's content only, never leaking
+// the replaced question back in as history.
+func TestWebSocket_EditFirstMessage_PreservesOriginalAsVariant(t *testing.T) {
 	var mu sync.Mutex
 	var requestBodies []string
 
@@ -512,12 +511,40 @@ func TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory(t *test
 	}
 	readEventsUntilDone(t, conn, 5*time.Second)
 
-	msgs, err := h.db.GetMessages(threadID)
+	// root's own row must be exactly what it was before the edit — the
+	// whole point of forking instead of deleting.
+	rootMsgs, err := h.db.GetMessages(threadID)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("GetMessages(root): %v", err)
 	}
-	if len(msgs) != 2 || msgs[0].Content != "edited question" || msgs[0].Role != "user" {
-		t.Fatalf("messages = %+v, want exactly [edited question, an answer]", msgs)
+	if len(rootMsgs) != 2 || rootMsgs[0].Content != "original question" || rootMsgs[1].Content != "an answer" {
+		t.Fatalf("root messages = %+v, want the original exchange left completely untouched", rootMsgs)
+	}
+
+	// The edited version is what's now effective.
+	effectiveID, err := h.db.EffectiveThreadID(threadID)
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effectiveID == threadID {
+		t.Fatalf("EffectiveThreadID = root, want a forked thread after editing")
+	}
+	effectiveMsgs, err := h.db.GetMessages(effectiveID)
+	if err != nil {
+		t.Fatalf("GetMessages(effective): %v", err)
+	}
+	if len(effectiveMsgs) != 2 || effectiveMsgs[0].Content != "edited question" || effectiveMsgs[0].Role != "user" {
+		t.Fatalf("effective messages = %+v, want exactly [edited question, an answer]", effectiveMsgs)
+	}
+
+	// Both the original and the edit must show up as variants at
+	// position 0 — this is what lets the switcher browse back to it.
+	variants, err := h.db.VariantsAt(threadID, 0)
+	if err != nil {
+		t.Fatalf("VariantsAt: %v", err)
+	}
+	if len(variants) != 2 || variants[0] != threadID || variants[1] != effectiveID {
+		t.Fatalf("VariantsAt(0) = %v, want [%s, %s]", variants, threadID, effectiveID)
 	}
 
 	mu.Lock()
@@ -529,6 +556,226 @@ func TestWebSocket_EditFirstMessage_AtomicallyReplacesAndRebuildsHistory(t *test
 		if strings.Contains(body, "original question") {
 			t.Errorf("an edit-turn LLM request still contained the replaced question: %s", body)
 		}
+	}
+}
+
+// TestWebSocket_MultipleRegeneratesCreateOrderedVariants regenerates the
+// same reply twice and checks the variant group grows correctly each
+// time, oldest-created first, with the newest generation always the one
+// EffectiveThreadID/GetThread's "active" field points at.
+func TestWebSocket_MultipleRegeneratesCreateOrderedVariants(t *testing.T) {
+	// currentAnswer, not a call-indexed slice — a single turn makes
+	// several LLM calls (the main answer, then suggestions, then title
+	// on the first turn), all against this same fake server, so indexing
+	// by call count doesn't line up with "which regenerate is this." The
+	// test flips currentAnswer between WriteJSON calls instead, so every
+	// HTTP request within one turn consistently sees that turn's answer.
+	var mu sync.Mutex
+	currentAnswer := "first answer"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		answer := currentAnswer
+		mu.Unlock()
+
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": answer}}},
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "a question", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+	var userMsgID int64
+	for _, e := range events {
+		if e["type"] == "user_message" {
+			id, _ := e["user_message_id"].(float64)
+			userMsgID = int64(id)
+		}
+	}
+	if userMsgID == 0 {
+		t.Fatalf("never captured user_message_id: %+v", events)
+	}
+
+	// Regenerate twice — same user content, same edit_from_id, just
+	// asking for a fresh reply each time.
+	regenAnswers := []string{"second answer", "third answer"}
+	for i, next := range regenAnswers {
+		mu.Lock()
+		currentAnswer = next
+		mu.Unlock()
+		if err := conn.WriteJSON(map[string]interface{}{
+			"type": "message", "thread_id": threadID, "content": "a question",
+			"model": "test-model", "edit_from_id": userMsgID,
+		}); err != nil {
+			t.Fatalf("WriteJSON (regenerate %d): %v", i, err)
+		}
+		readEventsUntilDone(t, conn, 5*time.Second)
+	}
+
+	variants, err := h.db.VariantsAt(threadID, 0)
+	if err != nil {
+		t.Fatalf("VariantsAt: %v", err)
+	}
+	if len(variants) != 3 {
+		t.Fatalf("VariantsAt(0) = %v, want 3 variants (original + 2 regenerates)", variants)
+	}
+	if variants[0] != threadID {
+		t.Errorf("variants[0] = %q, want root %q (the original, created first)", variants[0], threadID)
+	}
+
+	effectiveID, err := h.db.EffectiveThreadID(threadID)
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effectiveID != variants[2] {
+		t.Errorf("EffectiveThreadID = %q, want the last-created variant %q (the newest regenerate)", effectiveID, variants[2])
+	}
+	effectiveMsgs, err := h.db.GetMessages(effectiveID)
+	if err != nil {
+		t.Fatalf("GetMessages(effective): %v", err)
+	}
+	if len(effectiveMsgs) != 2 || effectiveMsgs[1].Content != "third answer" {
+		t.Fatalf("effective messages = %+v, want the third (most recent) regenerate's answer", effectiveMsgs)
+	}
+
+	// The two earlier generations must still be fully intact, not just
+	// referenced.
+	rootMsgs, err := h.db.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages(root): %v", err)
+	}
+	if len(rootMsgs) != 2 || rootMsgs[1].Content != "first answer" {
+		t.Errorf("root messages = %+v, want the original [first answer] untouched", rootMsgs)
+	}
+	secondMsgs, err := h.db.GetMessages(variants[1])
+	if err != nil {
+		t.Fatalf("GetMessages(second variant): %v", err)
+	}
+	if len(secondMsgs) != 2 || secondMsgs[1].Content != "second answer" {
+		t.Errorf("second variant messages = %+v, want [second answer]", secondMsgs)
+	}
+}
+
+// TestWebSocket_ContinuingAfterBrowsingToOldVariant_ForksTheNewerOne is
+// the exact scenario this whole feature was built for: regenerate once
+// (now two variants), browse back to the original, then send a genuinely
+// new follow-up from there. The reply that had been active must not be
+// lost — it becomes a third, still-reachable variant — and the new
+// follow-up must build on the ORIGINAL's content, not the regenerate's.
+func TestWebSocket_ContinuingAfterBrowsingToOldVariant_ForksTheNewerOne(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "a reply"}}},
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "say something", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+	var userMsgID int64
+	for _, e := range events {
+		if e["type"] == "user_message" {
+			id, _ := e["user_message_id"].(float64)
+			userMsgID = int64(id)
+		}
+	}
+
+	// Regenerate — now there are two variants, the second one active.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "thread_id": threadID, "content": "say something",
+		"model": "test-model", "edit_from_id": userMsgID,
+	}); err != nil {
+		t.Fatalf("WriteJSON (regenerate): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	variantsBefore, err := h.db.VariantsAt(threadID, 0)
+	if err != nil {
+		t.Fatalf("VariantsAt: %v", err)
+	}
+	if len(variantsBefore) != 2 {
+		t.Fatalf("VariantsAt(0) = %v, want 2 variants before browsing back", variantsBefore)
+	}
+	regeneratedVariantID := variantsBefore[1]
+
+	// Browse back to the original (root itself).
+	if err := h.db.SetActiveVariant(threadID, threadID); err != nil {
+		t.Fatalf("SetActiveVariant(back to root): %v", err)
+	}
+
+	mu.Lock()
+	preFollowUpCount := len(requestBodies)
+	mu.Unlock()
+
+	// Send a genuinely new follow-up while viewing the original.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "thread_id": threadID, "content": "a follow-up", "model": "test-model",
+	}); err != nil {
+		t.Fatalf("WriteJSON (follow-up): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	// The follow-up must have been appended to root's own history, not
+	// forked — a plain continuation (no edit_from_id) never needs to
+	// fork, it just builds on whatever's currently effective.
+	rootMsgs, err := h.db.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages(root): %v", err)
+	}
+	if len(rootMsgs) != 4 || rootMsgs[2].Content != "a follow-up" {
+		t.Fatalf("root messages = %+v, want the follow-up appended directly to root's own 2 original messages", rootMsgs)
+	}
+
+	// The regenerated variant from before must still be exactly as it
+	// was — completely unaffected by continuing down the other branch.
+	regeneratedMsgs, err := h.db.GetMessages(regeneratedVariantID)
+	if err != nil {
+		t.Fatalf("GetMessages(regenerated variant): %v", err)
+	}
+	if len(regeneratedMsgs) != 2 {
+		t.Errorf("regenerated variant messages = %+v, want it untouched at 2 messages", regeneratedMsgs)
+	}
+
+	// The LLM call for the follow-up must have been built from root's
+	// (the original's) content — never from the regenerated variant's,
+	// since we'd browsed away from it before sending.
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requestBodies) <= preFollowUpCount {
+		t.Fatalf("follow-up made no LLM request")
 	}
 }
 

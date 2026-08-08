@@ -36,30 +36,64 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// in the same thread.
 	turnID := uuid.NewString()
 
-	// Retry/edit: the message being replaced and everything after it (no
-	// branching history) gets wiped, but not until it's atomically combined
-	// with persisting the replacement below (see DeleteMessagesFromAndAddMessage) —
-	// deleting eagerly here, in a separate transaction from that insert,
-	// used to mean a failure in between (SQLite busy/locked, a crash) could
-	// commit the delete but never persist the replacement, permanently
-	// losing the deleted messages with nothing to show for it.
+	// storageThreadID is where this turn's messages/events actually get
+	// persisted — threadID itself for a brand-new thread or a plain
+	// continuation, but a freshly forked thread for an edit/retry. Every
+	// DB write from here on uses storageThreadID; threadID stays reserved
+	// for what the client sees (ServerEvent.ThreadID) and root-level
+	// concerns (the title). Keeping the client-facing thread id stable
+	// across edits/regenerates is the whole point: the sidebar entry, the
+	// URL, ThreadMenu — none of it needs to know a fork ever happened.
 	//
-	// isFirstMessageEdit is checked here, against current (pre-delete)
-	// state, since nothing downstream can prove this was the thread's
-	// opening question once the atomic delete+insert below actually runs.
-	// Only regenerating the title in this case (not on every retry)
-	// matters because the title describes the thread as a whole: editing
-	// turn 5 of an established conversation shouldn't retitle it around
-	// just that turn, but editing turn 1 means the question the current
-	// title was generated from doesn't exist anymore.
+	// Retry/edit no longer deletes anything (the old DeleteMessagesFromAnd
+	// AddMessage behavior) — the reply about to be replaced gets a
+	// permanent home of its own first (ForkThread), so it stays reachable
+	// afterward via the variant switcher instead of being gone for good.
+	//
+	// isFirstMessageEdit is checked against the pre-fork effective thread,
+	// since nothing downstream can prove this was the thread's opening
+	// question once ForkThread's copy has run. Only regenerating the title
+	// in this case (not on every retry) matters because the title
+	// describes the thread as a whole: editing turn 5 of an established
+	// conversation shouldn't retitle it around just that turn, but editing
+	// turn 1 means the question the current title was generated from
+	// doesn't exist anymore.
+	storageThreadID := threadID
 	isFirstMessageEdit := false
-	if msg.EditFromID != 0 {
-		var err error
-		isFirstMessageEdit, err = s.db.IsFirstMessage(threadID, msg.EditFromID)
+	if !isNewThread {
+		effectiveID, err := s.db.EffectiveThreadID(threadID)
 		if err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+			s.db.LogEvent(threadID, "error", "turn", "resolving active variant failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
+		}
+		if msg.EditFromID != 0 {
+			isFirstMessageEdit, err = s.db.IsFirstMessage(effectiveID, msg.EditFromID)
+			if err != nil {
+				s.db.LogEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+				return
+			}
+			atIndex, err := s.db.MessageIndex(effectiveID, msg.EditFromID)
+			if err != nil {
+				s.db.LogEvent(threadID, "error", "turn", "locating edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+				return
+			}
+			forkID, err := s.db.ForkThread(threadID, effectiveID, atIndex)
+			if err != nil {
+				s.db.LogEvent(threadID, "error", "turn", "forking thread for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+				return
+			}
+			if err := s.db.SetActiveVariant(threadID, forkID); err != nil {
+				s.db.LogEvent(threadID, "error", "turn", "activating forked variant failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+				return
+			}
+			storageThreadID = forkID
+		} else {
+			storageThreadID = effectiveID
 		}
 	}
 
@@ -106,10 +140,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
-	history, err := s.loadHistory(threadID, msg.EditFromID)
+	history, err := s.loadHistory(storageThreadID, 0)
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
-		send(ServerEvent{Type: "error", Message: err.Error()})
+		s.db.LogEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
+		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
 	}
 
@@ -119,19 +153,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// SttCostUSD folds in push-to-talk transcription cost, if this
 	// message originated from a voice memo.
 	//
-	// For a retry/edit, this is also where the messages being replaced
-	// actually get deleted — combined with this insert in one transaction
-	// (see DeleteMessagesFromAndAddMessage's doc comment) rather than as a
-	// separate step beforehand, so a failure here can't strand the thread
-	// with the old messages gone and nothing persisted in their place.
-	var userMsgID int64
-	if msg.EditFromID != 0 {
-		userMsgID, err = s.db.DeleteMessagesFromAndAddMessage(threadID, msg.EditFromID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
-	} else {
-		userMsgID, err = s.db.AddMessage(threadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
-	}
+	// Always a plain AddMessage now, even for a retry/edit — ForkThread
+	// above already left storageThreadID with exactly the shared prefix
+	// and nothing else, so there's nothing left to delete the way
+	// DeleteMessagesFromAndAddMessage used to.
+	userMsgID, err := s.db.AddMessage(storageThreadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
 	}
@@ -140,7 +168,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if msg.AttachmentID != "" {
 		if err := s.db.SetMessageAttachment(userMsgID, msg.AttachmentFilename, msg.AttachmentContentType); err != nil {
 			log.Warn("failed to record attachment metadata", "err", err)
-			s.db.LogEvent(threadID, "warn", "turn", "recording attachment metadata failed", map[string]interface{}{"err": err.Error()}, turnID)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachment metadata failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 	}
 
@@ -153,7 +181,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, msg)
 	if err != nil {
 		log.Warn("resolving attachment failed, continuing without it", "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
 		turnMessage = msg.Content
 		attachmentCostUSD = 0
 	}
@@ -164,7 +192,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		removeAttachmentFile(cfg, msg.AttachmentID)
 	}
 
-	s.db.LogEvent(threadID, "info", "turn", "turn started", map[string]interface{}{
+	s.db.LogEvent(storageThreadID, "info", "turn", "turn started", map[string]interface{}{
 		"model":         modelCfg.ID,
 		"is_new_thread": isNewThread,
 		"voice_mode":    msg.VoiceMode,
@@ -185,7 +213,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if reasoningBuf.Len() == 0 {
 			return
 		}
-		s.db.LogEvent(threadID, "info", "turn", "reasoning", map[string]interface{}{"content": reasoningBuf.String()}, turnID)
+		s.db.LogEvent(storageThreadID, "info", "turn", "reasoning", map[string]interface{}{"content": reasoningBuf.String()}, turnID)
 		reasoningBuf.Reset()
 	}
 
@@ -233,7 +261,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			flushReasoning()
 		}
 		send(evt)
-		s.logTurnEvent(threadID, turnID, eventType, evt)
+		s.logTurnEvent(storageThreadID, turnID, eventType, evt)
 	}
 
 	// The browser's geolocation (cached client-side, see protocol.go's
@@ -276,7 +304,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// wouldn't have reached that point.
 	flushReasoning()
 	if err != nil {
-		s.db.LogEvent(threadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
+		s.db.LogEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}
@@ -294,7 +322,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		const msg = "The model didn't return an answer — it may have spent its whole response budget on " +
 			"internal reasoning. Try again, or switch models."
 		log.Warn("turn produced an empty answer", "thread", threadID, "model", modelCfg.ID)
-		s.db.LogEvent(threadID, "warn", "turn", "model returned an empty answer", map[string]interface{}{"model": modelCfg.ID}, turnID)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "model returned an empty answer", map[string]interface{}{"model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: msg})
 		return
 	}
@@ -308,7 +336,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if ctx.Err() == nil && result.Answer != "" {
 		if sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer); err != nil {
 			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
+			s.db.LogEvent(storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else {
 			suggestions = sug
 			result.CostUSD += sugCost
@@ -320,7 +348,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// silent: no error to log, no suggestions to show, no trace
 			// in the event log to explain why.
 			if len(sug) == 0 {
-				s.db.LogEvent(threadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
+				s.db.LogEvent(storageThreadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
 			}
 		}
 	}
@@ -338,14 +366,14 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" {
 		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
+			s.db.LogEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {
 			if err := s.db.SetThreadTitle(threadID, title); err != nil {
 				log.Warn("failed to persist generated thread title", "err", err)
-				s.db.LogEvent(threadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()}, turnID)
+				s.db.LogEvent(storageThreadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			} else {
 				result.CostUSD += titleCost
-				s.db.LogEvent(threadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
+				s.db.LogEvent(storageThreadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
 			}
 		} else {
 			// No error, but nothing usable came back — this exact gap is
@@ -359,17 +387,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// the event log explaining why. Logging this case (and
 			// raising generateTitle's token budget) closes both the
 			// silence and the likely cause.
-			s.db.LogEvent(threadID, "warn", "title", "model returned no usable title", nil, turnID)
+			s.db.LogEvent(storageThreadID, "warn", "title", "model returned no usable title", nil, turnID)
 		}
 	}
 
 	citationsJSON, err := json.Marshal(result.Citations)
 	if err != nil {
 		log.Warn("failed to marshal citations, persisting message without them", "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
 		citationsJSON = []byte("[]")
 	}
-	assistantMsgID, err := s.db.AddMessage(threadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD, turnID)
+	assistantMsgID, err := s.db.AddMessage(storageThreadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD, turnID)
 	if err != nil {
 		// The answer was already fully streamed live via "token" events —
 		// the browser has it. But "done" (see protocol.go's doc comment)
@@ -380,7 +408,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		// Surfacing an explicit error instead tells the user their answer
 		// exists only in this live view and won't survive a reload.
 		log.Warn("failed to persist assistant message", "err", err)
-		s.db.LogEvent(threadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()}, turnID)
 		send(ServerEvent{
 			Type:          "error",
 			ThreadID:      threadID,
@@ -390,14 +418,14 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		return
 	}
 
-	if err := s.db.SetContextTokens(threadID, result.ContextTokens); err != nil {
+	if err := s.db.SetContextTokens(storageThreadID, result.ContextTokens); err != nil {
 		log.Warn("failed to record context tokens", "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
 		log.Warn("failed to record message duration", "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	// Auto-compact once this thread crosses the configured threshold: the
@@ -407,13 +435,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// the LLM shrinks, the visible transcript stays the true record.
 	contextTokens := result.ContextTokens
 	if result.ContextTokens >= cfg.ContextWindowTokens {
-		if summary, compactCost, err := s.compactThread(client, threadID, assistantMsgID); err != nil {
+		if summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
-			s.db.LogEvent(threadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
+			s.db.LogEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else {
 			contextTokens = estimateTokens(summary)
 			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
-			s.db.LogEvent(threadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
+			s.db.LogEvent(storageThreadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
 				"through_message_id": assistantMsgID,
 				"cost_usd":           compactCost,
 				"summary":            summary,
@@ -428,7 +456,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// just ran, plus follow-up suggestions — all persisted above, so the
 	// frontend's running total should reflect all of them.
 	totalCost := result.CostUSD + msg.SttCostUSD + attachmentCostUSD
-	s.db.LogEvent(threadID, "info", "turn", "turn completed", map[string]interface{}{
+	s.db.LogEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
 		"cost_usd":       totalCost,
 		"context_tokens": contextTokens,
@@ -722,7 +750,11 @@ func estimateTokens(s string) int {
 // transaction with the new message's insert, but the LLM must still see
 // history as if the edit had already happened).
 func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMessage, error) {
-	thread, err := s.db.GetThread(threadID)
+	// GetThreadRaw, not the public GetThread — threadID here is always
+	// storageThreadID, which is legitimately a hidden fork's own id for
+	// an edit/retry turn, and the public GetThread now deliberately
+	// rejects those (see its doc comment).
+	thread, err := s.db.GetThreadRaw(threadID)
 	if err != nil {
 		return nil, err
 	}

@@ -243,78 +243,98 @@ func TestSetMessageDuration_RecordsElapsedTime(t *testing.T) {
 	}
 }
 
-func TestDeleteMessagesFromAndAddMessage_RecomputesCostAndReplaces(t *testing.T) {
+// TestForkThread_PreservesOldContentAndCopiesSharedPrefix verifies the
+// non-destructive edit/retry mechanism: editing/regenerating no longer
+// deletes anything (the old DeleteMessagesFromAndAddMessage behavior) —
+// the reply being replaced gets forked off into its own thread first, so
+// it stays fully intact and reachable via VariantsAt.
+func TestForkThread_PreservesOldContentAndCopiesSharedPrefix(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-
-	if _, err := s.AddMessage("t1", "user", "q1", "[]", "[]", 0, ""); err != nil {
+	if _, err := s.AddMessage("root", "user", "q1", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
-	a1ID, err := s.AddMessage("t1", "assistant", "a1", "[]", "[]", 0.01, "")
-	if err != nil {
-		t.Fatalf("AddMessage: %v", err)
-	}
-	if _, err := s.AddMessage("t1", "user", "q2 (retry target)", "[]", "[]", 0, ""); err != nil {
-		t.Fatalf("AddMessage: %v", err)
-	}
-	if _, err := s.AddMessage("t1", "assistant", "a2", "[]", "[]", 0.02, ""); err != nil {
+	if _, err := s.AddMessage("root", "assistant", "a1", "[]", "[]", 0.01, ""); err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
 
-	// Editing/retrying from the first assistant message's slot replaces it
-	// (and everything after) with a single new message in one atomic
-	// operation — cost must drop back to whatever's left, plus the new
-	// message's own cost.
-	newMsgID, err := s.DeleteMessagesFromAndAddMessage("t1", a1ID, "user", "edited q1", "[]", "[]", 0.005, "")
+	// Regenerating "a1" forks at index 1 (the assistant message's own
+	// position) — the fork should end up with just the shared prefix (q1),
+	// ready for the caller to add the new reply.
+	forkID, err := s.ForkThread("root", "root", 1)
 	if err != nil {
-		t.Fatalf("DeleteMessagesFromAndAddMessage: %v", err)
+		t.Fatalf("ForkThread: %v", err)
+	}
+	forkMsgs, err := s.GetMessages(forkID)
+	if err != nil {
+		t.Fatalf("GetMessages(fork): %v", err)
+	}
+	if len(forkMsgs) != 1 || forkMsgs[0].Content != "q1" {
+		t.Fatalf("fork messages = %+v, want just the shared prefix [q1]", forkMsgs)
 	}
 
-	thread, err := s.GetThread("t1")
+	// root's own original content — the thing being "edited away" —
+	// must still be completely untouched.
+	rootMsgs, err := s.GetMessages("root")
 	if err != nil {
-		t.Fatalf("GetThread: %v", err)
+		t.Fatalf("GetMessages(root): %v", err)
 	}
-	if thread.CostUSD != 0.005 {
-		t.Errorf("CostUSD = %v, want 0.005 (only the new message's cost)", thread.CostUSD)
+	if len(rootMsgs) != 2 || rootMsgs[1].Content != "a1" {
+		t.Errorf("root messages = %+v, want the original [q1, a1] still intact", rootMsgs)
 	}
-	msgs, err := s.GetMessages("t1")
+
+	// The fork must show up as a variant at index 1, alongside root's own
+	// original content (which still reaches that far).
+	variants, err := s.VariantsAt("root", 1)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("VariantsAt: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("got %d messages, want 2 (the original first user message + the new replacement)", len(msgs))
-	}
-	if msgs[1].ID != newMsgID || msgs[1].Content != "edited q1" {
-		t.Errorf("msgs[1] = %+v, want the new replacement message with id %d", msgs[1], newMsgID)
+	if len(variants) != 2 || variants[0] != "root" || variants[1] != forkID {
+		t.Errorf("VariantsAt = %v, want [root, %s]", variants, forkID)
 	}
 }
 
-func TestDeleteMessagesFromAndAddMessage_RollsBackOnFailure(t *testing.T) {
+func TestEffectiveThreadID_FollowsSetActiveVariant(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
 		t.Fatalf("CreateThread: %v", err)
 	}
-	q1ID, err := s.AddMessage("t1", "user", "q1", "[]", "[]", 0, "")
+
+	effective, err := s.EffectiveThreadID("root")
 	if err != nil {
-		t.Fatalf("AddMessage: %v", err)
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effective != "root" {
+		t.Errorf("EffectiveThreadID = %q, want %q (no variant set yet)", effective, "root")
 	}
 
-	// A thread_id that doesn't exist violates the messages table's foreign
-	// key, failing the INSERT after the DELETE has already run inside the
-	// same transaction — the whole thing must roll back, not leave q1
-	// deleted with nothing replacing it.
-	if _, err := s.DeleteMessagesFromAndAddMessage("does-not-exist", q1ID, "user", "x", "[]", "[]", 0, ""); err == nil {
-		t.Fatal("expected an error for a nonexistent thread")
+	forkID, err := s.ForkThread("root", "root", 0)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if err := s.SetActiveVariant("root", forkID); err != nil {
+		t.Fatalf("SetActiveVariant: %v", err)
+	}
+	effective, err = s.EffectiveThreadID("root")
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effective != forkID {
+		t.Errorf("EffectiveThreadID = %q, want the fork %q after browsing to it", effective, forkID)
 	}
 
-	msgs, err := s.GetMessages("t1")
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+	// Swapping back to root itself resets it — no lingering pointer.
+	if err := s.SetActiveVariant("root", "root"); err != nil {
+		t.Fatalf("SetActiveVariant(back to root): %v", err)
 	}
-	if len(msgs) != 1 || msgs[0].ID != q1ID {
-		t.Errorf("msgs = %+v, want q1 untouched — the failed call must not have deleted it", msgs)
+	effective, err = s.EffectiveThreadID("root")
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if effective != "root" {
+		t.Errorf("EffectiveThreadID = %q, want %q after switching back", effective, "root")
 	}
 }
 
