@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, Copy, Link2, Paperclip } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
@@ -12,6 +12,22 @@
 	import { quintOut } from 'svelte/easing';
 
 	let { turn, index }: { turn: ChatTurn; index: number } = $props();
+
+	// Editing/regenerating always replaces starting at the preceding user
+	// message's position (see gateway/turn.go's ForkThread call) — so an
+	// assistant reply's variant group, if it has one, is keyed one index
+	// back from its own. appState.variants has no entry at all for a
+	// position that's never been touched, which is exactly what keeps the
+	// switcher hidden on an ordinary, never-edited reply.
+	let variantGroup = $derived(turn.role === 'assistant' ? appState.variants[index - 1] : undefined);
+	let variantPosition = $derived(variantGroup ? variantGroup.ids.indexOf(variantGroup.active) : -1);
+
+	function browseVariant(delta: number) {
+		if (!variantGroup) return;
+		const next = variantPosition + delta;
+		if (next < 0 || next >= variantGroup.ids.length) return;
+		void appState.swapVariant(variantGroup.ids[next]);
+	}
 
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
@@ -197,6 +213,27 @@
 
 			{#if !turn.streaming}
 				<div class="turn-footer">
+					{#if variantGroup && variantGroup.ids.length > 1}
+						<div class="variant-switcher">
+							<button
+								class="icon-btn"
+								onclick={() => browseVariant(-1)}
+								disabled={variantPosition <= 0}
+								title="Previous response"
+							>
+								<ChevronLeft size={13} />
+							</button>
+							<span class="variant-position">{variantPosition + 1}/{variantGroup.ids.length}</span>
+							<button
+								class="icon-btn"
+								onclick={() => browseVariant(1)}
+								disabled={variantPosition >= variantGroup.ids.length - 1}
+								title="Next response"
+							>
+								<ChevronRight size={13} />
+							</button>
+						</div>
+					{/if}
 					{#if turn.costUsd !== undefined}
 						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
 					{/if}
@@ -549,6 +586,29 @@
 		font-size: 11px;
 		color: var(--color-text-dim);
 		margin-right: 4px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Leads the footer, not tucked in with the utility icons — browsing
+	   past replies is a real navigation action, not a minor aside like
+	   copy/read-aloud. The position readout sits in a shallow well (same
+	   "carved, not drawn" language as inputs/readouts elsewhere) between
+	   its two arrows so it reads as one compact control. */
+	.variant-switcher {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		margin-right: 6px;
+	}
+
+	.variant-position {
+		min-width: 28px;
+		padding: 2px 4px;
+		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-well);
+		text-align: center;
+		font-size: 11px;
+		color: var(--color-text-dim);
 		font-variant-numeric: tabular-nums;
 	}
 

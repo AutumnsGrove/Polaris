@@ -7,7 +7,8 @@ import type {
 	StoredEvent,
 	TimelineItem,
 	FocusMode,
-	UploadedAttachment
+	UploadedAttachment,
+	VariantGroup
 } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
@@ -96,6 +97,14 @@ export class AppState {
 	// restores them; cleared on new dispatch/new thread since there's no
 	// "most recent answer" yet at that point.
 	suggestions = $state<string[]>([]);
+
+	// Which message positions in the current thread have more than one
+	// reply (an edit or regenerate happened there) — keyed by index into
+	// `turns`, same as GetThread's response (see gateway/threads.go's
+	// buildVariantsMap). ChatTurnView reads this to decide whether to show
+	// the "‹ 2/3 ›" switcher on a given assistant reply at all; a position
+	// with no entry here has never been touched.
+	variants = $state<Record<number, VariantGroup>>({});
 
 	// Desktop: sidebar sits inline, open by default. Mobile: it's an
 	// overlay drawer, closed by default so the chat is visible first.
@@ -309,38 +318,15 @@ export class AppState {
 		this.threads = (await res.json()) ?? [];
 	}
 
-	async openThread(id: string) {
-		const seq = ++this.openThreadSeq;
-
-		// A turn is in flight for a thread other than the one we're about
-		// to show — mark it abandoned so its eventual 'done' can't silently
-		// resurrect it as current (see pendingAbandoned's doc comment).
-		// Returning to the pending thread itself (or nothing being in
-		// flight at all) un-abandons it, so navigating back before it
-		// finishes still updates live, as expected.
-		if (this.busy) {
-			this.pendingAbandoned = id !== this.pendingThreadId;
-		}
-
-		const [res, eventsRes] = await Promise.all([
-			fetch(`/api/threads/${id}`),
-			fetch(`/api/threads/${id}/events`)
-		]);
-		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
-		if (!res.ok) return;
-		const data = await res.json();
-		this.currentThreadId = id;
-		this.syncURL(id);
-		this.totalCost = data.cost_usd ?? 0;
-		this.contextTokens = data.context_tokens ?? 0;
-		const messages = data.messages ?? [];
-
-		// Group persisted events by turn_id so each assistant message's
-		// timeline (thinking steps, tool calls) can be reattached below —
-		// otherwise reopening a thread shows only the bare final answer,
-		// with everything that led up to it gone. Older messages predating
-		// this feature have turn_id "" and simply get no timeline back.
+	// Shared by openThread and swapVariant — both end up with the exact
+	// same GetThread response shape (see gateway/threads.go's
+	// handleGetThread/handleSwapVariant) and need to turn it into the same
+	// ChatTurn[]/suggestions/variants state, just triggered differently
+	// (navigating to a thread vs. browsing to a different reply within
+	// the one already open).
+	private async fetchEventsByTurn(id: string): Promise<Map<string, StoredEvent[]>> {
 		const eventsByTurn = new Map<string, StoredEvent[]>();
+		const eventsRes = await fetch(`/api/threads/${id}/events`);
 		if (eventsRes.ok) {
 			const events: StoredEvent[] = (await eventsRes.json()) ?? [];
 			for (const evt of events) {
@@ -350,8 +336,11 @@ export class AppState {
 				else eventsByTurn.set(evt.turn_id, [evt]);
 			}
 		}
+		return eventsByTurn;
+	}
 
-		let turns: ChatTurn[] = messages.map((m: any) => ({
+	private buildTurnsFromMessages(messages: any[], eventsByTurn: Map<string, StoredEvent[]>): ChatTurn[] {
+		return messages.map((m: any) => ({
 			role: m.role,
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
@@ -365,6 +354,38 @@ export class AppState {
 					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
 					: undefined
 		}));
+	}
+
+	async openThread(id: string) {
+		const seq = ++this.openThreadSeq;
+
+		// A turn is in flight for a thread other than the one we're about
+		// to show — mark it abandoned so its eventual 'done' can't silently
+		// resurrect it as current (see pendingAbandoned's doc comment).
+		// Returning to the pending thread itself (or nothing being in
+		// flight at all) un-abandons it, so navigating back before it
+		// finishes still updates live, as expected.
+		if (this.busy) {
+			this.pendingAbandoned = id !== this.pendingThreadId;
+		}
+
+		const [res, eventsByTurn] = await Promise.all([fetch(`/api/threads/${id}`), this.fetchEventsByTurn(id)]);
+		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
+		if (!res.ok) return;
+		const data = await res.json();
+		this.currentThreadId = id;
+		this.syncURL(id);
+		this.totalCost = data.cost_usd ?? 0;
+		this.contextTokens = data.context_tokens ?? 0;
+		this.variants = data.variants ?? {};
+		const messages = data.messages ?? [];
+
+		// Group persisted events by turn_id so each assistant message's
+		// timeline (thinking steps, tool calls) can be reattached below —
+		// otherwise reopening a thread shows only the bare final answer,
+		// with everything that led up to it gone. Older messages predating
+		// this feature have turn_id "" and simply get no timeline back.
+		let turns = this.buildTurnsFromMessages(messages, eventsByTurn);
 
 		// A turn is still streaming for this exact thread — the user
 		// navigated away mid-generation and came back. The fetch above only
@@ -389,6 +410,35 @@ export class AppState {
 		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
 		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 		this.closeSidebarIfMobile();
+	}
+
+	// Browses to a different reply at some earlier edit/regenerate point —
+	// see store.SetActiveVariant's doc comment for what this does
+	// server-side. currentThreadId never changes: the swap endpoint
+	// responds with the same shape GetThread does, just built from
+	// whichever variant is now active, so this only ever updates what's
+	// displayed, never which thread is open.
+	async swapVariant(variantId: string) {
+		if (!this.currentThreadId) return;
+		const id = this.currentThreadId;
+
+		const [res, eventsByTurn] = await Promise.all([
+			fetch(`/api/threads/${id}/variant`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ variant_id: variantId })
+			}),
+			this.fetchEventsByTurn(id)
+		]);
+		if (!res.ok || id !== this.currentThreadId) return; // stale — navigated away mid-request
+		const data = await res.json();
+		this.totalCost = data.cost_usd ?? 0;
+		this.contextTokens = data.context_tokens ?? 0;
+		this.variants = data.variants ?? {};
+		const messages = data.messages ?? [];
+		this.turns = this.buildTurnsFromMessages(messages, eventsByTurn);
+		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
+		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 	}
 
 	newThread() {

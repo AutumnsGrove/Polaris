@@ -107,6 +107,17 @@ export interface Thread {
 	updated_at: string;
 }
 
+// VariantGroup describes the alternatives available at one message
+// position — every reply an edit/regenerate at that spot has ever
+// produced (oldest first) plus which one is currently shown. Keyed by
+// message array index in GetThread's response (see gateway/threads.go's
+// buildVariantsMap); a position with no entry here has never been
+// edited/regenerated, so ChatTurnView shows no switcher for it.
+export interface VariantGroup {
+	ids: string[];
+	active: string;
+}
+
 export interface StoredMessage {
 	id: number;
 	thread_id: string;
