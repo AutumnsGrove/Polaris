@@ -31,14 +31,18 @@ export type ServerEvent =
 			citations?: Citation[];
 			user_message_id?: number;
 			context_tokens?: number;
-			// Up to 3 follow-up questions for the answer that just finished,
-			// persisted alongside it (see StoredMessage.suggestions) — still
-			// there when this thread is reopened later.
-			suggestions?: string[];
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
 			duration_ms?: number;
 	  }
+	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
+	// answer that just finished, persisted alongside it (see
+	// StoredMessage.suggestions) so they're still there when this thread is
+	// reopened later. Deliberately its own event, not part of 'done': that
+	// call runs after 'done' ships so the turn footer doesn't wait on it —
+	// see gateway/protocol.go's doc comment. cost_usd here is just this
+	// call's own cost, additive with 'done''s, not a replacement for it.
+	| { type: 'suggestions'; thread_id: string; cost_usd: number; suggestions: string[] }
 	// The thread just crossed the context-window threshold and was
 	// auto-summarized — content is the summary, shown as a collapsible
 	// timeline note like a tool call, not a normal answer.

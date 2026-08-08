@@ -664,6 +664,21 @@ export class AppState {
 			this.syncURL(eventThreadId);
 		}
 
+		// 'suggestions' arrives well after 'done', which already cleared
+		// pendingThreadId/pendingTurn — the "still tracking this turn" gate
+		// just below (and the pendingTurn check further down) both exist to
+		// filter events belonging to an in-flight turn, which this isn't
+		// anymore by the time it shows up. Compare against currentThreadId
+		// directly instead, same as swapVariant/openThread do, and handle
+		// it here before that gate would otherwise drop it.
+		if (e.type === 'suggestions') {
+			if (eventThreadId === this.currentThreadId) {
+				this.totalCost += e.cost_usd ?? 0;
+				this.suggestions = e.suggestions ?? [];
+			}
+			return;
+		}
+
 		// Not for the turn we're tracking — most likely a late event for a
 		// turn the user has since navigated away from. The backend is
 		// still persisting it independently regardless; reopening that
@@ -783,7 +798,14 @@ export class AppState {
 					// session — this exact bug shipped once already.
 					this.totalCost += e.cost_usd ?? 0;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
-					this.suggestions = e.suggestions ?? [];
+					// Cleared here, not filled in — follow-up suggestions are
+					// a separate LLM call the backend now runs after "done"
+					// ships (see protocol.go's doc comment on the "suggestions"
+					// event type) precisely so the turn footer doesn't stall
+					// waiting on them. They arrive moments later via the
+					// 'suggestions' case below and render underneath the
+					// footer that's already visible.
+					this.suggestions = [];
 					// An edit/retry that just finished may have forked a new
 					// variant into existence — ServerEvent carries no
 					// variants field (openThread/swapVariant are the only

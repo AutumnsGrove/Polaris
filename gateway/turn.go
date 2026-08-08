@@ -327,33 +327,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		return
 	}
 
-	// Follow-up suggestions, Perplexity-style — generated before persisting
-	// so they're saved alongside the answer, same as citations, instead of
-	// living only in this turn's live event stream. Skipped on a stopped
-	// generation (ctx.Err() != nil) since suggesting where to go next from
-	// an answer the user just cut off isn't useful.
-	var suggestions []string
-	if ctx.Err() == nil && result.Answer != "" {
-		if sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer); err != nil {
-			log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else {
-			suggestions = sug
-			result.CostUSD += sugCost
-			// No error, but nothing usable came back either — a reasoning
-			// model can spend its whole completion budget on hidden
-			// reasoning tokens and never reach visible content (see
-			// generateTitle's doc comment for the real case that
-			// surfaced this). Otherwise this failure mode is completely
-			// silent: no error to log, no suggestions to show, no trace
-			// in the event log to explain why.
-			if len(sug) == 0 {
-				s.db.LogEvent(storageThreadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
-			}
-		}
-	}
-	suggestionsJSON, _ := json.Marshal(suggestions)
-
 	// One-time LLM-generated thread title, replacing the truncated
 	// placeholder set above — on a brand-new thread's first turn, or on
 	// an edit/retry of that first turn (isFirstMessageEdit), since in
@@ -397,7 +370,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
 		citationsJSON = []byte("[]")
 	}
-	assistantMsgID, err := s.db.AddMessage(storageThreadID, "assistant", result.Answer, string(citationsJSON), string(suggestionsJSON), result.CostUSD, turnID)
+	// Suggestions start empty and are filled in by a post-hoc UPDATE once
+	// generateSuggestions returns — see the call after "done" ships below.
+	assistantMsgID, err := s.db.AddMessage(storageThreadID, "assistant", result.Answer, string(citationsJSON), "[]", result.CostUSD, turnID)
 	if err != nil {
 		// The answer was already fully streamed live via "token" events —
 		// the browser has it. But "done" (see protocol.go's doc comment)
@@ -453,8 +428,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// Total cost added to the thread this turn: the agent's LLM/tool
 	// spend plus any STT cost from a voice memo, plus an image
 	// attachment's description call, plus compaction's own cost if it
-	// just ran, plus follow-up suggestions — all persisted above, so the
-	// frontend's running total should reflect all of them.
+	// just ran — all persisted above, so the frontend's running total
+	// should reflect all of them. Follow-up suggestions are deliberately
+	// excluded: that call hasn't run yet (see below), and its cost ships
+	// separately in the "suggestions" event once it does.
 	totalCost := result.CostUSD + msg.SttCostUSD + attachmentCostUSD
 	s.db.LogEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
@@ -471,9 +448,68 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Citations:     result.Citations,
 		CostUSD:       totalCost,
 		ContextTokens: contextTokens,
-		Suggestions:   suggestions,
 		DurationMs:    durationMs,
 	})
+
+	// Follow-up suggestions, Perplexity-style — generated in a detached
+	// goroutine, after "done" already shipped, so the turn footer and
+	// cost/duration appear the instant the real answer is ready instead
+	// of stalling behind a second, invisible LLM call the user never
+	// asked for. Detached, not just moved, because the caller's own
+	// goroutine (see ws.go) releases this connection's "turn in flight"
+	// guard via defer as soon as handleTurn returns — running this
+	// inline would keep the connection locked for this call's duration
+	// too, silently rejecting a fast follow-up message sent right after
+	// "done". Skipped on a stopped generation (ctx.Err() != nil) since
+	// suggesting where to go next from an answer the user just cut off
+	// isn't useful. assistantMsgID/storageThreadID are already persisted
+	// at this point, so this only ever does a post-hoc UPDATE, never
+	// blocks the message existing.
+	if ctx.Err() == nil && result.Answer != "" {
+		go func() {
+			// Same rationale as ws.go's turn goroutine: this runs outside
+			// any call stack net/http recovers, so an unrecovered panic
+			// here would take down the whole process instead of just
+			// this one enrichment step.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic generating follow-up suggestions", "thread", threadID, "panic", r)
+				}
+			}()
+			sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer)
+			if err != nil {
+				log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
+				s.db.LogEvent(storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
+				return
+			}
+			if len(sug) == 0 {
+				// No error, but nothing usable came back either — a
+				// reasoning model can spend its whole completion budget
+				// on hidden reasoning tokens and never reach visible
+				// content (see generateTitle's doc comment for the real
+				// case that surfaced this). Otherwise this failure mode
+				// is completely silent: no error to log, no suggestions
+				// to show, no trace in the event log to explain why.
+				s.db.LogEvent(storageThreadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
+				return
+			}
+			suggestionsJSON, _ := json.Marshal(sug)
+			if err := s.db.SetMessageSuggestions(assistantMsgID, string(suggestionsJSON)); err != nil {
+				log.Warn("failed to persist follow-up suggestions", "err", err)
+				s.db.LogEvent(storageThreadID, "warn", "suggestions", "persisting follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
+				return
+			}
+			if err := s.db.AddThreadCost(storageThreadID, sugCost); err != nil {
+				log.Warn("failed to record follow-up suggestions cost", "err", err)
+			}
+			send(ServerEvent{
+				Type:        "suggestions",
+				ThreadID:    threadID,
+				CostUSD:     sugCost,
+				Suggestions: sug,
+			})
+		}()
+	}
 }
 
 // logTurnEvent persists the subset of streamed turn events worth keeping

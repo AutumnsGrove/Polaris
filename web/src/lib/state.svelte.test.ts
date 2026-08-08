@@ -176,8 +176,7 @@ describe('AppState.handleEvent', () => {
 			thread_id: 't1',
 			cost_usd: 0.002,
 			citations: [{ title: 'Src', url: 'https://x.com' }],
-			context_tokens: 500,
-			suggestions: ['a follow-up?']
+			context_tokens: 500
 		});
 
 		expect(state.turns[1].streaming).toBe(false);
@@ -185,7 +184,43 @@ describe('AppState.handleEvent', () => {
 		expect(state.currentThreadId).toBe('t1');
 		expect(state.totalCost).toBe(0.002);
 		expect(state.contextTokens).toBe(500);
+		expect(state.suggestions).toEqual([]);
+	});
+
+	// The backend now generates follow-up suggestions in a detached
+	// goroutine kicked off after 'done' ships (see gateway/turn.go), so
+	// the turn footer doesn't stall behind that extra LLM call. They
+	// arrive later via their own 'suggestions' event instead of riding
+	// along on 'done' — see state.svelte.ts's handling of both event types.
+	it("a later 'suggestions' event fills in follow-ups and adds their cost", () => {
+		state.send('hello');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		fireEvent(state, { type: 'done', thread_id: 't1', cost_usd: 0.002 });
+		fireEvent(state, {
+			type: 'suggestions',
+			thread_id: 't1',
+			cost_usd: 0.0005,
+			suggestions: ['a follow-up?']
+		});
+
+		expect(state.totalCost).toBeCloseTo(0.0025);
 		expect(state.suggestions).toEqual(['a follow-up?']);
+	});
+
+	it("a 'suggestions' event for a thread the user has since navigated away from is ignored", () => {
+		state.send('hello');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		fireEvent(state, { type: 'done', thread_id: 't1', cost_usd: 0.002 });
+		state.currentThreadId = 't2';
+		fireEvent(state, {
+			type: 'suggestions',
+			thread_id: 't1',
+			cost_usd: 0.0005,
+			suggestions: ['a follow-up?']
+		});
+
+		expect(state.totalCost).toBe(0.002);
+		expect(state.suggestions).toEqual([]);
 	});
 
 	it('done does not overwrite cost/thread if the user navigated to a different thread first', () => {

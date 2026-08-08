@@ -181,6 +181,20 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+	// database/sql pools multiple physical connections by default, and two
+	// of them writing at once can still surface as an immediate
+	// SQLITE_BUSY/"database is locked" error rather than actually waiting
+	// out _busy_timeout above — that pragma governs how long SQLite's own
+	// busy handler retries within one connection, not how Go's pool
+	// arbitrates between several. Capping the pool to one connection
+	// forces every write to queue behind Go's own mutex instead, so two
+	// goroutines writing around the same moment (e.g. a turn's detached
+	// follow-up-suggestions save landing while the next turn's fork
+	// transaction runs — see handleTurn) simply wait their turn rather
+	// than erroring. This app's write volume is low enough that
+	// serializing all of it through one connection costs nothing
+	// noticeable.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
@@ -724,6 +738,24 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 // it to). Mirrors SetContextTokens' same shape for the same reason.
 func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
 	_, err := s.db.Exec(`UPDATE messages SET duration_ms = ? WHERE id = ?`, durationMs, messageID)
+	return err
+}
+
+// SetMessageSuggestions records follow-up suggestions generated after the
+// assistant message was already persisted — generateSuggestions now runs
+// after handleTurn sends "done" (so the turn footer doesn't wait on it),
+// so this is a post-hoc UPDATE rather than part of the original AddMessage
+// insert, same shape as SetMessageDuration above.
+func (s *Store) SetMessageSuggestions(messageID int64, suggestionsJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET suggestions = ? WHERE id = ?`, suggestionsJSON, messageID)
+	return err
+}
+
+// AddThreadCost adds delta to a thread's running cost total — used for
+// costs incurred after AddMessage's own cost_usd bump already ran, e.g.
+// follow-up suggestions generated post-"done" (see SetMessageSuggestions).
+func (s *Store) AddThreadCost(threadID string, delta float64) error {
+	_, err := s.db.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID)
 	return err
 }
 

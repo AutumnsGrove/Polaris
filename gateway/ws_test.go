@@ -495,13 +495,38 @@ func TestWebSocket_EditFirstMessage_PreservesOriginalAsVariant(t *testing.T) {
 		t.Fatalf("never captured user_message_id: %+v", events)
 	}
 
-	// Everything before this point belongs to turn 1 (its main answer call
-	// plus any post-processing like suggestions/title generation, all
-	// synchronous within handleTurn before "done" fires) — a clean
-	// boundary for isolating what the edit turn alone sends the LLM.
+	// Everything before this point belongs to turn 1: its main answer
+	// call, plus title generation (still synchronous within handleTurn
+	// before "done" fires), plus follow-up suggestions — which now runs
+	// in a detached goroutine kicked off right after "done" ships (see
+	// turn.go's comment on why), so it can still be in flight when "done"
+	// arrives here. Wait for turn 1's own suggestions call to actually
+	// land — it legitimately re-sends "original question" as context, so
+	// without this wait it can race past the boundary below and get
+	// miscounted as part of the edit turn, tripping the "must not leak
+	// the replaced question" check on a request that isn't the edit
+	// turn's at all.
+	mu.Lock()
+	turn1Count := len(requestBodies)
+	mu.Unlock()
+	if turn1Count < 3 {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			mu.Lock()
+			turn1Count = len(requestBodies)
+			mu.Unlock()
+			if turn1Count >= 3 {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	mu.Lock()
 	preEditCount := len(requestBodies)
 	mu.Unlock()
+	if preEditCount < 3 {
+		t.Fatalf("turn 1 made %d LLM requests, want 3 (answer + suggestions + title) before starting the edit", preEditCount)
+	}
 
 	if err := conn.WriteJSON(map[string]interface{}{
 		"type": "message", "thread_id": threadID, "content": "edited question",

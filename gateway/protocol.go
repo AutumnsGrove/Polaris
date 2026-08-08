@@ -85,12 +85,21 @@ type ClientMessage struct {
 //	"user_message"  — user_message_id: the persisted ID of the user message that started this
 //	                  turn, sent as soon as it's saved (even if the turn later errors) so the
 //	                  frontend can retry/edit from it
-//	"done"          — thread_id + cost_usd + context_tokens + suggestions + duration_ms: turn
-//	                  complete, persisted, safe to re-enable input; suggestions is up to 3
-//	                  follow-up questions for the just-finished answer, persisted alongside the
-//	                  assistant message (see store.Message.Suggestions) so reopening the thread
-//	                  later still shows them; duration_ms is how long agent.Run took (see
-//	                  store.Message.DurationMs), shown next to cost in the turn footer
+//	"done"          — thread_id + cost_usd + context_tokens + duration_ms: turn complete,
+//	                  persisted, safe to re-enable input; duration_ms is how long agent.Run took
+//	                  (see store.Message.DurationMs), shown next to cost in the turn footer.
+//	                  Deliberately does NOT wait on follow-up suggestions — those are a separate
+//	                  LLM call that runs after this event ships, so the turn footer appears the
+//	                  moment the answer itself is ready instead of stalling behind it (see
+//	                  "suggestions" below and handleTurn's comment on why generateSuggestions
+//	                  moved after this send).
+//	"suggestions"   — thread_id + cost_usd + suggestions: sent once, shortly after "done", once up
+//	                  to 3 follow-up questions for the just-finished answer are ready; persisted
+//	                  alongside the assistant message (see store.Message.Suggestions) so reopening
+//	                  the thread later still shows them. cost_usd is this call's own cost, added to
+//	                  the running total the same as "done"'s — not a replacement for it. May never
+//	                  arrive if generation fails or the answer was stopped early; the frontend
+//	                  should treat "no suggestions" as a normal, silent outcome, not an error.
 //	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
 //	                  and was auto-summarized; content is the summary, shown as a collapsible
 //	                  timeline note like a tool call, not a normal answer
