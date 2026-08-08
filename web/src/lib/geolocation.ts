@@ -16,11 +16,14 @@ const COOKIE_NAME = 'polaris_location';
 // whenever one is available — see its precedence comment.
 const MANUAL_COOKIE_NAME = 'polaris_location_manual';
 
-// 30 minutes: long enough that answering a burst of follow-up questions
-// doesn't re-prompt or re-fetch, short enough that "near me" stays accurate
-// for someone actually moving around (mobile is the primary surface here —
-// see PRODUCT.md) rather than going stale for a whole day.
-const COOKIE_MAX_AGE_SECONDS = 30 * 60;
+// 12 hours: long enough that opening the tab throughout the day — the
+// normal usage pattern for a personal assistant, not a single continuous
+// session — doesn't re-trigger getCurrentPosition (and thus the browser's
+// permission UI) on every single open, even though the permission itself
+// was already granted once. Short enough that "near me" still refreshes
+// at least daily for someone whose location genuinely changed overnight
+// (mobile is the primary surface here — see PRODUCT.md).
+const COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
 
 // 180 days: a manually-typed location is a deliberate, low-frequency
 // choice (unlike a GPS fix, it doesn't drift), so it should survive across
