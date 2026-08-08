@@ -149,7 +149,7 @@
 				{:else if appState.settings.updateState === 'restarting'}
 					Restarting…
 				{:else}
-					Push update now
+					Update Polaris
 				{/if}
 			</button>
 			<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>

@@ -192,7 +192,7 @@ No scp'd binaries, no manual redeploy steps:
 polaris update    # git pull, rebuild, restart — from the CLI over SSH
 ```
 
-or click **Push update now** in the settings panel to do the same thing from the browser.
+or click **Update Polaris** in the settings panel to do the same thing from the browser.
 
 ## CLI usage
 
