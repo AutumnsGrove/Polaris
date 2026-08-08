@@ -296,6 +296,67 @@ func TestForkThread_PreservesOldContentAndCopiesSharedPrefix(t *testing.T) {
 	}
 }
 
+// TestForkThread_CopiesEventsForSharedPrefix guards against exactly the
+// bug this shipped with once already: ForkThread copied messages but not
+// their events, so a fork's shared-prefix replies had the right text but
+// a silently empty reasoning/tool-call timeline — ListEvents filters by
+// thread_id, and those events were still sitting under the source
+// thread's id, invisible when queried by the fork's own id.
+func TestForkThread_CopiesEventsForSharedPrefix(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := s.AddMessage("root", "user", "q1", "[]", "[]", 0, "turn-1"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := s.AddMessage("root", "assistant", "a1", "[]", "[]", 0.01, "turn-1"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	s.LogEvent("root", "info", "tool.web_search", "tool call started", map[string]interface{}{"query": "q1"}, "turn-1")
+	s.LogEvent("root", "info", "turn", "reasoning", map[string]interface{}{"content": "thinking about q1"}, "turn-1")
+
+	// A second, later turn whose events must NOT be copied into a fork
+	// that only reaches the first turn — proof this isn't just copying
+	// srcID's entire event history wholesale.
+	if _, err := s.AddMessage("root", "user", "q2", "[]", "[]", 0, "turn-2"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := s.AddMessage("root", "assistant", "a2", "[]", "[]", 0.01, "turn-2"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	s.LogEvent("root", "info", "turn", "reasoning", map[string]interface{}{"content": "thinking about q2"}, "turn-2")
+
+	// Fork at index 2 — covers turn-1 (q1/a1) only, not turn-2.
+	forkID, err := s.ForkThread("root", "root", 2)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+
+	events, err := s.ListEvents(forkID, 100)
+	if err != nil {
+		t.Fatalf("ListEvents(fork): %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("fork events = %+v, want exactly turn-1's tool call + reasoning", events)
+	}
+	for _, e := range events {
+		if e.TurnID != "turn-1" {
+			t.Errorf("event %+v has turn_id %q, want only turn-1's events copied", e, e.TurnID)
+		}
+	}
+
+	// root's own events must be completely untouched — ForkThread reads,
+	// never mutates, the source.
+	rootEvents, err := s.ListEvents("root", 100)
+	if err != nil {
+		t.Fatalf("ListEvents(root): %v", err)
+	}
+	if len(rootEvents) != 3 {
+		t.Errorf("root events = %+v, want all 3 original events still there", rootEvents)
+	}
+}
+
 func TestEffectiveThreadID_FollowsSetActiveVariant(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {

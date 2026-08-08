@@ -382,6 +382,28 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 		return "", err
 	}
 
+	// Events (reasoning bursts, tool calls/results) aren't attached to a
+	// message row — they're their own rows in a separate table, joined
+	// back to a turn only by turn_id (see events.turn_id's doc comment).
+	// Copying messages alone would leave the shared prefix's own
+	// reasoning/tool-call history stranded under srcID: ListEvents filters
+	// by thread_id, so querying by forkID would come back empty even
+	// though the messages themselves came through fine. Copying only the
+	// turn_ids that actually made it into forkID (not srcID's whole
+	// event history) keeps this exact to the prefix, not everything srcID
+	// ever did.
+	if _, err := tx.Exec(
+		`INSERT INTO events (thread_id, level, source, message, data, turn_id, created_at)
+		 SELECT ?, level, source, message, data, turn_id, created_at
+		 FROM events
+		 WHERE thread_id = ? AND turn_id != '' AND turn_id IN (
+			 SELECT DISTINCT turn_id FROM messages WHERE thread_id = ? AND turn_id != ''
+		 )`,
+		forkID, srcID, forkID,
+	); err != nil {
+		return "", err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}

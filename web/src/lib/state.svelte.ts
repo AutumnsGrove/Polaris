@@ -422,16 +422,20 @@ export class AppState {
 		if (!this.currentThreadId) return;
 		const id = this.currentThreadId;
 
-		const [res, eventsByTurn] = await Promise.all([
-			fetch(`/api/threads/${id}/variant`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ variant_id: variantId })
-			}),
-			this.fetchEventsByTurn(id)
-		]);
+		// Sequential, not Promise.all — the events fetch resolves through
+		// EffectiveThreadID server-side (see handleThreadEvents), which
+		// only points at the new variant once this POST has actually
+		// committed. Firing both at once let the GET occasionally win the
+		// race and read the variant being switched away from, silently
+		// dropping that reply's reasoning/tool-call timeline.
+		const res = await fetch(`/api/threads/${id}/variant`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ variant_id: variantId })
+		});
 		if (!res.ok || id !== this.currentThreadId) return; // stale — navigated away mid-request
 		const data = await res.json();
+		const eventsByTurn = await this.fetchEventsByTurn(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		this.variants = data.variants ?? {};
