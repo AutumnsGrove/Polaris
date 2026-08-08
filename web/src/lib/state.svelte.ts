@@ -13,7 +13,7 @@ import type {
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
-import { getUserLocation, watchLocation } from './geolocation';
+import { getUserLocation, refreshLocation } from './geolocation';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -252,11 +252,6 @@ export class AppState {
 	connect() {
 		this.socket.connect();
 		void this.startVersionCheck();
-		// Opens a standing background subscription to the browser's location
-		// (permission-gated once, then silent) that keeps a cookie fresh for
-		// dispatch() to read per-message — see geolocation.ts. Never blocks
-		// connect() on a permission dialog.
-		watchLocation();
 	}
 
 	async startVersionCheck() {
@@ -636,6 +631,14 @@ export class AppState {
 			attachment_filename: attachment?.filename,
 			attachment_content_type: attachment?.content_type
 		});
+
+		// Fire-and-forget, and deliberately *after* the send above: this
+		// message goes out with whatever location was already cached, and
+		// only the next one benefits from the fresh fix. Asking the GPS
+		// only when a message is actually going out — never on a timer,
+		// never just because the tab is open — is what keeps this from
+		// draining the battery for a session that's just sitting idle.
+		refreshLocation();
 	}
 
 	// Reasoning always finishes before the visible answer (or a tool call)
