@@ -13,6 +13,27 @@
 	// update that finished (or started, from another tab/device) since
 	// the panel was last open, without waiting for a full page reload.
 	void appState.settings.checkUpdateStatus();
+	void appState.settings.loadUsage();
+
+	// toolCallTotal/toolErrorRate collapse the per-tool breakdown from
+	// GetStats into the two headline numbers worth a glance here — the
+	// full per-tool split is what `polaris stats` is for, not this panel.
+	let toolCallTotal = $derived(
+		appState.settings.usage
+			? Object.values(appState.settings.usage.tool_call_counts).reduce((a, b) => a + b, 0)
+			: 0
+	);
+	let toolErrorTotal = $derived(
+		appState.settings.usage
+			? Object.values(appState.settings.usage.tool_error_counts).reduce((a, b) => a + b, 0)
+			: 0
+	);
+	let toolErrorRate = $derived(toolCallTotal > 0 ? (toolErrorTotal / toolCallTotal) * 100 : 0);
+	let wrapupRate = $derived(
+		appState.settings.usage && appState.settings.usage.turn_count > 0
+			? (appState.settings.usage.max_turns_wrapup_count / appState.settings.usage.turn_count) * 100
+			: 0
+	);
 </script>
 
 <div class="modal-backdrop" role="presentation">
@@ -124,6 +145,33 @@
 				is available.
 			</p>
 		</section>
+
+		{#if appState.settings.usage}
+			<section>
+				<h3>Usage (last 30 days)</h3>
+				<div class="row">
+					<span>Cost</span>
+					<span>${appState.settings.usage.period_cost_usd.toFixed(2)}</span>
+				</div>
+				<div class="row">
+					<span>Threads / turns</span>
+					<span>{appState.settings.usage.thread_count} / {appState.settings.usage.turn_count}</span>
+				</div>
+				<div class="row">
+					<span>Tool calls</span>
+					<span>{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
+				</div>
+				<div class="row">
+					<span>Ran out of turn budget</span>
+					<span>{appState.settings.usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
+				</div>
+				<p class="hint">
+					Check-in nudges: {appState.settings.usage.check_in_count}, stale-streak warnings: {appState
+						.settings.usage.stale_streak_count}. See <code>polaris stats</code> for the full breakdown
+					by tool.
+				</p>
+			</section>
+		{/if}
 
 		<section>
 			<h3>Updates</h3>

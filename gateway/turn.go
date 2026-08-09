@@ -560,6 +560,12 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 			level = "warn"
 		}
 		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result, "citations": evt.Citations}, turnID)
+	case "agent_nudge":
+		// Durable record of a research-steering signal firing (see
+		// agent.emitNudge) — evt.Args carries kind/call_count/
+		// citation_count. store.Store.GetStats reads these back to report
+		// how often each signal actually fires against real usage.
+		s.db.LogEvent(threadID, "info", "agent.nudge", "research steering nudge fired", evt.Args, turnID)
 	}
 }
 

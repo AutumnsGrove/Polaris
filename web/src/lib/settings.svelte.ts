@@ -3,6 +3,24 @@ import type { FocusMode } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
+// Mirrors store.Stats (store/stats.go) — kept as plain counts/percentages
+// rather than a time series, since the settings panel only ever shows a
+// handful of numbers, not a chart.
+export interface UsageStats {
+	period_days: number;
+	total_cost_usd: number;
+	period_cost_usd: number;
+	thread_count: number;
+	turn_count: number;
+	avg_turn_duration_ms: number;
+	tool_call_counts: Record<string, number>;
+	tool_error_counts: Record<string, number>;
+	check_in_count: number;
+	stale_streak_count: number;
+	max_turns_wrapup_count: number;
+	compaction_count: number;
+}
+
 // User-adjustable UI preferences, split out of state.svelte.ts since
 // they're a self-contained concern: load once, persist to /api/settings,
 // apply the theme attribute — none of it touches thread/turn state.
@@ -45,6 +63,12 @@ export class SettingsState {
 	// is currently mounted to see them.
 	updateState = $state<UpdateState>('idle');
 	updateLog = $state('');
+
+	// Usage/tuning snapshot for the settings panel's Usage section — null
+	// until loadUsage() resolves (or forever, on a fetch failure; the
+	// panel just doesn't render that section then). Trailing-30-day scope
+	// matches the CLI's `polaris stats` default.
+	usage = $state<UsageStats | null>(null);
 
 	// True once load() has resolved — +page.svelte's composer uses this
 	// (not just checking defaultFocusMode's value) to apply the loaded
@@ -202,6 +226,22 @@ export class SettingsState {
 		} catch {
 			// Best-effort — a normal idle server with nothing to report
 			// shouldn't surface a network hiccup here as an error state.
+		}
+	}
+
+	// Re-fetched on every settings panel open (see SettingsPanel.svelte),
+	// same as checkUpdateStatus — cheap enough, and stats from the last
+	// time the panel happened to be open would be a stale, misleading
+	// snapshot for a "should I tune maxAgentTurns" decision.
+	async loadUsage() {
+		try {
+			const res = await fetch('/api/stats?days=30');
+			if (!res.ok) return;
+			this.usage = await res.json();
+		} catch {
+			// Best-effort — same rationale as checkUpdateStatus: a network
+			// hiccup here shouldn't surface as an error, the section just
+			// stays hidden.
 		}
 	}
 

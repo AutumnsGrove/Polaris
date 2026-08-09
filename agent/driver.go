@@ -90,9 +90,16 @@ func staleStreakMessage(streak, citationCount int) string {
 // checkInInterval/staleThreshold are parameters, not the package
 // constants directly, so Run can widen them for Deep Research mode (see
 // its doc comment) without a second copy of this function.
-func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCount, staleStreak *int, checkInInterval, staleThreshold int) []string {
+//
+// Takes ctx (not just citations) so each fired nudge can also be emitted
+// as a durable "agent_nudge" event (see emitNudge) — otherwise the only
+// trace of researchCheckInInterval/staleStreakThreshold actually firing
+// is the synthetic message baked into that one LLM call's request body,
+// gone the moment the turn finishes. Without that record there's no way
+// to tell, from real usage, whether those constants are tuned well.
+func trackResearchCall(ctx *tools.Context, researchCalls, lastCitationCount, staleStreak *int, checkInInterval, staleThreshold int) []string {
 	*researchCalls++
-	current := len(citations)
+	current := len(ctx.Citations)
 
 	var nudges []string
 	if current > *lastCitationCount {
@@ -101,6 +108,7 @@ func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCo
 		*staleStreak++
 		if *staleStreak >= staleThreshold {
 			nudges = append(nudges, staleStreakMessage(*staleStreak, current))
+			emitNudge(ctx, "stale_streak", *researchCalls, current)
 			*staleStreak = 0 // fire once per streak, not every call past the threshold
 		}
 	}
@@ -108,8 +116,24 @@ func trackResearchCall(citations []tools.Citation, researchCalls, lastCitationCo
 
 	if *researchCalls%checkInInterval == 0 {
 		nudges = append(nudges, researchCheckInMessage(current, *researchCalls))
+		emitNudge(ctx, "check_in", *researchCalls, current)
 	}
 	return nudges
+}
+
+// emitNudge persists a durable record of a research-steering signal
+// firing — kind is "check_in", "stale_streak", or "max_turns_wrapup" (see
+// trackResearchCall and Run's turn-budget exhaustion branch). Consumed by
+// store.Store.GetStats to answer "how often does each signal actually
+// fire, and against how many tool calls" from real usage.
+func emitNudge(ctx *tools.Context, kind string, callCount, citationCount int) {
+	ctx.Emit("agent_nudge", map[string]interface{}{
+		"args": map[string]interface{}{
+			"kind":           kind,
+			"call_count":     callCount,
+			"citation_count": citationCount,
+		},
+	})
 }
 
 // promptPath is read fresh on every turn — no recompiling to change how
@@ -276,7 +300,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 							"tool call syntax.", pc.name, result),
 					})
 					if isResearchTool(pc.name) {
-						for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
+						for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 						}
 					}
@@ -315,7 +339,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		}
 		for _, r := range results {
 			if isResearchTool(r.call.Function.Name) {
-				for _, nudge := range trackResearchCall(ctx.Citations, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
+				for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 				}
 			}
@@ -327,6 +351,11 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	// point of the bound), so if the model still tries to emit a pseudo
 	// tool call here, that's treated as "couldn't produce a real answer
 	// in time" rather than given yet another turn.
+	//
+	// Recorded as a nudge event too (see emitNudge) — this firing often is
+	// the strongest possible signal that maxTurns is tuned too low for
+	// what's actually being asked.
+	emitNudge(ctx, "max_turns_wrapup", researchCalls, len(ctx.Citations))
 	messages = append(messages, llm.ChatMessage{
 		Role:    "user",
 		Content: "Wrap up now — give your best answer with what you've gathered so far. Do not call any more tools.",
