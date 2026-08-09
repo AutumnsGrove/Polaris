@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, Info, ChevronLeft } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -8,6 +8,12 @@
 	function close() {
 		appState.settings.open = false;
 	}
+
+	// Local, not on SettingsState — unlike updateState (see its own doc
+	// comment on why that one has to survive an unmount), there's nothing
+	// in-flight to preserve here. The panel always reopens on the normal
+	// settings view, which is the right default every time.
+	let showStats = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
@@ -40,171 +46,202 @@
 	<button class="modal-backdrop-close" onclick={close} aria-label="Close settings"></button>
 	<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Settings">
 		<div class="sheet-handle" use:swipeToDismiss={close} aria-hidden="true"></div>
-		<div class="modal-panel-header">
-			<h2>Settings</h2>
-			<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
-		</div>
 
-		<section>
-			<h3>Appearance</h3>
-			<div class="row">
-				<span>Theme</span>
-				<div class="theme-toggle">
-					<button
-						class:active={appState.settings.theme === 'dark'}
-						onclick={() => appState.settings.setTheme('dark')}
-					>
-						<Moon size={14} /> Dark
+		{#if showStats}
+			<div class="modal-panel-header">
+				<button class="icon-btn" onclick={() => (showStats = false)} title="Back to settings">
+					<ChevronLeft size={18} />
+				</button>
+				<h2>Usage</h2>
+				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
+			</div>
+
+			{#if appState.settings.usage}
+				<section>
+					<h3>Last 30 days</h3>
+					<div class="row">
+						<span>Cost</span>
+						<span>${appState.settings.usage.period_cost_usd.toFixed(2)}</span>
+					</div>
+					<div class="row">
+						<span>Threads / turns</span>
+						<span>{appState.settings.usage.thread_count} / {appState.settings.usage.turn_count}</span>
+					</div>
+					<div class="row">
+						<span>Tool calls</span>
+						<span>{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
+					</div>
+					<div class="row">
+						<span>Ran out of turn budget</span>
+						<span>{appState.settings.usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
+					</div>
+					<div class="row">
+						<span>Check-in nudges</span>
+						<span>{appState.settings.usage.check_in_count}</span>
+					</div>
+					<div class="row">
+						<span>Stale-streak warnings</span>
+						<span>{appState.settings.usage.stale_streak_count}</span>
+					</div>
+					<div class="row">
+						<span>Auto-compactions</span>
+						<span>{appState.settings.usage.compaction_count}</span>
+					</div>
+					<p class="hint">
+						All-time cost: ${appState.settings.usage.total_cost_usd.toFixed(2)}. Run
+						<code>polaris stats</code> for the full per-tool breakdown.
+					</p>
+				</section>
+			{:else}
+				<section>
+					<p class="hint">Loading…</p>
+				</section>
+			{/if}
+		{:else}
+			<div class="modal-panel-header">
+				<h2>Settings</h2>
+				<div class="header-actions">
+					<button class="icon-btn" onclick={() => (showStats = true)} title="Usage stats">
+						<Info size={18} />
 					</button>
-					<button
-						class:active={appState.settings.theme === 'light'}
-						onclick={() => appState.settings.setTheme('light')}
-					>
-						<Sun size={14} /> Light
-					</button>
+					<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 				</div>
 			</div>
-		</section>
 
-		<section>
-			<h3>Model</h3>
-			<div class="row">
-				<span>Default model</span>
-				<select
-					value={appState.settings.defaultModel}
-					onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
-				>
-					{#each appState.models as model (model.id)}
-						<option value={model.id}>{model.name}</option>
-					{/each}
-				</select>
-			</div>
-			<p class="hint">
-				Applies to new threads. You can still switch models per-thread from the chat header.
-			</p>
-		</section>
-
-		<section>
-			<h3>Focus</h3>
-			<div class="row">
-				<span>Default focus mode</span>
-				<select
-					value={appState.settings.defaultFocusMode}
-					onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
-				>
-					<option value="off">Off</option>
-					{#each FOCUS_MODES as mode (mode.id)}
-						<option value={mode.id}>{mode.label}</option>
-					{/each}
-				</select>
-			</div>
-			<p class="hint">
-				Applied to every new message until changed from the composer's "+" menu.
-			</p>
-		</section>
-
-		<section>
-			<h3>Voice</h3>
-			<div class="row">
-				<span>Mic button</span>
-				<div class="theme-toggle">
-					<button
-						class:active={appState.settings.voiceInputMode === 'toggle'}
-						onclick={() => appState.settings.setVoiceInputMode('toggle')}
-					>
-						Tap to toggle
-					</button>
-					<button
-						class:active={appState.settings.voiceInputMode === 'hold'}
-						onclick={() => appState.settings.setVoiceInputMode('hold')}
-					>
-						Hold to talk
-					</button>
-				</div>
-			</div>
-			<p class="hint">
-				"Tap to toggle" starts recording on the first tap and stops on the second — no need to
-				keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
-				behavior.
-			</p>
-		</section>
-
-		<section>
-			<h3>Location</h3>
-			<div class="row location-row">
-				<input
-					type="text"
-					placeholder="e.g. Seattle, WA"
-					value={appState.settings.manualLocation}
-					onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
-				/>
-			</div>
-			<p class="hint">
-				Used by "near me" questions when the browser can't get your real location (it needs
-				https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
-				is available.
-			</p>
-		</section>
-
-		{#if appState.settings.usage}
 			<section>
-				<h3>Usage (last 30 days)</h3>
+				<h3>Appearance</h3>
 				<div class="row">
-					<span>Cost</span>
-					<span>${appState.settings.usage.period_cost_usd.toFixed(2)}</span>
+					<span>Theme</span>
+					<div class="theme-toggle">
+						<button
+							class:active={appState.settings.theme === 'dark'}
+							onclick={() => appState.settings.setTheme('dark')}
+						>
+							<Moon size={14} /> Dark
+						</button>
+						<button
+							class:active={appState.settings.theme === 'light'}
+							onclick={() => appState.settings.setTheme('light')}
+						>
+							<Sun size={14} /> Light
+						</button>
+					</div>
 				</div>
+			</section>
+
+			<section>
+				<h3>Model</h3>
 				<div class="row">
-					<span>Threads / turns</span>
-					<span>{appState.settings.usage.thread_count} / {appState.settings.usage.turn_count}</span>
-				</div>
-				<div class="row">
-					<span>Tool calls</span>
-					<span>{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
-				</div>
-				<div class="row">
-					<span>Ran out of turn budget</span>
-					<span>{appState.settings.usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
+					<span>Default model</span>
+					<select
+						value={appState.settings.defaultModel}
+						onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
+					>
+						{#each appState.models as model (model.id)}
+							<option value={model.id}>{model.name}</option>
+						{/each}
+					</select>
 				</div>
 				<p class="hint">
-					Check-in nudges: {appState.settings.usage.check_in_count}, stale-streak warnings: {appState
-						.settings.usage.stale_streak_count}. See <code>polaris stats</code> for the full breakdown
-					by tool.
+					Applies to new threads. You can still switch models per-thread from the chat header.
 				</p>
 			</section>
-		{/if}
 
-		<section>
-			<h3>Updates</h3>
-			{#if appState.version}
-				<div class="row version-row">
-					<span>Version</span>
-					<code class="version">{appState.version}</code>
+			<section>
+				<h3>Focus</h3>
+				<div class="row">
+					<span>Default focus mode</span>
+					<select
+						value={appState.settings.defaultFocusMode}
+						onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
+					>
+						<option value="off">Off</option>
+						{#each FOCUS_MODES as mode (mode.id)}
+							<option value={mode.id}>{mode.label}</option>
+						{/each}
+					</select>
 				</div>
-			{/if}
-			<button
-				class="btn update-btn"
-				onclick={() => appState.settings.pushUpdate()}
-				disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
-			>
-				<RefreshCw
-					size={14}
-					class={appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting'
-						? 'spin'
-						: ''}
-				/>
-				{#if appState.settings.updateState === 'updating'}
-					Pulling & building…
-				{:else if appState.settings.updateState === 'restarting'}
-					Restarting…
-				{:else}
-					Update Polaris
+				<p class="hint">
+					Applied to every new message until changed from the composer's "+" menu.
+				</p>
+			</section>
+
+			<section>
+				<h3>Voice</h3>
+				<div class="row">
+					<span>Mic button</span>
+					<div class="theme-toggle">
+						<button
+							class:active={appState.settings.voiceInputMode === 'toggle'}
+							onclick={() => appState.settings.setVoiceInputMode('toggle')}
+						>
+							Tap to toggle
+						</button>
+						<button
+							class:active={appState.settings.voiceInputMode === 'hold'}
+							onclick={() => appState.settings.setVoiceInputMode('hold')}
+						>
+							Hold to talk
+						</button>
+					</div>
+				</div>
+				<p class="hint">
+					"Tap to toggle" starts recording on the first tap and stops on the second — no need to
+					keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
+					behavior.
+				</p>
+			</section>
+
+			<section>
+				<h3>Location</h3>
+				<div class="row location-row">
+					<input
+						type="text"
+						placeholder="e.g. Seattle, WA"
+						value={appState.settings.manualLocation}
+						onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
+					/>
+				</div>
+				<p class="hint">
+					Used by "near me" questions when the browser can't get your real location (it needs
+					https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
+					is available.
+				</p>
+			</section>
+
+			<section>
+				<h3>Updates</h3>
+				{#if appState.version}
+					<div class="row version-row">
+						<span>Version</span>
+						<code class="version">{appState.version}</code>
+					</div>
 				{/if}
-			</button>
-			<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>
-			{#if appState.settings.updateLog}
-				<pre class="log">{appState.settings.updateLog}</pre>
-			{/if}
-		</section>
+				<button
+					class="btn update-btn"
+					onclick={() => appState.settings.pushUpdate()}
+					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+				>
+					<RefreshCw
+						size={14}
+						class={appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting'
+							? 'spin'
+							: ''}
+					/>
+					{#if appState.settings.updateState === 'updating'}
+						Pulling & building…
+					{:else if appState.settings.updateState === 'restarting'}
+						Restarting…
+					{:else}
+						Update Polaris
+					{/if}
+				</button>
+				<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>
+				{#if appState.settings.updateLog}
+					<pre class="log">{appState.settings.updateLog}</pre>
+				{/if}
+			</section>
+		{/if}
 	</div>
 </div>
 
@@ -239,6 +276,12 @@
 		color: var(--color-text);
 	}
 
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
 	.row {
 		display: flex;
 		align-items: center;
@@ -252,6 +295,11 @@
 		font-size: 12px;
 		color: var(--color-text-dim);
 		margin: 6px 0 0 0;
+	}
+
+	.hint code {
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-size: 11px;
 	}
 
 	/* Real segmented-control construction, not a bordered box of buttons:
