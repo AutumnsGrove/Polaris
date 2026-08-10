@@ -175,15 +175,32 @@ func spaHandler(staticFS fs.FS) http.Handler {
 			path = "/index.html"
 		}
 
+		if _, err := fs.Stat(staticFS, path[1:]); err != nil {
+			// A path under /_app/ is a build artifact (content-hashed immutable
+			// assets, version.json, ...), never a client route — so there's no
+			// SPA fallback for it. adapter-static falls back to index.html for
+			// client-side routing only (/t/<id>, /), but a *missing asset*
+			// means this URL belonged to an older build this binary no longer
+			// ships, which serving index.html there would silently paper over:
+			// a stale pre-self-update client (an old index.html + its cached
+			// hashed files, or a browser holding an old session) would fetch an
+			// HTML document at a .js/.json path and keep running old code
+			// instead of failing and reloading onto the current build. A real
+			// 404 makes that imported file fail loudly, so the next full load
+			// naturally pulls the current index.html + current hashes.
+			if strings.HasPrefix(path, "/_app/") {
+				w.Header().Set("Cache-Control", "no-store")
+				http.NotFound(w, r)
+				return
+			}
+			serveIndexHTML(w, staticFS)
+			return
+		}
+
 		if strings.HasPrefix(path, "/_app/immutable/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		}
-
-		if _, err := fs.Stat(staticFS, path[1:]); err != nil {
-			serveIndexHTML(w, staticFS)
-			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})

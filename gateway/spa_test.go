@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
@@ -55,6 +56,29 @@ func TestSpaHandler_RootServesIndexDirectly(t *testing.T) {
 	}
 	if rec.Body.String() != "<html>shell</html>" {
 		t.Errorf("body = %q, want the index.html shell", rec.Body.String())
+	}
+}
+
+// A missing hashed asset must be a real 404, not the index.html SPA
+// fallback — a 200 that serves an HTML document at a .js path would let a
+// stale pre-self-update client (old index.html + cached old hashed files,
+// or a long-lived browser session) keep running the previous build instead
+// of failing loudly and reloading onto the current one. This is what stops
+// an old bundle staying silently servable forever when its files are
+// pruned. Client *routes* (/t/<id>) still correctly fall back to index.html;
+// only build-artifact URLs under /_app/ 404.
+func TestSpaHandler_MissingAssetIs404NotIndexFallback(t *testing.T) {
+	handler := spaHandler(fakeStaticFS())
+
+	req := httptest.NewRequest("GET", "/_app/immutable/old-hash-gone.js", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (not the index.html SPA fallback)", rec.Code)
+	}
+	if rec.Body.String() == "<html>shell</html>" {
+		t.Fatalf("body served the index.html shell for a missing asset; want a real 404")
 	}
 }
 
