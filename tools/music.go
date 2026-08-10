@@ -174,6 +174,7 @@ func handleMusic(argsJSON string, ctx *Context) string {
 		"tool":      "music",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"cards":     ctx.CardsSnapshot(),
 	})
 	return result
 }
@@ -202,7 +203,30 @@ func lookupSimilarTrack(ctx *Context, artist, track string) (string, error) {
 	if citationURL == "" {
 		citationURL = lastfmTrackURL(resolvedArtist, resolvedTrack)
 	}
-	ctx.AddCitation(Citation{Title: fmt.Sprintf("Last.fm: %s – %s", resolvedArtist, resolvedTrack), URL: citationURL})
+	ctx.AddCitation(Citation{
+		Title:    fmt.Sprintf("Last.fm: %s – %s", resolvedArtist, resolvedTrack),
+		URL:      citationURL,
+		ImageURL: fetchDeezerCoverArt(ctx, "track", resolvedArtist, resolvedTrack),
+	})
+
+	// One card per recommendation actually shown to the user (same set as
+	// formatSimilarTrackResult's list, not some larger internal set) —
+	// concurrent Deezer lookups so this stays fast regardless of how many
+	// results there are, same shape as aggregateSimilarTracks' fan-out.
+	for _, card := range concurrentMap(trackFanoutConcurrency, similar, func(t lastfmSimilarTrack) (Card, error) {
+		cardURL := t.URL
+		if cardURL == "" {
+			cardURL = lastfmTrackURL(t.Artist.Name, t.Name)
+		}
+		return Card{
+			Title:    t.Name,
+			Subtitle: t.Artist.Name,
+			ImageURL: fetchDeezerCoverArt(ctx, "track", t.Artist.Name, t.Name),
+			URL:      cardURL,
+		}, nil
+	}) {
+		ctx.AddCard(card)
+	}
 
 	return formatSimilarTrackResult(resolvedArtist, resolvedTrack, tags, similar), nil
 }
@@ -232,8 +256,30 @@ func lookupAlbumTracks(ctx *Context, artist, album string) (string, error) {
 	}
 
 	ranked := rankSimilarTrackCandidates(aggregateSimilarTracks(ctx, canonicalArtist, tracklist))
+	if len(ranked) > maxAlbumTrackResultsShown {
+		ranked = ranked[:maxAlbumTrackResultsShown]
+	}
 
-	ctx.AddCitation(Citation{Title: fmt.Sprintf("Last.fm: %s – %s", canonicalArtist, album), URL: albumURL})
+	ctx.AddCitation(Citation{
+		Title:    fmt.Sprintf("Last.fm: %s – %s", canonicalArtist, album),
+		URL:      albumURL,
+		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
+	})
+
+	// One card per recommendation actually shown — ranked is already
+	// capped above, so this and the text list always describe the same
+	// set. Concurrent Deezer lookups, same shape as lookupSimilarTrack's.
+	for _, card := range concurrentMap(trackFanoutConcurrency, ranked, func(c *similarTrackCandidate) (Card, error) {
+		return Card{
+			Title:    c.Track,
+			Subtitle: c.Artist,
+			ImageURL: fetchDeezerCoverArt(ctx, "track", c.Artist, c.Track),
+			URL:      lastfmTrackURL(c.Artist, c.Track),
+		}, nil
+	}) {
+		ctx.AddCard(card)
+	}
+
 	return formatAlbumTracksResult(canonicalArtist, album, ranked), nil
 }
 
@@ -244,9 +290,6 @@ func formatAlbumTracksResult(artist, album string, ranked []*similarTrackCandida
 		sb.WriteString("(no similar tracks found)\n")
 	}
 	for i, c := range ranked {
-		if i >= maxAlbumTrackResultsShown {
-			break
-		}
 		if c.Count > 1 {
 			fmt.Fprintf(&sb, "%d. %s - %s (recommended by %d songs on the album)\n", i+1, c.Artist, c.Track, c.Count)
 		} else {
@@ -303,7 +346,34 @@ func lookupSimilarAlbums(ctx *Context, artist, album string) (string, error) {
 		return ranked[i].Artist < ranked[j].Artist
 	})
 
-	ctx.AddCitation(Citation{Title: fmt.Sprintf("Last.fm: %s – %s", canonicalArtist, album), URL: albumURL})
+	if len(ranked) > maxSimilarAlbumsShown {
+		ranked = ranked[:maxSimilarAlbumsShown]
+	}
+
+	ctx.AddCitation(Citation{
+		Title:    fmt.Sprintf("Last.fm: %s – %s", canonicalArtist, album),
+		URL:      albumURL,
+		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
+	})
+
+	// One card per recommendation actually shown — ranked is already
+	// capped above. Concurrent Deezer lookups, same shape as the other
+	// two modes'.
+	for _, card := range concurrentMap(albumResolveConcurrency, ranked, func(c *similarAlbumCandidate) (Card, error) {
+		cardURL := c.URL
+		if cardURL == "" {
+			cardURL = lastfmAlbumURL(c.Artist, c.Album)
+		}
+		return Card{
+			Title:    c.Album,
+			Subtitle: c.Artist,
+			ImageURL: fetchDeezerCoverArt(ctx, "album", c.Artist, c.Album),
+			URL:      cardURL,
+		}, nil
+	}) {
+		ctx.AddCard(card)
+	}
+
 	return formatSimilarAlbumsResult(canonicalArtist, album, ranked), nil
 }
 
@@ -322,9 +392,6 @@ func formatSimilarAlbumsResult(artist, album string, ranked []*similarAlbumCandi
 		sb.WriteString("(no similar albums found)\n")
 	}
 	for i, c := range ranked {
-		if i >= maxSimilarAlbumsShown {
-			break
-		}
 		if len(c.Tracks) > 1 {
 			fmt.Fprintf(&sb, "%d. %s - %s (%d tracks pointed here independently)\n", i+1, c.Artist, c.Album, len(c.Tracks))
 		} else {
@@ -525,6 +592,7 @@ func resolveTrack(ctx *Context, artist, track string) (resolvedArtist, resolvedT
 type lastfmSimilarTrack struct {
 	Name   string  `json:"name"`
 	Match  float64 `json:"match"`
+	URL    string  `json:"url"`
 	Artist struct {
 		Name string `json:"name"`
 	} `json:"artist"`
@@ -659,4 +727,72 @@ func fetchTrackAlbum(ctx *Context, artist, track string) (albumArtist, albumTitl
 // exact-artist search match (so has no URL from the API response itself).
 func lastfmTrackURL(artist, track string) string {
 	return fmt.Sprintf("https://www.last.fm/music/%s/_/%s", url.PathEscape(artist), url.PathEscape(track))
+}
+
+// lastfmAlbumURL is lastfmTrackURL's album-mode counterpart — used only
+// as a citation/card fallback on the rare path where an API response
+// didn't carry its own album URL.
+func lastfmAlbumURL(artist, album string) string {
+	return fmt.Sprintf("https://www.last.fm/music/%s/%s", url.PathEscape(artist), url.PathEscape(album))
+}
+
+// deezerBaseURL is a var (not a const) so tests can point it at a fake
+// server, same pattern as lastfmBaseURL.
+var deezerBaseURL = "https://api.deezer.com"
+
+// fetchDeezerCoverArt is a best-effort enrichment, not part of the tool's
+// core result — Deezer's field-scoped search (no key required) is keyless
+// and, unlike Apple's/Last.fm's own art, reliably has cover art for both
+// mainstream and niche releases alike (confirmed live for both Isaiah
+// Rashad and Kendrick Lamar while designing this). kind is "track" or
+// "album"; track results nest cover art under the parent album, album
+// results carry it directly. Any failure or no-match returns "" — the
+// citation this feeds just gets no thumbnail, never a broken/placeholder
+// image, and never blocks the tool's actual result.
+func fetchDeezerCoverArt(ctx *Context, kind, artist, title string) string {
+	field := "track"
+	if kind == "album" {
+		field = "album"
+	}
+	q := fmt.Sprintf(`artist:"%s" %s:"%s"`, artist, field, title)
+
+	req, err := http.NewRequestWithContext(ctx.Ctx, "GET",
+		fmt.Sprintf("%s/search/%s?q=%s&limit=1", deezerBaseURL, field, url.QueryEscape(q)), nil)
+	if err != nil {
+		return ""
+	}
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	if kind == "album" {
+		var out struct {
+			Data []struct {
+				CoverMedium string `json:"cover_medium"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(body, &out) != nil || len(out.Data) == 0 {
+			return ""
+		}
+		return out.Data[0].CoverMedium
+	}
+
+	var out struct {
+		Data []struct {
+			Album struct {
+				CoverMedium string `json:"cover_medium"`
+			} `json:"album"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &out) != nil || len(out.Data) == 0 {
+		return ""
+	}
+	return out.Data[0].Album.CoverMedium
 }

@@ -75,6 +75,30 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Write(b)
 }
 
+// fakeDeezer stubs deezerBaseURL for fetchDeezerCoverArt's enrichment
+// call — every success-path test needs this stubbed (even ones not
+// asserting on ImageURL) so it never makes a real network call to
+// production Deezer during `go test`. Returns coverURL for both
+// /search/track and /search/album regardless of the query, which is fine
+// since these tests only ever resolve one track/album per case.
+func fakeDeezer(t *testing.T, coverURL string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/search/album") {
+			writeJSON(w, map[string]interface{}{"data": []map[string]interface{}{{"cover_medium": coverURL}}})
+			return
+		}
+		writeJSON(w, map[string]interface{}{
+			"data": []map[string]interface{}{{"album": map[string]interface{}{"cover_medium": coverURL}}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	original := deezerBaseURL
+	deezerBaseURL = srv.URL
+	t.Cleanup(func() { deezerBaseURL = original })
+}
+
 func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 	// Mirrors the real Isaiah Rashad "Claymore" incident this design was
 	// built to handle: a bare title with almost no listeners vs. the real
@@ -112,6 +136,7 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 			})
 		},
 	})
+	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
 	result := handleMusic(`{"mode":"track","artist":"Test Artist","track":"Song"}`, ctx)
@@ -123,6 +148,15 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://last.fm/real" {
 		t.Errorf("Citations = %+v, want the resolved (high-listener) track's URL", ctx.Citations)
+	}
+	if ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
+		t.Errorf("Citations[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Citations[0].ImageURL)
+	}
+	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Cool Track" || ctx.Cards[0].Subtitle != "Other Artist" {
+		t.Errorf("Cards = %+v, want one card for the similar track", ctx.Cards)
+	}
+	if ctx.Cards[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
+		t.Errorf("Cards[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Cards[0].ImageURL)
 	}
 }
 
@@ -157,6 +191,7 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 			})
 		},
 	})
+	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
 	result := handleMusic(`{"mode":"album_tracks","artist":"Test Artist","album":"Test Album"}`, ctx)
@@ -171,6 +206,12 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://last.fm/album" {
 		t.Errorf("Citations = %+v, want the album's own page added", ctx.Citations)
+	}
+	if ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
+		t.Errorf("Citations[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Citations[0].ImageURL)
+	}
+	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Shared Hit" || ctx.Cards[0].Subtitle != "Discovery Artist" {
+		t.Errorf("Cards = %+v, want one card for the shared-hit recommendation, none for the excluded same-artist track", ctx.Cards)
 	}
 }
 
@@ -209,6 +250,7 @@ func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) 
 			})
 		},
 	})
+	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
 	result := handleMusic(`{"mode":"similar_albums","artist":"Test Artist","album":"Test Album"}`, ctx)
@@ -217,6 +259,36 @@ func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) 
 	}
 	if !strings.Contains(result, "Discovery Album") {
 		t.Errorf("result = %q, want the resolved album included", result)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
+		t.Errorf("Citations = %+v, want the Deezer cover art enrichment on the source album citation", ctx.Citations)
+	}
+	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Discovery Album" || ctx.Cards[0].Subtitle != "Discovery Artist" {
+		t.Errorf("Cards = %+v, want one card for the resolved similar album", ctx.Cards)
+	}
+	if ctx.Cards[0].URL != "https://last.fm/discovery-album" {
+		t.Errorf("Cards[0].URL = %q, want the resolved album's own URL", ctx.Cards[0].URL)
+	}
+}
+
+// TestFetchDeezerCoverArt_NoMatchReturnsEmpty confirms the enrichment is
+// truly best-effort — a Deezer response with no results (bad/obscure
+// query, or Deezer itself down) must degrade to "" silently, never error
+// or panic, since a citation missing a thumbnail is a non-event, not a
+// tool failure.
+func TestFetchDeezerCoverArt_NoMatchReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(w, map[string]interface{}{"data": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+	original := deezerBaseURL
+	deezerBaseURL = srv.URL
+	t.Cleanup(func() { deezerBaseURL = original })
+
+	ctx := &Context{Ctx: context.Background()}
+	if got := fetchDeezerCoverArt(ctx, "track", "Nobody", "Nothing"); got != "" {
+		t.Errorf("fetchDeezerCoverArt() = %q, want empty on no match", got)
 	}
 }
 
