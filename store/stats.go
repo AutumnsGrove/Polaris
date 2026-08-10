@@ -84,11 +84,18 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		messageQuery += ` WHERE created_at >= ?`
 		messageArgs = append(messageArgs, since)
 	}
+	// avgTurnDurationMs is scanned as a float64, not straight into
+	// stats.AvgTurnDurationMs (int64) — SQLite's AVG() always returns a
+	// real number even over an all-integer column, so a non-whole-number
+	// average (the common case with more than one turn) fails an int64
+	// Scan outright rather than just losing precision.
+	var avgTurnDurationMs float64
 	if err := s.db.QueryRow(messageQuery, messageArgs...).Scan(
-		&stats.PeriodCostUSD, &stats.TurnCount, &stats.AvgTurnDurationMs,
+		&stats.PeriodCostUSD, &stats.TurnCount, &avgTurnDurationMs,
 	); err != nil {
 		return nil, err
 	}
+	stats.AvgTurnDurationMs = int64(avgTurnDurationMs)
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
 	// variant fork isn't a thread the user thinks of as "one of theirs".
