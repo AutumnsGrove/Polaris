@@ -35,6 +35,12 @@ with citations.
   surprisingly brittle otherwise), concurrent fan-out across a whole album's tracklist for
   song-level picks, and album-to-album recommendations derived the same way (Last.fm has no direct
   album-similarity endpoint). Requires a free [Last.fm API key](https://www.last.fm/api/account/create)
+- **Book recommendations** — real "find me books like this" grounded in readers' curated lists
+  (Hardcover.app), ranked by likes-per-book density so a small list someone actually curated with
+  intent outranks a sprawling generic "best books ever" list with more raw likes but a weaker
+  signal. Falls back to Open Library's shared-subject data (no key needed) when Hardcover isn't
+  configured, its token has expired, or a book has too little curated-list data to trust alone —
+  see [Requirements](#requirements)
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -61,8 +67,8 @@ Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
   ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
-  │              weather / reference_lookup / github_repo / dictionary / music, or just answer —
-  │              independent tool calls in the same turn run concurrently
+  │              weather / reference_lookup / github_repo / dictionary / music / books, or just
+  │              answer — independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
@@ -102,6 +108,12 @@ app" is one file you can scp around if you ever needed to.
 - Required for the `music` tool: a free [Last.fm API key](https://www.last.fm/api/account/create)
   (self-service signup, no approval wait) — unlike the tokens above, there's no unauthenticated
   fallback, so `music` is unavailable without one
+- Optional: a free [Hardcover.app](https://hardcover.app) API token (account settings > API) for
+  the `books` tool's primary curated-list signal — expires after roughly a year, since it's a
+  personal-account JWT rather than a stable service key, not something you set once and forget.
+  Without one (or once it expires), `books` degrades to Open Library's shared-subject data instead
+  of failing outright — see the books tool's package doc comment in `tools/books.go` for why that
+  fallback exists and how it compares to Hardcover's stronger signal
 
 ### SearXNG's JSON API
 
