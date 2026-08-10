@@ -105,15 +105,20 @@ func handleReferenceLookup(argsJSON string, ctx *Context) string {
 var wikipediaAPIBaseURL = "https://en.wikipedia.org/w/api.php"
 
 // wikiSearchExtractResponse is the subset of MediaWiki's query API this
-// needs. Combining generator=search with prop=extracts|info in one
-// request returns the best-matching page's plain-text intro and
-// canonical URL without a separate search-then-fetch round trip.
+// needs. Combining generator=search with prop=extracts|info|pageimages in
+// one request returns the best-matching page's plain-text intro, canonical
+// URL, and lead image (a real per-article thumbnail, unlike arXiv — see
+// lookupArxiv's doc comment for why that source deliberately gets no
+// image) without a separate search-then-fetch round trip.
 type wikiSearchExtractResponse struct {
 	Query struct {
 		Pages map[string]struct {
-			Title   string `json:"title"`
-			Extract string `json:"extract"`
-			FullURL string `json:"fullurl"`
+			Title     string `json:"title"`
+			Extract   string `json:"extract"`
+			FullURL   string `json:"fullurl"`
+			Thumbnail struct {
+				Source string `json:"source"`
+			} `json:"thumbnail"`
 		} `json:"pages"`
 	} `json:"query"`
 }
@@ -125,10 +130,12 @@ func lookupWikipedia(ctx *Context, query string) (string, error) {
 	q.Set("generator", "search")
 	q.Set("gsrsearch", query)
 	q.Set("gsrlimit", "1")
-	q.Set("prop", "extracts|info")
+	q.Set("prop", "extracts|info|pageimages")
 	q.Set("exintro", "1")
 	q.Set("explaintext", "1")
 	q.Set("inprop", "url")
+	q.Set("piprop", "thumbnail")
+	q.Set("pithumbsize", "500")
 
 	body, err := referenceHTTPGet(ctx.Ctx, wikipediaAPIBaseURL+"?"+q.Encode())
 	if err != nil {
@@ -149,13 +156,22 @@ func lookupWikipedia(ctx *Context, query string) (string, error) {
 		if page.Extract == "" {
 			return "", fmt.Errorf("no wikipedia article found for %q", query)
 		}
-		ctx.AddCitation(Citation{Title: page.Title, URL: page.FullURL})
+		ctx.AddCitation(Citation{Title: page.Title, URL: page.FullURL, ImageURL: page.Thumbnail.Source})
 		return fmt.Sprintf("%s (Wikipedia)\n\n%s", page.Title, page.Extract), nil
 	}
 	return "", fmt.Errorf("no wikipedia article found for %q", query)
 }
 
 var arxivAPIBaseURL = "https://export.arxiv.org/api/query"
+
+// arxivLogoURL is arXiv's own static site logo (from its abstract pages'
+// og:image — confirmed live, identical for every paper). Unlike
+// lookupWikipedia's per-article thumbnail, this is deliberately the same
+// image on every arXiv citation: not a paper-specific picture, but a
+// recognizable source badge — "this came from arXiv" at a glance, the
+// same role a favicon plays elsewhere. The Atom API itself has no
+// per-paper image field, so this is the only image arXiv can offer.
+const arxivLogoURL = "https://arxiv.org/static/browse/0.3.4/images/arxiv-logo-fb.png"
 
 // arxivFeed is the subset of arXiv's Atom API response this needs.
 // encoding/xml matches elements by local name regardless of the feed's
@@ -193,7 +209,7 @@ func lookupArxiv(ctx *Context, query string, maxResults int) (string, error) {
 		summary := collapseWhitespace(e.Summary)
 		id := strings.TrimSpace(e.ID)
 		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, title, id, summary)
-		ctx.AddCitation(Citation{Title: title, URL: id})
+		ctx.AddCitation(Citation{Title: title, URL: id, ImageURL: arxivLogoURL})
 	}
 	return sb.String(), nil
 }

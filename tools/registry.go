@@ -144,9 +144,13 @@ type Citation struct {
 	// article's lead image, etc.) the frontend renders in place of the
 	// source list's numbered index badge when present — general-purpose
 	// across any tool, not specific to one. Empty means "no image", the
-	// normal case; a tool sets this only when it has a real image URL in
-	// hand already (see tools/music.go's Deezer cover-art enrichment for
-	// the first user), never a placeholder or a guess.
+	// normal case; a tool sets this only when it has a real, working image
+	// URL in hand already (see tools/music.go's Deezer cover-art
+	// enrichment), never a fabricated/guessed one. Usually per-item (an
+	// article's own lead photo), but a shared source-identity badge is a
+	// legitimate use too — see reference_lookup.go's arxivLogoURL, the
+	// same static image on every arXiv citation on purpose, so it reads
+	// as "this came from arXiv" at a glance rather than nothing at all.
 	ImageURL string `json:"image_url,omitempty"`
 }
 

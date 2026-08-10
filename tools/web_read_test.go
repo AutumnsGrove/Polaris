@@ -54,7 +54,7 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 		<footer>copyright footer</footer>
 	</body></html>`
 
-	title, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	title, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestFetchAndExtract_ExtractsSiteName(t *testing.T) {
 		<meta property="og:site_name" content="The Hollywood Reporter"></head>
 		<body><article><p>content</p></article></body></html>`
 
-	_, siteName, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, siteName, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestFetchAndExtract_ExtractsSiteName(t *testing.T) {
 func TestFetchAndExtract_SiteNameEmptyWhenMissing(t *testing.T) {
 	html := `<html><head><title>No meta tag here</title></head><body><article><p>content</p></article></body></html>`
 
-	_, siteName, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, siteName, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -95,9 +95,40 @@ func TestFetchAndExtract_SiteNameEmptyWhenMissing(t *testing.T) {
 	}
 }
 
+func TestFetchAndExtract_ExtractsImageURL(t *testing.T) {
+	html := `<html><head><title>An Article With Art</title>
+		<meta property="og:image" content="https://example.com/lead-image.jpg"></head>
+		<body><article><p>content</p></article></body></html>`
+
+	_, _, imageURL, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	if err != nil {
+		t.Fatalf("fetchAndExtract returned error: %v", err)
+	}
+	if imageURL != "https://example.com/lead-image.jpg" {
+		t.Errorf("imageURL = %q, want %q", imageURL, "https://example.com/lead-image.jpg")
+	}
+}
+
+func TestFetchAndExtract_ImageURLEmptyWhenMissingOrRelative(t *testing.T) {
+	for name, html := range map[string]string{
+		"missing":  `<html><head><title>No og:image</title></head><body><article><p>content</p></article></body></html>`,
+		"relative": `<html><head><title>Relative og:image</title><meta property="og:image" content="/img/lead.jpg"></head><body><article><p>content</p></article></body></html>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, imageURL, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+			if err != nil {
+				t.Fatalf("fetchAndExtract returned error: %v", err)
+			}
+			if imageURL != "" {
+				t.Errorf("imageURL = %q, want empty (a relative/missing og:image must never reach the frontend as a broken thumbnail)", imageURL)
+			}
+		})
+	}
+}
+
 func TestFetchAndExtract_FallsBackToBodyWithoutArticleOrMain(t *testing.T) {
 	html := `<html><body><p>Just a plain page with no article or main tag.</p></body></html>`
-	_, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -110,7 +141,7 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 	huge := strings.Repeat("word ", 5000) // well over maxExtractedChars
 	html := "<html><body><article>" + huge + "</article></body></html>"
 
-	_, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -123,7 +154,7 @@ func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
 }
 
 func TestFetchAndExtract_NonOKStatus(t *testing.T) {
-	_, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
+	_, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
 	if err == nil {
 		t.Fatal("expected an error for a 404 response")
 	}
@@ -151,7 +182,7 @@ func TestFetchAndExtract_RejectsRedirectToBlockedDomain(t *testing.T) {
 		t.Fatalf("LoadBlocklist returned error: %v", err)
 	}
 
-	_, _, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
+	_, _, _, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
 	if err == nil {
 		t.Fatal("expected an error: redirect target is on the blocklist")
 	}
@@ -217,6 +248,24 @@ func TestHandleWebRead_WithoutInstructions_ReturnsFullText(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].Title != "Page" {
 		t.Errorf("Citations = %+v, want one citation titled Page", ctx.Citations)
+	}
+}
+
+// TestHandleWebRead_CitationIncludesImageURL confirms og:image reaches the
+// citation through the full handleWebRead path, not just the lower-level
+// fetchAndExtract unit tests above — this is what the frontend's citation
+// thumbnail actually depends on.
+func TestHandleWebRead_CitationIncludesImageURL(t *testing.T) {
+	html := `<html><head><title>Page With Art</title>
+		<meta property="og:image" content="https://example.com/lead.jpg"></head>
+		<body><article>content</article></body></html>`
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+
+	if len(ctx.Citations) != 1 || ctx.Citations[0].ImageURL != "https://example.com/lead.jpg" {
+		t.Errorf("Citations = %+v, want the og:image URL carried through", ctx.Citations)
 	}
 }
 
@@ -327,7 +376,7 @@ func TestFetchAndExtract_PDF(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, _, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
+	_, _, _, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error for a PDF: %v", err)
 	}

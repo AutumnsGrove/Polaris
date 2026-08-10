@@ -29,7 +29,8 @@ func TestHandleReferenceLookup_Wikipedia(t *testing.T) {
 		w.Write([]byte(`{"query":{"pages":{"123":{
 			"title":"Go (programming language)",
 			"extract":"Go is a statically typed, compiled programming language.",
-			"fullurl":"https://en.wikipedia.org/wiki/Go_(programming_language)"
+			"fullurl":"https://en.wikipedia.org/wiki/Go_(programming_language)",
+			"thumbnail":{"source":"https://upload.wikimedia.org/go-gopher.png","width":500,"height":300}
 		}}}}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -44,6 +45,9 @@ func TestHandleReferenceLookup_Wikipedia(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://en.wikipedia.org/wiki/Go_(programming_language)" {
 		t.Errorf("Citations = %+v, want the article added", ctx.Citations)
+	}
+	if ctx.Citations[0].ImageURL != "https://upload.wikimedia.org/go-gopher.png" {
+		t.Errorf("Citations[0].ImageURL = %q, want the article's own lead thumbnail", ctx.Citations[0].ImageURL)
 	}
 }
 
@@ -89,5 +93,8 @@ func TestHandleReferenceLookup_Arxiv(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "http://arxiv.org/abs/1234.5678v1" {
 		t.Errorf("Citations = %+v, want the paper added", ctx.Citations)
+	}
+	if ctx.Citations[0].ImageURL != arxivLogoURL {
+		t.Errorf("Citations[0].ImageURL = %q, want the shared arXiv source badge", ctx.Citations[0].ImageURL)
 	}
 }
