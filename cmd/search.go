@@ -87,6 +87,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		Blocklist:       blocklist,
 		Foursquare:      foursquare,
 		GitHubToken:     cfg.GitHub.Token,
+		LastFMAPIKey:    cfg.LastFM.APIKey,
 		DefaultLocation: cfg.DefaultLocation,
 		LLM:             client,
 		Emit:            emit,

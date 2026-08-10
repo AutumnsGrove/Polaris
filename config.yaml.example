@@ -29,6 +29,9 @@ tavily:
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens
 
+lastfm:
+  api_key: "${LASTFM_API_KEY}"   # required for the music tool — no unauthenticated fallback. Free, no approval wait. https://www.last.fm/api/account/create
+
 # Geocoded when nearby_search omits a location. Optional — omit entirely
 # to require an explicit location on every nearby_search call.
 default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"

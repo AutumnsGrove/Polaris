@@ -65,6 +65,15 @@ type Config struct {
 		Token string `yaml:"token"`
 	} `yaml:"github"`
 
+	LastFM struct {
+		// APIKey; empty disables the music tool entirely — unlike
+		// GitHub's token, Last.fm has no unauthenticated fallback path, so
+		// every mode fails with a clear error rather than degrading.
+		// Free self-service signup, no approval wait:
+		// https://www.last.fm/api/account/create
+		APIKey string `yaml:"api_key"`
+	} `yaml:"lastfm"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

@@ -68,7 +68,7 @@ var defaults = buildDefaults()
 
 func buildDefaults() Set {
 	var d Set
-	d.Agent.FallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have nine tools:
+	d.Agent.FallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have ten tools:
 
 - think: reason privately about strategy before acting.
 - web_search: search the web via a private SearXNG instance.
@@ -79,6 +79,7 @@ func buildDefaults() Set {
 - reference_lookup: query Wikipedia or arXiv directly for an encyclopedia summary or a paper's abstract.
 - github_repo: look up a GitHub repository's stats (stars, commits, open issues/PRs) and README.
 - dictionary: look up a word's definition, part of speech, and an example sentence when available.
+- music: find song/album recommendations grounded in Last.fm's similarity data (modes: track, album_tracks, similar_albums).
 
 You can call multiple tools in the same turn when they're genuinely independent of each other's
 results (they run concurrently) — don't batch when a later call depends on an earlier one's result.
