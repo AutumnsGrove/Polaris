@@ -27,6 +27,14 @@ with citations.
 - **GitHub repo stats** — star/fork counts, license, repo age, first/most recent commit dates,
   total commit count, and open issue/PR counts, straight from GitHub's API, plus the README. No API
   key required (an optional token just raises the rate limit)
+- **Dictionary** — definitions, part of speech, and an example sentence when available, straight
+  from a dictionary source (Wiktionary-backed) instead of general knowledge or a web search —
+  precise and citable, with a second independent source as a fallback if the first is down
+- **Music recommendations** — real "find me songs/albums like this" grounded in Last.fm's actual
+  similarity data, not guesswork. Resolve-then-lookup for a single track (exact-title matching is
+  surprisingly brittle otherwise), concurrent fan-out across a whole album's tracklist for
+  song-level picks, and album-to-album recommendations derived the same way (Last.fm has no direct
+  album-similarity endpoint). Requires a free [Last.fm API key](https://www.last.fm/api/account/create)
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -53,8 +61,8 @@ Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
   ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
-  │              weather / reference_lookup / github_repo, or just answer — independent tool calls
-  │              in the same turn run concurrently
+  │              weather / reference_lookup / github_repo / dictionary / music, or just answer —
+  │              independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
@@ -91,6 +99,9 @@ app" is one file you can scp around if you ever needed to.
 - Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
   can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — it works fine with
   no token at all for occasional lookups
+- Required for the `music` tool: a free [Last.fm API key](https://www.last.fm/api/account/create)
+  (self-service signup, no approval wait) — unlike the tokens above, there's no unauthenticated
+  fallback, so `music` is unavailable without one
 
 ### SearXNG's JSON API
 
@@ -174,8 +185,9 @@ or the in-app settings panel:
   a specific OpenRouter provider for consistent prompt-cache pricing), SearXNG's URL, logging,
   voice model choices. Meant to be hand-edited; changes require a restart.
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
-  location fallback for `nearby_search`, and the update button. Changes apply instantly, no
-  restart, no file editing.
+  location fallback for `nearby_search`, the update button, and (behind the small info-icon button)
+  a usage/tuning stats page — cost, tool-call counts/error rates, research-loop steering signals.
+  Changes apply instantly, no restart, no file editing.
 - **prompt.md** — the system prompt, read fresh on every turn. Edit it, see the change on your
   very next message.
 
@@ -200,6 +212,7 @@ or click **Update Polaris** in the settings panel to do the same thing from the 
 ```bash
 polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
+polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
 ```
 
 ## Deployment
