@@ -42,6 +42,7 @@ type AskResponse struct {
 	ThreadID      string           `json:"thread_id"`
 	Answer        string           `json:"answer"`
 	Citations     []tools.Citation `json:"citations"`
+	Cards         []tools.Card     `json:"cards,omitempty"`
 	Suggestions   []string         `json:"suggestions"`
 	CostUSD       float64          `json:"cost_usd"`
 	ContextTokens int              `json:"context_tokens"`
@@ -124,6 +125,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		ThreadID:      final.ThreadID,
 		Answer:        answer.String(),
 		Citations:     final.Citations,
+		Cards:         final.Cards,
 		Suggestions:   final.Suggestions,
 		CostUSD:       final.CostUSD,
 		ContextTokens: final.ContextTokens,

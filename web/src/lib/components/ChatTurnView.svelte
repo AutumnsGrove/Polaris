@@ -2,6 +2,7 @@
 	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
+	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
@@ -182,6 +183,10 @@
 				<div class="pending">…</div>
 			{/if}
 
+			{#if turn.cards?.length}
+				<RecommendationsCarousel cards={turn.cards} />
+			{/if}
+
 			{#if turn.citations?.length}
 				<div class="sources">
 					<button class="sources-toggle" onclick={() => (sourcesOpen = !sourcesOpen)}>
@@ -199,7 +204,11 @@
 									rel="noreferrer"
 									title={c.title || c.url}
 								>
-									<span class="source-index">{i + 1}</span>
+									{#if c.image_url}
+										<img class="source-thumb" src={c.image_url} alt="" loading="lazy" />
+									{:else}
+										<span class="source-index">{i + 1}</span>
+									{/if}
 									<span class="source-text">
 										<span class="source-title">{c.title || hostname(c.url)}</span>
 										<span class="source-domain">{hostname(c.url)}</span>
@@ -549,6 +558,22 @@
 		font-size: 9.5px;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* Takes over from .source-index whenever a citation carries a real
+	   thumbnail (see tools/registry.go's Citation.ImageURL) — a slightly
+	   rounded square (not a circle) since it's showing real art (album
+	   covers, etc.), not an abstract badge. Kept small and compressed on
+	   purpose, per the same "calm over clever" brief every other bit of
+	   chrome in this app follows — it should read as a recognizable
+	   thumbnail at a glance, not a decorative hero image. */
+	.source-thumb {
+		flex-shrink: 0;
+		width: 28px;
+		height: 28px;
+		border-radius: var(--radius-sm);
+		object-fit: cover;
+		box-shadow: var(--shadow-xs);
 	}
 
 	.source-text {

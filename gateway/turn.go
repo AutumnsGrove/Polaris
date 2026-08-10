@@ -259,6 +259,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["citations"].([]tools.Citation); ok {
 			evt.Citations = v
 		}
+		if v, ok := payload["cards"].([]tools.Card); ok {
+			evt.Cards = v
+		}
 		if eventType == "reasoning" {
 			reasoningBuf.WriteString(evt.Content)
 		} else {
@@ -431,6 +434,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.db.LogEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
+	if len(result.Cards) > 0 {
+		if cardsJSON, err := json.Marshal(result.Cards); err != nil {
+			log.Warn("failed to marshal cards, message persisted without them", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling cards failed", map[string]interface{}{"err": err.Error()}, turnID)
+		} else if err := s.db.SetMessageCards(assistantMsgID, string(cardsJSON)); err != nil {
+			log.Warn("failed to record cards", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "recording cards failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+	}
+
 	// Auto-compact once this thread crosses the configured threshold: the
 	// model summarizes everything covered so far, and future turns build
 	// history from that summary instead of the full raw text. The
@@ -474,6 +487,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		ThreadID:      threadID,
 		UserMessageID: userMsgID,
 		Citations:     result.Citations,
+		Cards:         result.Cards,
 		CostUSD:       totalCost,
 		ContextTokens: contextTokens,
 		DurationMs:    durationMs,

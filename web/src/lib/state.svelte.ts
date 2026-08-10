@@ -4,6 +4,7 @@ import type {
 	Thread,
 	ServerEvent,
 	Citation,
+	Card,
 	StoredEvent,
 	TimelineItem,
 	FocusMode,
@@ -340,6 +341,7 @@ export class AppState {
 			role: m.role,
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
+			cards: safeParseJSON<Card>(m.cards),
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
 			id: m.role === 'user' ? m.id : undefined,
@@ -787,6 +789,7 @@ export class AppState {
 				this.closeOpenReasoning(turn);
 				turn.streaming = false;
 				turn.citations = e.citations;
+				turn.cards = e.cards;
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
 				this.busy = false;

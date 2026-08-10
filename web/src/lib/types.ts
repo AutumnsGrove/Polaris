@@ -5,6 +5,21 @@ export interface Citation {
 	title: string;
 	url: string;
 	site_name?: string;
+	// General-purpose thumbnail (album art, a repo avatar, an article's
+	// lead image, etc.) — see tools/registry.go's Citation.ImageURL doc
+	// comment. Rendered by the source list in place of the numbered index
+	// badge when present.
+	image_url?: string;
+}
+
+// A structured rich-result item — see tools/registry.go's Card doc
+// comment. General-purpose; music's recommendation carousel is the first
+// user.
+export interface Card {
+	title: string;
+	subtitle?: string;
+	image_url?: string;
+	url: string;
 }
 
 export type ServerEvent =
@@ -17,6 +32,7 @@ export type ServerEvent =
 			tool: string;
 			result: string;
 			citations?: Citation[];
+			cards?: Card[];
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
 	// What the model said before deciding to call a tool (or before an
@@ -29,6 +45,7 @@ export type ServerEvent =
 			thread_id: string;
 			cost_usd: number;
 			citations?: Citation[];
+			cards?: Card[];
 			user_message_id?: number;
 			context_tokens?: number;
 			// How long agent.Run took to produce this answer, in
@@ -143,6 +160,7 @@ export interface StoredMessage {
 	content: string;
 	citations: string; // JSON-encoded Citation[]
 	suggestions: string; // JSON-encoded string[], assistant messages only
+	cards: string; // JSON-encoded Card[], assistant messages only — see store.Store.SetMessageCards
 	cost_usd: number;
 	// Shared by the user/assistant message pair from one turn, and by
 	// every StoredEvent logged while that turn ran — the join key
@@ -194,6 +212,7 @@ export interface ChatTurn {
 	content: string;
 	timeline?: TimelineItem[];
 	citations?: Citation[];
+	cards?: Card[];
 	costUsd?: number;
 	streaming?: boolean;
 	// DB message id. Only ever set on 'user' turns — needed to retry/edit

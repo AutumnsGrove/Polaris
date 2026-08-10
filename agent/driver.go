@@ -226,6 +226,7 @@ func currentContextPreamble() string {
 type Result struct {
 	Answer    string
 	Citations []tools.Citation
+	Cards     []tools.Card
 	CostUSD   float64
 	// ContextTokens is the prompt+completion token count of the LAST LLM
 	// call this turn made — the best available estimate of how much
@@ -313,6 +314,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			return &Result{
 				Answer:        resp.Content,
 				Citations:     ctx.Citations,
+				Cards:         ctx.Cards,
 				CostUSD:       totalCost,
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 			}, nil
@@ -397,6 +399,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	return &Result{
 		Answer:        answerText,
 		Citations:     ctx.Citations,
+		Cards:         ctx.Cards,
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 	}, nil

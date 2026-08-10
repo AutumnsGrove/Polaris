@@ -130,6 +130,11 @@ type ServerEvent struct {
 	Args      map[string]any   `json:"args,omitempty"`
 	Result    string           `json:"result,omitempty"`
 	Citations []tools.Citation `json:"citations,omitempty"`
+	// Cards is a tool_result/done event's structured rich-result items
+	// (see tools.Card) — e.g. music's recommendation carousel. Same
+	// "attached to the final answer" shape as Citations, just rendered as
+	// its own visual block instead of a text source list.
+	Cards []tools.Card `json:"cards,omitempty"`
 	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
 	// legitimate value for both (a stopped turn that never reached an LLM
 	// call costs exactly $0), and omitempty would drop the field from the

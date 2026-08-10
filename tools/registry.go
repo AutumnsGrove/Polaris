@@ -98,6 +98,15 @@ type Context struct {
 	// can call AddCitation at the same instant.
 	citationsMu sync.Mutex
 	Citations   []Citation
+
+	// Cards accumulates structured rich-result items (see Card) a tool
+	// wants rendered as their own dedicated block — e.g. music's
+	// recommendations carousel — rather than woven into the model's own
+	// freeform prose or the citations list. Same concurrency shape as
+	// Citations: cardsMu guards it for the same reason (parallel tool
+	// dispatch within one turn).
+	cardsMu sync.Mutex
+	Cards   []Card
 }
 
 // ResolveLocation is the one place nearby_search and weather figure out
@@ -130,6 +139,15 @@ type Citation struct {
 	// The frontend falls back to a hostname-derived label when this is
 	// empty, see web/src/lib/citations.ts.
 	SiteName string `json:"site_name,omitempty"`
+
+	// ImageURL is an optional thumbnail (album art, a repo's avatar, an
+	// article's lead image, etc.) the frontend renders in place of the
+	// source list's numbered index badge when present — general-purpose
+	// across any tool, not specific to one. Empty means "no image", the
+	// normal case; a tool sets this only when it has a real image URL in
+	// hand already (see tools/music.go's Deezer cover-art enrichment for
+	// the first user), never a placeholder or a guess.
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 // AddCitation appends a citation unless its URL is already present —
@@ -161,6 +179,42 @@ func (c *Context) CitationsSnapshot() []Citation {
 	defer c.citationsMu.Unlock()
 	out := make([]Citation, len(c.Citations))
 	copy(out, c.Citations)
+	return out
+}
+
+// Card is a structured rich-result item — an image, a title, an optional
+// subtitle, and a link — meant to be rendered as its own visual block
+// (e.g. a carousel) rather than woven into the model's prose or listed as
+// a text citation. General-purpose: music's recommendation cards are the
+// first user, but nothing here is music-specific, so a future tool (repo
+// cards, place cards with photos) can populate the same field.
+type Card struct {
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	URL      string `json:"url"`
+}
+
+// AddCard appends a card unless its URL is already present, same
+// dedup-by-URL rationale as AddCitation. Safe to call concurrently.
+func (c *Context) AddCard(card Card) {
+	c.cardsMu.Lock()
+	defer c.cardsMu.Unlock()
+	for _, existing := range c.Cards {
+		if existing.URL == card.URL {
+			return
+		}
+	}
+	c.Cards = append(c.Cards, card)
+}
+
+// CardsSnapshot returns a copy of the cards gathered so far — same
+// concurrent-read rationale as CitationsSnapshot.
+func (c *Context) CardsSnapshot() []Card {
+	c.cardsMu.Lock()
+	defer c.cardsMu.Unlock()
+	out := make([]Card, len(c.Cards))
+	copy(out, c.Cards)
 	return out
 }
 

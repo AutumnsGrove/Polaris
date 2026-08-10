@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- purely cosmetic. '' on every other message.
 	attachment_filename TEXT NOT NULL DEFAULT '',
 	attachment_content_type TEXT NOT NULL DEFAULT '',
+	-- cards: structured rich-result items (see tools.Card) a tool wants
+	-- rendered as their own visual block — e.g. music's recommendations
+	-- carousel — set via SetMessageCards once the assistant message's ID
+	-- exists, same post-hoc-UPDATE shape as suggestions/duration_ms above.
+	-- '[]' for user messages and for any assistant message no tool call
+	-- populated cards for.
+	cards TEXT NOT NULL DEFAULT '[]',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -167,6 +174,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN fork_root_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN fork_at_index INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN active_variant_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN cards TEXT NOT NULL DEFAULT '[]'`,
 }
 
 func Open(path string) (*Store, error) {
@@ -294,7 +302,9 @@ type Message struct {
 	// message that carried an upload — see SetMessageAttachment.
 	AttachmentFilename    string    `json:"attachment_filename,omitempty"`
 	AttachmentContentType string    `json:"attachment_content_type,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
+	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
+	Cards     string    `json:"cards"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -388,8 +398,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -710,7 +720,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, created_at
+			attachment_filename, attachment_content_type, cards, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -723,7 +733,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
@@ -738,6 +748,15 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 // it to). Mirrors SetContextTokens' same shape for the same reason.
 func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
 	_, err := s.db.Exec(`UPDATE messages SET duration_ms = ? WHERE id = ?`, durationMs, messageID)
+	return err
+}
+
+// SetMessageCards records a tool's structured rich-result items (see
+// tools.Card) after the assistant message was already persisted — same
+// post-hoc-UPDATE shape as SetMessageDuration above, since cards (like
+// citations) are only known once agent.Run has already returned.
+func (s *Store) SetMessageCards(messageID int64, cardsJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET cards = ? WHERE id = ?`, cardsJSON, messageID)
 	return err
 }
 
