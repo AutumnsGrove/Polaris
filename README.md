@@ -34,13 +34,14 @@ with citations.
   similarity data, not guesswork. Resolve-then-lookup for a single track (exact-title matching is
   surprisingly brittle otherwise), concurrent fan-out across a whole album's tracklist for
   song-level picks, and album-to-album recommendations derived the same way (Last.fm has no direct
-  album-similarity endpoint). Requires a free [Last.fm API key](https://www.last.fm/api/account/create)
+  album-similarity endpoint). Shown as a scrollable carousel of cover-art cards, not just a text
+  list. Requires a free [Last.fm API key](https://www.last.fm/api/account/create)
 - **Book recommendations** — real "find me books like this" grounded in readers' curated lists
   (Hardcover.app), ranked by likes-per-book density so a small list someone actually curated with
   intent outranks a sprawling generic "best books ever" list with more raw likes but a weaker
   signal. Falls back to Open Library's shared-subject data (no key needed) when Hardcover isn't
   configured, its token has expired, or a book has too little curated-list data to trust alone —
-  see [Requirements](#requirements)
+  see [Requirements](#requirements). Same cover-art carousel as music
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -54,6 +55,9 @@ with citations.
   the old version is never deleted, just tucked behind a `‹ 2/3 ›` switcher on the reply, so you can
   browse back to it (or keep going from it) without losing whichever branch you're not looking at
 - **Persistent threads** with per-thread and per-turn cost tracking
+- **Illustrated sources** — a citation carries a thumbnail (a page's own lead image, a Wikipedia
+  article's photo) whenever one's genuinely available, instead of just a bare text chip. arXiv
+  citations get a recognizable source badge instead — a real per-paper image doesn't exist to show
 - **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
   that pulls, rebuilds, and restarts the service — no SSH required
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
