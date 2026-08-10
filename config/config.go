@@ -74,6 +74,19 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"lastfm"`
 
+	Hardcover struct {
+		// APIKey is optional, unlike LastFM's — the books tool's Open
+		// Library fallback (subject-tag overlap) works with no key at all,
+		// just as a weaker signal than Hardcover's curated-list
+		// co-occurrence data. Empty, invalid, or expired all degrade to
+		// Open Library-only rather than failing the tool outright (see
+		// tools/books.go). Hardcover tokens are personal-account JWTs with
+		// a ~1 year expiry, not a stable service key — regenerate at
+		// https://hardcover.app account settings when books.go's logs
+		// start reporting auth failures.
+		APIKey string `yaml:"api_key"`
+	} `yaml:"hardcover"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

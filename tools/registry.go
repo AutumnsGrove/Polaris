@@ -1,7 +1,7 @@
 // Package tools implements the agent's tool-use loop: think, web_search,
 // web_read, nearby_search, youtube_transcript, weather, reference_lookup,
-// github_repo, dictionary, music, and reply. Each tool self-registers via
-// init(), mirroring her-go's tools/ package convention.
+// github_repo, dictionary, music, books, and reply. Each tool self-registers
+// via init(), mirroring her-go's tools/ package convention.
 package tools
 
 import (
@@ -45,6 +45,12 @@ type Context struct {
 	// doc comment). Empty means every music call fails with a clear
 	// "not configured" error rather than degrading.
 	LastFMAPIKey string
+
+	// HardcoverAPIKey is optional, like GitHubToken — the books tool's
+	// Open Library fallback works with no key at all (see tools/books.go's
+	// package doc comment). Empty, invalid, or expired all degrade to
+	// Open Library-only recommendations rather than failing the tool.
+	HardcoverAPIKey string
 
 	// Blocklist rejects web_read fetches for blocked domains directly —
 	// web_search's own filtering happens inside SearXNG (nil-safe there
@@ -257,5 +263,5 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
 func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef, dictionaryDef, musicDef}
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef, dictionaryDef, musicDef, booksDef}
 }

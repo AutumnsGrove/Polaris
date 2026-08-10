@@ -310,6 +310,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Tavily:          s.tavily,
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
+		HardcoverAPIKey: cfg.Hardcover.APIKey,
 		DefaultLocation: defaultLocation,
 		RequestLocation: resolveLiveLocation,
 		VoiceMode:       msg.VoiceMode,
