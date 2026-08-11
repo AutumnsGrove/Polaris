@@ -1,36 +1,43 @@
-// books finds book recommendations grounded in two real signals, instead of
-// guesswork or shared-genre matching alone:
+// books finds book recommendations grounded in real signals, blended
+// rather than tried one-at-a-time, instead of guesswork:
 //
-//   - Hardcover.app's user-curated lists (primary, when hardcover.api_key is
+//   - Hardcover.app's user-curated lists (when hardcover.api_key is
 //     configured): books that turn up on the same curated lists as the
 //     source book — "Lasers Go Pew Pew", "The Esquire 75 Best Sci-Fi Books
-//     of All Time" — ranked by how many distinct lists agree, the book
-//     equivalent of music.go's aggregateSimilarTracks cross-track agreement
-//     signal. Hardcover also supplies member-crowdsourced genre tags for the
-//     resolved book (via its search index, not a separate query), used the
-//     same way music.go uses Last.fm's track.gettoptags: grounding for "why
-//     these fit", not part of the ranking itself.
-//   - Open Library subject-tag overlap (fallback, no key required, always
-//     available): a book's declared subjects fanned out concurrently, each
-//     subject's own top works aggregated by how many subjects they share
-//     with the source book. A distinctly weaker signal than Hardcover's
-//     list data — it's "same shelf", not "curated alongside on purpose" —
-//     so it's used only when Hardcover isn't configured, its token is
-//     invalid/expired (see hardcoverAuthError), the title can't be resolved
-//     there at all, or its list data for this specific book is too thin to
-//     trust alone (new/obscure titles with few or no curated-list
-//     placements — see hardcoverMinCandidates). In the thin-data case the
-//     Open Library results are appended after, not merged into, the
-//     Hardcover-ranked ones: the primary signal still outranks the
-//     fallback, it's just padded out to a fuller list.
+//     of All Time" — the book equivalent of music.go's
+//     aggregateSimilarTracks cross-track agreement signal. On its own this
+//     is NOT enough: a book that straddles two identities (The Count of
+//     Monte Cristo is both canonical 19th-century literature AND an
+//     adventure/revenge genre novel) gets its list ecosystem dominated by
+//     whichever identity has more active list-curators — confirmed live,
+//     Monte Cristo has 936 qualifying public lists, nearly all "greatest
+//     classics"/canon meta-lists, while its handful of genre-specific
+//     lists ("Adventure") have zero likes each, so cross-list agreement
+//     alone surfaced other canon staples (Catch-22, To the Lighthouse)
+//     instead of anything resembling its actual plot.
+//   - Hardcover's own crowdsourced genre tags, both for the source book
+//     (via its search index) and for every list-sourced candidate (via
+//     cached_tags) — genre overlap with the source book is the PRIMARY
+//     re-ranking signal on the Hardcover path (see
+//     rankHardcoverCandidates), specifically because list co-occurrence
+//     alone failed the case above. List agreement still matters as a
+//     tiebreaker, just not as the deciding factor.
+//   - Open Library subject-tag overlap: fetched CONCURRENTLY alongside
+//     Hardcover's list data, not sequentially as a fallback-of-last-resort.
+//     It does three jobs at once: corroborates Hardcover candidates (a
+//     modest ranking bonus when an independent signal agrees), backstops
+//     thin Hardcover list data (new/obscure titles — see
+//     hardcoverMinCandidates), and stands in entirely when Hardcover isn't
+//     configured, its token is invalid/expired (see hardcoverAuthError),
+//     or the title can't be resolved there at all.
 //
 // Unlike music.go's LastFMAPIKey, HardcoverAPIKey is optional (see
 // tools/registry.go's Context.HardcoverAPIKey doc comment). Hardcover
 // issues personal-account JWTs, not stable service keys, with roughly a
 // one-year expiry — a previously-working deployment can start hitting auth
 // failures with no config change on this end, which is exactly why the
-// Open Library fallback exists: expiry degrades the tool to a weaker
-// signal instead of breaking it outright.
+// Open Library path exists independently: expiry degrades the tool to a
+// weaker signal instead of breaking it outright.
 package tools
 
 import (
@@ -44,6 +51,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"polaris/llm"
@@ -166,6 +174,11 @@ type bookCandidate struct {
 	CoverURL string
 	Count    int
 	Source   string // candidateSourceList or candidateSourceSubject
+	// Genres is only populated for candidateSourceList candidates (each
+	// list-sourced book's own Hardcover genre tags) — used by
+	// rankHardcoverCandidates to score genre overlap against the source
+	// book, not shown directly to the user.
+	Genres []string
 }
 
 // addBookCards converts ranked candidates (already capped to
@@ -185,6 +198,87 @@ func rankBookCandidates(agg map[string]*bookCandidate) []*bookCandidate {
 		ranked = append(ranked, v)
 	}
 	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		return ranked[i].Title < ranked[j].Title
+	})
+	return ranked
+}
+
+// genreOverlapCount counts genres two books share, case-insensitively —
+// the primary re-ranking signal on the Hardcover path (see
+// rankHardcoverCandidates's doc comment for why cross-list agreement alone
+// isn't enough: it lets a book's "literary canon" cluster drown out
+// genuinely genre-similar candidates for books that straddle both a canon
+// and a genre identity).
+// genericHardcoverGenres are tags applied broadly enough across unrelated
+// books to add noise rather than signal to overlap scoring — confirmed
+// live: The Count of Monte Cristo's own genre tags include "Fiction" and
+// "Classics", and Heart of Darkness (tagged "Fantasy", "Fiction", "Murder",
+// "Romance" — crowdsourced tagging is noisy) shared enough of those with
+// it to outrank genuinely adventure-themed candidates on overlap alone,
+// purely because "Fiction" means nothing as a similarity signal between
+// two 19th-century novels.
+var genericHardcoverGenres = map[string]bool{
+	"fiction": true, "nonfiction": true, "classics": true, "literary fiction": true,
+}
+
+func genreOverlapCount(a, b []string) int {
+	set := make(map[string]bool, len(b))
+	for _, g := range b {
+		g = strings.ToLower(g)
+		if !genericHardcoverGenres[g] {
+			set[g] = true
+		}
+	}
+	count := 0
+	for _, g := range a {
+		g = strings.ToLower(g)
+		if !genericHardcoverGenres[g] && set[g] {
+			count++
+		}
+	}
+	return count
+}
+
+// rankHardcoverCandidates re-ranks aggregateListBooks' output primarily by
+// genre overlap with the source book (weighted far above cross-list
+// agreement — see genreOverlapCount), with a secondary bonus when Open
+// Library's independent subject-overlap signal also surfaced the same
+// candidate (fetched concurrently alongside the Hardcover list fan-out in
+// lookupViaHardcover, not as a sequential fallback — see this file's
+// package doc comment). Cross-list Count still breaks ties, it's just no
+// longer the deciding factor on its own: that's what let The Count of
+// Monte Cristo's 936 "greatest classics" meta-lists outrank its own
+// (unliked, but genre-accurate) "Adventure" lists before this existed.
+func rankHardcoverCandidates(agg map[string]*bookCandidate, sourceGenres []string, openLibraryTitles map[string]bool) []*bookCandidate {
+	ranked := make([]*bookCandidate, 0, len(agg))
+	for _, v := range agg {
+		ranked = append(ranked, v)
+	}
+	// Multiplicative, not additive — confirmed live against real Monte
+	// Cristo data that an additive score (genre overlap weighted far above
+	// Count) over-corrects: a single-list candidate matching on two
+	// generic-ish tags (a fantasy/vampire romance sharing "Historical
+	// Fiction"+"Romance" with Monte Cristo) beat real 4-list community
+	// consensus (Catch-22) outright. (1+overlap)*(1+count) lets either
+	// signal earn a candidate's way to the top — strong consensus with weak
+	// overlap and weak consensus with strong overlap both score
+	// competitively — while a candidate with genuinely neither (Heart of
+	// Darkness: 0 overlap, Count from lists that turned out to be generic
+	// "greatest classics" meta-lists) still sinks to the bottom.
+	score := func(c *bookCandidate) int {
+		s := (1 + genreOverlapCount(c.Genres, sourceGenres)) * (1 + c.Count)
+		if openLibraryTitles[strings.ToLower(c.Title)] {
+			s += 2
+		}
+		return s
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if si, sj := score(ranked[i]), score(ranked[j]); si != sj {
+			return si > sj
+		}
 		if ranked[i].Count != ranked[j].Count {
 			return ranked[i].Count > ranked[j].Count
 		}
@@ -333,7 +427,28 @@ type hardcoverBookRow struct {
 			Name string `json:"name"`
 		} `json:"author"`
 	} `json:"cached_contributors"`
+	// CachedTags is the raw `books` type's nested tag shape (categories:
+	// Genre, Mood, Content Warning, etc.) — distinct from
+	// hardcoverSearchDoc's flat `genres []string`, which comes from a
+	// different underlying representation (the Typesense search index).
+	// Only the "Genre" category is used here, via genres() below.
+	CachedTags map[string][]hardcoverTag `json:"cached_tags"`
 }
+
+type hardcoverTag struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"` // how many members independently applied this tag
+}
+
+// hardcoverGenreMinCount excludes single-vote (and near-single-vote) genre
+// tags from overlap scoring — confirmed live: a book's cached_tags Genre
+// category routinely includes stray count=1 entries ("Comics", "General",
+// "History" on The Count of Monte Cristo; "Comics" again, oddly, on an
+// obscure Heart of Darkness edition) that are essentially noise, one
+// person's mistag or edge-case categorization rather than a real signal —
+// and because they're rare, two unrelated books coincidentally sharing one
+// is far more likely to be noise-matching-noise than genuine similarity.
+const hardcoverGenreMinCount = 2
 
 func (r hardcoverBookRow) authorNames() []string {
 	names := make([]string, 0, len(r.CachedContributors))
@@ -352,6 +467,20 @@ func (r hardcoverBookRow) hasAuthor(author string) bool {
 		}
 	}
 	return false
+}
+
+func (r hardcoverBookRow) genres() []string {
+	tags, ok := r.CachedTags["Genre"]
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t.Count >= hardcoverGenreMinCount {
+			out = append(out, t.Tag)
+		}
+	}
+	return out
 }
 
 func hardcoverBookURL(slug string) string {
@@ -549,7 +678,7 @@ func fetchHardcoverLists(ctx *Context, bookID int) ([]hardcoverList, error) {
 func fetchListBooks(ctx *Context, listID, excludeBookID int) ([]hardcoverBookRow, error) {
 	const query = `query($listID: Int!, $excludeBookID: Int!) {
 		list_books(where: {list_id: {_eq: $listID}, book_id: {_neq: $excludeBookID}}, limit: 50) {
-			book { id title slug image { url } cached_contributors }
+			book { id title slug image { url } cached_contributors cached_tags }
 		}
 	}`
 	data, err := hardcoverQuery(ctx, query, map[string]interface{}{"listID": listID, "excludeBookID": excludeBookID})
@@ -598,6 +727,7 @@ func aggregateListBooks(ctx *Context, sourceBookID int, lists []hardcoverList) m
 					URL:      hardcoverBookURL(r.Slug),
 					CoverURL: imageURL,
 					Source:   candidateSourceList,
+					Genres:   r.genres(),
 				}
 				agg[key] = entry
 			}
@@ -618,6 +748,36 @@ func hardcoverGenreTags(genres []string) []string {
 	return genres
 }
 
+// fetchHardcoverBookGenres re-fetches the resolved book's own genre tags
+// via cached_tags rather than trusting hardcoverSearchDoc.Genres (the
+// Typesense search index's version, resolveHardcoverBook's data source) —
+// candidates from fetchListBooks only ever have cached_tags data
+// available, so scoring needs the source book on the exact same
+// vocabulary and noise threshold (see hardcoverGenreMinCount) for a fair
+// comparison, not two different tag representations that happen to look
+// similar but aren't guaranteed to match tag-for-tag.
+func fetchHardcoverBookGenres(ctx *Context, bookID int) ([]string, error) {
+	const query = `query($bookID: Int!) {
+		books(where: {id: {_eq: $bookID}}, limit: 1) {
+			cached_tags
+		}
+	}`
+	data, err := hardcoverQuery(ctx, query, map[string]interface{}{"bookID": bookID})
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Books []hardcoverBookRow `json:"books"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Books) == 0 {
+		return nil, fmt.Errorf("hardcover book id %d not found", bookID)
+	}
+	return resp.Books[0].genres(), nil
+}
+
 func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 	book, err := resolveHardcoverBook(ctx, title, author)
 	if err != nil {
@@ -632,11 +792,49 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 		return "", fmt.Errorf("no quality curated lists found for %q on hardcover", book.Title)
 	}
 
-	ranked := rankBookCandidates(aggregateListBooks(ctx, book.ID, lists))
+	// Three independent fetches run concurrently rather than sequentially:
+	// Hardcover's list co-occurrence, Open Library's subject overlap (see
+	// this file's package doc comment for why it's always fetched, not just
+	// a fallback), and the source book's own genre tags on the SAME
+	// vocabulary candidates use (see fetchHardcoverBookGenres — comparing
+	// against hardcoverSearchDoc.Genres instead was the bug that let noisy,
+	// low-confidence tag matches on obscure candidate editions outscore
+	// genuinely similar books).
+	var hcAgg map[string]*bookCandidate
+	var olRanked []*bookCandidate
+	sourceGenres := book.Genres // fallback if the cached_tags re-fetch below fails
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		hcAgg = aggregateListBooks(ctx, book.ID, lists)
+	}()
+	go func() {
+		defer wg.Done()
+		work, err := resolveOpenLibraryWork(ctx, title, author)
+		if err != nil || len(work.Subjects) == 0 {
+			return
+		}
+		olRanked = rankBookCandidates(aggregateOpenLibrarySubjects(ctx, work))
+	}()
+	go func() {
+		defer wg.Done()
+		if genres, err := fetchHardcoverBookGenres(ctx, book.ID); err == nil && len(genres) > 0 {
+			sourceGenres = genres
+		}
+	}()
+	wg.Wait()
+
+	openLibraryTitles := make(map[string]bool, len(olRanked))
+	for _, c := range olRanked {
+		openLibraryTitles[strings.ToLower(c.Title)] = true
+	}
+
+	ranked := rankHardcoverCandidates(hcAgg, sourceGenres, openLibraryTitles)
 
 	supplemented := false
-	if len(ranked) < hardcoverMinCandidates {
-		if extra, extraErr := openLibrarySupplement(ctx, title, author, ranked); extraErr == nil && len(extra) > 0 {
+	if len(ranked) < hardcoverMinCandidates && len(olRanked) > 0 {
+		if extra := openLibraryExtras(olRanked, ranked); len(extra) > 0 {
 			ranked = append(ranked, extra...)
 			supplemented = true
 		}
@@ -650,7 +848,7 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 
 	ranked = capBookCandidates(ranked)
 	addBookCards(ctx, ranked)
-	return formatBooksResult(book.Title, book.Author, hardcoverGenreTags(book.Genres), ranked, supplemented), nil
+	return formatBooksResult(book.Title, book.Author, hardcoverGenreTags(sourceGenres), ranked, supplemented), nil
 }
 
 // --- Open Library path ---
@@ -861,27 +1059,19 @@ func lookupViaOpenLibrary(ctx *Context, title, author string) (string, error) {
 	return formatBooksResult(work.Title, work.Author, work.Subjects, ranked, false), nil
 }
 
-// openLibrarySupplement is lookupViaHardcover's thin-data path — resolves
-// and aggregates Open Library the same way lookupViaOpenLibrary does, but
-// returns only the candidates not already present in existing (deduped by
-// title+author) instead of a formatted result, since the caller appends
-// them after its own Hardcover-ranked candidates rather than replacing them.
-func openLibrarySupplement(ctx *Context, title, author string, existing []*bookCandidate) ([]*bookCandidate, error) {
-	work, err := resolveOpenLibraryWork(ctx, title, author)
-	if err != nil {
-		return nil, err
-	}
-	if len(work.Subjects) == 0 {
-		return nil, nil
-	}
-	ranked := rankBookCandidates(aggregateOpenLibrarySubjects(ctx, work))
-
+// openLibraryExtras is lookupViaHardcover's thin-data path — filters an
+// already-fetched, already-ranked Open Library candidate list (olRanked,
+// fetched concurrently alongside Hardcover's own list data, not re-fetched
+// here) down to the ones not already present in existing (deduped by
+// title+author), since the caller appends them after its own
+// Hardcover-ranked candidates rather than replacing them.
+func openLibraryExtras(olRanked, existing []*bookCandidate) []*bookCandidate {
 	seen := make(map[string]bool, len(existing))
 	for _, c := range existing {
 		seen[strings.ToLower(c.Title)+"|"+strings.ToLower(c.Author)] = true
 	}
-	extra := make([]*bookCandidate, 0, len(ranked))
-	for _, c := range ranked {
+	extra := make([]*bookCandidate, 0, len(olRanked))
+	for _, c := range olRanked {
 		if len(existing)+len(extra) >= maxBooksResultsShown {
 			break
 		}
@@ -892,5 +1082,5 @@ func openLibrarySupplement(ctx *Context, title, author string, existing []*bookC
 		seen[key] = true
 		extra = append(extra, c)
 	}
-	return extra, nil
+	return extra
 }

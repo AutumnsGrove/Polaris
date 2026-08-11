@@ -92,12 +92,32 @@ func hcSearchHit(id, title, slug string, usersReadCount int, authors, genres []s
 }
 
 func hcBookRow(id int, title, slug, author string) map[string]interface{} {
+	return hcBookRowWithGenres(id, title, slug, author, nil)
+}
+
+// hcBookRowWithGenres mirrors the raw `books` type's nested cached_tags
+// shape (category -> tags), not hcSearchHit's flat `genres` list — see
+// hardcoverBookRow.genres()/hardcoverTag for why the two representations
+// differ.
+func hcBookRowWithGenres(id int, title, slug, author string, genres []string) map[string]interface{} {
 	return map[string]interface{}{
 		"book": map[string]interface{}{
 			"id": id, "title": title, "slug": slug,
 			"cached_contributors": []map[string]interface{}{{"author": map[string]interface{}{"name": author}}},
+			"cached_tags":         map[string]interface{}{"Genre": hcGenreTags(genres...)},
 		},
 	}
+}
+
+// hcGenreTags builds cached_tags-shaped Genre entries at count=2 — above
+// hardcoverGenreMinCount, so genres() doesn't filter them out as
+// low-confidence noise (see hardcoverGenreMinCount's doc comment).
+func hcGenreTags(genres ...string) []map[string]interface{} {
+	tags := make([]map[string]interface{}, len(genres))
+	for i, g := range genres {
+		tags[i] = map[string]interface{}{"tag": g, "count": 2}
+	}
+	return tags
 }
 
 func TestHandleBooks_NoHardcoverKey_UsesOpenLibrary(t *testing.T) {
@@ -133,8 +153,15 @@ func TestHandleBooks_NoHardcoverKey_UsesOpenLibrary(t *testing.T) {
 func TestHandleBooks_HardcoverSuccess_AggregatesAcrossLists(t *testing.T) {
 	// List 10 uniquely recommends X and Y; list 20 uniquely recommends Z and
 	// W; both recommend Shared — five distinct candidates total, at
-	// hardcoverMinCandidates, so the open-library supplement path (which
-	// would otherwise hit the network) never triggers.
+	// hardcoverMinCandidates, so the open-library supplement path never
+	// triggers. Open Library is still fetched concurrently regardless (see
+	// lookupViaHardcover) for corroboration scoring, so it's stubbed here
+	// to return no match — isolating this test to Hardcover's own ranking
+	// rather than also asserting on cross-source corroboration, and
+	// avoiding a real network call to production Open Library.
+	fakeOpenLibrary(t, func(path string, q url.Values) (interface{}, int) {
+		return map[string]interface{}{"docs": []map[string]interface{}{}}, http.StatusOK
+	})
 	fakeHardcover(t, func(query string, vars map[string]interface{}) (interface{}, int) {
 		switch {
 		case vars["q"] != nil:
@@ -143,10 +170,14 @@ func TestHandleBooks_HardcoverSuccess_AggregatesAcrossLists(t *testing.T) {
 					hcSearchHit("1", "Source Book", "source-book", 100, []string{"Test Author"}, []string{"Science Fiction"}),
 				}},
 			}}}, http.StatusOK
-		case vars["bookID"] != nil:
+		case vars["minBooks"] != nil: // fetchHardcoverLists — both it and fetchHardcoverBookGenres use $bookID, minBooks disambiguates
 			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{
 				{"list": map[string]interface{}{"id": 10, "name": "List A", "likes_count": 5, "books_count": 5}},
 				{"list": map[string]interface{}{"id": 20, "name": "List B", "likes_count": 5, "books_count": 5}},
+			}}}, http.StatusOK
+		case vars["bookID"] != nil: // fetchHardcoverBookGenres — empty cached_tags, falls back to the search doc's genres
+			return map[string]interface{}{"data": map[string]interface{}{"books": []map[string]interface{}{
+				{"cached_tags": map[string]interface{}{}},
 			}}}, http.StatusOK
 		case vars["listID"] != nil:
 			listID := int(vars["listID"].(float64))
@@ -175,6 +206,66 @@ func TestHandleBooks_HardcoverSuccess_AggregatesAcrossLists(t *testing.T) {
 	}
 	if len(ctx.Cards) != 5 {
 		t.Errorf("Cards = %+v, want one card per unique candidate", ctx.Cards)
+	}
+}
+
+// TestHandleBooks_GenreOverlap_OutranksRawListCount is the regression test
+// for the real bug this rewrite fixes: a book that straddles a "literary
+// canon" and a genre identity (confirmed live for The Count of Monte
+// Cristo, see this file's package doc comment) had its list-based
+// candidates dominated by other canon staples with more raw list
+// agreement, drowning out genuinely genre-similar picks with less. Canon
+// Pick appears on all 3 lists (highest possible Count) but shares no genre
+// with the source book; Genre Match appears on only 1 list but shares the
+// source book's genre — it must still rank first.
+func TestHandleBooks_GenreOverlap_OutranksRawListCount(t *testing.T) {
+	fakeOpenLibrary(t, func(path string, q url.Values) (interface{}, int) {
+		return map[string]interface{}{"docs": []map[string]interface{}{}}, http.StatusOK
+	})
+	fakeHardcover(t, func(query string, vars map[string]interface{}) (interface{}, int) {
+		switch {
+		case vars["q"] != nil:
+			return map[string]interface{}{"data": map[string]interface{}{"search": map[string]interface{}{
+				"results": map[string]interface{}{"hits": []map[string]interface{}{
+					hcSearchHit("1", "Source Book", "source-book", 100, []string{"Test Author"}, []string{"Adventure"}),
+				}},
+			}}}, http.StatusOK
+		case vars["minBooks"] != nil: // fetchHardcoverLists
+			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{
+				{"list": map[string]interface{}{"id": 10, "name": "Canon List A", "likes_count": 5, "books_count": 5}},
+				{"list": map[string]interface{}{"id": 20, "name": "Canon List B", "likes_count": 5, "books_count": 5}},
+			}}}, http.StatusOK
+		case vars["bookID"] != nil: // fetchHardcoverBookGenres — the source book's real (count-filtered) genres
+			return map[string]interface{}{"data": map[string]interface{}{"books": []map[string]interface{}{
+				{"cached_tags": map[string]interface{}{"Genre": hcGenreTags("Adventure", "Mystery")}},
+			}}}, http.StatusOK
+		case vars["listID"] != nil:
+			listID := int(vars["listID"].(float64))
+			// Canon Pick: no genre overlap, but on both lists (Count=2).
+			// Genre Match: overlaps on both source genres, but only on one
+			// list (Count=1) — despite the weaker list signal, it must
+			// still outrank Canon Pick: (1+2)*(1+1)=6 vs (1+0)*(1+2)=3.
+			books := []map[string]interface{}{
+				hcBookRowWithGenres(5, "Canon Pick", "canon-pick", "Canon Author", []string{"Literary Fiction"}),
+			}
+			if listID == 10 {
+				books = append(books, hcBookRowWithGenres(2, "Genre Match", "genre-match", "Genre Author", []string{"Adventure", "Mystery"}))
+			}
+			return map[string]interface{}{"data": map[string]interface{}{"list_books": books}}, http.StatusOK
+		}
+		t.Fatalf("unexpected hardcover query, vars=%v", vars)
+		return nil, http.StatusInternalServerError
+	})
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("result = %q, want a formatted result", result)
+	}
+	if strings.Index(result, "Genre Match") > strings.Index(result, "Canon Pick") {
+		t.Errorf("result = %q, want Genre Match (shares both the source book's genres, on fewer lists) to rank "+
+			"above Canon Pick (no genre overlap, on more lists) — the multiplicative score must let strong genre "+
+			"overlap outweigh weaker list-count consensus", result)
 	}
 }
 
@@ -220,9 +311,13 @@ func TestHandleBooks_ThinHardcoverData_SupplementedWithOpenLibrary(t *testing.T)
 					hcSearchHit("1", "Obscure Book", "obscure-book", 2, []string{"Test Author"}, []string{"Fantasy"}),
 				}},
 			}}}, http.StatusOK
-		case vars["bookID"] != nil:
+		case vars["minBooks"] != nil: // fetchHardcoverLists
 			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{
 				{"list": map[string]interface{}{"id": 10, "name": "Tiny List", "likes_count": 1, "books_count": 3}},
+			}}}, http.StatusOK
+		case vars["bookID"] != nil: // fetchHardcoverBookGenres
+			return map[string]interface{}{"data": map[string]interface{}{"books": []map[string]interface{}{
+				{"cached_tags": map[string]interface{}{}},
 			}}}, http.StatusOK
 		case vars["listID"] != nil:
 			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{
@@ -276,7 +371,7 @@ func TestHandleBooks_HardcoverNoLists_FallsBackToOpenLibrary(t *testing.T) {
 					hcSearchHit("1", "No Lists Book", "no-lists-book", 5, []string{"Test Author"}, []string{"Drama"}),
 				}},
 			}}}, http.StatusOK
-		case vars["bookID"] != nil:
+		case vars["minBooks"] != nil: // fetchHardcoverLists — empty means lookupViaHardcover bails before ever reaching fetchHardcoverBookGenres
 			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{}}}, http.StatusOK
 		}
 		t.Fatalf("unexpected hardcover query, vars=%v", vars)
