@@ -274,10 +274,24 @@ export class AppState {
 			const newVersion = data.version ?? '';
 
 			if (this.version && newVersion && this.version !== newVersion) {
-				// Version changed - reload to get new frontend code
-				if (typeof window !== 'undefined') {
+				// A new build landed — but reloading immediately would yank
+				// an in-flight turn out from under the user: it wipes
+				// busy/pendingTurn/pendingThreadId client-side while the
+				// turn keeps running server-side regardless, and if this
+				// fires in the gap before a brand-new thread's id has been
+				// synced to the URL, the reload lands back on the
+				// homescreen instead of the conversation just started.
+				// Deferring until nothing's in flight — and deliberately
+				// NOT updating this.version below so this same branch
+				// re-fires — is what makes the reload land at a safe
+				// moment. handleEvent's 'done'/'error' cases call this
+				// again the instant busy clears, so the retry happens
+				// within moments of the turn finishing rather than waiting
+				// out the rest of this 30s poll interval.
+				if (!this.busy && typeof window !== 'undefined') {
 					window.location.reload();
 				}
+				return;
 			}
 			this.version = newVersion;
 		} catch (err) {
@@ -849,6 +863,11 @@ export class AppState {
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
 				void this.loadThreads();
+				// Retries a version-change reload checkVersion() deferred
+				// while this turn was in flight (see its doc comment) —
+				// without this, a build that landed mid-turn wouldn't be
+				// noticed again until the next 30s poll happens to land.
+				void this.checkVersion();
 				break;
 			}
 
@@ -860,6 +879,7 @@ export class AppState {
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
+				void this.checkVersion();
 				break;
 		}
 	}
