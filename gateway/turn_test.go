@@ -247,3 +247,38 @@ func TestGenerateTitle_TruncatesOverlongTitle(t *testing.T) {
 		t.Errorf("len(title) = %d, want capped at maxTitleLen (%d)", len(title), maxTitleLen)
 	}
 }
+
+func TestRegenerateTitle(t *testing.T) {
+	srv := fakeLLMServer(t, "thread title (full context)", `"Trip Planning and Budget"`)
+	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
+
+	// A multi-turn history — the whole point of regenerateTitle is that
+	// this reflects the later follow-up too, not just the opening message.
+	history := []llm.ChatMessage{
+		{Role: "user", Content: "where should I go on vacation"},
+		{Role: "assistant", Content: "Japan is a great choice."},
+		{Role: "user", Content: "what's a reasonable budget for two weeks there"},
+	}
+
+	s := &Server{}
+	title, _, err := s.regenerateTitle(cfg, modelCfg, history)
+	if err != nil {
+		t.Fatalf("regenerateTitle returned error: %v", err)
+	}
+	if title != "Trip Planning and Budget" {
+		t.Errorf("title = %q, want surrounding quotes stripped", title)
+	}
+}
+
+func TestRegenerateTitle_NoHistoryIsAnError(t *testing.T) {
+	s := &Server{}
+	cfg := &config.Config{}
+	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model"}
+	if _, _, err := s.regenerateTitle(cfg, modelCfg, nil); err == nil {
+		t.Error("expected an error for empty history, got nil")
+	}
+}

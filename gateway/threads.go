@@ -225,6 +225,81 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleRegenerateTitle re-runs title generation using the thread's full
+// message history instead of just its opening message — see turn.go's
+// regenerateTitle. This is the "Regenerate title" menu action, distinct
+// from the one-time automatic title handleTurn generates right after a
+// brand-new thread's first turn. A manual rename (handleUpdateThread)
+// still always wins over either, whether it happens before or after.
+func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// effectiveID, not id — a browsed-to variant (see handleGetThread) has
+	// its own messages and its own cost ledger, so titling and billing
+	// this call both need to follow whichever variant is actually being
+	// shown, same as handleGetThread's cost/context fields already do.
+	effectiveID, err := s.db.EffectiveThreadID(id)
+	if err != nil {
+		log.Warn("resolving active variant failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "error", "thread", "resolving active variant failed", map[string]interface{}{"err": err.Error()}, "")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	thread, err := s.db.GetThreadRaw(effectiveID)
+	if err != nil {
+		log.Warn("getting thread failed", "thread", id, "err", err)
+		http.Error(w, "thread not found", http.StatusNotFound)
+		return
+	}
+
+	history, err := s.loadHistory(effectiveID, 0)
+	if err != nil {
+		log.Warn("loading thread history failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "error", "thread", "loading thread history for title regeneration failed", map[string]interface{}{"err": err.Error()}, "")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(history) == 0 {
+		http.Error(w, "thread has no messages to title", http.StatusBadRequest)
+		return
+	}
+
+	cfg := s.liveConfig()
+	modelCfg := cfg.ModelByID(thread.Model)
+
+	title, cost, err := s.regenerateTitle(cfg, modelCfg, history)
+	if err != nil {
+		log.Warn("thread title regeneration failed", "thread", id, "err", err)
+		s.db.LogEvent(id, "warn", "title", "thread title regeneration failed", map[string]interface{}{"err": err.Error()}, "")
+		http.Error(w, "title regeneration failed", http.StatusBadGateway)
+		return
+	}
+	if title == "" {
+		s.db.LogEvent(id, "warn", "title", "model returned no usable title", nil, "")
+		http.Error(w, "model returned no usable title", http.StatusBadGateway)
+		return
+	}
+
+	// id (the root, client-facing thread), not effectiveID — same target
+	// SetThreadTitle always uses, so the sidebar/URL/ThreadMenu entry
+	// updates regardless of which variant happens to be active.
+	if err := s.db.SetThreadTitle(id, title); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if cost > 0 {
+		if err := s.db.AddThreadCost(effectiveID, cost); err != nil {
+			log.Warn("recording title regeneration cost failed", "thread", id, "err", err)
+		}
+	}
+	s.db.LogEvent(id, "info", "title", "thread title regenerated", map[string]interface{}{"title": title, "cost_usd": cost}, "")
+
+	writeJSON(w, struct {
+		Title string `json:"title"`
+	}{title})
+}
+
 // handleDeleteThread soft-deletes a thread — see store.DeleteThread's
 // doc comment. The row and its messages/events stay in the database;
 // this just stops it from showing up anywhere in the API.

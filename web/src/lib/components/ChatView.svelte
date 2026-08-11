@@ -364,9 +364,11 @@
 	}
 
 	/* Replaces the model selector, which moved into the composer's "+"
-	   sheet — clamped to 2 lines since generated titles ("Debugging a
+	   sheet — clamped to 3 lines since generated titles ("Debugging a
 	   Go goroutine leak in the SearXNG client") routinely run past what
-	   fits on one line at a readable size. */
+	   fits on one line at a readable size, and a regenerated title
+	   (drawing on the whole thread instead of just the opening message)
+	   only makes that more likely, not less. */
 	.thread-title {
 		margin: 0;
 		min-width: 0;
@@ -376,7 +378,7 @@
 		line-height: 1.3;
 		color: var(--color-text);
 		display: -webkit-box;
-		-webkit-line-clamp: 2;
+		-webkit-line-clamp: 3;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}

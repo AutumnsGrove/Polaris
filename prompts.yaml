@@ -123,6 +123,14 @@ turn:
     "Do Planet Fitness locations still have $10 memberships?" -> "Planet Fitness Membership Pricing"
     "What's the tallest mountain and its height?" -> "Tallest Mountain and Its Height"
 
+  title_regenerate_system: >-
+    You write short thread titles describing what a Q&A conversation was about, based on its full
+    back-and-forth below — not just how it opened. 3 to 6 words, plain text, no quotes, no trailing
+    punctuation, no preamble or extra commentary. Title Case is fine but not required.
+
+  title_regenerate_task: |-
+    Based on the entire conversation above, write one short thread title that reflects it as a whole — weigh later follow-ups as much as the opening question, not just a restatement of the first message. Name the topic, don't answer or continue the conversation. Output only the title, nothing else.
+
   compaction_system: >-
     Summarize the following conversation concisely but completely: preserve every fact, decision,
     name, number, and cited URL that might matter later. This summary will fully replace the

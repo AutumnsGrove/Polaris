@@ -519,6 +519,19 @@ export class AppState {
 		await this.loadThreads();
 	}
 
+	// Re-titles using the whole thread (every message so far), not just
+	// the opening question the automatic one-time title was generated
+	// from — see gateway/turn.go's regenerateTitle. Returns whether it
+	// succeeded so ThreadMenu can show an error instead of just closing
+	// silently; a manual rename afterward still always wins over this,
+	// same as it does over the automatic title.
+	async regenerateTitle(id: string): Promise<boolean> {
+		const resp = await fetch(`/api/threads/${id}/regenerate-title`, { method: 'POST' });
+		if (!resp.ok) return false;
+		await this.loadThreads();
+		return true;
+	}
+
 	// Toggling favorite doesn't touch updated_at server-side (see
 	// store.SetThreadFavorite's doc comment), so re-fetching the list
 	// afterward moves the thread between the Favorites/rest sections in

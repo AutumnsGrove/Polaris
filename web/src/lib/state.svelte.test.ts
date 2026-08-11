@@ -405,6 +405,37 @@ describe('AppState.openThread', () => {
 	});
 });
 
+describe('AppState.regenerateTitle', () => {
+	it('posts to the regenerate-title endpoint and reloads threads on success', async () => {
+		const fetchMock = vi.fn((url: string, opts?: RequestInit) => {
+			if (typeof url === 'string' && url.endsWith('/regenerate-title')) {
+				expect(opts?.method).toBe('POST');
+				return Promise.resolve({ ok: true, json: async () => ({ title: 'New Title' }) });
+			}
+			return Promise.resolve({ ok: true, json: async () => [{ id: 't1', title: 'New Title' }] });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const state = new AppState();
+		const ok = await state.regenerateTitle('t1');
+
+		expect(ok).toBe(true);
+		expect(fetchMock).toHaveBeenCalledWith('/api/threads/t1/regenerate-title', { method: 'POST' });
+		expect(state.threads).toEqual([{ id: 't1', title: 'New Title' }]);
+	});
+
+	it('returns false and skips the reload when the request fails', async () => {
+		const fetchMock = vi.fn(() => Promise.resolve({ ok: false, json: async () => ({}) }));
+		vi.stubGlobal('fetch', fetchMock);
+
+		const state = new AppState();
+		const ok = await state.regenerateTitle('t1');
+
+		expect(ok).toBe(false);
+		expect(fetchMock).toHaveBeenCalledTimes(1); // no loadThreads follow-up call
+	});
+});
+
 describe('AppState.showToast', () => {
 	// The copy buttons' checkmark icon-swap alone turned out not to be a
 	// clear enough "did that work" signal (clipboard writes can also fail
