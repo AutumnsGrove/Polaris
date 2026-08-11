@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -397,6 +398,103 @@ func TestHandleBooks_HardcoverNoLists_FallsBackToOpenLibrary(t *testing.T) {
 	}
 	if !strings.Contains(result, "OL Only Discovery") {
 		t.Errorf("result = %q, want the open library candidate", result)
+	}
+}
+
+// TestHandleBooks_HardcoverCandidateDescription confirms a list-sourced
+// candidate's description comes straight from Hardcover's own `books` row
+// (fetchListBooks' query now selects it) with no extra network call — the
+// zero-extra-calls path documented on bookCandidate.Description.
+func TestHandleBooks_HardcoverCandidateDescription(t *testing.T) {
+	fakeOpenLibrary(t, func(path string, q url.Values) (interface{}, int) {
+		return map[string]interface{}{"docs": []map[string]interface{}{}}, http.StatusOK
+	})
+	fakeHardcover(t, func(query string, vars map[string]interface{}) (interface{}, int) {
+		switch {
+		case vars["q"] != nil:
+			return map[string]interface{}{"data": map[string]interface{}{"search": map[string]interface{}{
+				"results": map[string]interface{}{"hits": []map[string]interface{}{
+					hcSearchHit("1", "Source Book", "source-book", 100, []string{"Test Author"}, []string{"Science Fiction"}),
+				}},
+			}}}, http.StatusOK
+		case vars["minBooks"] != nil: // fetchHardcoverLists
+			return map[string]interface{}{"data": map[string]interface{}{"list_books": []map[string]interface{}{
+				{"list": map[string]interface{}{"id": 10, "name": "List A", "likes_count": 5, "books_count": 5}},
+			}}}, http.StatusOK
+		case vars["bookID"] != nil: // fetchHardcoverBookGenres
+			return map[string]interface{}{"data": map[string]interface{}{"books": []map[string]interface{}{
+				{"cached_tags": map[string]interface{}{}},
+			}}}, http.StatusOK
+		case vars["listID"] != nil:
+			// Five candidates total (at hardcoverMinCandidates) so the
+			// thin-data Open Library supplement path never triggers.
+			books := []map[string]interface{}{
+				{"book": map[string]interface{}{
+					"id": 2, "title": "Candidate Book", "slug": "candidate-book",
+					"description":         "A tense tale of revenge on the high seas.",
+					"cached_contributors": []map[string]interface{}{{"author": map[string]interface{}{"name": "Candidate Author"}}},
+				}},
+			}
+			for i := 3; i <= 6; i++ {
+				books = append(books, hcBookRow(i, fmt.Sprintf("Filler %d", i), fmt.Sprintf("filler-%d", i), "Filler Author"))
+			}
+			return map[string]interface{}{"data": map[string]interface{}{"list_books": books}}, http.StatusOK
+		}
+		t.Fatalf("unexpected hardcover query, vars=%v", vars)
+		return nil, http.StatusInternalServerError
+	})
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("result = %q, want a formatted result", result)
+	}
+	if !strings.Contains(result, "Candidate Book by Candidate Author — A tense tale of revenge on the high seas.") {
+		t.Errorf("result = %q, want the candidate's description shown inline with its recommendation", result)
+	}
+}
+
+// TestHandleBooks_OpenLibraryCandidateDescription confirms the pure Open
+// Library path (no Hardcover key) fetches each shown candidate's
+// description via one extra /works/{key}.json call — /subjects/*.json's
+// listing shape (used to surface the candidate itself) carries no
+// description field at all, so this is the one path in the tool that
+// actually costs a network round trip beyond what resolution already needed.
+func TestHandleBooks_OpenLibraryCandidateDescription(t *testing.T) {
+	fakeOpenLibrary(t, func(path string, q url.Values) (interface{}, int) {
+		switch path {
+		case "/search.json":
+			return map[string]interface{}{"docs": []map[string]interface{}{
+				{"key": "/works/OL1W", "title": "Source Book", "author_name": []string{"Test Author"},
+					"subject": []string{"Space Opera"}, "cover_i": 111, "description": "The source book's own blurb."},
+			}}, http.StatusOK
+		case "/subjects/space_opera.json":
+			return map[string]interface{}{"works": []map[string]interface{}{
+				{"key": "/works/OL2W", "title": "Discovery Book", "cover_id": 222,
+					"authors": []map[string]interface{}{{"name": "Other Author"}}},
+			}}, http.StatusOK
+		case "/works/OL2W.json":
+			// The flexible {type,value} shape, distinct from search.json's
+			// flattened plain-string form used above for the source book —
+			// see openLibraryDescription's doc comment.
+			return map[string]interface{}{"description": map[string]interface{}{
+				"type": "/type/text", "value": "Discovery Book's own detailed description.",
+			}}, http.StatusOK
+		}
+		t.Fatalf("unexpected open library path %q", path)
+		return nil, http.StatusInternalServerError
+	})
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("result = %q, want a formatted result", result)
+	}
+	if !strings.Contains(result, "Description: The source book's own blurb.") {
+		t.Errorf("result = %q, want the source book's description shown once, in full", result)
+	}
+	if !strings.Contains(result, "Discovery Book by Other Author") || !strings.Contains(result, "Discovery Book's own detailed description.") {
+		t.Errorf("result = %q, want the candidate's description fetched from its {type,value} work-detail shape", result)
 	}
 }
 

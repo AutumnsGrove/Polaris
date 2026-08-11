@@ -41,9 +41,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -107,6 +109,13 @@ const (
 	maxTrackResultsShown      = 10
 	maxAlbumTrackResultsShown = 15
 	maxSimilarAlbumsShown     = 10
+
+	// descriptionTruncateLen bounds how much of a wiki summary gets shown
+	// per recommendation line — fine to show in full once for the source
+	// track/album, but stacked under every one of up to 15 candidates it
+	// would swamp the actual result. Shared with books.go's equivalent
+	// per-candidate truncation (see truncateText).
+	descriptionTruncateLen = 200
 )
 
 func handleMusic(argsJSON string, ctx *Context) string {
@@ -191,12 +200,17 @@ func lookupSimilarTrack(ctx *Context, artist, track string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Tags are best-effort enrichment (grounding for the model's "why
-	// these fit" reasoning, not the core result) — a failure here
-	// shouldn't sink an otherwise-successful similar-tracks lookup.
+	// Tags and description are both best-effort enrichment (grounding for
+	// the model's "why these fit" reasoning, not the core result) — a
+	// failure in either shouldn't sink an otherwise-successful
+	// similar-tracks lookup.
 	tags, tagErr := fetchTrackTags(ctx, resolvedArtist, resolvedTrack, 8)
 	if tagErr != nil {
 		log.Warn("music: fetching tags failed", "artist", resolvedArtist, "track", resolvedTrack, "err", tagErr)
+	}
+	description, descErr := fetchTrackWiki(ctx, resolvedArtist, resolvedTrack)
+	if descErr != nil {
+		log.Warn("music: fetching description failed", "artist", resolvedArtist, "track", resolvedTrack, "err", descErr)
 	}
 
 	citationURL := resolvedURL
@@ -209,40 +223,64 @@ func lookupSimilarTrack(ctx *Context, artist, track string) (string, error) {
 		ImageURL: fetchDeezerCoverArt(ctx, "track", resolvedArtist, resolvedTrack),
 	})
 
-	// One card per recommendation actually shown to the user (same set as
-	// formatSimilarTrackResult's list, not some larger internal set) —
-	// concurrent Deezer lookups so this stays fast regardless of how many
-	// results there are, same shape as aggregateSimilarTracks' fan-out.
-	for _, card := range concurrentMap(trackFanoutConcurrency, similar, func(t lastfmSimilarTrack) (Card, error) {
+	// One card + one description per recommendation actually shown to the
+	// user (same set as formatSimilarTrackResult's list, not some larger
+	// internal set) — concurrent Deezer/Last.fm lookups so this stays fast
+	// regardless of how many results there are, same shape as
+	// aggregateSimilarTracks' fan-out.
+	descriptions := make([]string, len(similar))
+	for i, rec := range concurrentMap(trackFanoutConcurrency, similar, func(t lastfmSimilarTrack) (trackRecommendation, error) {
 		cardURL := t.URL
 		if cardURL == "" {
 			cardURL = lastfmTrackURL(t.Artist.Name, t.Name)
 		}
-		return Card{
-			Title:    t.Name,
-			Subtitle: t.Artist.Name,
-			ImageURL: fetchDeezerCoverArt(ctx, "track", t.Artist.Name, t.Name),
-			URL:      cardURL,
+		wiki, _ := fetchTrackWiki(ctx, t.Artist.Name, t.Name)
+		return trackRecommendation{
+			Card: Card{
+				Title:    t.Name,
+				Subtitle: t.Artist.Name,
+				ImageURL: fetchDeezerCoverArt(ctx, "track", t.Artist.Name, t.Name),
+				URL:      cardURL,
+			},
+			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(card)
+		ctx.AddCard(rec.Card)
+		descriptions[i] = rec.Description
 	}
 
-	return formatSimilarTrackResult(resolvedArtist, resolvedTrack, tags, similar), nil
+	return formatSimilarTrackResult(resolvedArtist, resolvedTrack, tags, description, similar, descriptions), nil
 }
 
-func formatSimilarTrackResult(artist, track string, tags []string, similar []lastfmSimilarTrack) string {
+// trackRecommendation pairs a candidate track's Card with its best-effort
+// wiki description — concurrentMap returns one R per item, so a card-only
+// return type would need a second, separately-ordered fan-out to also carry
+// descriptions; bundling both in one round trip's result keeps them
+// correctly paired by index without a second concurrent pass.
+type trackRecommendation struct {
+	Card        Card
+	Description string
+}
+
+func formatSimilarTrackResult(artist, track string, tags []string, description string, similar []lastfmSimilarTrack, descriptions []string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s - %s\n", artist, track)
 	if len(tags) > 0 {
 		fmt.Fprintf(&sb, "Tags: %s\n", strings.Join(tags, ", "))
+	}
+	if description != "" {
+		fmt.Fprintf(&sb, "Description: %s\n", description)
 	}
 	sb.WriteString("\nSimilar tracks:\n")
 	if len(similar) == 0 {
 		sb.WriteString("(no similar tracks found)\n")
 	}
 	for i, t := range similar {
-		fmt.Fprintf(&sb, "%d. %s - %s\n", i+1, t.Artist.Name, t.Name)
+		fmt.Fprintf(&sb, "%d. %s - %s", i+1, t.Artist.Name, t.Name)
+		if i < len(descriptions) && descriptions[i] != "" {
+			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+		}
+		sb.WriteString("\n")
 	}
 	return strings.TrimSpace(sb.String())
 }
@@ -250,7 +288,7 @@ func formatSimilarTrackResult(artist, track string, tags []string, similar []las
 // --- mode "album_tracks" ---
 
 func lookupAlbumTracks(ctx *Context, artist, album string) (string, error) {
-	canonicalArtist, albumURL, tracklist, err := fetchAlbumTracklist(ctx, artist, album)
+	canonicalArtist, albumURL, description, tracklist, err := fetchAlbumTracklist(ctx, artist, album)
 	if err != nil {
 		return "", err
 	}
@@ -266,35 +304,49 @@ func lookupAlbumTracks(ctx *Context, artist, album string) (string, error) {
 		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
 	})
 
-	// One card per recommendation actually shown — ranked is already
-	// capped above, so this and the text list always describe the same
-	// set. Concurrent Deezer lookups, same shape as lookupSimilarTrack's.
-	for _, card := range concurrentMap(trackFanoutConcurrency, ranked, func(c *similarTrackCandidate) (Card, error) {
-		return Card{
-			Title:    c.Track,
-			Subtitle: c.Artist,
-			ImageURL: fetchDeezerCoverArt(ctx, "track", c.Artist, c.Track),
-			URL:      lastfmTrackURL(c.Artist, c.Track),
+	// One card + one description per recommendation actually shown — ranked
+	// is already capped above, so this and the text list always describe
+	// the same set. Concurrent Deezer/Last.fm lookups, same shape as
+	// lookupSimilarTrack's.
+	descriptions := make([]string, len(ranked))
+	for i, rec := range concurrentMap(trackFanoutConcurrency, ranked, func(c *similarTrackCandidate) (trackRecommendation, error) {
+		wiki, _ := fetchTrackWiki(ctx, c.Artist, c.Track)
+		return trackRecommendation{
+			Card: Card{
+				Title:    c.Track,
+				Subtitle: c.Artist,
+				ImageURL: fetchDeezerCoverArt(ctx, "track", c.Artist, c.Track),
+				URL:      lastfmTrackURL(c.Artist, c.Track),
+			},
+			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(card)
+		ctx.AddCard(rec.Card)
+		descriptions[i] = rec.Description
 	}
 
-	return formatAlbumTracksResult(canonicalArtist, album, ranked), nil
+	return formatAlbumTracksResult(canonicalArtist, album, description, ranked, descriptions), nil
 }
 
-func formatAlbumTracksResult(artist, album string, ranked []*similarTrackCandidate) string {
+func formatAlbumTracksResult(artist, album, description string, ranked []*similarTrackCandidate, descriptions []string) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Similar tracks to %s by %s:\n\n", album, artist)
+	fmt.Fprintf(&sb, "Similar tracks to %s by %s:\n", album, artist)
+	if description != "" {
+		fmt.Fprintf(&sb, "Description: %s\n", description)
+	}
+	sb.WriteString("\n")
 	if len(ranked) == 0 {
 		sb.WriteString("(no similar tracks found)\n")
 	}
 	for i, c := range ranked {
+		fmt.Fprintf(&sb, "%d. %s - %s", i+1, c.Artist, c.Track)
 		if c.Count > 1 {
-			fmt.Fprintf(&sb, "%d. %s - %s (recommended by %d songs on the album)\n", i+1, c.Artist, c.Track, c.Count)
-		} else {
-			fmt.Fprintf(&sb, "%d. %s - %s\n", i+1, c.Artist, c.Track)
+			fmt.Fprintf(&sb, " (recommended by %d songs on the album)", c.Count)
 		}
+		if i < len(descriptions) && descriptions[i] != "" {
+			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+		}
+		sb.WriteString("\n")
 	}
 	return strings.TrimSpace(sb.String())
 }
@@ -302,7 +354,7 @@ func formatAlbumTracksResult(artist, album string, ranked []*similarTrackCandida
 // --- mode "similar_albums" ---
 
 func lookupSimilarAlbums(ctx *Context, artist, album string) (string, error) {
-	canonicalArtist, albumURL, tracklist, err := fetchAlbumTracklist(ctx, artist, album)
+	canonicalArtist, albumURL, description, tracklist, err := fetchAlbumTracklist(ctx, artist, album)
 	if err != nil {
 		return "", err
 	}
@@ -356,25 +408,34 @@ func lookupSimilarAlbums(ctx *Context, artist, album string) (string, error) {
 		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
 	})
 
-	// One card per recommendation actually shown — ranked is already
-	// capped above. Concurrent Deezer lookups, same shape as the other
-	// two modes'.
-	for _, card := range concurrentMap(albumResolveConcurrency, ranked, func(c *similarAlbumCandidate) (Card, error) {
+	// One card + one description per recommendation actually shown — ranked
+	// is already capped above. Concurrent Deezer/Last.fm lookups, same
+	// shape as the other two modes'. Each candidate costs an extra
+	// album.getinfo call here (fetchAlbumWiki) on top of the track.getinfo
+	// call fetchTrackAlbum already made to resolve its album name in the
+	// first place — this mode is already documented as the expensive one.
+	descriptions := make([]string, len(ranked))
+	for i, rec := range concurrentMap(albumResolveConcurrency, ranked, func(c *similarAlbumCandidate) (trackRecommendation, error) {
 		cardURL := c.URL
 		if cardURL == "" {
 			cardURL = lastfmAlbumURL(c.Artist, c.Album)
 		}
-		return Card{
-			Title:    c.Album,
-			Subtitle: c.Artist,
-			ImageURL: fetchDeezerCoverArt(ctx, "album", c.Artist, c.Album),
-			URL:      cardURL,
+		wiki, _ := fetchAlbumWiki(ctx, c.Artist, c.Album)
+		return trackRecommendation{
+			Card: Card{
+				Title:    c.Album,
+				Subtitle: c.Artist,
+				ImageURL: fetchDeezerCoverArt(ctx, "album", c.Artist, c.Album),
+				URL:      cardURL,
+			},
+			Description: wiki,
 		}, nil
 	}) {
-		ctx.AddCard(card)
+		ctx.AddCard(rec.Card)
+		descriptions[i] = rec.Description
 	}
 
-	return formatSimilarAlbumsResult(canonicalArtist, album, ranked), nil
+	return formatSimilarAlbumsResult(canonicalArtist, album, description, ranked, descriptions), nil
 }
 
 type similarAlbumCandidate struct {
@@ -385,18 +446,25 @@ type similarAlbumCandidate struct {
 	Tracks map[string]bool // distinct contributing candidate tracks — len() is the cross-track agreement count
 }
 
-func formatSimilarAlbumsResult(artist, album string, ranked []*similarAlbumCandidate) string {
+func formatSimilarAlbumsResult(artist, album, description string, ranked []*similarAlbumCandidate, descriptions []string) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Similar albums to %s by %s:\n\n", album, artist)
+	fmt.Fprintf(&sb, "Similar albums to %s by %s:\n", album, artist)
+	if description != "" {
+		fmt.Fprintf(&sb, "Description: %s\n", description)
+	}
+	sb.WriteString("\n")
 	if len(ranked) == 0 {
 		sb.WriteString("(no similar albums found)\n")
 	}
 	for i, c := range ranked {
+		fmt.Fprintf(&sb, "%d. %s - %s", i+1, c.Artist, c.Album)
 		if len(c.Tracks) > 1 {
-			fmt.Fprintf(&sb, "%d. %s - %s (%d tracks pointed here independently)\n", i+1, c.Artist, c.Album, len(c.Tracks))
-		} else {
-			fmt.Fprintf(&sb, "%d. %s - %s\n", i+1, c.Artist, c.Album)
+			fmt.Fprintf(&sb, " (%d tracks pointed here independently)", len(c.Tracks))
 		}
+		if i < len(descriptions) && descriptions[i] != "" {
+			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+		}
+		sb.WriteString("\n")
 	}
 	return strings.TrimSpace(sb.String())
 }
@@ -526,6 +594,38 @@ func lastfmGet(ctx context.Context, apiKey string, params url.Values) ([]byte, e
 	return body, nil
 }
 
+// lastfmReadMoreLinkRe strips the "<a href=\"...\">Read more on Last.fm</a>."
+// suffix Last.fm appends to every wiki summary (confirmed live for both
+// track.getinfo and album.getinfo) — that link is meaningless once the text
+// is folded into a tool result the model reads, not a rendered page.
+var lastfmReadMoreLinkRe = regexp.MustCompile(`\s*<a\s+href="[^"]*">[^<]*</a>\.?\s*$`)
+
+// cleanLastFMWiki strips the trailing "Read more on Last.fm" link, unescapes
+// HTML entities (Last.fm's wiki text is user-submitted and escapes quotes/
+// ampersands), and trims whitespace — turns the raw wiki.summary field into
+// plain prose suitable for a tool result. Empty input (most candidate
+// tracks/albums have no wiki entry at all — confirmed live) returns "".
+func cleanLastFMWiki(raw string) string {
+	cleaned := lastfmReadMoreLinkRe.ReplaceAllString(raw, "")
+	return strings.TrimSpace(html.UnescapeString(cleaned))
+}
+
+// truncateText bounds s to max runes, breaking at the last space before the
+// cutoff rather than mid-word, and appending "..." — used for per-candidate
+// descriptions (see descriptionTruncateLen) in both music.go and books.go,
+// where a full wiki/description paragraph is appropriate once for the
+// source item but not stacked under every recommendation.
+func truncateText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := s[:max]
+	if i := strings.LastIndex(cut, " "); i > 0 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut) + "..."
+}
+
 // resolveTrack turns a user-supplied artist/track into Last.fm's
 // canonical entry via track.search, picking the same-artist match with
 // the most listeners. This is load-bearing, not cosmetic: track.getsimilar
@@ -648,22 +748,36 @@ func fetchTrackTags(ctx *Context, artist, track string, limit int) ([]string, er
 	return names, nil
 }
 
-// fetchAlbumTracklist resolves an album's canonical artist credit and
-// Last.fm URL, plus its tracklist capped at maxAlbumTracklistSize.
-func fetchAlbumTracklist(ctx *Context, artist, album string) (canonicalArtist, albumURL string, tracks []string, err error) {
+// lastfmAlbumInfo is album.getinfo's parsed response — fetchAlbumInfo is the
+// one place this file calls that endpoint; fetchAlbumTracklist and
+// fetchAlbumWiki are both thin extractions over it rather than issuing their
+// own separate requests, since a single album.getinfo call already carries
+// everything either one needs (tracklist and wiki summary alike).
+type lastfmAlbumInfo struct {
+	Name   string
+	Artist string
+	URL    string
+	Wiki   string
+	Tracks []string
+}
+
+func fetchAlbumInfo(ctx *Context, artist, album string) (*lastfmAlbumInfo, error) {
 	body, err := lastfmGet(ctx.Ctx, ctx.LastFMAPIKey, url.Values{
 		"method": {"album.getinfo"},
 		"artist": {artist},
 		"album":  {album},
 	})
 	if err != nil {
-		return "", "", nil, fmt.Errorf("fetching album: %w", err)
+		return nil, fmt.Errorf("fetching album: %w", err)
 	}
 	var resp struct {
 		Album struct {
 			Name   string `json:"name"`
 			Artist string `json:"artist"`
 			URL    string `json:"url"`
+			Wiki   *struct {
+				Summary string `json:"summary"`
+			} `json:"wiki"`
 			Tracks struct {
 				Track []struct {
 					Name string `json:"name"`
@@ -672,23 +786,84 @@ func fetchAlbumTracklist(ctx *Context, artist, album string) (canonicalArtist, a
 		} `json:"album"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", "", nil, fmt.Errorf("parsing album response: %w", err)
-	}
-	if resp.Album.Name == "" {
-		return "", "", nil, fmt.Errorf("no album found for %q by %q", album, artist)
+		return nil, fmt.Errorf("parsing album response: %w", err)
 	}
 
 	names := make([]string, 0, len(resp.Album.Tracks.Track))
 	for _, t := range resp.Album.Tracks.Track {
 		names = append(names, t.Name)
 	}
-	if len(names) == 0 {
-		return "", "", nil, fmt.Errorf("%q by %q has no tracklist on last.fm", album, artist)
+	wiki := ""
+	if resp.Album.Wiki != nil {
+		wiki = cleanLastFMWiki(resp.Album.Wiki.Summary)
 	}
-	if len(names) > maxAlbumTracklistSize {
-		names = names[:maxAlbumTracklistSize]
+	return &lastfmAlbumInfo{Name: resp.Album.Name, Artist: resp.Album.Artist, URL: resp.Album.URL, Wiki: wiki, Tracks: names}, nil
+}
+
+// fetchAlbumTracklist resolves an album's canonical artist credit, Last.fm
+// URL, and wiki description, plus its tracklist capped at
+// maxAlbumTracklistSize.
+func fetchAlbumTracklist(ctx *Context, artist, album string) (canonicalArtist, albumURL, wikiSummary string, tracks []string, err error) {
+	info, err := fetchAlbumInfo(ctx, artist, album)
+	if err != nil {
+		return "", "", "", nil, err
 	}
-	return resp.Album.Artist, resp.Album.URL, names, nil
+	if info.Name == "" {
+		return "", "", "", nil, fmt.Errorf("no album found for %q by %q", album, artist)
+	}
+	if len(info.Tracks) == 0 {
+		return "", "", "", nil, fmt.Errorf("%q by %q has no tracklist on last.fm", album, artist)
+	}
+	tracks = info.Tracks
+	if len(tracks) > maxAlbumTracklistSize {
+		tracks = tracks[:maxAlbumTracklistSize]
+	}
+	return info.Artist, info.URL, info.Wiki, tracks, nil
+}
+
+// fetchAlbumWiki is similar_albums mode's per-candidate description
+// lookup — a second album.getinfo call per resolved candidate album, on top
+// of fetchTrackAlbum's track.getinfo call that resolved its name in the
+// first place (track.getinfo's own response has no album-level wiki field).
+// Best-effort: errors are swallowed by the caller the same way
+// fetchDeezerCoverArt's are, since a missing description shouldn't sink an
+// otherwise-successful candidate.
+func fetchAlbumWiki(ctx *Context, artist, album string) (string, error) {
+	info, err := fetchAlbumInfo(ctx, artist, album)
+	if err != nil {
+		return "", err
+	}
+	return info.Wiki, nil
+}
+
+// fetchTrackWiki is track.getinfo's wiki summary, used both for a source
+// track's own description (mode "track") and per-candidate descriptions
+// across all three modes. Most candidate tracks have no wiki entry at all
+// (confirmed live against niche tracks) — that's not an error, just an
+// empty string the caller omits from its output.
+func fetchTrackWiki(ctx *Context, artist, track string) (string, error) {
+	body, err := lastfmGet(ctx.Ctx, ctx.LastFMAPIKey, url.Values{
+		"method": {"track.getinfo"},
+		"artist": {artist},
+		"track":  {track},
+	})
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Track struct {
+			Wiki *struct {
+				Summary string `json:"summary"`
+			} `json:"wiki"`
+		} `json:"track"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", err
+	}
+	if resp.Track.Wiki == nil {
+		return "", nil
+	}
+	return cleanLastFMWiki(resp.Track.Wiki.Summary), nil
 }
 
 // fetchTrackAlbum resolves which album a candidate track belongs to —

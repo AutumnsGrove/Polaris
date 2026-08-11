@@ -135,6 +135,19 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 				"toptags": map[string]interface{}{"tag": []map[string]interface{}{{"name": "rap"}}},
 			})
 		},
+		// track.getinfo backs fetchTrackWiki — called once for the resolved
+		// source track's own description, and once per similar-track
+		// candidate (here just "Cool Track"); the same fixed wiki fires for
+		// both since this test only has one of each.
+		"track.getinfo": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]interface{}{
+				"track": map[string]interface{}{
+					"wiki": map[string]interface{}{
+						"summary": `A great song. <a href="https://last.fm/x">Read more on Last.fm</a>.`,
+					},
+				},
+			})
+		},
 	})
 	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
@@ -145,6 +158,12 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 	}
 	if !strings.Contains(result, "Cool Track") {
 		t.Errorf("result = %q, want it to include the similar track", result)
+	}
+	if !strings.Contains(result, "Description: A great song.") {
+		t.Errorf("result = %q, want the source track's wiki summary with the Last.fm link stripped", result)
+	}
+	if strings.Contains(result, "Read more on Last.fm") {
+		t.Errorf("result = %q, must not leak the raw wiki HTML link", result)
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://last.fm/real" {
 		t.Errorf("Citations = %+v, want the resolved (high-listener) track's URL", ctx.Citations)
@@ -168,6 +187,7 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 					"name":   "Test Album",
 					"artist": "Test Artist",
 					"url":    "https://last.fm/album",
+					"wiki":   map[string]interface{}{"summary": "A great test album."},
 					"tracks": map[string]interface{}{
 						"track": []map[string]interface{}{
 							{"name": "Track One"},
@@ -190,6 +210,16 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 				},
 			})
 		},
+		// track.getinfo backs fetchTrackWiki, called per shown candidate —
+		// only "Shared Hit" is shown (the same-artist candidate is excluded
+		// before this fan-out runs), so a fixed response is fine.
+		"track.getinfo": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]interface{}{
+				"track": map[string]interface{}{
+					"wiki": map[string]interface{}{"summary": "A shared hit indeed."},
+				},
+			})
+		},
 	})
 	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
@@ -204,6 +234,12 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 	if !strings.Contains(result, "Shared Hit") || !strings.Contains(result, "recommended by 2 songs") {
 		t.Errorf("result = %q, want Shared Hit credited for both contributing tracks", result)
 	}
+	if !strings.Contains(result, "Description: A great test album.") {
+		t.Errorf("result = %q, want the source album's wiki summary", result)
+	}
+	if !strings.Contains(result, "A shared hit indeed.") {
+		t.Errorf("result = %q, want the candidate's wiki summary alongside its recommendation", result)
+	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://last.fm/album" {
 		t.Errorf("Citations = %+v, want the album's own page added", ctx.Citations)
 	}
@@ -217,12 +253,17 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 
 func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) {
 	fakeLastFM(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		// This same handler backs both the source album's own lookup and
+		// fetchAlbumWiki's per-candidate call (method-routed, not
+		// artist/album-routed) — the fixed wiki below applies to both, which
+		// is fine since this test only has one of each.
 		"album.getinfo": func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]interface{}{
 				"album": map[string]interface{}{
 					"name":   "Test Album",
 					"artist": "Test Artist",
 					"url":    "https://last.fm/album",
+					"wiki":   map[string]interface{}{"summary": "Album wiki text."},
 					"tracks": map[string]interface{}{
 						"track": []map[string]interface{}{{"name": "Track One"}},
 					},
@@ -259,6 +300,9 @@ func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) 
 	}
 	if !strings.Contains(result, "Discovery Album") {
 		t.Errorf("result = %q, want the resolved album included", result)
+	}
+	if strings.Count(result, "Album wiki text.") != 2 {
+		t.Errorf("result = %q, want the wiki summary once for the source album and once for the resolved candidate", result)
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
 		t.Errorf("Citations = %+v, want the Deezer cover art enrichment on the source album citation", ctx.Citations)

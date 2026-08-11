@@ -179,6 +179,19 @@ type bookCandidate struct {
 	// rankHardcoverCandidates to score genre overlap against the source
 	// book, not shown directly to the user.
 	Genres []string
+	// Description is populated directly from Hardcover's response for
+	// candidateSourceList candidates (its `books` GraphQL type carries
+	// description right alongside title/slug/contributors, confirmed live
+	// — no extra query needed). candidateSourceSubject candidates have no
+	// description in the /subjects/{slug}.json listing that surfaces them,
+	// so it's left empty here and filled in afterward, only for the
+	// capped/shown set, by enrichSubjectDescriptions.
+	Description string
+	// Key is the Open Library work key (e.g. "/works/OL2W"), populated
+	// only for candidateSourceSubject candidates — enrichSubjectDescriptions
+	// uses it to fetch the one extra per-candidate detail call description
+	// requires on this path.
+	Key string
 }
 
 // addBookCards converts ranked candidates (already capped to
@@ -301,7 +314,7 @@ func capBookCandidates(ranked []*bookCandidate) []*bookCandidate {
 // formatBooksResult assumes ranked is already capped (see
 // capBookCandidates) — callers pass the same capped slice to addBookCards,
 // so the text list and the Card carousel always describe the same set.
-func formatBooksResult(title, author string, tags []string, ranked []*bookCandidate, supplemented bool) string {
+func formatBooksResult(title, author, description string, tags []string, ranked []*bookCandidate, supplemented bool) string {
 	var sb strings.Builder
 	if author != "" {
 		fmt.Fprintf(&sb, "%s by %s\n", title, author)
@@ -310,6 +323,9 @@ func formatBooksResult(title, author string, tags []string, ranked []*bookCandid
 	}
 	if len(tags) > 0 {
 		fmt.Fprintf(&sb, "Tags: %s\n", strings.Join(tags, ", "))
+	}
+	if description != "" {
+		fmt.Fprintf(&sb, "Description: %s\n", description)
 	}
 	sb.WriteString("\nSimilar books:\n")
 	if len(ranked) == 0 {
@@ -326,10 +342,14 @@ func formatBooksResult(title, author string, tags []string, ranked []*bookCandid
 			label = " (via shared subjects)"
 		}
 		if c.Author == "" {
-			fmt.Fprintf(&sb, "%d. %s%s\n", i+1, c.Title, label)
+			fmt.Fprintf(&sb, "%d. %s%s", i+1, c.Title, label)
 		} else {
-			fmt.Fprintf(&sb, "%d. %s by %s%s\n", i+1, c.Title, c.Author, label)
+			fmt.Fprintf(&sb, "%d. %s by %s%s", i+1, c.Title, c.Author, label)
 		}
+		if c.Description != "" {
+			fmt.Fprintf(&sb, " — %s", truncateText(c.Description, descriptionTruncateLen))
+		}
+		sb.WriteString("\n")
 	}
 	if supplemented {
 		sb.WriteString("\n(Hardcover had limited curated-list data for this book — some results above are " +
@@ -416,10 +436,11 @@ func hardcoverQuery(ctx *Context, query string, variables map[string]interface{}
 // hardcoverSearchDoc below (the Typesense-backed `search` query's result
 // shape, used only for resolution).
 type hardcoverBookRow struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
-	Image *struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	Image       *struct {
 		URL string `json:"url"`
 	} `json:"image"`
 	CachedContributors []struct {
@@ -491,12 +512,13 @@ func hardcoverBookURL(slug string) string {
 }
 
 type hardcoverBook struct {
-	ID       int
-	Title    string
-	Author   string
-	Slug     string
-	ImageURL string
-	Genres   []string
+	ID          int
+	Title       string
+	Author      string
+	Slug        string
+	ImageURL    string
+	Genres      []string
+	Description string
 }
 
 // hardcoverSearchDoc is one hit's `document` from Hardcover's `search` query
@@ -519,6 +541,7 @@ type hardcoverSearchDoc struct {
 	ID             string   `json:"id"`
 	Title          string   `json:"title"`
 	Slug           string   `json:"slug"`
+	Description    string   `json:"description"`
 	UsersReadCount int      `json:"users_read_count"`
 	AuthorNames    []string `json:"author_names"`
 	Genres         []string `json:"genres"`
@@ -601,12 +624,13 @@ func resolveHardcoverBook(ctx *Context, title, author string) (*hardcoverBook, e
 		imageURL = best.Image.URL
 	}
 	return &hardcoverBook{
-		ID:       id,
-		Title:    best.Title,
-		Author:   strings.Join(best.AuthorNames, ", "),
-		Slug:     best.Slug,
-		ImageURL: imageURL,
-		Genres:   best.Genres,
+		ID:          id,
+		Title:       best.Title,
+		Author:      strings.Join(best.AuthorNames, ", "),
+		Slug:        best.Slug,
+		ImageURL:    imageURL,
+		Genres:      best.Genres,
+		Description: best.Description,
 	}, nil
 }
 
@@ -678,7 +702,7 @@ func fetchHardcoverLists(ctx *Context, bookID int) ([]hardcoverList, error) {
 func fetchListBooks(ctx *Context, listID, excludeBookID int) ([]hardcoverBookRow, error) {
 	const query = `query($listID: Int!, $excludeBookID: Int!) {
 		list_books(where: {list_id: {_eq: $listID}, book_id: {_neq: $excludeBookID}}, limit: 50) {
-			book { id title slug image { url } cached_contributors cached_tags }
+			book { id title slug description image { url } cached_contributors cached_tags }
 		}
 	}`
 	data, err := hardcoverQuery(ctx, query, map[string]interface{}{"listID": listID, "excludeBookID": excludeBookID})
@@ -722,12 +746,13 @@ func aggregateListBooks(ctx *Context, sourceBookID int, lists []hardcoverList) m
 					imageURL = r.Image.URL
 				}
 				entry = &bookCandidate{
-					Title:    r.Title,
-					Author:   author,
-					URL:      hardcoverBookURL(r.Slug),
-					CoverURL: imageURL,
-					Source:   candidateSourceList,
-					Genres:   r.genres(),
+					Title:       r.Title,
+					Author:      author,
+					URL:         hardcoverBookURL(r.Slug),
+					CoverURL:    imageURL,
+					Source:      candidateSourceList,
+					Genres:      r.genres(),
+					Description: r.Description,
 				}
 				agg[key] = entry
 			}
@@ -847,18 +872,20 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 	})
 
 	ranked = capBookCandidates(ranked)
+	enrichSubjectDescriptions(ctx, ranked)
 	addBookCards(ctx, ranked)
-	return formatBooksResult(book.Title, book.Author, hardcoverGenreTags(sourceGenres), ranked, supplemented), nil
+	return formatBooksResult(book.Title, book.Author, book.Description, hardcoverGenreTags(sourceGenres), ranked, supplemented), nil
 }
 
 // --- Open Library path ---
 
 type openLibraryWork struct {
-	Key      string
-	Title    string
-	Author   string
-	Subjects []string
-	CoverID  int
+	Key         string
+	Title       string
+	Author      string
+	Subjects    []string
+	CoverID     int
+	Description string
 }
 
 // filterOpenLibrarySubjects keeps only the subjects likely to produce a
@@ -884,9 +911,13 @@ func filterOpenLibrarySubjects(subjects []string) []string {
 
 func resolveOpenLibraryWork(ctx *Context, title, author string) (*openLibraryWork, error) {
 	params := url.Values{
-		"title":  {title},
-		"limit":  {"5"},
-		"fields": {"key,title,author_name,subject,cover_i"},
+		"title": {title},
+		"limit": {"5"},
+		// description is requested here too — search.json flattens it to a
+		// plain string for the top-level work doc (confirmed live), unlike
+		// /subjects/{slug}.json's listing shape used for candidates below,
+		// which carries no description at all (see enrichSubjectDescriptions).
+		"fields": {"key,title,author_name,subject,cover_i,description"},
 	}
 	if author != "" {
 		params.Set("author", author)
@@ -913,11 +944,12 @@ func resolveOpenLibraryWork(ctx *Context, title, author string) (*openLibraryWor
 
 	var parsed struct {
 		Docs []struct {
-			Key        string   `json:"key"`
-			Title      string   `json:"title"`
-			AuthorName []string `json:"author_name"`
-			Subject    []string `json:"subject"`
-			CoverI     int      `json:"cover_i"`
+			Key         string   `json:"key"`
+			Title       string   `json:"title"`
+			AuthorName  []string `json:"author_name"`
+			Subject     []string `json:"subject"`
+			CoverI      int      `json:"cover_i"`
+			Description string   `json:"description"`
 		} `json:"docs"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -928,11 +960,12 @@ func resolveOpenLibraryWork(ctx *Context, title, author string) (*openLibraryWor
 	}
 	d := parsed.Docs[0]
 	return &openLibraryWork{
-		Key:      d.Key,
-		Title:    d.Title,
-		Author:   strings.Join(d.AuthorName, ", "),
-		Subjects: filterOpenLibrarySubjects(d.Subject),
-		CoverID:  d.CoverI,
+		Key:         d.Key,
+		Title:       d.Title,
+		Author:      strings.Join(d.AuthorName, ", "),
+		Subjects:    filterOpenLibrarySubjects(d.Subject),
+		CoverID:     d.CoverI,
+		Description: strings.TrimSpace(d.Description),
 	}, nil
 }
 
@@ -1025,6 +1058,7 @@ func aggregateOpenLibrarySubjects(ctx *Context, work *openLibraryWork) map[strin
 					URL:      "https://openlibrary.org" + w.Key,
 					CoverURL: w.CoverURL,
 					Source:   candidateSourceSubject,
+					Key:      w.Key,
 				}
 				agg[key] = entry
 			}
@@ -1032,6 +1066,87 @@ func aggregateOpenLibrarySubjects(ctx *Context, work *openLibraryWork) map[strin
 		}
 	}
 	return agg
+}
+
+// openLibraryDescription unmarshals Open Library's /works/{key}.json
+// description field, which comes back in two different shapes depending on
+// the record (confirmed live): a plain string, or {"type": "/type/text",
+// "value": "..."}. search.json's flattened `description` field (used for
+// the source book in resolveOpenLibraryWork) is always the plain-string
+// form, so only this per-work-detail path needs to handle both.
+type openLibraryDescription struct{ Value string }
+
+func (d *openLibraryDescription) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		d.Value = s
+		return nil
+	}
+	var obj struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return err
+	}
+	d.Value = obj.Value
+	return nil
+}
+
+// fetchOpenLibraryWorkDescription is the one extra call the subject-overlap
+// path needs per candidate: /subjects/{slug}.json (fetchOpenLibrarySubjectWorks)
+// is a lightweight listing with no description field at all, unlike
+// search.json's flattened one or Hardcover's `books` type (both available
+// with zero extra calls — see this file's bookCandidate.Description doc
+// comment). Only called for the final capped/shown candidate set, never the
+// full aggregated pool, via enrichSubjectDescriptions.
+func fetchOpenLibraryWorkDescription(ctx *Context, workKey string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx.Ctx, "GET", openLibraryBaseURL+workKey+".json", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Polaris/1.0 (personal search assistant)")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("open library work %q status %d", workKey, resp.StatusCode)
+	}
+
+	var parsed struct {
+		Description openLibraryDescription `json:"description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("parsing open library work response: %w", err)
+	}
+	return strings.TrimSpace(parsed.Description.Value), nil
+}
+
+// enrichSubjectDescriptions fetches candidateSourceSubject candidates'
+// descriptions concurrently and in place — called after capBookCandidates in
+// every caller, so this only ever fans out over the ≤maxBooksResultsShown
+// candidates actually displayed, not the full aggregated pool.
+// candidateSourceList candidates already have Description populated (see
+// aggregateListBooks) and are skipped. Best-effort: a failed lookup just
+// leaves that one candidate's Description empty, same as a missing Deezer
+// cover elsewhere in this codebase.
+func enrichSubjectDescriptions(ctx *Context, candidates []*bookCandidate) {
+	concurrentMap(openLibrarySubjectConcurrency, candidates, func(c *bookCandidate) (struct{}, error) {
+		if c.Source != candidateSourceSubject || c.Key == "" {
+			return struct{}{}, nil
+		}
+		if desc, err := fetchOpenLibraryWorkDescription(ctx, c.Key); err == nil {
+			c.Description = desc
+		}
+		return struct{}{}, nil
+	})
 }
 
 func lookupViaOpenLibrary(ctx *Context, title, author string) (string, error) {
@@ -1055,8 +1170,9 @@ func lookupViaOpenLibrary(ctx *Context, title, author string) (string, error) {
 	})
 
 	ranked = capBookCandidates(ranked)
+	enrichSubjectDescriptions(ctx, ranked)
 	addBookCards(ctx, ranked)
-	return formatBooksResult(work.Title, work.Author, work.Subjects, ranked, false), nil
+	return formatBooksResult(work.Title, work.Author, work.Description, work.Subjects, ranked, false), nil
 }
 
 // openLibraryExtras is lookupViaHardcover's thin-data path — filters an
