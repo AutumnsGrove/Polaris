@@ -1,0 +1,72 @@
+name: Frontend build stays in sync
+
+# web/build/ is the static SvelteKit output go:embed bakes into the Go
+# binary — see web/embed.go and README's "Frontend development" section.
+# It's committed straight to git rather than built on the potato (too
+# weak an SBC for pnpm install + vite build on every self-update), which
+# only works if every commit touching web/src/ also rebuilds and commits
+# web/build/. .githooks/pre-commit does that locally, but core.hooksPath
+# is a per-clone git config setting — nothing about the hook file being
+# tracked makes it run automatically, so a fresh clone or an ephemeral
+# sandbox that never ran `git config core.hooksPath .githooks` silently
+# skips it entirely, with no error and no diff to notice in review. That
+# exact gap shipped a real feature (thread title regeneration) whose
+# compiled output never made it into web/build/ for two commits straight.
+#
+# This job is the backstop: it rebuilds the frontend the same way the
+# hook does and fails if that produces a diff against what's committed,
+# regardless of what machine or sandbox authored the commit.
+on:
+  pull_request:
+    paths:
+      - 'web/src/**'
+      - 'web/package.json'
+      - 'web/pnpm-lock.yaml'
+      - 'web/svelte.config.js'
+      - 'web/vite.config.ts'
+  push:
+    branches: [main]
+    paths:
+      - 'web/src/**'
+      - 'web/package.json'
+      - 'web/pnpm-lock.yaml'
+      - 'web/svelte.config.js'
+      - 'web/vite.config.ts'
+
+jobs:
+  check-build-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild frontend
+        working-directory: web
+        # A clean build every time, deliberately not reusing any cache —
+        # see .githooks/pre-commit's own history: a stale local Vite
+        # cache once let `vite build` succeed while silently omitting a
+        # changed component's compiled output, with fresh-looking content
+        # hashes elsewhere masking exactly this. A cold cache in CI can't
+        # replicate that, so it's the more trustworthy signal here.
+        run: pnpm run build
+
+      - name: Fail if web/build/ doesn't match what's committed
+        run: |
+          if ! git diff --quiet -- web/build; then
+            echo "::error::web/build/ is out of sync with web/src/. Run 'cd web && pnpm run build' (or commit with core.hooksPath set to .githooks — see README) and commit the result."
+            git diff --stat -- web/build
+            exit 1
+          fi

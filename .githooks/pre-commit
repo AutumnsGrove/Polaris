@@ -10,6 +10,13 @@
 
 if git diff --cached --name-only | grep -qE '^web/(src/|package\.json$|pnpm-lock\.yaml$)'; then
 	echo "web/ changed — rebuilding frontend before commit..."
+	# Clear Vite/SvelteKit's caches first — a stale node_modules/.vite
+	# once let `vite build` succeed with fresh-looking content hashes
+	# while silently omitting a changed component's actual compiled
+	# output, so web/build looked rebuilt (new filenames) but wasn't
+	# (old content). A clean build every commit costs a few extra
+	# seconds; a silently-stale one costs a shipped-but-missing feature.
+	rm -rf web/node_modules/.vite web/.svelte-kit
 	if ! (cd web && pnpm run build); then
 		echo "Frontend build failed — aborting commit." >&2
 		exit 1
