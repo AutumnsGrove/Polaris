@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, Trash2, Check, X, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, RefreshCw, Trash2, Check, X, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -30,6 +30,7 @@
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
 	let renameValue = $state('');
+	let regeneratingTitle = $state(false);
 	let rootEl: HTMLDivElement | undefined = $state();
 
 	function toggle() {
@@ -60,6 +61,22 @@
 			saveRename();
 		} else if (e.key === 'Escape') {
 			close();
+		}
+	}
+
+	// Re-titles from the whole conversation instead of just the opening
+	// question — left open (not close()'d) on failure so the item resets
+	// to normal and the user can retry, instead of the menu just vanishing
+	// with no explanation.
+	async function regenerateTitle() {
+		if (regeneratingTitle) return;
+		regeneratingTitle = true;
+		const ok = await appState.regenerateTitle(threadId);
+		regeneratingTitle = false;
+		if (ok) {
+			close();
+		} else {
+			appState.showToast("Couldn't regenerate title");
 		}
 	}
 
@@ -137,6 +154,15 @@
 					<Pencil size={14} />
 					<span>Rename</span>
 				</button>
+				<button
+					class="dropdown-item"
+					onclick={regenerateTitle}
+					disabled={regeneratingTitle}
+					role="menuitem"
+				>
+					<RefreshCw size={14} class={regeneratingTitle ? 'spin' : ''} />
+					<span>{regeneratingTitle ? 'Regenerating…' : 'Regenerate title'}</span>
+				</button>
 				<button class="dropdown-item danger" onclick={askDelete} role="menuitem">
 					<Trash2 size={14} />
 					<span>Delete</span>
@@ -193,6 +219,25 @@
 
 	.dropdown-item:hover {
 		background: var(--color-surface-2);
+	}
+
+	.dropdown-item:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.dropdown-item:disabled:hover {
+		background: transparent;
+	}
+
+	:global(.dropdown-item .spin) {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.dropdown-item :global(svg) {

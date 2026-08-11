@@ -42,10 +42,12 @@ type Set struct {
 	} `yaml:"agent"`
 
 	Turn struct {
-		SuggestionsSystem string `yaml:"suggestions_system"`
-		SuggestionsTask   string `yaml:"suggestions_task"`
-		TitleSystem       string `yaml:"title_system"`
-		CompactionSystem  string `yaml:"compaction_system"`
+		SuggestionsSystem     string `yaml:"suggestions_system"`
+		SuggestionsTask       string `yaml:"suggestions_task"`
+		TitleSystem           string `yaml:"title_system"`
+		TitleRegenerateSystem string `yaml:"title_regenerate_system"`
+		TitleRegenerateTask   string `yaml:"title_regenerate_task"`
+		CompactionSystem      string `yaml:"compaction_system"`
 	} `yaml:"turn"`
 
 	Tools struct {
@@ -150,6 +152,16 @@ Don't call tools for questions you can already answer confidently (general knowl
 		"\"Who did Vincent Pastore play in the Sopranos? Was it Paulie?\" -> \"Vincent Pastore's Sopranos Role\"\n" +
 		"\"Do Planet Fitness locations still have $10 memberships?\" -> \"Planet Fitness Membership Pricing\"\n" +
 		"\"What's the tallest mountain and its height?\" -> \"Tallest Mountain and Its Height\""
+
+	d.Turn.TitleRegenerateSystem = "You write short thread titles describing what a Q&A conversation " +
+		"was about, based on its full back-and-forth below — not just how it opened. 3 to 6 words, " +
+		"plain text, no quotes, no trailing punctuation, no preamble or extra commentary. Title Case " +
+		"is fine but not required."
+
+	d.Turn.TitleRegenerateTask = "Based on the entire conversation above, write one short thread " +
+		"title that reflects it as a whole — weigh later follow-ups as much as the opening question, " +
+		"not just a restatement of the first message. Name the topic, don't answer or continue the " +
+		"conversation. Output only the title, nothing else."
 
 	d.Turn.CompactionSystem = "Summarize the following conversation concisely but completely: preserve " +
 		"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
@@ -258,6 +270,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Turn.TitleSystem == "" {
 		s.Turn.TitleSystem = defaults.Turn.TitleSystem
+	}
+	if s.Turn.TitleRegenerateSystem == "" {
+		s.Turn.TitleRegenerateSystem = defaults.Turn.TitleRegenerateSystem
+	}
+	if s.Turn.TitleRegenerateTask == "" {
+		s.Turn.TitleRegenerateTask = defaults.Turn.TitleRegenerateTask
 	}
 	if s.Turn.CompactionSystem == "" {
 		s.Turn.CompactionSystem = defaults.Turn.CompactionSystem

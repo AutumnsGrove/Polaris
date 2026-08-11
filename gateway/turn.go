@@ -765,17 +765,61 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 	if err != nil {
 		return "", 0, err
 	}
+	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
+}
 
-	title := strings.TrimSpace(resp.Content)
+// sanitizeGeneratedTitle cleans up a raw title completion into something
+// safe to store — strips a wrapping quote and trailing punctuation, caps
+// the length, and rejects anything that reads like an answer rather than
+// a title (see answerLikeTitle). Shared by generateTitle and
+// regenerateTitle so both apply the exact same rules to whatever the
+// model sends back.
+func sanitizeGeneratedTitle(raw string) string {
+	title := strings.TrimSpace(raw)
 	title = strings.TrimSpace(titleQuotePrefix.ReplaceAllString(title, ""))
 	title = strings.TrimRight(title, ".!。")
 	if len(title) > maxTitleLen {
 		title = title[:maxTitleLen]
 	}
 	if answerLikeTitle.MatchString(title) {
-		return "", resp.CostUSD, nil
+		return ""
 	}
-	return title, resp.CostUSD, nil
+	return title
+}
+
+// regenerateTitle is generateTitle's whole-thread counterpart: instead of
+// titling just the opening question, it reads the full conversation
+// (history, exactly as loadHistory reconstructs it — a compacted summary
+// included, same as a normal turn would see) and titles that as a whole.
+// Used by the "Regenerate title" menu action, not by the automatic
+// once-per-thread path in handleTurn.
+//
+// The task instruction goes in a trailing user message after history,
+// exactly like generateSuggestions — see that function's doc comment for
+// why: ending the prompt array on the thread's last assistant reply
+// (which the raw history always does) invites a helpful model to keep
+// answering instead of switching to the actual task, so the instruction
+// needs to be the very last thing it sees.
+func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig, history []llm.ChatMessage) (string, float64, error) {
+	if len(history) == 0 {
+		return "", 0, fmt.Errorf("thread has no messages to title")
+	}
+
+	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
+
+	p := prompts.Get()
+	prompt := make([]llm.ChatMessage, 0, len(history)+2)
+	prompt = append(prompt, llm.ChatMessage{Role: "system", Content: p.Turn.TitleRegenerateSystem})
+	prompt = append(prompt, history...)
+	prompt = append(prompt, llm.ChatMessage{Role: "user", Content: p.Turn.TitleRegenerateTask})
+
+	resp, err := titleClient.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	return sanitizeGeneratedTitle(resp.Content), resp.CostUSD, nil
 }
 
 // compactThread summarizes every message up to and including throughID,

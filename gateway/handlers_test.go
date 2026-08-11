@@ -385,6 +385,66 @@ func TestThreadsCRUD(t *testing.T) {
 	}
 }
 
+func TestHandleRegenerateTitle(t *testing.T) {
+	srv := fakeLLMServer(t, "thread title (full context)", "Vacation Budget Planning")
+	h := newTestHarness(t, srv.URL)
+
+	if err := h.db.CreateThread("t1", "vacation ideas", "mimo-pro", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := h.db.AddMessage("t1", "user", "where should I go on vacation", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := h.db.AddMessage("t1", "assistant", "Japan is a great choice.", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	resp, err := http.Post(h.url("/api/threads/t1/regenerate-title"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST regenerate-title: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var got struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got.Title != "Vacation Budget Planning" {
+		t.Errorf("title = %q, want %q", got.Title, "Vacation Budget Planning")
+	}
+
+	thread, err := h.db.GetThread("t1")
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.Title != "Vacation Budget Planning" {
+		t.Errorf("persisted title = %q, want %q", thread.Title, "Vacation Budget Planning")
+	}
+	if thread.CostUSD <= 0 {
+		t.Errorf("thread.CostUSD = %v, want the fake LLM call's cost recorded", thread.CostUSD)
+	}
+}
+
+func TestHandleRegenerateTitle_NoMessages(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("t1", "empty thread", "mimo-pro", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	resp, err := http.Post(h.url("/api/threads/t1/regenerate-title"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST regenerate-title: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for a thread with no messages", resp.StatusCode)
+	}
+}
+
 func TestHandleGetThread_NotFound(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	resp, err := http.Get(h.url("/api/threads/does-not-exist"))
