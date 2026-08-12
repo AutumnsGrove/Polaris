@@ -311,6 +311,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
 		HardcoverAPIKey: cfg.Hardcover.APIKey,
+		TMDBAPIKey:      cfg.TMDB.APIKey,
 		DefaultLocation: defaultLocation,
 		RequestLocation: resolveLiveLocation,
 		VoiceMode:       msg.VoiceMode,

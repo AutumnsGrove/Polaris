@@ -6,7 +6,10 @@ package tools
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"sync"
+	"time"
 
 	"polaris/llm"
 	"polaris/logger"
@@ -16,6 +19,42 @@ import (
 )
 
 var log = logger.WithPrefix("tools")
+
+// httpUserAgent is sent on every outbound request this package's tools
+// make to a third-party API — a handful of providers (GitHub, Open
+// Library among them) reject or rate-limit requests with no User-Agent
+// at all, and a consistent identifying string is good citizenship either
+// way.
+const httpUserAgent = "Polaris/1.0 (personal search assistant)"
+
+// httpGetJSON issues a GET request and returns its raw body plus status
+// code — the transport plumbing (request construction, User-Agent, a
+// 10-second timeout, reading the body) is identical across every JSON
+// API this package's tools call, even though each one's response/error
+// shape differs (Last.fm's HTTP-200-with-error-field vs TMDB's non-2xx
+// status, for two). Callers own their own status-code and error-shape
+// parsing; this only exists so that plumbing isn't copy-pasted anew in
+// every *Get function.
+func httpGetJSON(ctx context.Context, url string) (body []byte, statusCode int, err error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("User-Agent", httpUserAgent)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
+}
 
 // Context carries dependencies shared across a single turn's tool calls,
 // plus an Emit callback the gateway uses to stream progress events
@@ -51,6 +90,11 @@ type Context struct {
 	// package doc comment). Empty, invalid, or expired all degrade to
 	// Open Library-only recommendations rather than failing the tool.
 	HardcoverAPIKey string
+
+	// TMDBAPIKey is required for the movies tool — like LastFMAPIKey,
+	// there's no unauthenticated fallback. Empty means every movies call
+	// fails with a clear "not configured" error rather than degrading.
+	TMDBAPIKey string
 
 	// Blocklist rejects web_read fetches for blocked domains directly —
 	// web_search's own filtering happens inside SearXNG (nil-safe there
@@ -267,5 +311,5 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
 func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef, dictionaryDef, musicDef, booksDef}
+	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef, dictionaryDef, musicDef, booksDef, moviesDef}
 }

@@ -89,6 +89,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
 		HardcoverAPIKey: cfg.Hardcover.APIKey,
+		TMDBAPIKey:      cfg.TMDB.APIKey,
 		DefaultLocation: cfg.DefaultLocation,
 		LLM:             client,
 		Emit:            emit,

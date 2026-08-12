@@ -87,6 +87,14 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"hardcover"`
 
+	TMDB struct {
+		// APIKey; empty disables the movies tool entirely — like LastFM's,
+		// TMDB has no unauthenticated fallback path, so every call fails
+		// with a clear error rather than degrading. Free self-service
+		// signup, no approval wait: https://www.themoviedb.org/settings/api
+		APIKey string `yaml:"api_key"`
+	} `yaml:"tmdb"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

@@ -51,6 +51,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"polaris/llm"
 )
@@ -110,12 +111,16 @@ const (
 	maxAlbumTrackResultsShown = 15
 	maxSimilarAlbumsShown     = 10
 
-	// descriptionTruncateLen bounds how much of a wiki summary gets shown
-	// per recommendation line — fine to show in full once for the source
-	// track/album, but stacked under every one of up to 15 candidates it
-	// would swamp the actual result. Shared with books.go's equivalent
-	// per-candidate truncation (see truncateText).
-	descriptionTruncateLen = 200
+	// descriptionTruncateLen bounds how much of a wiki summary/overview
+	// gets shown per recommendation line — fine to show in full once for
+	// the source track/album/title, but stacked under every one of up to
+	// 15 candidates it would swamp the actual result. 500 rather than a
+	// tighter bound because most wiki summaries and TMDB overviews run
+	// 1-3 sentences (150-400 chars) — a lower cap was cutting most of them
+	// off mid-sentence, which read as more garbled than useful. Shared
+	// with books.go's and movies.go's equivalent per-candidate truncation
+	// (see truncateText).
+	descriptionTruncateLen = 500
 )
 
 func handleMusic(argsJSON string, ctx *Context) string {
@@ -567,25 +572,12 @@ func lastfmGet(ctx context.Context, apiKey string, params url.Values) ([]byte, e
 	params.Set("api_key", apiKey)
 	params.Set("format", "json")
 
-	req, err := http.NewRequestWithContext(ctx, "GET", lastfmBaseURL+"?"+params.Encode(), nil)
+	body, statusCode, err := httpGetJSON(ctx, lastfmBaseURL+"?"+params.Encode())
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Polaris/1.0 (personal search assistant)")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("last.fm status %d", resp.StatusCode)
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("last.fm status %d", statusCode)
 	}
 	var lfErr lastfmError
 	if json.Unmarshal(body, &lfErr) == nil && lfErr.Error != 0 {
@@ -620,6 +612,18 @@ func truncateText(s string, max int) string {
 		return s
 	}
 	cut := s[:max]
+	// s[:max] is a byte-offset slice — for non-ASCII text (a foreign-film
+	// TMDB overview, say) that can land mid-rune, producing invalid UTF-8.
+	// Trim back byte-by-byte until the prefix is valid UTF-8 again, before
+	// searching for a word boundary below — a run of multi-byte characters
+	// with no space near the cutoff (nothing for LastIndex to find) can't
+	// return a broken trailing byte sequence this way. Bounded by at most
+	// utf8.UTFMax-1 iterations: s itself is assumed valid UTF-8 (it's
+	// decoded JSON text), so cutting one byte at a time off an invalid
+	// mid-rune prefix reaches a valid boundary in at most 3 steps.
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
 	if i := strings.LastIndex(cut, " "); i > 0 {
 		cut = cut[:i]
 	}

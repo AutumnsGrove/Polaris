@@ -42,6 +42,11 @@ with citations.
   signal. Falls back to Open Library's shared-subject data (no key needed) when Hardcover isn't
   configured, its token has expired, or a book has too little curated-list data to trust alone —
   see [Requirements](#requirements). Same cover-art carousel as music
+- **Movie & TV recommendations** — real "find me movies/shows like this" grounded in TMDB's own
+  audience-recommendation data ("people who watched this also watched"), not guesswork. Falls back
+  to TMDB's genre/keyword-based `similar` data when a title is too new or obscure to have much
+  recommendation data of its own. Same cover-art carousel as music/books. Requires a free
+  [TMDB API key](https://www.themoviedb.org/settings/api)
 - **Nearby places** — real-world search (restaurants, pharmacies, etc.) via Foursquare, with
   distance/category/map links, falling back to a plain web search if Foursquare isn't configured.
   Uses the browser's own geolocation for "near me" questions when it's reachable over HTTPS (a
@@ -71,8 +76,8 @@ Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
   ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
-  │              weather / reference_lookup / github_repo / dictionary / music / books, or just
-  │              answer — independent tool calls in the same turn run concurrently
+  │              weather / reference_lookup / github_repo / dictionary / music / books / movies, or
+  │              just answer — independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client
   ├── places   — Foursquare + Nominatim geocoding
@@ -118,6 +123,9 @@ app" is one file you can scp around if you ever needed to.
   Without one (or once it expires), `books` degrades to Open Library's shared-subject data instead
   of failing outright — see the books tool's package doc comment in `tools/books.go` for why that
   fallback exists and how it compares to Hardcover's stronger signal
+- Required for the `movies` tool: a free [TMDB API key](https://www.themoviedb.org/settings/api)
+  (self-service signup, no approval wait) — like `lastfm`, there's no unauthenticated fallback, so
+  `movies` is unavailable without one
 
 ### SearXNG's JSON API
 

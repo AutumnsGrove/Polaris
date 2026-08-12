@@ -35,6 +35,9 @@ lastfm:
 hardcover:
   api_key: "${HARDCOVER_API_KEY}"   # optional — the books tool falls back to Open Library (no key needed) without it, just with weaker recommendations. Free account, token under Settings > API. Expires after ~1 year. https://hardcover.app
 
+tmdb:
+  api_key: "${TMDB_API_KEY}"   # required for the movies tool — no unauthenticated fallback. Free, no approval wait. https://www.themoviedb.org/settings/api
+
 # Geocoded when nearby_search omits a location. Optional — omit entirely
 # to require an explicit location on every nearby_search call.
 default_location: ""   # e.g. "Seattle, WA" or "47.6062, -122.3321"
