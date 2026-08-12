@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,16 @@ import (
 	"polaris/search"
 	"polaris/tavily"
 )
+
+// TestMain swaps out safeDialContext for a plain, unrestricted dialer for
+// the whole test binary. Every test in this file fetches from httptest
+// servers, which bind to loopback on purpose — safeDialContext exists to
+// block exactly that in production, so it would refuse every fake server
+// here otherwise.
+func TestMain(m *testing.M) {
+	dialContext = (&net.Dialer{}).DialContext
+	os.Exit(m.Run())
+}
 
 func fakeHTMLPage(t *testing.T, status int, body string) *httptest.Server {
 	t.Helper()
@@ -54,7 +66,7 @@ func TestFetchAndExtract_PrefersArticleOverChrome(t *testing.T) {
 		<footer>copyright footer</footer>
 	</body></html>`
 
-	title, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	title, _, _, text, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -74,7 +86,7 @@ func TestFetchAndExtract_ExtractsSiteName(t *testing.T) {
 		<meta property="og:site_name" content="The Hollywood Reporter"></head>
 		<body><article><p>content</p></article></body></html>`
 
-	_, siteName, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, siteName, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -86,7 +98,7 @@ func TestFetchAndExtract_ExtractsSiteName(t *testing.T) {
 func TestFetchAndExtract_SiteNameEmptyWhenMissing(t *testing.T) {
 	html := `<html><head><title>No meta tag here</title></head><body><article><p>content</p></article></body></html>`
 
-	_, siteName, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, siteName, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -100,7 +112,7 @@ func TestFetchAndExtract_ExtractsImageURL(t *testing.T) {
 		<meta property="og:image" content="https://example.com/lead-image.jpg"></head>
 		<body><article><p>content</p></article></body></html>`
 
-	_, _, imageURL, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, imageURL, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -115,7 +127,7 @@ func TestFetchAndExtract_ImageURLEmptyWhenMissingOrRelative(t *testing.T) {
 		"relative": `<html><head><title>Relative og:image</title><meta property="og:image" content="/img/lead.jpg"></head><body><article><p>content</p></article></body></html>`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, imageURL, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+			_, _, imageURL, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 			if err != nil {
 				t.Fatalf("fetchAndExtract returned error: %v", err)
 			}
@@ -128,7 +140,7 @@ func TestFetchAndExtract_ImageURLEmptyWhenMissingOrRelative(t *testing.T) {
 
 func TestFetchAndExtract_FallsBackToBodyWithoutArticleOrMain(t *testing.T) {
 	html := `<html><body><p>Just a plain page with no article or main tag.</p></body></html>`
-	_, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, _, text, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
@@ -137,26 +149,92 @@ func TestFetchAndExtract_FallsBackToBodyWithoutArticleOrMain(t *testing.T) {
 	}
 }
 
-func TestFetchAndExtract_TruncatesLongContent(t *testing.T) {
+// TestFetchAndExtract_DoesNotTruncate confirms fetchAndExtract itself
+// returns the full, uncapped text — length capping (and, for HTML, offset
+// pagination) is applied later by windowText in handleWebRead, not here.
+// Truncating in fetchAndExtract would silently defeat pagination: the
+// filter-pass and paywall/empty-page heuristics both need the full text,
+// and offset pagination needs something bigger than maxExtractedChars to
+// page through in the first place.
+func TestFetchAndExtract_DoesNotTruncate(t *testing.T) {
 	huge := strings.Repeat("word ", 5000) // well over maxExtractedChars
 	html := "<html><body><article>" + huge + "</article></body></html>"
 
-	_, _, _, text, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil)
+	_, _, _, text, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error: %v", err)
 	}
-	if len(text) > maxExtractedChars+50 {
-		t.Errorf("text length = %d, want it capped near maxExtractedChars (%d)", len(text), maxExtractedChars)
+	if len(text) <= maxExtractedChars {
+		t.Errorf("text length = %d, want it to exceed maxExtractedChars (%d) — fetchAndExtract must not truncate", len(text), maxExtractedChars)
 	}
-	if !strings.HasSuffix(text, "[truncated]") {
-		t.Errorf("text should end with a truncation marker, got suffix %q", text[max(0, len(text)-30):])
+	if strings.Contains(text, "[truncated]") {
+		t.Error("fetchAndExtract's text contains a truncation marker — truncation belongs in windowText, not here")
+	}
+}
+
+func TestWindowText_TruncatesAndReportsNextOffset(t *testing.T) {
+	full := strings.Repeat("a", maxExtractedChars+500)
+
+	windowed := windowText(full, 0)
+	if len(windowed) <= maxExtractedChars {
+		t.Fatalf("windowText should still return roughly maxExtractedChars of content plus a marker, got len %d", len(windowed))
+	}
+	if !strings.Contains(windowed, fmt.Sprintf("offset: %d", maxExtractedChars)) {
+		t.Errorf("windowed = %q, want it to name the next offset (%d)", windowed, maxExtractedChars)
+	}
+
+	rest := windowText(full, maxExtractedChars)
+	if len(rest) != 500 {
+		t.Errorf("windowText(full, maxExtractedChars) length = %d, want the remaining 500 chars with no further truncation", len(rest))
+	}
+	if strings.Contains(rest, "call web_read again") {
+		t.Errorf("rest = %q, want no continuation hint once everything has been read", rest)
 	}
 }
 
 func TestFetchAndExtract_NonOKStatus(t *testing.T) {
-	_, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil)
+	_, _, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusNotFound, "not found").URL, nil, 0)
 	if err == nil {
 		t.Fatal("expected an error for a 404 response")
+	}
+}
+
+func TestFetchAndExtract_OversizedResponseRejected(t *testing.T) {
+	huge := strings.Repeat("a", maxResponseBytes+1)
+	html := "<html><body><article>" + huge + "</article></body></html>"
+
+	_, _, _, _, _, err := fetchAndExtract(context.Background(), fakeHTMLPage(t, http.StatusOK, html).URL, nil, 0)
+	if err == nil {
+		t.Fatal("expected an error for a response over the size limit")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("err = %q, want it to mention the size limit", err.Error())
+	}
+}
+
+// TestSafeDialContext_BlocksInternalAddresses exercises the real
+// safeDialContext (not the TestMain-overridden dialContext var) directly,
+// since every other test in this file deliberately bypasses it to reach
+// httptest's loopback servers.
+func TestSafeDialContext_BlocksInternalAddresses(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:80", "169.254.169.254:80", "10.0.0.5:443", "localhost:80"} {
+		t.Run(addr, func(t *testing.T) {
+			_, err := safeDialContext(context.Background(), "tcp", addr)
+			if err == nil {
+				t.Fatalf("safeDialContext(%q) = nil error, want it refused as an internal address", addr)
+			}
+			if !strings.Contains(err.Error(), "refusing to connect") {
+				t.Errorf("err = %q, want a refusing-to-connect error", err.Error())
+			}
+		})
+	}
+}
+
+func TestIsDisallowedIP_AllowsPublicAddress(t *testing.T) {
+	// 93.184.216.34 is example.com's well-known static IP — a genuine
+	// public address that must not trip the internal-address check.
+	if isDisallowedIP(net.ParseIP("93.184.216.34")) {
+		t.Error("isDisallowedIP(93.184.216.34) = true, want false for a public address")
 	}
 }
 
@@ -182,7 +260,7 @@ func TestFetchAndExtract_RejectsRedirectToBlockedDomain(t *testing.T) {
 		t.Fatalf("LoadBlocklist returned error: %v", err)
 	}
 
-	_, _, _, _, err = fetchAndExtract(context.Background(), redirector.URL, bl)
+	_, _, _, _, _, err = fetchAndExtract(context.Background(), redirector.URL, bl, 0)
 	if err == nil {
 		t.Fatal("expected an error: redirect target is on the blocklist")
 	}
@@ -289,6 +367,51 @@ func TestHandleWebRead_WithInstructions_AppliesFilterPass(t *testing.T) {
 	}
 }
 
+func TestHandleWebRead_OffsetContinuesReading(t *testing.T) {
+	huge := strings.Repeat("a", maxExtractedChars) + "SECOND_CHUNK_MARKER" + strings.Repeat("b", 100)
+	html := "<html><body><article>" + huge + "</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	first := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+	if strings.Contains(first, "SECOND_CHUNK_MARKER") {
+		t.Errorf("first read should stop before the marker, got a result containing it")
+	}
+	if !strings.Contains(first, fmt.Sprintf("offset: %d", maxExtractedChars)) {
+		t.Errorf("first = %q, want a continuation hint naming offset %d", first, maxExtractedChars)
+	}
+
+	ctx2 := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	second := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":%d}`, srv.URL, maxExtractedChars), ctx2)
+	if !strings.Contains(second, "SECOND_CHUNK_MARKER") {
+		t.Errorf("second = %q, want it to contain the marker past the first chunk", second)
+	}
+}
+
+// TestHandleWebRead_InstructionsSeeBeyondDisplayWindow guards against the
+// exact bug this pagination feature was built to fix: the filter pass used
+// to run on the already-truncated (maxExtractedChars) text, so "extract
+// just X" could never find an X that only appeared later in a long page.
+func TestHandleWebRead_InstructionsSeeBeyondDisplayWindow(t *testing.T) {
+	huge := strings.Repeat("a", maxExtractedChars+500) + "DEEP_TARGET_VALUE"
+	html := "<html><body><article>" + huge + "</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "DEEP_TARGET_VALUE"}}},
+	}
+	ctx := &Context{Ctx: context.Background(), LLM: mock, Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`","instructions":"find the target value"}`, ctx)
+
+	if len(mock.Calls) != 1 {
+		t.Fatalf("CallCount = %d, want exactly 1", len(mock.Calls))
+	}
+	sent := mock.Calls[0].Messages[len(mock.Calls[0].Messages)-1].Content
+	if !strings.Contains(sent, "DEEP_TARGET_VALUE") {
+		t.Errorf("filter pass input didn't contain content past maxExtractedChars — the double-RAG truncation bug regressed")
+	}
+}
+
 func TestHandleWebRead_FilterFailureFallsBackToFullText(t *testing.T) {
 	html := `<html><body><article>Full content, filter will fail so this should still come back.</article></body></html>`
 	srv := fakeHTMLPage(t, http.StatusOK, html)
@@ -376,12 +499,129 @@ func TestFetchAndExtract_PDF(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, _, _, text, err := fetchAndExtract(context.Background(), srv.URL, nil)
+	_, _, _, text, totalPages, err := fetchAndExtract(context.Background(), srv.URL, nil, 0)
 	if err != nil {
 		t.Fatalf("fetchAndExtract returned error for a PDF: %v", err)
 	}
 	if !strings.Contains(text, "Hello World") {
 		t.Errorf("text = %q, want it to contain the PDF's text content", text)
+	}
+	if totalPages != 1 {
+		t.Errorf("totalPages = %d, want 1 for a single-page PDF", totalPages)
+	}
+}
+
+// twoPageTestPDFBase64 is a byte-accurate two-page PDF ("Page One Text" /
+// "Page Two Text"), generated the same programmatic way as
+// minimalTestPDFBase64 above (see its comment) — verified against
+// ledongthuc/pdf directly before being pasted in here.
+const twoPageTestPDFBase64 = "JVBERi0xLjEKJcKlwrHDqwoKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCgoyIDAgb2JqCjw8IC9UeXBlIC9QYWdlcyAvS2lkcyBbMyAwIFIgNSAwIFJdIC9Db3VudCAyIC9NZWRpYUJveCBbMCAwIDMwMCAxNDRdID4+CmVuZG9iagoKMyAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuID4+ID4+ID4+IC9Db250ZW50cyA0IDAgUiA+PgplbmRvYmoKCjQgMCBvYmoKPDwgL0xlbmd0aCA0MSA+PgpzdHJlYW0KQlQgL0YxIDE4IFRmIDAgMCBUZCAoUGFnZSBPbmUgVGV4dCkgVGogRVQKZW5kc3RyZWFtCmVuZG9iagoKNSAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuID4+ID4+ID4+IC9Db250ZW50cyA2IDAgUiA+PgplbmRvYmoKCjYgMCBvYmoKPDwgL0xlbmd0aCA0MSA+PgpzdHJlYW0KQlQgL0YxIDE4IFRmIDAgMCBUZCAoUGFnZSBUd28gVGV4dCkgVGogRVQKZW5kc3RyZWFtCmVuZG9iagoKeHJlZgowIDcKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE4IDAwMDAwIG4gCjAwMDAwMDAwNjggMDAwMDAgbiAKMDAwMDAwMDE1NiAwMDAwMCBuIAowMDAwMDAwMzEwIDAwMDAwIG4gCjAwMDAwMDA0MDIgMDAwMDAgbiAKMDAwMDAwMDU1NiAwMDAwMCBuIAp0cmFpbGVyCjw8IC9Sb290IDEgMCBSIC9TaXplIDcgPj4Kc3RhcnR4cmVmCjY0OAolJUVPRg=="
+
+func twoPageTestPDFServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	pdfBytes, err := base64.StdEncoding.DecodeString(twoPageTestPDFBase64)
+	if err != nil {
+		t.Fatalf("decoding test fixture: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.WriteHeader(http.StatusOK)
+		w.Write(pdfBytes)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestExtractPDFPage_DefaultsToFirstPage(t *testing.T) {
+	pdfBytes, err := base64.StdEncoding.DecodeString(twoPageTestPDFBase64)
+	if err != nil {
+		t.Fatalf("decoding test fixture: %v", err)
+	}
+
+	title, text, totalPages, err := ExtractPDFPage(pdfBytes, 0)
+	if err != nil {
+		t.Fatalf("ExtractPDFPage returned error: %v", err)
+	}
+	if totalPages != 2 {
+		t.Errorf("totalPages = %d, want 2", totalPages)
+	}
+	if !strings.Contains(text, "Page One Text") {
+		t.Errorf("text = %q, want page 1's content when page is unset", text)
+	}
+	if strings.Contains(text, "Page Two Text") {
+		t.Errorf("text = %q, want only page 1's content, not page 2's", text)
+	}
+	if title != "Page One Text" {
+		t.Errorf("title = %q, want the first line of page 1's text", title)
+	}
+	if !strings.Contains(text, "page: 2") {
+		t.Errorf("text = %q, want a continuation hint pointing at page 2", text)
+	}
+}
+
+func TestExtractPDFPage_SecondPage(t *testing.T) {
+	pdfBytes, err := base64.StdEncoding.DecodeString(twoPageTestPDFBase64)
+	if err != nil {
+		t.Fatalf("decoding test fixture: %v", err)
+	}
+
+	_, text, totalPages, err := ExtractPDFPage(pdfBytes, 2)
+	if err != nil {
+		t.Fatalf("ExtractPDFPage returned error: %v", err)
+	}
+	if totalPages != 2 {
+		t.Errorf("totalPages = %d, want 2", totalPages)
+	}
+	if !strings.Contains(text, "Page Two Text") {
+		t.Errorf("text = %q, want page 2's content", text)
+	}
+	if strings.Contains(text, "Page One Text") {
+		t.Errorf("text = %q, want only page 2's content, not page 1's", text)
+	}
+	if !strings.Contains(text, "last page") {
+		t.Errorf("text = %q, want a last-page note since there's nothing after page 2", text)
+	}
+}
+
+func TestExtractPDFPage_OutOfRangeClampsToLastPage(t *testing.T) {
+	pdfBytes, err := base64.StdEncoding.DecodeString(twoPageTestPDFBase64)
+	if err != nil {
+		t.Fatalf("decoding test fixture: %v", err)
+	}
+
+	_, text, _, err := ExtractPDFPage(pdfBytes, 99)
+	if err != nil {
+		t.Fatalf("ExtractPDFPage returned error: %v", err)
+	}
+	if !strings.Contains(text, "Page Two Text") {
+		t.Errorf("text = %q, want page 99 clamped down to the last real page (2)", text)
+	}
+}
+
+func TestHandleWebRead_PDFPageParam(t *testing.T) {
+	srv := twoPageTestPDFServer(t)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(fmt.Sprintf(`{"url":"%s","page":2}`, srv.URL), ctx)
+
+	if !strings.Contains(result, "Page Two Text") {
+		t.Errorf("result = %q, want page 2's content when page:2 is requested", result)
+	}
+	if strings.Contains(result, "Page One Text") {
+		t.Errorf("result = %q, want only page 2's content", result)
+	}
+}
+
+func TestHandleWebRead_PDFIgnoresOffsetPagination(t *testing.T) {
+	// offset is the HTML pagination knob; a PDF paginates by page instead,
+	// so an offset alone (no page) must not truncate/window a PDF's text.
+	srv := twoPageTestPDFServer(t)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":5}`, srv.URL), ctx)
+
+	if !strings.Contains(result, "Page One Text") {
+		t.Errorf("result = %q, want page 1's full content, unaffected by offset", result)
 	}
 }
 
