@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -31,6 +35,20 @@ const eventRetentionDays = 90
 // (see gateway.PruneOldAttachments), so there's no cost to erring toward
 // "definitely abandoned" over risking a slow upload-then-send collision.
 const attachmentMaxAge = 24 * time.Hour
+
+// shutdownGrace bounds how long a SIGTERM/SIGINT (systemd's `systemctl
+// restart`/`stop` — see procmgr/systemd.go, triggered by the self-update
+// flow in gateway/update.go) waits for whatever's in flight — an agent
+// turn streaming over /ws, or a synchronous POST /api/ask — to finish and
+// persist before this process actually exits. It's a bound, not a
+// promise: a deep-research turn can legitimately run past it, in which
+// case it gets killed exactly as abruptly as it would have without any
+// of this, just far less often in practice — see gateway.Server.
+// BeginShutdown's doc comment for what this is actually protecting
+// against. Keep this comfortably under the systemd unit's TimeoutStopSec
+// (see procmgr/systemd.go's unitTemplate) so systemd never SIGKILLs
+// mid-drain before this deadline has a chance to fire on its own.
+const shutdownGrace = 25 * time.Second
 
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -79,6 +97,47 @@ func runRun(cmd *cobra.Command, args []string) error {
 	srv := gateway.New(cfg, configPath, db, staticFS)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Infof("listening on %s (dev=%v)", addr, devMode)
-	return http.ListenAndServe(addr, srv.Handler())
+	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		log.Infof("listening on %s (dev=%v)", addr, devMode)
+		serveErr <- httpServer.ListenAndServe()
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+
+	select {
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	case sig := <-sigCh:
+		log.Infof("received %s — draining in-flight turns before exit (up to %s)", sig, shutdownGrace)
+		db.LogEvent("", "info", "shutdown", "received signal, draining in-flight turns before restart/exit", map[string]interface{}{"signal": sig.String()}, "")
+	}
+
+	// Stop accepting new turns immediately — one started now would only
+	// get killed mid-flight when this function returns below, which is
+	// exactly the "thread silently reverts to an older state" failure
+	// mode this whole shutdown sequence exists to avoid.
+	srv.BeginShutdown()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Warn("http server did not shut down cleanly within the grace period", "err", err)
+	}
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := srv.WaitForActiveTurns(drainCtx); err != nil {
+		log.Warn("timed out waiting for in-flight turns to finish — exiting anyway", "err", err)
+	} else {
+		log.Info("all in-flight turns finished cleanly, exiting")
+	}
+
+	return nil
 }

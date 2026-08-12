@@ -10,6 +10,7 @@
 package gateway
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
@@ -48,6 +49,20 @@ type Server struct {
 	// see its doc comment in update.go for why this needs to survive
 	// past the single request that triggered it.
 	updateStatus updateStatus
+
+	// shuttingDown/activeTurns let cmd/run.go drain in-flight agent turns
+	// before the process actually exits on SIGTERM — see BeginShutdown's
+	// doc comment for why this matters specifically for the self-update
+	// restart path. Both are guarded by turnsMu, not left as a bare
+	// atomic, because "check shuttingDown, then Add(1)" (TryStartTurn)
+	// must never interleave with BeginShutdown flipping the flag: without
+	// a shared lock, a turn could Add(1) after WaitForActiveTurns has
+	// already observed the counter at zero and returned — sync.WaitGroup
+	// explicitly documents that as a misuse that can panic ("Add ... must
+	// happen before Wait").
+	turnsMu      sync.Mutex
+	shuttingDown bool
+	activeTurns  sync.WaitGroup
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -78,6 +93,82 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 }
 
 func (s *Server) Handler() http.Handler { return s.mux }
+
+// TryStartTurn registers a new turn goroutine with the server's shutdown
+// tracking, returning false if a shutdown is already underway (see
+// BeginShutdown) — the caller (handleWS) must not start the turn at all
+// in that case. On true, the caller must call FinishTurn exactly once
+// when the turn goroutine returns.
+//
+// This exists because handleTurn's goroutine deliberately runs on a
+// context derived from context.Background(), not the request/connection
+// that started it (see ws.go's turnCtx comment) — a dropped WebSocket was
+// never meant to interrupt an in-flight turn, and neither should a
+// self-update's restart. Without this, `systemctl restart` (see
+// procmgr/systemd.go) sends SIGTERM and the Go runtime's default
+// disposition kills the process immediately, mid-DB-write, for whatever
+// turn happens to be running at that instant. store.CreateThread/
+// AddMessage are bare, non-transactional Execs — a kill between "mint a
+// new thread id" and "the INSERT actually committing" leaves the thread
+// simply not existing, so the next request (a reconnect fetching that
+// thread, or a sidebar reload) legitimately falls back to whatever was
+// the previous newest thread — indistinguishable from "the app bumped me
+// back to an old conversation."
+//
+// The check-then-Add happens under turnsMu, not as two separate steps on
+// a bare atomic, specifically so it can never interleave with
+// BeginShutdown/WaitForActiveTurns — see turnsMu's doc comment on the
+// struct field for the WaitGroup misuse that would otherwise risk.
+func (s *Server) TryStartTurn() bool {
+	s.turnsMu.Lock()
+	defer s.turnsMu.Unlock()
+	if s.shuttingDown {
+		return false
+	}
+	s.activeTurns.Add(1)
+	return true
+}
+
+// FinishTurn marks one turn (started via a successful TryStartTurn) as
+// done — always call via defer right after a successful TryStartTurn.
+func (s *Server) FinishTurn() {
+	s.activeTurns.Done()
+}
+
+// BeginShutdown marks the server as shutting down: TryStartTurn starts
+// rejecting brand-new turns from this point on, so nothing new gets
+// started that's only going to be killed mid-flight moments later. It
+// does NOT touch turns already running — those are exactly what
+// WaitForActiveTurns below waits on.
+func (s *Server) BeginShutdown() {
+	s.turnsMu.Lock()
+	s.shuttingDown = true
+	s.turnsMu.Unlock()
+}
+
+// WaitForActiveTurns blocks until every turn goroutine started before
+// BeginShutdown finishes, or ctx is done — whichever comes first. A
+// bounded wait, not an unconditional one: a deep-research turn can
+// legitimately run for minutes, and the point of a self-update restart is
+// to actually happen, not to be held hostage by whichever turn happened
+// to be in flight. The caller (cmd/run.go) picks the bound and just
+// proceeds to exit either way once this returns — a turn still running
+// past the deadline gets killed exactly as it would have without any of
+// this, just less often in practice. Safe to call only after
+// BeginShutdown, per turnsMu's ordering guarantee above.
+func (s *Server) WaitForActiveTurns(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.activeTurns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)

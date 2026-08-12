@@ -18,6 +18,7 @@ import (
 // exercise liveConfig()'s hot-reload behavior.
 type testHarness struct {
 	srv            *httptest.Server
+	srvObj         *Server // the gateway.Server behind srv — exposed for tests that need TryStartTurn/BeginShutdown/WaitForActiveTurns directly, not just via HTTP
 	cfgPath        string
 	db             *store.Store
 	llmBaseURL     string
@@ -68,7 +69,7 @@ func newTestHarness(t *testing.T, llmBaseURL string) *testHarness {
 	httpSrv := httptest.NewServer(s.Handler())
 	t.Cleanup(httpSrv.Close)
 
-	return &testHarness{srv: httpSrv, cfgPath: cfgPath, db: db, llmBaseURL: llmBaseURL, attachmentsDir: cfg.Attachments.Dir}
+	return &testHarness{srv: httpSrv, srvObj: s, cfgPath: cfgPath, db: db, llmBaseURL: llmBaseURL, attachmentsDir: cfg.Attachments.Dir}
 }
 
 func (h *testHarness) url(path string) string {

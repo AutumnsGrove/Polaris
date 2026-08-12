@@ -5,10 +5,10 @@ import "testing"
 func TestUpdateStatus_TryStartRejectsWhileRunning(t *testing.T) {
 	var s updateStatus
 
-	if !s.tryStart() {
+	if started, _ := s.tryStart(); !started {
 		t.Fatal("first tryStart() = false, want true (nothing running yet)")
 	}
-	if s.tryStart() {
+	if started, _ := s.tryStart(); started {
 		t.Fatal("second tryStart() = true, want false — an update is already running")
 	}
 
@@ -36,11 +36,55 @@ func TestUpdateStatus_FinishClearsRunningAndRecordsOutcome(t *testing.T) {
 	if snap["restarting"] != true {
 		t.Errorf("restarting = %v, want true", snap["restarting"])
 	}
+	if snap["restart_error"] != "" {
+		t.Errorf("restart_error = %v, want empty until a restart actually fails", snap["restart_error"])
+	}
 
 	// A finished (non-running) update must be startable again — e.g. the
 	// next self-update, once this one's fully wrapped up.
-	if !s.tryStart() {
+	if started, _ := s.tryStart(); !started {
 		t.Fatal("tryStart() after finish() = false, want true")
+	}
+}
+
+func TestUpdateStatus_SetRestartErrorSurfacesFailure(t *testing.T) {
+	var s updateStatus
+	_, startedAt := s.tryStart()
+	s.finish(true, "pull ok\nbuild ok", "", true)
+
+	// Mirrors handleUpdate's real sequence: finish() runs synchronously
+	// (the build succeeded, a restart was attempted), then the restart
+	// goroutine's mgr.Restart() call fails moments later, after the HTTP
+	// response has already gone out reporting success.
+	s.setRestartError(startedAt, "sudo systemctl restart polaris: exit status 1")
+
+	snap := s.snapshot()
+	if snap["restart_error"] != "sudo systemctl restart polaris: exit status 1" {
+		t.Errorf("restart_error = %v, want the restart failure message", snap["restart_error"])
+	}
+	// The build itself still succeeded — only the restart failed — so
+	// success/error (the build outcome) must be untouched.
+	if snap["success"] != true {
+		t.Errorf("success = %v, want true — the build succeeded even though the restart failed", snap["success"])
+	}
+}
+
+func TestUpdateStatus_SetRestartErrorIgnoresStaleRun(t *testing.T) {
+	var s updateStatus
+	_, staleStartedAt := s.tryStart()
+	s.finish(true, "pull ok\nbuild ok", "", true)
+
+	// A second update started (and finished) before the first run's
+	// restart goroutine got around to reporting its own failure — that
+	// stale report must not clobber the second run's state.
+	s.tryStart()
+	s.finish(true, "pull ok\nbuild ok", "", true)
+
+	s.setRestartError(staleStartedAt, "stale failure from the first run")
+
+	snap := s.snapshot()
+	if snap["restart_error"] != "" {
+		t.Errorf("restart_error = %v, want empty — stale run's error must be ignored", snap["restart_error"])
 	}
 }
 
