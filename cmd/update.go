@@ -38,6 +38,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
+	// Held across the whole pull+build+restart sequence below, not just
+	// the build — see AcquireLock's doc comment for why releasing early
+	// would leave the restart window open to a second update racing in.
+	release, err := updater.AcquireLock(repoPath)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	log.Info("pulling changes from origin/main...")
 	result, err := updater.Run(repoPath)
 	if err != nil {

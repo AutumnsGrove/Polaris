@@ -124,8 +124,27 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Held across the whole pull+build+restart sequence below, not just
+	// the build — see updater.AcquireLock's doc comment for why releasing
+	// early would leave the restart window (which can take tens of
+	// seconds — see procmgr/systemd.go's TimeoutStopSec) open to a second
+	// update racing in and overwriting the binary the OS is mid-exec'ing
+	// for this one's restart. Carried into the detached goroutine below
+	// when restarting, since the response has to reach the client (and
+	// this handler return) before that goroutine's Restart() call runs.
+	release, err := updater.AcquireLock(repoPath)
+	if err != nil {
+		s.updateStatus.finish(false, "", err.Error(), false)
+		writeJSON(w, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
 	result, err := updater.Run(repoPath)
 	if err != nil {
+		release()
 		logOut := result.PullOutput + "\n" + result.BuildOutput
 		s.updateStatus.finish(false, logOut, err.Error(), false)
 		s.db.LogEvent("", "error", "update", "self-update build failed", map[string]interface{}{
@@ -150,6 +169,13 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		"pull_output": result.PullOutput, "restarting": restarting,
 	}, "")
 
+	if !restarting {
+		// Nothing more will touch the repo or the binary on this run —
+		// safe to let the next update proceed immediately rather than
+		// holding the lock for no reason.
+		release()
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"success":    true,
 		"log":        logOut,
@@ -161,6 +187,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 		go func() {
+			defer release()
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic in self-update restart goroutine", "panic", r)

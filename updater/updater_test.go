@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -85,30 +86,32 @@ func TestRun_GitPullFailureStopsBeforeBuild(t *testing.T) {
 	}
 }
 
-// TestRun_RejectsConcurrentCallOnSameRepo guards against a found-in-audit
-// bug: `polaris update` (SSH, cmd/update.go) and the settings panel's
-// HTTP-triggered update (gateway/update.go) are two entirely separate
-// process invocations that both call Run on the same repoPath, with no
-// coordination between them beyond gateway's own in-process mutex (which
-// only ever sees requests to one already-running server). Concurrently
-// running `git pull` and `go build -o polaris` in the same working
-// directory risks a corrupted or truncated binary.
-func TestRun_RejectsConcurrentCallOnSameRepo(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not on PATH")
-	}
-	repoPath := setupTestRepo(t)
+// TestAcquireLock_RejectsConcurrentCallOnSameRepo guards against a
+// found-in-audit bug: `polaris update` (SSH, cmd/update.go) and the
+// settings panel's HTTP-triggered update (gateway/update.go) are two
+// entirely separate process invocations that both operate on the same
+// repoPath, with no coordination between them beyond gateway's own
+// in-process mutex (which only ever sees requests to one already-running
+// server). Concurrently running `git pull` and `go build -o polaris` in
+// the same working directory risks a corrupted or truncated binary — and
+// per AcquireLock's doc comment, the lock must also stay held through the
+// restart that follows Run, not just the build, so this exercises
+// AcquireLock directly rather than through Run (which, since the caller
+// now owns locking end to end, no longer touches the lock at all).
+func TestAcquireLock_RejectsConcurrentCallOnSameRepo(t *testing.T) {
+	repoPath := t.TempDir()
 
-	release, err := acquireUpdateLock(repoPath)
+	release, err := AcquireLock(repoPath)
 	if err != nil {
-		t.Fatalf("acquireUpdateLock: %v", err)
+		t.Fatalf("AcquireLock: %v", err)
 	}
 
 	// Simulates a second process (or a second concurrent caller in this
-	// one) trying to update the same repo while the first "holds" it.
-	_, err = Run(repoPath)
+	// one) trying to update the same repo while the first "holds" it —
+	// e.g. still inside its own restart, per AcquireLock's doc comment.
+	_, err = AcquireLock(repoPath)
 	if err == nil {
-		t.Fatal("expected Run to reject a concurrent call while the lock is held")
+		t.Fatal("expected AcquireLock to reject a concurrent call while the lock is held")
 	}
 	if !strings.Contains(err.Error(), "already in progress") {
 		t.Errorf("err = %v, want it to explain another update is already in progress", err)
@@ -116,10 +119,59 @@ func TestRun_RejectsConcurrentCallOnSameRepo(t *testing.T) {
 
 	release()
 
-	// Once released, a normal Run must succeed exactly as if there'd been
-	// no contention at all.
+	// Once released, a normal AcquireLock must succeed exactly as if
+	// there'd been no contention at all.
+	release2, err := AcquireLock(repoPath)
+	if err != nil {
+		t.Errorf("AcquireLock after releasing the first lock returned error: %v", err)
+	} else {
+		release2()
+	}
+}
+
+// TestRun_DoesNotTouchTheLock confirms Run's contract change: locking is
+// now entirely the caller's responsibility (AcquireLock, held across Run
+// AND the restart that follows it — see both doc comments), so Run itself
+// must succeed freely whether or not anything holds the lock, and must
+// leave a lock the caller took out completely alone.
+func TestRun_DoesNotTouchTheLock(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+	repoPath := setupTestRepo(t)
+
+	release, err := AcquireLock(repoPath)
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	defer release()
+
+	// Run must succeed even while the caller (this test) already holds
+	// the lock — it no longer acquires its own.
 	if _, err := Run(repoPath); err != nil {
-		t.Errorf("Run after releasing the lock returned error: %v", err)
+		t.Fatalf("Run returned error while the caller already held the lock: %v", err)
+	}
+
+	// The lock Run supposedly doesn't touch must still be held afterward
+	// — a second AcquireLock attempt (simulating a concurrent caller)
+	// must still be rejected.
+	if _, err := AcquireLock(repoPath); err == nil {
+		t.Error("AcquireLock succeeded after Run — Run must not have released the caller's lock")
+	}
+}
+
+func TestWrapFlockError_DistinguishesContentionFromOtherFailures(t *testing.T) {
+	contention := wrapFlockError("/some/path", syscall.EWOULDBLOCK)
+	if !strings.Contains(contention.Error(), "already in progress") {
+		t.Errorf("contention error = %v, want it to say another update is already in progress", contention)
+	}
+
+	other := wrapFlockError("/some/path", syscall.EACCES)
+	if strings.Contains(other.Error(), "already in progress") {
+		t.Errorf("non-contention error = %v, want it NOT to claim another update is running", other)
+	}
+	if !strings.Contains(other.Error(), "/some/path") {
+		t.Errorf("non-contention error = %v, want it to mention the lock path for debugging", other)
 	}
 }
 
