@@ -47,7 +47,7 @@ var Registry = []config.ModelConfig{
 	{
 		ID:          "deepseek-pro",
 		Name:        "DeepSeek V4 Pro",
-		Model:       "deepseek/deepseek-v4-pro",
+		Model:       "deepseek/deepseek-v4-pro-0813",
 		Provider:    []string{"deepseek"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
@@ -61,6 +61,18 @@ var Registry = []config.ModelConfig{
 		Name:        "DeepSeek V4 Flash",
 		Model:       "deepseek/deepseek-v4-flash-0731",
 		Provider:    []string{"deepseek"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+	},
+	{
+		ID:          "luna",
+		Name:        "ChatGPT Luna",
+		Model:       "openai/gpt-5.6-luna",
+		Provider:    []string{"openai"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{

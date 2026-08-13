@@ -27,8 +27,8 @@ func TestHandleModels_ListsConfiguredModelsWithDefault(t *testing.T) {
 		t.Fatalf("decoding response: %v", err)
 	}
 	// Models now come from the registry (models/models.go), not config.yaml
-	if len(models) != 4 {
-		t.Fatalf("got %d models, want 4 from registry", len(models))
+	if len(models) != 5 {
+		t.Fatalf("got %d models, want 5 from registry", len(models))
 	}
 	// Default is set in testutil_test.go's writeTestConfig
 	defaultFound := false
@@ -68,9 +68,9 @@ func TestHandleModels_HotReloadsModelOverrides(t *testing.T) {
 	}
 	json.NewDecoder(resp.Body).Decode(&models)
 
-	// Should still have all 4 registry models
-	if len(models) != 4 {
-		t.Errorf("got %d models after config rewrite, want 4", len(models))
+	// Should still have all 5 registry models
+	if len(models) != 5 {
+		t.Errorf("got %d models after config rewrite, want 5", len(models))
 	}
 }
 
