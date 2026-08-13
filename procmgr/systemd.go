@@ -126,6 +126,11 @@ type unitData struct {
 // watchdog in v1, so Restart=always + RestartSec is the safety net
 // instead of WatchdogSec.
 //
+// After= includes tailscaled.service on top of network-online.target: this
+// is a Tailscale-only deployment (see gateway/ws.go's CheckOrigin comment),
+// so starting before the tunnel is up would mean the process comes up not
+// actually reachable from anywhere it's meant to be reachable from.
+//
 // TimeoutStopSec is set explicitly (systemd's own default is also 90s,
 // but leaving it implicit invites drift) to comfortably exceed cmd/run.go's
 // shutdownGrace (25s for httpServer.Shutdown, then another 25s draining
@@ -135,7 +140,7 @@ type unitData struct {
 // wait ever got to finish or give up on its own terms.
 const unitTemplate = `[Unit]
 Description={{.Description}}
-After=network-online.target
+After=network-online.target tailscaled.service
 Wants=network-online.target
 StartLimitIntervalSec=600
 StartLimitBurst=5
