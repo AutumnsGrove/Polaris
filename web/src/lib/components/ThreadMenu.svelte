@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, RefreshCw, Trash2, Check, X, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, RefreshCw, Trash2, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
+	import EditTextModal from './EditTextModal.svelte';
 
 	// Header-level equivalent of the Sidebar's per-row rename/delete —
 	// same two actions, surfaced here for whoever's already looking at the
@@ -29,7 +30,6 @@
 	let open = $state(false);
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
-	let renameValue = $state('');
 	let regeneratingTitle = $state(false);
 	let rootEl: HTMLDivElement | undefined = $state();
 
@@ -45,23 +45,19 @@
 		confirmingDelete = false;
 	}
 
+	// Rename opens the full EditTextModal instead of an inline dropdown
+	// input — a title can run well past what the ~190px-wide dropdown
+	// could ever show, especially on mobile. Closing the dropdown here
+	// (not just leaving it open behind the modal) avoids stacking two
+	// floating layers on top of each other.
 	function startRename() {
-		renameValue = threadTitle;
 		renaming = true;
+		open = false;
 	}
 
-	function saveRename() {
-		if (renameValue.trim()) void appState.renameThread(threadId, renameValue);
+	function saveRename(newTitle: string) {
+		void appState.renameThread(threadId, newTitle);
 		close();
-	}
-
-	function onRenameKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			saveRename();
-		} else if (e.key === 'Escape') {
-			close();
-		}
 	}
 
 	// Re-titles from the whole conversation instead of just the opening
@@ -87,11 +83,6 @@
 	function confirmDelete() {
 		void appState.deleteThread(threadId);
 		close();
-	}
-
-	function focusOnMount(node: HTMLInputElement) {
-		node.focus();
-		node.select();
 	}
 
 	// Click-outside-to-close — the click that opened the menu also bubbles
@@ -123,18 +114,7 @@
 	</button>
 	{#if open}
 		<div class="dropdown" role="menu" in:fly={{ y: -6, duration: 150, easing: quintOut }}>
-			{#if renaming}
-				<div class="rename-row">
-					<input
-						class="rename-input"
-						bind:value={renameValue}
-						onkeydown={onRenameKeydown}
-						use:focusOnMount
-					/>
-					<button class="icon-btn" onclick={close} title="Cancel"><X size={13} /></button>
-					<button class="icon-btn" onclick={saveRename} title="Save"><Check size={13} /></button>
-				</div>
-			{:else if confirmingDelete}
+			{#if confirmingDelete}
 				<div class="confirm">
 					<div class="confirm-message">
 						<TriangleAlert size={14} />
@@ -182,6 +162,16 @@
 		</div>
 	{/if}
 </div>
+{#if renaming}
+	<EditTextModal
+		heading="Rename thread"
+		initialValue={threadTitle}
+		placeholder="Thread title"
+		maxLength={200}
+		onSave={saveRename}
+		onCancel={close}
+	/>
+{/if}
 
 <style>
 	.thread-menu {
@@ -337,23 +327,4 @@
 		color: var(--color-bg);
 	}
 
-	.rename-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 2px;
-	}
-
-	.rename-input {
-		flex: 1;
-		min-width: 0;
-		border: 1px solid var(--color-accent-2);
-		background: var(--color-surface-2);
-		border-radius: var(--radius-sm);
-		padding: 6px 8px;
-		font-size: 13px;
-		font-family: inherit;
-		color: var(--color-text);
-		outline: none;
-	}
 </style>
