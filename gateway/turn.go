@@ -182,7 +182,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// only the in-flight prompt to the model is augmented, so reopening
 	// this thread later shows the original question, not a wall of
 	// extracted PDF text glued onto it.
-	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, msg)
+	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg)
 	if err != nil {
 		log.Warn("resolving attachment failed, continuing without it", "err", err)
 		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)

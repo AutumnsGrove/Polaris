@@ -147,7 +147,14 @@ func firstNonEmpty(vals ...string) string {
 // nonzero for an image (the vision-model description call has a real
 // cost); the caller folds it into the turn's total the same way a voice
 // memo's transcription cost already is.
-func resolveAttachment(ctx context.Context, cfg *config.Config, msg ClientMessage) (content string, costUSD float64, err error) {
+//
+// selectedModel is the model the thread is actually about to talk to —
+// when it's multimodal itself, it describes its own image rather than
+// deferring to cfg.MultimodalModel()'s fixed pick. Without this, adding a
+// second multimodal model to the registry (config.ModelConfig.Multimodal)
+// would silently never be used for this: MultimodalModel() always returns
+// the first Multimodal entry it finds, regardless of what's selected.
+func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel config.ModelConfig, msg ClientMessage) (content string, costUSD float64, err error) {
 	if msg.AttachmentID == "" {
 		return msg.Content, 0, nil
 	}
@@ -179,9 +186,13 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, msg ClientMessag
 		return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s", msg.Content, filename, text), 0, nil
 
 	case strings.HasPrefix(msg.AttachmentContentType, "image/"):
-		visionModel, ok := cfg.MultimodalModel()
-		if !ok {
-			return msg.Content, 0, fmt.Errorf("no multimodal model configured to describe images")
+		visionModel := selectedModel
+		if !visionModel.Multimodal {
+			var ok bool
+			visionModel, ok = cfg.MultimodalModel()
+			if !ok {
+				return msg.Content, 0, fmt.Errorf("no multimodal model configured to describe images")
+			}
 		}
 		// Deliberately NOT pinned to visionModel.Provider the way the main
 		// chat client pins its provider — that pin exists for prompt-cache

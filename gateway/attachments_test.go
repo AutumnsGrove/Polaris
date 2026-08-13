@@ -33,7 +33,7 @@ func mustDecodePDF(t *testing.T) []byte {
 
 func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, cost, err := resolveAttachment(context.Background(), cfg, ClientMessage{Content: "hello"})
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"})
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 
 func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"})
+	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"})
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
 	}
@@ -69,7 +69,7 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 		AttachmentFilename:    "report.pdf",
 		AttachmentContentType: "application/pdf",
 	}
-	got, cost, err := resolveAttachment(context.Background(), cfg, msg)
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Attachments.Dir = t.TempDir()
 
-	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{
+	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
 		Content:               "hi",
 		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
 		AttachmentContentType: "application/pdf",
@@ -127,7 +127,9 @@ func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
 		AttachmentFilename:    "bike.jpg",
 		AttachmentContentType: "image/jpeg",
 	}
-	got, cost, err := resolveAttachment(context.Background(), cfg, msg)
+	// The selected model (config.ModelConfig{}, i.e. not multimodal) can't see
+	// the image itself, so this exercises the cfg.MultimodalModel() fallback.
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -142,6 +144,63 @@ func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
 	}
 }
 
+// TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage guards
+// against the routing gap found in review: resolveAttachment used to always
+// hand image description off to cfg.MultimodalModel() (the first
+// Multimodal-flagged entry in the registry), even when the thread's own
+// selected model was itself vision-capable — so adding a second multimodal
+// model to the registry would silently never be preferred for its own
+// thread. The selected model must win when it's multimodal itself.
+func TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage(t *testing.T) {
+	var requestedModel string
+	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding vision request body: %v", err)
+		}
+		requestedModel = body.Model
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
+	}))
+	defer visionSrv.Close()
+
+	dir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440005"
+	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
+		t.Fatalf("writing fake image: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = dir
+	cfg.OpenRouter.BaseURL = visionSrv.URL
+	// A different multimodal model sits earlier in the registry than the
+	// one actually selected for this thread — if the old first-match
+	// fallback fired, the request would go to "registry-mimo" instead.
+	cfg.Models = []config.ModelConfig{
+		{ID: "registry-mimo", Name: "Registry MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
+	}
+	selectedModel := config.ModelConfig{ID: "luna-vision", Name: "Luna Vision", Model: "openai/luna-vision", Multimodal: true}
+
+	msg := ClientMessage{
+		Content:               "what's in this photo",
+		AttachmentID:          id,
+		AttachmentFilename:    "bike.jpg",
+		AttachmentContentType: "image/jpeg",
+	}
+	got, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg)
+	if err != nil {
+		t.Fatalf("resolveAttachment returned error: %v", err)
+	}
+	if !bytes.Contains([]byte(got), []byte("red bicycle")) {
+		t.Errorf("got %q, want it to contain the vision model's description", got)
+	}
+	if requestedModel != selectedModel.Model {
+		t.Errorf("requestedModel = %q, want the selected model (%q), not a registry fallback", requestedModel, selectedModel.Model)
+	}
+}
+
 func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing.T) {
 	dir := t.TempDir()
 	id := "550e8400-e29b-41d4-a716-446655440004"
@@ -153,7 +212,7 @@ func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing
 	cfg.Attachments.Dir = dir
 	cfg.Models = []config.ModelConfig{{ID: "deepseek", Multimodal: false}}
 
-	_, _, err := resolveAttachment(context.Background(), cfg, ClientMessage{
+	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
 		Content:               "what is this",
 		AttachmentID:          id,
 		AttachmentContentType: "image/png",
