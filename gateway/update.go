@@ -29,20 +29,36 @@ type updateStatus struct {
 	log        string
 	errMsg     string
 	restarting bool
+
+	// restartErr is set from the restart goroutine in handleUpdate below,
+	// strictly after finish() already ran (finish only knows the build
+	// succeeded and a restart was *attempted* — restart itself happens
+	// asynchronously afterward, since mgr.Restart() blocks on systemd/
+	// launchd, and the HTTP response has to reach the client first). A
+	// separate field, not folded into errMsg/success, because without it
+	// a failed `sudo systemctl restart` (a polkit hiccup, a bad unit
+	// file, ...) was only ever logged — snapshot kept reporting the
+	// build's own "success: true, restarting: true" forever, so a client
+	// polling /api/update/status had no way to learn the binary never
+	// actually got swapped and was still running the pre-update code.
+	restartErr string
 }
 
-// tryStart claims the single update slot, returning false if one's
-// already running — the caller must not start a second git pull/build.
-func (u *updateStatus) tryStart() bool {
+// tryStart claims the single update slot, returning false (and a zero
+// time.Time) if one's already running — the caller must not start a
+// second git pull/build. The returned startedAt identifies this run for
+// setRestartError below, since the restart goroutine finishes well after
+// finish() (and possibly after a second update has already started).
+func (u *updateStatus) tryStart() (bool, time.Time) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.running {
-		return false
+		return false, time.Time{}
 	}
 	u.running = true
 	u.startedAt = time.Now()
 	u.done = false
-	return true
+	return true, u.startedAt
 }
 
 func (u *updateStatus) finish(success bool, log, errMsg string, restarting bool) {
@@ -54,18 +70,34 @@ func (u *updateStatus) finish(success bool, log, errMsg string, restarting bool)
 	u.log = log
 	u.errMsg = errMsg
 	u.restarting = restarting
+	u.restartErr = "" // a fresh update run supersedes any previous run's restart outcome
+}
+
+// setRestartError records that the restart command itself (systemctl/
+// launchctl restart) failed after a successful build — see restartErr's
+// doc comment. Guarded against a later update's finish() clearing it out
+// from under a stale goroutine: only applies if this is still the same
+// run (no update has started since).
+func (u *updateStatus) setRestartError(startedAt time.Time, err string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if !u.startedAt.Equal(startedAt) {
+		return
+	}
+	u.restartErr = err
 }
 
 func (u *updateStatus) snapshot() map[string]interface{} {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return map[string]interface{}{
-		"running":    u.running,
-		"done":       u.done,
-		"success":    u.success,
-		"log":        u.log,
-		"error":      u.errMsg,
-		"restarting": u.restarting,
+		"running":       u.running,
+		"done":          u.done,
+		"success":       u.success,
+		"log":           u.log,
+		"error":         u.errMsg,
+		"restarting":    u.restarting,
+		"restart_error": u.restartErr,
 	}
 }
 
@@ -75,7 +107,8 @@ func (u *updateStatus) snapshot() map[string]interface{} {
 // client *before* restarting: systemctl/launchctl kills this very
 // process, so the client needs its answer in hand first.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	if !s.updateStatus.tryStart() {
+	started, startedAt := s.updateStatus.tryStart()
+	if !started {
 		writeJSON(w, map[string]interface{}{
 			"success":         false,
 			"already_running": true,
@@ -91,8 +124,27 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Held across the whole pull+build+restart sequence below, not just
+	// the build — see updater.AcquireLock's doc comment for why releasing
+	// early would leave the restart window (which can take tens of
+	// seconds — see procmgr/systemd.go's TimeoutStopSec) open to a second
+	// update racing in and overwriting the binary the OS is mid-exec'ing
+	// for this one's restart. Carried into the detached goroutine below
+	// when restarting, since the response has to reach the client (and
+	// this handler return) before that goroutine's Restart() call runs.
+	release, err := updater.AcquireLock(repoPath)
+	if err != nil {
+		s.updateStatus.finish(false, "", err.Error(), false)
+		writeJSON(w, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
 	result, err := updater.Run(repoPath)
 	if err != nil {
+		release()
 		logOut := result.PullOutput + "\n" + result.BuildOutput
 		s.updateStatus.finish(false, logOut, err.Error(), false)
 		s.db.LogEvent("", "error", "update", "self-update build failed", map[string]interface{}{
@@ -117,6 +169,13 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		"pull_output": result.PullOutput, "restarting": restarting,
 	}, "")
 
+	if !restarting {
+		// Nothing more will touch the repo or the binary on this run —
+		// safe to let the next update proceed immediately rather than
+		// holding the lock for no reason.
+		release()
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"success":    true,
 		"log":        logOut,
@@ -128,6 +187,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 		go func() {
+			defer release()
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic in self-update restart goroutine", "panic", r)
@@ -138,6 +198,12 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			if err := mgr.Restart(); err != nil {
 				log.Error("self-update restart failed", "err", err)
 				s.db.LogEvent("", "error", "update", "self-update restart failed", map[string]interface{}{"err": err.Error()}, "")
+				// Surfaced via /api/update/status so the settings panel can
+				// tell the user the binary was rebuilt but never actually
+				// swapped in, instead of spinning on waitForServerAndReload
+				// until its own 2-minute deadline — see restartErr's doc
+				// comment on why this couldn't just be folded into finish().
+				s.updateStatus.setRestartError(startedAt, err.Error())
 			}
 		}()
 	}

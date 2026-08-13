@@ -175,18 +175,70 @@ export class SettingsState {
 
 	// The build (go build on the potato's ARM CPU can take a while) and
 	// restart happen out from under the request that triggered them, so
-	// poll until the server answers again, then hard-reload — a normal
+	// poll until the *new* binary answers, then hard-reload — a normal
 	// client-side nav would keep running the *old* JS bundle even after
 	// the backend and its embedded frontend assets have updated.
+	//
+	// Polls /api/version specifically, and waits for it to actually
+	// *change* from the baseline captured at the top — not just "did some
+	// server respond" (this used to hit /api/models and reload the
+	// instant that came back 200). handleUpdate's restart goroutine
+	// sleeps only 300ms before calling `sudo systemctl restart`
+	// (procmgr/systemd.go), which itself is a polkit/D-Bus round trip
+	// that can easily take longer than that on the potato's weak CPU — so
+	// for the first poll or two, the OLD process is very often still
+	// alive and answering completely normally. Reloading on "a server
+	// responded" landed back on that same still-old binary and embedded
+	// frontend, silently failing to update while reporting success —
+	// which is exactly the "had to click the update button twice" pattern
+	// this was hardened against: the first click's reload fired too
+	// early, and the real restart only happened later, unannounced,
+	// possibly mid-conversation.
 	private async waitForServerAndReload() {
+		let baseline = '';
+		try {
+			const res = await fetch('/api/version', { cache: 'no-store' });
+			if (res.ok) baseline = (await res.json()).version ?? '';
+		} catch {
+			// Already down by the time we got here — fine, the loop below
+			// falls back to "any successful response" when there's no
+			// baseline to compare against.
+		}
+
 		const deadline = Date.now() + 120_000;
 		while (Date.now() < deadline) {
 			await new Promise((r) => setTimeout(r, 1500));
+
+			// Check for a definitive restart failure first so a dead
+			// `sudo systemctl restart` (bad unit file, polkit denial, ...)
+			// surfaces immediately instead of silently spinning here for
+			// the full 2 minutes while the old process keeps answering
+			// with its old, unchanged version.
 			try {
-				const res = await fetch('/api/models', { cache: 'no-store' });
+				const statusRes = await fetch('/api/update/status', { cache: 'no-store' });
+				if (statusRes.ok) {
+					const status = await statusRes.json();
+					if (status.restart_error) {
+						this.updateState = 'error';
+						this.updateLog += `\n\nBuild succeeded, but restarting the service failed: ${status.restart_error}`;
+						return;
+					}
+				}
+			} catch {
+				// Best-effort — fall through to the version poll below.
+			}
+
+			try {
+				const res = await fetch('/api/version', { cache: 'no-store' });
 				if (res.ok) {
-					window.location.reload();
-					return;
+					const newVersion = (await res.json()).version ?? '';
+					if (!baseline || (newVersion && newVersion !== baseline)) {
+						window.location.reload();
+						return;
+					}
+					// Still answering, but with the same version as before —
+					// the real restart hasn't landed yet. Keep polling
+					// instead of treating this as "the new binary is up".
 				}
 			} catch {
 				// still down — keep polling
@@ -212,11 +264,19 @@ export class SettingsState {
 			if (data.running) {
 				this.updateState = 'updating';
 				await this.pollUntilFinished();
+			} else if (data.restart_error) {
+				// The build succeeded and a restart was attempted, but the
+				// restart command itself (systemctl/launchctl) failed — the
+				// process now serving this request is still the pre-update
+				// one. See gateway/update.go's restartErr doc comment.
+				this.updateState = 'error';
+				this.updateLog = (data.log ?? '') + `\n\nBuild succeeded, but restarting the service failed: ${data.restart_error}`;
 			} else if (data.done && data.restarting) {
 				// Caught in the narrow window after the build finished but
-				// before the process actually restarts — /api/models below
-				// will start failing any moment now, then come back once
-				// the new binary is up.
+				// before the process actually restarts — /api/version below
+				// will keep answering with the pre-update version for a
+				// little while yet, then change once the new binary is
+				// actually up (see waitForServerAndReload's doc comment).
 				this.updateState = 'restarting';
 				await this.waitForServerAndReload();
 			} else if (data.done && !data.success) {
@@ -253,7 +313,10 @@ export class SettingsState {
 				if (!res.ok) continue;
 				const data = await res.json();
 				if (data.running) continue;
-				if (data.restarting) {
+				if (data.restart_error) {
+					this.updateState = 'error';
+					this.updateLog = (data.log ?? '') + `\n\nBuild succeeded, but restarting the service failed: ${data.restart_error}`;
+				} else if (data.restarting) {
 					this.updateState = 'restarting';
 					await this.waitForServerAndReload();
 				} else if (data.success) {

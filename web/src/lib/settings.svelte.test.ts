@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SettingsState } from './settings.svelte';
 
 function fakeFetch(data: unknown, ok = true) {
@@ -144,6 +144,98 @@ describe('SettingsState.pushUpdate', () => {
 
 		expect(settings.updateState).toBe('error');
 		expect(settings.updateLog).toBe('an update is already in progress');
+	});
+});
+
+describe('SettingsState.pushUpdate restart handling', () => {
+	// waitForServerAndReload is private, exercised only through pushUpdate's
+	// restarting:true path — these pin down the exact bug being hardened
+	// against: reloading the instant *any* server answers, even the
+	// still-alive old process, rather than waiting for /api/version to
+	// actually change. See its doc comment in settings.svelte.ts.
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it('does not reload while /api/version keeps reporting the pre-update version', async () => {
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/update') {
+				return { ok: true, json: async () => ({ success: true, log: 'build successful', restarting: true }) };
+			}
+			if (url === '/api/update/status') {
+				return { ok: true, json: async () => ({}) };
+			}
+			if (url === '/api/version') {
+				// The old process is still alive and answering — restart
+				// hasn't actually landed yet (systemctl restart is a slow
+				// polkit round trip on the potato). Same version every time.
+				return { ok: true, json: async () => ({ version: 'r100.aaaaaaa' }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		const done = settings.pushUpdate();
+
+		// Let the baseline fetch and a handful of poll iterations run —
+		// each iteration waits 1500ms, then hits /api/update/status and
+		// /api/version, both of which report "nothing's changed yet".
+		for (let i = 0; i < 5; i++) {
+			await vi.advanceTimersByTimeAsync(1500);
+		}
+
+		expect(reloadSpy).not.toHaveBeenCalled();
+		expect(settings.updateState).toBe('restarting');
+
+		// Now the real restart has landed — /api/version starts reporting
+		// the new build.
+		fetchSpy.mockImplementation(async (url: string) => {
+			if (url === '/api/update/status') return { ok: true, json: async () => ({}) };
+			if (url === '/api/version') return { ok: true, json: async () => ({ version: 'r101.bbbbbbb' }) };
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).toHaveBeenCalledOnce();
+	});
+
+	it('surfaces a failed restart command instead of waiting out the full 2 minutes', async () => {
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/update') {
+				return { ok: true, json: async () => ({ success: true, log: 'build successful', restarting: true }) };
+			}
+			if (url === '/api/update/status') {
+				return {
+					ok: true,
+					json: async () => ({ restart_error: 'sudo systemctl restart polaris: exit status 1' })
+				};
+			}
+			if (url === '/api/version') {
+				return { ok: true, json: async () => ({ version: 'r100.aaaaaaa' }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		const done = settings.pushUpdate();
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).not.toHaveBeenCalled();
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toContain('sudo systemctl restart polaris: exit status 1');
 	});
 });
 

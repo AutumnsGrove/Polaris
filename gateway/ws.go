@@ -143,6 +143,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Reject new turns once a self-update restart is underway (see
+		// Server.TryStartTurn/BeginShutdown's doc comments) — starting one
+		// now would just mean it gets killed mid-flight moments later when
+		// the process actually exits. The client sees a normal error and
+		// can retry once its reconnect lands on the new binary.
+		if !s.TryStartTurn() {
+			log.Info("rejected a new turn during shutdown", "thread", msg.ThreadID)
+			send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "the server is restarting — please retry in a few seconds"})
+			continue
+		}
+
 		// Only one turn runs at a time per connection — the frontend
 		// enforces this by disabling the composer while busy (see
 		// AppState.busy in state.svelte.ts), but that's a client-side
@@ -157,6 +168,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		cancelMu.Lock()
 		if current != nil {
 			cancelMu.Unlock()
+			s.FinishTurn() // matches the TryStartTurn above — this turn never actually starts
 			log.Warn("rejected a new turn while one was already in flight on this connection", "thread", msg.ThreadID)
 			s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
 			send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "a response is already in progress on this connection — please wait for it to finish"})
@@ -179,6 +191,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
 			defer cancel()
+			defer s.FinishTurn()
 			// net/http recovers a panic in a handler running synchronously
 			// under ServeHTTP, but this goroutine runs outside that call
 			// stack — an unrecovered panic here (a bug three tool calls

@@ -125,6 +125,14 @@ type unitData struct {
 // unitTemplate uses Type=simple (not notify) — we don't ping a systemd
 // watchdog in v1, so Restart=always + RestartSec is the safety net
 // instead of WatchdogSec.
+//
+// TimeoutStopSec is set explicitly (systemd's own default is also 90s,
+// but leaving it implicit invites drift) to comfortably exceed cmd/run.go's
+// shutdownGrace (25s for httpServer.Shutdown, then another 25s draining
+// in-flight turns — worst case ~50s) plus headroom for the stop signal
+// itself to land. Without this, a `systemctl restart` mid-drain that ran
+// long would get SIGKILLed by systemd before cmd/run.go's own bounded
+// wait ever got to finish or give up on its own terms.
 const unitTemplate = `[Unit]
 Description={{.Description}}
 After=network-online.target
@@ -142,6 +150,7 @@ ExecStart={{.BinaryPath}} run
 
 Restart=always
 RestartSec=10
+TimeoutStopSec=75
 
 
 # The app's own logger writes daily-rotated files (logs/YYYY-MM-DD.log,

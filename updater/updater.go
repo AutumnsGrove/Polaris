@@ -6,6 +6,7 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,13 +48,17 @@ type Result struct {
 // (procmgr.Restart for the CLI; the gateway handler needs to flush its
 // HTTP response first, since restarting kills the very process serving
 // it).
+//
+// Run does NOT itself acquire AcquireLock — the caller must already be
+// holding it, and must keep holding it through the restart that follows
+// Run, not just through this call. See AcquireLock's doc comment for the
+// race that requires this: this used to acquire+release the lock
+// entirely internally, which protected the pull/build but left the
+// restart itself — which can legitimately take tens of seconds (see
+// procmgr/systemd.go's TimeoutStopSec) — completely unguarded, wide open
+// to a second update racing in and overwriting the very binary the OS
+// was mid-exec'ing for the first restart.
 func Run(repoPath string) (*Result, error) {
-	release, err := acquireUpdateLock(repoPath)
-	if err != nil {
-		return &Result{}, err
-	}
-	defer release()
-
 	binaryPath := filepath.Join(repoPath, "polaris")
 
 	pullCtx, pullCancel := context.WithTimeout(context.Background(), pullTimeout)
@@ -86,15 +91,30 @@ func RepoPath() (string, error) {
 	return os.Getwd()
 }
 
-// acquireUpdateLock takes an exclusive, advisory file lock on a lockfile
-// inside repoPath, so `polaris update` (SSH, cmd/update.go) and the
-// settings panel's HTTP-triggered update (gateway/update.go) can't run
-// concurrently and race two `git pull`s / two `go build -o polaris`s in
-// the same working directory into a corrupted or truncated binary.
+// AcquireLock takes an exclusive, advisory file lock on a lockfile inside
+// repoPath, so `polaris update` (SSH, cmd/update.go) and the settings
+// panel's HTTP-triggered update (gateway/update.go) can't run concurrently
+// and race two `git pull`s / two `go build -o polaris`s in the same
+// working directory into a corrupted or truncated binary.
 // gateway/update.go's updateStatus mutex only serializes concurrent
 // requests to one already-running server process — it has no way to know
 // about a second, entirely separate `polaris update` process started over
 // SSH at the same moment.
+//
+// The caller must hold this across the *entire* update-and-restart
+// sequence — Run, then whatever actually triggers the service restart —
+// not just the build. Releasing right after Run (as this used to do
+// internally) leaves the restart itself unprotected: procmgr.Restart can
+// legitimately take tens of seconds (see procmgr/systemd.go's
+// TimeoutStopSec), and a second update racing in during that window would
+// overwrite the very binary file the OS is in the middle of exec'ing for
+// the first restart — the exact corrupted-binary race this lock exists to
+// prevent, just relocated from the build window into the restart window.
+// cmd/update.go can just `defer release()` since it runs synchronously
+// end to end; gateway/update.go's handler has to carry it into the
+// detached goroutine that performs the actual restart, since the HTTP
+// response (and the handler returning) has to happen before that restart
+// can run.
 //
 // Unlike a plain "does a lockfile exist" check, flock is released by the
 // kernel automatically if this process exits for any reason — including
@@ -104,7 +124,7 @@ func RepoPath() (string, error) {
 // LOCK_NB (non-blocking): a second caller finding the lock already held
 // fails immediately with a clear error, rather than blocking and possibly
 // running its update at a surprising later moment.
-func acquireUpdateLock(repoPath string) (release func(), err error) {
+func AcquireLock(repoPath string) (release func(), err error) {
 	lockPath := filepath.Join(repoPath, ".update.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
@@ -112,10 +132,26 @@ func acquireUpdateLock(repoPath string) (release func(), err error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("another update is already in progress: %w", err)
+		return nil, wrapFlockError(lockPath, err)
 	}
 	return func() {
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		f.Close()
 	}, nil
+}
+
+// wrapFlockError distinguishes real contention (LOCK_NB's documented
+// EWOULDBLOCK/EAGAIN, meaning another process actually holds the lock)
+// from every other way Flock can fail — a filesystem that doesn't support
+// flock at all, ENOLCK, a permissions problem, etc. Folding both into the
+// same "another update is already in progress" message used to send
+// anyone debugging a permanently-broken self-update looking for a
+// nonexistent concurrent run instead of the real, structural problem with
+// the host — and on a filesystem that genuinely can't flock, every future
+// call would fail the exact same misleading way forever.
+func wrapFlockError(lockPath string, err error) error {
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return fmt.Errorf("another update is already in progress: %w", err)
+	}
+	return fmt.Errorf("acquiring update lock at %s: %w", lockPath, err)
 }
