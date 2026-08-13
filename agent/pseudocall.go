@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"polaris/tools"
 )
 
 // Some providers emit a tool call as literal text in the content field
@@ -37,19 +39,70 @@ type pseudoCall struct {
 	argsJSON string
 }
 
+// paramSchemaType looks up the JSON Schema "type" toolName's real tool
+// definition (see tools.Defs) declares for one of its arguments — "", false
+// if the tool or argument isn't found. Schemas here are always the
+// map[string]interface{} shape every tools/*.go definition builds by hand
+// (see e.g. weatherDef), never a typed struct, so this is a defensive
+// type-assertion walk rather than a simple field access.
+func paramSchemaType(toolName, argName string) (string, bool) {
+	for _, def := range tools.Defs() {
+		if def.Function.Name != toolName {
+			continue
+		}
+		params, ok := def.Function.Parameters.(map[string]interface{})
+		if !ok {
+			return "", false
+		}
+		props, ok := params["properties"].(map[string]interface{})
+		if !ok {
+			return "", false
+		}
+		prop, ok := props[argName].(map[string]interface{})
+		if !ok {
+			return "", false
+		}
+		kind, ok := prop["type"].(string)
+		return kind, ok
+	}
+	return "", false
+}
+
 // buildArgsJSON turns key/value string pairs into the same JSON shape a
-// real tool call's Function.Arguments would be. Values that parse as
-// integers are kept numeric (not stringified) since tool arg structs like
-// web_search's max_results expect a JSON number, not a numeric string.
-func buildArgsJSON(pairs [][2]string) (string, bool) {
+// real tool call's Function.Arguments would be. A pseudo-tool-call gives
+// every argument as bare text with no type of its own — unlike a real
+// structured tool call, whose typed field the API itself fills in — so
+// whether a value belongs in JSON as a number/bool or a string has to come
+// from toolName's own declared schema (see paramSchemaType), not guessed
+// from the value's shape. Guessing from shape alone used to coerce ANY
+// int-parseable value to a JSON number, silently breaking a string-typed
+// argument that just happens to look numeric — a zip code, an ISBN, a
+// search query that's a bare year ("1984") — with a json.Unmarshal type
+// error deep inside the tool handler. Falls back to the raw string on a
+// declared-numeric/boolean value that doesn't actually parse, same as
+// before, rather than dropping the whole call over one bad argument.
+func buildArgsJSON(toolName string, pairs [][2]string) (string, bool) {
 	args := make(map[string]interface{}, len(pairs))
 	for _, kv := range pairs {
 		key, val := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
-		if n, err := strconv.Atoi(val); err == nil {
-			args[key] = n
-		} else {
-			args[key] = val
+		switch kind, _ := paramSchemaType(toolName, key); kind {
+		case "integer":
+			if n, err := strconv.Atoi(val); err == nil {
+				args[key] = n
+				continue
+			}
+		case "number":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				args[key] = f
+				continue
+			}
+		case "boolean":
+			if b, err := strconv.ParseBool(val); err == nil {
+				args[key] = b
+				continue
+			}
 		}
+		args[key] = val
 	}
 	b, err := json.Marshal(args)
 	if err != nil {
@@ -73,7 +126,7 @@ func parsePseudoToolCalls(content string) []pseudoCall {
 		for _, p := range mimoParamRe.FindAllStringSubmatch(m[2], -1) {
 			pairs = append(pairs, [2]string{p[1], p[2]})
 		}
-		argsJSON, ok := buildArgsJSON(pairs)
+		argsJSON, ok := buildArgsJSON(name, pairs)
 		if !ok {
 			return nil
 		}
@@ -90,7 +143,7 @@ func parsePseudoToolCalls(content string) []pseudoCall {
 		for _, p := range dsmlParamRe.FindAllStringSubmatch(inv[2], -1) {
 			pairs = append(pairs, [2]string{p[1], p[2]})
 		}
-		argsJSON, ok := buildArgsJSON(pairs)
+		argsJSON, ok := buildArgsJSON(name, pairs)
 		if !ok {
 			continue
 		}

@@ -509,3 +509,36 @@ func TestHandleBooks_NotFoundOnEitherSource(t *testing.T) {
 		t.Errorf("result = %q, want a clear not-found error, not a silent empty success", result)
 	}
 }
+
+// TestRankHardcoverCandidates_CorroborationBonusRequiresAuthorMatch guards
+// against a real ranking bug: the Open Library corroboration bonus (see
+// rankHardcoverCandidates' doc comment) is meant to reward a Hardcover
+// candidate that Open Library's independent subject-overlap signal ALSO
+// surfaced — i.e. two sources agreeing on the same book. Keying that check
+// by title alone (the original bug) let an unrelated Open Library
+// candidate that merely shares a title with a different author (a common
+// public-domain title, a "Study Guide" companion edition, ...) grant the
+// bonus anyway, since matching only by title+author (as every other
+// dedup/match key in this file does) is what actually distinguishes one
+// book from another sharing its title.
+func TestRankHardcoverCandidates_CorroborationBonusRequiresAuthorMatch(t *testing.T) {
+	agg := map[string]*bookCandidate{
+		"same-book":      {Title: "Frankenstein", Author: "Mary Shelley", Count: 1},
+		"different-book": {Title: "Frankenstein", Author: "Some Other Author", Count: 1},
+	}
+	// Open Library only actually corroborated the Mary Shelley edition.
+	openLibraryTitleAuthors := map[string]bool{
+		"frankenstein|mary shelley": true,
+	}
+
+	ranked := rankHardcoverCandidates(agg, nil, openLibraryTitleAuthors)
+	if len(ranked) != 2 {
+		t.Fatalf("got %d candidates, want 2", len(ranked))
+	}
+	// Both start with equal (1+0)*(1+1)=2 base score; only the genuinely
+	// corroborated one should out-rank the other via the +2 bonus.
+	if ranked[0].Author != "Mary Shelley" {
+		t.Errorf("top candidate = %q by %q, want the Mary Shelley edition ranked first "+
+			"(the only one Open Library actually corroborated)", ranked[0].Title, ranked[0].Author)
+	}
+}

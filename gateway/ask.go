@@ -76,6 +76,19 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same shutdown-draining registration /ws's handleWS does before
+	// calling handleTurn — without it, this turn is invisible to
+	// WaitForActiveTurns (a self-update restart wouldn't wait for it to
+	// finish) and TryStartTurn's "reject new turns once a restart is
+	// underway" guard never applies to this endpoint either, leaving a
+	// window for a kill mid-DB-write identical to the one TryStartTurn's
+	// doc comment describes for /ws.
+	if !s.TryStartTurn() {
+		http.Error(w, "the server is restarting — please retry in a few seconds", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.FinishTurn()
+
 	msg := ClientMessage{
 		Type:                  "message",
 		ThreadID:              req.ThreadID,

@@ -192,6 +192,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
 			defer cancel()
 			defer s.FinishTurn()
+			// Must be a defer, not plain code after handleTurn below — a
+			// panic there (recovered just below, so the process survives)
+			// would otherwise skip straight past this cleanup, leaving
+			// `current` permanently non-nil and wedging every future turn
+			// on this connection behind the "already in progress" check
+			// above for good, with no way to clear it short of reconnecting.
+			defer func() {
+				cancelMu.Lock()
+				if current == slot {
+					current = nil
+				}
+				cancelMu.Unlock()
+			}()
 			// net/http recovers a panic in a handler running synchronously
 			// under ServeHTTP, but this goroutine runs outside that call
 			// stack — an unrecovered panic here (a bug three tool calls
@@ -207,11 +220,6 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 			s.handleTurn(ctx, msg, send, requestLocation)
-			cancelMu.Lock()
-			if current == slot {
-				current = nil
-			}
-			cancelMu.Unlock()
 		}(turnCtx, cancel, msg)
 	}
 }

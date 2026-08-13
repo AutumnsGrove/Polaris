@@ -60,7 +60,7 @@ func TestParsePseudoToolCalls_EmptyFunctionName(t *testing.T) {
 }
 
 func TestBuildArgsJSON_IntCoercion(t *testing.T) {
-	argsJSON, ok := buildArgsJSON([][2]string{{"max_results", "5"}, {"query", "test"}})
+	argsJSON, ok := buildArgsJSON("web_search", [][2]string{{"max_results", "5"}, {"query", "test"}})
 	if !ok {
 		t.Fatal("buildArgsJSON returned ok=false")
 	}
@@ -73,6 +73,46 @@ func TestBuildArgsJSON_IntCoercion(t *testing.T) {
 	}
 	if _, ok := args["query"].(string); !ok {
 		t.Errorf("query should decode as a string, got %T", args["query"])
+	}
+}
+
+// TestBuildArgsJSON_NumericLookingStringStaysString guards against a real
+// bug: coercing purely from whether a value's TEXT parses as an int (the
+// old behavior) sent a numeric-looking query like "1984" as a JSON number
+// even though web_search's "query" is declared a string — breaking
+// json.Unmarshal in the tool handler for any digit-only search term (a
+// year, a zip code, an ISBN). The type must come from the tool's own
+// declared schema (see paramSchemaType), not the value's shape.
+func TestBuildArgsJSON_NumericLookingStringStaysString(t *testing.T) {
+	argsJSON, ok := buildArgsJSON("web_search", [][2]string{{"query", "1984"}})
+	if !ok {
+		t.Fatal("buildArgsJSON returned ok=false")
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if v, ok := args["query"].(string); !ok || v != "1984" {
+		t.Errorf("query = %v (%T), want string \"1984\" — query is a declared string param", args["query"], args["query"])
+	}
+}
+
+// TestBuildArgsJSON_UnknownToolFallsBackToString covers a tool name that
+// doesn't match any real definition (defensive — parsePseudoToolCalls
+// always passes a name straight from the model's own output) — must not
+// panic and must not silently misdeclare a value as numeric with nothing
+// to check it against.
+func TestBuildArgsJSON_UnknownToolFallsBackToString(t *testing.T) {
+	argsJSON, ok := buildArgsJSON("not_a_real_tool", [][2]string{{"anything", "42"}})
+	if !ok {
+		t.Fatal("buildArgsJSON returned ok=false")
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if _, ok := args["anything"].(string); !ok {
+		t.Errorf("anything = %v (%T), want string for an unknown tool with no schema to consult", args["anything"], args["anything"])
 	}
 }
 

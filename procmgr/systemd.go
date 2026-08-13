@@ -1,6 +1,7 @@
 package procmgr
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,9 +78,18 @@ func (m *SystemdManager) Uninstall() error {
 	return nil
 }
 
-func (m *SystemdManager) Start() error   { return m.systemctl("start", m.label) }
-func (m *SystemdManager) Stop() error    { return m.systemctl("stop", m.label) }
-func (m *SystemdManager) Restart() error { return m.systemctl("restart", m.label) }
+func (m *SystemdManager) Start() error { return m.systemctl("start", m.label) }
+func (m *SystemdManager) Stop() error  { return m.systemctl("stop", m.label) }
+
+// Restart uses restartCmdTimeout, not the shared systemctl() helper's
+// cmdTimeout — see restartCmdTimeout's doc comment in procmgr.go for why a
+// restart specifically needs much more room than every other systemctl
+// call this type makes.
+func (m *SystemdManager) Restart() error {
+	ctx, cancel := withRestartCmdTimeout()
+	defer cancel()
+	return m.systemctlWithContext(ctx, "restart", m.label)
+}
 
 func (m *SystemdManager) IsManaged() bool {
 	ctx, cancel := withCmdTimeout()
@@ -106,6 +116,14 @@ func (m *SystemdManager) unitPath() string {
 func (m *SystemdManager) systemctl(args ...string) error {
 	ctx, cancel := withCmdTimeout()
 	defer cancel()
+	return m.systemctlWithContext(ctx, args...)
+}
+
+// systemctlWithContext is systemctl's actual implementation, taking the
+// timeout context as a parameter rather than always defaulting to
+// withCmdTimeout — Restart() needs a much longer bound (see
+// restartCmdTimeout's doc comment) than every other call through here.
+func (m *SystemdManager) systemctlWithContext(ctx context.Context, args ...string) error {
 	cmdArgs := append([]string{"-n", "systemctl"}, args...)
 	out, err := exec.CommandContext(ctx, "sudo", cmdArgs...).CombinedOutput()
 	if err != nil {

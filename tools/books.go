@@ -265,7 +265,7 @@ func genreOverlapCount(a, b []string) int {
 // longer the deciding factor on its own: that's what let The Count of
 // Monte Cristo's 936 "greatest classics" meta-lists outrank its own
 // (unliked, but genre-accurate) "Adventure" lists before this existed.
-func rankHardcoverCandidates(agg map[string]*bookCandidate, sourceGenres []string, openLibraryTitles map[string]bool) []*bookCandidate {
+func rankHardcoverCandidates(agg map[string]*bookCandidate, sourceGenres []string, openLibraryTitleAuthors map[string]bool) []*bookCandidate {
 	ranked := make([]*bookCandidate, 0, len(agg))
 	for _, v := range agg {
 		ranked = append(ranked, v)
@@ -283,7 +283,16 @@ func rankHardcoverCandidates(agg map[string]*bookCandidate, sourceGenres []strin
 	// "greatest classics" meta-lists) still sinks to the bottom.
 	score := func(c *bookCandidate) int {
 		s := (1 + genreOverlapCount(c.Genres, sourceGenres)) * (1 + c.Count)
-		if openLibraryTitles[strings.ToLower(c.Title)] {
+		// Keyed by title+author, not title alone — matching every other
+		// dedup/match key in this file (see aggregateListBooks,
+		// aggregateOpenLibrarySubjects, openLibraryExtras). Title-only
+		// matching let an unrelated Open Library candidate that merely
+		// SHARES a title with a Hardcover candidate (a common public-domain
+		// title, a "Study Guide" companion edition, ...) grant this
+		// cross-source corroboration bonus even though Open Library never
+		// actually corroborated THIS book — silently promoting the wrong
+		// candidate in the final ranking.
+		if openLibraryTitleAuthors[strings.ToLower(c.Title)+"|"+strings.ToLower(c.Author)] {
 			s += 2
 		}
 		return s
@@ -850,12 +859,12 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 	}()
 	wg.Wait()
 
-	openLibraryTitles := make(map[string]bool, len(olRanked))
+	openLibraryTitleAuthors := make(map[string]bool, len(olRanked))
 	for _, c := range olRanked {
-		openLibraryTitles[strings.ToLower(c.Title)] = true
+		openLibraryTitleAuthors[strings.ToLower(c.Title)+"|"+strings.ToLower(c.Author)] = true
 	}
 
-	ranked := rankHardcoverCandidates(hcAgg, sourceGenres, openLibraryTitles)
+	ranked := rankHardcoverCandidates(hcAgg, sourceGenres, openLibraryTitleAuthors)
 
 	supplemented := false
 	if len(ranked) < hardcoverMinCandidates && len(olRanked) > 0 {
