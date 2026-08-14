@@ -51,6 +51,9 @@ voice:
   tts_model: "hexgrad/kokoro-82m"
   tts_voice: "bf_lily"   # British female "Lily" — see hexgrad/Kokoro-82M's VOICES.md for the full list
   tts_format: "mp3"      # OpenRouter's Kokoro endpoint only documents mp3/pcm
+  tts_provider: "Together"   # pinned provider for Kokoro's /audio/speech calls — DeepInfra is cheaper
+                              # but has shown 15-40s+ latency (sometimes past our own timeout); Together
+                              # has tested consistently ~12-13s. Empty lets OpenRouter route/fail over itself.
 
 database:
   path: "./polaris.db"

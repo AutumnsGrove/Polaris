@@ -98,7 +98,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
-		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat),
+		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
 		mux:        http.NewServeMux(),
 		turnSends:  make(map[int64]func(ServerEvent)),
 	}

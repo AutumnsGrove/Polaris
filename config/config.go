@@ -111,6 +111,15 @@ type Config struct {
 		TTSModel  string `yaml:"tts_model"`
 		TTSVoice  string `yaml:"tts_voice"`
 		TTSFormat string `yaml:"tts_format"` // "mp3" or "pcm" — only two OpenRouter documents for this endpoint
+
+		// TTSProvider pins Kokoro's OpenRouter backing provider (currently
+		// "DeepInfra" or "Together" — see the model's /endpoints listing).
+		// DeepInfra is Kokoro's cheaper default but has shown wildly
+		// inconsistent latency (15-40s+, sometimes hanging past our own
+		// client timeout entirely); Together has tested consistently ~12-13s.
+		// Empty means no provider field is sent — OpenRouter picks/fails
+		// over between them itself.
+		TTSProvider string `yaml:"tts_provider"`
 	} `yaml:"voice"`
 
 	Database struct {
@@ -278,6 +287,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		// time /audio/speech is actually called, far from this typo.
 		log.Warn("voice.tts_format is neither \"mp3\" nor \"pcm\", falling back to \"mp3\"", "configured", cfg.Voice.TTSFormat)
 		cfg.Voice.TTSFormat = "mp3"
+	}
+	if cfg.Voice.TTSProvider == "" {
+		cfg.Voice.TTSProvider = "Together"
 	}
 	if cfg.ContextWindowTokens <= 0 {
 		cfg.ContextWindowTokens = 100_000
