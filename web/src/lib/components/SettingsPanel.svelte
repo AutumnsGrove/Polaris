@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, Info, ChevronLeft } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -217,26 +217,55 @@
 						<code class="version">{appState.version}</code>
 					</div>
 				{/if}
-				<button
-					class="btn update-btn"
-					onclick={() => appState.settings.pushUpdate(() => appState.busy)}
-					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
-				>
-					<RefreshCw
-						size={14}
-						class={appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting'
-							? 'spin'
-							: ''}
-					/>
-					{#if appState.settings.updateState === 'updating'}
-						Pulling & building…
-					{:else if appState.settings.updateState === 'restarting'}
-						Restarting…
-					{:else}
-						Update Polaris
-					{/if}
-				</button>
-				<p class="hint">Pulls the latest code, rebuilds the binary, then restarts.</p>
+				<div class="update-actions">
+					<button
+						class="btn update-btn"
+						onclick={() => appState.settings.pushUpdate(() => appState.busy)}
+						disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+					>
+						<RefreshCw
+							size={14}
+							class={appState.settings.updateKind === 'update' &&
+							(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
+								? 'spin'
+								: ''}
+						/>
+						{#if appState.settings.updateKind === 'update' && appState.settings.updateState === 'updating'}
+							Pulling & building…
+						{:else if appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'}
+							Restarting…
+						{:else}
+							Update Polaris
+						{/if}
+					</button>
+					<!-- No pull, no rebuild — just kills and cleanly restarts the
+					     running binary. Separate from Update Polaris because running
+					     the full update flow just to force a restart still does a
+					     real (if usually no-op) git pull and go build first, which
+					     can stall for no benefit when there's nothing new to pull. -->
+					<button
+						class="btn restart-btn"
+						onclick={() => appState.settings.pushRestart(() => appState.busy)}
+						disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+					>
+						<RotateCw
+							size={14}
+							class={appState.settings.updateKind === 'restart' &&
+							(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
+								? 'spin'
+								: ''}
+						/>
+						{#if appState.settings.updateKind === 'restart' && (appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
+							Restarting…
+						{:else}
+							Restart Polaris
+						{/if}
+					</button>
+				</div>
+				<p class="hint">
+					<strong>Update</strong> pulls the latest code, rebuilds, then restarts.
+					<strong>Restart</strong> just cleanly restarts the running process — no pull, no rebuild.
+				</p>
 				{#if appState.settings.updateLog}
 					<pre class="log">{appState.settings.updateLog}</pre>
 				{/if}
@@ -381,7 +410,14 @@
 		box-shadow: var(--shadow-well);
 	}
 
-	.update-btn {
+	.update-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.update-btn,
+	.restart-btn {
 		width: 100%;
 	}
 

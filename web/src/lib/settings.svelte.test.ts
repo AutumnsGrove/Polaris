@@ -292,6 +292,108 @@ describe('SettingsState.pushUpdate restart handling', () => {
 	});
 });
 
+describe('SettingsState.pushRestart', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it('hits /api/restart (not /api/update) and reloads once the version changes, with no build step', async () => {
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		let versionCalls = 0;
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/restart') {
+				return { ok: true, json: async () => ({ success: true, restarting: true }) };
+			}
+			if (url === '/api/update') {
+				throw new Error('pushRestart must not hit /api/update — that pulls and rebuilds');
+			}
+			if (url === '/api/update/status') {
+				return { ok: true, json: async () => ({}) };
+			}
+			if (url === '/api/version') {
+				versionCalls++;
+				const version = versionCalls === 1 ? 'r100.aaaaaaa' : 'r101.bbbbbbb';
+				return { ok: true, json: async () => ({ version }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		const done = settings.pushRestart();
+		expect(settings.updateKind).toBe('restart');
+
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).toHaveBeenCalledOnce();
+		expect(settings.updateKind).toBe('restart');
+	});
+
+	it('reports "already in progress" without starting a second restart', async () => {
+		vi.stubGlobal(
+			'fetch',
+			fakeFetch({ success: false, already_running: true, error: 'an update or restart is already in progress' })
+		);
+
+		const settings = new SettingsState();
+		await settings.pushRestart();
+
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toContain('already in progress');
+	});
+
+	it('surfaces "service is not managed" instead of hanging on a reload that will never come', async () => {
+		vi.stubGlobal(
+			'fetch',
+			fakeFetch({ success: false, error: 'service is not managed by systemd/launchd — restart manually' })
+		);
+
+		const settings = new SettingsState();
+		await settings.pushRestart();
+
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toContain('not managed');
+	});
+
+	it('uses restart-specific wording (not "build succeeded") when the restart command itself fails', async () => {
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/restart') {
+				return { ok: true, json: async () => ({ success: true, restarting: true }) };
+			}
+			if (url === '/api/update/status') {
+				return {
+					ok: true,
+					json: async () => ({ restart_error: 'sudo systemctl restart polaris: exit status 1' })
+				};
+			}
+			if (url === '/api/version') {
+				return { ok: true, json: async () => ({ version: 'r100.aaaaaaa' }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		const done = settings.pushRestart();
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).not.toHaveBeenCalled();
+		expect(settings.updateState).toBe('error');
+		expect(settings.updateLog).toContain('Restart command failed:');
+		expect(settings.updateLog).not.toContain('Build succeeded');
+	});
+});
+
 describe('SettingsState.checkUpdateStatus', () => {
 	it('resumes showing "updating" if the server reports one still running', async () => {
 		// First poll (inside checkUpdateStatus): still running. Second poll
@@ -327,5 +429,21 @@ describe('SettingsState.checkUpdateStatus', () => {
 		await settings.checkUpdateStatus();
 
 		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	it('resumes tracking a restart (not an update) another tab/reload started, by kind', async () => {
+		const fetchSpy = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => ({ kind: 'restart', running: true, done: false }) })
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ kind: 'restart', running: false, done: true, success: true, log: 'restart requested' })
+			});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		await settings.checkUpdateStatus();
+
+		expect(settings.updateKind).toBe('restart');
 	});
 });

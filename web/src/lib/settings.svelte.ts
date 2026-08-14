@@ -3,6 +3,16 @@ import type { FocusMode } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
+// Which operation updateState/updateLog currently describe — 'update' is
+// the full git-pull-and-rebuild flow (pushUpdate), 'restart' is just the
+// service restart with no pull or rebuild (pushRestart), for when there's
+// nothing new to pull and running the full update flow anyway would stall
+// on a no-op pull + a real (if usually fast) rebuild for zero benefit. Both
+// share one status slot server-side (see gateway/update.go's updateStatus
+// doc comment on why they're mutually exclusive) and this same client-side
+// state machine — kind only changes which copy the settings panel shows.
+export type UpdateKind = 'update' | 'restart';
+
 // Mirrors store.Stats (store/stats.go) — kept as plain counts/percentages
 // rather than a time series, since the settings panel only ever shows a
 // handful of numbers, not a chart.
@@ -63,6 +73,11 @@ export class SettingsState {
 	// is currently mounted to see them.
 	updateState = $state<UpdateState>('idle');
 	updateLog = $state('');
+	// Which of pushUpdate/pushRestart updateState/updateLog describe right
+	// now — set at kickoff by whichever one ran, or by checkUpdateStatus
+	// when resuming a run this client didn't itself start (a reload mid-
+	// operation, or another tab/device having triggered it).
+	updateKind = $state<UpdateKind>('update');
 
 	// Usage/tuning snapshot for the settings panel's Usage section — null
 	// until loadUsage() resolves (or forever, on a fetch failure; the
@@ -153,6 +168,7 @@ export class SettingsState {
 	// check (there is none today, but nothing here should require one)
 	// still gets a working reload.
 	async pushUpdate(isBusy: () => boolean = () => false) {
+		this.updateKind = 'update';
 		this.updateState = 'updating';
 		this.updateLog = '';
 		try {
@@ -162,7 +178,7 @@ export class SettingsState {
 			if (!result.success) {
 				this.updateState = 'error';
 				if (result.already_running) {
-					this.updateLog = result.error ?? 'an update is already in progress';
+					this.updateLog = result.error ?? 'an update or restart is already in progress';
 				}
 				return;
 			}
@@ -178,6 +194,44 @@ export class SettingsState {
 			this.updateLog = String(err);
 			this.updateState = 'error';
 		}
+	}
+
+	// Cleanly restarts the service with no git pull, no go build — just
+	// `mgr.Restart()` server-side (see gateway/update.go's handleRestart).
+	// For when there's nothing new to pull: running pushUpdate anyway
+	// still does a real pull (a no-op) and rebuild before it ever
+	// restarts anything, which can stall on the potato's weak CPU for no
+	// benefit — this is the "just clear things out" button. Otherwise
+	// identical in shape to pushUpdate (same status slot server-side, same
+	// isBusy-guarded reload), just without the build phase.
+	async pushRestart(isBusy: () => boolean = () => false) {
+		this.updateKind = 'restart';
+		this.updateState = 'updating';
+		this.updateLog = '';
+		try {
+			const res = await fetch('/api/restart', { method: 'POST' });
+			const result = await res.json();
+			if (!result.success) {
+				this.updateState = 'error';
+				this.updateLog = result.already_running
+					? (result.error ?? 'an update or restart is already in progress')
+					: (result.error ?? 'restart failed');
+				return;
+			}
+			this.updateState = 'restarting';
+			await this.waitForServerAndReload(isBusy);
+		} catch (err) {
+			this.updateLog = String(err);
+			this.updateState = 'error';
+		}
+	}
+
+	// Phrasing for a failed restart command differs by kind — "build
+	// succeeded, but..." is misleading when there was no build (a plain
+	// restart). Shared by waitForServerAndReload and checkUpdateStatus/
+	// pollUntilFinished's identical restart_error branches.
+	private restartFailedPrefix(): string {
+		return this.updateKind === 'restart' ? 'Restart command failed: ' : 'Build succeeded, but restarting the service failed: ';
 	}
 
 	// The build (go build on the potato's ARM CPU can take a while) and
@@ -245,7 +299,7 @@ export class SettingsState {
 					const status = await statusRes.json();
 					if (status.restart_error) {
 						this.updateState = 'error';
-						this.updateLog += `\n\nBuild succeeded, but restarting the service failed: ${status.restart_error}`;
+						this.updateLog += `\n\n${this.restartFailedPrefix()}${status.restart_error}`;
 						return;
 					}
 				}
@@ -298,16 +352,21 @@ export class SettingsState {
 			const res = await fetch('/api/update/status');
 			if (!res.ok) return;
 			const data = await res.json();
+			// Resuming a run this client didn't itself start (a reload mid-
+			// operation, another tab/device) — take kind from the server's
+			// own record of which one is/was actually running.
+			if (data.kind === 'update' || data.kind === 'restart') this.updateKind = data.kind;
 			if (data.running) {
 				this.updateState = 'updating';
 				await this.pollUntilFinished(isBusy);
 			} else if (data.restart_error) {
-				// The build succeeded and a restart was attempted, but the
-				// restart command itself (systemctl/launchctl) failed — the
-				// process now serving this request is still the pre-update
-				// one. See gateway/update.go's restartErr doc comment.
+				// The operation succeeded and a restart was attempted, but
+				// the restart command itself (systemctl/launchctl) failed —
+				// the process now serving this request is still the
+				// pre-restart one. See gateway/update.go's restartErr doc
+				// comment.
 				this.updateState = 'error';
-				this.updateLog = (data.log ?? '') + `\n\nBuild succeeded, but restarting the service failed: ${data.restart_error}`;
+				this.updateLog = (data.log ?? '') + `\n\n${this.restartFailedPrefix()}${data.restart_error}`;
 			} else if (data.done && data.restarting) {
 				// Caught in the narrow window after the build finished but
 				// before the process actually restarts — /api/version below
@@ -349,10 +408,11 @@ export class SettingsState {
 				const res = await fetch('/api/update/status');
 				if (!res.ok) continue;
 				const data = await res.json();
+				if (data.kind === 'update' || data.kind === 'restart') this.updateKind = data.kind;
 				if (data.running) continue;
 				if (data.restart_error) {
 					this.updateState = 'error';
-					this.updateLog = (data.log ?? '') + `\n\nBuild succeeded, but restarting the service failed: ${data.restart_error}`;
+					this.updateLog = (data.log ?? '') + `\n\n${this.restartFailedPrefix()}${data.restart_error}`;
 				} else if (data.restarting) {
 					this.updateState = 'restarting';
 					await this.waitForServerAndReload(isBusy);
