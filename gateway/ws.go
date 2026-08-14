@@ -189,9 +189,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			return locationBroker.request(waitCtx, send, threadID)
 		}
 
+		sendID := s.registerTurnSend(send)
+
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
 			defer cancel()
 			defer s.FinishTurn()
+			defer s.unregisterTurnSend(sendID)
 			// Must be a defer, not plain code after handleTurn below — a
 			// panic there (recovered just below, so the process survives)
 			// would otherwise skip straight past this cleanup, leaving

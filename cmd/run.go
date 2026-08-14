@@ -134,7 +134,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 	drainCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	if err := srv.WaitForActiveTurns(drainCtx); err != nil {
-		log.Warn("timed out waiting for in-flight turns to finish — exiting anyway", "err", err)
+		log.Warn("timed out waiting for in-flight turns to finish — aborting them and exiting anyway", "err", err)
+		// Whatever's still running past the deadline (a multi-step research
+		// turn doing several sequential tool calls is the common case — see
+		// AbortActiveTurns' doc comment) is about to die with this process
+		// regardless. Telling the client explicitly, instead of letting the
+		// WebSocket just go silent, is what turns "the app mysteriously
+		// bumped me back to an old thread" into a normal, visible, retryable
+		// error.
+		srv.AbortActiveTurns("the server is restarting and this turn couldn't finish in time — please retry")
 	} else {
 		log.Info("all in-flight turns finished cleanly, exiting")
 	}

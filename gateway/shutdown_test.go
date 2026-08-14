@@ -142,3 +142,75 @@ func TestShutdown_RejectsNewTurnsOnceBegun(t *testing.T) {
 		t.Fatalf("WaitForActiveTurns = %v, want nil — no turn should have started to wait on", err)
 	}
 }
+
+// TestShutdown_AbortActiveTurnsNotifiesClientPastDeadline is a regression
+// test for the actual "thread bump-back" mechanism, confirmed live against
+// the production server: a turn that outruns shutdownGrace (a multi-step
+// research turn doing several sequential tool calls is the realistic case
+// — reproduced with a synthetic turn cut off mid-tool-call at exactly the
+// drain deadline) used to just have its connection go silent when
+// cmd/run.go gave up and the process exited. No 'done', no 'error' — the
+// frontend's AppState.busy never clears normally and the new thread this
+// turn belonged to never gets adopted as currentThreadId (see
+// state.svelte.ts's 'done' handler), so the UI is left showing whatever
+// thread was open before, indistinguishable from "the app bumped me back
+// to an old conversation." AbortActiveTurns exists so cmd/run.go can tell
+// the client explicitly instead of just vanishing.
+func TestShutdown_AbortActiveTurnsNotifiesClientPastDeadline(t *testing.T) {
+	started := make(chan struct{})
+	blockForever := make(chan struct{})
+	var once sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		once.Do(func() { close(started) })
+		<-blockForever // simulates a turn that outlives the drain deadline
+	}))
+	defer srv.Close()
+	// srv.Close() (deferred above, so it runs LAST — defers unwind LIFO)
+	// blocks until every outstanding request finishes. The handler above
+	// deliberately never returns on its own (that's the whole point:
+	// simulating a turn cmd/run.go gave up waiting on), so it must be
+	// unblocked first or Close() hangs forever.
+	defer close(blockForever)
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "hi", "model": "test-model"}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake LLM server never received the request")
+	}
+
+	h.srvObj.BeginShutdown()
+
+	// Simulate cmd/run.go's drain deadline expiring while the turn is
+	// still genuinely in flight — this is the exact moment the old code
+	// just gave up silently.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := h.srvObj.WaitForActiveTurns(ctx); err == nil {
+		t.Fatal("WaitForActiveTurns returned nil, want a deadline error — the turn is deliberately still blocked")
+	}
+
+	h.srvObj.AbortActiveTurns("the server is restarting and this turn couldn't finish in time — please retry")
+
+	// 'user_message' arrives first (persisted well before the LLM call
+	// even starts — see handleTurn) — the abort event is whatever comes
+	// after it, since this turn never got far enough to send anything else.
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for i := 0; i < 5; i++ {
+		var evt map[string]interface{}
+		if err := conn.ReadJSON(&evt); err != nil {
+			t.Fatalf("reading event: %v", err)
+		}
+		if evt["type"] == "error" {
+			return
+		}
+	}
+	t.Fatal("never received an explicit error telling the client this turn was cut off")
+}

@@ -156,6 +156,22 @@ type unitData struct {
 // itself to land. Without this, a `systemctl restart` mid-drain that ran
 // long would get SIGKILLed by systemd before cmd/run.go's own bounded
 // wait ever got to finish or give up on its own terms.
+//
+// KillMode=process (not the default control-group) matters specifically
+// because this service restarts *itself*: SystemdManager.Restart() below
+// runs `sudo systemctl restart <label>` as a child process of the very
+// unit being restarted. With the default control-group KillMode, the
+// SIGTERM that `systemctl restart` sends targets every process in the
+// unit's cgroup — including that child — so it always dies from the same
+// signal it just triggered, and exec.Command always reports "signal:
+// terminated" back to beginAsyncRestart even on a perfectly successful
+// restart (confirmed live: the restart itself completes in ~1s regardless,
+// this is purely a false-failure report). KillMode=process sends SIGTERM
+// to only the main PID, letting that child finish reporting success before
+// systemd tears the cgroup down. Safe here because the only child this
+// process ever spawns is that same short-lived, already-timeout-bounded
+// systemctl/launchctl call (see systemctl() and every other Manager
+// method) — nothing long-lived is left orphaned by not cascading the kill.
 const unitTemplate = `[Unit]
 Description={{.Description}}
 After=network-online.target tailscaled.service
@@ -165,6 +181,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+KillMode=process
 User={{.User}}
 Group={{.User}}
 WorkingDirectory={{.WorkDir}}

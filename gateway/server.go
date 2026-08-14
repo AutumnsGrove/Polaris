@@ -63,6 +63,19 @@ type Server struct {
 	turnsMu      sync.Mutex
 	shuttingDown bool
 	activeTurns  sync.WaitGroup
+
+	// turnSends lets AbortActiveTurns below reach every in-flight turn's
+	// WebSocket the instant WaitForActiveTurns gives up on them, instead of
+	// those turns just vanishing when this process exits moments later —
+	// see AbortActiveTurns' doc comment for why a silent kill here is
+	// exactly the "bumped back to an old conversation" symptom TryStartTurn's
+	// doc comment describes. Keyed by an opaque handle (not thread ID —
+	// a brand-new thread's ID may not be known yet) so registerTurnSend's
+	// caller can deregister the exact entry it added, not any entry that
+	// happens to share a thread ID.
+	sendsMu    sync.Mutex
+	turnSends  map[int64]func(ServerEvent)
+	nextSendID int64
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -87,6 +100,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat),
 		mux:        http.NewServeMux(),
+		turnSends:  make(map[int64]func(ServerEvent)),
 	}
 	s.routes(staticFS)
 	return s
@@ -167,6 +181,62 @@ func (s *Server) WaitForActiveTurns(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// registerTurnSend records a turn's WebSocket send func so AbortActiveTurns
+// can reach it if WaitForActiveTurns gives up before it finishes. Call
+// right after a successful TryStartTurn, alongside it (not inside
+// handleTurn itself) so the registration window exactly matches the
+// activeTurns tracking window. Returns a handle for unregisterTurnSend.
+func (s *Server) registerTurnSend(send func(ServerEvent)) int64 {
+	s.sendsMu.Lock()
+	defer s.sendsMu.Unlock()
+	id := s.nextSendID
+	s.nextSendID++
+	s.turnSends[id] = send
+	return id
+}
+
+// unregisterTurnSend removes a turn's send func once it finishes on its
+// own — always call via defer right after registerTurnSend, mirroring
+// FinishTurn. Without this, a long-lived server would leak one map entry
+// per turn ever started.
+func (s *Server) unregisterTurnSend(id int64) {
+	s.sendsMu.Lock()
+	defer s.sendsMu.Unlock()
+	delete(s.turnSends, id)
+}
+
+// AbortActiveTurns tells every turn still registered (i.e. still running
+// after WaitForActiveTurns' deadline expired) that it's being cut off,
+// before cmd/run.go actually exits the process. Without this, a turn that
+// legitimately outran the drain deadline — the common case for a
+// multi-step research thread doing several sequential web_search/web_read
+// calls, confirmed live: a synthetic turn was cut off mid-tool-call after
+// exactly shutdownGrace's ~25s budget — just stops dead with a bare TCP
+// close. The frontend never receives a 'done' or 'error' for it, so
+// AppState.busy never clears normally and the thread this turn belonged to
+// never gets adopted as currentThreadId (see state.svelte.ts's 'done'
+// handler) — from the user's seat, they typed a new message, watched it
+// stream for a while, and then the app is just back on whatever thread was
+// open before, with no explanation. Sending an explicit error here turns
+// that into a normal, visible failure the user can see and retry, same as
+// any other dropped turn.
+func (s *Server) AbortActiveTurns(message string) {
+	s.sendsMu.Lock()
+	sends := make([]func(ServerEvent), 0, len(s.turnSends))
+	for _, send := range s.turnSends {
+		sends = append(sends, send)
+	}
+	s.sendsMu.Unlock()
+	for _, send := range sends {
+		// ThreadID intentionally left empty: a still-forming brand-new
+		// thread's real ID may not be known to the client's pendingThreadId
+		// yet, and handleEvent's routing gate only filters on a *non-empty*
+		// thread_id (see state.svelte.ts), so an empty one reaches whichever
+		// turn is currently pending regardless of which thread it's for.
+		send(ServerEvent{Type: "error", Message: message})
 	}
 }
 
