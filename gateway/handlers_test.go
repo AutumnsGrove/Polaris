@@ -457,6 +457,44 @@ func TestHandleGetThread_NotFound(t *testing.T) {
 	}
 }
 
+// TestHandleGetThread_TransientDBErrorIsNot404 is a regression test for a
+// bug found while investigating the "thread bump-back" reports: GetThread
+// returning ANY error — sql.ErrNoRows for a genuinely missing thread, but
+// also a busy timeout, a locked file, or any other transient database
+// failure — used to collapse into the same 404. openThread()
+// (state.svelte.ts) treats a 404 as "nothing to show, do nothing" with no
+// retry and no visible error, so a transient DB hiccup (exactly what the
+// restart window's old-process/new-process overlap can produce — see
+// cmd/run.go) silently left the UI stuck on stale content with zero
+// indication anything went wrong. A real "not found" must still 404; any
+// other failure must not.
+func TestHandleGetThread_TransientDBErrorIsNot404(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	// Force a non-ErrNoRows failure deterministically: close the
+	// underlying connection out from under the handler, same shape of
+	// error a busy/locked file under real cross-process contention would
+	// surface as (some database/sql-level error, not "no rows").
+	if err := h.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/threads/t1"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		t.Errorf("status = 404, want anything BUT 404 for a transient DB error — it wrongly looks like the thread doesn't exist")
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
 // TestHandleGetThread_IncludesVariantsMapAndAppliesActiveContent builds a
 // forked thread directly at the store layer (no need to go through a full
 // WS turn for this) and checks the HTTP response: messages/cost/context

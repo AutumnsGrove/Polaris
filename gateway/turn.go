@@ -167,6 +167,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 		return
 	}
+	// See TouchUpdatedAt's doc comment: AddMessage above just bumped
+	// storageThreadID's own updated_at, which is invisible to ListThreads
+	// once storageThreadID is a forked variant (post edit/retry) rather
+	// than threadID itself — without this, the thread silently stops
+	// climbing the sidebar's recency order the moment it's ever been
+	// edited, even while actively being used.
+	if err := s.db.TouchUpdatedAt(threadID); err != nil {
+		log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
+	}
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
 	if msg.AttachmentID != "" {
@@ -424,6 +433,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			Message:       "Your answer was generated but couldn't be saved — copy it now if you need it, then try again.",
 		})
 		return
+	}
+	// See the matching call above (and TouchUpdatedAt's doc comment) —
+	// same gap, same fix, for the assistant reply's own write.
+	if err := s.db.TouchUpdatedAt(threadID); err != nil {
+		log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
 	}
 
 	if err := s.db.SetContextTokens(storageThreadID, result.ContextTokens); err != nil {

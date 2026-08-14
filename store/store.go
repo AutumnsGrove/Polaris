@@ -342,6 +342,27 @@ func (s *Store) SetThreadFavorite(id string, favorite bool) error {
 	return err
 }
 
+// TouchUpdatedAt bumps rootID's own updated_at to now, independent of
+// whichever thread is actually being written to. Needed because AddMessage/
+// CompactThread bump updated_at on storageThreadID — the effective variant a
+// turn is writing into (see EffectiveThreadID), which is a hidden,
+// forked thread (fork_root_id set) once anything's ever been edited or
+// regenerated in rootID's conversation. ListThreads only ever returns
+// root threads (fork_root_id = ''), so without this, a thread with even
+// one edit/retry in its past silently stops advancing in the sidebar's
+// recency order the moment that happens — every later message keeps
+// bumping the hidden variant's own updated_at instead, which nothing
+// user-visible ever reads. rootID is always safe to call this with even
+// when it has no active variant (storageThreadID == rootID): the two
+// bumps just land on the same row a moment apart, which is harmless.
+func (s *Store) TouchUpdatedAt(rootID string) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
+		rootID,
+	)
+	return err
+}
+
 // EffectiveThreadID resolves which thread's messages are actually shown
 // for rootID right now — rootID's own, unless SetActiveVariant last
 // pointed it at a different variant (a thread ForkThread previously

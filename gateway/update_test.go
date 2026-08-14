@@ -5,10 +5,10 @@ import "testing"
 func TestUpdateStatus_TryStartRejectsWhileRunning(t *testing.T) {
 	var s updateStatus
 
-	if started, _ := s.tryStart(); !started {
+	if started, _ := s.tryStart("update"); !started {
 		t.Fatal("first tryStart() = false, want true (nothing running yet)")
 	}
-	if started, _ := s.tryStart(); started {
+	if started, _ := s.tryStart("update"); started {
 		t.Fatal("second tryStart() = true, want false — an update is already running")
 	}
 
@@ -23,7 +23,7 @@ func TestUpdateStatus_TryStartRejectsWhileRunning(t *testing.T) {
 
 func TestUpdateStatus_FinishClearsRunningAndRecordsOutcome(t *testing.T) {
 	var s updateStatus
-	s.tryStart()
+	s.tryStart("update")
 	s.finish(true, "pull ok\nbuild ok", "", true)
 
 	snap := s.snapshot()
@@ -42,14 +42,14 @@ func TestUpdateStatus_FinishClearsRunningAndRecordsOutcome(t *testing.T) {
 
 	// A finished (non-running) update must be startable again — e.g. the
 	// next self-update, once this one's fully wrapped up.
-	if started, _ := s.tryStart(); !started {
+	if started, _ := s.tryStart("update"); !started {
 		t.Fatal("tryStart() after finish() = false, want true")
 	}
 }
 
 func TestUpdateStatus_SetRestartErrorSurfacesFailure(t *testing.T) {
 	var s updateStatus
-	_, startedAt := s.tryStart()
+	_, startedAt := s.tryStart("update")
 	s.finish(true, "pull ok\nbuild ok", "", true)
 
 	// Mirrors handleUpdate's real sequence: finish() runs synchronously
@@ -71,13 +71,13 @@ func TestUpdateStatus_SetRestartErrorSurfacesFailure(t *testing.T) {
 
 func TestUpdateStatus_SetRestartErrorIgnoresStaleRun(t *testing.T) {
 	var s updateStatus
-	_, staleStartedAt := s.tryStart()
+	_, staleStartedAt := s.tryStart("update")
 	s.finish(true, "pull ok\nbuild ok", "", true)
 
 	// A second update started (and finished) before the first run's
 	// restart goroutine got around to reporting its own failure — that
 	// stale report must not clobber the second run's state.
-	s.tryStart()
+	s.tryStart("update")
 	s.finish(true, "pull ok\nbuild ok", "", true)
 
 	s.setRestartError(staleStartedAt, "stale failure from the first run")
@@ -90,7 +90,7 @@ func TestUpdateStatus_SetRestartErrorIgnoresStaleRun(t *testing.T) {
 
 func TestUpdateStatus_FinishRecordsFailure(t *testing.T) {
 	var s updateStatus
-	s.tryStart()
+	s.tryStart("update")
 	s.finish(false, "pull ok\nbuild failed", "go build failed: exit status 1", false)
 
 	snap := s.snapshot()
@@ -99,5 +99,42 @@ func TestUpdateStatus_FinishRecordsFailure(t *testing.T) {
 	}
 	if snap["error"] != "go build failed: exit status 1" {
 		t.Errorf("error = %v, want the build failure message", snap["error"])
+	}
+}
+
+// TestUpdateStatus_KindDistinguishesUpdateFromRestart is a regression test
+// for the settings panel's "Restart Polaris" button (handleRestart) —
+// added alongside "Update Polaris" (handleUpdate). Both share this one
+// updateStatus slot (see its doc comment on why: they'd otherwise be able
+// to race each other's mgr.Restart() calls), so the frontend needs kind to
+// tell which operation is actually in flight to show the right copy.
+func TestUpdateStatus_KindDistinguishesUpdateFromRestart(t *testing.T) {
+	var s updateStatus
+
+	started, _ := s.tryStart("restart")
+	if !started {
+		t.Fatal("tryStart(\"restart\") = false, want true (nothing running yet)")
+	}
+	if snap := s.snapshot(); snap["kind"] != "restart" {
+		t.Errorf("kind = %v, want %q while a restart is running", snap["kind"], "restart")
+	}
+
+	// A restart already running must block a concurrent update, and vice
+	// versa — they share one slot precisely so this can't happen.
+	if started, _ := s.tryStart("update"); started {
+		t.Fatal("tryStart(\"update\") = true while a restart was running, want false — update and restart must be mutually exclusive")
+	}
+
+	s.finish(true, "restart requested", "", true)
+	if snap := s.snapshot(); snap["kind"] != "restart" {
+		t.Errorf("kind after finish = %v, want %q — finish() doesn't change which operation just ran", snap["kind"], "restart")
+	}
+
+	started, _ = s.tryStart("update")
+	if !started {
+		t.Fatal("tryStart(\"update\") after the restart finished = false, want true")
+	}
+	if snap := s.snapshot(); snap["kind"] != "update" {
+		t.Errorf("kind = %v, want %q for the new run", snap["kind"], "update")
 	}
 }

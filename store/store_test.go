@@ -480,6 +480,55 @@ func TestListThreads_NewestFirst(t *testing.T) {
 	}
 }
 
+// TestTouchUpdatedAt_KeepsRootRecentAfterVariantSwitch is a regression test
+// for the "thread bump-back" symptom: once a thread has ever been edited/
+// retried (SetActiveVariant points it at a fork), every later AddMessage
+// writes to that fork's own row, not the root's — so without an explicit
+// TouchUpdatedAt on the root, ListThreads' recency order silently freezes
+// that thread in place even while it's actively being used, letting an
+// untouched, older thread outrank it and sit above it in the sidebar.
+func TestTouchUpdatedAt_KeepsRootRecentAfterVariantSwitch(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Root", "m", "web"); err != nil {
+		t.Fatalf("CreateThread(root): %v", err)
+	}
+	if _, err := s.AddMessage("root", "user", "hi", "[]", "[]", 0, "turn1"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := s.CreateThread("other", "Other", "m", "web"); err != nil {
+		t.Fatalf("CreateThread(other): %v", err)
+	}
+
+	forkID, err := s.ForkThread("root", "root", 1)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if err := s.SetActiveVariant("root", forkID); err != nil {
+		t.Fatalf("SetActiveVariant: %v", err)
+	}
+
+	// Simulate handleTurn continuing the conversation post-edit: it writes
+	// to the effective (forked) thread, then explicitly touches the root.
+	effective, err := s.EffectiveThreadID("root")
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if _, err := s.AddMessage(effective, "assistant", "new answer", "[]", "[]", 0, "turn2"); err != nil {
+		t.Fatalf("AddMessage(effective): %v", err)
+	}
+	if err := s.TouchUpdatedAt("root"); err != nil {
+		t.Fatalf("TouchUpdatedAt: %v", err)
+	}
+
+	threads, err := s.ListThreads(10)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(threads) != 2 || threads[0].ID != "root" {
+		t.Errorf("threads = %+v, want [root, other] — root should still sort as most recently active", threads)
+	}
+}
+
 // TestDeleteThread_SoftDeletePreservesMessages verifies DeleteThread is a
 // soft delete: the thread disappears from every read path (GetThread,
 // ListThreads) but its messages survive untouched, since the row itself
