@@ -531,6 +531,63 @@ describe('AppState URL sync', () => {
 	});
 });
 
+// Regression test for a live, confirmed bug: checkVersion's post-turn
+// reload used to be a bare window.location.reload(), which trusts the
+// address bar to already reflect currentThreadId. 'done' never re-syncs
+// the URL (only openThread/newThread/the new-thread-id branch above do),
+// so any drift between the two turned a version-bump reload into landing
+// on whatever unrelated thread the address bar happened to still say —
+// reproduced against the real app, not just a theoretical gap.
+describe('AppState.checkVersion reload target', () => {
+	beforeEach(() => {
+		window.history.replaceState({}, '', '/');
+	});
+
+	function fakeVersionFetch(version: string) {
+		return vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ version }) }));
+	}
+
+	it('navigates explicitly to currentThreadId instead of trusting the address bar', async () => {
+		const state = new AppState();
+		vi.stubGlobal('fetch', fakeVersionFetch('r1'));
+		await (state as any).checkVersion(); // captures the baseline version
+
+		// Simulate the drift: currentThreadId has moved on to a real thread,
+		// but nothing has re-synced the address bar since (the exact gap
+		// 'done' leaves — see this describe block's doc comment).
+		state.currentThreadId = 'the-real-current-thread';
+		window.history.replaceState({}, '', '/'); // address bar lagging behind
+
+		vi.stubGlobal('fetch', fakeVersionFetch('r2'));
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		await (state as any).checkVersion();
+
+		expect(window.location.pathname).toBe('/t/the-real-current-thread');
+		// The href navigation above is what actually reloads the page here
+		// (a real browser navigates to a new URL); reload() is only the
+		// same-URL fallback path and must not have fired for a genuine
+		// cross-thread correction.
+		expect(reloadSpy).not.toHaveBeenCalled();
+	});
+
+	it('still force-reloads when the address bar already matches currentThreadId', async () => {
+		const state = new AppState();
+		vi.stubGlobal('fetch', fakeVersionFetch('r1'));
+		await (state as any).checkVersion();
+
+		state.currentThreadId = 'already-synced-thread';
+		window.history.replaceState({}, '', '/t/already-synced-thread');
+
+		vi.stubGlobal('fetch', fakeVersionFetch('r2'));
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		await (state as any).checkVersion();
+
+		expect(reloadSpy).toHaveBeenCalledOnce();
+	});
+});
+
 describe('AppState.stopGeneration', () => {
 	it('sends a stop message only when busy', () => {
 		const state = new AppState();

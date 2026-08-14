@@ -277,19 +277,46 @@ export class AppState {
 				// A new build landed — but reloading immediately would yank
 				// an in-flight turn out from under the user: it wipes
 				// busy/pendingTurn/pendingThreadId client-side while the
-				// turn keeps running server-side regardless, and if this
-				// fires in the gap before a brand-new thread's id has been
-				// synced to the URL, the reload lands back on the
-				// homescreen instead of the conversation just started.
-				// Deferring until nothing's in flight — and deliberately
-				// NOT updating this.version below so this same branch
-				// re-fires — is what makes the reload land at a safe
-				// moment. handleEvent's 'done'/'error' cases call this
-				// again the instant busy clears, so the retry happens
-				// within moments of the turn finishing rather than waiting
-				// out the rest of this 30s poll interval.
+				// turn keeps running server-side regardless. Deferring
+				// until nothing's in flight — and deliberately NOT updating
+				// this.version below so this same branch re-fires — is what
+				// makes the reload land at a safe moment. handleEvent's
+				// 'done'/'error' cases call this again the instant busy
+				// clears, so the retry happens within moments of the turn
+				// finishing rather than waiting out the rest of this 30s
+				// poll interval.
+				//
+				// Navigating to an explicit href (not a bare reload())
+				// matters: a bare reload() trusts window.location.pathname
+				// to already reflect whatever thread is actually current,
+				// but syncURL's replaceState calls only fire from specific
+				// call sites (openThread, newThread, a just-learned new
+				// thread id) — 'done' itself never re-syncs the URL, so any
+				// path where the address bar and currentThreadId can
+				// legitimately drift apart for a moment (confirmed
+				// happening in practice, not just theoretical) turns into
+				// reload() silently landing on whatever the browser's
+				// address bar happened to still say, which can be a
+				// completely unrelated thread from earlier in the session
+				// rather than "the homescreen" this comment used to assume.
+				// Building the URL explicitly from currentThreadId — the
+				// same source of truth syncURL itself uses — removes that
+				// gap by construction instead of relying on timing.
 				if (!this.busy && typeof window !== 'undefined') {
-					window.location.reload();
+					const path = this.currentThreadId ? `/t/${this.currentThreadId}` : '/';
+					// Checked before navigating, not after: whether an href
+					// assignment updates window.location synchronously or
+					// only once the new document actually loads isn't
+					// consistent across environments (confirmed different
+					// between real browsers and jsdom), so branching on the
+					// current path up front is the only deterministic way
+					// to pick reload() vs. href — see this block's doc
+					// comment above for why the target must be explicit.
+					if (window.location.pathname === path) {
+						window.location.reload();
+					} else {
+						window.location.href = path;
+					}
 				}
 				return;
 			}
