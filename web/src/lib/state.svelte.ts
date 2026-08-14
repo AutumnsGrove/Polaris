@@ -381,9 +381,32 @@ export class AppState {
 			this.pendingAbandoned = id !== this.pendingThreadId;
 		}
 
-		const [res, eventsByTurn] = await Promise.all([fetch(`/api/threads/${id}`), this.fetchEventsByTurn(id)]);
+		let res: Response;
+		let eventsByTurn: Map<string, StoredEvent[]>;
+		try {
+			[res, eventsByTurn] = await Promise.all([fetch(`/api/threads/${id}`), this.fetchEventsByTurn(id)]);
+		} catch {
+			// Network failure (e.g. the brief window right as a restart's
+			// old process goes away and the new one isn't answering yet) —
+			// same "don't leave this silent" reasoning as the !res.ok
+			// branch below.
+			if (seq === this.openThreadSeq) this.showToast("Couldn't load that thread — please try again");
+			return;
+		}
 		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
-		if (!res.ok) return;
+		if (!res.ok) {
+			// 404 means the id genuinely doesn't exist (deleted, a stale
+			// bookmark, a hidden variant id) — nothing to show, staying
+			// silent here is correct. Anything else (503 above all — see
+			// handleGetThread's doc comment on why a transient DB hiccup
+			// during the restart-overlap window now surfaces as 503, not a
+			// misleading 404) used to no-op identically, leaving the view
+			// stuck on whatever was on screen before with zero indication
+			// anything went wrong — which is exactly what "I clicked a
+			// thread and it didn't switch" looks like from the outside.
+			if (res.status !== 404) this.showToast("Couldn't load that thread — please try again");
+			return;
+		}
 		const data = await res.json();
 		this.currentThreadId = id;
 		this.syncURL(id);

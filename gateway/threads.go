@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -39,7 +41,25 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Warn("getting thread failed", "thread", id, "err", err)
 		s.db.LogEvent(id, "warn", "thread", "getting thread failed", map[string]interface{}{"err": err.Error()}, "")
-		http.Error(w, "thread not found", http.StatusNotFound)
+		// sql.ErrNoRows (the id genuinely doesn't exist/is disabled/is a
+		// hidden variant — see GetThread's own doc comment) is the only
+		// case that actually means "not found". Anything else — a busy
+		// timeout, a locked file, any other transient database error —
+		// used to collapse into the same 404, which openThread()
+		// (state.svelte.ts) treats as "nothing to show, do nothing" with
+		// no retry and no visible error. A transient DB hiccup is exactly
+		// what the restart window can produce (see cmd/run.go: the old
+		// process's db.Close() doesn't run until it's done draining,
+		// which can overlap the new process already serving live
+		// traffic) — reporting it as "not found" instead of a retryable
+		// failure left the UI silently stuck on stale content with no
+		// indication anything went wrong, which looks a lot like landing
+		// on the wrong thread even though the data itself was never bad.
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "thread not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "temporarily unable to load thread — please retry", http.StatusServiceUnavailable)
+		}
 		return
 	}
 
@@ -249,7 +269,12 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 	thread, err := s.db.GetThreadRaw(effectiveID)
 	if err != nil {
 		log.Warn("getting thread failed", "thread", id, "err", err)
-		http.Error(w, "thread not found", http.StatusNotFound)
+		// See handleGetThread's doc comment on this same distinction.
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "thread not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "temporarily unable to load thread — please retry", http.StatusServiceUnavailable)
+		}
 		return
 	}
 
