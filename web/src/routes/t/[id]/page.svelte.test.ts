@@ -14,7 +14,7 @@ vi.mock('$app/state', async () => {
 });
 vi.mock('$lib/state.svelte', async () => {
 	const fakes = await import('./routeTestFakes.svelte');
-	return { appState: fakes.fakeAppState };
+	return { appState: fakes.fakeAppState, debugBeacon: () => {} };
 });
 vi.mock('$lib/components/ChatView.svelte', () => import('./ChatViewStub.svelte'));
 

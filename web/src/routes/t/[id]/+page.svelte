@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { appState } from '$lib/state.svelte';
+	import { appState, debugBeacon } from '$lib/state.svelte';
 	import ChatView from '$lib/components/ChatView.svelte';
 
 	// Reopens the thread named by the URL — the fix for refresh/reconnect
@@ -18,7 +18,14 @@
 	// back to whatever thread this route was first loaded with.
 	$effect(() => {
 		const id = page.params.id;
-		if (id && untrack(() => id !== appState.currentThreadId)) {
+		const willOpen = !!id && untrack(() => id !== appState.currentThreadId);
+		// TEMPORARY — see project_thread_bump_back_root_cause memory.
+		debugBeacon('route effect fired', {
+			routeId: id,
+			currentThreadId: untrack(() => appState.currentThreadId),
+			willOpen
+		});
+		if (willOpen && id) {
 			void appState.openThread(id);
 		}
 	});

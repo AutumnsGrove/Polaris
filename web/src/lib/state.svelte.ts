@@ -32,6 +32,30 @@ function safeParseObject(json: string): Record<string, any> {
 	}
 }
 
+// TEMPORARY instrumentation for chasing the "thread bump-back" bug (see
+// memory: project_thread_bump_back_root_cause) — fires a fire-and-forget
+// beacon to the server's event log at the handful of places
+// currentThreadId changes or a version-mismatch reload fires, so the next
+// occurrence can be read back from the events table afterward instead of
+// needing the user to have DevTools open at the exact moment it happens.
+// keepalive (not navigator.sendBeacon) is what survives the page unloading
+// (the exact moment a reload/href navigation fires) here — sendBeacon
+// would do the same in a real browser, but its rejection can't be caught
+// the way a plain fetch promise's can, which surfaced as unhandled
+// rejections under happy-dom's polyfill. Remove this and its call sites
+// once the mechanism is confirmed and fixed.
+export function debugBeacon(message: string, data: Record<string, unknown> = {}) {
+	if (typeof fetch === 'undefined') return;
+	fetch('/api/debug-log', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		keepalive: true,
+		body: JSON.stringify({ message, data })
+	}).catch(() => {
+		// Best-effort — never let diagnostics themselves break the app.
+	});
+}
+
 // Rebuilds one turn's timeline from its persisted events (thinking steps,
 // tool call start/finish pairs, compaction) — the same shape handleEvent
 // builds live while a turn streams, so a reopened thread renders
@@ -274,6 +298,12 @@ export class AppState {
 			const newVersion = data.version ?? '';
 
 			if (this.version && newVersion && this.version !== newVersion) {
+				debugBeacon('checkVersion mismatch detected', {
+					oldVersion: this.version,
+					newVersion,
+					busy: this.busy,
+					currentThreadId: this.currentThreadId
+				});
 				// A new build landed — but reloading immediately would yank
 				// an in-flight turn out from under the user: it wipes
 				// busy/pendingTurn/pendingThreadId client-side while the
@@ -304,6 +334,13 @@ export class AppState {
 				// gap by construction instead of relying on timing.
 				if (!this.busy && typeof window !== 'undefined') {
 					const path = this.currentThreadId ? `/t/${this.currentThreadId}` : '/';
+					debugBeacon('checkVersion reloading', {
+						oldVersion: this.version,
+						newVersion,
+						currentThreadId: this.currentThreadId,
+						currentPathname: window.location.pathname,
+						targetPath: path
+					});
 					// Checked before navigating, not after: whether an href
 					// assignment updates window.location synchronously or
 					// only once the new document actually loads isn't
@@ -435,6 +472,12 @@ export class AppState {
 			return;
 		}
 		const data = await res.json();
+		debugBeacon('currentThreadId set (openThread)', {
+			from: this.currentThreadId,
+			to: id,
+			pendingThreadId: this.pendingThreadId,
+			busy: this.busy
+		});
 		this.currentThreadId = id;
 		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
@@ -527,6 +570,7 @@ export class AppState {
 		// one too, not just an existing thread's turn).
 		if (this.busy) this.pendingAbandoned = true;
 
+		debugBeacon('currentThreadId set (newThread)', { from: this.currentThreadId, busy: this.busy });
 		this.currentThreadId = null;
 		this.turns = [];
 		this.totalCost = 0;
@@ -695,6 +739,13 @@ export class AppState {
 		this.pendingThreadId = this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
 		this.pendingAbandoned = false;
+
+		debugBeacon('dispatch sending', {
+			currentThreadId: this.currentThreadId,
+			editFromId,
+			truncateFromIndex,
+			turnsLengthBeforePush: truncateFromIndex !== undefined ? truncateFromIndex : this.turns.length - 2
+		});
 
 		this.socket.send({
 			type: 'message',
@@ -881,6 +932,13 @@ export class AppState {
 				const stillWatching =
 					!this.pendingAbandoned &&
 					(this.currentThreadId === null || this.currentThreadId === this.pendingThreadId);
+				debugBeacon('done event received', {
+					stillWatching,
+					pendingAbandoned: this.pendingAbandoned,
+					currentThreadId: this.currentThreadId,
+					pendingThreadId: this.pendingThreadId,
+					eventThreadId: e.thread_id
+				});
 				if (stillWatching) {
 					this.currentThreadId = e.thread_id;
 					// ?? 0 guards against a missing cost_usd (e.g. an older
