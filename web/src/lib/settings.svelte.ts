@@ -145,7 +145,14 @@ export class SettingsState {
 	// button unless idle/error) — the server independently rejects a
 	// second overlapping call regardless, since this button surviving a
 	// closed-and-reopened panel is exactly what invites a double-click.
-	async pushUpdate() {
+	//
+	// isBusy lets the caller (SettingsPanel.svelte, via appState.busy) tell
+	// waitForServerAndReload not to fire its reload while a turn is still
+	// streaming — see that function's doc comment for why this matters.
+	// Optional, defaulting to "never busy", so a caller with nothing to
+	// check (there is none today, but nothing here should require one)
+	// still gets a working reload.
+	async pushUpdate(isBusy: () => boolean = () => false) {
 		this.updateState = 'updating';
 		this.updateLog = '';
 		try {
@@ -166,7 +173,7 @@ export class SettingsState {
 				return;
 			}
 			this.updateState = 'restarting';
-			await this.waitForServerAndReload();
+			await this.waitForServerAndReload(isBusy);
 		} catch (err) {
 			this.updateLog = String(err);
 			this.updateState = 'error';
@@ -194,7 +201,25 @@ export class SettingsState {
 	// this was hardened against: the first click's reload fired too
 	// early, and the real restart only happened later, unannounced,
 	// possibly mid-conversation.
-	private async waitForServerAndReload() {
+	//
+	// isBusy is the OTHER half of that same "possibly mid-conversation"
+	// problem: the new binary can easily come up while a turn is still
+	// streaming on this very client (e.g. someone hits Update, then, out
+	// of habit or to test whether it worked, sends another message before
+	// the poll below has resolved). checkVersion()'s own periodic version
+	// poll (state.svelte.ts) learned this lesson already — it defers its
+	// reload until !appState.busy specifically to avoid yanking
+	// busy/pendingTurn/pendingThreadId out from under an in-flight turn.
+	// This loop is a separate reload path that grew independently and
+	// never got the same guard, so it kept firing unconditionally the
+	// instant the version changed — wiping client-side turn state while
+	// the server kept streaming, and (worse, on a brand-new thread)
+	// landing the reload on whatever URL happened to be in the address
+	// bar at that instant rather than the thread the turn belongs to.
+	// Once the version has changed, this simply keeps polling instead of
+	// reloading for as long as isBusy() says so — same bound as the outer
+	// 2-minute deadline below, not a separate one.
+	private async waitForServerAndReload(isBusy: () => boolean) {
 		let baseline = '';
 		try {
 			const res = await fetch('/api/version', { cache: 'no-store' });
@@ -233,6 +258,14 @@ export class SettingsState {
 				if (res.ok) {
 					const newVersion = (await res.json()).version ?? '';
 					if (!baseline || (newVersion && newVersion !== baseline)) {
+						if (isBusy()) {
+							// The new binary is up, but this client still has a
+							// turn in flight — reloading now would cut it off
+							// mid-stream. Keep polling; the next iteration
+							// re-checks isBusy() and reloads the moment it
+							// clears, same deadline as everything else here.
+							continue;
+						}
 						window.location.reload();
 						return;
 					}
@@ -255,7 +288,11 @@ export class SettingsState {
 	// app startup; cheap enough to also call whenever the settings panel
 	// opens, in case an update finished (or started, from another tab)
 	// since the last check.
-	async checkUpdateStatus() {
+	//
+	// isBusy — see waitForServerAndReload's doc comment — is threaded
+	// through to whichever of pollUntilFinished/waitForServerAndReload
+	// this ends up calling, same as pushUpdate does.
+	async checkUpdateStatus(isBusy: () => boolean = () => false) {
 		if (this.updateState === 'updating' || this.updateState === 'restarting') return;
 		try {
 			const res = await fetch('/api/update/status');
@@ -263,7 +300,7 @@ export class SettingsState {
 			const data = await res.json();
 			if (data.running) {
 				this.updateState = 'updating';
-				await this.pollUntilFinished();
+				await this.pollUntilFinished(isBusy);
 			} else if (data.restart_error) {
 				// The build succeeded and a restart was attempted, but the
 				// restart command itself (systemctl/launchctl) failed — the
@@ -278,7 +315,7 @@ export class SettingsState {
 				// little while yet, then change once the new binary is
 				// actually up (see waitForServerAndReload's doc comment).
 				this.updateState = 'restarting';
-				await this.waitForServerAndReload();
+				await this.waitForServerAndReload(isBusy);
 			} else if (data.done && !data.success) {
 				this.updateState = 'error';
 				this.updateLog = (data.log ?? '') + (data.error ? `\n\n${data.error}` : '');
@@ -305,7 +342,7 @@ export class SettingsState {
 		}
 	}
 
-	private async pollUntilFinished() {
+	private async pollUntilFinished(isBusy: () => boolean) {
 		while (this.updateState === 'updating') {
 			await new Promise((r) => setTimeout(r, 2000));
 			try {
@@ -318,7 +355,7 @@ export class SettingsState {
 					this.updateLog = (data.log ?? '') + `\n\nBuild succeeded, but restarting the service failed: ${data.restart_error}`;
 				} else if (data.restarting) {
 					this.updateState = 'restarting';
-					await this.waitForServerAndReload();
+					await this.waitForServerAndReload(isBusy);
 				} else if (data.success) {
 					this.updateState = 'idle';
 					this.updateLog = data.log ?? '';

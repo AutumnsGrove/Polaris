@@ -208,6 +208,59 @@ describe('SettingsState.pushUpdate restart handling', () => {
 		expect(reloadSpy).toHaveBeenCalledOnce();
 	});
 
+	it('does not reload while isBusy() reports a turn still in flight, then reloads once it clears', async () => {
+		// Regression test for the gap this exact hardening pattern (see the
+		// test above) was supposed to close everywhere: checkVersion()
+		// (state.svelte.ts) already deferred its own reload until
+		// !appState.busy, but this restart-triggered path kept calling
+		// window.location.reload() unconditionally the instant the new
+		// binary answered — even mid-turn, wiping busy/pendingTurn/
+		// pendingThreadId client-side while the server kept streaming
+		// regardless, and landing wherever the address bar happened to be
+		// pointed at that instant rather than the thread the turn belongs
+		// to.
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		// First /api/version call is waitForServerAndReload's own baseline
+		// read (still the pre-update process); every call after that is the
+		// polling loop, already seeing the new build.
+		let versionCalls = 0;
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/update') {
+				return { ok: true, json: async () => ({ success: true, log: 'build successful', restarting: true }) };
+			}
+			if (url === '/api/update/status') {
+				return { ok: true, json: async () => ({}) };
+			}
+			if (url === '/api/version') {
+				versionCalls++;
+				const version = versionCalls === 1 ? 'r100.aaaaaaa' : 'r101.bbbbbbb';
+				return { ok: true, json: async () => ({ version }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		let busy = true;
+		const settings = new SettingsState();
+		const done = settings.pushUpdate(() => busy);
+
+		// The new version is visible on every poll, but a turn is still
+		// in flight on this client — must keep polling, not reload.
+		for (let i = 0; i < 5; i++) {
+			await vi.advanceTimersByTimeAsync(1500);
+		}
+		expect(reloadSpy).not.toHaveBeenCalled();
+		expect(settings.updateState).toBe('restarting');
+
+		// The turn finishes — the very next poll should reload immediately.
+		busy = false;
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).toHaveBeenCalledOnce();
+	});
+
 	it('surfaces a failed restart command instead of waiting out the full 2 minutes', async () => {
 		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
 

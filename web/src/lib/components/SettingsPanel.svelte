@@ -18,7 +18,7 @@
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
 	// the panel was last open, without waiting for a full page reload.
-	void appState.settings.checkUpdateStatus();
+	void appState.settings.checkUpdateStatus(() => appState.busy);
 	void appState.settings.loadUsage();
 
 	// toolCallTotal/toolErrorRate collapse the per-tool breakdown from
@@ -219,7 +219,7 @@
 				{/if}
 				<button
 					class="btn update-btn"
-					onclick={() => appState.settings.pushUpdate()}
+					onclick={() => appState.settings.pushUpdate(() => appState.busy)}
 					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
 				>
 					<RefreshCw
