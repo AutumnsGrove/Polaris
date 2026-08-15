@@ -1,0 +1,9 @@
+name: books
+description: >-
+  find real book recommendations grounded in readers' curated lists (Hardcover.app) and shared
+  subject/genre data (Open Library), not guesswork. Use when the user names a book and wants more
+  like it.
+api_description: >-
+  Find real book recommendations grounded in readers' curated lists (Hardcover.app) and shared
+  subject/genre data (Open Library), not guesswork or hoping a web search turns up a "books like
+  X" listicle. Use when the user names a book and wants more like it.

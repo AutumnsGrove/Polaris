@@ -27,9 +27,7 @@ var youtubeTranscriptDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "youtube_transcript",
-		Description: "Fetch the transcript of a YouTube video, given its URL (youtube.com/watch, youtu.be, " +
-			"shorts, etc.) or bare video ID. Use when the user shares a YouTube link or a web_search result " +
-			"is a YouTube video worth reading. Fails if the video has no captions available.",
+		// Description is set in init() from tools/descriptions/youtube_transcript.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -43,7 +41,10 @@ var youtubeTranscriptDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("youtube_transcript", handleYouTubeTranscript) }
+func init() {
+	Register("youtube_transcript", handleYouTubeTranscript)
+	youtubeTranscriptDef.Function.Description = catalogDescription("youtube_transcript")
+}
 
 func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
 	var args struct {

@@ -23,10 +23,7 @@ var weatherDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "weather",
-		Description: "Get current weather conditions and a short daily forecast for a location. " +
-			"Returns temperature, conditions, precipitation chance, and wind. Pass include_hourly for " +
-			"an hour-by-hour breakdown of the next 24 hours instead of (or alongside) the daily summary — " +
-			"use that for questions like 'what time will it rain today' or 'will it be warmer this afternoon'.",
+		// Description is set in init() from tools/descriptions/weather.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -51,7 +48,10 @@ var weatherDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("weather", handleWeather) }
+func init() {
+	Register("weather", handleWeather)
+	weatherDef.Function.Description = catalogDescription("weather")
+}
 
 // openMeteoBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as places.nominatimBaseURL and web_read.go's

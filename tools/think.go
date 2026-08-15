@@ -10,9 +10,7 @@ var thinkDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "think",
-		Description: "Reason privately about what to do next before acting: plan a search strategy, " +
-			"evaluate whether you already have enough information, or decide which tool to call next. " +
-			"The user sees this as a visible 'thinking' step, so keep it short and in first person.",
+		// Description is set in init() from tools/descriptions/think.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -26,7 +24,10 @@ var thinkDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("think", handleThink) }
+func init() {
+	Register("think", handleThink)
+	thinkDef.Function.Description = catalogDescription("think")
+}
 
 func handleThink(argsJSON string, ctx *Context) string {
 	var args struct {

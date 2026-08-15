@@ -1,0 +1,11 @@
+name: web_read
+description: >-
+  fetch a URL and extract its content (optionally filtered to just what's needed). Long results
+  are cut off with a note telling you the offset (web pages) or page (PDFs) to pass back for the
+  next chunk — see "Know when to stop researching" for when that's actually worth doing.
+api_description: >-
+  Fetch a URL and extract its clean text content. Use when the user shares a link, or a
+  web_search result needs deeper investigation. Optionally pass 'instructions' to extract only
+  specific information (e.g. 'just the prices', 'just the release date') instead of the full
+  page. Long results are cut off with a note telling you how to read the rest: pass that same
+  'offset' back for a normal web page, or that same 'page' back for a PDF.

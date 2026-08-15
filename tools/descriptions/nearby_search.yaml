@@ -1,0 +1,7 @@
+name: nearby_search
+description: >-
+  find real-world places (restaurants, pharmacies, etc.) near a location.
+api_description: >-
+  Find real-world places near a location — restaurants, coffee shops, pharmacies, parks, etc.
+  Returns structured results (distance, category, map link) when Foursquare is configured,
+  otherwise falls back to a web search for the same query.

@@ -11,8 +11,8 @@ import (
 var webSearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
-		Name:        "web_search",
-		Description: "Search the web via SearXNG for current information, facts, or sources. Returns titles, URLs, and snippets.",
+		Name: "web_search",
+		// Description is set in init() from tools/descriptions/web_search.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -38,7 +38,10 @@ var webSearchDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("web_search", handleWebSearch) }
+func init() {
+	Register("web_search", handleWebSearch)
+	webSearchDef.Function.Description = catalogDescription("web_search")
+}
 
 func handleWebSearch(argsJSON string, ctx *Context) string {
 	var args struct {

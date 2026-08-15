@@ -27,11 +27,7 @@ var githubRepoDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "github_repo",
-		Description: "Look up a GitHub repository directly via GitHub's API: star count, forks, license, " +
-			"repo age, first/most recent commit dates, total commit count, open issue count, and open pull " +
-			"request count — plus the README. Prefer this over web_search/web_read for questions about a " +
-			"specific GitHub repo's stats, since those can't reliably pull numeric stats like star count " +
-			"off a rendered page.",
+		// Description is set in init() from tools/descriptions/github_repo.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -51,7 +47,10 @@ var githubRepoDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("github_repo", handleGitHubRepo) }
+func init() {
+	Register("github_repo", handleGitHubRepo)
+	githubRepoDef.Function.Description = catalogDescription("github_repo")
+}
 
 // githubAPIBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as places.nominatimBaseURL and web_read.go's

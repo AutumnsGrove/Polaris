@@ -1,0 +1,16 @@
+name: music
+requires: lastfm_api_key
+description: >-
+  find real song/album recommendations grounded in Last.fm's actual similarity data, not
+  guesswork. Use mode "track" for "more songs like this one", "album_tracks" for song-level
+  recommendations based on a whole album, and "similar_albums" only when the user specifically
+  wants other whole albums like a given one — that mode is noticeably more expensive, so don't
+  reach for it on a single-song request.
+api_description: >-
+  Find real music recommendations grounded in actual listening/similarity data (Last.fm), not
+  guesswork or hoping a web search turns up a review that happens to mention comparable songs.
+  Use mode "track" when the user names one song and wants more like it. Use "album_tracks" when
+  they want song-level recommendations based on a whole album. Use "similar_albums" only when
+  they specifically want other ALBUMS similar to a given album, not individual songs — this mode
+  makes many more API calls than the other two, so reach for it only when album-level
+  recommendations were actually asked for.

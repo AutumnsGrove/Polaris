@@ -60,13 +60,7 @@ var musicDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "music",
-		Description: "Find real music recommendations grounded in actual listening/similarity data " +
-			"(Last.fm), not guesswork or hoping a web search turns up a review that happens to mention " +
-			"comparable songs. Use mode \"track\" when the user names one song and wants more like it. Use " +
-			"\"album_tracks\" when they want song-level recommendations based on a whole album. Use " +
-			"\"similar_albums\" only when they specifically want other ALBUMS similar to a given album, not " +
-			"individual songs — this mode makes many more API calls than the other two, so reach for it only " +
-			"when album-level recommendations were actually asked for.",
+		// Description is set in init() from tools/descriptions/music.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -94,7 +88,10 @@ var musicDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("music", handleMusic) }
+func init() {
+	Register("music", handleMusic)
+	musicDef.Function.Description = catalogDescription("music")
+}
 
 // lastfmBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as openMeteoBaseURL/wikipediaAPIBaseURL.

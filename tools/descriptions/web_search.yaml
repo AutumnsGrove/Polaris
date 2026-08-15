@@ -1,0 +1,6 @@
+name: web_search
+description: >-
+  search the web via a private SearXNG instance.
+api_description: >-
+  Search the web via SearXNG for current information, facts, or sources. Returns titles, URLs,
+  and snippets.

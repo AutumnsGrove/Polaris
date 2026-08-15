@@ -30,10 +30,7 @@ var dictionaryDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "dictionary",
-		Description: "Look up a word's definition, part of speech, and (when available) an example " +
-			"sentence, straight from a dictionary source. Prefer this over web_search or answering from " +
-			"memory whenever the user asks what a word means, how it's used in a sentence, or wants it " +
-			"defined — it's a more precise and more directly citable source than a general search.",
+		// Description is set in init() from tools/descriptions/dictionary.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -47,7 +44,10 @@ var dictionaryDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("dictionary", handleDictionary) }
+func init() {
+	Register("dictionary", handleDictionary)
+	dictionaryDef.Function.Description = catalogDescription("dictionary")
+}
 
 // dictionaryAPIDevBaseURL/freeDictionaryAPIBaseURL are vars (not consts)
 // so tests can point them at a fake server, same pattern as

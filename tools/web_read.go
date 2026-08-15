@@ -39,11 +39,7 @@ var webReadDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "web_read",
-		Description: "Fetch a URL and extract its clean text content. Use when the user shares a link, or " +
-			"a web_search result needs deeper investigation. Optionally pass 'instructions' to extract only " +
-			"specific information (e.g. 'just the prices', 'just the release date') instead of the full page. " +
-			"Long results are cut off with a note telling you how to read the rest: pass that same 'offset' " +
-			"back for a normal web page, or that same 'page' back for a PDF.",
+		// Description is set in init() from tools/descriptions/web_read.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -71,7 +67,10 @@ var webReadDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("web_read", handleWebRead) }
+func init() {
+	Register("web_read", handleWebRead)
+	webReadDef.Function.Description = catalogDescription("web_read")
+}
 
 func handleWebRead(argsJSON string, ctx *Context) string {
 	var args struct {

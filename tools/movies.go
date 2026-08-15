@@ -45,10 +45,7 @@ var moviesDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "movies",
-		Description: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation " +
-			"data (\"people who watched this also watched\"), not guesswork or hoping a web search turns up a " +
-			"\"movies like X\" listicle. Use media_type \"movie\" or \"tv\" depending on what the user named. " +
-			"Pass year when the title could be ambiguous (a remake, a reboot, a common title).",
+		// Description is set in init() from tools/descriptions/movies.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -72,7 +69,10 @@ var moviesDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("movies", handleMovies) }
+func init() {
+	Register("movies", handleMovies)
+	moviesDef.Function.Description = catalogDescription("movies")
+}
 
 // tmdbBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as lastfmBaseURL/hardcoverBaseURL.

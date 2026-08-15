@@ -24,10 +24,7 @@ var referenceLookupDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "reference_lookup",
-		Description: "Look up a topic directly in a specific reference source — Wikipedia for an " +
-			"encyclopedia summary, or arXiv for academic paper abstracts. Prefer this over web_search " +
-			"when you specifically want an encyclopedic overview or a paper's abstract, since it's more " +
-			"precise and more directly citable than a general search.",
+		// Description is set in init() from tools/descriptions/reference_lookup.yaml.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -50,7 +47,10 @@ var referenceLookupDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("reference_lookup", handleReferenceLookup) }
+func init() {
+	Register("reference_lookup", handleReferenceLookup)
+	referenceLookupDef.Function.Description = catalogDescription("reference_lookup")
+}
 
 func handleReferenceLookup(argsJSON string, ctx *Context) string {
 	var args struct {

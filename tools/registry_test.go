@@ -45,8 +45,11 @@ func TestContext_AddCitation_DeduplicatesByURL(t *testing.T) {
 	}
 }
 
-func TestDefs_ReturnsAllTwelveTools(t *testing.T) {
-	defs := Defs()
+func TestDefs_ReturnsAllTwelveToolsWhenAllKeysConfigured(t *testing.T) {
+	ctx := newTestContext()
+	ctx.LastFMAPIKey = "test-key"
+	ctx.TMDBAPIKey = "test-key"
+	defs := Defs(ctx)
 	names := make(map[string]bool, len(defs))
 	for _, d := range defs {
 		names[d.Function.Name] = true
@@ -61,5 +64,51 @@ func TestDefs_ReturnsAllTwelveTools(t *testing.T) {
 	}
 	if len(defs) != 12 {
 		t.Errorf("got %d tool defs, want exactly 12", len(defs))
+	}
+}
+
+func TestDefs_ExcludesMusicAndMoviesWithoutKeys(t *testing.T) {
+	defs := Defs(newTestContext())
+	names := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		names[d.Function.Name] = true
+	}
+	if names["music"] {
+		t.Error("Defs() included music with no LastFMAPIKey configured")
+	}
+	if names["movies"] {
+		t.Error("Defs() included movies with no TMDBAPIKey configured")
+	}
+	for _, want := range []string{
+		"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"weather", "reference_lookup", "github_repo", "dictionary", "books",
+	} {
+		if !names[want] {
+			t.Errorf("Defs() missing %q, got %v", want, names)
+		}
+	}
+	if len(defs) != 10 {
+		t.Errorf("got %d tool defs, want exactly 10", len(defs))
+	}
+}
+
+func TestDefs_OrderIsStable(t *testing.T) {
+	ctx := newTestContext()
+	ctx.LastFMAPIKey = "test-key"
+	ctx.TMDBAPIKey = "test-key"
+	want := []string{
+		"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies",
+	}
+	for i := 0; i < 2; i++ {
+		defs := Defs(ctx)
+		if len(defs) != len(want) {
+			t.Fatalf("call %d: got %d defs, want %d", i, len(defs), len(want))
+		}
+		for j, d := range defs {
+			if d.Function.Name != want[j] {
+				t.Errorf("call %d: position %d = %q, want %q", i, j, d.Function.Name, want[j])
+			}
+		}
 	}
 }

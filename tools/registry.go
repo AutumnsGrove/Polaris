@@ -306,10 +306,49 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 	return result
 }
 
-// Defs returns the tool definitions offered to the model every turn.
+// toolDefsByName maps each catalogOrder name to its Go-literal ToolDef —
+// the lookup Defs()/AllDefs() iterate over. Built fresh on every call
+// (cheap: 12 map entries) rather than captured in a package-level var,
+// since each tool's init() patches its ToolDef.Function.Description from
+// the catalog (see e.g. think.go's init) — package-level vars all
+// initialize before any init() runs, so a var here would snapshot the
+// pre-patch (empty) Description instead of the catalog-sourced one.
+func toolDefsByName() map[string]llm.ToolDef {
+	return map[string]llm.ToolDef{
+		"think": thinkDef, "web_search": webSearchDef, "web_read": webReadDef,
+		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
+		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef,
+	}
+}
+
+// Defs returns the tool definitions offered to the model every turn,
+// excluding any tool whose required API key isn't configured on ctx
+// (currently music/movies — see catalog.go's catalogEntry.offered).
 // There's no explicit "reply" tool — the loop runs with tool_choice
 // "auto", so the model free-flows between calling tools and just
 // answering directly once it has enough context.
-func Defs() []llm.ToolDef {
-	return []llm.ToolDef{thinkDef, webSearchDef, webReadDef, nearbySearchDef, youtubeTranscriptDef, weatherDef, referenceLookupDef, githubRepoDef, dictionaryDef, musicDef, booksDef, moviesDef}
+func Defs(ctx *Context) []llm.ToolDef {
+	catalog := loadCatalog()
+	byName := toolDefsByName()
+	defs := make([]llm.ToolDef, 0, len(catalogOrder))
+	for _, name := range catalogOrder {
+		if !catalog[name].offered(ctx) {
+			continue
+		}
+		defs = append(defs, byName[name])
+	}
+	return defs
+}
+
+// AllDefs returns every tool definition, ungated — for agent/pseudocall.go's
+// paramSchemaType, which has no per-request Context (it's a static-analysis
+// path over pseudo-tool-call syntax, not a real per-turn tool offer).
+func AllDefs() []llm.ToolDef {
+	byName := toolDefsByName()
+	defs := make([]llm.ToolDef, 0, len(catalogOrder))
+	for _, name := range catalogOrder {
+		defs = append(defs, byName[name])
+	}
+	return defs
 }

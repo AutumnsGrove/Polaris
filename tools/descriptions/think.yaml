@@ -1,0 +1,7 @@
+name: think
+description: >-
+  reason privately about strategy before acting.
+api_description: >-
+  Reason privately about what to do next before acting: plan a search strategy, evaluate whether
+  you already have enough information, or decide which tool to call next. The user sees this as a
+  visible 'thinking' step, so keep it short and in first person.
