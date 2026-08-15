@@ -161,6 +161,56 @@ describe('AppState.handleEvent', () => {
 		expect(state.turns[1].timeline![0]).toMatchObject({ kind: 'tool', done: true, result: 'found stuff' });
 	});
 
+	// Mirrors the exact wire sequence gateway/turn.go now emits for an
+	// image attachment (see gateway/attachments.go's resolveAttachment):
+	// user_message, then a synthetic describe_image tool_call/tool_result
+	// pair BEFORE the main answer's first token — the fix for the "blank
+	// screen for several seconds while the vision model looks at the
+	// photo" gap. Confirms the client builds the same live-then-completed
+	// timeline entry for it as a real tool call, using the generic
+	// tool/args/result handling already in place — no special-casing
+	// needed client-side beyond ToolEvent.svelte's label/icon.
+	it('a synthetic describe_image tool_call/tool_result pair (image attachment processing) completes the matching timeline entry before the answer streams', () => {
+		state.send("what's in this photo?");
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+
+		fireEvent(state, {
+			type: 'tool_call',
+			thread_id: 't1',
+			tool: 'describe_image',
+			args: { filename: 'bike.jpg' }
+		});
+		expect(state.turns[1].timeline).toHaveLength(1);
+		expect(state.turns[1].timeline![0]).toMatchObject({
+			kind: 'tool',
+			tool: 'describe_image',
+			args: { filename: 'bike.jpg' },
+			done: false
+		});
+
+		// While it's "running" (done: false), nothing else has streamed yet —
+		// this is the moment that used to be a silent blank wait.
+		expect(state.turns[1].content).toBe('');
+
+		fireEvent(state, {
+			type: 'tool_result',
+			thread_id: 't1',
+			tool: 'describe_image',
+			result: 'A red bicycle leaning against a brick wall.'
+		});
+		expect(state.turns[1].timeline![0]).toMatchObject({
+			kind: 'tool',
+			tool: 'describe_image',
+			done: true,
+			result: 'A red bicycle leaning against a brick wall.'
+		});
+
+		// The main answer streams in afterward, as its own separate timeline
+		// content — the synthetic tool entry doesn't interfere with it.
+		fireEvent(state, { type: 'token', thread_id: 't1', content: 'It looks like a red bicycle.' });
+		expect(state.turns[1].content).toBe('It looks like a red bicycle.');
+	});
+
 	it('events for a different thread than the one in flight are ignored', () => {
 		state.send('hello');
 		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });

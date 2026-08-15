@@ -175,6 +175,17 @@ func TestCrossProcessUpdatedAtOrdering(t *testing.T) {
 	if _, err := procB.AddMessage("older", "user", "hi from new proc", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("procB.AddMessage: %v", err)
 	}
+	// updated_at is stamped via strftime('%Y-%m-%d %H:%M:%f', 'now') —
+	// millisecond resolution, same as the 1100ms sleep above exists to
+	// clear. Two back-to-back writes with nothing between them can land in
+	// the same millisecond often enough to flake this test (~15% of runs,
+	// confirmed by instrumenting UpdatedAt directly): a tied updated_at
+	// makes "which one sorts first" genuinely undefined — ORDER BY ...
+	// DESC has no secondary key here, so ties fall back to whatever
+	// arbitrary order the query plan happens to produce, not insertion or
+	// write order. This sleep is what actually makes procA's write "LAST"
+	// in the sense this test needs: distinguishably, not just chronologically.
+	time.Sleep(20 * time.Millisecond)
 	if _, err := procA.AddMessage("current", "assistant", "finishing up from old proc", "[]", "[]", 0, ""); err != nil {
 		t.Fatalf("procA.AddMessage: %v", err)
 	}

@@ -185,26 +185,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
-	// turnMessage is what the agent actually sees — msg.Content plus the
-	// attachment's extracted text, if any (see resolveAttachment). The
-	// persisted user message above stays as exactly what the user typed;
-	// only the in-flight prompt to the model is augmented, so reopening
-	// this thread later shows the original question, not a wall of
-	// extracted PDF text glued onto it.
-	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg)
-	if err != nil {
-		log.Warn("resolving attachment failed, continuing without it", "err", err)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
-		turnMessage = msg.Content
-		attachmentCostUSD = 0
-	}
-	// The file's only ever read once, right above — nothing re-reads it
-	// later (see removeAttachmentFile's doc comment), so it can be removed
-	// immediately regardless of whether extraction succeeded.
-	if msg.AttachmentID != "" {
-		removeAttachmentFile(cfg, msg.AttachmentID)
-	}
-
 	s.db.LogEvent(storageThreadID, "info", "turn", "turn started", map[string]interface{}{
 		"model":         modelCfg.ID,
 		"is_new_thread": isNewThread,
@@ -278,6 +258,31 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 		send(evt)
 		s.logTurnEvent(storageThreadID, turnID, eventType, evt)
+	}
+
+	// turnMessage is what the agent actually sees — msg.Content plus the
+	// attachment's extracted text, if any (see resolveAttachment). The
+	// persisted user message above stays as exactly what the user typed;
+	// only the in-flight prompt to the model is augmented, so reopening
+	// this thread later shows the original question, not a wall of
+	// extracted PDF text glued onto it. Called only now, after emit is
+	// defined above — an image attachment's vision-model call streams its
+	// own synthetic tool_call/tool_result pair through emit (see
+	// resolveAttachment's doc comment), so the frontend has something to
+	// show during those few seconds instead of a blank wait before
+	// agent.Run even starts.
+	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg, emit)
+	if err != nil {
+		log.Warn("resolving attachment failed, continuing without it", "err", err)
+		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
+		turnMessage = msg.Content
+		attachmentCostUSD = 0
+	}
+	// The file's only ever read once, right above — nothing re-reads it
+	// later (see removeAttachmentFile's doc comment), so it can be removed
+	// immediately regardless of whether extraction succeeded.
+	if msg.AttachmentID != "" {
+		removeAttachmentFile(cfg, msg.AttachmentID)
 	}
 
 	// The browser's last-known cached fix (see protocol.go's UserLocation
