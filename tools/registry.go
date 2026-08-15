@@ -307,12 +307,13 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 }
 
 // toolDefsByName maps each catalogOrder name to its Go-literal ToolDef —
-// the lookup Defs()/AllDefs() iterate over. Built fresh on every call
-// (cheap: 12 map entries) rather than captured in a package-level var,
-// since each tool's init() patches its ToolDef.Function.Description from
-// the catalog (see e.g. think.go's init) — package-level vars all
-// initialize before any init() runs, so a var here would snapshot the
-// pre-patch (empty) Description instead of the catalog-sourced one.
+// the lookup Defs()/AllDefs() iterate over. Function.Description on each
+// entry is a placeholder (see e.g. thinkDef) — callers overlay the
+// catalog's current APIDescription on top of the copy they get back
+// (llm.ToolDef is a plain struct, so byName[name] is already a copy,
+// safe to mutate) rather than baking it in here, so an edit to a tool's
+// api_description in tools/descriptions/*.yaml is reflected on the very
+// next call instead of only at the process's original init() time.
 func toolDefsByName() map[string]llm.ToolDef {
 	return map[string]llm.ToolDef{
 		"think": thinkDef, "web_search": webSearchDef, "web_read": webReadDef,
@@ -333,10 +334,13 @@ func Defs(ctx *Context) []llm.ToolDef {
 	byName := toolDefsByName()
 	defs := make([]llm.ToolDef, 0, len(catalogOrder))
 	for _, name := range catalogOrder {
-		if !catalog[name].offered(ctx) {
+		entry := catalog[name]
+		if !entry.offered(ctx) {
 			continue
 		}
-		defs = append(defs, byName[name])
+		def := byName[name]
+		def.Function.Description = entry.APIDescription
+		defs = append(defs, def)
 	}
 	return defs
 }
@@ -345,10 +349,13 @@ func Defs(ctx *Context) []llm.ToolDef {
 // paramSchemaType, which has no per-request Context (it's a static-analysis
 // path over pseudo-tool-call syntax, not a real per-turn tool offer).
 func AllDefs() []llm.ToolDef {
+	catalog := loadCatalog()
 	byName := toolDefsByName()
 	defs := make([]llm.ToolDef, 0, len(catalogOrder))
 	for _, name := range catalogOrder {
-		defs = append(defs, byName[name])
+		def := byName[name]
+		def.Function.Description = catalog[name].APIDescription
+		defs = append(defs, def)
 	}
 	return defs
 }

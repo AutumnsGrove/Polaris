@@ -10,7 +10,8 @@ var thinkDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "think",
-		// Description is set in init() from tools/descriptions/think.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/think.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -24,10 +25,7 @@ var thinkDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("think", handleThink)
-	thinkDef.Function.Description = catalogDescription("think")
-}
+func init() { Register("think", handleThink) }
 
 func handleThink(argsJSON string, ctx *Context) string {
 	var args struct {

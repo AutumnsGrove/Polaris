@@ -27,7 +27,8 @@ var youtubeTranscriptDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "youtube_transcript",
-		// Description is set in init() from tools/descriptions/youtube_transcript.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/youtube_transcript.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -41,10 +42,7 @@ var youtubeTranscriptDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("youtube_transcript", handleYouTubeTranscript)
-	youtubeTranscriptDef.Function.Description = catalogDescription("youtube_transcript")
-}
+func init() { Register("youtube_transcript", handleYouTubeTranscript) }
 
 func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
 	var args struct {

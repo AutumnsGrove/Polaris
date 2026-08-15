@@ -39,7 +39,8 @@ var webReadDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "web_read",
-		// Description is set in init() from tools/descriptions/web_read.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/web_read.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -67,10 +68,7 @@ var webReadDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("web_read", handleWebRead)
-	webReadDef.Function.Description = catalogDescription("web_read")
-}
+func init() { Register("web_read", handleWebRead) }
 
 func handleWebRead(argsJSON string, ctx *Context) string {
 	var args struct {

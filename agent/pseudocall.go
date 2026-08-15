@@ -40,7 +40,7 @@ type pseudoCall struct {
 }
 
 // paramSchemaType looks up the JSON Schema "type" toolName's real tool
-// definition (see tools.allDefs) declares for one of its arguments — "",
+// definition (see tools.AllDefs) declares for one of its arguments — "",
 // false if the tool or argument isn't found. This path has no per-request
 // Context (it's static analysis over pseudo-tool-call syntax, not a real
 // per-turn tool offer), so it always sees every tool regardless of

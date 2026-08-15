@@ -60,7 +60,8 @@ var musicDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "music",
-		// Description is set in init() from tools/descriptions/music.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/music.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -88,10 +89,7 @@ var musicDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("music", handleMusic)
-	musicDef.Function.Description = catalogDescription("music")
-}
+func init() { Register("music", handleMusic) }
 
 // lastfmBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as openMeteoBaseURL/wikipediaAPIBaseURL.

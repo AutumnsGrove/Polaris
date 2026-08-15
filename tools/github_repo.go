@@ -27,7 +27,8 @@ var githubRepoDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "github_repo",
-		// Description is set in init() from tools/descriptions/github_repo.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/github_repo.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -47,10 +48,7 @@ var githubRepoDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("github_repo", handleGitHubRepo)
-	githubRepoDef.Function.Description = catalogDescription("github_repo")
-}
+func init() { Register("github_repo", handleGitHubRepo) }
 
 // githubAPIBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as places.nominatimBaseURL and web_read.go's

@@ -17,7 +17,8 @@ var nearbySearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "nearby_search",
-		// Description is set in init() from tools/descriptions/nearby_search.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/nearby_search.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -44,10 +45,7 @@ var nearbySearchDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("nearby_search", handleNearbySearch)
-	nearbySearchDef.Function.Description = catalogDescription("nearby_search")
-}
+func init() { Register("nearby_search", handleNearbySearch) }
 
 func handleNearbySearch(argsJSON string, ctx *Context) string {
 	var args struct {

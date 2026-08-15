@@ -24,7 +24,8 @@ var referenceLookupDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "reference_lookup",
-		// Description is set in init() from tools/descriptions/reference_lookup.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/reference_lookup.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -47,10 +48,7 @@ var referenceLookupDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("reference_lookup", handleReferenceLookup)
-	referenceLookupDef.Function.Description = catalogDescription("reference_lookup")
-}
+func init() { Register("reference_lookup", handleReferenceLookup) }
 
 func handleReferenceLookup(argsJSON string, ctx *Context) string {
 	var args struct {

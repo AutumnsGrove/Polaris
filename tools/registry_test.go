@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -109,6 +110,45 @@ func TestDefs_OrderIsStable(t *testing.T) {
 			if d.Function.Name != want[j] {
 				t.Errorf("call %d: position %d = %q, want %q", i, j, d.Function.Name, want[j])
 			}
+		}
+	}
+}
+
+// TestDefs_AndAllDefs_DescriptionMatchesLiveCatalog guards against the
+// hot-reload regression this PR originally shipped with: Description was
+// baked into each ToolDef once at init() time and never re-derived, so an
+// operator's live edit to tools/descriptions/*.yaml's api_description
+// never reached the model until a restart. Defs()/AllDefs() must overlay
+// the catalog's CURRENT APIDescription on every call — chdirs to the repo
+// root (see TestCatalog_AllTwelveFilesLoadAndNamesMatch) so this checks
+// against the real shipped YAML files, not catalogDefaults' fallback text.
+func TestDefs_AndAllDefs_DescriptionMatchesLiveCatalog(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	catalog := loadCatalog()
+
+	ctx := newTestContext()
+	ctx.LastFMAPIKey = "x"
+	ctx.TMDBAPIKey = "x"
+	for _, d := range Defs(ctx) {
+		want := catalog[d.Function.Name].APIDescription
+		if d.Function.Description != want {
+			t.Errorf("Defs(): %q Description = %q, want catalog's current APIDescription %q",
+				d.Function.Name, d.Function.Description, want)
+		}
+	}
+	for _, d := range AllDefs() {
+		want := catalog[d.Function.Name].APIDescription
+		if d.Function.Description != want {
+			t.Errorf("AllDefs(): %q Description = %q, want catalog's current APIDescription %q",
+				d.Function.Name, d.Function.Description, want)
 		}
 	}
 }

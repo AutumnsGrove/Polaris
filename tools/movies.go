@@ -45,7 +45,8 @@ var moviesDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "movies",
-		// Description is set in init() from tools/descriptions/movies.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/movies.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -69,10 +70,7 @@ var moviesDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("movies", handleMovies)
-	moviesDef.Function.Description = catalogDescription("movies")
-}
+func init() { Register("movies", handleMovies) }
 
 // tmdbBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as lastfmBaseURL/hardcoverBaseURL.

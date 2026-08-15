@@ -61,7 +61,8 @@ var booksDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "books",
-		// Description is set in init() from tools/descriptions/books.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/books.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -79,10 +80,7 @@ var booksDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("books", handleBooks)
-	booksDef.Function.Description = catalogDescription("books")
-}
+func init() { Register("books", handleBooks) }
 
 // hardcoverBaseURL/openLibraryBaseURL are vars (not consts) so tests can
 // point them at a fake server, same pattern as music.go's lastfmBaseURL.

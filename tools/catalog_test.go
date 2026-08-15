@@ -88,3 +88,31 @@ func TestCatalog_AllTwelveFilesLoadAndNamesMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogEntry_Offered(t *testing.T) {
+	withKeys := newTestContext()
+	withKeys.LastFMAPIKey = "x"
+	withKeys.TMDBAPIKey = "x"
+	withoutKeys := newTestContext()
+
+	cases := []struct {
+		name  string
+		entry catalogEntry
+		ctx   *Context
+		want  bool
+	}{
+		{"unset requires is always offered", catalogEntry{Requires: ""}, withoutKeys, true},
+		{"lastfm_api_key offered when configured", catalogEntry{Requires: "lastfm_api_key"}, withKeys, true},
+		{"lastfm_api_key excluded when missing", catalogEntry{Requires: "lastfm_api_key"}, withoutKeys, false},
+		{"tmdb_api_key offered when configured", catalogEntry{Requires: "tmdb_api_key"}, withKeys, true},
+		{"tmdb_api_key excluded when missing", catalogEntry{Requires: "tmdb_api_key"}, withoutKeys, false},
+		{"unrecognized requires fails closed", catalogEntry{Name: "typo_tool", Requires: "last_fm_api_key"}, withKeys, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.entry.offered(c.ctx); got != c.want {
+				t.Errorf("offered() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

@@ -12,7 +12,7 @@ import (
 
 // catalogOrder is the fixed, deterministic tool order used everywhere a
 // tool list is rendered or offered to the model — Defs(), ToolsPrompt(),
-// and allDefs() all iterate in this exact order, so the wire-format tool
+// and AllDefs() all iterate in this exact order, so the wire-format tool
 // list and the {tools} prompt substitution stay byte-identical across
 // requests/restarts (see config.go's OpenRouter provider-pinning comment
 // for why: prompt-prefix caching depends on this).
@@ -38,15 +38,23 @@ type catalogEntry struct {
 // offered reports whether ctx has whatever key entry.Requires needs — the
 // same gating both Defs() and ToolsPrompt() apply, so a tool excluded from
 // the wire-format tool list is never mentioned in the system prompt's tool
-// list either.
+// list either. An unrecognized Requires value (a typo, or a new tool's
+// YAML file shipped before a matching case is added here) fails closed —
+// excluded and logged — rather than silently defaulting to "always
+// offered", since the whole point of Requires is to keep an unusable tool
+// off the model's menu.
 func (e catalogEntry) offered(ctx *Context) bool {
 	switch e.Requires {
+	case "":
+		return true
 	case "lastfm_api_key":
 		return ctx.LastFMAPIKey != ""
 	case "tmdb_api_key":
 		return ctx.TMDBAPIKey != ""
 	default:
-		return true
+		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
+			"tool", e.Name, "requires", e.Requires)
+		return false
 	}
 }
 
@@ -144,14 +152,6 @@ func loadCatalog() map[string]catalogEntry {
 	}
 
 	return catalogCache
-}
-
-// catalogDescription returns name's api_description from the catalog,
-// used to populate each tools/*.go ToolDef.Function.Description at
-// init() time — see this file's package-level doc for why that isn't
-// just a literal anymore.
-func catalogDescription(name string) string {
-	return loadCatalog()[name].APIDescription
 }
 
 // ToolsPrompt renders the {tools} placeholder's replacement text: one

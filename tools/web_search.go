@@ -12,7 +12,8 @@ var webSearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "web_search",
-		// Description is set in init() from tools/descriptions/web_search.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/web_search.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -38,10 +39,7 @@ var webSearchDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("web_search", handleWebSearch)
-	webSearchDef.Function.Description = catalogDescription("web_search")
-}
+func init() { Register("web_search", handleWebSearch) }
 
 func handleWebSearch(argsJSON string, ctx *Context) string {
 	var args struct {

@@ -30,7 +30,8 @@ var dictionaryDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "dictionary",
-		// Description is set in init() from tools/descriptions/dictionary.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/dictionary.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -44,10 +45,7 @@ var dictionaryDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("dictionary", handleDictionary)
-	dictionaryDef.Function.Description = catalogDescription("dictionary")
-}
+func init() { Register("dictionary", handleDictionary) }
 
 // dictionaryAPIDevBaseURL/freeDictionaryAPIBaseURL are vars (not consts)
 // so tests can point them at a fake server, same pattern as

@@ -23,7 +23,8 @@ var weatherDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "weather",
-		// Description is set in init() from tools/descriptions/weather.yaml.
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/weather.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -48,10 +49,7 @@ var weatherDef = llm.ToolDef{
 	},
 }
 
-func init() {
-	Register("weather", handleWeather)
-	weatherDef.Function.Description = catalogDescription("weather")
-}
+func init() { Register("weather", handleWeather) }
 
 // openMeteoBaseURL is a var (not a const) so tests can point it at a fake
 // server, same pattern as places.nominatimBaseURL and web_read.go's
