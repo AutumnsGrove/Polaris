@@ -284,6 +284,25 @@ export class SettingsState {
 			// baseline to compare against.
 		}
 
+		// A plain restart (updateKind === 'restart') never changes the
+		// reported version at all — same binary/image, just a fresh
+		// process, by definition (see gateway/docker_update.go's
+		// handleDockerRestart / handleRestart's "no build, just
+		// restart" doc comments) — so requiring newVersion !== baseline
+		// below would spin for the full 2 minutes and report failure
+		// even on a genuinely successful restart. baseline is almost
+		// always captured successfully just above (the old process is
+		// still briefly answering when this function starts), so
+		// !baseline essentially never saves this case either. Tracking
+		// whether the server was ever actually observed unreachable
+		// during this poll is real evidence a restart happened; for a
+		// restart, "back up AND we saw it go down first" replaces "the
+		// version changed" as the success condition. Covers both
+		// failure shapes a down backend can produce: fetch() throwing
+		// (connection refused) and a reverse proxy like Tailscale Serve
+		// returning a non-2xx instead of refusing the connection.
+		let sawDowntime = false;
+
 		const deadline = Date.now() + 120_000;
 		while (Date.now() < deadline) {
 			await new Promise((r) => setTimeout(r, 1500));
@@ -311,7 +330,9 @@ export class SettingsState {
 				const res = await fetch('/api/version', { cache: 'no-store' });
 				if (res.ok) {
 					const newVersion = (await res.json()).version ?? '';
-					if (!baseline || (newVersion && newVersion !== baseline)) {
+					const versionChanged = !baseline || (newVersion && newVersion !== baseline);
+					const restartConfirmed = this.updateKind === 'restart' && sawDowntime;
+					if (versionChanged || restartConfirmed) {
 						if (isBusy()) {
 							// The new binary is up, but this client still has a
 							// turn in flight — reloading now would cut it off
@@ -323,12 +344,16 @@ export class SettingsState {
 						window.location.reload();
 						return;
 					}
-					// Still answering, but with the same version as before —
-					// the real restart hasn't landed yet. Keep polling
-					// instead of treating this as "the new binary is up".
+					// Still answering with the same version, and (for a
+					// restart) haven't yet seen it go down — the real
+					// restart hasn't landed yet. Keep polling instead of
+					// treating this as "the new binary is up".
+				} else {
+					sawDowntime = true;
 				}
 			} catch {
 				// still down — keep polling
+				sawDowntime = true;
 			}
 		}
 		this.updateState = 'error';
