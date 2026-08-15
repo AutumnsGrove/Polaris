@@ -101,7 +101,8 @@ app" is one file you can scp around if you ever needed to.
 
 ## Requirements
 
-- Go 1.24+
+- Go 1.26+ (only for the bare-metal install path — the Docker install path builds its own
+  toolchain and needs no local Go at all)
 - A running [SearXNG](https://github.com/searxng/searxng) instance with JSON output enabled
   (disabled by default upstream — see below)
 - An [OpenRouter](https://openrouter.ai) API key

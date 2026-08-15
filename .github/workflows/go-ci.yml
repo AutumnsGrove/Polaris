@@ -1,0 +1,40 @@
+name: Go build, vet, and test
+
+# Same rationale as frontend-build-sync.yml's backstop role, just for
+# the Go side: 224 Go files and 99 test files (per an earlier repo
+# audit) with real concurrency (turn.go, gateway's shutdown/restart
+# coordination) is exactly the kind of surface where a broken PR should
+# fail loudly here, not get discovered later on the potato.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+
+jobs:
+  build-vet-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
