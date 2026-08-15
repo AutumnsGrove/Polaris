@@ -1,0 +1,23 @@
+use_default_settings: true
+
+general:
+  instance_name: "Polaris SearXNG"
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  # "ultrasecretkey" is intentionally left as-is: the official SearXNG
+  # image's entrypoint replaces this exact placeholder string with the
+  # SEARXNG_SECRET environment variable (set in docker-compose.yml, read
+  # from .env) at container start — see install.sh, which generates a
+  # random one on first install. Never hand-edit this to a real value;
+  # a value here would just get silently overwritten on every restart.
+  secret_key: "ultrasecretkey"
+  # Not internet-facing (only reachable from the polaris container over
+  # the compose-internal network — see docker-compose.yml), so the
+  # rate limiter's bot-defense is protecting against a threat model that
+  # doesn't apply here. Matches dev/searxng/settings.yml.
+  limiter: false

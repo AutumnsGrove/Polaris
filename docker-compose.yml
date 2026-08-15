@@ -1,0 +1,58 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./compose/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+    # No ports: exposed — only polaris talks to this, over the compose
+    # network's built-in DNS (http://searxng:8080, see
+    # compose/polaris/config.yaml.example). Nothing else needs to reach it.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  polaris:
+    build: .
+    image: ghcr.io/autumnsgrove/polaris:latest
+    restart: unless-stopped
+    depends_on:
+      searxng:
+        condition: service_healthy
+    # config.yaml's ${VAR} placeholders are expanded inside the polaris
+    # process itself (config.Load -> os.ExpandEnv), so these have to
+    # reach the *container's* environment, not just the host shell that
+    # ran `docker compose up` — Compose doesn't forward arbitrary host
+    # env vars in without being told to. Values come from .env (copy
+    # .env.example); a name with no value here means "pull it from
+    # .env/the host env", same convention .env.example documents.
+    environment:
+      - OPENROUTER_API_KEY
+      - FOURSQUARE_API_KEY
+      - TAVILY_API_KEY
+      - GITHUB_TOKEN
+      - LASTFM_API_KEY
+      - HARDCOVER_API_KEY
+      - TMDB_API_KEY
+    ports:
+      # Override with POLARIS_PORT in .env if 8899 is already taken on
+      # the host (e.g. a bare-metal Polaris still running alongside this).
+      - "127.0.0.1:${POLARIS_PORT:-8899}:8899"
+    volumes:
+      # State: database, logs, attachments — everything config.yaml
+      # points at under /data (see compose/polaris/config.yaml.example).
+      - polaris-data:/data
+      # Hand-editable files, bind-mounted so host edits take effect
+      # without a rebuild — see the Dockerfile's comment on why these
+      # three are copied into the image AND mounted here.
+      - ./compose/polaris/config.yaml:/data/config.yaml:ro
+      - ./prompt.md:/app/prompt.md:ro
+      - ./prompts.yaml:/app/prompts.yaml:ro
+      - ./blocked_sources.txt:/app/blocked_sources.txt:ro
+
+volumes:
+  polaris-data:

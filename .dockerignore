@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.githooks
+
+config.yaml
+*.db
+*.db-shm
+*.db-wal
+logs/
+attachments/
+polaris
+
+web/node_modules/
+web/.svelte-kit/
+dev/searxng/data/

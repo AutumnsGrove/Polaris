@@ -1,0 +1,72 @@
+# Docker Compose variant of ../../config.yaml.example — same fields,
+# see that file's comments for what each one does. The only real
+# differences are:
+#   - server.host is 0.0.0.0, not 127.0.0.1: this now binds inside its
+#     own container's network namespace, not the host directly, so there's
+#     no Tailscale-collision concern (see the bare-metal example's comment
+#     on that).
+#   - database/logging/attachments paths point at /data, the volume
+#     mounted into the polaris container (see docker-compose.yml) — the
+#     working directory inside the container isn't where you'd expect
+#     persistent state to land otherwise.
+#   - searxng.base_url points at the searxng service by its Compose
+#     service name, not localhost:18888 — Compose's built-in DNS resolves
+#     "searxng" to the right container on the internal network.
+#
+# Copy this to compose/polaris/config.yaml before `docker compose up` —
+# gitignored the same way the bare-metal config.yaml is.
+
+server:
+  host: "0.0.0.0"
+  port: 8899
+
+openrouter:
+  api_key: "${OPENROUTER_API_KEY}"
+  base_url: "https://openrouter.ai/api/v1"
+
+searxng:
+  base_url: "http://searxng:8080"
+
+foursquare:
+  api_key: "${FOURSQUARE_API_KEY}"
+
+tavily:
+  api_key: "${TAVILY_API_KEY}"
+
+github:
+  token: "${GITHUB_TOKEN}"
+
+lastfm:
+  api_key: "${LASTFM_API_KEY}"
+
+hardcover:
+  api_key: "${HARDCOVER_API_KEY}"
+
+tmdb:
+  api_key: "${TMDB_API_KEY}"
+
+default_location: ""
+
+voice:
+  stt_model: "mistralai/voxtral-mini-transcribe"
+  stt_fallback_model: "openai/whisper-large-v3"
+  tts_model: "hexgrad/kokoro-82m"
+  tts_voice: "bf_lily"
+  tts_format: "mp3"
+  tts_provider: "Together"
+
+database:
+  path: "/data/polaris.db"
+
+logging:
+  dir: "/data/logs"
+
+attachments:
+  dir: "/data/attachments"
+
+service:
+  label: "polaris"
+
+context_window_tokens: 100000
+max_agent_turns: 50
+default_model: "deepseek"
