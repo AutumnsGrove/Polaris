@@ -253,16 +253,26 @@ paths, `http://searxng:8080` instead of `localhost:18888`). The API keys in
 
 ### Self-update, under Docker
 
-"Update Polaris" (settings panel or `polaris update`) works differently here than on bare-metal:
-there's no git pull or rebuild inside the container (there's no `.git` in the image at all).
-Instead, Polaris resolves the latest published image's digest from GHCR and hands off to a
-host-side watcher — a systemd path unit + oneshot service (`compose/watcher/`), installed and
-enabled automatically by `install.sh`'s Docker mode on Linux — which does the actual
-`docker compose pull && up -d` outside any container. This is deliberate: the container that
-fetches arbitrary URLs and runs model-directed tool calls never gets any control over Docker
-itself. Not wired up on macOS (no systemd, and it isn't the target production deployment for this
-project anyway — see "Why not just use \[existing tool\]?" above); a Docker install there still
-runs fine, the update button just won't have anything to trigger.
+"Update Polaris" and "Restart Polaris" (settings panel, or `polaris update`/`polaris restart` over
+SSH — both auto-detect a Docker install from `docker-compose.yml` being present, no flag needed)
+work differently here than on bare-metal: there's no git pull or rebuild inside the container
+(there's no `.git` in the image at all). Instead, Polaris resolves the latest published image's
+digest from GHCR — waiting out an in-progress CI build first if a push just landed, so a click
+right after `git push` can't silently pull the *previous* build — and hands off to a host-side
+watcher — a systemd path unit + oneshot service (`compose/watcher/`), installed and enabled
+automatically by `install.sh`'s Docker mode on Linux — which does the actual
+`docker compose pull && up --force-recreate` outside any container. This is deliberate: the
+container that fetches arbitrary URLs and runs model-directed tool calls never gets any control
+over Docker itself. A restart pins the target to whatever's already running instead of resolving a
+fresh digest, so it never touches GHCR at all. Not wired up on macOS (no systemd, and it isn't the
+target production deployment for this project anyway — see "Why not just use \[existing tool\]?"
+above); a Docker install there still runs fine, the update button just won't have anything to
+trigger.
+
+The CLI commands are a thin client to the exact same `/api/update`/`/api/restart` the settings
+panel hits — they can't drift apart in behavior, and `polaris update`/`polaris restart` genuinely
+work identically whether you're SSH'd into a bare-metal or a Docker install; no need to remember
+which one this host is.
 
 Images are published to `ghcr.io/autumnsgrove/polaris` (multi-arch: `amd64` + `arm64`) on every
 push to `main` via `.github/workflows/docker-publish.yml`.
@@ -292,15 +302,20 @@ http://localhost:8899`) gives it a real, tailnet-only HTTPS URL with zero cert m
 
 ## Self-update
 
-No scp'd binaries, no manual redeploy steps. Bare-metal:
+No scp'd binaries, no manual redeploy steps — and `polaris update`/`polaris restart` work
+correctly over SSH on **either** install method, auto-detected, so there's nothing to remember
+about which one a given host is running:
 
 ```bash
-polaris update    # git pull, rebuild, restart — from the CLI over SSH
+polaris update    # bare-metal: git pull, rebuild, restart. Docker: resolve+pull+recreate.
+polaris restart    # clean restart, no pull/rebuild/GHCR check either way
 ```
 
-or click **Update Polaris** in the settings panel to do the same thing from the browser. Under
-Docker, the same CLI command and settings-panel button trigger a different mechanism — see
-[Self-update, under Docker](#self-update-under-docker) above.
+or click **Update Polaris** / **Restart Polaris** in the settings panel to do the same thing from
+the browser — the CLI is a thin client to the exact same endpoints those buttons hit, so the two
+can never drift apart in behavior. Docker's version works meaningfully differently under the hood
+(no git pull, resolves a GHCR image digest instead) — see
+[Self-update, under Docker](#self-update-under-docker) above for the full mechanism.
 
 ## CLI usage
 
@@ -309,6 +324,14 @@ polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
 polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
 ```
+
+`update`/`restart` are Docker-aware (see [Self-update](#self-update)); `search`/`stats`/`install`
+aren't yet — they read `./config.yaml` directly and (for `install`) manage a systemd/launchd unit,
+both bare-metal-only assumptions. Under a Docker install, run these the same way `update`/`restart`
+do internally instead: `curl -X POST http://127.0.0.1:8899/api/ask -d '{"content":"..."}'` for a
+one-off query, or open the settings panel's usage stats (small info-icon button) for the same
+numbers `stats` prints. `install` has no Docker equivalent to begin with — `docker compose up -d`
+(or `install.sh POLARIS_INSTALL_MODE=docker`, see [Docker install](#docker-install)) is that step.
 
 ## Deployment
 
