@@ -64,7 +64,7 @@ with citations.
   article's photo) whenever one's genuinely available, instead of just a bare text chip. arXiv
   citations get a recognizable source badge instead — a real per-paper image doesn't exist to show
 - **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
-  that pulls, rebuilds, and restarts the service — no SSH required
+  that updates and restarts the service — no SSH required (see [Self-update](#self-update))
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's homescreen
   as a standalone app (no browser chrome), since [mobile is the primary surface](PRODUCT.md)
@@ -90,6 +90,10 @@ Go backend
 One binary, no Node.js at runtime. The SvelteKit frontend is built ahead of time and its static
 output is committed to the repo and embedded directly into the Go binary, so the machine running
 this only ever needs the Go toolchain — nothing else to install, nothing else to keep running.
+
+Two ways to run it: bare-metal (the binary directly, described above) or Docker Compose, which
+bundles a SearXNG instance alongside it — see [Docker install](#docker-install). Both are full
+deployments, not a dev-only convenience; either one is a real install choice.
 
 ## Why not just use \[existing tool\]?
 
@@ -142,8 +146,8 @@ search:
 
 ## Quick start
 
-One-liner (macOS/Linux): clones the repo, builds the binary, brings up a local SearXNG via
-Docker (installing Docker itself if it's missing), and opens `config.yaml` for you to drop in
+Bare-metal one-liner (macOS/Linux): clones the repo, builds the binary, brings up a local SearXNG
+via Docker (installing Docker itself if it's missing), and opens `config.yaml` for you to drop in
 an OpenRouter key. Doesn't start the server — that's still on you, once the key's in.
 
 ```bash
@@ -155,6 +159,21 @@ Once `config.yaml` has a real OpenRouter key in it, start the server:
 ```bash
 cd ~/Polaris   # or wherever POLARIS_INSTALL_DIR pointed, if you set it
 ./polaris run
+```
+
+Open `http://localhost:8899`.
+
+Docker one-liner instead — same script, no local Go toolchain needed, and it sets up the update
+watcher for you (Linux only; see [Docker install](#docker-install)):
+
+```bash
+POLARIS_INSTALL_MODE=docker curl -fsSL https://raw.githubusercontent.com/AutumnsGrove/Polaris/main/install.sh | bash
+```
+
+Once `.env` has a real OpenRouter key in it:
+
+```bash
+cd ~/Polaris && docker compose up -d
 ```
 
 Open `http://localhost:8899`.
@@ -201,6 +220,53 @@ pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go ba
 pnpm run build        # manual rebuild, if you ever need one outside of committing
 ```
 
+## Docker install
+
+`docker-compose.yml` bundles Polaris with its own SearXNG instance (JSON output already enabled —
+none of the manual `settings.yml` edit above is needed under Docker) on an internal-only network;
+only Polaris's port is published to the host.
+
+```bash
+git clone https://github.com/AutumnsGrove/Polaris.git
+cd Polaris
+
+cp .env.example .env
+# generate SEARXNG_SECRET: openssl rand -hex 32
+# edit .env: OpenRouter API key, any optional tool keys you want
+
+cp compose/polaris/config.yaml.example compose/polaris/config.yaml
+# nothing in here needs editing to get started — see Configuration below
+
+docker compose up -d
+```
+
+Open `http://localhost:8899`. (`POLARIS_INSTALL_MODE=docker curl -fsSL .../install.sh | bash` —
+see Quick start — does all of the above for you, plus the update watcher below.)
+
+Config is split across two files, not one — `.env` is what Docker Compose itself reads to
+interpolate secrets into the containers before they even start (its own standard mechanism, not
+something specific to this project); `compose/polaris/config.yaml` is the actual app config, same
+format and purpose as bare-metal's `config.yaml`, just with Docker-appropriate values (`/data/...`
+paths, `http://searxng:8080` instead of `localhost:18888`). The API keys in
+`compose/polaris/config.yaml` are `${VAR}`-style placeholders — the real values only ever live in
+`.env`.
+
+### Self-update, under Docker
+
+"Update Polaris" (settings panel or `polaris update`) works differently here than on bare-metal:
+there's no git pull or rebuild inside the container (there's no `.git` in the image at all).
+Instead, Polaris resolves the latest published image's digest from GHCR and hands off to a
+host-side watcher — a systemd path unit + oneshot service (`compose/watcher/`), installed and
+enabled automatically by `install.sh`'s Docker mode on Linux — which does the actual
+`docker compose pull && up -d` outside any container. This is deliberate: the container that
+fetches arbitrary URLs and runs model-directed tool calls never gets any control over Docker
+itself. Not wired up on macOS (no systemd, and it isn't the target production deployment for this
+project anyway — see "Why not just use \[existing tool\]?" above); a Docker install there still
+runs fine, the update button just won't have anything to trigger.
+
+Images are published to `ghcr.io/autumnsgrove/polaris` (multi-arch: `amd64` + `arm64`) on every
+push to `main` via `.github/workflows/docker-publish.yml`.
+
 ## Configuration
 
 Everything behavior-affecting lives in `config.yaml` (gitignored — copy `config.yaml.example`)
@@ -208,7 +274,9 @@ or the in-app settings panel:
 
 - **config.yaml** — API keys (OpenRouter, Foursquare, Tavily), the model catalog (each entry pins
   a specific OpenRouter provider for consistent prompt-cache pricing), SearXNG's URL, logging,
-  voice model choices. Meant to be hand-edited; changes require a restart.
+  voice model choices. Meant to be hand-edited; changes require a restart. (Docker install: this
+  is split across `.env` and `compose/polaris/config.yaml` instead — see
+  [Docker install](#docker-install).)
 - **Settings panel** (gear icon in the sidebar) — theme, default model, price visibility, a manual
   location fallback for `nearby_search`, the update button, and (behind the small info-icon button)
   a usage/tuning stats page — cost, tool-call counts/error rates, research-loop steering signals.
@@ -224,13 +292,15 @@ http://localhost:8899`) gives it a real, tailnet-only HTTPS URL with zero cert m
 
 ## Self-update
 
-No scp'd binaries, no manual redeploy steps:
+No scp'd binaries, no manual redeploy steps. Bare-metal:
 
 ```bash
 polaris update    # git pull, rebuild, restart — from the CLI over SSH
 ```
 
-or click **Update Polaris** in the settings panel to do the same thing from the browser.
+or click **Update Polaris** in the settings panel to do the same thing from the browser. Under
+Docker, the same CLI command and settings-panel button trigger a different mechanism — see
+[Self-update, under Docker](#self-update-under-docker) above.
 
 ## CLI usage
 
@@ -242,10 +312,13 @@ polaris stats --days 30    # cost, tool-call counts/error rates, research-loop t
 
 ## Deployment
 
-Runs as a systemd service (Linux) or launchd agent (macOS) via the bundled `procmgr` package —
-`Restart=always`, logs rotate daily with 90-day retention. Designed to run on genuinely
-resource-constrained hardware (this was built to run on a Le Potato SBC); see
-`config.yaml.example` for the full set of tunables.
+Bare-metal: runs as a systemd service (Linux) or launchd agent (macOS) via the bundled `procmgr`
+package — `Restart=always`, logs rotate daily with 90-day retention. Docker: `restart:
+unless-stopped` in `docker-compose.yml` plays the same role. Designed to run on genuinely
+resource-constrained hardware (this was built to run on a Le Potato SBC, and runs there via Docker
+today — 64MB image, no local Go/Node toolchain needed on-device at all); see
+`config.yaml.example` (bare-metal) or `compose/polaris/config.yaml.example` (Docker) for the full
+set of tunables.
 
 `GET /healthz` is an unauthenticated liveness check (confirms the process is up and the SQLite
 connection is actually reachable) for `Restart=always` or any external uptime monitor to poll.
