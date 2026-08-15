@@ -122,10 +122,21 @@ if ! docker compose pull polaris; then
 	exit 1
 fi
 
-if ! docker compose up -d --no-deps polaris; then
+# --force-recreate: without it, `docker compose up -d` is a no-op
+# whenever the desired image/config already matches what's running —
+# exactly the case handleDockerRestart (gateway/docker_update.go)
+# deliberately creates, since a plain restart pins TARGET_IMAGE to
+# whatever's *already* running. Confirmed live: a restart click pulled
+# nothing new (correctly — same image), then `up -d` printed "Container
+# polaris-polaris-1 Running" and genuinely did nothing, leaving the old
+# process running forever while the settings panel polled /api/version
+# for a change that could never come. --force-recreate makes both
+# "restart, same image" and "update, new image" actually cycle the
+# container either way, with the same one code path for both.
+if ! docker compose up -d --force-recreate --no-deps polaris; then
 	write_result "failed" "docker compose up failed for $TARGET_IMAGE"
 	set_pinned_image "$PREVIOUS_IMAGE"
-	docker compose up -d --no-deps polaris || true
+	docker compose up -d --force-recreate --no-deps polaris || true
 	rm -f "$REQUESTED_FILE"
 	exit 1
 fi
