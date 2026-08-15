@@ -133,6 +133,15 @@ func TestHandleDockerUpdate_EndToEnd(t *testing.T) {
 	srv := fakeGHCR(t, http.StatusOK, http.StatusOK, "sha256:deadbeef")
 	withGHCRBaseURL(t, srv.URL)
 
+	// Without this, handleDockerUpdate's waitForPublishWorkflow call
+	// would hit the real https://api.github.com — harmless in practice
+	// (it degrades gracefully on any failure), but it makes this test
+	// silently depend on live network access and the real repo's
+	// current CI state. Point it at a fake "always completed" server
+	// so this stays fully hermetic.
+	ciSrv := fakeWorkflowRuns(t, func() string { return "completed" })
+	withGitHubActionsBaseURL(t, ciSrv.URL)
+
 	dir := t.TempDir()
 	original := dockerUpdateSignalDir
 	dockerUpdateSignalDir = filepath.Join(dir, "update-signal")

@@ -66,6 +66,13 @@ func (s *Server) handleDockerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Close the race window where CI is still building the commit that
+	// was just pushed — without this, resolveLatestDigest below could
+	// silently resolve the PREVIOUS build and report success while
+	// actually delivering stale code. Best-effort: never blocks the
+	// update over a GitHub API hiccup, see its own doc comment.
+	waitForPublishWorkflow(r.Context(), s.liveConfig().GitHub.Token)
+
 	digest, err := resolveLatestDigest(r.Context(), dockerImageRepo, "latest")
 	if err != nil {
 		s.updateStatus.finish(false, "", err.Error(), false)
