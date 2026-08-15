@@ -1,9 +1,28 @@
 # syntax=docker/dockerfile:1
 
+# --- frontend build -----------------------------------------------------
+# web/build/ is committed to git for the bare-metal path (see README's
+# "Frontend development": the Le Potato SBC can't afford pnpm install +
+# vite build on every self-update, so that cost stays off-device,
+# permanently, via a checked-in prebuilt copy). That constraint doesn't
+# apply here — this image is always built on a real machine (CI, or a
+# dev machine via `docker compose up --build`), never on the potato
+# itself, which only ever pulls an already-built image. So instead of
+# depending on the committed copy staying in sync (a real footgun: see
+# .github/workflows/frontend-build-sync.yml, which exists purely to
+# catch that drift), this stage just builds straight from web/src every
+# time — always exactly what's in this commit, no possibility of drift.
+# Node/pnpm versions matched to that same workflow for the same
+# reproducibility reason it pins them.
+FROM node:22-bookworm AS frontend-build
+WORKDIR /web
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate && \
+    pnpm install --frozen-lockfile
+COPY web/ .
+RUN pnpm run build
+
 # --- build ------------------------------------------------------------
-# web/build/ (the SvelteKit static output go:embed pulls in) is committed
-# to the repo rather than built here — see README's "Frontend
-# development" section. This stage only ever compiles Go.
 FROM golang:1.26-alpine AS build
 
 WORKDIR /src
@@ -12,6 +31,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Overwrites whatever committed web/build/ COPY . . just brought in
+# with the freshly built copy from frontend-build above — see that
+# stage's comment for why this image never relies on the committed one
+# being accurate.
+COPY --from=frontend-build /web/build ./web/build
 
 # ARG (not just a shell default inside the RUN below) is required for
 # --build-arg VERSION=... to actually reach this step at all — without

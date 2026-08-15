@@ -13,4 +13,5 @@ polaris
 
 web/node_modules/
 web/.svelte-kit/
+web/build/
 dev/searxng/data/

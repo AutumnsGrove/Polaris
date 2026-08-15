@@ -63,6 +63,15 @@ jobs:
         # replicate that, so it's the more trustworthy signal here.
         run: pnpm run build
 
+      # TEMPORARY debug step — investigating a build-sync mismatch that
+      # doesn't reproduce locally under an equivalent Linux/amd64 Node 22
+      # environment. Remove once resolved.
+      - name: Upload build output for comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-web-build
+          path: web/build
+
       - name: Fail if web/build/ doesn't match what's committed
         run: |
           if ! git diff --quiet -- web/build; then
