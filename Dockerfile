@@ -94,13 +94,15 @@ RUN apk add --no-cache ca-certificates && \
 WORKDIR /app
 COPY --from=build /out/polaris /app/polaris
 
-# prompt.md/prompts.yaml/blocked_sources.txt are loaded relative to CWD
-# and hot-reloaded from disk (see prompts/prompts.go, agent's
-# loadSystemPrompt, search.LoadBlocklist) — baked in here so the image
-# runs standalone, but docker-compose.yml bind-mounts the repo's real
-# copies over these so editing them on the host still takes effect
-# without a rebuild, same as the bare-metal deployment.
+# prompt.md/prompts.yaml/blocked_sources.txt/tools/descriptions/*.yaml
+# are loaded relative to CWD and hot-reloaded from disk (see
+# prompts/prompts.go, agent's loadSystemPrompt, search.LoadBlocklist,
+# tools/catalog.go's loadCatalog) — baked in here so the image runs
+# standalone, but docker-compose.yml bind-mounts the repo's real copies
+# over these so editing them on the host still takes effect without a
+# rebuild, same as the bare-metal deployment.
 COPY prompt.md prompts.yaml blocked_sources.txt /app/
+COPY tools/descriptions/ /app/tools/descriptions/
 
 # /data holds everything config.yaml.example points relative paths at
 # by default (database, logs, attachments) — a single named volume

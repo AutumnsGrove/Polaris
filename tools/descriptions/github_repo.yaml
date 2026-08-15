@@ -1,0 +1,12 @@
+name: github_repo
+description: >-
+  look up a GitHub repository's stats (stars, forks, license, age, commit history, open issue/PR
+  counts) and README directly via GitHub's API. Use this instead of web_search/web_read for
+  questions about a specific repo's numbers — a rendered repo page doesn't reliably expose star
+  counts or commit history the way a search/read pass would need to parse it.
+api_description: >-
+  Look up a GitHub repository directly via GitHub's API: star count, forks, license, repo age,
+  first/most recent commit dates, total commit count, open issue count, and open pull request
+  count — plus the README. Prefer this over web_search/web_read for questions about a specific
+  GitHub repo's stats, since those can't reliably pull numeric stats like star count off a
+  rendered page.

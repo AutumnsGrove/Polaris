@@ -17,9 +17,8 @@ var nearbySearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "nearby_search",
-		Description: "Find real-world places near a location — restaurants, coffee shops, pharmacies, " +
-			"parks, etc. Returns structured results (distance, category, map link) when Foursquare is " +
-			"configured, otherwise falls back to a web search for the same query.",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/nearby_search.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

@@ -23,10 +23,8 @@ var weatherDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "weather",
-		Description: "Get current weather conditions and a short daily forecast for a location. " +
-			"Returns temperature, conditions, precipitation chance, and wind. Pass include_hourly for " +
-			"an hour-by-hour breakdown of the next 24 hours instead of (or alongside) the daily summary — " +
-			"use that for questions like 'what time will it rain today' or 'will it be warmer this afternoon'.",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/weather.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

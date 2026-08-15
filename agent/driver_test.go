@@ -60,8 +60,8 @@ func newTestContext(mock *llmtest.MockClient, rec *recordingEmit, maxTurns int) 
 }
 
 func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
-	base := loadSystemPrompt(false, "", false)
-	brief := loadSystemPrompt(false, FocusModeBrief, false)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false)
+	brief := loadSystemPrompt(&tools.Context{}, false, FocusModeBrief, false)
 	if brief == base {
 		t.Error("loadSystemPrompt(false, FocusModeBrief, false) should differ from the no-focus-mode prompt")
 	}
@@ -71,8 +71,8 @@ func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
 }
 
 func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
-	base := loadSystemPrompt(false, "", false)
-	unknown := loadSystemPrompt(false, "not_a_real_mode", false)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false)
+	unknown := loadSystemPrompt(&tools.Context{}, false, "not_a_real_mode", false)
 	if base != unknown {
 		t.Errorf("an unrecognized focus mode should leave the prompt unchanged, got a difference")
 	}
@@ -572,8 +572,8 @@ func TestRun_DeepResearchRaisesMaxTurns(t *testing.T) {
 }
 
 func TestLoadSystemPrompt_AppliesDeepResearchInstruction(t *testing.T) {
-	base := loadSystemPrompt(false, "", false)
-	deep := loadSystemPrompt(false, "", true)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false)
+	deep := loadSystemPrompt(&tools.Context{}, false, "", true)
 	if deep == base {
 		t.Error("loadSystemPrompt(false, \"\", true) should differ from the non-deep-research prompt")
 	}

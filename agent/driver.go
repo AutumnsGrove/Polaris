@@ -168,7 +168,7 @@ const (
 // "same research, shorter replies", and that's exactly what this does:
 // Run's turn-budget/research-check-in logic never reads FocusMode, only
 // this function's output differs.
-func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) string {
+func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deepResearch bool) string {
 	p := prompts.Get()
 
 	data, err := os.ReadFile(promptPath)
@@ -184,6 +184,7 @@ func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) strin
 		// nothing to explain why.
 		log.Warn("failed to read prompt.md, using fallback system prompt", "err", err)
 	}
+	prompt = applyToolsPlaceholder(prompt, ctx)
 	if voiceMode {
 		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
@@ -194,6 +195,15 @@ func loadSystemPrompt(voiceMode bool, focusMode string, deepResearch bool) strin
 		prompt += "\n\n" + p.Agent.DeepResearchInstruction
 	}
 	return prompt
+}
+
+// applyToolsPlaceholder replaces every "{tools}" occurrence in prompt with
+// tools.ToolsPrompt(ctx) — the one substitution point all three system-prompt
+// sources (prompt.md, prompts.yaml's fallback_system_prompt, buildDefaults()'s
+// Go literal) funnel through, so whichever one loadSystemPrompt picked, the
+// rendered tool list is identical.
+func applyToolsPlaceholder(prompt string, ctx *tools.Context) string {
+	return strings.ReplaceAll(prompt, "{tools}", tools.ToolsPrompt(ctx))
 }
 
 // deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the
@@ -249,11 +259,11 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	ctx.Ctx = reqCtx
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch)})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 
-	toolDefs := tools.Defs()
+	toolDefs := tools.Defs(ctx)
 	var totalCost float64
 	var answer strings.Builder
 

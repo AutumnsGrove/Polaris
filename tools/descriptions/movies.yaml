@@ -1,0 +1,12 @@
+name: movies
+requires: tmdb_api_key
+description: >-
+  find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data
+  ("people who watched this also watched"), not guesswork. Set media_type to "movie" or "tv"
+  depending on what the user named, and pass year when the title could be ambiguous (a remake,
+  reboot, or common title).
+api_description: >-
+  Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data
+  ("people who watched this also watched"), not guesswork or hoping a web search turns up a
+  "movies like X" listicle. Use media_type "movie" or "tv" depending on what the user named. Pass
+  year when the title could be ambiguous (a remake, a reboot, a common title).

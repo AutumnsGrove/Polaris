@@ -60,13 +60,8 @@ var musicDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "music",
-		Description: "Find real music recommendations grounded in actual listening/similarity data " +
-			"(Last.fm), not guesswork or hoping a web search turns up a review that happens to mention " +
-			"comparable songs. Use mode \"track\" when the user names one song and wants more like it. Use " +
-			"\"album_tracks\" when they want song-level recommendations based on a whole album. Use " +
-			"\"similar_albums\" only when they specifically want other ALBUMS similar to a given album, not " +
-			"individual songs — this mode makes many more API calls than the other two, so reach for it only " +
-			"when album-level recommendations were actually asked for.",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/music.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

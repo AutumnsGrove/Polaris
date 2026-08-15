@@ -1,0 +1,8 @@
+name: youtube_transcript
+description: >-
+  fetch a YouTube video's transcript, given its URL or video ID. Use this instead of web_read for
+  YouTube links — web_read can't see a video page's actual content.
+api_description: >-
+  Fetch the transcript of a YouTube video, given its URL (youtube.com/watch, youtu.be, shorts,
+  etc.) or bare video ID. Use when the user shares a YouTube link or a web_search result is a
+  YouTube video worth reading. Fails if the video has no captions available.

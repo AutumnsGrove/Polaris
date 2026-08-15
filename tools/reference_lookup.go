@@ -24,10 +24,8 @@ var referenceLookupDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "reference_lookup",
-		Description: "Look up a topic directly in a specific reference source — Wikipedia for an " +
-			"encyclopedia summary, or arXiv for academic paper abstracts. Prefer this over web_search " +
-			"when you specifically want an encyclopedic overview or a paper's abstract, since it's more " +
-			"precise and more directly citable than a general search.",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/reference_lookup.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

@@ -1,0 +1,11 @@
+name: reference_lookup
+description: >-
+  query Wikipedia or arXiv directly for an encyclopedia summary or a paper's abstract. Prefer
+  this over web_search when you specifically want an encyclopedic overview or an academic
+  abstract — it's more precise and more directly citable than a general search landing on the
+  same page.
+api_description: >-
+  Look up a topic directly in a specific reference source — Wikipedia for an encyclopedia
+  summary, or arXiv for academic paper abstracts. Prefer this over web_search when you
+  specifically want an encyclopedic overview or a paper's abstract, since it's more precise and
+  more directly citable than a general search.

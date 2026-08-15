@@ -45,10 +45,8 @@ var moviesDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "movies",
-		Description: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation " +
-			"data (\"people who watched this also watched\"), not guesswork or hoping a web search turns up a " +
-			"\"movies like X\" listicle. Use media_type \"movie\" or \"tv\" depending on what the user named. " +
-			"Pass year when the title could be ambiguous (a remake, a reboot, a common title).",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/movies.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

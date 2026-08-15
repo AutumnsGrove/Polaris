@@ -61,9 +61,8 @@ var booksDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
 		Name: "books",
-		Description: "Find real book recommendations grounded in readers' curated lists (Hardcover.app) " +
-			"and shared subject/genre data (Open Library), not guesswork or hoping a web search turns up a " +
-			"\"books like X\" listicle. Use when the user names a book and wants more like it.",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/books.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

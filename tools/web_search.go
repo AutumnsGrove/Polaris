@@ -11,8 +11,9 @@ import (
 var webSearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
-		Name:        "web_search",
-		Description: "Search the web via SearXNG for current information, facts, or sources. Returns titles, URLs, and snippets.",
+		Name: "web_search",
+		// Description is populated at call time by Defs()/AllDefs() from
+		// tools/descriptions/web_search.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

@@ -1,0 +1,10 @@
+name: dictionary
+description: >-
+  look up a word's definition, part of speech, and (when available) an example sentence, straight
+  from a dictionary source. Prefer this over web_search or answering from memory whenever the
+  user asks what a word means, how it's used, or wants it defined.
+api_description: >-
+  Look up a word's definition, part of speech, and (when available) an example sentence, straight
+  from a dictionary source. Prefer this over web_search or answering from memory whenever the
+  user asks what a word means, how it's used in a sentence, or wants it defined — it's a more
+  precise and more directly citable source than a general search.

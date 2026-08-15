@@ -40,13 +40,17 @@ type pseudoCall struct {
 }
 
 // paramSchemaType looks up the JSON Schema "type" toolName's real tool
-// definition (see tools.Defs) declares for one of its arguments — "", false
-// if the tool or argument isn't found. Schemas here are always the
-// map[string]interface{} shape every tools/*.go definition builds by hand
-// (see e.g. weatherDef), never a typed struct, so this is a defensive
-// type-assertion walk rather than a simple field access.
+// definition (see tools.AllDefs) declares for one of its arguments — "",
+// false if the tool or argument isn't found. This path has no per-request
+// Context (it's static analysis over pseudo-tool-call syntax, not a real
+// per-turn tool offer), so it always sees every tool regardless of
+// configured API keys — unlike tools.Defs, which gates music/movies.
+// Schemas here are always the map[string]interface{} shape every
+// tools/*.go definition builds by hand (see e.g. weatherDef), never a
+// typed struct, so this is a defensive type-assertion walk rather than a
+// simple field access.
 func paramSchemaType(toolName, argName string) (string, bool) {
-	for _, def := range tools.Defs() {
+	for _, def := range tools.AllDefs() {
 		if def.Function.Name != toolName {
 			continue
 		}
