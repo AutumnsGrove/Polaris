@@ -69,6 +69,43 @@
 		attachedFile = file;
 	}
 
+	// Clipboard File objects from an image copy (screenshot tools, "Copy
+	// image" from a browser, etc.) commonly arrive with an empty .name —
+	// the attachment chip below renders attachedFile.name, so an unnamed
+	// blob would show as a blank pill. Giving it a synthetic name keeps
+	// the chip legible without needing any UI just for the paste path.
+	const extensionForImageType: Record<string, string> = {
+		'image/png': 'png',
+		'image/jpeg': 'jpg',
+		'image/gif': 'gif',
+		'image/webp': 'webp',
+		'image/svg+xml': 'svg'
+	};
+
+	// Reuses the exact same attach → upload-on-send pipeline as the "+"
+	// menu's file input (see handleAttach/submit above and ComposerMenu's
+	// handleFileChange) — a paste is just another way to arrive at the
+	// same attachedFile state, so nothing downstream needs to know which
+	// path produced it. Only image types are handled; a text/plain or
+	// text/html paste falls through untouched so normal pasting still works.
+	function onPaste(e: ClipboardEvent) {
+		const items = e.clipboardData?.items;
+		if (!items) return;
+		for (const item of items) {
+			if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+			const file = item.getAsFile();
+			if (!file) continue;
+			e.preventDefault();
+			const named = file.name
+				? file
+				: new File([file], `pasted-image-${Date.now()}.${extensionForImageType[file.type] ?? 'png'}`, {
+						type: file.type
+					});
+			handleAttach(named);
+			break;
+		}
+	}
+
 	async function submit() {
 		const text = input;
 		const file = attachedFile;
@@ -194,6 +231,7 @@
 				rows="1"
 				bind:value={input}
 				onkeydown={onKeydown}
+				onpaste={onPaste}
 				use:autoResize={{ value: input, maxHeight: 200 }}
 				aria-label="Ask Polaris"
 			></textarea>
