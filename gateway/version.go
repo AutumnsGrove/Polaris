@@ -16,9 +16,10 @@ import (
 const versionCmdTimeout = 5 * time.Second
 
 // handleVersion returns build info so the frontend can display it and
-// force a cache-bust when the version changes. deployment is purely
-// informational (see deploymentMode's doc comment) — nothing server-side
-// branches on it yet.
+// force a cache-bust when the version changes. deployment doubles as
+// the settings-panel version row's icon signal and the actual gate
+// handleUpdate/handleRestart branch on — see deploymentMode's doc
+// comment.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{
 		"version":    s.getVersion(),
@@ -29,10 +30,13 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 // deploymentMode reports whether this process is running inside the
 // Docker Compose stack or bare-metal (systemd/launchd) — set via
 // POLARIS_DEPLOYMENT in docker-compose.yml's polaris service, unset
-// everywhere else. Purely a display signal for the settings panel's
-// version row (a small icon distinguishing the two) — deliberately not
-// wired into any update/restart logic decision; that branch lives in
-// handleUpdate reading this same env var directly, not through here.
+// everywhere else. Only meaningful called from inside this server
+// process itself: the env var is set in the *container's* own
+// environment, not the host's. cmd/update.go and cmd/restart.go (the
+// SSH CLI paths, a separate process running on the host) can't use
+// this — they check for docker-compose.yml's presence in the install
+// directory instead (isDockerComposeInstall), the one signal a
+// host-side process can actually observe.
 func deploymentMode() string {
 	if os.Getenv("POLARIS_DEPLOYMENT") == "docker" {
 		return "docker"

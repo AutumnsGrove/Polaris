@@ -13,13 +13,18 @@ import (
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Pull latest code, rebuild, and restart the service",
-	Long: `Pulls the latest code from the main branch, rebuilds the binary, and
-restarts the service — no scp'd binaries, no manual redeploy steps.
+	Long: `Updates and restarts the service — no scp'd binaries, no manual redeploy steps.
+Behaves differently depending on how this install runs, auto-detected from
+whether docker-compose.yml exists in the current directory:
 
-Steps:
+Bare-metal:
   1. git pull origin main
   2. go build -o polaris
   3. Restart service (systemd on the potato, launchd for local dev)
+
+Docker: resolves the latest published image's digest from GHCR (waiting out
+an in-progress CI build if one just landed) and hands off to the host-side
+update watcher, which pulls and recreates the container.
 
 The settings panel's "push update now" button does the same thing over
 HTTP (POST /api/update) — this CLI command is for SSH access.`,
@@ -31,12 +36,31 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	log := logger.WithPrefix("update")
-
 	repoPath, err := updater.RepoPath()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
+
+	// Docker mode: there's no local .git to pull and no local go build
+	// to run — this CLI runs on the host, outside any container, so
+	// even if it happened to rebuild something, that binary would have
+	// nothing to do with what's actually serving traffic. Delegate to
+	// the real running container's own /api/update instead — see
+	// runDockerModeCall's doc comment.
+	//
+	// Deliberately NOT gateway.DeploymentMode(): that reads
+	// POLARIS_DEPLOYMENT, which is only ever set *inside* the
+	// container's own environment (docker-compose.yml's environment:
+	// block) — this CLI process, running on the host over SSH, never
+	// has it set regardless of which way the install actually runs.
+	// isDockerComposeInstall checks for docker-compose.yml in the
+	// install directory instead, the one signal a host-side process
+	// can actually observe.
+	if isDockerComposeInstall(repoPath) {
+		return runDockerModeCall("/api/update")
+	}
+
+	log := logger.WithPrefix("update")
 
 	// Held across the whole pull+build+restart sequence below, not just
 	// the build — see AcquireLock's doc comment for why releasing early
