@@ -128,6 +128,11 @@ func (u *updateStatus) snapshot() map[string]interface{} {
 // client *before* restarting: systemctl/launchctl kills this very
 // process, so the client needs its answer in hand first.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if deploymentMode() == "docker" {
+		s.handleDockerUpdate(w, r)
+		return
+	}
+
 	started, startedAt := s.updateStatus.tryStart("update")
 	if !started {
 		writeJSON(w, map[string]interface{}{
