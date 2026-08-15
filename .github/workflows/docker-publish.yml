@@ -36,10 +36,22 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default shallow single-commit clone —
+          # `git rev-list --count HEAD` below needs it to compute the
+          # same monotonic revision count gateway/version.go's
+          # bare-metal computeVersion() derives from a full local
+          # checkout, so Docker's version string matches that format
+          # exactly instead of being SHA-only.
+          fetch-depth: 0
 
-      - name: Compute short SHA
+      - name: Compute version string (rNNN.hash, matching bare-metal's own format)
         id: vars
-        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          count="$(git rev-list --count HEAD)"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "version=r${count}.${short_sha}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
 
@@ -60,6 +72,6 @@ jobs:
             ghcr.io/autumnsgrove/polaris:latest
             ghcr.io/autumnsgrove/polaris:${{ steps.vars.outputs.short_sha }}
           build-args: |
-            VERSION=${{ steps.vars.outputs.short_sha }}
+            VERSION=${{ steps.vars.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

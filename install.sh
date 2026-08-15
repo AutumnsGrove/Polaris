@@ -271,7 +271,22 @@ else
 		info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
 	fi
 
+	# 777, not the default 755: this is bind-mounted into the polaris
+	# container at /data/update-signal (docker-compose.yml), which writes
+	# to it as the image's non-root polaris user (uid 100) — a numeric
+	# uid that essentially never matches whatever host user runs this
+	# script. Docker bind mounts don't remap ownership, so without this
+	# the container's write (update-signal/requested — see
+	# gateway/docker_update.go's writeUpdateSignal) fails outright with
+	# a permission error. Found live, testing the real update flow
+	# against a real container: not a hypothetical edge case. The
+	# watcher script (running as the host user, not uid 100) needs
+	# write access here too, for the same reason. Nothing sensitive
+	# ever lives in this directory (an image reference string, a small
+	# status JSON) — world-writable is the pragmatic fix for a
+	# cross-UID-namespace shared directory, not a real exposure.
 	mkdir -p update-signal
+	chmod 777 update-signal
 fi
 
 # ---- 6. host update watcher (docker mode, Linux only) ---------------------
