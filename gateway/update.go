@@ -224,6 +224,11 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 // endpoint exists to fix. Shares updateStatus and the same file lock as
 // handleUpdate so the two can never race each other.
 func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if deploymentMode() == "docker" {
+		s.handleDockerRestart(w, r)
+		return
+	}
+
 	started, startedAt := s.updateStatus.tryStart("restart")
 	if !started {
 		writeJSON(w, map[string]interface{}{

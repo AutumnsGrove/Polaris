@@ -78,9 +78,52 @@ func (s *Server) handleDockerUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := "ghcr.io/" + dockerImageRepo + "@" + digest
+	s.finishDockerSignal(w, "update", target, "requested update to")
+}
+
+// handleDockerRestart is handleRestart's Docker-mode counterpart: the
+// same "recreate the container, but don't check for or pull anything
+// new" restart bare-metal's handleRestart does with mgr.Restart() and
+// no build — here that means handing the watcher the image reference
+// this container is *already* running (POLARIS_RUNNING_IMAGE, set in
+// docker-compose.yml from the same POLARIS_IMAGE value the `image:`
+// field itself resolves to) instead of resolving a fresh digest from
+// GHCR the way handleDockerUpdate does. `docker compose pull` on an
+// already-present image is a fast no-op, so reusing the exact same
+// watcher/script path for both costs nothing extra.
+func (s *Server) handleDockerRestart(w http.ResponseWriter, r *http.Request) {
+	started, _ := s.updateStatus.tryStart("restart")
+	if !started {
+		writeJSON(w, map[string]interface{}{
+			"success":         false,
+			"already_running": true,
+			"error":           "an update or restart is already in progress",
+		})
+		return
+	}
+
+	target := os.Getenv("POLARIS_RUNNING_IMAGE")
+	if target == "" {
+		err := "POLARIS_RUNNING_IMAGE is not set — this container wasn't started via the project's docker-compose.yml"
+		s.updateStatus.finish(false, "", err, false)
+		writeJSON(w, map[string]interface{}{
+			"success": false,
+			"error":   err,
+		})
+		return
+	}
+
+	s.finishDockerSignal(w, "restart", target, "requested restart against")
+}
+
+// finishDockerSignal is handleDockerUpdate/handleDockerRestart's shared
+// tail: write the resolved target to the update watcher's signal file,
+// mark updateStatus finished, and respond — identical past the point
+// each has already decided what target image to hand the watcher.
+func (s *Server) finishDockerSignal(w http.ResponseWriter, kind, target, logVerb string) {
 	if err := writeUpdateSignal(target); err != nil {
 		s.updateStatus.finish(false, "", err.Error(), false)
-		s.db.LogEvent("", "error", "update", "writing update signal failed", map[string]interface{}{"err": err.Error()}, "")
+		s.db.LogEvent("", "error", kind, "writing update signal failed", map[string]interface{}{"err": err.Error()}, "")
 		writeJSON(w, map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
@@ -88,9 +131,9 @@ func (s *Server) handleDockerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logOut := "requested update to " + target + " — the host update watcher will pull and restart shortly"
+	logOut := logVerb + " " + target + " — the host update watcher will pull and restart shortly"
 	s.updateStatus.finish(true, logOut, "", true)
-	s.db.LogEvent("", "info", "update", "docker update requested", map[string]interface{}{"target": target}, "")
+	s.db.LogEvent("", "info", kind, "docker "+kind+" requested", map[string]interface{}{"target": target}, "")
 
 	writeJSON(w, map[string]interface{}{
 		"success":    true,

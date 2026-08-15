@@ -192,3 +192,81 @@ func TestHandleDockerUpdate_AlreadyRunning(t *testing.T) {
 		t.Errorf("requested file should not be written when an update is already running, stat err = %v", err)
 	}
 }
+
+// TestHandleDockerRestart_UsesRunningImageNotGHCR confirms handleRestart's
+// Docker branch skips digest resolution entirely (POLARIS_RUNNING_IMAGE
+// is the target verbatim) — a restart shouldn't hit GHCR at all, let
+// alone pick up whatever the latest tag happens to point at right now.
+// No fakeGHCR server is set up for this test on purpose: if the restart
+// path ever accidentally called resolveLatestDigest, ghcrRegistryBaseURL
+// would still point at the real https://ghcr.io default and this test
+// would either hang or fail against the live network, making that
+// regression loud instead of silently passing.
+func TestHandleDockerRestart_UsesRunningImageNotGHCR(t *testing.T) {
+	t.Setenv("POLARIS_DEPLOYMENT", "docker")
+	t.Setenv("POLARIS_RUNNING_IMAGE", "ghcr.io/autumnsgrove/polaris@sha256:currentlyrunning")
+
+	dir := t.TempDir()
+	original := dockerUpdateSignalDir
+	dockerUpdateSignalDir = filepath.Join(dir, "update-signal")
+	t.Cleanup(func() { dockerUpdateSignalDir = original })
+
+	h := newTestHarness(t, "")
+	resp, err := http.Post(h.url("/api/restart"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	snap := h.srvObj.updateStatus.snapshot()
+	if snap["kind"] != "restart" {
+		t.Errorf("updateStatus kind = %v, want %q", snap["kind"], "restart")
+	}
+	if snap["success"] != true || snap["restarting"] != true {
+		t.Errorf("updateStatus success/restarting = %v/%v, want true/true", snap["success"], snap["restarting"])
+	}
+
+	got, err := os.ReadFile(filepath.Join(dockerUpdateSignalDir, "requested"))
+	if err != nil {
+		t.Fatalf("reading requested file: %v", err)
+	}
+	want := "ghcr.io/autumnsgrove/polaris@sha256:currentlyrunning"
+	if string(got) != want {
+		t.Errorf("requested file content = %q, want %q (the currently-running image, not a freshly resolved digest)", got, want)
+	}
+}
+
+// TestHandleDockerRestart_MissingEnvVar guards the "this container
+// wasn't started via docker-compose.yml" edge case (e.g. a bare `docker
+// run` with POLARIS_DEPLOYMENT=docker set by hand but not
+// POLARIS_RUNNING_IMAGE) — must fail with a clear error, not write an
+// empty/malformed target the watcher would choke on.
+func TestHandleDockerRestart_MissingEnvVar(t *testing.T) {
+	t.Setenv("POLARIS_DEPLOYMENT", "docker")
+	// Deliberately not setting POLARIS_RUNNING_IMAGE.
+
+	dir := t.TempDir()
+	original := dockerUpdateSignalDir
+	dockerUpdateSignalDir = filepath.Join(dir, "update-signal")
+	t.Cleanup(func() { dockerUpdateSignalDir = original })
+
+	h := newTestHarness(t, "")
+	resp, err := http.Post(h.url("/api/restart"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/restart: %v", err)
+	}
+	defer resp.Body.Close()
+
+	snap := h.srvObj.updateStatus.snapshot()
+	if snap["success"] != false {
+		t.Errorf("updateStatus success = %v, want false when POLARIS_RUNNING_IMAGE is unset", snap["success"])
+	}
+
+	if _, err := os.Stat(filepath.Join(dockerUpdateSignalDir, "requested")); !os.IsNotExist(err) {
+		t.Errorf("requested file should not be written when POLARIS_RUNNING_IMAGE is missing, stat err = %v", err)
+	}
+}
