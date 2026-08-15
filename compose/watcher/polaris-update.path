@@ -1,0 +1,15 @@
+[Unit]
+Description=Trigger the Polaris update watcher when an update is requested
+
+[Path]
+# Fires polaris-update.service the instant update-signal/requested
+# transitions from not-existing to existing — i.e. the moment the
+# settings panel's "Update Polaris" button (or `polaris update` under
+# Docker) writes it. The service itself deletes this file on every
+# exit path (success or failure), so this is a clean edge trigger, not
+# a level condition that could refire spuriously.
+PathExists=@INSTALL_DIR@/update-signal/requested
+Unit=polaris-update.service
+
+[Install]
+WantedBy=multi-user.target

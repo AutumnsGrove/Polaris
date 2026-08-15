@@ -2,13 +2,19 @@ config.yaml
 *.db
 *.db-shm
 *.db-wal
-polaris
+/polaris
 logs/
 attachments/
 .update.lock
 web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/
+
+# Docker Compose install — real config/secrets, gitignored the same way
+# their bare-metal equivalents are (see compose/polaris/config.yaml.example).
+compose/polaris/config.yaml
+.env
+update-signal/
 
 # web/build/ is intentionally committed — the potato is a Le Potato SBC,
 # too weak to run pnpm install + vite build in any reasonable time on

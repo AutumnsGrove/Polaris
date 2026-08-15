@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -214,7 +214,18 @@
 				{#if appState.version}
 					<div class="row version-row">
 						<span>Version</span>
-						<code class="version">{appState.version}</code>
+						<span class="version-info">
+							<code class="version">{appState.version}</code>
+							{#if appState.deployment === 'docker'}
+								<span class="deployment-icon" title="Running in Docker">
+									<Container size={13} />
+								</span>
+							{:else if appState.deployment === 'bare-metal'}
+								<span class="deployment-icon" title="Running bare-metal">
+									<Server size={13} />
+								</span>
+							{/if}
+						</span>
 					</div>
 				{/if}
 				<div class="update-actions">
@@ -408,6 +419,19 @@
 		border-radius: var(--radius-sm);
 		border: none;
 		box-shadow: var(--shadow-well);
+	}
+
+	.version-info {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* Matches PRODUCT.md's "calm over clever" — a plain muted glyph, not a
+	   colored badge; a hover title is enough to name it explicitly. */
+	.deployment-icon {
+		display: inline-flex;
+		color: var(--color-text-dim);
 	}
 
 	.update-actions {

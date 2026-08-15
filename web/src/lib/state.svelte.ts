@@ -109,6 +109,10 @@ export class AppState {
 	busy = $state(false);
 	totalCost = $state(0);
 	version = $state<string>('');
+	// 'bare-metal' | 'docker' | '' (not yet loaded) — see gateway/version.go's
+	// deploymentMode. Purely a display signal for the settings panel's
+	// version-row icon, set alongside version in checkVersion() below.
+	deployment = $state<string>('');
 	versionCheckInterval: number | null = null;
 
 	// contextTokens is the current thread's last-known prompt+completion
@@ -296,6 +300,10 @@ export class AppState {
 			const res = await fetch('/api/version');
 			const data = await res.json();
 			const newVersion = data.version ?? '';
+			// Static for the process's whole lifetime (only a real restart
+			// changes it) — fine to just assign unconditionally on every
+			// poll, unlike version's mismatch-triggers-a-reload dance below.
+			this.deployment = data.deployment ?? '';
 
 			if (this.version && newVersion && this.version !== newVersion) {
 				debugBeacon('checkVersion mismatch detected', {

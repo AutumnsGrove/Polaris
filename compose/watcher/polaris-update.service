@@ -1,0 +1,25 @@
+[Unit]
+Description=Polaris Docker update watcher (one-shot)
+# Same reasoning as procmgr/systemd.go's unit template: don't run this
+# before the tunnel is up, since a pull that needs to reach the
+# internet has no reason to fire before networking is actually usable.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the operator account that ran install.sh (same convention
+# cmd/install.go uses for the bare-metal service — see its comment: the
+# invoking user, not a dedicated system account), which install.sh adds
+# to the host's `docker` group so `docker compose` works without sudo.
+# Deliberately NOT root: this script only ever runs one fixed,
+# reviewable command sequence (pull + recreate one named service), so
+# there's nothing root privileges would add except blast radius if the
+# script itself were ever compromised or misused.
+User=@USER@
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/compose/watcher/update.sh
+
+# Generous but bounded — a slow registry pull on the potato's uplink
+# shouldn't hang forever, but shouldn't get cut off mid-pull either.
+TimeoutStartSec=600

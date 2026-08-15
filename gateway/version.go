@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -15,12 +16,28 @@ import (
 const versionCmdTimeout = 5 * time.Second
 
 // handleVersion returns build info so the frontend can display it and
-// force a cache-bust when the version changes.
+// force a cache-bust when the version changes. deployment is purely
+// informational (see deploymentMode's doc comment) — nothing server-side
+// branches on it yet.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	version := getVersion()
 	writeJSON(w, map[string]string{
-		"version": version,
+		"version":    s.getVersion(),
+		"deployment": deploymentMode(),
 	})
+}
+
+// deploymentMode reports whether this process is running inside the
+// Docker Compose stack or bare-metal (systemd/launchd) — set via
+// POLARIS_DEPLOYMENT in docker-compose.yml's polaris service, unset
+// everywhere else. Purely a display signal for the settings panel's
+// version row (a small icon distinguishing the two) — deliberately not
+// wired into any update/restart logic decision; that branch lives in
+// handleUpdate reading this same env var directly, not through here.
+func deploymentMode() string {
+	if os.Getenv("POLARIS_DEPLOYMENT") == "docker" {
+		return "docker"
+	}
+	return "bare-metal"
 }
 
 var (
@@ -48,9 +65,22 @@ var (
 // reported version to what this binary actually is, which is what
 // "has it changed" is supposed to mean — it only ever changes across an
 // actual restart, exactly when a reload is warranted.
-func getVersion() string {
+//
+// Prefers s.version (main.Version, injected via -ldflags -X at build
+// time — see the Server.version field's doc comment) when the caller
+// gave one, since a Docker image has no .git directory to shell out to
+// at all (computeVersion would just fail there, every time, and silently
+// pin at "dev" forever — exactly the kind of unchanging value the
+// caching comment above warns never looks like an update). Bare-metal
+// callers pass "" (no ldflags in updater.Run's plain `go build`), so
+// they're unaffected and keep using the git-based value they always have.
+func (s *Server) getVersion() string {
 	versionOnce.Do(func() {
-		cachedVersion = computeVersion()
+		if s.version != "" {
+			cachedVersion = s.version
+		} else {
+			cachedVersion = computeVersion()
+		}
 	})
 	return cachedVersion
 }
