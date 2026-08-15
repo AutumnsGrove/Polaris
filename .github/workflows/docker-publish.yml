@@ -1,0 +1,65 @@
+name: Build and publish Docker image
+
+# Publishes ghcr.io/autumnsgrove/polaris on every push to main — matches
+# gateway/docker_update.go's dockerImageRepo constant exactly, which the
+# update watcher (compose/watcher/update.sh) resolves the "latest"
+# tag's digest against. One image per commit is deliberate (see the
+# Docker install design discussion): a floating :latest tag for
+# convenience, plus a short-SHA tag per push so a specific build can
+# always be pinned/rolled back to by name, not just by digest.
+#
+# platforms: linux/amd64,linux/arm64 — arm64 is what actually matters
+# (the Le Potato SBC this whole project targets), amd64 covers dev
+# machines/most other self-hosters. Both build stages that would
+# otherwise need per-arch emulation (frontend's Node/pnpm, Go's own
+# compiler) are pinned to --platform=$BUILDPLATFORM in the Dockerfile
+# specifically to avoid that — see its comments. Only the tiny final
+# alpine stage (apk add + file copies) actually runs under QEMU for the
+# non-native target, which is fast enough not to matter.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Never cancel an in-progress publish mid-push — an interrupted push
+  # can leave a partially-uploaded manifest on GHCR. A second push
+  # landing while one's still running just queues behind it instead.
+  group: docker-publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute short SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/autumnsgrove/polaris:latest
+            ghcr.io/autumnsgrove/polaris:${{ steps.vars.outputs.short_sha }}
+          build-args: |
+            VERSION=${{ steps.vars.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

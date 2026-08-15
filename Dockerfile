@@ -14,7 +14,16 @@
 # time — always exactly what's in this commit, no possibility of drift.
 # Node/pnpm versions matched to that same workflow for the same
 # reproducibility reason it pins them.
-FROM node:22-bookworm AS frontend-build
+#
+# --platform=$BUILDPLATFORM pins this stage to the build host's own
+# architecture regardless of which platform(s) this image is being
+# built for (see the release workflow's `platforms: linux/amd64,
+# linux/arm64`) — a Vite/SvelteKit build produces plain JS/CSS/HTML,
+# architecture-independent output, so there's no reason to run it once
+# per target arch under QEMU emulation (slow, and Node's native addons
+# are the exact thing QEMU handles worst). It builds once, natively,
+# and every target-arch stage below reuses the same output.
+FROM --platform=$BUILDPLATFORM node:22-bookworm AS frontend-build
 WORKDIR /web
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate && \
@@ -23,7 +32,15 @@ COPY web/ .
 RUN pnpm run build
 
 # --- build ------------------------------------------------------------
-FROM golang:1.26-alpine AS build
+# Also pinned to --platform=$BUILDPLATFORM, same reasoning as
+# frontend-build but for a different underlying reason: Go cross-
+# compiles natively (just set GOOS/GOARCH — no C toolchain involved
+# since CGO_ENABLED=0, see below), so running this stage under
+# emulation for the target arch would only make it slower for zero
+# correctness benefit. TARGETOS/TARGETARCH (buildx-provided build args
+# describing what we're actually compiling *for*) drive the
+# cross-compilation directly instead.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -48,13 +65,21 @@ COPY --from=frontend-build /web/build ./web/build
 # there's no .git directory in this image to shell out to (see
 # .dockerignore) — see gateway.Server's version field's doc comment.
 ARG VERSION=dev-docker
+# TARGETOS/TARGETARCH: automatically populated by buildx per platform
+# in `platforms: linux/amd64,linux/arm64` — no ARG declaration needed
+# for these two specifically (buildx predefines them), but they must be
+# named here to be visible inside this stage's RUN commands.
+ARG TARGETOS
+ARG TARGETARCH
 
 # CGO_ENABLED=0: modernc.org/sqlite is a pure-Go SQLite driver, so this
 # binary has no C dependency at all — a fully static binary that runs in
 # a scratch-derived runtime stage with no libc, no musl, nothing to patch
-# for CVEs beyond the binary itself.
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o /out/polaris .
+# for CVEs beyond the binary itself. That same fact is what makes
+# GOOS/GOARCH cross-compilation just work here with zero extra setup —
+# no per-arch C toolchain to install, unlike a cgo-dependent build.
+RUN --mount=type=cache,target=/root/.cache/go-build,id=go-build-${TARGETOS}-${TARGETARCH} \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w -X main.Version=${VERSION}" -o /out/polaris .
 
 # --- runtime ------------------------------------------------------------
 FROM alpine:3.20
