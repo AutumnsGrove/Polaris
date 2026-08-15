@@ -31,6 +31,17 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
+	// Docker installs have no systemd/launchd unit for this command to
+	// write in the first place — Docker's own restart: unless-stopped
+	// plays that role (see docker-compose.yml), and the update watcher's
+	// units are install.sh's job, not this command's. Installing one
+	// here would just point systemd at the orphaned host-side CLI
+	// binary, not the actual container serving traffic — misleading,
+	// not just unnecessary.
+	if isDockerComposeInstall(repoPath) {
+		return fmt.Errorf("this is a Docker install (docker-compose.yml present) — there's no systemd/launchd unit for `polaris install` to set up here.\nUse `docker compose up -d` to start it, or `install.sh POLARIS_INSTALL_MODE=docker` (see README's Docker install section) to also set up the update watcher")
+	}
+
 	// Writing the systemd unit to /etc requires sudo, but the service
 	// itself shouldn't run as root — a network-facing process with API
 	// keys and a database has no business needing root privileges. sudo

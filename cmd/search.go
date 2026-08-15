@@ -1,14 +1,20 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"polaris/agent"
 	"polaris/config"
+	"polaris/gateway"
 	"polaris/llm"
 	"polaris/models"
 	"polaris/places"
@@ -26,13 +32,22 @@ var searchCmd = &cobra.Command{
 }
 
 func init() {
-	searchCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml")
-	searchCmd.Flags().StringVarP(&searchModel, "model", "m", "", "model id from config.yaml (defaults to default_model)")
+	searchCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install queries the running container instead)")
+	searchCmd.Flags().StringVarP(&searchModel, "model", "m", "", "model id (defaults to default_model)")
 	rootCmd.AddCommand(searchCmd)
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
 	query := strings.Join(args, " ")
+
+	// Docker mode: same reasoning as runStats — ./config.yaml doesn't
+	// correctly describe a Docker install (missing, or worse, stale).
+	// Route the query through the running container's own /api/ask
+	// instead, the exact same synchronous endpoint any other
+	// programmatic caller uses.
+	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
+		return runDockerSearch(query, searchModel)
+	}
 
 	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
@@ -110,5 +125,57 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Printf("\ncost: $%.5f\n", result.CostUSD)
+	return nil
+}
+
+// runDockerSearch is runSearch's Docker-mode implementation: POST the
+// query to the running container's own /api/ask (the same synchronous,
+// non-streaming endpoint any programmatic caller uses — see
+// gateway/ask.go's doc comment) instead of building a local agent.Run
+// call against a config/SearXNG/store this process can't correctly see
+// under Docker. No live "thinking"/tool-call progress lines here,
+// unlike the bare-metal path above — /api/ask blocks until the whole
+// turn finishes, so there's genuinely nothing to print until then.
+func runDockerSearch(query, model string) error {
+	reqBody, err := json.Marshal(gateway.AskRequest{Content: query, Model: model, Source: "cli"})
+	if err != nil {
+		return err
+	}
+
+	url := dockerLocalBaseURL() + "/api/ask"
+	// A real research turn (several search/read rounds) can legitimately
+	// take a couple of minutes — same reasoning as runDockerModeCall's
+	// generous timeout.
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("reaching the local polaris server at %s: %w (is the container running? try `docker compose ps`)", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errBody struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errBody)
+		if errBody.Error != "" {
+			return fmt.Errorf("%s", errBody.Error)
+		}
+		return fmt.Errorf("query failed (status %d)", resp.StatusCode)
+	}
+
+	var ask gateway.AskResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ask); err != nil {
+		return fmt.Errorf("decoding response from %s: %w", url, err)
+	}
+
+	fmt.Println(ask.Answer)
+	if len(ask.Citations) > 0 {
+		fmt.Println("\nSources:")
+		for _, c := range ask.Citations {
+			fmt.Printf("  - %s (%s)\n", c.Title, c.URL)
+		}
+	}
+	fmt.Printf("\ncost: $%.5f\n", ask.CostUSD)
 	return nil
 }
