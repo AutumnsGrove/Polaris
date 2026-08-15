@@ -10,14 +10,41 @@
 
 let threadId = $state('A');
 
+// Bumped to invalidate page state *without* changing the id. Real
+// SvelteKit page state is a single reactive object: anything reading
+// page.params re-runs whenever page state is updated at all, not only when
+// the matched params happen to differ. Modelling that is what lets
+// page.svelte.test.ts reproduce the bump-back bug, where the effect re-ran
+// on its own while page.params.id was stale.
+let pageVersion = $state(0);
+
 export const fakePage = {
 	get params() {
+		pageVersion;
 		return { id: threadId };
 	}
 };
 
 export function setPageId(id: string) {
 	threadId = id;
+}
+
+// A real SvelteKit navigation moves the address bar and page.params
+// together; syncURL's raw history.replaceState moves only the address bar.
+export function navigateTo(id: string) {
+	window.history.replaceState(null, '', `/t/${id}`);
+	threadId = id;
+}
+
+// What AppState.syncURL does: address bar only, page state left stale.
+export function syncURLOnly(path: string) {
+	window.history.replaceState(null, '', path);
+}
+
+// Page state churn with no navigation — forces effects reading page.params
+// to re-run against an unchanged (and possibly stale) id.
+export function invalidatePageState() {
+	pageVersion++;
 }
 
 let currentThreadId = $state<string | null>(null);
@@ -40,4 +67,6 @@ export function resetRouteTestFakes() {
 	currentThreadId = null;
 	openThreadCalls.length = 0;
 	threadId = 'A';
+	pageVersion = 0;
+	window.history.replaceState(null, '', '/t/A');
 }
