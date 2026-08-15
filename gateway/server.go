@@ -36,6 +36,17 @@ type Server struct {
 	cfgPath string
 	cfgMu   sync.RWMutex
 
+	// version is the build-injected version (main.Version, via -ldflags
+	// -X, threaded through from main.go/cmd) — empty for a plain local
+	// `go build` with no ldflags, in which case handleVersion falls back
+	// to computeVersion's git shell-out (see version.go). A Docker image
+	// has no .git directory (see .dockerignore) and no reliable git
+	// binary, so that shell-out would just fail there — this is what
+	// lets /api/version report something real under Docker instead of
+	// silently pinning at "dev" forever, which would break the settings
+	// panel's "did the update actually land" reload check.
+	version string
+
 	db         *store.Store
 	searxng    *search.SearXNGClient
 	blocklist  *search.Blocklist
@@ -82,7 +93,9 @@ type Server struct {
 // config.yaml on demand; staticFS is the embedded SvelteKit build (see
 // web/embed.go) — pass nil to run API/WS-only, which is what local dev
 // does while `vite dev` serves the frontend and proxies through instead.
-func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *Server {
+// version is main.Version, or "" if the caller has none to give (tests,
+// mainly) — see the Server.version field's doc comment.
+func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, version string) *Server {
 	blocklist, err := search.LoadBlocklist(cfg.BlockedSourcesFile)
 	if err != nil {
 		log.Warn("loading source blocklist failed, continuing with no blocked sources", "path", cfg.BlockedSourcesFile, "err", err)
@@ -92,6 +105,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS) *S
 	s := &Server{
 		cfg:        cfg,
 		cfgPath:    cfgPath,
+		version:    version,
 		db:         db,
 		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist),
 		blocklist:  blocklist,

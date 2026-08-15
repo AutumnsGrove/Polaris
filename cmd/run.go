@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -94,7 +95,18 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	srv := gateway.New(cfg, configPath, db, staticFS)
+	// AppVersion defaults to "dev-<build timestamp>" (see version.go)
+	// when nothing was injected via -ldflags -X, which is exactly what a
+	// plain bare-metal `go build` (updater.Run's self-update included)
+	// does — no ldflags at all. Only pass through a real injected
+	// version (Docker builds set one via the Dockerfile's ARG VERSION);
+	// otherwise gateway falls back to its own git-based computeVersion,
+	// preserving today's bare-metal "rNNN.hash" version display.
+	version := AppVersion
+	if strings.HasPrefix(version, "dev-") {
+		version = ""
+	}
+	srv := gateway.New(cfg, configPath, db, staticFS, version)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}

@@ -65,7 +65,7 @@ func newTestHarness(t *testing.T, llmBaseURL string) *testHarness {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	s := New(cfg, cfgPath, db, nil)
+	s := New(cfg, cfgPath, db, nil, "")
 	httpSrv := httptest.NewServer(s.Handler())
 	t.Cleanup(httpSrv.Close)
 

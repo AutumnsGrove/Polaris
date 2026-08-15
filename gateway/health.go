@@ -13,5 +13,5 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "error", "error": err.Error()})
 		return
 	}
-	writeJSON(w, map[string]string{"status": "ok", "version": getVersion()})
+	writeJSON(w, map[string]string{"status": "ok", "version": s.getVersion()})
 }

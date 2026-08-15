@@ -13,12 +13,24 @@ RUN go mod download
 
 COPY . .
 
+# ARG (not just a shell default inside the RUN below) is required for
+# --build-arg VERSION=... to actually reach this step at all — without
+# declaring it, ${VERSION} in the RUN command below silently resolves
+# to nothing but its own :- fallback every time, regardless of what's
+# passed at `docker build` time. Meant to be the git short SHA (CI's
+# release workflow passes one; a local `docker build` with no
+# --build-arg falls back to this default) — gateway/version.go prefers
+# this over shelling out to git for its own version reporting, since
+# there's no .git directory in this image to shell out to (see
+# .dockerignore) — see gateway.Server's version field's doc comment.
+ARG VERSION=dev-docker
+
 # CGO_ENABLED=0: modernc.org/sqlite is a pure-Go SQLite driver, so this
 # binary has no C dependency at all — a fully static binary that runs in
 # a scratch-derived runtime stage with no libc, no musl, nothing to patch
 # for CVEs beyond the binary itself.
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION:-docker}" -o /out/polaris .
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o /out/polaris .
 
 # --- runtime ------------------------------------------------------------
 FROM alpine:3.20

@@ -43,6 +43,12 @@ services:
       - LASTFM_API_KEY
       - HARDCOVER_API_KEY
       - TMDB_API_KEY
+      # Read by gateway/version.go's deploymentMode() — purely a display
+      # signal for the settings panel's version row (bare-metal vs
+      # Docker icon). Fixed, not overridable via .env: this needs to
+      # reflect how the process is actually running, not an operator
+      # preference.
+      - POLARIS_DEPLOYMENT=docker
     ports:
       # Override with POLARIS_PORT in .env if 8899 is already taken on
       # the host (e.g. a bare-metal Polaris still running alongside this).
