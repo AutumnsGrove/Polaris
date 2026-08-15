@@ -3,7 +3,7 @@
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen } from '@lucide/svelte';
+	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen, Image } from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 	// Tool calls start collapsed (their result is secondary detail) but a
@@ -19,6 +19,11 @@
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
 		if (item.tool === 'weather') return `Weather: ${item.args?.location ?? ''}`;
 		if (item.tool === 'reference_lookup') return `Looking up: ${item.args?.query ?? ''}`;
+		// Synthetic — not a real agent tool call. resolveAttachment
+		// (gateway/attachments.go) emits this pair itself, before agent.Run
+		// even starts, so an uploaded photo's vision-model description shows
+		// up on the timeline instead of leaving the screen blank while it runs.
+		if (item.tool === 'describe_image') return `Looking at: ${item.args?.filename ?? 'image'}`;
 		return item.tool;
 	}
 
@@ -72,6 +77,8 @@
 				<Cloud size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'reference_lookup'}
 				<BookOpen size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'describe_image'}
+				<Image size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}

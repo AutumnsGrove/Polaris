@@ -154,7 +154,18 @@ func firstNonEmpty(vals ...string) string {
 // second multimodal model to the registry (config.ModelConfig.Multimodal)
 // would silently never be used for this: MultimodalModel() always returns
 // the first Multimodal entry it finds, regardless of what's selected.
-func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel config.ModelConfig, msg ClientMessage) (content string, costUSD float64, err error) {
+//
+// emit, if non-nil, is handleTurn's same event-streaming closure the rest
+// of a turn uses for real tool calls — an image description is a "blank
+// screen" moment otherwise: it runs entirely before agent.Run even starts,
+// so nothing was ever visible on the frontend while it happened, often for
+// several seconds. Wrapping the vision-model call in a synthetic
+// tool_call/tool_result pair (tool name "describe_image") makes it show up
+// on the timeline exactly like a real tool call, description included, so
+// there's finally something to look at instead of a blank wait. Nil is
+// fine (and used by tests below) — this attachment path also runs from
+// contexts with no live streaming connection to write to.
+func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel config.ModelConfig, msg ClientMessage, emit func(eventType string, payload map[string]interface{})) (content string, costUSD float64, err error) {
 	if msg.AttachmentID == "" {
 		return msg.Content, 0, nil
 	}
@@ -205,9 +216,21 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 		// routing open lets OpenRouter pick whichever endpoint actually
 		// handles image input for this model.
 		client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens)
+		if emit != nil {
+			emit("tool_call", map[string]interface{}{
+				"tool": "describe_image",
+				"args": map[string]interface{}{"filename": filename},
+			})
+		}
 		description, cost, err := client.DescribeImage(ctx, base64.StdEncoding.EncodeToString(data), msg.AttachmentContentType)
 		if err != nil {
+			if emit != nil {
+				emit("tool_result", map[string]interface{}{"tool": "describe_image", "result": "error: " + err.Error()})
+			}
 			return msg.Content, 0, fmt.Errorf("describing image: %w", err)
+		}
+		if emit != nil {
+			emit("tool_result", map[string]interface{}{"tool": "describe_image", "result": description})
 		}
 		return fmt.Sprintf("%s\n\n[Attached image: %s]\nImage description (the model itself can't see "+
 			"the image — this description is all it has to go on): %s", msg.Content, filename, description), cost, nil

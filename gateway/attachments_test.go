@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func mustDecodePDF(t *testing.T) []byte {
 
 func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"})
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"}, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 
 func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"})
+	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, nil)
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
 	}
@@ -69,7 +70,7 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 		AttachmentFilename:    "report.pdf",
 		AttachmentContentType: "application/pdf",
 	}
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg)
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
 		Content:               "hi",
 		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
 		AttachmentContentType: "application/pdf",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected an error when the attachment file doesn't exist on disk")
 	}
@@ -129,7 +130,7 @@ func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
 	}
 	// The selected model (config.ModelConfig{}, i.e. not multimodal) can't see
 	// the image itself, so this exercises the cfg.MultimodalModel() fallback.
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg)
+	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage(t *testin
 		AttachmentFilename:    "bike.jpg",
 		AttachmentContentType: "image/jpeg",
 	}
-	got, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg)
+	got, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -198,6 +199,67 @@ func TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage(t *testin
 	}
 	if requestedModel != selectedModel.Model {
 		t.Errorf("requestedModel = %q, want the selected model (%q), not a registry fallback", requestedModel, selectedModel.Model)
+	}
+}
+
+// TestResolveAttachment_ImageEmitsSyntheticToolCall guards the fix for a
+// found-in-the-wild UX gap: describing an image runs entirely before
+// agent.Run even starts, so the frontend showed nothing at all — not even
+// a spinner — for however long the vision-model call took. resolveAttachment
+// now wraps that call in a synthetic tool_call/tool_result pair (tool name
+// "describe_image") through the same emit callback handleTurn uses for
+// real tool calls, so it shows up on the timeline instead of a blank wait.
+func TestResolveAttachment_ImageEmitsSyntheticToolCall(t *testing.T) {
+	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
+	}))
+	defer visionSrv.Close()
+
+	dir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440006"
+	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
+		t.Fatalf("writing fake image: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = dir
+	cfg.OpenRouter.BaseURL = visionSrv.URL
+	cfg.Models = []config.ModelConfig{
+		{ID: "mimo", Name: "MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
+	}
+
+	msg := ClientMessage{
+		Content:               "what's in this photo",
+		AttachmentID:          id,
+		AttachmentFilename:    "bike.jpg",
+		AttachmentContentType: "image/jpeg",
+	}
+
+	var events []map[string]interface{}
+	emit := func(eventType string, payload map[string]interface{}) {
+		payload["_type"] = eventType
+		events = append(events, payload)
+	}
+
+	if _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, emit); err != nil {
+		t.Fatalf("resolveAttachment returned error: %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("got %d emitted events, want 2 (tool_call + tool_result): %+v", len(events), events)
+	}
+	if events[0]["_type"] != "tool_call" || events[0]["tool"] != "describe_image" {
+		t.Errorf("first event = %+v, want a describe_image tool_call", events[0])
+	}
+	if args, ok := events[0]["args"].(map[string]interface{}); !ok || args["filename"] != "bike.jpg" {
+		t.Errorf("tool_call args = %+v, want filename bike.jpg", events[0]["args"])
+	}
+	if events[1]["_type"] != "tool_result" || events[1]["tool"] != "describe_image" {
+		t.Errorf("second event = %+v, want a describe_image tool_result", events[1])
+	}
+	if result, _ := events[1]["result"].(string); !strings.Contains(result, "red bicycle") {
+		t.Errorf("tool_result result = %q, want it to contain the vision model's description", result)
 	}
 }
 
@@ -216,7 +278,7 @@ func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing
 		Content:               "what is this",
 		AttachmentID:          id,
 		AttachmentContentType: "image/png",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected an error when no multimodal model is configured")
 	}
