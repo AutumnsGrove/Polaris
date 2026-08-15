@@ -108,14 +108,24 @@ set_pinned_image "$TARGET_IMAGE"
 # otherwise disturb the searxng container as a side effect.
 if ! docker compose pull polaris; then
 	write_result "failed" "docker compose pull failed for $TARGET_IMAGE"
-	[ -n "$PREVIOUS_IMAGE" ] && set_pinned_image "$PREVIOUS_IMAGE"
+	# Always roll back — even when PREVIOUS_IMAGE is empty (the very
+	# first update attempt, nothing pinned yet). An earlier version of
+	# this only rolled back when PREVIOUS_IMAGE was non-empty, which on
+	# a first-ever failed attempt left .env pinned to the *broken*
+	# target instead of back to "nothing pinned" (which falls through
+	# to docker-compose.yml's :latest default) — strictly worse than
+	# doing nothing, since a later `docker compose up` would then try
+	# to start from that same broken reference. Caught by actually
+	# testing this exact scenario live against the potato.
+	set_pinned_image "$PREVIOUS_IMAGE"
 	rm -f "$REQUESTED_FILE"
 	exit 1
 fi
 
 if ! docker compose up -d --no-deps polaris; then
 	write_result "failed" "docker compose up failed for $TARGET_IMAGE"
-	[ -n "$PREVIOUS_IMAGE" ] && set_pinned_image "$PREVIOUS_IMAGE" && docker compose up -d --no-deps polaris || true
+	set_pinned_image "$PREVIOUS_IMAGE"
+	docker compose up -d --no-deps polaris || true
 	rm -f "$REQUESTED_FILE"
 	exit 1
 fi
