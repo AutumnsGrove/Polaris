@@ -18,7 +18,12 @@ services:
 
   polaris:
     build: .
-    image: ghcr.io/autumnsgrove/polaris:latest
+    # POLARIS_IMAGE lets the update watcher (compose/watcher/update.sh)
+    # pin this to an exact digest from .env before recreating the
+    # container — see that script's comment on why a floating :latest
+    # tag isn't good enough for what "Update Polaris" actually pulls.
+    # Unset/default is fine for local dev (`docker compose up --build`).
+    image: ${POLARIS_IMAGE:-ghcr.io/autumnsgrove/polaris:latest}
     restart: unless-stopped
     depends_on:
       searxng:

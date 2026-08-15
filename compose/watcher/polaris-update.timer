@@ -1,0 +1,10 @@
+[Unit]
+Description=Backstop for the Polaris update watcher (in case an inotify event from polaris-update.path is ever missed)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=polaris-update.service
+
+[Install]
+WantedBy=timers.target
