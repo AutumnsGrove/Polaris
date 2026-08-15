@@ -4,22 +4,38 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/AutumnsGrove/Polaris/main/install.sh | bash
 #
-# Clones the repo, builds the binary, brings up a local SearXNG instance
-# via Docker (installing Docker itself if it's missing), copies
-# config.yaml.example to config.yaml, and opens it in your default editor
-# so you can drop in your OpenRouter key. Safe to re-run — every step
-# checks what's already there before doing anything.
+# Two install modes, chosen via POLARIS_INSTALL_MODE (default
+# "bare-metal", matching this script's original behavior):
 #
-# What it deliberately does NOT do: start the Polaris server itself. The
-# config needs a real API key first, so the last step is always "go fill
-# this in", not "silently start a half-configured server in the
-# background."
+#   bare-metal (default) — clones the repo, builds the polaris binary
+#     with the local Go toolchain, brings up a standalone SearXNG dev
+#     container via Docker (installing Docker itself if it's missing),
+#     copies config.yaml.example to config.yaml, and opens it for you
+#     to drop in an OpenRouter key.
+#
+#   docker — clones the repo, ensures Docker + the Compose plugin are
+#     present, copies .env.example/compose/polaris/config.yaml.example
+#     to their real counterparts, and (Linux only) installs the host
+#     update watcher's systemd units (see compose/watcher/) so the
+#     settings panel's "Update Polaris" button works. Does NOT run
+#     `docker compose up` itself — same "go fill in the config first"
+#     philosophy as the bare-metal path below.
+#
+#     POLARIS_INSTALL_MODE=docker curl -fsSL .../install.sh | bash
+#
+# Safe to re-run in either mode — every step checks what's already
+# there before doing anything.
+#
+# What neither mode does: start the Polaris server itself. The config
+# needs a real API key first, so the last step is always "go fill this
+# in", not "silently start a half-configured server in the background."
 set -euo pipefail
 
 REPO_URL="https://github.com/AutumnsGrove/Polaris.git"
 INSTALL_DIR="${POLARIS_INSTALL_DIR:-$HOME/Polaris}"
 SEARXNG_PORT="${POLARIS_SEARXNG_PORT:-18888}"
 SEARXNG_CONTAINER="${POLARIS_SEARXNG_CONTAINER:-searxng-dev}"
+INSTALL_MODE="${POLARIS_INSTALL_MODE:-bare-metal}"
 
 # Set to 1 after a fresh Docker Engine install on Linux, where the
 # current shell session doesn't have the new `docker` group membership
@@ -41,6 +57,16 @@ docker_cmd() {
 	fi
 }
 
+# ---- -1. install mode check ---------------------------------------------
+
+case "$INSTALL_MODE" in
+	bare-metal | docker) ;;
+	*)
+		warn "Unknown POLARIS_INSTALL_MODE: \"$INSTALL_MODE\" (expected \"bare-metal\" or \"docker\")"
+		exit 1
+		;;
+esac
+
 # ---- 0. platform check --------------------------------------------------
 
 OS="$(uname -s)"
@@ -53,7 +79,7 @@ case "$OS" in
 		;;
 esac
 
-# ---- 1. prerequisites: git, go -----------------------------------------
+# ---- 1. prerequisites: git, (go for bare-metal only) ---------------------
 
 step "Checking prerequisites"
 
@@ -68,12 +94,16 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 info "git: $(git --version)"
 
-if ! command -v go >/dev/null 2>&1; then
-	warn "Go is required and wasn't found."
-	warn "Install it from https://go.dev/dl/ and re-run this script."
-	exit 1
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	if ! command -v go >/dev/null 2>&1; then
+		warn "Go is required and wasn't found."
+		warn "Install it from https://go.dev/dl/ and re-run this script."
+		exit 1
+	fi
+	info "go: $(go version)"
+else
+	info "Docker mode — no local Go toolchain needed (the image builds its own)."
 fi
-info "go: $(go version)"
 
 # ---- 2. clone or update the repo ---------------------------------------
 
@@ -97,16 +127,21 @@ cd "$INSTALL_DIR"
 # if this checkout is ever committed to.
 git config core.hooksPath .githooks
 
-# ---- 3. build the binary ------------------------------------------------
+# ---- 3. build the binary (bare-metal only) -------------------------------
 
-step "Building the polaris binary"
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	step "Building the polaris binary"
 
-go build -o polaris .
-info "Built ./polaris"
+	go build -o polaris .
+	info "Built ./polaris"
+fi
 
-# ---- 4. Docker + SearXNG -------------------------------------------------
+# ---- 4. Docker ------------------------------------------------------------
+#
+# Needed in both modes: bare-metal uses it for the standalone SearXNG
+# dev container below; docker mode uses it for the whole compose stack.
 
-step "Setting up SearXNG (local web search backend)"
+step "Setting up Docker"
 
 if ! command -v docker >/dev/null 2>&1; then
 	info "Docker not found — installing it."
@@ -156,39 +191,138 @@ else
 fi
 info "Docker daemon is up."
 
-# Reuse an existing container (start it if stopped) rather than always
-# recreating — a fresh `docker run` with the same --name would just fail
-# with "container already exists" on a second run of this script.
-if docker_cmd ps -a --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
-	if docker_cmd ps --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
-		info "$SEARXNG_CONTAINER is already running."
+if [ "$INSTALL_MODE" = "docker" ]; then
+	if ! docker_cmd compose version >/dev/null 2>&1; then
+		warn "docker compose (the v2 plugin) wasn't found even though Docker is installed."
+		warn "Docker Desktop and the get.docker.com script both bundle it — if this is a"
+		warn "custom Docker install, add the compose plugin and re-run."
+		exit 1
+	fi
+	info "docker compose: $(docker_cmd compose version --short 2>/dev/null || echo present)"
+fi
+
+# ---- 4b. standalone SearXNG dev container (bare-metal only) --------------
+#
+# Docker mode doesn't need this — docker-compose.yml brings up its own
+# searxng service with JSON output already enabled (see
+# compose/searxng/settings.yml), no separate container to manage.
+
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	step "Setting up SearXNG (local web search backend)"
+
+	# Reuse an existing container (start it if stopped) rather than always
+	# recreating — a fresh `docker run` with the same --name would just fail
+	# with "container already exists" on a second run of this script.
+	if docker_cmd ps -a --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
+		if docker_cmd ps --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
+			info "$SEARXNG_CONTAINER is already running."
+		else
+			info "$SEARXNG_CONTAINER exists but isn't running — starting it."
+			docker_cmd start "$SEARXNG_CONTAINER"
+		fi
 	else
-		info "$SEARXNG_CONTAINER exists but isn't running — starting it."
-		docker_cmd start "$SEARXNG_CONTAINER"
+		info "Creating the $SEARXNG_CONTAINER container on port $SEARXNG_PORT."
+		docker_cmd run -d --name "$SEARXNG_CONTAINER" -p "$SEARXNG_PORT:8080" \
+			-v "$INSTALL_DIR/dev/searxng/settings.yml:/etc/searxng/settings.yml:ro" \
+			searxng/searxng:latest
+	fi
+fi
+
+# ---- 5. config -------------------------------------------------------------
+
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	step "Setting up config.yaml"
+
+	if [ -f config.yaml ]; then
+		info "config.yaml already exists — leaving it alone."
+	else
+		cp config.yaml.example config.yaml
+		info "Copied config.yaml.example to config.yaml."
 	fi
 else
-	info "Creating the $SEARXNG_CONTAINER container on port $SEARXNG_PORT."
-	docker_cmd run -d --name "$SEARXNG_CONTAINER" -p "$SEARXNG_PORT:8080" \
-		-v "$INSTALL_DIR/dev/searxng/settings.yml:/etc/searxng/settings.yml:ro" \
-		searxng/searxng:latest
+	step "Setting up .env and compose/polaris/config.yaml"
+
+	if [ -f .env ]; then
+		info ".env already exists — leaving it alone."
+	else
+		cp .env.example .env
+		if command -v openssl >/dev/null 2>&1; then
+			SEARXNG_SECRET="$(openssl rand -hex 32)"
+			# macOS's BSD sed needs -i '' (empty extension arg); GNU sed on
+			# Linux takes -i with no argument at all — this ternary picks
+			# the right invocation per platform rather than assuming one.
+			if [ "$OS" = "Darwin" ]; then
+				sed -i '' "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
+			else
+				sed -i "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
+			fi
+			info "Copied .env.example to .env and generated a random SEARXNG_SECRET."
+		else
+			warn "openssl not found — copied .env.example to .env, but you'll need to"
+			warn "fill in SEARXNG_SECRET yourself (openssl rand -hex 32, or any random string)."
+		fi
+	fi
+
+	mkdir -p compose/polaris
+	if [ -f compose/polaris/config.yaml ]; then
+		info "compose/polaris/config.yaml already exists — leaving it alone."
+	else
+		cp compose/polaris/config.yaml.example compose/polaris/config.yaml
+		info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
+	fi
+
+	mkdir -p update-signal
 fi
 
-# ---- 5. config.yaml -------------------------------------------------------
+# ---- 6. host update watcher (docker mode, Linux only) ---------------------
+#
+# macOS has no systemd — and isn't the target production deployment
+# anyway (see README's "why not just use X": this is built to run on a
+# Le Potato SBC, not a dev laptop). A macOS Docker install still works
+# fine; "Update Polaris" in the settings panel just won't be wired up,
+# same as it wasn't before this step existed.
 
-step "Setting up config.yaml"
+if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
+	step "Installing the host update watcher"
 
-if [ -f config.yaml ]; then
-	info "config.yaml already exists — leaving it alone."
+	if ! command -v systemctl >/dev/null 2>&1; then
+		warn "systemctl not found — skipping the update watcher."
+		warn "\"Update Polaris\" in the settings panel won't work until it's set up"
+		warn "manually; see compose/watcher/ for the unit files."
+	else
+		WATCHER_SRC="$INSTALL_DIR/compose/watcher"
+		WATCHER_TMP="$(mktemp -d)"
+		trap 'rm -rf "$WATCHER_TMP"' EXIT
+
+		for unit in polaris-update.service polaris-update.path polaris-update.timer; do
+			sed -e "s|@INSTALL_DIR@|$INSTALL_DIR|g" -e "s|@USER@|$USER|g" \
+				"$WATCHER_SRC/$unit" >"$WATCHER_TMP/$unit"
+			sudo cp "$WATCHER_TMP/$unit" "/etc/systemd/system/$unit"
+		done
+		info "Installed polaris-update.service/.path/.timer to /etc/systemd/system/."
+
+		sudo systemctl daemon-reload
+		# Enabling --now the .path and .timer is safe at install time even
+		# with nothing pending: .path's PathExists condition is false until
+		# a real update is requested (see that unit's comment), and
+		# .timer's first tick is 5 minutes out (OnBootSec) — neither runs
+		# polaris-update.service itself right now.
+		sudo systemctl enable --now polaris-update.path polaris-update.timer
+		info "Enabled polaris-update.path (instant trigger) and polaris-update.timer"
+		info "(hourly backstop)."
+	fi
+fi
+
+# ---- 7. open config for editing --------------------------------------------
+
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	step "Opening config.yaml for you to add your OpenRouter API key"
+	EDIT_PATHS=("$INSTALL_DIR/config.yaml")
 else
-	cp config.yaml.example config.yaml
-	info "Copied config.yaml.example to config.yaml."
+	step "Opening .env and compose/polaris/config.yaml for you to add your API keys"
+	EDIT_PATHS=("$INSTALL_DIR/.env" "$INSTALL_DIR/compose/polaris/config.yaml")
 fi
 
-# ---- 6. open it for editing ------------------------------------------------
-
-step "Opening config.yaml for you to add your OpenRouter API key"
-
-CONFIG_PATH="$INSTALL_DIR/config.yaml"
 if [ "$OS" = "Darwin" ]; then
 	# Deliberately `open -e`, not a bare `open` — a bare `open` defers to
 	# whatever LaunchServices has registered as the default handler for
@@ -197,21 +331,33 @@ if [ "$OS" = "Darwin" ]; then
 	# show a text file. `-e` forces TextEdit specifically, which is
 	# guaranteed present on every Mac and can't trigger anything like
 	# that.
-	open -e "$CONFIG_PATH"
+	open -e "${EDIT_PATHS[@]}"
 elif command -v xdg-open >/dev/null 2>&1; then
-	xdg-open "$CONFIG_PATH" >/dev/null 2>&1 &
+	for p in "${EDIT_PATHS[@]}"; do
+		xdg-open "$p" >/dev/null 2>&1 &
+	done
 else
 	info "No GUI editor available on this machine (likely a headless server)."
-	info "Edit it yourself: \${EDITOR:-nano} $CONFIG_PATH"
+	info "Edit these yourself: \${EDITOR:-nano} ${EDIT_PATHS[*]}"
 fi
 
 # ---- done -------------------------------------------------------------------
 
 step "Done"
-info "Polaris is built and SearXNG is running at http://localhost:$SEARXNG_PORT"
-info ""
-info "Next steps:"
-info "  1. In config.yaml, set openrouter.api_key to your real key"
-info "     (get one at https://openrouter.ai/keys)"
-info "  2. cd $INSTALL_DIR && ./polaris run"
-info "  3. Open http://localhost:8899"
+if [ "$INSTALL_MODE" = "bare-metal" ]; then
+	info "Polaris is built and SearXNG is running at http://localhost:$SEARXNG_PORT"
+	info ""
+	info "Next steps:"
+	info "  1. In config.yaml, set openrouter.api_key to your real key"
+	info "     (get one at https://openrouter.ai/keys)"
+	info "  2. cd $INSTALL_DIR && ./polaris run"
+	info "  3. Open http://localhost:8899"
+else
+	info "Polaris's Docker install is set up in $INSTALL_DIR."
+	info ""
+	info "Next steps:"
+	info "  1. In .env, set OPENROUTER_API_KEY to your real key"
+	info "     (get one at https://openrouter.ai/keys)"
+	info "  2. cd $INSTALL_DIR && docker compose up -d"
+	info "  3. Open http://localhost:8899"
+fi
