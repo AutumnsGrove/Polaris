@@ -319,8 +319,15 @@ if [ "$INSTALL_MODE" = "bare-metal" ]; then
 	step "Opening config.yaml for you to add your OpenRouter API key"
 	EDIT_PATHS=("$INSTALL_DIR/config.yaml")
 else
-	step "Opening .env and compose/polaris/config.yaml for you to add your API keys"
-	EDIT_PATHS=("$INSTALL_DIR/.env" "$INSTALL_DIR/compose/polaris/config.yaml")
+	# Only .env needs a fresh install's attention — every field in
+	# compose/polaris/config.yaml already has a sane default or gets
+	# filled in from .env via ${VAR} (see that file's own comments), so
+	# there's nothing actionable in it to open unprompted. It's there to
+	# edit later (model choice, voice settings, etc.), not on install.
+	step "Opening .env for you to add your OpenRouter API key"
+	info "(compose/polaris/config.yaml is also there if you want to tune model/voice"
+	info "defaults later — nothing in it needs editing to get started.)"
+	EDIT_PATHS=("$INSTALL_DIR/.env")
 fi
 
 if [ "$OS" = "Darwin" ]; then
