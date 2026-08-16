@@ -6,9 +6,17 @@ services:
       - ./compose/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
       - SEARXNG_SECRET=${SEARXNG_SECRET}
-    # No ports: exposed — only polaris talks to this, over the compose
-    # network's built-in DNS (http://searxng:8080, see
-    # compose/polaris/config.yaml.example). Nothing else needs to reach it.
+    ports:
+      # Loopback-only by default, same posture as polaris's own port below
+      # — SearXNG has no auth of its own, so publishing it wide open by
+      # default would hand out an anonymous search proxy to anything that
+      # can reach the host. Override SEARXNG_HOST=0.0.0.0 in .env if this
+      # host is already access-controlled some other way (e.g. only
+      # reachable over a private tailnet) and direct browser/LAN access to
+      # SearXNG itself is wanted, alongside polaris still talking to it
+      # over the compose network's built-in DNS either way
+      # (http://searxng:8080, see compose/polaris/config.yaml.example).
+      - "${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s

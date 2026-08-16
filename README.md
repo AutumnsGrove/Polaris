@@ -223,8 +223,10 @@ pnpm run build        # manual rebuild, if you ever need one outside of committi
 ## Docker install
 
 `docker-compose.yml` bundles Polaris with its own SearXNG instance (JSON output already enabled —
-none of the manual `settings.yml` edit above is needed under Docker) on an internal-only network;
-only Polaris's port is published to the host.
+none of the manual `settings.yml` edit above is needed under Docker). SearXNG's port is published
+loopback-only by default (`SEARXNG_HOST=0.0.0.0` in `.env` to widen that, e.g. for direct browser
+access on a private tailnet); Polaris always reaches it over the compose network's built-in DNS
+either way, regardless of that setting.
 
 ```bash
 git clone https://github.com/AutumnsGrove/Polaris.git

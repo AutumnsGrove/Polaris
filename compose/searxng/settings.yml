@@ -16,8 +16,9 @@ server:
   # random one on first install. Never hand-edit this to a real value;
   # a value here would just get silently overwritten on every restart.
   secret_key: "ultrasecretkey"
-  # Not internet-facing (only reachable from the polaris container over
-  # the compose-internal network — see docker-compose.yml), so the
-  # rate limiter's bot-defense is protecting against a threat model that
-  # doesn't apply here. Matches dev/searxng/settings.yml.
+  # Loopback-only by default (see docker-compose.yml's SEARXNG_HOST), so
+  # the rate limiter's bot-defense is protecting against a threat model
+  # that doesn't apply out of the box. Matches dev/searxng/settings.yml.
+  # Re-enable this if SEARXNG_HOST is ever widened to a shared/untrusted
+  # network.
   limiter: false
