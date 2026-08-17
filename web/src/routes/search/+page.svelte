@@ -231,8 +231,15 @@
 
 		background: var(--paper);
 		color: var(--ink);
-		min-height: 100%;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+		/* +layout.svelte's .main wraps every route with overflow: hidden,
+		   expecting each page to own its own scroll region (see ChatView's
+		   .messages) rather than relying on document-level scrolling —
+		   without height: 100% + overflow-y: auto here, tall result lists
+		   just clip instead of scrolling. */
+		height: 100%;
+		overflow-y: auto;
 	}
 
 	/* Follows the settings panel's global theme (document.documentElement's
@@ -266,6 +273,9 @@
 	}
 
 	.top {
+		position: sticky;
+		top: 0;
+		z-index: 10;
 		border-bottom: 1px solid var(--line);
 		background: var(--paper);
 	}
