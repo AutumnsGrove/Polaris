@@ -167,6 +167,23 @@ CREATE TABLE IF NOT EXISTS api_usage (
 	count INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (provider, month)
 );
+
+-- search_history backs Atlas's sidebar "Recent searches"/Favorites
+-- sections — the same shape as threads' recency+favorite model, but for
+-- one-shot queries rather than conversations, so it's its own table
+-- rather than shoehorned into threads. One row per distinct query
+-- (exact-match, case-sensitive — see RecordSearch): re-running the same
+-- search bumps updated_at instead of creating a duplicate entry, same
+-- "recency without clutter" idea as a browser's own history.
+CREATE TABLE IF NOT EXISTS search_history (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	query TEXT NOT NULL,
+	favorite INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_search_history_query ON search_history(query);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -623,6 +640,64 @@ func (s *Store) DeleteThread(id string) error {
 		`UPDATE threads SET disabled = 1, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		id,
 	)
+	return err
+}
+
+type SearchHistoryEntry struct {
+	ID        int64     `json:"id"`
+	Query     string    `json:"query"`
+	Favorite  bool      `json:"favorite"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RecordSearch logs a completed Atlas search — called once per query from
+// handleSearch, not per keystroke. An exact repeat of an existing query
+// (case-sensitive, trimmed by the caller) bumps its updated_at instead of
+// inserting a duplicate row, same recency-without-clutter idea as
+// TouchUpdatedAt for threads.
+func (s *Store) RecordSearch(query string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO search_history (query) VALUES (?)
+		 ON CONFLICT(query) DO UPDATE SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`,
+		query,
+	)
+	return err
+}
+
+// ListSearchHistory returns searches newest-first, for Atlas's sidebar —
+// same shape as ListThreads: favorite/non-favorite interleaved in one
+// recency order, split into sections by the frontend.
+func (s *Store) ListSearchHistory(limit int) ([]SearchHistoryEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(
+		`SELECT id, query, favorite, created_at, updated_at
+		 FROM search_history ORDER BY updated_at DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []SearchHistoryEntry
+	for rows.Next() {
+		var e SearchHistoryEntry
+		if err := rows.Scan(&e.ID, &e.Query, &e.Favorite, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// SetSearchHistoryFavorite pins/unpins a search to the sidebar's Favorites
+// section — deliberately doesn't touch updated_at, same reasoning as
+// SetThreadFavorite.
+func (s *Store) SetSearchHistoryFavorite(id int64, favorite bool) error {
+	_, err := s.db.Exec(`UPDATE search_history SET favorite = ? WHERE id = ?`, favorite, id)
 	return err
 }
 

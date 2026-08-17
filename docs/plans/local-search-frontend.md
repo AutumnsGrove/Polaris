@@ -205,14 +205,33 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    Both `gateway/server.go`'s and `cmd/search.go`'s `SearXNGClient` now have it enabled, and since
    `tools/web_search.go` reuses that same client instance, ranking already affects the assistant's
    tool calls too — no separate wiring needed for point 3 above.
-3. Build the `/search` route tree in `web/src/routes`, porting the mockup's HTML/CSS into Svelte
-   components.
-4. Extract the shared sidebar shell out of `Sidebar.svelte` into a mode-agnostic component that
-   takes brand text + list entries + primary-action label as inputs, so Assistant and Atlas each
-   feed it their own content rather than forking the component.
-5. Add a search-history store (query text, timestamp, favorite flag) for Atlas's sidebar list,
-   separate from `Thread`/`Message`.
-6. Wire the Quick Answer endpoint to the existing agent.
+3. ~~Build the `/search` route tree~~ **Done.** `GET /api/search` (`gateway/search.go`) wraps the
+   shared `SearXNGClient`; `web/src/routes/search/+page.svelte` ports the mockup with live data,
+   its own `SearchState` (`web/src/lib/search.svelte.ts`), and a shared `ModeToggle` component
+   (Compass/Atlas, Telescope/Polaris) in both Atlas's header and `ChatView`'s homepage header.
+   Ranking popover is optimistic-only so far — no write endpoint yet (see point 6 below, unchanged).
+   Atlas follows the settings panel's one global theme control rather than a second toggle.
+4. ~~Extract the shared sidebar shell~~ **Done, differently than planned.** Rather than extracting
+   a new mode-agnostic component, `Sidebar.svelte` itself branches on `$app/state`'s `page.url`
+   (`isAtlas = pathname.startsWith('/search')`) and renders Atlas or Assistant content inline —
+   simpler than threading brand/list/label props through a wrapper, since the shell markup
+   (brand row, primary-action button, sectioned list, status footer) is identical either way and
+   only the data source differs.
+5. ~~Add a search-history store~~ **Done.** New `search_history` table, methods added to
+   `store/store.go` alongside threads' equivalents, same recency+favorite shape: `RecordSearch`
+   upserts by exact query text
+   (bumping `updated_at` on a repeat rather than duplicating), `ListSearchHistory`,
+   `SetSearchHistoryFavorite`. `handleSearch` calls `RecordSearch` after every successful search
+   (best-effort — a DB hiccup doesn't fail the search itself). Sidebar's "Recent searches" section
+   is wired to this live; clicking an entry navigates to `/search?q=...`, which `+page.svelte`'s
+   `$effect` picks up and re-runs.
+6. Wire the Quick Answer endpoint to the existing agent, and build the domain-ranking write
+   endpoint so the ranking popover actually persists to `domain_rankings.yaml` instead of being
+   optimistic-only.
 7. Add `search.autocomplete` to `compose/searxng/settings.yml` and the Dockerfile/compose
    COPY+bind-mount pair for `domain_rankings.yaml`, once the feature is ready to ship rather than
    still in design.
+8. ~~`polaris atlas search "query"` CLI~~ **Done** (not originally in this plan, added on request).
+   `cmd/atlas.go`: bare-metal calls `SearXNGClient.Search` directly; Docker mode GETs the running
+   container's own `/api/search` (same endpoint the web UI uses) — same parity pattern as
+   `cmd/search.go`/`cmd/stats.go`, tested in `cmd/docker_cli_parity_test.go`.

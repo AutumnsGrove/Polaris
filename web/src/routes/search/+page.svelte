@@ -1,9 +1,27 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { searchState } from '$lib/search.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import { Search as SearchIcon, SlidersHorizontal, Globe, X } from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
+
+	// Tracks the query the address bar has already been synced to (either
+	// by us, via submitSearch's goto below, or by whatever put it there
+	// before this page loaded — a sidebar click, a pasted/reloaded URL).
+	// The $effect only acts on a query that's NEW relative to this, so a
+	// submit's own goto() doesn't loop back around and re-trigger itself.
+	let syncedQuery = $state('');
+
+	$effect(() => {
+		const q = page.url.searchParams.get('q') ?? '';
+		if (q && q !== syncedQuery) {
+			syncedQuery = q;
+			searchState.query = q;
+			void searchState.search(q);
+		}
+	});
 
 	let openPopoverFor = $state<string | null>(null);
 	// Optimistic-only: no write endpoint exists yet (see
@@ -44,7 +62,11 @@
 
 	function submitSearch(e: Event) {
 		e.preventDefault();
-		void searchState.search(searchState.query);
+		const q = searchState.query.trim();
+		if (!q) return;
+		syncedQuery = q; // see the $effect above — prevents this goto from looping back
+		void searchState.search(q);
+		void goto(`/search?q=${encodeURIComponent(q)}`, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
 	onMount(() => {

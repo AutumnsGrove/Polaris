@@ -1,4 +1,4 @@
-import type { SearchResult } from './types';
+import type { SearchResult, SearchHistoryEntry } from './types';
 
 // Atlas's own reactive state — deliberately separate from AppState
 // (state.svelte.ts), not a mode bolted onto it. Chat's state model is
@@ -10,6 +10,12 @@ export class SearchState {
 	loading = $state(false);
 	error = $state('');
 	lastQuery = $state('');
+
+	// Sidebar's "Recent searches"/Favorites data — see store.SearchHistoryEntry.
+	// Loaded independently of a live search (Sidebar needs it even before
+	// the user has searched anything this session) and refreshed after
+	// every successful search, since handleSearch records it server-side.
+	history = $state<SearchHistoryEntry[]>([]);
 
 	async search(query: string) {
 		const trimmed = query.trim();
@@ -31,6 +37,7 @@ export class SearchState {
 			if (seq !== this.searchSeq) return;
 			this.results = data.results ?? [];
 			this.lastQuery = trimmed;
+			void this.loadHistory();
 		} catch {
 			if (seq !== this.searchSeq) return;
 			this.error = "Couldn't reach the search backend.";
@@ -38,6 +45,21 @@ export class SearchState {
 		} finally {
 			if (seq === this.searchSeq) this.loading = false;
 		}
+	}
+
+	async loadHistory() {
+		const res = await fetch('/api/search-history');
+		if (!res.ok) return;
+		this.history = (await res.json()) ?? [];
+	}
+
+	async favoriteSearch(id: number, favorite: boolean) {
+		await fetch(`/api/search-history/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ favorite })
+		});
+		await this.loadHistory();
 	}
 
 	// Bumped on every search() call; a fetch that resolves after a newer

@@ -281,6 +281,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
 	s.mux.HandleFunc("POST /api/ask", s.handleAsk)
 	s.mux.HandleFunc("GET /api/search", s.handleSearch)
+	s.mux.HandleFunc("GET /api/search-history", s.handleListSearchHistory)
+	s.mux.HandleFunc("PATCH /api/search-history/{id}", s.handleUpdateSearchHistory)
 	s.mux.HandleFunc("POST /api/debug-log", s.handleDebugLog)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

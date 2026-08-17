@@ -251,3 +251,12 @@ export interface SearchResponse {
 	answer?: string;
 	results: SearchResult[];
 }
+
+// Mirrors store.SearchHistoryEntry — Atlas's sidebar list.
+export interface SearchHistoryEntry {
+	id: number;
+	query: string;
+	favorite: boolean;
+	created_at: string;
+	updated_at: string;
+}

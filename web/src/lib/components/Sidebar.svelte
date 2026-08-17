@@ -1,10 +1,21 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
-	import { Plus, PanelLeftClose, Settings, Star } from '@lucide/svelte';
+	import { searchState } from '$lib/search.svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Compass } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { Thread } from '$lib/types';
+	import type { Thread, SearchHistoryEntry } from '$lib/types';
+
+	// The sidebar SHELL (this component, its layout/collapse/mobile-overlay
+	// behavior) is shared between Atlas and the chat assistant — see
+	// docs/plans/local-search-frontend.md's "Shared chrome" section — but
+	// its CONTENT is mode-scoped: Atlas shows past searches, Assistant
+	// shows chat threads. Two separate histories, not a merged one.
+	let isAtlas = $derived(page.url.pathname.startsWith('/search'));
 
 	// Pinned to the top, same shape as the Claude app — favorited threads
 	// move out of the plain recency list into their own section instead of
@@ -12,6 +23,22 @@
 	// changes where it lives, not just how it looks.
 	let favorites = $derived(appState.threads.filter((t) => t.favorite));
 	let recents = $derived(appState.threads.filter((t) => !t.favorite));
+
+	let searchFavorites = $derived(searchState.history.filter((h) => h.favorite));
+	let searchRecents = $derived(searchState.history.filter((h) => !h.favorite));
+
+	// Loaded once regardless of which mode is active on mount — same as
+	// appState.loadThreads() in +layout.svelte — so switching into Atlas
+	// for the first time doesn't show a flash of "no searches yet" while a
+	// fetch that could've started earlier is still in flight. search()
+	// itself refreshes this again after every completed search.
+	onMount(() => {
+		void searchState.loadHistory();
+	});
+
+	function openSearch(query: string) {
+		void goto(`/search?q=${encodeURIComponent(query)}`);
+	}
 </script>
 
 {#snippet threadRow(thread: Thread, i: number)}
@@ -31,43 +58,101 @@
 	</div>
 {/snippet}
 
+{#snippet searchRow(entry: SearchHistoryEntry, i: number)}
+	<div
+		class="thread-item"
+		class:active={isAtlas && searchState.lastQuery === entry.query}
+		onclick={() => openSearch(entry.query)}
+		onkeydown={(e) => e.key === 'Enter' && openSearch(entry.query)}
+		role="button"
+		tabindex="0"
+		in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
+	>
+		<span class="thread-dot" aria-hidden="true"></span>
+		<div class="thread-meta">
+			<div class="thread-title">{entry.query}</div>
+		</div>
+	</div>
+{/snippet}
+
 <aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
 	<div class="brand">
-		<img class="brand-mark" src="/apple-touch-icon.png" alt="" width="22" height="22" />
-		<span class="wordmark">Polaris</span>
+		{#if isAtlas}
+			<Compass size={20} class="brand-icon" />
+			<span class="wordmark">Atlas</span>
+		{:else}
+			<img class="brand-mark" src="/apple-touch-icon.png" alt="" width="22" height="22" />
+			<span class="wordmark">Polaris</span>
+		{/if}
 		<button class="icon-btn collapse-btn" onclick={() => appState.toggleSidebar()} title="Collapse sidebar">
 			<PanelLeftClose size={16} />
 		</button>
 	</div>
 
-	<button class="btn btn-accent new-thread" onclick={() => appState.newThread()}>
-		<Plus size={16} />
-		New thread
-	</button>
+	{#if isAtlas}
+		<button
+			class="btn btn-accent new-thread"
+			onclick={() => {
+				searchState.query = '';
+				searchState.results = [];
+				searchState.lastQuery = '';
+				void goto('/search');
+			}}
+		>
+			<Plus size={16} />
+			New search
+		</button>
+	{:else}
+		<button class="btn btn-accent new-thread" onclick={() => appState.newThread()}>
+			<Plus size={16} />
+			New thread
+		</button>
+	{/if}
 
 	<div class="thread-list">
-		{#if appState.threads.length === 0}
-			<p class="thread-empty">No threads yet. Ask something to start.</p>
-		{/if}
-		<!-- Rename/delete used to live here as hover-revealed row icons —
-		     moved to ThreadMenu.svelte (the "..." menu in the chat header)
-		     since managing the thread you're actually looking at fits there
-		     better than a list row whose whole job is just "open this". -->
-		{#if favorites.length > 0}
-			<div class="section-label">
-				<Star size={11} fill="currentColor" />
-				Favorites
-			</div>
-			{#each favorites as thread, i (thread.id)}
+		{#if isAtlas}
+			{#if searchState.history.length === 0}
+				<p class="thread-empty">No searches yet. Try Atlas above.</p>
+			{/if}
+			{#if searchFavorites.length > 0}
+				<div class="section-label">
+					<Star size={11} fill="currentColor" />
+					Favorites
+				</div>
+				{#each searchFavorites as entry, i (entry.id)}
+					{@render searchRow(entry, i)}
+				{/each}
+				{#if searchRecents.length > 0}
+					<div class="section-label">Recent searches</div>
+				{/if}
+			{/if}
+			{#each searchRecents as entry, i (entry.id)}
+				{@render searchRow(entry, i)}
+			{/each}
+		{:else}
+			{#if appState.threads.length === 0}
+				<p class="thread-empty">No threads yet. Ask something to start.</p>
+			{/if}
+			<!-- Rename/delete used to live here as hover-revealed row icons —
+			     moved to ThreadMenu.svelte (the "..." menu in the chat header)
+			     since managing the thread you're actually looking at fits there
+			     better than a list row whose whole job is just "open this". -->
+			{#if favorites.length > 0}
+				<div class="section-label">
+					<Star size={11} fill="currentColor" />
+					Favorites
+				</div>
+				{#each favorites as thread, i (thread.id)}
+					{@render threadRow(thread, i)}
+				{/each}
+				{#if recents.length > 0}
+					<div class="section-label">Recents</div>
+				{/if}
+			{/if}
+			{#each recents as thread, i (thread.id)}
 				{@render threadRow(thread, i)}
 			{/each}
-			{#if recents.length > 0}
-				<div class="section-label">Recents</div>
-			{/if}
 		{/if}
-		{#each recents as thread, i (thread.id)}
-			{@render threadRow(thread, i)}
-		{/each}
 	</div>
 
 	<div class="status">
@@ -123,6 +208,11 @@
 		border-radius: 6px;
 		flex-shrink: 0;
 		box-shadow: var(--shadow-sm);
+	}
+
+	.sidebar :global(.brand-icon) {
+		flex-shrink: 0;
+		color: var(--color-accent);
 	}
 
 	.wordmark {
