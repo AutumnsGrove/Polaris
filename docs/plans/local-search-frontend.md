@@ -70,12 +70,27 @@ parallel system) that:
 3. Is shared by both the new search frontend's Go handler *and* `tools/web_search.go`'s existing
    agent tool — this is what makes ranking changes "affect Polaris too," per the original ask.
 
-**Open problem worth flagging:** `search/searxng.go` currently normalizes each engine's raw
+**Ranking algorithm (resolved):** `search/searxng.go` currently normalizes each engine's raw
 `score` by dividing by 10 and clamping to 1.0 (`search/searxng.go:115-118`) — a rough heuristic,
-not a real cross-engine ranking signal. SearXNG merges results from N engines (DuckDuckGo, Brave,
-Bing News, etc.) whose scores aren't on the same scale. Before `raise`/`lower` weighting can mean
-anything precise, this needs a proper re-ranking pass — likely rank-based (position within each
-engine's own result list) rather than trusting the raw `score` field across engines.
+not a real cross-engine signal, since SearXNG merges results from engines (DuckDuckGo, Brave,
+Bing News, etc.) whose scores aren't on the same scale and some engines don't return one at all.
+
+Fix: **Reciprocal Rank Fusion (RRF)**, the standard IR technique for combining ranked lists
+without comparable scores. For each engine's own result list, a result at 1-indexed position
+`rank` contributes `1 / (k + rank)` to its fused score (`k = 60`, the standard damping constant
+from the original RRF paper). A result's total fused score is the sum of its contributions across
+every engine that returned it — so a result ranked #1 by two engines outscores one ranked #1 by
+only a single engine, entirely from position data, no score-magnitude comparison needed. This
+also directly produces the "agreed on by N other engines" detail already shown in the mockup's
+ranking popover — it falls out of the fusion math rather than needing separate bookkeeping.
+
+Domain-ranking states apply as a second pass, on top of the fused score:
+- `block` — excluded before fusion (same early-filter behavior as today's `Blocklist.Blocked`).
+- `pin` — forced to the top of the final list, ahead of fused ordering.
+- `raise` / `lower` — multiply the fused score (exact multipliers TBD during implementation —
+  something like 1.5–2x / 0.4–0.6x as a starting point, tuned by feel once it's running against
+  real queries).
+- `default` — fused score used as-is.
 
 ## Autocomplete
 
@@ -142,11 +157,11 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
 
 ## Next steps
 
-1. Confirm the domain-ranking weighting math (rank-based vs. score-based) before wiring it into
-   `search/searxng.go` — this is the one piece of the plan that's still a genuine open design
-   question, not just an implementation detail.
+1. Implement RRF-based re-ranking in `search/searxng.go`, replacing the current `score / 10`
+   heuristic — requires each engine's results to carry their own within-engine rank, which means
+   grouping SearXNG's merged response back out by `engine` before fusing.
 2. Build the Go-side `DomainRankings` type + `domain_rankings.yaml` loader (extends
-   `search/blocklist.go`).
+   `search/blocklist.go`), applying block/pin/raise/lower on top of the fused score.
 3. Build the `/search` route tree in `web/src/routes`, porting the mockup's HTML/CSS into Svelte
    components.
 4. Wire the Quick Answer endpoint to the existing agent.
