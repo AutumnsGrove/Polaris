@@ -187,9 +187,13 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
 
 ## Next steps
 
-1. Implement RRF-based re-ranking in `search/searxng.go`, replacing the current `score / 10`
-   heuristic — requires each engine's results to carry their own within-engine rank, which means
-   grouping SearXNG's merged response back out by `engine` before fusing.
+1. ~~Implement RRF-based re-ranking in `search/searxng.go`~~ **Done.** Turned out simpler than
+   planned: SearXNG already deduplicates near-identical results across engines itself and reports
+   each contributing engine's own rank directly in a `positions` array per result (confirmed live
+   — e.g. `positions: [1, 2]` for a result ranked #1 by one engine and #2 by another) — no need to
+   reconstruct per-engine sublists ourselves, just fuse over `positions`. `SearchResult` also now
+   carries `Engine`/`Engines`, sourced from the same response, for the ranking popover's "Found
+   via" display later.
 2. Build the Go-side `DomainRankings` type + `domain_rankings.yaml` loader (extends
    `search/blocklist.go`), applying block/pin/raise/lower on top of the fused score.
 3. Build the `/search` route tree in `web/src/routes`, porting the mockup's HTML/CSS into Svelte

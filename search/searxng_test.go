@@ -9,22 +9,18 @@ import (
 	"testing"
 )
 
-func TestSearch_ParsesResultsAndNormalizesScore(t *testing.T) {
+func TestSearch_QueryAndCategoryParams(t *testing.T) {
 	var gotQuery, gotCategory string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query().Get("q")
 		gotCategory = r.URL.Query().Get("categories")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"query":"golang","results":[
-			{"title":"Go Blog","url":"https://go.dev/blog","content":"News","score":15.0,"thumbnail":""},
-			{"title":"Go Docs","url":"https://go.dev/doc","content":"Docs","score":5.0,"thumbnail":""}
-		]}`))
+		w.Write([]byte(`{"query":"golang","results":[]}`))
 	}))
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "golang", 5, "news")
-	if err != nil {
+	if _, err := client.Search(context.Background(), "golang", 5, "news"); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if gotQuery != "golang" {
@@ -33,15 +29,62 @@ func TestSearch_ParsesResultsAndNormalizesScore(t *testing.T) {
 	if gotCategory != "news" {
 		t.Errorf("categories param = %q, want news", gotCategory)
 	}
+}
+
+func TestSearch_FusesMultiEnginePositions(t *testing.T) {
+	// "single" is ranked #1 by one engine only. "double" is ranked #2 by
+	// two engines. Under RRF, agreement across engines should outrank a
+	// single engine's #1 pick — this is the whole point of fusing on
+	// per-engine rank instead of a raw, non-comparable score.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"single","url":"https://a.com/1","engine":"brave","engines":["brave"],"positions":[1]},
+			{"title":"double","url":"https://b.com/1","engine":"duckduckgo","engines":["duckduckgo","brave"],"positions":[2,2]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
 	if len(resp.Results) != 2 {
 		t.Fatalf("got %d results, want 2", len(resp.Results))
 	}
-	// score 15.0 / 10.0 = 1.5, clamped to 1.0.
-	if resp.Results[0].Score != 1.0 {
-		t.Errorf("Results[0].Score = %v, want clamped to 1.0", resp.Results[0].Score)
+	if resp.Results[0].Title != "double" {
+		t.Errorf("Results[0].Title = %q, want %q (two engines agreeing on rank 2 should beat one engine's rank 1)", resp.Results[0].Title, "double")
 	}
-	if resp.Results[1].Score != 0.5 {
-		t.Errorf("Results[1].Score = %v, want 0.5", resp.Results[1].Score)
+	if len(resp.Results[0].Engines) != 2 {
+		t.Errorf("Results[0].Engines = %v, want 2 engines", resp.Results[0].Engines)
+	}
+}
+
+func TestSearch_FallsBackToListPositionWhenPositionsOmitted(t *testing.T) {
+	// Older SearXNG versions (and hand-built fixtures) may omit "positions"
+	// entirely — Search should still rank by SearXNG's own list order
+	// rather than erroring or scoring everything identically.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"first","url":"https://a.com/1"},
+			{"title":"second","url":"https://a.com/2"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("got %d results, want 2", len(resp.Results))
+	}
+	if resp.Results[0].Title != "first" || resp.Results[0].Score <= resp.Results[1].Score {
+		t.Errorf("expected %q (list position 1) to outrank %q (list position 2), got scores %v, %v",
+			"first", "second", resp.Results[0].Score, resp.Results[1].Score)
 	}
 }
 

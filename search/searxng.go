@@ -9,17 +9,30 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
+// rrfK is the damping constant from the original Reciprocal Rank Fusion
+// paper (Cormack et al., 2009) — large enough that the difference between
+// e.g. rank 1 and rank 2 doesn't dominate the fused score, so a result
+// several engines agree on (even at middling positions) can outrank one
+// only a single engine ranks first.
+const rrfK = 60.0
+
 type SearchResult struct {
-	Title     string  `json:"title"`
-	URL       string  `json:"url"`
-	Content   string  `json:"content"`
-	Score     float64 `json:"score"`
-	Thumbnail string  `json:"thumbnail,omitempty"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+	// Score is a Reciprocal Rank Fusion value, not a 0-1 relevance
+	// score — see rrfScore. It's meaningful only for relative ordering
+	// between results in the same response, not as an absolute number.
+	Score     float64  `json:"score"`
+	Thumbnail string   `json:"thumbnail,omitempty"`
+	Engine    string   `json:"engine,omitempty"`
+	Engines   []string `json:"engines,omitempty"`
 }
 
 type SearchResponse struct {
@@ -137,11 +150,33 @@ type searxngResponse struct {
 }
 
 type searxngResult struct {
-	Title     string  `json:"title"`
-	URL       string  `json:"url"`
-	Content   string  `json:"content"`
-	Score     float64 `json:"score"`
-	Thumbnail string  `json:"thumbnail"`
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	Content   string   `json:"content"`
+	Thumbnail string   `json:"thumbnail"`
+	Engine    string   `json:"engine"`
+	Engines   []string `json:"engines"`
+	// Positions is each contributing engine's own 1-indexed rank for this
+	// result — SearXNG already merges near-duplicate results across engines
+	// before returning them, so a result two engines both ranked highly
+	// arrives here as one entry with e.g. positions [1, 2], not two
+	// separate entries. This is what rrfScore fuses on.
+	Positions []int `json:"positions"`
+}
+
+// rrfScore fuses per-engine rank positions into a single score via
+// Reciprocal Rank Fusion: 1/(k+rank) per engine, summed. Unlike SearXNG's
+// own raw `score` field, this never compares magnitudes across engines —
+// it only uses each engine's ranking of its own results, which is the one
+// signal that's actually comparable when merging DuckDuckGo/Brave/Bing
+// News/etc, whose native scores live on unrelated scales (and which don't
+// all report a score at all).
+func rrfScore(positions []int) float64 {
+	var score float64
+	for _, p := range positions {
+		score += 1.0 / (rrfK + float64(p))
+	}
+	return score
 }
 
 // Search performs a web search via SearXNG and returns up to maxResults
@@ -194,28 +229,39 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
-	results := make([]SearchResult, 0, maxResults)
-	for _, r := range searxngResp.Results {
-		if len(results) >= maxResults {
-			break
-		}
-		// Filtered out before counting toward maxResults, not after — a
-		// blocked result sitting early in SearXNG's ranking would otherwise
+	results := make([]SearchResult, 0, len(searxngResp.Results))
+	for i, r := range searxngResp.Results {
+		// Filtered out before ranking/truncation, not after — a blocked
+		// result sitting early in SearXNG's own ordering would otherwise
 		// crowd a legitimate result off the end of a maxResults-capped list.
 		if c.blocklist.Blocked(r.URL) {
 			continue
 		}
-		normalizedScore := r.Score / 10.0
-		if normalizedScore > 1.0 {
-			normalizedScore = 1.0
+		positions := r.Positions
+		if len(positions) == 0 {
+			// Defensive fallback for responses that omit positions (older
+			// SearXNG versions, or hand-built test fixtures) — treat this
+			// result's place in SearXNG's own merged list as its one position.
+			positions = []int{i + 1}
 		}
 		results = append(results, SearchResult{
 			Title:     r.Title,
 			URL:       r.URL,
 			Content:   r.Content,
-			Score:     normalizedScore,
+			Score:     rrfScore(positions),
 			Thumbnail: r.Thumbnail,
+			Engine:    r.Engine,
+			Engines:   r.Engines,
 		})
+	}
+
+	// Stable sort: results tied on fused score (common for single-engine,
+	// single-position results near the tail) keep SearXNG's own relative
+	// order rather than shuffling arbitrarily.
+	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
+
+	if len(results) > maxResults {
+		results = results[:maxResults]
 	}
 
 	unresponsive := make([]string, 0, len(searxngResp.UnresponsiveEngines))
