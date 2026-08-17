@@ -43,6 +43,14 @@ type Config struct {
 	// startup — see gateway.New/cmd/search.go).
 	BlockedSourcesFile string `yaml:"blocked_sources_file"`
 
+	// DomainRankingsFile holds per-domain search ranking preferences
+	// (block/lower/default/raise/pin — see search.DomainRankings), edited
+	// either by hand or by Atlas's ranking popover UI. Unlike
+	// BlockedSourcesFile this *is* hot-reloaded — re-read on its mtime
+	// changing, no restart needed, since the popover writes to it live
+	// while the server keeps running.
+	DomainRankingsFile string `yaml:"domain_rankings_file"`
+
 	Foursquare struct {
 		APIKey string `yaml:"api_key"` // Service API Key; empty disables nearby_search's Foursquare path (falls back to SearXNG)
 	} `yaml:"foursquare"`
@@ -265,6 +273,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
+	}
+	if cfg.DomainRankingsFile == "" {
+		cfg.DomainRankingsFile = "./domain_rankings.yaml"
 	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./polaris.db"

@@ -33,6 +33,13 @@ type SearchResult struct {
 	Thumbnail string   `json:"thumbnail,omitempty"`
 	Engine    string   `json:"engine,omitempty"`
 	Engines   []string `json:"engines,omitempty"`
+	// RankState and Pinned reflect this result's domain-ranking state (see
+	// DomainRankings) — surfaced so the ranking popover can show a result's
+	// current state without a second lookup. RankState is "default" when
+	// the domain has no explicit entry (or no DomainRankings is configured
+	// at all).
+	RankState string `json:"rank_state,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
 }
 
 type SearchResponse struct {
@@ -95,9 +102,10 @@ const generalCategoryEngineCount = 4
 const degradedCooldown = 20 * time.Minute
 
 type SearXNGClient struct {
-	baseURL   string
-	http      *http.Client
-	blocklist *Blocklist
+	baseURL            string
+	http               *http.Client
+	blocklist          *Blocklist
+	domainRankingsPath string
 
 	// cooldownUntil/cooldownMu implement a simple circuit breaker across
 	// calls — see degradedCooldown. In-memory only (resets on a process
@@ -113,7 +121,8 @@ type SearXNGClient struct {
 }
 
 // NewSearXNGClient builds a client for the given SearXNG instance.
-// blocklist may be nil — Search then applies no filtering.
+// blocklist may be nil — Search then applies no filtering. Chain
+// WithDomainRankings to enable the 5-state ranking system on top.
 func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 	return &SearXNGClient{
 		baseURL:   strings.TrimSuffix(baseURL, "/"),
@@ -136,6 +145,16 @@ func (c *SearXNGClient) startCooldown() {
 	c.cooldownMu.Lock()
 	defer c.cooldownMu.Unlock()
 	c.cooldownUntil = time.Now().Add(degradedCooldown)
+}
+
+// WithDomainRankings enables domain ranking (Block/Lower/Default/Raise/Pin)
+// on this client, hot-reloaded from path on every Search call — see
+// DomainRankings/LoadDomainRankings. A separate method rather than a
+// NewSearXNGClient parameter so existing call sites (tests especially,
+// which mostly don't care about ranking) don't all need updating.
+func (c *SearXNGClient) WithDomainRankings(path string) *SearXNGClient {
+	c.domainRankingsPath = path
+	return c
 }
 
 type searxngResponse struct {
@@ -229,14 +248,23 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
+	rankings := LoadDomainRankings(c.domainRankingsPath)
+
 	results := make([]SearchResult, 0, len(searxngResp.Results))
 	for i, r := range searxngResp.Results {
 		// Filtered out before ranking/truncation, not after — a blocked
 		// result sitting early in SearXNG's own ordering would otherwise
 		// crowd a legitimate result off the end of a maxResults-capped list.
+		// Both the curated Blocklist and a user's own "block" ranking are
+		// hard excludes, checked the same way.
 		if c.blocklist.Blocked(r.URL) {
 			continue
 		}
+		state := rankings.State(r.URL)
+		if state == RankBlock {
+			continue
+		}
+
 		positions := r.Positions
 		if len(positions) == 0 {
 			// Defensive fallback for responses that omit positions (older
@@ -244,21 +272,38 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 			// result's place in SearXNG's own merged list as its one position.
 			positions = []int{i + 1}
 		}
+		score := rrfScore(positions)
+		switch state {
+		case RankRaise:
+			score *= raiseMultiplier
+		case RankLower:
+			score *= lowerMultiplier
+		}
+
 		results = append(results, SearchResult{
 			Title:     r.Title,
 			URL:       r.URL,
 			Content:   r.Content,
-			Score:     rrfScore(positions),
+			Score:     score,
 			Thumbnail: r.Thumbnail,
 			Engine:    r.Engine,
 			Engines:   r.Engines,
+			RankState: string(state),
+			Pinned:    state == RankPin,
 		})
 	}
 
-	// Stable sort: results tied on fused score (common for single-engine,
-	// single-position results near the tail) keep SearXNG's own relative
-	// order rather than shuffling arbitrarily.
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
+	// Stable sort: pinned results first (in their own relative fused-score
+	// order), then everyone else by fused score descending. Results tied
+	// on score (common for single-engine, single-position results near the
+	// tail) keep SearXNG's own relative order rather than shuffling
+	// arbitrarily.
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Pinned != results[j].Pinned {
+			return results[i].Pinned
+		}
+		return results[i].Score > results[j].Score
+	})
 
 	if len(results) > maxResults {
 		results = results[:maxResults]

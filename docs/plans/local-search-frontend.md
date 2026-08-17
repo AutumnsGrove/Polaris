@@ -194,8 +194,17 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    reconstruct per-engine sublists ourselves, just fuse over `positions`. `SearchResult` also now
    carries `Engine`/`Engines`, sourced from the same response, for the ranking popover's "Found
    via" display later.
-2. Build the Go-side `DomainRankings` type + `domain_rankings.yaml` loader (extends
-   `search/blocklist.go`), applying block/pin/raise/lower on top of the fused score.
+2. ~~Build the Go-side `DomainRankings` type + `domain_rankings.yaml` loader~~ **Done.** Kept as
+   a separate type/file rather than folding into `Blocklist` after all — `Blocklist` turned out to
+   be used by `web_read` too (rejecting direct page fetches, redirect hops, and Wayback fallback),
+   a genuinely different concern from search-ranking preferences, so merging them would have meant
+   scope-creeping into `tools/web_read.go` for no reason. `DomainRankings`'s own `block` state is
+   applied independently, alongside (not instead of) the existing `Blocklist` check. Wired via a
+   chainable `SearXNGClient.WithDomainRankings(path)` rather than a `NewSearXNGClient` parameter,
+   so the ~15 existing test call sites that don't care about ranking didn't all need updating.
+   Both `gateway/server.go`'s and `cmd/search.go`'s `SearXNGClient` now have it enabled, and since
+   `tools/web_search.go` reuses that same client instance, ranking already affects the assistant's
+   tool calls too — no separate wiring needed for point 3 above.
 3. Build the `/search` route tree in `web/src/routes`, porting the mockup's HTML/CSS into Svelte
    components.
 4. Extract the shared sidebar shell out of `Sidebar.svelte` into a mode-agnostic component that

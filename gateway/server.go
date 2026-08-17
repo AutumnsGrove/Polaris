@@ -109,7 +109,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		cfgPath:    cfgPath,
 		version:    version,
 		db:         db,
-		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist),
+		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
 		blocklist:  blocklist,
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		tavily:     tavily.NewClient(cfg.Tavily.APIKey),

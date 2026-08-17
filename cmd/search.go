@@ -73,7 +73,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		blocklist = nil
 	}
 
-	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist)
+	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile)
 	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
 	tavilyClient := tavily.NewClient(cfg.Tavily.APIKey)
 	parallelClient := parallel.NewClient(cfg.Parallel.APIKey)

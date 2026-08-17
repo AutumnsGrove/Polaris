@@ -384,6 +384,80 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	}
 }
 
+func TestSearch_DomainRankingBlockExcludesResult(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"blocked","url":"https://spam.example/1","positions":[1]},
+			{"title":"fine","url":"https://a.com/1","positions":[2]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "spam.example: block\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Title != "fine" {
+		t.Fatalf("got %+v, want only the non-blocked result", resp.Results)
+	}
+}
+
+func TestSearch_DomainRankingPinForcesToTop(t *testing.T) {
+	// "pinned" would rank last by fused score alone (position 5, no other
+	// engine agreement) — pin must override that entirely.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"top-ranked","url":"https://a.com/1","positions":[1,1]},
+			{"title":"pinned","url":"https://pin.example/1","positions":[5]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "pin.example: pin\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 2 || resp.Results[0].Title != "pinned" {
+		t.Fatalf("got %+v, want pinned result first despite its lower fused score", resp.Results)
+	}
+	if !resp.Results[0].Pinned {
+		t.Error("Results[0].Pinned = false, want true")
+	}
+}
+
+func TestSearch_DomainRankingRaiseCanOutrankHigherPosition(t *testing.T) {
+	// "boosted" starts behind "ahead" purely on fused rank, but a strong
+	// enough raise multiplier should be able to flip that ordering — this
+	// is the actual point of raise/lower existing at all.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"ahead","url":"https://a.com/1","positions":[1]},
+			{"title":"boosted","url":"https://boost.example/1","positions":[3]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "boost.example: raise\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if resp.Results[0].Title != "boosted" {
+		t.Errorf("Results[0].Title = %q, want %q (raiseMultiplier should have flipped the ordering)", resp.Results[0].Title, "boosted")
+	}
+	if resp.Results[0].RankState != string(RankRaise) {
+		t.Errorf("Results[0].RankState = %q, want %q", resp.Results[0].RankState, RankRaise)
+	}
+}
+
 func writeBlocklistFile(t *testing.T, contents string) string {
 	t.Helper()
 	path := t.TempDir() + "/blocked_sources.txt"
