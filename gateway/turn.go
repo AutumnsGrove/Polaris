@@ -334,6 +334,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		VoiceMode:              msg.VoiceMode,
 		FocusMode:              msg.FocusMode,
 		DeepResearch:           msg.DeepResearch,
+		QuickMode:              msg.QuickMode,
 		LLM:                    client,
 		Emit:                   emit,
 		MaxTurns:               cfg.MaxAgentTurns,

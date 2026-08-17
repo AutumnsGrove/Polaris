@@ -367,6 +367,31 @@ func TestHandleWebRead_WithInstructions_AppliesFilterPass(t *testing.T) {
 	}
 }
 
+// TestHandleWebRead_QuickModeSkipsFilterPassEvenWithInstructions guards
+// Atlas's Quick Answer speedup: QuickMode must win over Instructions being
+// present, not just over ctx.LLM being nil — a model that still passes
+// instructions under quick mode (nothing stops it from trying) must not
+// pay the extra LLM round-trip anyway.
+func TestHandleWebRead_QuickModeSkipsFilterPassEvenWithInstructions(t *testing.T) {
+	html := `<html><body><article>A long page with prices: $10, $20, and $30 scattered around with lots of other text.</article></body></html>`
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "$10, $20, $30"}},
+		},
+	}
+	ctx := &Context{Ctx: context.Background(), LLM: mock, QuickMode: true, Emit: func(string, map[string]interface{}) {}}
+
+	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"just the prices"}`, ctx)
+	if strings.Contains(result, "$10, $20, $30") && !strings.Contains(result, "lots of other text") {
+		t.Errorf("result = %q, want the full unfiltered page text, not the filter pass's output", result)
+	}
+	if mock.CallCount() != 0 {
+		t.Errorf("CallCount = %d, want 0 — QuickMode must skip the filter pass entirely", mock.CallCount())
+	}
+}
+
 func TestHandleWebRead_OffsetContinuesReading(t *testing.T) {
 	huge := strings.Repeat("a", maxExtractedChars) + "SECOND_CHUNK_MARKER" + strings.Repeat("b", 100)
 	html := "<html><body><article>" + huge + "</article></body></html>"

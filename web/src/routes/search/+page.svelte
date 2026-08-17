@@ -5,7 +5,7 @@
 	import { searchState } from '$lib/search.svelte';
 	import { appState } from '$lib/state.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
-	import { Search as SearchIcon, SlidersHorizontal, Globe, X } from '@lucide/svelte';
+	import { Search as SearchIcon, SlidersHorizontal, Globe, X, Sparkles, Telescope } from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
 
 	// Tracks the query the address bar has already been synced to (either
@@ -20,9 +20,28 @@
 		if (q && q !== syncedQuery) {
 			syncedQuery = q;
 			searchState.query = q;
-			void searchState.search(q);
+			runQuery(q);
 		}
 	});
+
+	// Shared by the $effect above (sidebar clicks, pasted/reloaded URLs)
+	// and submitSearch below — a trailing "?" triggers Quick Answer (per
+	// the plan's Kagi-matching omnibox convention) in parallel with the
+	// regular results search, and is stripped before either request so
+	// the literal "?" character never becomes part of the query itself.
+	function runQuery(q: string) {
+		const wantsQuickAnswer = q.endsWith('?');
+		const bare = wantsQuickAnswer ? q.slice(0, -1).trim() : q;
+		if (!bare) return;
+
+		void searchState.search(bare);
+		if (wantsQuickAnswer) {
+			void searchState.askQuickAnswer(bare);
+		} else {
+			searchState.quickAnswer = null;
+			searchState.quickAnswerError = '';
+		}
+	}
 
 	let openPopoverFor = $state<string | null>(null);
 	// Optimistic: reflects a click immediately, then persists via
@@ -77,7 +96,7 @@
 		const q = searchState.query.trim();
 		if (!q) return;
 		syncedQuery = q; // see the $effect above — prevents this goto from looping back
-		void searchState.search(q);
+		runQuery(q);
 		void goto(`/search?q=${encodeURIComponent(q)}`, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
@@ -139,6 +158,39 @@
 	</header>
 
 	<main>
+		{#if searchState.quickAnswerLoading}
+			<section class="quick-answer">
+				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
+				<p class="qa-loading">Thinking…</p>
+			</section>
+		{:else if searchState.quickAnswerError}
+			<section class="quick-answer">
+				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
+				<p class="qa-loading">{searchState.quickAnswerError}</p>
+			</section>
+		{:else if searchState.quickAnswer}
+			<section class="quick-answer">
+				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
+				<p class="qa-text">{searchState.quickAnswer.text}</p>
+				{#if searchState.quickAnswer.citations.length > 0}
+					<div class="qa-sources">
+						{#each searchState.quickAnswer.citations as c, i (c.url)}
+							<a class="qa-source" href={c.url} target="_blank" rel="noreferrer">
+								<span class="qa-source-n">{i + 1}</span>
+								{c.site_name || domainOf(c.url)}
+							</a>
+						{/each}
+					</div>
+				{/if}
+				{#if searchState.quickAnswer.threadId}
+					<a class="qa-continue" href="/t/{searchState.quickAnswer.threadId}">
+						<Telescope size={13} />
+						Continue in Assistant
+					</a>
+				{/if}
+			</section>
+		{/if}
+
 		{#if searchState.loading}
 			<p class="status-line">Searching…</p>
 		{:else if searchState.error}
@@ -429,6 +481,97 @@
 
 	.status-line.error {
 		color: var(--rank-block);
+	}
+
+	.quick-answer {
+		background: var(--paper-raised);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 18px 20px 16px;
+		margin-bottom: 28px;
+	}
+
+	.qa-label {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		font-size: 11.5px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--accent);
+		margin-bottom: 12px;
+	}
+
+	.qa-loading {
+		margin: 0;
+		font-size: 14px;
+		color: var(--ink-faint);
+	}
+
+	.qa-text {
+		font-family: ui-serif, Georgia, serif;
+		font-size: 16px;
+		line-height: 1.6;
+		color: var(--ink);
+		margin: 0 0 14px;
+		max-width: 68ch;
+		white-space: pre-wrap;
+	}
+
+	.qa-sources {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
+	}
+
+	.qa-source {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--ink-muted);
+		background: var(--paper-sunken);
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		padding: 5px 10px 5px 7px;
+		text-decoration: none;
+	}
+
+	.qa-source:hover {
+		border-color: var(--line-strong);
+		color: var(--ink);
+	}
+
+	.qa-source-n {
+		font-size: 10px;
+		font-weight: 700;
+		color: var(--accent);
+		background: var(--accent-soft);
+		border-radius: 999px;
+		width: 15px;
+		height: 15px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: none;
+	}
+
+	.qa-continue {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 14px;
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--accent);
+		text-decoration: none;
+	}
+
+	.qa-continue:hover {
+		text-decoration: underline;
 	}
 
 	.results-heading {

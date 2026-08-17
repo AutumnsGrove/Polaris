@@ -1,4 +1,11 @@
-import type { SearchResult, SearchHistoryEntry, RankState } from './types';
+import type { SearchResult, SearchHistoryEntry, RankState, Citation, ServerEvent } from './types';
+
+export interface QuickAnswer {
+	text: string;
+	citations: Citation[];
+	threadId: string;
+	costUsd: number;
+}
 
 // Atlas's own reactive state — deliberately separate from AppState
 // (state.svelte.ts), not a mode bolted onto it. Chat's state model is
@@ -16,6 +23,10 @@ export class SearchState {
 	// the user has searched anything this session) and refreshed after
 	// every successful search, since handleSearch records it server-side.
 	history = $state<SearchHistoryEntry[]>([]);
+
+	quickAnswer = $state<QuickAnswer | null>(null);
+	quickAnswerLoading = $state(false);
+	quickAnswerError = $state('');
 
 	async search(query: string) {
 		const trimmed = query.trim();
@@ -44,6 +55,108 @@ export class SearchState {
 			this.results = [];
 		} finally {
 			if (seq === this.searchSeq) this.loading = false;
+		}
+	}
+
+	// Quick Answer, "?"-triggered per the plan — deliberately the full
+	// agent pipeline via POST /api/ask/stream (gateway/ask.go), not a
+	// separate lightweight synthesis path: it runs the same web_search/
+	// web_read tool-calling loop and multi-source verification the chat
+	// assistant uses, and persists a real, revisitable thread, so a Quick
+	// Answer can grow into a full conversation via "Continue in
+	// Assistant" instead of being a dead end. quick_mode: true (tools.
+	// Context.QuickMode) is one behavior difference — it skips web_read's
+	// optional per-page filter LLM call, trading some precision for fewer
+	// sequential round-trips, since "quick" is the whole point here.
+	//
+	// Streamed (NDJSON over a flushed response body, same wire shape /ws
+	// sends), not a single blocking request — waiting out a full agent
+	// turn in total silence before anything appears is exactly the
+	// "nothing then everything at once" problem this fixes. Event
+	// handling below mirrors state.svelte.ts's handleEvent as closely as
+	// this one-shot (non-thread-following) context allows, most
+	// importantly the "commentary" reset: text streamed as "token" before
+	// a tool call is preamble, not the real answer, and must not survive
+	// into what's shown.
+	async askQuickAnswer(query: string) {
+		const trimmed = query.trim();
+		if (!trimmed) return;
+
+		this.quickAnswerLoading = true;
+		this.quickAnswerError = '';
+		this.quickAnswer = { text: '', citations: [], threadId: '', costUsd: 0 };
+		const seq = ++this.quickAnswerSeq;
+
+		try {
+			const res = await fetch('/api/ask/stream', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ content: trimmed, source: 'atlas', quick_mode: true })
+			});
+			if (seq !== this.quickAnswerSeq) return;
+			if (!res.ok || !res.body) {
+				this.quickAnswerError = 'Quick Answer failed — try again.';
+				this.quickAnswer = null;
+				return;
+			}
+
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffered = '';
+
+			// NDJSON: each line is a complete JSON value, but a single chunk
+			// read from the stream can split a line across two reads (or
+			// contain several) — same buffering shape as synthesizeStream's
+			// /api/speak/stream consumer in speech.ts.
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				if (seq !== this.quickAnswerSeq) {
+					void reader.cancel();
+					return;
+				}
+				buffered += decoder.decode(value, { stream: true });
+
+				let newlineIndex: number;
+				while ((newlineIndex = buffered.indexOf('\n')) !== -1) {
+					const line = buffered.slice(0, newlineIndex).trim();
+					buffered = buffered.slice(newlineIndex + 1);
+					if (!line) continue;
+					this.handleQuickAnswerEvent(JSON.parse(line));
+					if (this.quickAnswerLoading) this.quickAnswerLoading = false;
+				}
+			}
+		} catch {
+			if (seq !== this.quickAnswerSeq) return;
+			this.quickAnswerError = "Couldn't reach the assistant.";
+			this.quickAnswer = null;
+		} finally {
+			if (seq === this.quickAnswerSeq) this.quickAnswerLoading = false;
+		}
+	}
+
+	private handleQuickAnswerEvent(evt: ServerEvent) {
+		if (!this.quickAnswer) return;
+		switch (evt.type) {
+			case 'token':
+				this.quickAnswer.text += evt.content;
+				break;
+			case 'commentary':
+				// See askQuickAnswer's doc comment — discard, don't append.
+				this.quickAnswer.text = '';
+				break;
+			case 'done':
+				this.quickAnswer.citations = evt.citations ?? [];
+				this.quickAnswer.threadId = evt.thread_id;
+				this.quickAnswer.costUsd = evt.cost_usd ?? 0;
+				break;
+			case 'error':
+				// Same fallback rule as state.svelte.ts's 'error' case: keep
+				// whatever text already streamed in if there is any, only
+				// surface the error message when there's genuinely nothing
+				// to show instead.
+				if (!this.quickAnswer.text) this.quickAnswerError = evt.message || 'Quick Answer failed.';
+				break;
 		}
 	}
 
@@ -82,6 +195,7 @@ export class SearchState {
 	// AppState.openThreadSeq, for the same reason (a fast retype
 	// shouldn't let an earlier, slower response clobber a later one).
 	private searchSeq = 0;
+	private quickAnswerSeq = 0;
 }
 
 export const searchState = new SearchState();

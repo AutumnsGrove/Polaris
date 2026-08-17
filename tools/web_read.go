@@ -149,7 +149,13 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 	isPDF := totalPages > 0
 
 	result := text
-	if args.Instructions != "" && ctx.LLM != nil {
+	// !ctx.QuickMode: Atlas's Quick Answer (see gateway/ask.go's QuickMode
+	// wiring) trades the filter pass's precision for latency — one fewer
+	// sequential LLM round-trip per page read, in exchange for handing the
+	// main model more raw text to synthesize from itself. Only skips the
+	// filter; web_search and the rest of the tool-calling loop are
+	// unchanged, so answers stay grounded in real sources either way.
+	if args.Instructions != "" && ctx.LLM != nil && !ctx.QuickMode {
 		filterInput := text
 		if !isPDF {
 			if args.Offset > 0 && args.Offset < len(filterInput) {

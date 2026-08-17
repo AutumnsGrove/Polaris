@@ -152,6 +152,14 @@ type Context struct {
 	// check-in leniency — see agent.Run.
 	DeepResearch bool
 
+	// QuickMode, when true, tells web_read to skip its optional filter LLM
+	// pass entirely (always return raw extracted text, ignoring
+	// Instructions) — set for Atlas's Quick Answer, where a fast answer
+	// matters more than each individual page read being tightly targeted.
+	// Doesn't touch web_search or the tool-calling loop itself — see
+	// tools/web_read.go's use of this field for the actual gate.
+	QuickMode bool
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/

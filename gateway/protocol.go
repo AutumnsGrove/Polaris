@@ -60,6 +60,9 @@ type ClientMessage struct {
 	// check-in leniency — see agent.Run's maxTurns/researchCheckInInterval
 	// handling.
 	DeepResearch bool `json:"deep_research,omitempty"`
+	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
+	// Answer via POST /api/ask, never by the WebSocket chat client.
+	QuickMode bool `json:"quick_mode,omitempty"`
 	// AttachmentID/AttachmentFilename/AttachmentContentType describe a
 	// file uploaded via POST /api/upload ahead of this message (see
 	// gateway/attachments.go) — same two-step shape as push-to-talk voice

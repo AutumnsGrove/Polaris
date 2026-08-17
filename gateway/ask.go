@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"polaris/tools"
 )
@@ -23,11 +24,12 @@ type AskRequest struct {
 	Model    string `json:"model,omitempty"`
 	ThreadID string `json:"thread_id,omitempty"`
 	Source   string `json:"source,omitempty"`
-	// FocusMode/DeepResearch mirror ClientMessage's fields of the same
-	// name — see protocol.go's doc comments. Optional: a programmatic
-	// caller not exercising these can just omit them.
+	// FocusMode/DeepResearch/QuickMode mirror ClientMessage's fields of
+	// the same name — see protocol.go's doc comments. Optional: a
+	// programmatic caller not exercising these can just omit them.
 	FocusMode    string `json:"focus_mode,omitempty"`
 	DeepResearch bool   `json:"deep_research,omitempty"`
+	QuickMode    bool   `json:"quick_mode,omitempty"`
 	// AttachmentID/AttachmentFilename/AttachmentContentType mirror
 	// ClientMessage's fields of the same name — see attachments.go. A
 	// caller uploads via POST /api/upload first, then passes its ID here.
@@ -97,6 +99,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		Source:                req.Source,
 		FocusMode:             req.FocusMode,
 		DeepResearch:          req.DeepResearch,
+		QuickMode:             req.QuickMode,
 		AttachmentID:          req.AttachmentID,
 		AttachmentFilename:    req.AttachmentFilename,
 		AttachmentContentType: req.AttachmentContentType,
@@ -113,6 +116,15 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		switch evt.Type {
 		case "token":
 			answer.WriteString(evt.Content)
+		case "commentary":
+			// Matches the WebSocket frontend's handling exactly (see
+			// ServerEvent's doc comment on "commentary" above) — whatever
+			// streamed as "token" before a tool call was preamble, not the
+			// real final answer, and must not survive into it. Without this
+			// reset, a turn that talks before searching (a real, observed
+			// pattern — e.g. "Let me check the release history page...")
+			// got that sentence permanently glued onto the front of Answer.
+			answer.Reset()
 		case "done":
 			final = evt
 		case "error":
@@ -145,4 +157,95 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		DurationMs:    final.DurationMs,
 		Title:         title,
 	})
+}
+
+// handleAskStream is handleAsk's streaming twin — same request shape, but
+// forwards every ServerEvent live as it happens (NDJSON, one event per
+// line, same wire shape /ws sends over the WebSocket) instead of blocking
+// until the whole turn finishes. Built for Atlas's Quick Answer, where
+// waiting out a full agent turn in silence before anything appears is
+// exactly the "nothing then everything at once" problem streaming fixes —
+// but the shape is generic, not Quick-Answer-specific, so any future
+// caller wanting progressive output over plain HTTP (no WebSocket) can
+// reuse it as-is.
+//
+// Deliberately NDJSON over a flushed response body, not Server-Sent
+// Events — matches this codebase's existing streaming precedent
+// (handleSpeakStream) rather than introducing a second convention, and a
+// plain POST body is simpler to read from `fetch` than SSE's GET-only
+// EventSource API would have been.
+func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
+	var req AskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		http.Error(w, "content is required", http.StatusBadRequest)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Same shutdown-draining registration as handleAsk — see its doc
+	// comment for why this must happen before handleTurn, not after.
+	if !s.TryStartTurn() {
+		http.Error(w, "the server is restarting — please retry in a few seconds", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.FinishTurn()
+
+	msg := ClientMessage{
+		Type:                  "message",
+		ThreadID:              req.ThreadID,
+		Content:               req.Content,
+		Model:                 req.Model,
+		Source:                req.Source,
+		FocusMode:             req.FocusMode,
+		DeepResearch:          req.DeepResearch,
+		QuickMode:             req.QuickMode,
+		AttachmentID:          req.AttachmentID,
+		AttachmentFilename:    req.AttachmentFilename,
+		AttachmentContentType: req.AttachmentContentType,
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+
+	// handleTurn spawns a detached goroutine for follow-up suggestions
+	// that outlives handleTurn's own return (see its doc comment on why —
+	// the point is not blocking the response on a second, invisible LLM
+	// call) and calls send() again once that finishes, well after this
+	// handler function itself has already returned. For handleAsk that's
+	// harmless — its own send callback only mutates local variables
+	// nobody reads anymore — but here send() writes to the real
+	// http.ResponseWriter, and doing that once the handler has returned
+	// is unsafe: net/http may have already reused or torn down state
+	// backing it, which surfaced as a real nil-pointer panic (recovered,
+	// not crashing, but a real bug) the very first time this endpoint ran
+	// end-to-end against a live model. done, set right after handleTurn
+	// returns below, makes every event from that point on (suggestions
+	// chief among them) a silent no-op instead — Atlas's Quick Answer
+	// doesn't render suggestions anyway, so nothing is lost by dropping
+	// them here specifically.
+	var done atomic.Bool
+	s.handleTurn(r.Context(), msg, func(evt ServerEvent) {
+		if done.Load() {
+			return
+		}
+		// Unlike handleAsk's own accumulation, no commentary-reset logic
+		// is needed here: this just forwards the raw event stream, and the
+		// consumer (search.svelte.ts's askQuickAnswer, mirroring
+		// state.svelte.ts's handleEvent) applies that same reset itself
+		// when it sees a "commentary" event, exactly like the WebSocket
+		// chat client already does.
+		_ = enc.Encode(evt)
+		flusher.Flush()
+	}, nil)
+	done.Store(true)
 }

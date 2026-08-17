@@ -237,7 +237,32 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    doesn't violate SearchState's separation from AppState) if the write actually failed.
    `domain_rankings.yaml` is now a real tracked file (like `blocked_sources.txt`), starting empty
    since there's no sensible default to seed.
-   Wire the Quick Answer endpoint to the existing agent next.
+   ~~Wire the Quick Answer endpoint to the existing agent~~ **Done, and streamed.** Deliberately
+   reuses the full agent pipeline (`POST /api/ask/stream`, a new NDJSON-streaming twin of
+   `/api/ask` — same `ServerEvent` wire shape `/ws` sends, just newline-delimited over a flushed
+   HTTP response instead of WebSocket frames) rather than a separate lightweight synthesis path —
+   same web_search/web_read tool-calling loop and multi-source verification the chat assistant
+   uses, and persists a real, revisitable thread (`threadId` on the response), so "Continue in
+   Assistant" is a real jump-off point, not a dead end. Naturally resumes at full precision with
+   no extra wiring, since the WebSocket chat path never sets `quick_mode` at all.
+
+   New `tools.Context.QuickMode` (threaded through `ClientMessage`/`AskRequest`) makes `web_read`
+   skip its optional per-page filter LLM call entirely — even if the model still passes
+   `instructions`, quick mode wins — trading some per-page precision for one fewer sequential LLM
+   round-trip per read, since speed is the entire point of "quick." Set only by Atlas's Quick
+   Answer, never by normal chat.
+
+   Along the way, fixed two real bugs surfaced by actually running this end-to-end against a live
+   model (not just unit tests) — both worth flagging since they'd have shipped invisibly
+   otherwise: (1) `handleAsk`'s answer reconstruction never applied the same "commentary" reset
+   the WebSocket frontend's `handleEvent` already does, so text the model said before deciding to
+   call a tool (e.g. "Let me check the release history page...") was permanently glued onto the
+   front of `AskResponse.Answer` for every `/api/ask` caller, not just Quick Answer — general bug,
+   general fix. (2) `handleTurn`'s detached follow-up-suggestions goroutine calls `send()` again
+   well after the handler that started it has returned — harmless for `handleAsk` (mutates
+   abandoned local variables) but a real, observed nil-pointer panic for `handleAskStream`, which
+   writes to the actual `http.ResponseWriter` — fixed with an `atomic.Bool` guard that no-ops any
+   event arriving after the handler's own synchronous return.
 7. Add `search.autocomplete` to `compose/searxng/settings.yml` and the Dockerfile/compose
    COPY+bind-mount pair for `domain_rankings.yaml`, once the feature is ready to ship rather than
    still in design.

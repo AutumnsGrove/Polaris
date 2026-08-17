@@ -280,6 +280,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("POST /api/restart", s.handleRestart)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
 	s.mux.HandleFunc("POST /api/ask", s.handleAsk)
+	s.mux.HandleFunc("POST /api/ask/stream", s.handleAskStream)
 	s.mux.HandleFunc("GET /api/search", s.handleSearch)
 	s.mux.HandleFunc("GET /api/search-history", s.handleListSearchHistory)
 	s.mux.HandleFunc("PATCH /api/search-history/{id}", s.handleUpdateSearchHistory)
