@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="paper">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,7 +42,7 @@
     --radius-md: 10px;
   }
 
-  [data-theme="night"] {
+  [data-theme="dark"] {
     --paper: oklch(21% 0.014 75);
     --paper-raised: oklch(25% 0.015 75);
     --paper-sunken: oklch(18% 0.013 75);
@@ -72,6 +72,42 @@
     --scrim: oklch(0% 0 0 / 0.5);
   }
 
+  /* ---------- shared chrome tokens ----------
+     Real values lifted from web/src/app.css, not approximated — this is
+     what makes the sidebar read as "the same app" underneath Atlas's own
+     paper/ink palette rather than a reskinned copy. */
+
+  :root {
+    --p-bg: oklch(97% 0.008 75);
+    --p-surface: oklch(99% 0.004 80);
+    --p-surface-2: oklch(95% 0.01 75);
+    --p-surface-3: oklch(91% 0.012 75);
+    --p-border: oklch(87% 0.012 75);
+    --p-border-strong: oklch(78% 0.016 75);
+    --p-text: oklch(24% 0.016 60);
+    --p-text-dim: oklch(46% 0.018 60);
+    --p-accent: oklch(54% 0.17 68);
+    --p-accent-strong: oklch(46% 0.18 66);
+    --p-accent-soft: color-mix(in srgb, var(--p-accent) 12%, transparent);
+    --p-shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --p-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-theme="dark"] {
+    --p-bg: oklch(15% 0.014 65);
+    --p-surface: oklch(19% 0.014 65);
+    --p-surface-2: oklch(23% 0.016 65);
+    --p-surface-3: oklch(28% 0.018 65);
+    --p-border: oklch(30% 0.016 65);
+    --p-border-strong: oklch(40% 0.02 65);
+    --p-text: oklch(93% 0.01 75);
+    --p-text-dim: oklch(64% 0.014 70);
+    --p-accent: oklch(82% 0.17 78);
+    --p-accent-strong: oklch(72% 0.18 74);
+    --p-accent-soft: color-mix(in srgb, var(--p-accent) 16%, transparent);
+    --p-shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+  }
+
   * { box-sizing: border-box; }
 
   html, body {
@@ -89,6 +125,216 @@
   a { color: inherit; text-decoration: none; }
 
   ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  /* ---------- app shell + shared sidebar ---------- */
+
+  .app-shell { display: flex; height: 100vh; }
+
+  .main-column { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+  .p-sidebar {
+    display: flex;
+    width: 260px;
+    height: 100%;
+    flex-shrink: 0;
+    flex-direction: column;
+    background: var(--p-surface);
+    box-shadow: 6px 0 24px -16px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    transition: width 0.2s ease;
+    font-family: var(--sans);
+  }
+
+  .p-sidebar:not(.open) { width: 0; box-shadow: none; }
+
+  .p-brand { display: flex; align-items: center; gap: 10px; padding: 16px 16px 16px; white-space: nowrap; }
+
+  .p-brand-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, oklch(88% 0.03 78), oklch(45% 0.03 260) 70%, oklch(20% 0.02 260));
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .p-wordmark { font-size: 17px; font-weight: 700; letter-spacing: 0.03em; color: var(--p-text); }
+
+  .p-collapse-btn {
+    margin-left: auto;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--p-text-dim);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .p-collapse-btn:hover { background: var(--p-surface-2); color: var(--p-text); }
+
+  .p-new-thread {
+    margin: 4px 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    background: var(--p-accent);
+    color: var(--p-surface);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .p-new-thread:hover { background: var(--p-accent-strong); }
+
+  .p-thread-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+
+  .p-section-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 14px 10px 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--p-text-dim);
+  }
+
+  .p-section-label:first-child { margin-top: 4px; }
+  .p-section-label svg { color: var(--p-accent); width: 11px; height: 11px; }
+
+  .p-thread-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    padding: 9px 10px;
+    cursor: pointer;
+    transition: background-color 0.15s var(--p-ease-out-expo);
+  }
+
+  .p-thread-item:hover { background: var(--p-surface-2); }
+
+  .p-thread-item.active { background: var(--p-accent-soft); }
+
+  .p-thread-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex-shrink: 0; }
+
+  .p-thread-item.active .p-thread-dot {
+    background: var(--p-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 22%, transparent);
+  }
+
+  .p-thread-title {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--p-text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .p-thread-item.active .p-thread-title { font-weight: 600; color: var(--p-text); }
+
+  .p-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: var(--p-shadow-well);
+    padding: 12px;
+    font-size: 12px;
+    color: var(--p-text-dim);
+    white-space: nowrap;
+  }
+
+  .p-status-text { flex: 1; }
+
+  .p-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--p-accent);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 20%, transparent);
+  }
+
+  .p-settings-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--p-text-dim);
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .p-settings-btn:hover { background: var(--p-surface-2); color: var(--p-text); }
+
+  .sidebar-backdrop { display: none; }
+
+  .sidebar-open-btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--paper-sunken);
+    border-radius: 7px;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .sidebar-open-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+  .sidebar-open-btn.visible { display: flex; }
+
+  @media (max-width: 768px) {
+    .p-sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 280px;
+      z-index: 60;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .p-sidebar.open { width: 280px; transform: translateX(0); box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4); }
+    .p-sidebar:not(.open) { width: 280px; border-right: 1px solid var(--p-border); transform: translateX(-100%); }
+
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: var(--scrim);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 55;
+      transition: opacity 0.2s ease;
+    }
+
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  }
 
   /* ---------- header ---------- */
 
@@ -186,8 +432,8 @@
 
   .theme-btn:hover { border-color: var(--line-strong); color: var(--ink); }
   .theme-btn .icon-moon { display: none; }
-  [data-theme="night"] .theme-btn .icon-sun { display: none; }
-  [data-theme="night"] .theme-btn .icon-moon { display: block; }
+  [data-theme="dark"] .theme-btn .icon-sun { display: none; }
+  [data-theme="dark"] .theme-btn .icon-moon { display: block; }
 
   /* ---------- omnibox ---------- */
 
@@ -629,10 +875,70 @@
 </head>
 <body>
 
+<div class="app-shell">
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<aside class="p-sidebar open" id="pSidebar">
+  <div class="p-brand">
+    <span class="p-brand-mark"></span>
+    <span class="p-wordmark">Atlas</span>
+    <button class="p-collapse-btn" id="sidebarCollapseBtn" type="button" aria-label="Collapse sidebar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><path d="M15 9 l-2 3 l2 3"/></svg>
+    </button>
+  </div>
+
+  <button class="p-new-thread" type="button">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New search
+  </button>
+
+  <div class="p-thread-list">
+    <div class="p-section-label">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L14.5 9 L22 9.5 L16.5 14.5 L18 22 L12 18 L6 22 L7.5 14.5 L2 9.5 L9.5 9 Z"/></svg>
+      Favorites
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">best homelab NAS 2026</span>
+    </div>
+
+    <div class="p-section-label">Recent searches</div>
+    <div class="p-thread-item active">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">rust async runtime</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">coffee shop near Space Needle</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">current stable version of Go</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">le potato SBC thermal throttling</span>
+    </div>
+  </div>
+
+  <div class="p-status">
+    <span class="p-status-dot"></span>
+    <span class="p-status-text">connected</span>
+    <button class="p-settings-btn" type="button" aria-label="Settings">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</aside>
+
+<div class="main-column">
+
 <header class="top">
   <div class="top-inner">
     <div class="brand-row">
       <div class="wordmark">
+        <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" aria-label="Open sidebar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><path d="M13 9 l2 3 l-2 3"/></svg>
+        </button>
         <span class="mark"></span>
         <span class="name">Atlas<span class="sub">self-hosted, over SearXNG</span></span>
       </div>
@@ -809,6 +1115,9 @@
   <span>5 engines &middot; 0 blocked &middot; 1 boosted</span>
 </footer>
 
+</div><!-- /main-column -->
+</div><!-- /app-shell -->
+
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="drawer" id="drawer" aria-label="Domain ranking">
   <div class="drawer-handle"></div>
@@ -868,10 +1177,10 @@
     var root = document.documentElement;
     var stored = localStorage.getItem('atlas-theme');
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.setAttribute('data-theme', stored || (prefersDark ? 'night' : 'paper'));
+    root.setAttribute('data-theme', stored || (prefersDark ? 'dark' : 'light'));
 
     document.getElementById('themeToggle').addEventListener('click', function () {
-      var next = root.getAttribute('data-theme') === 'night' ? 'paper' : 'night';
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
       localStorage.setItem('atlas-theme', next);
     });
@@ -963,6 +1272,35 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
 
     openDrawer(tuneButtons[0]);
+  })();
+
+  (function () {
+    var sidebar = document.getElementById('pSidebar');
+    var sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    var collapseBtn = document.getElementById('sidebarCollapseBtn');
+    var openBtn = document.getElementById('sidebarOpenBtn');
+    var isMobile = function () { return window.matchMedia('(max-width: 768px)').matches; };
+
+    function syncOpenBtn() {
+      openBtn.classList.toggle('visible', !sidebar.classList.contains('open'));
+    }
+
+    function setSidebar(open) {
+      sidebar.classList.toggle('open', open);
+      sidebarBackdrop.classList.toggle('open', open && isMobile());
+      syncOpenBtn();
+    }
+
+    setSidebar(!isMobile());
+
+    collapseBtn.addEventListener('click', function () { setSidebar(false); });
+    openBtn.addEventListener('click', function () { setSidebar(true); });
+    sidebarBackdrop.addEventListener('click', function () { setSidebar(false); });
+
+    window.addEventListener('resize', function () {
+      if (isMobile() && sidebar.classList.contains('open') === false) return;
+      syncOpenBtn();
+    });
   })();
 </script>
 </body>

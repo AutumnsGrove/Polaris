@@ -2,9 +2,10 @@
 
 Atlas is a self-hosted "local Kagi" search results page for Polaris, built on the existing
 SearXNG instance. This is a new, visually distinct product living inside the same Go
-binary/SvelteKit app as the chat assistant, not a reskin of it — connected only by a mode toggle
-in the header. Named in the same navigation-instrument register as Polaris (the star you steer
-by) — Atlas is the reference you consult, a companion product rather than a clone.
+binary/SvelteKit app as the chat assistant, not a reskin of it — connected by a mode toggle in
+the header and a shared sidebar shell (see "Shared chrome" below). Named in the same
+navigation-instrument register as Polaris (the star you steer by) — Atlas is the reference you
+consult, a companion product rather than a clone.
 
 Design reference: `design/mockups/search-results.html` (open directly in a browser, works
 offline, no build step — the header wordmark there now reads "Atlas"). That mockup is the source
@@ -109,12 +110,40 @@ existing agent/LLM pipeline — no new model integration — and renders as a ca
 list, with numbered citations linking down to the specific sources used. No redirect into the
 existing `/t/[id]` chat thread UI; this stays inline on the results page.
 
+## Shared chrome (sidebar)
+
+Atlas and the chat assistant share one sidebar shell — same component structure, same visual
+tokens, same collapse/expand and mobile-overlay behavior as `web/src/lib/components/Sidebar.svelte`
+— so toggling between modes doesn't feel like switching apps. What's shared is the *shell*, not
+the *content*:
+
+- **Shell (shared):** brand row + collapse button, primary action button, favorites/recents
+  thread-style list with the same row styling (leading dot, active-state accent-soft background,
+  inset separators), status footer with connection dot + settings button. Same collapse-to-zero
+  desktop behavior and fixed-overlay-with-backdrop mobile behavior as today's `Sidebar.svelte`.
+- **Content (mode-scoped, not shared):** the wordmark and list entries change per mode. In
+  Assistant mode it reads "Polaris" and lists chat threads (today's behavior, unchanged). In
+  Search mode it reads "Atlas" and lists past *searches*, not chat threads — these are separate
+  histories, not a merged one. The primary action button is "New thread" in Assistant mode,
+  "New search" in Atlas mode.
+- **Token strategy:** the sidebar uses Polaris's real `--color-*` tokens from `web/src/app.css`
+  (not Atlas's own `--paper`/`--ink` palette), so it renders identically regardless of which
+  mode's content area is showing — confirmed in the mockup by literally copying the light/dark
+  values rather than approximating them. Both palettes are driven by the same light/dark toggle;
+  Atlas's `data-theme` attribute values were renamed from an initial `paper`/`night` guess to
+  `light`/`dark` specifically to match Polaris's real attribute values one-for-one, so a single
+  theme switch drives both token systems without a translation layer.
+
+Practically, this means Atlas needs its own search-history store (query text, timestamp,
+favorite flag) separate from `Thread`/`Message` — mirroring the shape, not reusing the table.
+
 ## Frontend architecture
 
 - New route tree in `web/src/routes` (e.g. `/search`), separate from `/t/[id]`'s chat UI, with
-  its own layout and components — deliberately not sharing chat's component tree, since the
-  interaction models are fundamentally different (persistent conversation thread vs. one-shot
-  query → ranked list).
+  its own layout and components in the content area — deliberately not sharing chat's content
+  component tree, since the interaction models are fundamentally different (persistent
+  conversation thread vs. one-shot query → ranked list). The sidebar shell is the one exception,
+  per "Shared chrome" above.
 - Same Go binary, same `go:embed` bundling, same backend — only the frontend route/component tree
   and (per above) the domain-ranking data model are new.
 - New Go handler(s) for: serving search results (wrapping `search.SearXNGClient.Search`), the
@@ -126,12 +155,13 @@ existing `/t/[id]` chat thread UI; this stays inline on the results page.
 
 ## Visual design (see mockup for the actual pixels)
 
-- **Deliberately distinct identity from Polaris's chat UI** — Polaris's own `PRODUCT.md` calls
-  for a dark, night-sky, editorial calm; this mockup instead defaults to a warm-paper light theme
-  (with a full dark mode available via a header toggle, defaulting to `prefers-color-scheme`).
-  The reasoning: dense link-scanning in daylight/outdoor mobile use (the primary use case per
-  Polaris's own "mobile is the primary surface" principle) favors a light, high-contrast reading
-  surface over a dark one.
+- **Distinct content-area identity, shared chrome** — Polaris's own `PRODUCT.md` calls for a
+  dark, night-sky, editorial calm; Atlas's content area instead defaults to a warm-paper light
+  theme (with a full dark mode available via a header toggle, defaulting to
+  `prefers-color-scheme`). The reasoning: dense link-scanning in daylight/outdoor mobile use (the
+  primary use case per Polaris's own "mobile is the primary surface" principle) favors a light,
+  high-contrast reading surface over a dark one. The sidebar is the deliberate exception — see
+  "Shared chrome" above.
 - Serif titles (`ui-serif, Georgia...` stack) paired with a system-sans UI chrome — signals "a
   considered reading surface," not a generic search-engine clone. No web font dependency, fully
   offline/self-hosted-appropriate.
@@ -164,7 +194,12 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    `search/blocklist.go`), applying block/pin/raise/lower on top of the fused score.
 3. Build the `/search` route tree in `web/src/routes`, porting the mockup's HTML/CSS into Svelte
    components.
-4. Wire the Quick Answer endpoint to the existing agent.
-5. Add `search.autocomplete` to `compose/searxng/settings.yml` and the Dockerfile/compose
+4. Extract the shared sidebar shell out of `Sidebar.svelte` into a mode-agnostic component that
+   takes brand text + list entries + primary-action label as inputs, so Assistant and Atlas each
+   feed it their own content rather than forking the component.
+5. Add a search-history store (query text, timestamp, favorite flag) for Atlas's sidebar list,
+   separate from `Thread`/`Message`.
+6. Wire the Quick Answer endpoint to the existing agent.
+7. Add `search.autocomplete` to `compose/searxng/settings.yml` and the Dockerfile/compose
    COPY+bind-mount pair for `domain_rankings.yaml`, once the feature is ready to ship rather than
    still in design.
