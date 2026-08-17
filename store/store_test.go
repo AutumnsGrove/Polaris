@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -169,6 +171,20 @@ func TestSetThreadFavorite(t *testing.T) {
 	}
 	if thread.Favorite {
 		t.Error("expected Favorite to be false after SetThreadFavorite(false)")
+	}
+}
+
+func TestSetThreadFavorite_NonexistentIDReturnsErrNoRows(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.SetThreadFavorite("does-not-exist", true); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetThreadFavorite(nonexistent) = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSetThreadTitle_NonexistentIDReturnsErrNoRows(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.SetThreadTitle("does-not-exist", "new title"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetThreadTitle(nonexistent) = %v, want sql.ErrNoRows", err)
 	}
 }
 

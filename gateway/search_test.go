@@ -52,6 +52,24 @@ func TestHandleSetDomainRanking_RejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateSearchHistory_NonexistentIDReturns404(t *testing.T) {
+	h := newTestHarness(t, "")
+
+	req, err := http.NewRequest(http.MethodPatch, h.url("/api/search-history/999"), strings.NewReader(`{"favorite":true}`))
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/search-history/999: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for a search history id that doesn't exist", resp.StatusCode)
+	}
+}
+
 func TestHandleSetDomainRanking_RejectsMissingDomain(t *testing.T) {
 	h := newTestHarness(t, "")
 

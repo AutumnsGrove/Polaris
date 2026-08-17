@@ -57,7 +57,13 @@ type DomainRankings struct {
 // isn't in the map, on parse failure, or on a nil *DomainRankings, so
 // callers that don't wire one up don't need their own nil checks. Matches
 // Blocklist.Blocked's subdomain semantics: a state set on "reddit.com"
-// also applies to "old.reddit.com".
+// also applies to "old.reddit.com". When both a domain and one of its
+// subdomains have their own entries (e.g. "reddit.com": block and
+// "old.reddit.com": raise), the most specific (longest) match wins,
+// picked deterministically rather than by Go's randomized map iteration
+// order — a prior version returned on the first match found while
+// ranging over the map, so the same rankings file could produce opposite
+// behavior across process restarts.
 func (d *DomainRankings) State(rawURL string) RankState {
 	if d == nil || len(d.states) == 0 {
 		return RankDefault
@@ -67,12 +73,15 @@ func (d *DomainRankings) State(rawURL string) RankState {
 		return RankDefault
 	}
 	host := normalizeDomain(u.Hostname())
+	best := RankDefault
+	bestLen := -1
 	for h, s := range d.states {
-		if host == h || strings.HasSuffix(host, "."+h) {
-			return s
+		if (host == h || strings.HasSuffix(host, "."+h)) && len(h) > bestLen {
+			best = s
+			bestLen = len(h)
 		}
 	}
-	return RankDefault
+	return best
 }
 
 var (

@@ -287,6 +287,16 @@ else
 	# cross-UID-namespace shared directory, not a real exposure.
 	mkdir -p update-signal
 	chmod 777 update-signal
+
+	# Same cross-UID-namespace bind-mount problem as update-signal above,
+	# for the same reason: domain_rankings.yaml is bind-mounted
+	# read-write (docker-compose.yml) so the ranking popover UI can write
+	# it as the image's non-root polaris user, whose uid won't match
+	# whatever host user owns the file by default. 666, not 777 — this
+	# is a plain file, not a directory that needs the execute bit.
+	if [ -f domain_rankings.yaml ]; then
+		chmod 666 domain_rankings.yaml
+	fi
 fi
 
 # ---- 6. host update watcher (docker mode, Linux only) ---------------------

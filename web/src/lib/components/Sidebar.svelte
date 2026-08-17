@@ -60,7 +60,7 @@
 
 {#snippet searchRow(entry: SearchHistoryEntry, i: number)}
 	<div
-		class="thread-item"
+		class="thread-item search-item"
 		class:active={isAtlas && searchState.lastQuery === entry.query}
 		onclick={() => openSearch(entry.query)}
 		onkeydown={(e) => e.key === 'Enter' && openSearch(entry.query)}
@@ -72,6 +72,18 @@
 		<div class="thread-meta">
 			<div class="thread-title">{entry.query}</div>
 		</div>
+		<button
+			class="favorite-btn"
+			class:favorited={entry.favorite}
+			type="button"
+			aria-label={entry.favorite ? 'Remove from favorites' : 'Add to favorites'}
+			onclick={(e) => {
+				e.stopPropagation();
+				void searchState.favoriteSearch(entry.id, !entry.favorite);
+			}}
+		>
+			<Star size={13} fill={entry.favorite ? 'currentColor' : 'none'} />
+		</button>
 	</div>
 {/snippet}
 
@@ -93,9 +105,7 @@
 		<button
 			class="btn btn-accent new-thread"
 			onclick={() => {
-				searchState.query = '';
-				searchState.results = [];
-				searchState.lastQuery = '';
+				searchState.reset();
 				void goto('/search');
 			}}
 		>
@@ -337,6 +347,40 @@
 	.thread-meta {
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* Hover-revealed, same idea as the star affordance ThreadMenu.svelte
+	   exposes for chat threads — search history rows have no equivalent
+	   "..." menu (there's no per-search page header to hang one off), so
+	   this lives directly on the row instead. */
+	.favorite-btn {
+		appearance: none;
+		border: none;
+		background: transparent;
+		flex-shrink: 0;
+		width: 22px;
+		height: 22px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 5px;
+		color: var(--color-text-dim);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+	}
+
+	.search-item:hover .favorite-btn,
+	.favorite-btn.favorited {
+		opacity: 1;
+	}
+
+	.favorite-btn:hover {
+		color: var(--color-accent);
+	}
+
+	.favorite-btn.favorited {
+		color: var(--color-accent);
 	}
 
 	.thread-title {

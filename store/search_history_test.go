@@ -1,6 +1,11 @@
 package store
 
-import "testing"
+import (
+	"database/sql"
+	"errors"
+	"testing"
+	"time"
+)
 
 func TestRecordSearch_DedupesExactRepeatByBumpingUpdatedAt(t *testing.T) {
 	s := openTestStore(t)
@@ -46,6 +51,32 @@ func TestListSearchHistory_NewestFirst(t *testing.T) {
 	}
 }
 
+func TestListSearchHistory_SameSecondInsertsSortByMillisecond(t *testing.T) {
+	// Two distinct (never-bumped) queries recorded a few milliseconds
+	// apart — well within the same wall-clock second, the scenario that
+	// motivated giving search_history's created_at/updated_at columns
+	// millisecond rather than second precision (see the schema comment on
+	// that table). A second-precision timestamp would tie here and leave
+	// relative order up to SQLite's unspecified tiebreak instead of
+	// reflecting insertion order.
+	s := openTestStore(t)
+	if err := s.RecordSearch("alpha query"); err != nil {
+		t.Fatalf("RecordSearch(alpha): %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if err := s.RecordSearch("beta query"); err != nil {
+		t.Fatalf("RecordSearch(beta): %v", err)
+	}
+
+	entries, err := s.ListSearchHistory(10)
+	if err != nil {
+		t.Fatalf("ListSearchHistory: %v", err)
+	}
+	if len(entries) != 2 || entries[0].Query != "beta query" {
+		t.Fatalf("entries = %+v, want beta query first (most recently inserted)", entries)
+	}
+}
+
 func TestSetSearchHistoryFavorite(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.RecordSearch("rust async runtime"); err != nil {
@@ -69,5 +100,12 @@ func TestSetSearchHistoryFavorite(t *testing.T) {
 	}
 	if !entries[0].Favorite {
 		t.Error("expected Favorite to be true after SetSearchHistoryFavorite(true)")
+	}
+}
+
+func TestSetSearchHistoryFavorite_NonexistentIDReturnsErrNoRows(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.SetSearchHistoryFavorite(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetSearchHistoryFavorite(nonexistent) = %v, want sql.ErrNoRows", err)
 	}
 }

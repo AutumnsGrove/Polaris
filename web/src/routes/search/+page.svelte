@@ -38,8 +38,12 @@
 		if (wantsQuickAnswer) {
 			void searchState.askQuickAnswer(bare);
 		} else {
-			searchState.quickAnswer = null;
-			searchState.quickAnswerError = '';
+			// Also bump quickAnswerSeq (not just clear the visible fields) so
+			// a still-in-flight askQuickAnswer() from a *previous* "?" query
+			// can't flip quickAnswerLoading back to true after this plain
+			// query already cleared it — that reappeared as a stale
+			// "Thinking…" panel for a query that never asked for one.
+			searchState.discardQuickAnswer();
 		}
 	}
 

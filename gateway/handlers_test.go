@@ -385,6 +385,32 @@ func TestThreadsCRUD(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateThread_NonexistentIDReturns404(t *testing.T) {
+	h := newTestHarness(t, "")
+
+	favBody, _ := json.Marshal(map[string]interface{}{"favorite": true})
+	favReq, _ := http.NewRequest(http.MethodPatch, h.url("/api/threads/does-not-exist"), bytes.NewReader(favBody))
+	favResp, err := http.DefaultClient.Do(favReq)
+	if err != nil {
+		t.Fatalf("PATCH favorite: %v", err)
+	}
+	favResp.Body.Close()
+	if favResp.StatusCode != http.StatusNotFound {
+		t.Errorf("favorite status = %d, want 404 for a thread id that doesn't exist", favResp.StatusCode)
+	}
+
+	titleBody, _ := json.Marshal(map[string]string{"title": "New Title"})
+	titleReq, _ := http.NewRequest(http.MethodPatch, h.url("/api/threads/does-not-exist"), bytes.NewReader(titleBody))
+	titleResp, err := http.DefaultClient.Do(titleReq)
+	if err != nil {
+		t.Fatalf("PATCH title: %v", err)
+	}
+	titleResp.Body.Close()
+	if titleResp.StatusCode != http.StatusNotFound {
+		t.Errorf("title status = %d, want 404 for a thread id that doesn't exist", titleResp.StatusCode)
+	}
+}
+
 func TestHandleRegenerateTitle(t *testing.T) {
 	srv := fakeLLMServer(t, "thread title (full context)", "Vacation Budget Planning")
 	h := newTestHarness(t, srv.URL)
@@ -536,7 +562,7 @@ func TestHandleGetThread_IncludesVariantsMapAndAppliesActiveContent(t *testing.T
 
 	var got struct {
 		store.Thread
-		Messages []store.Message      `json:"messages"`
+		Messages []store.Message `json:"messages"`
 		Variants map[string]struct {
 			IDs    []string `json:"ids"`
 			Active string   `json:"active"`

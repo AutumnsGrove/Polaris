@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 
 	"polaris/tools"
 )
@@ -233,9 +233,21 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 	// chief among them) a silent no-op instead — Atlas's Quick Answer
 	// doesn't render suggestions anyway, so nothing is lost by dropping
 	// them here specifically.
-	var done atomic.Bool
+	//
+	// The check ("is it safe to write?") and the write itself share
+	// sendMu, and done is only ever flipped while holding it too — a bare
+	// atomic.Bool checked before the write left a real (if narrow) window
+	// where a goroutine could pass the check and then get preempted before
+	// its enc.Encode/Flush actually ran, with done.Store(true) landing in
+	// between and reproducing the exact panic this exists to prevent.
+	// Serializing the check-and-write against the done-flip closes that
+	// window structurally instead of just narrowing it.
+	var sendMu sync.Mutex
+	done := false
 	s.handleTurn(r.Context(), msg, func(evt ServerEvent) {
-		if done.Load() {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		if done {
 			return
 		}
 		// Unlike handleAsk's own accumulation, no commentary-reset logic
@@ -247,5 +259,7 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		_ = enc.Encode(evt)
 		flusher.Flush()
 	}, nil)
-	done.Store(true)
+	sendMu.Lock()
+	done = true
+	sendMu.Unlock()
 }

@@ -179,8 +179,14 @@ CREATE TABLE IF NOT EXISTS search_history (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	query TEXT NOT NULL,
 	favorite INTEGER NOT NULL DEFAULT 0,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	-- Millisecond precision, matching RecordSearch's ON CONFLICT bump
+	-- (strftime('%Y-%m-%d %H:%M:%f', 'now')) exactly — CURRENT_TIMESTAMP
+	-- only has second precision, so a fresh row and a bumped row could
+	-- otherwise get identical updated_at strings within the same second
+	-- and sort nondeterministically in ListSearchHistory's ORDER BY
+	-- updated_at DESC.
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+	updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_search_history_query ON search_history(query);
@@ -354,6 +360,27 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 	return err
 }
 
+// execOne runs a write that's expected to touch exactly one existing row
+// (an UPDATE targeting a single id), translating "the id didn't match
+// anything" into sql.ErrNoRows so callers — and, following the same
+// errors.Is(err, sql.ErrNoRows) -> 404 convention handleGetThread/
+// handleRegenerateTitle already use, their HTTP handlers — can tell a
+// missing id apart from a real database error instead of both silently
+// reporting success.
+func execOne(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetThreadTitle updates a thread's title — used both for the one-time
 // LLM-generated title after a new thread's first turn finishes, and for
 // a user-initiated rename from the sidebar. Either one replaces
@@ -361,11 +388,10 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 // since a rename happening at all is itself the signal that the title
 // is no longer just the auto-generated placeholder.
 func (s *Store) SetThreadTitle(id, title string) error {
-	_, err := s.db.Exec(
+	return execOne(s.db.Exec(
 		`UPDATE threads SET title = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		title, id,
-	)
-	return err
+	))
 }
 
 // SetThreadFavorite pins/unpins a thread to the sidebar's Favorites
@@ -373,8 +399,7 @@ func (s *Store) SetThreadTitle(id, title string) error {
 // "activity" on a thread the way a rename or a new message is, and
 // shouldn't reorder it within its section.
 func (s *Store) SetThreadFavorite(id string, favorite bool) error {
-	_, err := s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id)
-	return err
+	return execOne(s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id))
 }
 
 // TouchUpdatedAt bumps rootID's own updated_at to now, independent of
@@ -695,10 +720,10 @@ func (s *Store) ListSearchHistory(limit int) ([]SearchHistoryEntry, error) {
 
 // SetSearchHistoryFavorite pins/unpins a search to the sidebar's Favorites
 // section — deliberately doesn't touch updated_at, same reasoning as
-// SetThreadFavorite.
+// SetThreadFavorite. Returns sql.ErrNoRows for an id that doesn't exist,
+// same convention as SetThreadFavorite/SetThreadTitle.
 func (s *Store) SetSearchHistoryFavorite(id int64, favorite bool) error {
-	_, err := s.db.Exec(`UPDATE search_history SET favorite = ? WHERE id = ?`, favorite, id)
-	return err
+	return execOne(s.db.Exec(`UPDATE search_history SET favorite = ? WHERE id = ?`, favorite, id))
 }
 
 // AddCost bumps a thread's running cost without inserting a message row —

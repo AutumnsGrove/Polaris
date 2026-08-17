@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -78,7 +80,11 @@ func (s *Server) handleUpdateSearchHistory(w http.ResponseWriter, r *http.Reques
 
 	if req.Favorite != nil {
 		if err := s.db.SetSearchHistoryFavorite(id, *req.Favorite); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "search history entry not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 	}

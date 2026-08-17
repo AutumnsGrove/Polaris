@@ -228,7 +228,11 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 			title = title[:maxThreadTitleLen]
 		}
 		if err := s.db.SetThreadTitle(id, title); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title}, "")
@@ -236,7 +240,11 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 
 	if req.Favorite != nil {
 		if err := s.db.SetThreadFavorite(id, *req.Favorite); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		s.db.LogEvent(id, "info", "thread", "thread favorite changed", map[string]interface{}{"favorite": *req.Favorite}, "")

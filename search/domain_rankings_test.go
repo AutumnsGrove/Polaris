@@ -38,6 +38,25 @@ func TestLoadDomainRankings_ParsesStates(t *testing.T) {
 	}
 }
 
+func TestLoadDomainRankings_SubdomainOverridesParentDeterministically(t *testing.T) {
+	path := writeRankingsFile(t, "reddit.com: block\nold.reddit.com: raise\n")
+	r := LoadDomainRankings(path)
+
+	// Run repeatedly — a bug where the first map-iteration match wins
+	// would only fail nondeterministically across separate processes, so
+	// a single run in-process wouldn't reliably catch it. The fix makes
+	// this deterministic regardless of map iteration order, so it should
+	// hold every time even within one process.
+	for i := 0; i < 20; i++ {
+		if got := r.State("https://old.reddit.com/r/rust"); got != RankRaise {
+			t.Fatalf("run %d: State(old.reddit.com) = %q, want raise (more specific match should win over the parent domain's block)", i, got)
+		}
+		if got := r.State("https://reddit.com/r/rust"); got != RankBlock {
+			t.Fatalf("run %d: State(reddit.com) = %q, want block", i, got)
+		}
+	}
+}
+
 func TestLoadDomainRankings_MissingPathIsEmpty(t *testing.T) {
 	r := LoadDomainRankings("/nonexistent/domain_rankings.yaml")
 	if r.State("https://anything.com") != RankDefault {
