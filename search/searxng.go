@@ -157,6 +157,15 @@ func (c *SearXNGClient) WithDomainRankings(path string) *SearXNGClient {
 	return c
 }
 
+// DomainRankingsPath returns the file this client's ranking is loaded
+// from ("" if WithDomainRankings was never called) — so a caller writing
+// a ranking change (see SetDomainRanking) always targets exactly the file
+// Search itself reads, rather than re-deriving the path from config and
+// risking the two drifting apart.
+func (c *SearXNGClient) DomainRankingsPath() string {
+	return c.domainRankingsPath
+}
+
 type searxngResponse struct {
 	Query   string          `json:"query"`
 	Results []searxngResult `json:"results"`

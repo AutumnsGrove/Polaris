@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"polaris/search"
 )
 
 // handleSearch backs Atlas's results page — a thin wrapper around the same
@@ -79,6 +81,40 @@ func (s *Server) handleUpdateSearchHistory(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetDomainRanking backs the ranking popover's Block/Lower/Default/
+// Raise/Pin control — writes through to whatever file s.searxng itself
+// reads (see SearXNGClient.DomainRankingsPath), so a change here is live
+// on the very next search with no restart, and applies identically to
+// Atlas and the assistant's web_search tool since they share that client.
+func (s *Server) handleSetDomainRanking(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domain string `json:"domain"`
+		State  string `json:"state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	domain := strings.TrimSpace(req.Domain)
+	if domain == "" {
+		http.Error(w, "domain is required", http.StatusBadRequest)
+		return
+	}
+
+	path := s.searxng.DomainRankingsPath()
+	if path == "" {
+		http.Error(w, "domain rankings are not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := search.SetDomainRanking(path, domain, search.RankState(req.State)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)

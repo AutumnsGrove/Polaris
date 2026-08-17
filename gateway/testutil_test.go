@@ -42,8 +42,9 @@ database:
   path: %q
 attachments:
   dir: %q
+domain_rankings_file: %q
 default_model: "mimo-pro"
-`, llmBaseURL, filepath.Join(dir, "test.db"), filepath.Join(dir, "attachments"))
+`, llmBaseURL, filepath.Join(dir, "test.db"), filepath.Join(dir, "attachments"), filepath.Join(dir, "domain_rankings.yaml"))
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing test config: %v", err)
 	}

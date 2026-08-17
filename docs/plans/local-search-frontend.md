@@ -209,7 +209,6 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    shared `SearXNGClient`; `web/src/routes/search/+page.svelte` ports the mockup with live data,
    its own `SearchState` (`web/src/lib/search.svelte.ts`), and a shared `ModeToggle` component
    (Compass/Atlas, Telescope/Polaris) in both Atlas's header and `ChatView`'s homepage header.
-   Ranking popover is optimistic-only so far — no write endpoint yet (see point 6 below, unchanged).
    Atlas follows the settings panel's one global theme control rather than a second toggle.
 4. ~~Extract the shared sidebar shell~~ **Done, differently than planned.** Rather than extracting
    a new mode-agnostic component, `Sidebar.svelte` itself branches on `$app/state`'s `page.url`
@@ -225,9 +224,20 @@ titles/URLs/snippets that genuinely came back from DuckDuckGo/Brave.
    (best-effort — a DB hiccup doesn't fail the search itself). Sidebar's "Recent searches" section
    is wired to this live; clicking an entry navigates to `/search?q=...`, which `+page.svelte`'s
    `$effect` picks up and re-runs.
-6. Wire the Quick Answer endpoint to the existing agent, and build the domain-ranking write
-   endpoint so the ranking popover actually persists to `domain_rankings.yaml` instead of being
-   optimistic-only.
+6. ~~Build the domain-ranking write endpoint~~ **Done.** `search.SetDomainRanking` (a
+   read-modify-write under the same mutex `LoadDomainRankings`'s cache uses, so a popover click
+   can't race a concurrent load or another click) behind `PUT /api/domain-rankings`
+   (`gateway/search.go`), writing to whatever file `SearXNGClient.DomainRankingsPath()` itself
+   reads — a new accessor added specifically so the write side can never target a different file
+   than the read side does. The cache is updated synchronously as part of the write, not just on
+   disk, so the very next search reflects it immediately rather than waiting on the mtime-based
+   hot-reload check to notice (filesystem mtime resolution can be as coarse as 1 second). The
+   frontend's popover (`+page.svelte`'s `setRank`) is optimistic — updates immediately, then
+   reverts with a toast (reusing `appState.showToast`, a legitimate cross-cutting utility — this
+   doesn't violate SearchState's separation from AppState) if the write actually failed.
+   `domain_rankings.yaml` is now a real tracked file (like `blocked_sources.txt`), starting empty
+   since there's no sensible default to seed.
+   Wire the Quick Answer endpoint to the existing agent next.
 7. Add `search.autocomplete` to `compose/searxng/settings.yml` and the Dockerfile/compose
    COPY+bind-mount pair for `domain_rankings.yaml`, once the feature is ready to ship rather than
    still in design.

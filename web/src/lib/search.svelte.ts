@@ -1,4 +1,4 @@
-import type { SearchResult, SearchHistoryEntry } from './types';
+import type { SearchResult, SearchHistoryEntry, RankState } from './types';
 
 // Atlas's own reactive state — deliberately separate from AppState
 // (state.svelte.ts), not a mode bolted onto it. Chat's state model is
@@ -60,6 +60,21 @@ export class SearchState {
 			body: JSON.stringify({ favorite })
 		});
 		await this.loadHistory();
+	}
+
+	// Persists a ranking popover choice to domain_rankings.yaml
+	// (search.SetDomainRanking, via PUT /api/domain-rankings) — applies to
+	// every future search, Atlas's or the assistant's web_search tool's,
+	// not just the results currently on screen. Returns whether it
+	// succeeded so the caller can decide how to handle a failure (e.g. an
+	// optimistic UI update that needs reverting).
+	async setDomainRanking(domain: string, state: RankState): Promise<boolean> {
+		const res = await fetch('/api/domain-rankings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ domain, state })
+		});
+		return res.ok;
 	}
 
 	// Bumped on every search() call; a fetch that resolves after a newer

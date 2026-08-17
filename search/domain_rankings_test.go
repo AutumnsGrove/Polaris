@@ -2,6 +2,7 @@ package search
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,5 +90,79 @@ func TestLoadDomainRankings_HotReloadsOnFileChange(t *testing.T) {
 
 	if got := LoadDomainRankings(path).State("https://example.com"); got != RankPin {
 		t.Errorf("after hot-reload: State = %q, want pin", got)
+	}
+}
+
+func TestSetDomainRanking_WritesAndTakesEffectImmediately(t *testing.T) {
+	path := writeRankingsFile(t, "existing.com: lower\n")
+
+	if err := SetDomainRanking(path, "reddit.com", RankRaise); err != nil {
+		t.Fatalf("SetDomainRanking: %v", err)
+	}
+
+	// No mtime-wait needed — the cache is updated synchronously as part of
+	// the write, not just on-disk (see SetDomainRanking's doc comment).
+	if got := LoadDomainRankings(path).State("https://reddit.com"); got != RankRaise {
+		t.Errorf("State(reddit.com) = %q, want raise (immediately after write, no reload delay)", got)
+	}
+	// The pre-existing entry must survive a read-modify-write, not just
+	// whatever was set in this call.
+	if got := LoadDomainRankings(path).State("https://existing.com"); got != RankLower {
+		t.Errorf("State(existing.com) = %q, want lower (pre-existing entry should survive)", got)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading written file: %v", err)
+	}
+	if !strings.Contains(string(data), "reddit.com: raise") {
+		t.Errorf("file contents = %q, want it to contain the new entry", data)
+	}
+}
+
+func TestSetDomainRanking_DefaultRemovesEntry(t *testing.T) {
+	path := writeRankingsFile(t, "reddit.com: raise\nother.com: pin\n")
+
+	if err := SetDomainRanking(path, "reddit.com", RankDefault); err != nil {
+		t.Fatalf("SetDomainRanking: %v", err)
+	}
+
+	if got := LoadDomainRankings(path).State("https://reddit.com"); got != RankDefault {
+		t.Errorf("State(reddit.com) = %q, want default after clearing", got)
+	}
+	if got := LoadDomainRankings(path).State("https://other.com"); got != RankPin {
+		t.Error("clearing one domain should not touch a sibling entry")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading written file: %v", err)
+	}
+	if strings.Contains(string(data), "reddit.com") {
+		t.Errorf("file contents = %q, want reddit.com entry removed entirely, not written as \"default\"", data)
+	}
+}
+
+func TestSetDomainRanking_CreatesFileIfMissing(t *testing.T) {
+	path := t.TempDir() + "/domain_rankings.yaml"
+
+	if err := SetDomainRanking(path, "reddit.com", RankPin); err != nil {
+		t.Fatalf("SetDomainRanking: %v", err)
+	}
+	if got := LoadDomainRankings(path).State("https://reddit.com"); got != RankPin {
+		t.Errorf("State(reddit.com) = %q, want pin", got)
+	}
+}
+
+func TestSetDomainRanking_RejectsInvalidState(t *testing.T) {
+	path := writeRankingsFile(t, "")
+	if err := SetDomainRanking(path, "reddit.com", RankState("boost")); err == nil {
+		t.Fatal("expected an error for an invalid rank state")
+	}
+}
+
+func TestSetDomainRanking_RejectsEmptyPath(t *testing.T) {
+	if err := SetDomainRanking("", "reddit.com", RankRaise); err == nil {
+		t.Fatal("expected an error when no domain rankings file is configured")
 	}
 }

@@ -1,6 +1,7 @@
 package search
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -147,4 +148,79 @@ func LoadDomainRankings(path string) *DomainRankings {
 	rankingsCache[path] = &rankingsCacheEntry{parsed: parsed, modTime: info.ModTime()}
 	blocklistLog.Info("loaded domain rankings", "path", path, "domains", len(parsed.states))
 	return parsed
+}
+
+// domainRankingsHeader is prepended to every SetDomainRanking-written file
+// — this file is both hand-editable and UI-written, unlike
+// blocked_sources.txt (hand-editable only), so a reminder of the valid
+// states belongs in the file itself, not just in docs. A round-trip
+// through yaml.Marshal on a plain map can't preserve a human's own
+// comments, though — a UI edit will silently drop any hand-added ones.
+// Acceptable for v1 (see docs/plans/local-search-frontend.md); revisit if
+// that turns out to matter in practice.
+const domainRankingsHeader = "# domain_rankings.yaml — hand-editable, or written by Atlas's ranking popover.\n" +
+	"# State: block | lower | raise | pin. Omitted domains are implicitly \"default\".\n"
+
+// SetDomainRanking sets domain's ranking state in the file at path,
+// creating it if it doesn't exist yet. RankDefault removes the entry
+// entirely rather than writing it explicitly — omitting a domain already
+// means default, so there's nothing to persist. Read-modify-write happens
+// under rankingsMu (the same lock LoadDomainRankings' cache uses) so a
+// popover click can't race a concurrent load or another click into
+// silently dropping one of them, and the in-memory cache is updated
+// immediately afterward so the very next search reflects the change
+// without waiting on filesystem mtime resolution (coarse — as little as
+// 1-second granularity on some filesystems — to notice the write).
+func SetDomainRanking(path, domain string, state RankState) error {
+	if path == "" {
+		return fmt.Errorf("no domain rankings file configured")
+	}
+	if !state.valid() {
+		return fmt.Errorf("invalid rank state %q", state)
+	}
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+
+	rankingsMu.Lock()
+	defer rankingsMu.Unlock()
+
+	raw := map[string]RankState{}
+	if data, err := os.ReadFile(path); err == nil {
+		// Tolerate a stale/corrupt on-disk file here — this write is about
+		// to replace it with a valid one regardless, and failing outright
+		// would mean one hand-edit typo permanently blocks the popover
+		// from ever writing again.
+		_ = yaml.Unmarshal(data, &raw)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+
+	if state == RankDefault {
+		delete(raw, domain)
+	} else {
+		raw[domain] = state
+	}
+
+	data, err := yaml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("encoding domain rankings: %w", err)
+	}
+	if err := os.WriteFile(path, append([]byte(domainRankingsHeader), data...), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s after write: %w", path, err)
+	}
+	states := make(map[string]RankState, len(raw))
+	for d, s := range raw {
+		states[normalizeDomain(d)] = s
+	}
+	rankingsCache[path] = &rankingsCacheEntry{parsed: &DomainRankings{states: states}, modTime: info.ModTime()}
+
+	blocklistLog.Info("updated domain ranking", "path", path, "domain", domain, "state", state)
+	return nil
 }

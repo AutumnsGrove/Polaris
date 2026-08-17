@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { searchState } from '$lib/search.svelte';
+	import { appState } from '$lib/state.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import { Search as SearchIcon, SlidersHorizontal, Globe, X } from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
@@ -24,11 +25,12 @@
 	});
 
 	let openPopoverFor = $state<string | null>(null);
-	// Optimistic-only: no write endpoint exists yet (see
-	// docs/plans/local-search-frontend.md's "Next steps") — this reflects
-	// clicks in the UI immediately but doesn't persist to
-	// domain_rankings.yaml. Keyed by URL so a re-search doesn't lose it
-	// mid-session, but a page reload does.
+	// Optimistic: reflects a click immediately, then persists via
+	// setDomainRanking below — keyed by URL (not domain) purely so
+	// rankStateOf can look it up alongside a SearchResult by the same key
+	// it's already indexed by; the actual persisted state is per-domain.
+	// Reverted if the write fails, so the UI never quietly disagrees with
+	// what's actually on disk.
 	let localRankOverrides = $state<Record<string, RankState>>({});
 
 	function rankStateOf(r: SearchResult): RankState {
@@ -56,8 +58,18 @@
 		openPopoverFor = openPopoverFor === url ? null : url;
 	}
 
-	function setRank(url: string, state: RankState) {
-		localRankOverrides = { ...localRankOverrides, [url]: state };
+	async function setRank(r: SearchResult, domain: string, state: RankState) {
+		const previous = rankStateOf(r);
+		localRankOverrides = { ...localRankOverrides, [r.url]: state };
+
+		const ok = await searchState.setDomainRanking(domain, state);
+		if (!ok) {
+			// Revert — don't leave the UI showing a state that isn't actually
+			// persisted, since the whole point of this control is that it
+			// applies everywhere search happens, not just visually here.
+			localRankOverrides = { ...localRankOverrides, [r.url]: previous };
+			appState.showToast("Couldn't save that ranking — try again");
+		}
 	}
 
 	function submitSearch(e: Event) {
@@ -184,7 +196,7 @@
 													class="rank-option"
 													class:selected={state === opt}
 													data-state={opt}
-													onclick={() => setRank(r.url, opt as RankState)}
+													onclick={() => setRank(r, domain, opt as RankState)}
 												>
 													{rankLabels[opt as RankState]}
 												</button>
