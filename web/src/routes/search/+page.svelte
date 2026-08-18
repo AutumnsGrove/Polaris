@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fade } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { searchState } from '$lib/search.svelte';
@@ -132,6 +133,15 @@
 		return () => document.removeEventListener('click', closeOnOutsideClick);
 	});
 
+	// True before any search has actually run — drives which layout the
+	// omnibox lives in (see the markup below): centered and prominent here,
+	// or compact and pinned in the header once there's something to show
+	// underneath it. Same shape as ChatView.svelte's `appState.turns.length
+	// === 0` check for its own welcome state.
+	let isStartScreen = $derived(
+		!searchState.lastQuery && !searchState.loading && !searchState.error
+	);
+
 	const rankLabels: Record<RankState, string> = {
 		block: 'Block',
 		lower: 'Lower',
@@ -145,6 +155,19 @@
 <svelte:head>
 	<title>Atlas{searchState.lastQuery ? ` — ${searchState.lastQuery}` : ''}</title>
 </svelte:head>
+
+{#snippet omniboxForm()}
+	<form class="omnibox" onsubmit={submitSearch}>
+		<SearchIcon size={16} class="icon-search" />
+		<input
+			type="text"
+			bind:value={searchState.query}
+			placeholder="Search the web"
+			spellcheck="false"
+		/>
+		<span class="hint">? for answer</span>
+	</form>
+{/snippet}
 
 <div class="atlas-page">
 	<header class="top">
@@ -176,16 +199,16 @@
 				</div>
 			</div>
 
-			<form class="omnibox" onsubmit={submitSearch}>
-				<SearchIcon size={16} class="icon-search" />
-				<input
-					type="text"
-					bind:value={searchState.query}
-					placeholder="Search the web"
-					spellcheck="false"
-				/>
-				<span class="hint">? for answer</span>
-			</form>
+			<!-- The omnibox itself only lives here once there's something
+			     for it to sit above — before a first search it's centered
+			     in the empty canvas below instead (see .welcome), same
+			     shape as ChatView's composer floating for its own welcome
+			     state rather than pinned at the bottom from the start. -->
+			{#if !isStartScreen}
+				<div in:fly={{ y: -14, duration: 320, easing: quintOut }}>
+					{@render omniboxForm()}
+				</div>
+			{/if}
 
 			{#if searchState.lastQuery}
 				<div class="meta-line">
@@ -197,25 +220,26 @@
 	</header>
 
 	<main>
-		{#if !searchState.lastQuery && !searchState.loading && !searchState.error}
-			<!-- Start screen: the omnibox itself stays pinned in the header
-			     (unlike ChatView's composer, which floats down here for its
-			     own welcome state) — there's no reason to relocate a search
-			     bar, so this just gives the otherwise-blank space below it
-			     something to look at before a first search. Deliberately
-			     one short line, not an explainer: "self-hosted, over
-			     SearXNG" and "? for answer" are already sitting right above
-			     this in the header, so restating either here was just the
-			     same information twice on one screen.
-
-			     The plain lucide Earth outline, not the desk-globe photo
-			     (atlas-touch-icon.png) used everywhere else — that one has
-			     a stand/arm molded into the artwork, which spins along
-			     with the sphere and reads as broken, not delightful. A
-			     bare sphere has no "wrong way up" to violate. -->
-			<div class="welcome" in:fade={{ duration: 350 }}>
-				<Earth size={56} class="welcome-mark" aria-hidden="true" />
-				<h1 class="welcome-heading">Point it anywhere.</h1>
+		{#if isStartScreen}
+			<!-- Start screen: the omnibox lives centered here, right below
+			     the branding, rather than pinned in the header — unified
+			     with ChatView's own empty state, which floats its composer
+			     the same way before the first message. Once a search runs,
+			     this whole block gives way to the compact header version
+			     above (see the fly transition on it) instead of staying put. -->
+			<div class="welcome" out:fade={{ duration: 150 }}>
+				<!-- The plain lucide Earth outline, not the desk-globe photo
+				     (atlas-touch-icon.png) used everywhere else — that one
+				     has a stand/arm molded into the artwork, which spins
+				     along with the sphere and reads as broken, not
+				     delightful. A bare sphere has no "wrong way up" to
+				     violate. -->
+				<Earth size={44} class="welcome-mark" aria-hidden="true" />
+				<h1 class="welcome-heading">Atlas</h1>
+				<p class="welcome-tagline">Point it anywhere.</p>
+				<div class="welcome-omnibox">
+					{@render omniboxForm()}
+				</div>
 			</div>
 		{:else if searchState.quickAnswerLoading}
 			<section class="quick-answer">
@@ -561,10 +585,11 @@
 		padding: 28px 24px 80px;
 	}
 
-	/* Start screen — the omnibox lives in the header, not here, so this is
-	   just giving the otherwise-blank space below it a real first
-	   impression instead of a flat void. One line, not an explainer —
-	   see the markup comment above for why the copy stays this short. */
+	/* Start screen — centered branding + the omnibox itself, unified with
+	   ChatView's own welcome state (same idea: a floating composer/search
+	   bar before the first turn, pinned to the header once there's a
+	   reason to pin it). Fills most of the space below the sticky header
+	   so it reads as an actual landing moment, not a stray banner. */
 	.welcome {
 		position: relative;
 		display: flex;
@@ -572,8 +597,8 @@
 		align-items: center;
 		justify-content: center;
 		text-align: center;
-		gap: 18px;
-		min-height: min(52vh, 460px);
+		gap: 8px;
+		min-height: min(60vh, 520px);
 		isolation: isolate;
 	}
 
@@ -601,6 +626,7 @@
 	   below. */
 	.welcome :global(.welcome-mark) {
 		color: var(--ink-faint);
+		margin-bottom: 4px;
 		animation: welcome-mark-spin 34s linear infinite;
 	}
 
@@ -621,14 +647,40 @@
 		}
 	}
 
+	/* Same hero treatment ChatView.svelte gives "Polaris" in its own
+	   welcome heading — the app's name set in the Asimovian display face
+	   at a scale nothing else on this page uses. */
 	.welcome-heading {
 		margin: 0;
+		font-family: var(--font-wordmark);
+		font-size: clamp(34px, 6vw, 52px);
+		font-weight: 400;
+		letter-spacing: 0.01em;
+		color: var(--ink);
+	}
+
+	.welcome-tagline {
+		margin: 0 0 22px;
 		font-family: ui-serif, Georgia, serif;
-		font-size: clamp(24px, 3.4vw, 32px);
-		font-weight: 600;
 		font-style: italic;
-		letter-spacing: -0.01em;
-		color: var(--ink-muted);
+		font-size: 15px;
+		color: var(--ink-faint);
+	}
+
+	.welcome-omnibox {
+		width: 100%;
+		max-width: 560px;
+	}
+
+	/* A touch more presence than the pinned-header version — same idea as
+	   ChatView's .welcome-composer focus ring — since this instance is
+	   the whole point of the screen, not a secondary control up top. */
+	.welcome-omnibox :global(.omnibox) {
+		padding: 14px 16px;
+	}
+
+	.welcome-omnibox :global(.omnibox:focus-within) {
+		box-shadow: 0 0 0 4px var(--accent-soft);
 	}
 
 	.status-line {
