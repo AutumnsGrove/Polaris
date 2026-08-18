@@ -226,7 +226,7 @@ func formatMoviesResult(source tmdbTitle, mediaType string, genres []string, rec
 	for i, r := range recs {
 		fmt.Fprintf(&sb, "%d. %s", i+1, r.citationLabel(mediaType))
 		if overview := strings.TrimSpace(r.Overview); overview != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(overview, descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", overview)
 		}
 		sb.WriteString("\n")
 	}

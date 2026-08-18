@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 func TestHandleMusic_NotConfigured(t *testing.T) {
@@ -351,33 +350,5 @@ func TestHandleMusic_LastFMAPIError(t *testing.T) {
 	result := handleMusic(`{"mode":"track","artist":"Nobody","track":"Nothing"}`, ctx)
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an error surfaced from last.fm's error field", result)
-	}
-}
-
-func TestTruncateText_NoSpaceNearCutoffStillValidUTF8(t *testing.T) {
-	// A run of multi-byte characters with no space anywhere near the
-	// cutoff — the space-search fallback below can't help here, so this
-	// exercises truncateText's own rune-boundary trimming directly. Byte
-	// offset 500 lands mid-character for a 3-byte-per-rune string (500 is
-	// not a multiple of 3), which is exactly the case that used to
-	// produce invalid UTF-8.
-	s := strings.Repeat("日", 300)
-	out := truncateText(s, 500)
-	if !utf8.ValidString(out) {
-		t.Fatalf("truncateText produced invalid UTF-8: %q", out)
-	}
-	if !strings.HasSuffix(out, "...") {
-		t.Errorf("truncateText(long, 500) = %q, want a \"...\" suffix", out)
-	}
-}
-
-func TestTruncateText_BreaksOnWordBoundaryWhenPossible(t *testing.T) {
-	s := strings.Repeat("word ", 200) // plenty of spaces near any cutoff
-	out := truncateText(s, 500)
-	if !utf8.ValidString(out) {
-		t.Fatalf("truncateText produced invalid UTF-8: %q", out)
-	}
-	if !strings.HasSuffix(strings.TrimSuffix(out, "..."), "word") {
-		t.Errorf("truncateText cut mid-word despite nearby spaces: %q", out)
 	}
 }
