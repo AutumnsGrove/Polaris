@@ -113,8 +113,10 @@ const (
 	// tighter bound because most wiki summaries and TMDB overviews run
 	// 1-3 sentences (150-400 chars) — a lower cap was cutting most of them
 	// off mid-sentence, which read as more garbled than useful. Shared
-	// with books.go's and movies.go's equivalent per-candidate truncation
-	// (see truncateText).
+	// with movies.go's equivalent per-candidate truncation (see
+	// truncateText). books.go deliberately shows full, untruncated
+	// descriptions instead — book blurbs are the point of the result, not
+	// incidental flavor text, so cutting them off defeats the tool.
 	descriptionTruncateLen = 500
 )
 

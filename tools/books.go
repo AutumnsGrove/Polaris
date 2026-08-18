@@ -355,7 +355,7 @@ func formatBooksResult(title, author, description string, tags []string, ranked 
 			fmt.Fprintf(&sb, "%d. %s by %s%s", i+1, c.Title, c.Author, label)
 		}
 		if c.Description != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(c.Description, descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", c.Description)
 		}
 		sb.WriteString("\n")
 	}
