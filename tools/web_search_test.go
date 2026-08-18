@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"polaris/parallel"
 	"polaris/search"
 	"polaris/tavily"
 )
@@ -162,6 +163,143 @@ func TestHandleWebSearch_DegradedTavilyAlsoFailsReturnsDegradedMessage(t *testin
 
 	if !strings.Contains(result, "degraded") {
 		t.Errorf("result = %q, want the degraded message when both SearXNG and the Tavily fallback fail", result)
+	}
+}
+
+// fakeParallel serves a Parallel-Search-API-shaped response with one
+// result, recording how many times it was hit.
+func fakeParallel(t *testing.T) (srv *httptest.Server, hits *int) {
+	t.Helper()
+	count := 0
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"search_id": "search_test",
+			"results": []map[string]interface{}{
+				{"url": "https://example.com/parallel-result", "title": "From Parallel", "excerpts": []string{"steep overnight"}},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &count
+}
+
+func TestHandleWebSearch_DegradedPrefersParallelOverTavily(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	parallelSrv, parallelHits := fakeParallel(t)
+
+	tavilyHit := false
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tavilyHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	var incremented int
+	ctx := &Context{
+		Ctx:                    context.Background(),
+		SearXNG:                search.NewSearXNGClient(searxngSrv.URL, nil),
+		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
+		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementParallelUsage: func() error { incremented++; return nil },
+		Tavily:                 tavily.NewClientForTest("test-key", tavilySrv.URL),
+		Emit:                   func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Parallel") || !strings.Contains(result, "example.com/parallel-result") {
+		t.Errorf("result = %q, want the Parallel fallback result formatted in", result)
+	}
+	if *parallelHits != 1 {
+		t.Errorf("parallel hits = %d, want 1", *parallelHits)
+	}
+	if tavilyHit {
+		t.Error("tavily was hit, want it skipped — Parallel succeeded first and is preferred")
+	}
+	if incremented != 1 {
+		t.Errorf("IncrementParallelUsage called %d times, want 1", incremented)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://example.com/parallel-result" {
+		t.Errorf("Citations = %+v, want the Parallel result's URL added", ctx.Citations)
+	}
+}
+
+func TestHandleWebSearch_DegradedSkipsParallelWhenMonthlyCapReached(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	parallelSrv, parallelHits := fakeParallel(t)
+
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": "q",
+			"results": []map[string]interface{}{
+				{"title": "From Tavily", "url": "https://example.com/tavily-result", "content": "c", "score": 0.5},
+			},
+		})
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	ctx := &Context{
+		Ctx:                    context.Background(),
+		SearXNG:                search.NewSearXNGClient(searxngSrv.URL, nil),
+		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
+		ParallelUsageThisMonth: func() (int, error) { return parallelMonthlyCap, nil }, // already at the cap
+		IncrementParallelUsage: func() error {
+			t.Error("IncrementParallelUsage must not be called when the cap gates Parallel out")
+			return nil
+		},
+		Tavily: tavily.NewClientForTest("test-key", tavilySrv.URL),
+		Emit:   func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Tavily") {
+		t.Errorf("result = %q, want the Tavily fallback result — Parallel should have been skipped at the cap", result)
+	}
+	if *parallelHits != 0 {
+		t.Errorf("parallel hits = %d, want 0 — must not call Parallel once the monthly cap is reached", *parallelHits)
+	}
+}
+
+func TestHandleWebSearch_DegradedFallsBackToTavilyWhenParallelErrors(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	parallelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(parallelSrv.Close)
+
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": "q",
+			"results": []map[string]interface{}{
+				{"title": "From Tavily", "url": "https://example.com/tavily-result", "content": "c", "score": 0.5},
+			},
+		})
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	var incremented int
+	ctx := &Context{
+		Ctx:                    context.Background(),
+		SearXNG:                search.NewSearXNGClient(searxngSrv.URL, nil),
+		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
+		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementParallelUsage: func() error { incremented++; return nil },
+		Tavily:                 tavily.NewClientForTest("test-key", tavilySrv.URL),
+		Emit:                   func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Tavily") {
+		t.Errorf("result = %q, want the Tavily fallback result when Parallel itself errors", result)
+	}
+	if incremented != 0 {
+		t.Errorf("IncrementParallelUsage called %d times, want 0 — a failed Parallel request never reached its own billing", incremented)
 	}
 }
 

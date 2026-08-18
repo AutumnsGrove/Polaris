@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,12 @@ type SearchResponse struct {
 	// regardless of Degraded — useful for logging even when other engines
 	// still returned enough to answer the query.
 	UnresponsiveEngines []string `json:"unresponsive_engines,omitempty"`
+	// RetryAfter is set only on a response served from the cooldown
+	// short-circuit (see SearXNGClient.cooldownUntil) — when the real
+	// engines will actually be tried again, so a caller can tell the
+	// user/model roughly how long to wait instead of an open-ended
+	// "try again later".
+	RetryAfter time.Time `json:"retry_after,omitempty"`
 }
 
 // generalCategoryEngineCount is how many engines SearXNG's "general"
@@ -62,10 +69,34 @@ type SearchResponse struct {
 // fallback credits are the scarce resource this whole check protects.
 const generalCategoryEngineCount = 4
 
+// degradedCooldown is how long Search stops actually contacting SearXNG
+// after detecting a full outage (Degraded), before trying it again.
+// Repeatedly hitting an instance whose engines are already rate-limited
+// or CAPTCHA'd doesn't help it recover — it very plausibly makes things
+// worse, and it definitely burns time on requests that were never going
+// to succeed. 20 minutes is a starting guess, not measured against how
+// long these providers' own suspensions actually last; adjust if it
+// turns out to be too short (still hitting the same outage) or too long
+// (SearXNG's clearly fine again but nothing tries it for the rest of
+// the window).
+const degradedCooldown = 20 * time.Minute
+
 type SearXNGClient struct {
 	baseURL   string
 	http      *http.Client
 	blocklist *Blocklist
+
+	// cooldownUntil/cooldownMu implement a simple circuit breaker across
+	// calls — see degradedCooldown. In-memory only (resets on a process
+	// restart), which is an acceptable cost: a restart is rare, and the
+	// alternative (persisting this to the DB) doesn't buy anything a
+	// fixed wait doesn't already provide on its own. Applies to every
+	// category once tripped, not just whichever one triggered it — the
+	// actual failure mode this protects against (the whole box's
+	// outbound IP getting rate-limited/CAPTCHA'd) affects every engine
+	// regardless of which category a given query used.
+	cooldownMu    sync.Mutex
+	cooldownUntil time.Time
 }
 
 // NewSearXNGClient builds a client for the given SearXNG instance.
@@ -76,6 +107,22 @@ func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 		http:      &http.Client{Timeout: 15 * time.Second},
 		blocklist: blocklist,
 	}
+}
+
+// inCooldown reports whether Search should currently short-circuit
+// without contacting SearXNG at all, and until when.
+func (c *SearXNGClient) inCooldown() (bool, time.Time) {
+	c.cooldownMu.Lock()
+	defer c.cooldownMu.Unlock()
+	return time.Now().Before(c.cooldownUntil), c.cooldownUntil
+}
+
+// startCooldown begins (or restarts) the cooldown window from now —
+// called once Search itself confirms a full outage.
+func (c *SearXNGClient) startCooldown() {
+	c.cooldownMu.Lock()
+	defer c.cooldownMu.Unlock()
+	c.cooldownUntil = time.Now().Add(degradedCooldown)
 }
 
 type searxngResponse struct {
@@ -108,6 +155,11 @@ type searxngResult struct {
 // to dedicated news-search engines (Google News, Bing News, etc.), which
 // index actual articles rather than static pages.
 func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string) (*SearchResponse, error) {
+	if cooling, until := c.inCooldown(); cooling {
+		blocklistLog.Info("searxng: skipping request, still cooling down after a full outage", "query", query, "retry_after", until)
+		return &SearchResponse{Query: query, Degraded: true, RetryAfter: until}, nil
+	}
+
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -183,6 +235,10 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 	degraded := false
 	if category == "" && len(results) == 0 {
 		degraded = len(unresponsive) >= generalCategoryEngineCount
+	}
+	if degraded {
+		c.startCooldown()
+		blocklistLog.Warn("searxng: full outage detected, entering cooldown", "query", query, "unresponsive_engines", unresponsive, "cooldown", degradedCooldown)
 	}
 
 	return &SearchResponse{

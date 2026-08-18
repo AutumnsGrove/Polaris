@@ -13,6 +13,7 @@ import (
 
 	"polaris/llm"
 	"polaris/logger"
+	"polaris/parallel"
 	"polaris/places"
 	"polaris/search"
 	"polaris/tavily"
@@ -69,7 +70,20 @@ type Context struct {
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
+	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried before Tavily's own) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+
+	// ParallelUsageThisMonth/IncrementParallelUsage back the monthly cap
+	// on Parallel calls (store.Store's api_usage table) — narrow closures
+	// rather than handing tools a full *store.Store, same pattern as
+	// RequestLocation below. Both nil whenever Parallel itself is nil;
+	// web_search checks Parallel != nil first, so neither is called in
+	// that case. ParallelUsageThisMonth is read before every Parallel
+	// call to enforce the cap; IncrementParallelUsage is called only
+	// after a call that actually went through, so a request that errored
+	// out before reaching Parallel doesn't count against the budget.
+	ParallelUsageThisMonth func() (int, error)
+	IncrementParallelUsage func() error
 
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call

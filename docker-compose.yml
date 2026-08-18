@@ -47,6 +47,7 @@ services:
       - OPENROUTER_API_KEY
       - FOURSQUARE_API_KEY
       - TAVILY_API_KEY
+      - PARALLEL_API_KEY
       - GITHUB_TOKEN
       - LASTFM_API_KEY
       - HARDCOVER_API_KEY

@@ -54,6 +54,17 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"tavily"`
 
+	Parallel struct {
+		// APIKey; empty disables web_search's Parallel fallback entirely
+		// (see tools/web_search.go) — only ever tried once SearXNG itself
+		// reports it's degraded, ahead of Tavily's own fallback in the
+		// same spot. The account has a card on file, so going over the
+		// free tier bills real money — see store.Store's api_usage table,
+		// which enforces the monthly cap this key alone doesn't.
+		// https://parallel.ai
+		APIKey string `yaml:"api_key"`
+	} `yaml:"parallel"`
+
 	GitHub struct {
 		// Token is an optional personal access token attached to
 		// github_repo's API calls. Unlike Foursquare/Tavily's API keys,

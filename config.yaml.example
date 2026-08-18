@@ -26,6 +26,9 @@ foursquare:
 tavily:
   api_key: "${TAVILY_API_KEY}"   # optional — web_read's last-resort fallback for JS-rendered/paywalled pages that goquery and archive.org can't get through. Costs credits per call, so it's never the default fetch path. https://tavily.com
 
+parallel:
+  api_key: "${PARALLEL_API_KEY}"   # optional — web_search's fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), tried before Tavily's own fallback. Free tier: 5,000 searches/month, but the account has a card on file — see store.Store's api_usage table, which enforces that cap in code rather than trusting the free tier not to bill overage. https://parallel.ai
+
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens
 

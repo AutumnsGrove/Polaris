@@ -260,6 +260,87 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
+func TestSearch_EntersCooldownAfterFullOutageAndSkipsSubsequentRequests(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		// Every request from this server looks like a full outage — the
+		// point is proving the *second* Search call never reaches here at
+		// all, not exercising a real recovery.
+		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
+			["brave","Suspended: too many requests"],
+			["duckduckgo","CAPTCHA"],
+			["google cse","Suspended: too many requests"],
+			["startpage","Suspended: CAPTCHA"]
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+
+	first, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("first Search returned error: %v", err)
+	}
+	if !first.Degraded {
+		t.Fatal("first response Degraded = false, want true (sets up the cooldown this test is actually checking)")
+	}
+	if requestCount != 1 {
+		t.Fatalf("requestCount after first Search = %d, want 1", requestCount)
+	}
+
+	second, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("second Search returned error: %v", err)
+	}
+	if requestCount != 1 {
+		t.Errorf("requestCount after second Search = %d, want still 1 (cooldown should skip the network call entirely)", requestCount)
+	}
+	if !second.Degraded {
+		t.Error("second response Degraded = false, want true (served from cooldown short-circuit)")
+	}
+	if second.RetryAfter.IsZero() {
+		t.Error("second response RetryAfter is zero, want the cooldown's expiry time set")
+	}
+}
+
+func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
+	// Sanity check that the cooldown is per-client state, not some
+	// process-wide flag that would leak between independent SearXNGClient
+	// instances (e.g. in tests, or if the app ever constructed more than
+	// one).
+	outage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
+			["brave","x"],["duckduckgo","x"],["google cse","x"],["startpage","x"]
+		]}`))
+	}))
+	defer outage.Close()
+	outageClient := NewSearXNGClient(outage.URL, nil)
+	if resp, err := outageClient.Search(context.Background(), "q", 5, ""); err != nil || !resp.Degraded {
+		t.Fatalf("setting up the outaged client failed: resp=%+v err=%v", resp, err)
+	}
+
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[{"title":"fine","url":"https://a.com/1","score":1.0}]}`))
+	}))
+	defer healthy.Close()
+	healthyClient := NewSearXNGClient(healthy.URL, nil)
+
+	resp, err := healthyClient.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("healthy client Search returned error: %v", err)
+	}
+	if resp.Degraded {
+		t.Error("a fresh client's Degraded = true, want false — cooldown must not leak across client instances")
+	}
+	if len(resp.Results) != 1 {
+		t.Errorf("got %d results, want 1", len(resp.Results))
+	}
+}
+
 func writeBlocklistFile(t *testing.T, contents string) string {
 	t.Helper()
 	path := t.TempDir() + "/blocked_sources.txt"
