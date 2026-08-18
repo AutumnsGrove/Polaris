@@ -67,6 +67,9 @@ func TestHandleWebSearch_FormatsResultsAndAddsCitations(t *testing.T) {
 	if result == "" || result == "no results found" {
 		t.Fatalf("result = %q, want formatted results", result)
 	}
+	if !strings.Contains(result, "[via SearXNG]") {
+		t.Errorf("result = %q, want a provider tag naming SearXNG as the source", result)
+	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://go.dev/blog/go1.24" {
 		t.Errorf("Citations = %+v, want the one result added", ctx.Citations)
 	}
@@ -140,6 +143,9 @@ func TestHandleWebSearch_DegradedFallsBackToTavily(t *testing.T) {
 	if !strings.Contains(result, "Cold Brew Green Tea") || !strings.Contains(result, "example.com/cold-brew") {
 		t.Errorf("result = %q, want the Tavily fallback result formatted in", result)
 	}
+	if !strings.Contains(result, "[via Tavily") {
+		t.Errorf("result = %q, want a provider tag naming Tavily as the source", result)
+	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://example.com/cold-brew" {
 		t.Errorf("Citations = %+v, want the Tavily result's URL added", ctx.Citations)
 	}
@@ -211,6 +217,9 @@ func TestHandleWebSearch_DegradedPrefersParallelOverTavily(t *testing.T) {
 
 	if !strings.Contains(result, "From Parallel") || !strings.Contains(result, "example.com/parallel-result") {
 		t.Errorf("result = %q, want the Parallel fallback result formatted in", result)
+	}
+	if !strings.Contains(result, "[via Parallel") {
+		t.Errorf("result = %q, want a provider tag naming Parallel as the source", result)
 	}
 	if *parallelHits != 1 {
 		t.Errorf("parallel hits = %d, want 1", *parallelHits)

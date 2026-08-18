@@ -144,16 +144,45 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		return "no results found"
 	}
 
-	urls := make([]string, 0, len(resp.Results))
-	var sb strings.Builder
+	results := make([]searchResultLike, len(resp.Results))
 	for i, r := range resp.Results {
+		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
+	}
+	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, results)
+	return formatted
+}
+
+// searchResultLike is the common (Title, URL, Content) shape SearXNG,
+// Parallel, and Tavily's search results all reduce to — three different
+// packages' own result types, not a shared interface, so each call site
+// converts its own slice into this before handing it to
+// formatSearchResults rather than tripling the formatting/logging/
+// citation logic three ways.
+type searchResultLike struct {
+	Title   string
+	URL     string
+	Content string
+}
+
+// formatSearchResults is shared by the main SearXNG path and both
+// fallbacks — same formatting, logging, and citation/tool_result
+// plumbing regardless of which provider actually answered. The "[via
+// X]" line at the top exists specifically so a fallback firing is
+// visible in the transcript/timeline, not just in server logs — the
+// model (and anyone reading the timeline) can tell when an answer came
+// from a degraded-SearXNG fallback instead of the primary path.
+func formatSearchResults(ctx *Context, provider, query, category string, results []searchResultLike) string {
+	urls := make([]string, 0, len(results))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "[via %s]\n\n", provider)
+	for i, r := range results {
 		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.URL, r.Content)
 		ctx.AddCitation(Citation{Title: r.Title, URL: r.URL})
 		urls = append(urls, r.URL)
 	}
 	formatted := sb.String()
 
-	log.Info("web_search", "query", args.Query, "category", args.Category, "results", len(resp.Results), "urls", urls)
+	log.Info("web_search", "provider", provider, "query", query, "category", category, "results", len(results), "urls", urls)
 
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_search",
@@ -190,23 +219,11 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 		return "", false
 	}
 
-	urls := make([]string, 0, len(resp.Results))
-	var sb strings.Builder
+	results := make([]searchResultLike, len(resp.Results))
 	for i, r := range resp.Results {
-		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.URL, r.Content)
-		ctx.AddCitation(Citation{Title: r.Title, URL: r.URL})
-		urls = append(urls, r.URL)
+		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted = sb.String()
-
-	log.Info("web_search: served from parallel fallback (searxng degraded)", "query", query, "results", len(resp.Results), "urls", urls)
-
-	ctx.Emit("tool_result", map[string]interface{}{
-		"tool":      "web_search",
-		"result":    formatted,
-		"citations": ctx.CitationsSnapshot(),
-	})
-	return formatted, true
+	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", results), true
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
@@ -221,21 +238,9 @@ func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 		return "", false
 	}
 
-	urls := make([]string, 0, len(resp.Results))
-	var sb strings.Builder
+	results := make([]searchResultLike, len(resp.Results))
 	for i, r := range resp.Results {
-		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.URL, r.Content)
-		ctx.AddCitation(Citation{Title: r.Title, URL: r.URL})
-		urls = append(urls, r.URL)
+		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted = sb.String()
-
-	log.Info("web_search: served from tavily fallback (searxng degraded)", "query", query, "results", len(resp.Results), "urls", urls)
-
-	ctx.Emit("tool_result", map[string]interface{}{
-		"tool":      "web_search",
-		"result":    formatted,
-		"citations": ctx.CitationsSnapshot(),
-	})
-	return formatted, true
+	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", results), true
 }

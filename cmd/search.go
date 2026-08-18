@@ -17,8 +17,11 @@ import (
 	"polaris/gateway"
 	"polaris/llm"
 	"polaris/models"
+	"polaris/parallel"
 	"polaris/places"
 	"polaris/search"
+	"polaris/store"
+	"polaris/tavily"
 	"polaris/tools"
 )
 
@@ -72,6 +75,22 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist)
 	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
+	tavilyClient := tavily.NewClient(cfg.Tavily.APIKey)
+	parallelClient := parallel.NewClient(cfg.Parallel.APIKey)
+
+	// Opened even for this one-shot CLI command specifically so
+	// web_search's Parallel monthly-usage cap (see tools/web_search.go)
+	// is checked against the *same* running total the web UI/assistant
+	// use, not a separate count that would let this path silently spend
+	// past the real cap — cmd/stats.go opens the same DB the same way
+	// for the same "one-shot CLI command still needs real state" reason.
+	db, err := store.Open(cfg.Database.Path)
+	if err != nil {
+		log.Warn("opening database failed, Parallel's usage cap can't be enforced — disabling that fallback for this run", "path", cfg.Database.Path, "err", err)
+		parallelClient = nil
+	} else {
+		defer db.Close()
+	}
 
 	fmt.Printf("model: %s\n\n", modelCfg.Name)
 
@@ -101,6 +120,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		SearXNG:         searxng,
 		Blocklist:       blocklist,
 		Foursquare:      foursquare,
+		Tavily:          tavilyClient,
+		Parallel:        parallelClient,
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
 		HardcoverAPIKey: cfg.Hardcover.APIKey,
@@ -109,6 +130,15 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		LLM:             client,
 		Emit:            emit,
 		MaxTurns:        cfg.MaxAgentTurns,
+	}
+	// Only set once db is known-good (see the store.Open error handling
+	// above, which also nils out parallelClient on failure) — handleWebSearch
+	// requires both Context.Parallel and these closures non-nil before
+	// ever calling Parallel, so leaving them nil here is enough to keep
+	// this path safe without a nil-db guard inside the closures themselves.
+	if db != nil {
+		agentCtx.ParallelUsageThisMonth = func() (int, error) { return db.GetAPIUsage("parallel") }
+		agentCtx.IncrementParallelUsage = func() error { _, err := db.IncrementAPIUsage("parallel"); return err }
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)
