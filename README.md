@@ -23,7 +23,10 @@ with citations.
   Search API first, then [Tavily](https://tavily.com)'s — both optional, both with a real free
   tier — before finally just saying plainly that search is degraded rather than reporting a false
   "no results". A 20-minute cooldown kicks in after a detected outage too, so retrying doesn't keep
-  hitting (and prolonging) the same rate limit — see `search.SearXNGClient`'s cooldown docs
+  hitting (and prolonging) the same rate limit — see `search.SearXNGClient`'s cooldown docs. Every
+  result set (primary or fallback) opens with a `[via SearXNG/Parallel/Tavily]` tag, so it's always
+  visible which provider actually answered. `polaris search` (the CLI) shares this same fallback
+  chain and Parallel usage cap as the web UI/assistant, backed by the same on-disk database
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
