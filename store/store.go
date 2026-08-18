@@ -149,6 +149,24 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_thread ON events(thread_id);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+
+-- api_usage tracks calendar-month call counts for paid, card-on-file
+-- fallback APIs (currently just Parallel's Search API — see
+-- tools/web_search.go's fallback chain) whose free tier has a hard cap
+-- worth enforcing ourselves rather than trusting the provider not to
+-- silently bill overage. One row per (provider, month); IncrementAPIUsage
+-- upserts rather than requiring a row to already exist, so a brand-new
+-- month just starts a fresh row at 1 the first time it's called.
+CREATE TABLE IF NOT EXISTS api_usage (
+	provider TEXT NOT NULL,
+	-- month: "YYYY-MM", from SQLite's own strftime('%Y-%m', 'now') rather
+	-- than a Go-computed timestamp — same reasoning as every other
+	-- SQL-side time function in this schema, avoids any host clock/
+	-- timezone mismatch between the Go process and what's stored.
+	month TEXT NOT NULL,
+	count INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (provider, month)
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -300,8 +318,8 @@ type Message struct {
 	DurationMs int64 `json:"duration_ms"`
 	// AttachmentFilename/AttachmentContentType are set only on a user
 	// message that carried an upload — see SetMessageAttachment.
-	AttachmentFilename    string    `json:"attachment_filename,omitempty"`
-	AttachmentContentType string    `json:"attachment_content_type,omitempty"`
+	AttachmentFilename    string `json:"attachment_filename,omitempty"`
+	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
 	Cards     string    `json:"cards"`
 	CreatedAt time.Time `json:"created_at"`
@@ -348,7 +366,7 @@ func (s *Store) SetThreadFavorite(id string, favorite bool) error {
 // turn is writing into (see EffectiveThreadID), which is a hidden,
 // forked thread (fork_root_id set) once anything's ever been edited or
 // regenerated in rootID's conversation. ListThreads only ever returns
-// root threads (fork_root_id = ''), so without this, a thread with even
+// root threads (fork_root_id = ”), so without this, a thread with even
 // one edit/retry in its past silently stops advancing in the sidebar's
 // recency order the moment that happens — every later message keeps
 // bumping the hidden variant's own updated_at instead, which nothing
@@ -807,4 +825,35 @@ func (s *Store) SetMessageAttachment(messageID int64, filename, contentType stri
 	_, err := s.db.Exec(`UPDATE messages SET attachment_filename = ?, attachment_content_type = ? WHERE id = ?`,
 		filename, contentType, messageID)
 	return err
+}
+
+// IncrementAPIUsage bumps provider's call count for the current calendar
+// month by one (creating the row at 1 if this is the first call this
+// month) and returns the new total — see api_usage's schema comment.
+// Callers that need to check the cap before spending a call should use
+// GetAPIUsage first; this only records that a call was actually made.
+func (s *Store) IncrementAPIUsage(provider string) (int, error) {
+	if _, err := s.db.Exec(
+		`INSERT INTO api_usage (provider, month, count) VALUES (?, strftime('%Y-%m', 'now'), 1)
+		 ON CONFLICT(provider, month) DO UPDATE SET count = count + 1`,
+		provider,
+	); err != nil {
+		return 0, err
+	}
+	return s.GetAPIUsage(provider)
+}
+
+// GetAPIUsage returns provider's call count for the current calendar
+// month — 0 if nothing's been recorded yet (a brand-new month, or a
+// provider that's never been used).
+func (s *Store) GetAPIUsage(provider string) (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT count FROM api_usage WHERE provider = ? AND month = strftime('%Y-%m', 'now')`,
+		provider,
+	).Scan(&count)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return count, err
 }

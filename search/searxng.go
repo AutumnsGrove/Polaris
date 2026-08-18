@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,12 +26,77 @@ type SearchResponse struct {
 	Query   string         `json:"query"`
 	Answer  string         `json:"answer,omitempty"`
 	Results []SearchResult `json:"results"`
+	// Degraded is true only when EVERY engine SearXNG queried for this
+	// category failed — not just one of several. A single engine being
+	// rate-limited while the others are fine still produces normal
+	// results (or a normal, genuine empty result if the healthy engines
+	// really do have nothing for this query); that's not an outage, and
+	// shouldn't spend a Tavily fallback credit on what's actually just
+	// this query having no coverage. Only "nothing came back because
+	// nothing *could*" counts. See generalCategoryEngineCount's comment
+	// for why this is a known count rather than something derived from
+	// the response itself.
+	Degraded bool `json:"degraded,omitempty"`
+	// UnresponsiveEngines is always populated when SearXNG reports any,
+	// regardless of Degraded — useful for logging even when other engines
+	// still returned enough to answer the query.
+	UnresponsiveEngines []string `json:"unresponsive_engines,omitempty"`
+	// RetryAfter is set only on a response served from the cooldown
+	// short-circuit (see SearXNGClient.cooldownUntil) — when the real
+	// engines will actually be tried again, so a caller can tell the
+	// user/model roughly how long to wait instead of an open-ended
+	// "try again later".
+	RetryAfter time.Time `json:"retry_after,omitempty"`
 }
+
+// generalCategoryEngineCount is how many engines SearXNG's "general"
+// category (category == "") actually queries on this deployment —
+// brave, duckduckgo, google cse, and startpage, confirmed empirically
+// against the real instance (curl .../search?format=json against a
+// scratch query showed exactly these 4 in unresponsive_engines during a
+// full outage). SearXNG's JSON API has no field reporting "how many
+// engines are configured for this category" — unresponsive_engines only
+// lists the ones that failed, so there's no way to derive "all of them
+// failed" from the response alone without knowing the total up front.
+//
+// This needs updating by hand if the engine set for "general" ever
+// changes (compose/searxng/settings.yml, dev/searxng/settings.yml use
+// use_default_settings: true, so SearXNG's own upstream defaults decide
+// this, not a file in this repo). A stale-but-too-high count just means
+// Degraded under-fires (a real full outage briefly gets reported as a
+// plain empty result instead) rather than over-firing on a single
+// engine's hiccup — the safer direction to be wrong in, given Tavily's
+// fallback credits are the scarce resource this whole check protects.
+const generalCategoryEngineCount = 4
+
+// degradedCooldown is how long Search stops actually contacting SearXNG
+// after detecting a full outage (Degraded), before trying it again.
+// Repeatedly hitting an instance whose engines are already rate-limited
+// or CAPTCHA'd doesn't help it recover — it very plausibly makes things
+// worse, and it definitely burns time on requests that were never going
+// to succeed. 20 minutes is a starting guess, not measured against how
+// long these providers' own suspensions actually last; adjust if it
+// turns out to be too short (still hitting the same outage) or too long
+// (SearXNG's clearly fine again but nothing tries it for the rest of
+// the window).
+const degradedCooldown = 20 * time.Minute
 
 type SearXNGClient struct {
 	baseURL   string
 	http      *http.Client
 	blocklist *Blocklist
+
+	// cooldownUntil/cooldownMu implement a simple circuit breaker across
+	// calls — see degradedCooldown. In-memory only (resets on a process
+	// restart), which is an acceptable cost: a restart is rare, and the
+	// alternative (persisting this to the DB) doesn't buy anything a
+	// fixed wait doesn't already provide on its own. Applies to every
+	// category once tripped, not just whichever one triggered it — the
+	// actual failure mode this protects against (the whole box's
+	// outbound IP getting rate-limited/CAPTCHA'd) affects every engine
+	// regardless of which category a given query used.
+	cooldownMu    sync.Mutex
+	cooldownUntil time.Time
 }
 
 // NewSearXNGClient builds a client for the given SearXNG instance.
@@ -43,9 +109,31 @@ func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 	}
 }
 
+// inCooldown reports whether Search should currently short-circuit
+// without contacting SearXNG at all, and until when.
+func (c *SearXNGClient) inCooldown() (bool, time.Time) {
+	c.cooldownMu.Lock()
+	defer c.cooldownMu.Unlock()
+	return time.Now().Before(c.cooldownUntil), c.cooldownUntil
+}
+
+// startCooldown begins (or restarts) the cooldown window from now —
+// called once Search itself confirms a full outage.
+func (c *SearXNGClient) startCooldown() {
+	c.cooldownMu.Lock()
+	defer c.cooldownMu.Unlock()
+	c.cooldownUntil = time.Now().Add(degradedCooldown)
+}
+
 type searxngResponse struct {
 	Query   string          `json:"query"`
 	Results []searxngResult `json:"results"`
+	// UnresponsiveEngines is SearXNG's own [["engine", "reason"], ...]
+	// shape (e.g. ["brave", "Suspended: too many requests"]) — a plain
+	// [][]string rather than a named struct since JSON can't decode a
+	// 2-element array into named fields, and the reason string is only
+	// ever used for logging, not branched on.
+	UnresponsiveEngines [][]string `json:"unresponsive_engines"`
 }
 
 type searxngResult struct {
@@ -67,6 +155,11 @@ type searxngResult struct {
 // to dedicated news-search engines (Google News, Bing News, etc.), which
 // index actual articles rather than static pages.
 func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string) (*SearchResponse, error) {
+	if cooling, until := c.inCooldown(); cooling {
+		blocklistLog.Info("searxng: skipping request, still cooling down after a full outage", "query", query, "retry_after", until)
+		return &SearchResponse{Query: query, Degraded: true, RetryAfter: until}, nil
+	}
+
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -125,5 +218,33 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		})
 	}
 
-	return &SearchResponse{Query: query, Results: results}, nil
+	unresponsive := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+	for _, e := range searxngResp.UnresponsiveEngines {
+		if len(e) > 0 {
+			unresponsive = append(unresponsive, e[0])
+		}
+	}
+
+	// Only the "general" category (category == "") has a known engine
+	// count to compare against — see generalCategoryEngineCount. Other
+	// categories (e.g. "news") have their own, different engine sets that
+	// haven't been measured, so there's no reliable "all of them" to
+	// check against; Degraded just never fires for those rather than
+	// guessing, consistent with under- rather than over-firing being the
+	// safe direction here.
+	degraded := false
+	if category == "" && len(results) == 0 {
+		degraded = len(unresponsive) >= generalCategoryEngineCount
+	}
+	if degraded {
+		c.startCooldown()
+		blocklistLog.Warn("searxng: full outage detected, entering cooldown", "query", query, "unresponsive_engines", unresponsive, "cooldown", degradedCooldown)
+	}
+
+	return &SearchResponse{
+		Query:               query,
+		Results:             results,
+		Degraded:            degraded,
+		UnresponsiveEngines: unresponsive,
+	}, nil
 }

@@ -32,12 +32,20 @@ func writeSearchTestConfig(t *testing.T, llmBaseURL string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
+	// database.path explicitly scoped into the same tempdir — without
+	// it, config.Load's own "./polaris.db" default resolves against
+	// whatever the test binary's actual working directory happens to be
+	// (the cmd package's source directory under `go test`), and runSearch
+	// opening a real store.Store (needed to check Parallel's usage cap)
+	// would leave a stray polaris.db sitting there after every test run.
 	contents := fmt.Sprintf(`
 openrouter:
   api_key: "test-key"
   base_url: %q
+database:
+  path: %q
 default_model: "mimo-pro"
-`, llmBaseURL)
+`, llmBaseURL, filepath.Join(dir, "test.db"))
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing test config: %v", err)
 	}

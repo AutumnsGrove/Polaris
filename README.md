@@ -13,7 +13,20 @@ Ask it something. It decides for itself whether it needs to search the web, read
 look up a nearby place, check the weather, or just answer directly — then streams the answer back
 with citations.
 
-- **Web search** via your own SearXNG instance (no API key, no per-query cost, no rate limits)
+- **Web search** via your own SearXNG instance (no API key, no per-query cost). In practice, though,
+  SearXNG's own underlying engines (Brave, Google, DuckDuckGo, Startpage) *do* rate-limit or
+  CAPTCHA a single self-hosted instance under real usage — even fairly modest query volume, not
+  just a burst. When that happens, SearXNG itself starts reporting a clean, error-free zero results
+  for every query, indistinguishable from a genuinely empty search unless you go looking for it. To
+  handle that: `web_search` detects a full outage (every general-category engine unresponsive at
+  once, not just one having a bad moment) and falls back to [Parallel](https://parallel.ai)'s
+  Search API first, then [Tavily](https://tavily.com)'s — both optional, both with a real free
+  tier — before finally just saying plainly that search is degraded rather than reporting a false
+  "no results". A 20-minute cooldown kicks in after a detected outage too, so retrying doesn't keep
+  hitting (and prolonging) the same rate limit — see `search.SearXNGClient`'s cooldown docs. Every
+  result set (primary or fallback) opens with a `[via SearXNG/Parallel/Tavily]` tag, so it's always
+  visible which provider actually answered. `polaris search` (the CLI) shares this same fallback
+  chain and Parallel usage cap as the web UI/assistant, backed by the same on-disk database
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
@@ -79,11 +92,16 @@ Go backend
   │              weather / reference_lookup / github_repo / dictionary / music / books / movies, or
   │              just answer — independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
-  ├── search   — SearXNG client
+  ├── search   — SearXNG client; detects a full engine outage and enters a cooldown rather than
+  │              retrying into the same rate limit
   ├── places   — Foursquare + Nominatim geocoding
-  ├── tavily   — Extract API client, web_read's paid fallback for JS-rendered pages
+  ├── tavily   — Extract API client (web_read's paid fallback for JS-rendered pages) and Search API
+  │              client (web_search's second fallback, after Parallel, when SearXNG is degraded)
+  ├── parallel — Search API client, web_search's first fallback when SearXNG is degraded — its own
+  │              monthly usage is tracked in the DB and hard-capped under its free tier, since the
+  │              account needs a card on file
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
-  ├── store    — SQLite: threads, messages, settings, running cost
+  ├── store    — SQLite: threads, messages, settings, running cost, per-provider API usage counts
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
 ```
 
@@ -113,9 +131,15 @@ app" is one file you can scp around if you ever needed to.
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search
-- Optional: a [Tavily](https://tavily.com) API key so `web_read` can fall back to Tavily's Extract
-  API (which actually renders JS) for JS-rendered pages the free goquery-based fetch can't see —
-  without it, those pages just fail after the free archive.org fallback also comes up empty
+- Optional: a [Tavily](https://tavily.com) API key, used two ways — `web_read` falls back to
+  Tavily's Extract API (which actually renders JS) for JS-rendered pages the free goquery-based
+  fetch can't see, and `web_search` falls back to it (second, after Parallel) when SearXNG itself
+  is fully rate-limited. Free tier: 1,000 credits/month, no card required
+- Optional: a [Parallel](https://parallel.ai) API key so `web_search` can fall back to it (tried
+  first, ahead of Tavily) when SearXNG's own engines are all rate-limited/CAPTCHA'd at once — see
+  "What it does" above. Free tier: 5,000 requests/month, but **the account needs a card on file**,
+  so Polaris tracks its own monthly usage count in the database and hard-stops calling it a little
+  under that free-tier limit rather than trusting the provider not to bill overage automatically
 - Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
   can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — it works fine with
   no token at all for occasional lookups
@@ -284,7 +308,7 @@ push to `main` via `.github/workflows/docker-publish.yml`.
 Everything behavior-affecting lives in `config.yaml` (gitignored — copy `config.yaml.example`)
 or the in-app settings panel:
 
-- **config.yaml** — API keys (OpenRouter, Foursquare, Tavily), the model catalog (each entry pins
+- **config.yaml** — API keys (OpenRouter, Foursquare, Tavily, Parallel), the model catalog (each entry pins
   a specific OpenRouter provider for consistent prompt-cache pricing), SearXNG's URL, logging,
   voice model choices. Meant to be hand-edited; changes require a restart. (Docker install: this
   is split across `.env` and `compose/polaris/config.yaml` instead — see

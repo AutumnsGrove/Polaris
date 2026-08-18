@@ -138,6 +138,29 @@ pattern for new work here, not just the Docker-specific cases above.
 - `install.sh` — `POLARIS_INSTALL_MODE=docker` is the Docker install path; default is bare-metal
 - `prompts.yaml` / `prompts/prompts.go` — every LLM prompt fragment except `prompt.md` itself,
   hot-reloaded with compiled-in defaults as a fallback
+- `search/searxng.go` — SearXNG's own engines (Brave, Google, DuckDuckGo, Startpage) do rate-limit
+  a self-hosted instance under real usage; `SearXNGClient` detects a full outage (every
+  general-category engine unresponsive at once, not just one) and enters a 20-minute cooldown
+  rather than repeatedly hammering an already-rate-limited service
+- `parallel/`, `tavily/tavily.go`'s `Search` method — the two-tier paid fallback chain
+  `tools/web_search.go` reaches for once SearXNG confirms itself degraded (Parallel first, since
+  its free tier of 5,000/mo is 5x Tavily's 1,000/mo). Parallel's account has a card on file, so
+  `store.Store`'s `api_usage` table enforces a hard monthly cap (`parallelMonthlyCap` in
+  `tools/web_search.go`) before ever calling it — never raise or bypass that cap without confirming
+  real usage with the user first. Every result set is tagged `[via <provider>]` so a fallback
+  firing is visible in the transcript, not just server logs
+
+## Web search fallback chain
+
+`web_search` tries SearXNG first, then Parallel, then Tavily, only when SearXNG has confirmed a
+full outage (not an ordinary empty result) — see `search.SearXNGClient`'s cooldown/degraded logic
+and `tools/web_search.go`'s `handleWebSearch`. Wiring this into a new call site means giving it
+both `tools.Context.Parallel`/`Tavily` **and** a real `store.Store` for the usage-cap closures
+(`ParallelUsageThisMonth`/`IncrementParallelUsage`) — `cmd/search.go` originally had neither wired
+for the CLI's one-shot `polaris search` path even after the web UI/assistant got them, a real gap
+only found by running `polaris search` live and checking what it actually had access to, not by
+code review. Any new CLI command or server entry point that can trigger `web_search` needs the same
+three pieces (SearXNG, Tavily, Parallel + DB-backed usage closures), not just the LLM client.
 
 ## Conventions worth knowing before editing Go here
 

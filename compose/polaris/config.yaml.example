@@ -33,6 +33,9 @@ foursquare:
 tavily:
   api_key: "${TAVILY_API_KEY}"
 
+parallel:
+  api_key: "${PARALLEL_API_KEY}"
+
 github:
   token: "${GITHUB_TOKEN}"
 
