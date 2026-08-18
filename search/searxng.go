@@ -9,17 +9,37 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
+// rrfK is the damping constant from the original Reciprocal Rank Fusion
+// paper (Cormack et al., 2009) — large enough that the difference between
+// e.g. rank 1 and rank 2 doesn't dominate the fused score, so a result
+// several engines agree on (even at middling positions) can outrank one
+// only a single engine ranks first.
+const rrfK = 60.0
+
 type SearchResult struct {
-	Title     string  `json:"title"`
-	URL       string  `json:"url"`
-	Content   string  `json:"content"`
-	Score     float64 `json:"score"`
-	Thumbnail string  `json:"thumbnail,omitempty"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+	// Score is a Reciprocal Rank Fusion value, not a 0-1 relevance
+	// score — see rrfScore. It's meaningful only for relative ordering
+	// between results in the same response, not as an absolute number.
+	Score     float64  `json:"score"`
+	Thumbnail string   `json:"thumbnail,omitempty"`
+	Engine    string   `json:"engine,omitempty"`
+	Engines   []string `json:"engines,omitempty"`
+	// RankState and Pinned reflect this result's domain-ranking state (see
+	// DomainRankings) — surfaced so the ranking popover can show a result's
+	// current state without a second lookup. RankState is "default" when
+	// the domain has no explicit entry (or no DomainRankings is configured
+	// at all).
+	RankState string `json:"rank_state,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
 }
 
 type SearchResponse struct {
@@ -47,6 +67,19 @@ type SearchResponse struct {
 	// user/model roughly how long to wait instead of an open-ended
 	// "try again later".
 	RetryAfter time.Time `json:"retry_after,omitempty"`
+	// Page is the 1-indexed page these results came from, echoed back so a
+	// caller doesn't have to separately track what it asked for.
+	Page int `json:"page"`
+	// HasMore is a heuristic, not a real "is there really another page"
+	// answer — SearXNG never reports a total result count. True when
+	// SearXNG's own raw response for this page had at least maxResults
+	// items, before this client's blocklist/ranking filtering trims that
+	// down further (checking the filtered, capped count instead would
+	// under-report — a page that lost half its results to the blocklist
+	// says nothing about whether SearXNG itself had more). Good enough to
+	// gate a "next page" control without a wasted round-trip most of the
+	// time; not a promise.
+	HasMore bool `json:"has_more"`
 }
 
 // generalCategoryEngineCount is how many engines SearXNG's "general"
@@ -74,17 +107,18 @@ const generalCategoryEngineCount = 4
 // Repeatedly hitting an instance whose engines are already rate-limited
 // or CAPTCHA'd doesn't help it recover — it very plausibly makes things
 // worse, and it definitely burns time on requests that were never going
-// to succeed. 20 minutes is a starting guess, not measured against how
-// long these providers' own suspensions actually last; adjust if it
-// turns out to be too short (still hitting the same outage) or too long
-// (SearXNG's clearly fine again but nothing tries it for the rest of
-// the window).
-const degradedCooldown = 20 * time.Minute
+// to succeed. Started at 20 minutes as a guess; raised to an hour after
+// live observation showed the underlying engines (Brave, Google CSE)
+// were still suspended well past the 20-minute mark on repeated checks
+// — 20 minutes was measurably too short for how long these providers'
+// own suspensions actually last.
+const degradedCooldown = time.Hour
 
 type SearXNGClient struct {
-	baseURL   string
-	http      *http.Client
-	blocklist *Blocklist
+	baseURL            string
+	http               *http.Client
+	blocklist          *Blocklist
+	domainRankingsPath string
 
 	// cooldownUntil/cooldownMu implement a simple circuit breaker across
 	// calls — see degradedCooldown. In-memory only (resets on a process
@@ -100,7 +134,8 @@ type SearXNGClient struct {
 }
 
 // NewSearXNGClient builds a client for the given SearXNG instance.
-// blocklist may be nil — Search then applies no filtering.
+// blocklist may be nil — Search then applies no filtering. Chain
+// WithDomainRankings to enable the 5-state ranking system on top.
 func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 	return &SearXNGClient{
 		baseURL:   strings.TrimSuffix(baseURL, "/"),
@@ -125,6 +160,25 @@ func (c *SearXNGClient) startCooldown() {
 	c.cooldownUntil = time.Now().Add(degradedCooldown)
 }
 
+// WithDomainRankings enables domain ranking (Block/Lower/Default/Raise/Pin)
+// on this client, hot-reloaded from path on every Search call — see
+// DomainRankings/LoadDomainRankings. A separate method rather than a
+// NewSearXNGClient parameter so existing call sites (tests especially,
+// which mostly don't care about ranking) don't all need updating.
+func (c *SearXNGClient) WithDomainRankings(path string) *SearXNGClient {
+	c.domainRankingsPath = path
+	return c
+}
+
+// DomainRankingsPath returns the file this client's ranking is loaded
+// from ("" if WithDomainRankings was never called) — so a caller writing
+// a ranking change (see SetDomainRanking) always targets exactly the file
+// Search itself reads, rather than re-deriving the path from config and
+// risking the two drifting apart.
+func (c *SearXNGClient) DomainRankingsPath() string {
+	return c.domainRankingsPath
+}
+
 type searxngResponse struct {
 	Query   string          `json:"query"`
 	Results []searxngResult `json:"results"`
@@ -137,24 +191,56 @@ type searxngResponse struct {
 }
 
 type searxngResult struct {
-	Title     string  `json:"title"`
-	URL       string  `json:"url"`
-	Content   string  `json:"content"`
-	Score     float64 `json:"score"`
-	Thumbnail string  `json:"thumbnail"`
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	Content   string   `json:"content"`
+	Thumbnail string   `json:"thumbnail"`
+	Engine    string   `json:"engine"`
+	Engines   []string `json:"engines"`
+	// Positions is each contributing engine's own 1-indexed rank for this
+	// result — SearXNG already merges near-duplicate results across engines
+	// before returning them, so a result two engines both ranked highly
+	// arrives here as one entry with e.g. positions [1, 2], not two
+	// separate entries. This is what rrfScore fuses on.
+	Positions []int `json:"positions"`
+}
+
+// rrfScore fuses per-engine rank positions into a single score via
+// Reciprocal Rank Fusion: 1/(k+rank) per engine, summed. Unlike SearXNG's
+// own raw `score` field, this never compares magnitudes across engines —
+// it only uses each engine's ranking of its own results, which is the one
+// signal that's actually comparable when merging DuckDuckGo/Brave/Bing
+// News/etc, whose native scores live on unrelated scales (and which don't
+// all report a score at all).
+func rrfScore(positions []int) float64 {
+	var score float64
+	for _, p := range positions {
+		score += 1.0 / (rrfK + float64(p))
+	}
+	return score
 }
 
 // Search performs a web search via SearXNG and returns up to maxResults
-// relevance-ranked results. SearXNG doesn't produce an AI-generated
-// answer summary, so Answer is always empty here (unlike Tavily).
-// category filters which SearXNG engines answer the query — "" (SearXNG's
-// default "general" category) searches ordinary web-indexed pages, which
-// for broad queries like "atlanta ga news" routinely surface each outlet's
-// homepage rather than a specific story, since the homepage's title/text
-// matches a broad phrase just as well as any article does. "news" routes
-// to dedicated news-search engines (Google News, Bing News, etc.), which
-// index actual articles rather than static pages.
-func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string) (*SearchResponse, error) {
+// relevance-ranked results from the given page (1-indexed; page <= 1 is
+// SearXNG's own default and omits &pageno entirely, matching this
+// function's pre-pagination request shape exactly). SearXNG doesn't
+// produce an AI-generated answer summary, so Answer is always empty here
+// (unlike Tavily). category filters which SearXNG engines answer the
+// query — "" (SearXNG's default "general" category) searches ordinary
+// web-indexed pages, which for broad queries like "atlanta ga news"
+// routinely surface each outlet's homepage rather than a specific story,
+// since the homepage's title/text matches a broad phrase just as well as
+// an article does. "news" routes to dedicated news-search engines
+// (Google News, Bing News, etc.), which index actual articles rather
+// than static pages.
+//
+// Each page is fused/sorted/truncated independently — SearXNG doesn't
+// report a total result count up front, so there's no single ranking to
+// slice across pages from; a caller wanting broad coverage (Atlas's own
+// pagination, or the assistant issuing several web_search calls across
+// pages at once) is trading exhaustiveness for that, same tradeoff behind
+// Google's own numbered pagination.
+func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string, page int) (*SearchResponse, error) {
 	if cooling, until := c.inCooldown(); cooling {
 		blocklistLog.Info("searxng: skipping request, still cooling down after a full outage", "query", query, "retry_after", until)
 		return &SearchResponse{Query: query, Degraded: true, RetryAfter: until}, nil
@@ -167,6 +253,9 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 	u := fmt.Sprintf("%s/search?format=json&q=%s", c.baseURL, url.QueryEscape(query))
 	if category != "" {
 		u += "&categories=" + url.QueryEscape(category)
+	}
+	if page > 1 {
+		u += fmt.Sprintf("&pageno=%d", page)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -194,28 +283,71 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
-	results := make([]SearchResult, 0, maxResults)
-	for _, r := range searxngResp.Results {
-		if len(results) >= maxResults {
-			break
-		}
-		// Filtered out before counting toward maxResults, not after — a
-		// blocked result sitting early in SearXNG's ranking would otherwise
+	rankings := LoadDomainRankings(c.domainRankingsPath)
+
+	results := make([]SearchResult, 0, len(searxngResp.Results))
+	for i, r := range searxngResp.Results {
+		// Filtered out before ranking/truncation, not after — a blocked
+		// result sitting early in SearXNG's own ordering would otherwise
 		// crowd a legitimate result off the end of a maxResults-capped list.
+		// Both the curated Blocklist and a user's own "block" ranking are
+		// hard excludes, checked the same way.
 		if c.blocklist.Blocked(r.URL) {
 			continue
 		}
-		normalizedScore := r.Score / 10.0
-		if normalizedScore > 1.0 {
-			normalizedScore = 1.0
+		state := rankings.State(r.URL)
+		if state == RankBlock {
+			continue
 		}
+
+		positions := r.Positions
+		if len(positions) == 0 {
+			// Defensive fallback for responses that omit positions (older
+			// SearXNG versions, or hand-built test fixtures) — treat this
+			// result's place in SearXNG's own merged list as its one position.
+			positions = []int{i + 1}
+		}
+		score := rrfScore(positions)
+		switch state {
+		case RankRaise:
+			score *= raiseMultiplier
+		case RankLower:
+			score *= lowerMultiplier
+		}
+
 		results = append(results, SearchResult{
 			Title:     r.Title,
 			URL:       r.URL,
 			Content:   r.Content,
-			Score:     normalizedScore,
+			Score:     score,
 			Thumbnail: r.Thumbnail,
+			Engine:    r.Engine,
+			Engines:   r.Engines,
+			RankState: string(state),
+			Pinned:    state == RankPin,
 		})
+	}
+
+	// Stable sort: pinned results first (in their own relative fused-score
+	// order), then everyone else by fused score descending. Results tied
+	// on score (common for single-engine, single-position results near the
+	// tail) keep SearXNG's own relative order rather than shuffling
+	// arbitrarily.
+	sort.SliceStable(results, func(i, j int) bool {
+		if results[i].Pinned != results[j].Pinned {
+			return results[i].Pinned
+		}
+		return results[i].Score > results[j].Score
+	})
+
+	// searxngResp.Results is untouched by the filtering loop above (it
+	// only reads from it to build results) — still the raw, pre-filter
+	// count SearXNG itself returned. See HasMore's doc comment on why
+	// that's the one that matters here, not len(results).
+	hasMore := len(searxngResp.Results) >= maxResults
+
+	if len(results) > maxResults {
+		results = results[:maxResults]
 	}
 
 	unresponsive := make([]string, 0, len(searxngResp.UnresponsiveEngines))
@@ -241,10 +373,15 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		blocklistLog.Warn("searxng: full outage detected, entering cooldown", "query", query, "unresponsive_engines", unresponsive, "cooldown", degradedCooldown)
 	}
 
+	if page <= 0 {
+		page = 1
+	}
 	return &SearchResponse{
 		Query:               query,
 		Results:             results,
 		Degraded:            degraded,
 		UnresponsiveEngines: unresponsive,
+		Page:                page,
+		HasMore:             hasMore,
 	}, nil
 }

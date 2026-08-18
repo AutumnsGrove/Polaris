@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -169,6 +171,49 @@ func TestSetThreadFavorite(t *testing.T) {
 	}
 	if thread.Favorite {
 		t.Error("expected Favorite to be false after SetThreadFavorite(false)")
+	}
+}
+
+func TestSetThreadFavorite_NonexistentIDReturnsErrNoRows(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.SetThreadFavorite("does-not-exist", true); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetThreadFavorite(nonexistent) = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSetThreadTitle_NonexistentIDReturnsErrNoRows(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.SetThreadTitle("does-not-exist", "new title"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetThreadTitle(nonexistent) = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestListThreads_ExcludesUncontinuedAtlasThreads(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("web1", "web thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread(web): %v", err)
+	}
+	if err := s.CreateThread("atlas1", "atlas thread", "test-model", "atlas"); err != nil {
+		t.Fatalf("CreateThread(atlas): %v", err)
+	}
+
+	threads, err := s.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(threads) != 1 || threads[0].ID != "web1" {
+		t.Fatalf("threads = %+v, want only web1 (atlas1 not yet continued)", threads)
+	}
+
+	if err := s.MarkThreadContinued("atlas1"); err != nil {
+		t.Fatalf("MarkThreadContinued: %v", err)
+	}
+	threads, err = s.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads (after continue): %v", err)
+	}
+	if len(threads) != 2 {
+		t.Fatalf("threads = %+v, want both web1 and atlas1 once continued", threads)
 	}
 }
 

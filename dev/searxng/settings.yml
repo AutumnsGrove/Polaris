@@ -7,6 +7,7 @@ search:
   formats:
     - html
     - json
+  autocomplete: "duckduckgo"
 
 server:
   secret_key: "dev-only-local-assistant-secret-change-in-prod"

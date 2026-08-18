@@ -7,6 +7,7 @@
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
+	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import type { FocusMode } from '$lib/types';
@@ -300,6 +301,12 @@
 		{/if}
 	</div>
 	<div class="header-right">
+		{#if !appState.currentThreadId}
+			<!-- Homepage only, per ModeToggle's shared-chrome role — once a
+			     thread exists this row switches to the New-thread/ThreadMenu
+			     controls below instead, so the two never compete for space. -->
+			<ModeToggle mode="assistant" />
+		{/if}
 		{#if appState.currentThreadId}
 			<button
 				class="icon-btn"

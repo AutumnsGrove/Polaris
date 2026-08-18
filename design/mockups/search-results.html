@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — rust async runtime</title>
+<style>
+
+  :root {
+    --paper: oklch(97.3% 0.011 75);
+    --paper-raised: oklch(99.2% 0.006 75);
+    --paper-sunken: oklch(95% 0.014 75);
+    --ink: oklch(23% 0.018 75);
+    --ink-muted: oklch(46% 0.016 75);
+    --ink-faint: oklch(62% 0.012 75);
+    --line: oklch(88.5% 0.013 75);
+    --line-strong: oklch(80% 0.016 75);
+
+    --accent: oklch(53% 0.135 42);
+    --accent-ink: oklch(99% 0.006 75);
+    --accent-soft: oklch(93% 0.035 42);
+    --accent-soft-line: oklch(83% 0.06 42);
+
+    --rank-block: oklch(54% 0.16 25);
+    --rank-block-soft: oklch(93% 0.035 25);
+    --rank-lower: oklch(58% 0.02 75);
+    --rank-lower-soft: oklch(91% 0.012 75);
+    --rank-default: oklch(46% 0.016 75);
+    --rank-default-soft: oklch(95% 0.014 75);
+    --rank-raise: oklch(52% 0.1 155);
+    --rank-raise-soft: oklch(92% 0.035 155);
+    --rank-pin: oklch(58% 0.12 85);
+    --rank-pin-soft: oklch(92% 0.045 85);
+
+    --shadow-ambient: oklch(23% 0.018 75 / 0.05);
+    --scrim: oklch(20% 0.01 75 / 0.38);
+
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+  }
+
+  [data-theme="dark"] {
+    --paper: oklch(21% 0.014 75);
+    --paper-raised: oklch(25% 0.015 75);
+    --paper-sunken: oklch(18% 0.013 75);
+    --ink: oklch(93% 0.008 75);
+    --ink-muted: oklch(72% 0.012 75);
+    --ink-faint: oklch(52% 0.012 75);
+    --line: oklch(32% 0.014 75);
+    --line-strong: oklch(40% 0.016 75);
+
+    --accent: oklch(74% 0.12 48);
+    --accent-ink: oklch(18% 0.01 75);
+    --accent-soft: oklch(30% 0.05 48);
+    --accent-soft-line: oklch(42% 0.08 48);
+
+    --rank-block: oklch(68% 0.15 25);
+    --rank-block-soft: oklch(30% 0.06 25);
+    --rank-lower: oklch(68% 0.014 75);
+    --rank-lower-soft: oklch(28% 0.014 75);
+    --rank-default: oklch(72% 0.012 75);
+    --rank-default-soft: oklch(28% 0.014 75);
+    --rank-raise: oklch(72% 0.09 155);
+    --rank-raise-soft: oklch(28% 0.045 155);
+    --rank-pin: oklch(76% 0.1 85);
+    --rank-pin-soft: oklch(30% 0.05 85);
+
+    --shadow-ambient: oklch(0% 0 0 / 0.28);
+    --scrim: oklch(0% 0 0 / 0.5);
+  }
+
+  /* ---------- shared chrome tokens ----------
+     Real values lifted from web/src/app.css, not approximated — this is
+     what makes the sidebar read as "the same app" underneath Atlas's own
+     paper/ink palette rather than a reskinned copy. */
+
+  :root {
+    --p-bg: oklch(97% 0.008 75);
+    --p-surface: oklch(99% 0.004 80);
+    --p-surface-2: oklch(95% 0.01 75);
+    --p-surface-3: oklch(91% 0.012 75);
+    --p-border: oklch(87% 0.012 75);
+    --p-border-strong: oklch(78% 0.016 75);
+    --p-text: oklch(24% 0.016 60);
+    --p-text-dim: oklch(46% 0.018 60);
+    --p-accent: oklch(54% 0.17 68);
+    --p-accent-strong: oklch(46% 0.18 66);
+    --p-accent-soft: color-mix(in srgb, var(--p-accent) 12%, transparent);
+    --p-shadow-well: inset 0 1px 3px rgba(50, 40, 28, 0.16), inset 0 0 0 1px rgba(50, 40, 28, 0.08);
+    --p-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-theme="dark"] {
+    --p-bg: oklch(15% 0.014 65);
+    --p-surface: oklch(19% 0.014 65);
+    --p-surface-2: oklch(23% 0.016 65);
+    --p-surface-3: oklch(28% 0.018 65);
+    --p-border: oklch(30% 0.016 65);
+    --p-border-strong: oklch(40% 0.02 65);
+    --p-text: oklch(93% 0.01 75);
+    --p-text-dim: oklch(64% 0.014 70);
+    --p-accent: oklch(82% 0.17 78);
+    --p-accent-strong: oklch(72% 0.18 74);
+    --p-accent-soft: color-mix(in srgb, var(--p-accent) 16%, transparent);
+    --p-shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 200ms ease-out, color 200ms ease-out;
+  }
+
+  body { min-height: 100vh; }
+
+  a { color: inherit; text-decoration: none; }
+
+  ::selection { background: var(--accent-soft); color: var(--ink); }
+
+  /* ---------- app shell + shared sidebar ---------- */
+
+  .app-shell { display: flex; height: 100vh; }
+
+  .main-column { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+  .p-sidebar {
+    display: flex;
+    width: 260px;
+    height: 100%;
+    flex-shrink: 0;
+    flex-direction: column;
+    background: var(--p-surface);
+    box-shadow: 6px 0 24px -16px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    transition: width 0.2s ease;
+    font-family: var(--sans);
+  }
+
+  .p-sidebar:not(.open) { width: 0; box-shadow: none; }
+
+  .p-brand { display: flex; align-items: center; gap: 10px; padding: 16px 16px 16px; white-space: nowrap; }
+
+  .p-brand-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, oklch(88% 0.03 78), oklch(45% 0.03 260) 70%, oklch(20% 0.02 260));
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .p-wordmark { font-size: 17px; font-weight: 700; letter-spacing: 0.03em; color: var(--p-text); }
+
+  .p-collapse-btn {
+    margin-left: auto;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--p-text-dim);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .p-collapse-btn:hover { background: var(--p-surface-2); color: var(--p-text); }
+
+  .p-new-thread {
+    margin: 4px 12px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    appearance: none;
+    border: none;
+    border-radius: 8px;
+    background: var(--p-accent);
+    color: var(--p-surface);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .p-new-thread:hover { background: var(--p-accent-strong); }
+
+  .p-thread-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+
+  .p-section-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 14px 10px 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--p-text-dim);
+  }
+
+  .p-section-label:first-child { margin-top: 4px; }
+  .p-section-label svg { color: var(--p-accent); width: 11px; height: 11px; }
+
+  .p-thread-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    padding: 9px 10px;
+    cursor: pointer;
+    transition: background-color 0.15s var(--p-ease-out-expo);
+  }
+
+  .p-thread-item:hover { background: var(--p-surface-2); }
+
+  .p-thread-item.active { background: var(--p-accent-soft); }
+
+  .p-thread-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex-shrink: 0; }
+
+  .p-thread-item.active .p-thread-dot {
+    background: var(--p-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 22%, transparent);
+  }
+
+  .p-thread-title {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--p-text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .p-thread-item.active .p-thread-title { font-weight: 600; color: var(--p-text); }
+
+  .p-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: var(--p-shadow-well);
+    padding: 12px;
+    font-size: 12px;
+    color: var(--p-text-dim);
+    white-space: nowrap;
+  }
+
+  .p-status-text { flex: 1; }
+
+  .p-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--p-accent);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 20%, transparent);
+  }
+
+  .p-settings-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--p-text-dim);
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .p-settings-btn:hover { background: var(--p-surface-2); color: var(--p-text); }
+
+  .sidebar-backdrop { display: none; }
+
+  .sidebar-open-btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--paper-sunken);
+    border-radius: 7px;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .sidebar-open-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+  .sidebar-open-btn.visible { display: flex; }
+
+  @media (max-width: 768px) {
+    .p-sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 280px;
+      z-index: 60;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .p-sidebar.open { width: 280px; transform: translateX(0); box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4); }
+    .p-sidebar:not(.open) { width: 280px; border-right: 1px solid var(--p-border); transform: translateX(-100%); }
+
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: var(--scrim);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 55;
+      transition: opacity 0.2s ease;
+    }
+
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  }
+
+  /* ---------- header ---------- */
+
+  header.top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in oklch, var(--paper) 92%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .top-inner {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 14px 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .brand-row { display: flex; align-items: center; justify-content: space-between; }
+
+  .wordmark { display: flex; align-items: baseline; gap: 9px; }
+
+  .wordmark .mark {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: var(--ink);
+    position: relative;
+    flex: none;
+  }
+
+  .wordmark .mark::after {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    border-radius: 2px;
+    background: var(--paper);
+    clip-path: polygon(0 100%, 100% 100%, 100% 40%, 55% 40%, 55% 0, 30% 0, 30% 60%, 0 60%);
+  }
+
+  .wordmark .name { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+
+  .wordmark .name .sub {
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin-left: 6px;
+    letter-spacing: 0.02em;
+  }
+
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+
+  .mode-toggle {
+    display: flex;
+    background: var(--paper-sunken);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .mode-toggle button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 999px;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .mode-toggle button.active { background: var(--ink); color: var(--paper); }
+
+  .theme-btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--paper-sunken);
+    border-radius: 999px;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .theme-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+  .theme-btn .icon-moon { display: none; }
+  [data-theme="dark"] .theme-btn .icon-sun { display: none; }
+  [data-theme="dark"] .theme-btn .icon-moon { display: block; }
+
+  /* ---------- omnibox ---------- */
+
+  .omnibox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    padding: 11px 14px;
+    box-shadow: 0 1px 2px var(--shadow-ambient);
+  }
+
+  .omnibox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  .omnibox svg.icon-search { flex: none; color: var(--ink-faint); }
+
+  .omnibox input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: var(--sans);
+    font-size: 16px;
+    color: var(--ink);
+    min-width: 0;
+  }
+
+  .omnibox .hint {
+    flex: none;
+    font-family: var(--sans);
+    font-size: 11px;
+    color: var(--ink-faint);
+    background: var(--paper-sunken);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 3px 6px;
+    white-space: nowrap;
+  }
+
+  .meta-line { font-size: 12px; color: var(--ink-faint); padding-left: 2px; }
+  .meta-line b { color: var(--ink-muted); font-weight: 600; }
+
+  /* ---------- layout ---------- */
+
+  main { max-width: 780px; margin: 0 auto; padding: 28px 24px 80px; }
+
+  /* ---------- quick answer ---------- */
+
+  .quick-answer {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px 22px 18px;
+    margin-bottom: 34px;
+  }
+
+  .qa-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  .qa-label svg { width: 13px; height: 13px; }
+
+  .quick-answer p {
+    font-family: var(--serif);
+    font-size: 16.5px;
+    line-height: 1.62;
+    color: var(--ink);
+    margin: 0 0 14px;
+    max-width: 68ch;
+  }
+
+  .qa-cite {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 4px;
+    padding: 0 4.5px;
+    margin: 0 1px;
+    transform: translateY(-4px);
+  }
+
+  .qa-sources { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+  .qa-source {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink-muted);
+    background: var(--paper-sunken);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 10px 5px 7px;
+  }
+
+  .qa-source .n {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---------- results ---------- */
+
+  .results-heading {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 6px;
+    padding: 0 2px;
+  }
+
+  ol.results { list-style: none; margin: 0; padding: 0; }
+
+  .result { padding: 18px 2px; border-bottom: 1px solid var(--line); }
+  .result:first-of-type { padding-top: 8px; }
+
+  .result-top { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+
+  .favicon {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--accent-ink);
+  }
+
+  .fav-teal   { background: oklch(52% 0.09 195); }
+  .fav-rust   { background: oklch(54% 0.15 38); }
+  .fav-amber  { background: oklch(68% 0.13 78); color: oklch(20% 0.02 78); }
+  .fav-dark   { background: oklch(30% 0.012 75); }
+  .fav-violet { background: oklch(52% 0.12 300); }
+  .fav-reddit { background: oklch(58% 0.18 35); }
+
+  .result-url {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .result-url .sep { color: var(--ink-faint); margin: 0 3px; }
+
+  .result-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .result h3 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .result h3 a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+  .tune-btn {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 7px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-faint);
+    cursor: pointer;
+    flex: none;
+    margin-top: 1px;
+  }
+
+  .tune-btn:hover { background: var(--paper-sunken); color: var(--ink-muted); }
+  .tune-btn.adjusted { color: var(--accent); }
+
+  .result p.snippet {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    max-width: 68ch;
+  }
+
+  /* ---------- drawer ---------- */
+
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 40;
+  }
+
+  .drawer-backdrop.open { pointer-events: auto; }
+
+  .drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 322px;
+    max-width: 90vw;
+    max-height: 80vh;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    box-shadow: 0 18px 40px var(--shadow-ambient), 0 3px 10px var(--shadow-ambient);
+    z-index: 50;
+    padding: 17px 18px 19px;
+    overflow-y: auto;
+    opacity: 0;
+    transform: scale(0.96) translateY(-6px);
+    transform-origin: var(--caret-origin-x, 50%) top;
+    transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1), transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+  }
+
+  .drawer.open { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; }
+
+  .drawer::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: var(--caret-x, 24px);
+    width: 12px;
+    height: 12px;
+    background: var(--paper-raised);
+    border-left: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+    transform: rotate(45deg);
+  }
+
+  .drawer.caret-below::before {
+    top: auto;
+    bottom: -6px;
+    border-left: none;
+    border-top: none;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .drawer-handle { display: none; }
+
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+
+  .drawer-domain { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .drawer-domain svg { flex: none; color: var(--ink-faint); }
+
+  .drawer-close {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .drawer-close:hover { background: var(--paper-sunken); color: var(--ink); }
+
+  .drawer-section { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+
+  .drawer-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+
+  .rank-group { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+
+  .rank-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 9px 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: var(--paper);
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .rank-option svg { width: 15px; height: 15px; }
+  .rank-option span { font-size: 10.5px; font-weight: 600; color: var(--ink-muted); }
+
+  .rank-option[data-state="block"] svg { color: var(--rank-block); }
+  .rank-option[data-state="lower"] svg { color: var(--rank-lower); }
+  .rank-option[data-state="default"] svg { color: var(--rank-default); }
+  .rank-option[data-state="raise"] svg { color: var(--rank-raise); }
+  .rank-option[data-state="pin"] svg { color: var(--rank-pin); }
+
+  .rank-option.selected { border-color: var(--line-strong); }
+  .rank-option.selected[data-state="block"] { background: var(--rank-block-soft); }
+  .rank-option.selected[data-state="lower"] { background: var(--rank-lower-soft); }
+  .rank-option.selected[data-state="default"] { background: var(--rank-default-soft); }
+  .rank-option.selected[data-state="raise"] { background: var(--rank-raise-soft); }
+  .rank-option.selected[data-state="pin"] { background: var(--rank-pin-soft); }
+  .rank-option.selected span { color: var(--ink); }
+
+  .drawer-help { font-size: 12px; line-height: 1.5; color: var(--ink-faint); margin: 0; }
+  .drawer-help b { color: var(--ink-muted); font-weight: 600; }
+
+  .engine-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+
+  .engine-chip {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    background: var(--paper-sunken);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+
+  .drawer-footnote { display: flex; align-items: flex-start; gap: 7px; font-size: 11.5px; line-height: 1.5; color: var(--ink-faint); }
+  .drawer-footnote svg { flex: none; margin-top: 1px; width: 12px; height: 12px; }
+
+  /* ---------- related ---------- */
+
+  .related { margin-top: 40px; }
+  .related-grid { display: flex; flex-wrap: wrap; gap: 9px; }
+
+  .related-chip {
+    font-size: 13px;
+    color: var(--ink-muted);
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 15px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .related-chip:hover { border-color: var(--line-strong); color: var(--ink); }
+  .related-chip svg { width: 11px; height: 11px; color: var(--ink-faint); }
+
+  footer.page-foot {
+    max-width: 780px;
+    margin: 50px auto 0;
+    padding: 18px 24px 0;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- mobile ---------- */
+
+  @media (max-width: 640px) {
+    .top-inner { padding: 12px 16px 14px; gap: 12px; }
+    .wordmark .name .sub { display: none; }
+    .omnibox .hint { display: none; }
+    main { padding: 22px 16px 64px; }
+    .quick-answer { padding: 16px 16px 14px; margin-bottom: 26px; }
+    .quick-answer p { font-size: 15.5px; }
+    .result h3 { font-size: 16.5px; }
+    .result p.snippet { font-size: 13px; }
+    .tune-btn { width: 36px; height: 36px; }
+    .theme-btn { width: 36px; height: 36px; }
+
+    .drawer {
+      top: auto !important;
+      left: 0 !important;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      max-width: 100%;
+      max-height: 84vh;
+      border: none;
+      border-top: 1px solid var(--line);
+      border-radius: 18px 18px 0 0;
+      box-shadow: 0 -12px 28px var(--shadow-ambient);
+      opacity: 1;
+      transform: translateY(100%);
+      padding-top: 10px;
+    }
+
+    .drawer.open { transform: translateY(0); }
+    .drawer::before { display: none; }
+
+    .drawer-handle {
+      display: block;
+      width: 36px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--line-strong);
+      margin: 0 auto 16px;
+    }
+
+    .rank-option { padding: 8px 2px 7px; }
+    .rank-option span { font-size: 9.5px; }
+
+    footer.page-foot { padding: 16px 16px 0; flex-direction: column; gap: 4px; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<aside class="p-sidebar open" id="pSidebar">
+  <div class="p-brand">
+    <span class="p-brand-mark"></span>
+    <span class="p-wordmark">Atlas</span>
+    <button class="p-collapse-btn" id="sidebarCollapseBtn" type="button" aria-label="Collapse sidebar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><path d="M15 9 l-2 3 l2 3"/></svg>
+    </button>
+  </div>
+
+  <button class="p-new-thread" type="button">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New search
+  </button>
+
+  <div class="p-thread-list">
+    <div class="p-section-label">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L14.5 9 L22 9.5 L16.5 14.5 L18 22 L12 18 L6 22 L7.5 14.5 L2 9.5 L9.5 9 Z"/></svg>
+      Favorites
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">best homelab NAS 2026</span>
+    </div>
+
+    <div class="p-section-label">Recent searches</div>
+    <div class="p-thread-item active">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">rust async runtime</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">coffee shop near Space Needle</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">current stable version of Go</span>
+    </div>
+    <div class="p-thread-item">
+      <span class="p-thread-dot"></span>
+      <span class="p-thread-title">le potato SBC thermal throttling</span>
+    </div>
+  </div>
+
+  <div class="p-status">
+    <span class="p-status-dot"></span>
+    <span class="p-status-text">connected</span>
+    <button class="p-settings-btn" type="button" aria-label="Settings">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</aside>
+
+<div class="main-column">
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand-row">
+      <div class="wordmark">
+        <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" aria-label="Open sidebar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><path d="M13 9 l2 3 l-2 3"/></svg>
+        </button>
+        <span class="mark"></span>
+        <span class="name">Atlas<span class="sub">self-hosted, over SearXNG</span></span>
+      </div>
+      <div class="header-actions">
+        <div class="mode-toggle">
+          <button class="active" type="button">Search</button>
+          <button type="button">Assistant</button>
+        </div>
+        <button class="theme-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
+          <svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5 M12 19.5V22 M4.2 4.2l1.8 1.8 M18 18l1.8 1.8 M2 12h2.5 M19.5 12H22 M4.2 19.8L6 18 M18 6l1.8-1.8"/></svg>
+          <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="omnibox">
+      <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" value="rust async runtime" spellcheck="false">
+      <span class="hint">? for answer</span>
+    </div>
+
+    <div class="meta-line">About <b>26</b> results (0.41s) &middot; <b>5</b> engines queried &middot; 2 unresponsive</div>
+  </div>
+</header>
+
+<main>
+
+  <section class="quick-answer">
+    <div class="qa-label">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L14.5 9 L22 9.5 L16.5 14.5 L18 22 L12 18 L6 22 L7.5 14.5 L2 9.5 L9.5 9 Z"/></svg>
+      Quick Answer
+    </div>
+    <p>
+      <b>Tokio</b> is the de facto standard async runtime for Rust<span class="qa-cite">1</span> and what
+      you should default to for anything network- or I/O-bound in production. For smaller binaries,
+      embedded targets, or WASM, <b>smol</b> is a lighter-weight alternative built from composable
+      pieces rather than one monolithic runtime<span class="qa-cite">3</span>, while <b>async-std</b>
+      trades some of Tokio's performance for a std-mirroring API that's easier to pick up<span class="qa-cite">2</span>.
+      Runtimes generally aren't interchangeable mid-project since ecosystem crates target one or the other.
+    </p>
+    <div class="qa-sources">
+      <span class="qa-source"><span class="n">1</span> tokio.rs</span>
+      <span class="qa-source"><span class="n">2</span> corrode.dev</span>
+      <span class="qa-source"><span class="n">3</span> github.com/smol-rs/smol</span>
+    </div>
+  </section>
+
+  <h2 class="results-heading">Web results</h2>
+
+  <ol class="results">
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-teal">T</span>
+        <span class="result-url">tokio.rs<span class="sep">›</span>docs</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">Tokio — An asynchronous Rust runtime</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for tokio.rs"
+          data-domain="tokio.rs" data-engine="DuckDuckGo" data-agree="Also matched by 2 other engines." data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">Tokio is an asynchronous runtime for the Rust programming language. It provides the building blocks needed for writing network applications: an async multi-threaded scheduler, a reactor, and non-blocking I/O primitives.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-rust">R</span>
+        <span class="result-url">rust-lang.github.io<span class="sep">›</span>async-book<span class="sep">›</span>ecosystem</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">The Async Ecosystem — Asynchronous Programming in Rust</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for rust-lang.github.io"
+          data-domain="rust-lang.github.io" data-engine="DuckDuckGo" data-agree="" data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">The Futures crate provides the definition of Future and utilities for working with them, but the actual execution requires a runtime. This chapter surveys the major runtimes and how they differ in scheduling and I/O model.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-amber">C</span>
+        <span class="result-url">corrode.dev<span class="sep">›</span>blog<span class="sep">›</span>async</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">The State of Async Rust: Runtimes</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for corrode.dev"
+          data-domain="corrode.dev" data-engine="DuckDuckGo" data-agree="" data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">A survey of Tokio, async-std, smol, and glommio, with benchmarks for task-spawn overhead and I/O throughput under realistic web-service workloads, plus notes on ecosystem lock-in for each.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-dark">G</span>
+        <span class="result-url">github.com<span class="sep">›</span>smol-rs<span class="sep">›</span>smol</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">smol-rs/smol — a small and fast async runtime for Rust</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for github.com"
+          data-domain="github.com" data-engine="DuckDuckGo" data-agree="" data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">A small and fast async runtime for Rust. It's a simpler alternative to popular runtimes like Tokio, made of a handful of reusable components that can be composed for embedded or WASM targets.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-violet">L</span>
+        <span class="result-url">blog.logrocket.com<span class="sep">›</span>async-std-vs-tokio</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">async-std vs. Tokio: Choosing an async runtime</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for blog.logrocket.com"
+          data-domain="blog.logrocket.com" data-engine="Brave" data-agree="" data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">Both crates implement the Future trait, but they take different approaches to task scheduling and expose different APIs for spawning, timers, and channels. Here's how to pick between them for a new project.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-reddit">r</span>
+        <span class="result-url">reddit.com<span class="sep">›</span>r/rust</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">What's everyone using for async in 2026?</a></h3>
+        <button class="tune-btn adjusted" type="button" aria-label="Adjust ranking for reddit.com"
+          data-domain="reddit.com" data-engine="Brave" data-agree="Also matched by 1 other engine." data-state="raise">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">243 comments — general consensus is Tokio unless you have a specific reason not to, though a few people report good results dropping to smol for CLI tools where startup time and binary size actually matter.</p>
+    </li>
+
+    <li class="result">
+      <div class="result-top">
+        <span class="favicon fav-rust">R</span>
+        <span class="result-url">rust-lang.github.io<span class="sep">›</span>async-book</span>
+      </div>
+      <div class="result-title-row">
+        <h3><a href="#">Introduction — Asynchronous Programming in Rust</a></h3>
+        <button class="tune-btn" type="button" aria-label="Adjust ranking for rust-lang.github.io"
+          data-domain="rust-lang.github.io" data-engine="DuckDuckGo" data-agree="" data-state="default">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.3" fill="var(--paper-raised)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.3" fill="var(--paper-raised)"/></svg>
+        </button>
+      </div>
+      <p class="snippet">Async programming allows you to run a large number of concurrent tasks on a small number of threads, at the cost of being harder to reason about than simple sequential programs. This book covers the language's async features.</p>
+    </li>
+
+  </ol>
+
+  <section class="related">
+    <h2 class="results-heading">Related searches</h2>
+    <div class="related-grid">
+      <a class="related-chip" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>tokio vs async-std</a>
+      <a class="related-chip" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>rust async book</a>
+      <a class="related-chip" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>async runtime benchmarks</a>
+      <a class="related-chip" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>smol rust runtime</a>
+      <a class="related-chip" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>glommio vs tokio</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="page-foot">
+  <span>Atlas &middot; self-hosted over SearXNG</span>
+  <span>5 engines &middot; 0 blocked &middot; 1 boosted</span>
+</footer>
+
+</div><!-- /main-column -->
+</div><!-- /app-shell -->
+
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="drawer" id="drawer" aria-label="Domain ranking">
+  <div class="drawer-handle"></div>
+  <div class="drawer-head">
+    <div class="drawer-domain">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3 a15 15 0 0 1 0 18 a15 15 0 0 1 0 -18"/></svg>
+      <span id="drawerDomainName">tokio.rs</span>
+    </div>
+    <button class="drawer-close" id="drawerClose" type="button" aria-label="Close">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="drawer-section">
+    <p class="drawer-label">Domain ranking</p>
+    <div class="rank-group" id="rankGroup">
+      <div class="rank-option" data-state="block">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5.5" y1="5.5" x2="18.5" y2="18.5"/></svg>
+        <span>Block</span>
+      </div>
+      <div class="rank-option" data-state="lower">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 v14 M6 13 l6 6 l6 -6"/></svg>
+        <span>Lower</span>
+      </div>
+      <div class="rank-option selected" data-state="default">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Default</span>
+      </div>
+      <div class="rank-option" data-state="raise">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19 v-14 M6 11 l6 -6 l6 6"/></svg>
+        <span>Raise</span>
+      </div>
+      <div class="rank-option" data-state="pin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L14.5 9 L22 9.5 L16.5 14.5 L18 22 L12 18 L6 22 L7.5 14.5 L2 9.5 L9.5 9 Z"/></svg>
+        <span>Pin</span>
+      </div>
+    </div>
+    <p class="drawer-help" id="drawerHelp">This domain will rank <b>normally</b>.</p>
+  </div>
+
+  <div class="drawer-section">
+    <p class="drawer-label">Found via</p>
+    <div class="engine-chips">
+      <span class="engine-chip" id="drawerEngine">DuckDuckGo</span>
+    </div>
+    <p class="drawer-help" id="drawerAgree"></p>
+  </div>
+
+  <div class="drawer-footnote">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="8.01"/><line x1="12" y1="11" x2="12" y2="16"/></svg>
+    Ranking applies everywhere search happens on your behalf, including Polaris's assistant tool calls.
+  </div>
+</aside>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var stored = localStorage.getItem('atlas-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', stored || (prefersDark ? 'dark' : 'light'));
+
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('atlas-theme', next);
+    });
+  })();
+
+  (function () {
+    var backdrop = document.getElementById('drawerBackdrop');
+    var drawer = document.getElementById('drawer');
+    var domainName = document.getElementById('drawerDomainName');
+    var engineChip = document.getElementById('drawerEngine');
+    var agreeLine = document.getElementById('drawerAgree');
+    var helpLine = document.getElementById('drawerHelp');
+    var rankOptions = document.querySelectorAll('.rank-option');
+    var tuneButtons = document.querySelectorAll('.tune-btn');
+
+    var stateLabels = { block: 'blocked', lower: 'ranked lower', default: 'normally', raise: 'ranked higher', pin: 'pinned to the top' };
+
+    function setRankState(state) {
+      rankOptions.forEach(function (opt) {
+        opt.classList.toggle('selected', opt.dataset.state === state);
+      });
+      helpLine.innerHTML = state === 'block'
+        ? 'This domain will be <b>excluded</b> from results entirely.'
+        : 'This domain will rank <b>' + stateLabels[state] + '</b>.';
+    }
+
+    function positionDrawer(btn) {
+      if (window.matchMedia('(max-width: 640px)').matches) return;
+
+      var rect = btn.getBoundingClientRect();
+      var margin = 12;
+      var width = drawer.offsetWidth || 322;
+
+      drawer.style.left = '0px';
+      drawer.style.top = '0px';
+      drawer.classList.remove('caret-below');
+
+      var left = rect.left - width + rect.width + 18;
+      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+
+      var top = rect.bottom + 10;
+      var estHeight = drawer.scrollHeight || 300;
+      var caretBelow = false;
+      if (top + estHeight > window.innerHeight - margin) {
+        top = rect.top - estHeight - 10;
+        caretBelow = true;
+      }
+
+      drawer.style.left = left + 'px';
+      drawer.style.top = Math.max(margin, top) + 'px';
+      drawer.style.setProperty('--caret-x', (rect.left + rect.width / 2 - left - 6) + 'px');
+      if (caretBelow) drawer.classList.add('caret-below');
+    }
+
+    function openDrawer(btn) {
+      domainName.textContent = btn.dataset.domain;
+      engineChip.textContent = btn.dataset.engine;
+      agreeLine.textContent = btn.dataset.agree || '';
+      setRankState(btn.dataset.state || 'default');
+      drawer.classList.add('open');
+      backdrop.classList.add('open');
+      drawer.dataset.forBtn = btn.dataset.domain;
+      window._activeTuneBtn = btn;
+      positionDrawer(btn);
+      requestAnimationFrame(function () { positionDrawer(btn); });
+    }
+
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      backdrop.classList.remove('open');
+    }
+
+    tuneButtons.forEach(function (btn) {
+      btn.addEventListener('click', function () { openDrawer(btn); });
+    });
+
+    rankOptions.forEach(function (opt) {
+      opt.addEventListener('click', function () {
+        setRankState(opt.dataset.state);
+        if (window._activeTuneBtn) {
+          window._activeTuneBtn.dataset.state = opt.dataset.state;
+          window._activeTuneBtn.classList.toggle('adjusted', opt.dataset.state !== 'default');
+        }
+      });
+    });
+
+    document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
+
+    openDrawer(tuneButtons[0]);
+  })();
+
+  (function () {
+    var sidebar = document.getElementById('pSidebar');
+    var sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    var collapseBtn = document.getElementById('sidebarCollapseBtn');
+    var openBtn = document.getElementById('sidebarOpenBtn');
+    var isMobile = function () { return window.matchMedia('(max-width: 768px)').matches; };
+
+    function syncOpenBtn() {
+      openBtn.classList.toggle('visible', !sidebar.classList.contains('open'));
+    }
+
+    function setSidebar(open) {
+      sidebar.classList.toggle('open', open);
+      sidebarBackdrop.classList.toggle('open', open && isMobile());
+      syncOpenBtn();
+    }
+
+    setSidebar(!isMobile());
+
+    collapseBtn.addEventListener('click', function () { setSidebar(false); });
+    openBtn.addEventListener('click', function () { setSidebar(true); });
+    sidebarBackdrop.addEventListener('click', function () { setSidebar(false); });
+
+    window.addEventListener('resize', function () {
+      if (isMobile() && sidebar.classList.contains('open') === false) return;
+      syncOpenBtn();
+    });
+  })();
+</script>
+</body>
+</html>

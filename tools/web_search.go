@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"polaris/brave"
 	"polaris/llm"
 )
 
@@ -35,7 +36,7 @@ var webSearchDef = llm.ToolDef{
 				},
 				"max_results": map[string]interface{}{
 					"type":        "integer",
-					"description": "Maximum results to return (default 5, max 10).",
+					"description": "Maximum results to return (default 5, max 20).",
 				},
 				"category": map[string]interface{}{
 					"type": "string",
@@ -44,6 +45,14 @@ var webSearchDef = llm.ToolDef{
 						"surfaces an outlet's homepage instead of a specific story for broad queries like " +
 						"\"<city> news\".",
 					"enum": []string{"general", "news"},
+				},
+				"page": map[string]interface{}{
+					"type": "integer",
+					"description": "Optional: which page of results to fetch (default 1, max 5). Each page is a " +
+						"different set of results, not more of the same ones — for a topic that needs unusually " +
+						"broad coverage, call web_search several times with different page values (they're " +
+						"independent queries, so issue them in the same turn to run concurrently) rather than " +
+						"calling page 1 repeatedly.",
 				},
 			},
 			"required": []string{"query"},
@@ -58,6 +67,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 		Category   string `json:"category"`
+		Page       int    `json:"page"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "web_search", nil, "error: "+err.Error())
@@ -65,16 +75,23 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	if args.Query == "" {
 		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query}, "error: query is required")
 	}
-	if args.MaxResults <= 0 || args.MaxResults > 10 {
+	if args.MaxResults <= 0 || args.MaxResults > 20 {
 		args.MaxResults = 5
 	}
 	if args.Category == "general" {
 		args.Category = "" // SearXNG's default category — no filter needed
 	}
+	if args.Page <= 0 || args.Page > 5 {
+		args.Page = 1
+	}
 
+	callArgs := map[string]interface{}{"query": args.Query}
+	if args.Page > 1 {
+		callArgs["page"] = args.Page
+	}
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool": "web_search",
-		"args": map[string]interface{}{"query": args.Query},
+		"args": callArgs,
 	})
 
 	if ctx.SearXNG == nil {
@@ -84,9 +101,9 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		return result
 	}
 
-	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category)
+	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category, args.Page)
 	if err != nil {
-		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "err", err)
+		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "page", args.Page, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
 	}
@@ -100,13 +117,27 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		// for a question that plainly has an answer, or (worse) lets the
 		// model quietly answer from ungrounded memory instead.
 		//
-		// Parallel first, then Tavily — both completely different
+		// Brave, then Parallel, then Tavily — three completely different
 		// services (their own indexes, not SearXNG engines) with their
 		// own scarce budgets, worth spending only on a confirmed SearXNG
 		// failure, never as a blanket fallback for an ordinary empty
-		// result. Parallel goes first because its free tier (5,000/mo) is
-		// 5x Tavily's (1,000/mo) — see parallelMonthlyCap — so exhausting
-		// the cheaper one first stretches the combined budget further.
+		// result. Brave goes first specifically because it returns real,
+		// multi-result listings (title/url/snippet) rather than an
+		// AI-pre-summarized single answer — the better fit for anything
+		// that ends up surfaced in Atlas's browsing UI, not just the
+		// assistant's own citations. Parallel goes next because its free
+		// tier (5,000/mo) is 5x Tavily's (1,000/mo) — see
+		// parallelMonthlyCap — so exhausting the cheaper one first
+		// stretches the combined budget further.
+		if ctx.Brave != nil && ctx.BraveUsageThisMonth != nil {
+			if used, uErr := ctx.BraveUsageThisMonth(); uErr != nil {
+				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
+			} else if used >= brave.MonthlyCap {
+				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
+			} else if formatted, ok := braveFallback(ctx, args.Query); ok {
+				return formatted
+			}
+		}
 		if ctx.Parallel != nil && ctx.ParallelUsageThisMonth != nil {
 			if used, uErr := ctx.ParallelUsageThisMonth(); uErr != nil {
 				log.Warn("web_search: checking parallel usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
@@ -124,7 +155,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 
 		log.Warn("web_search: searxng degraded, no fallback available or all fallbacks failed", "query", args.Query, "category", args.Category, "unresponsive_engines", resp.UnresponsiveEngines)
 		msg := fmt.Sprintf(
-			"web search is degraded and completely unavailable right now — every SearXNG engine (%s) is being rate-limited or blocked, and no fallback (Parallel/Tavily) is configured or able to help. "+
+			"web search is degraded and completely unavailable right now — every SearXNG engine (%s) is being rate-limited or blocked, and no fallback (Brave/Parallel/Tavily) is configured or able to help. "+
 				"This is not a confirmed absence of results, so don't report it as one; say plainly that search is down right now rather than answering from memory.",
 			strings.Join(resp.UnresponsiveEngines, ", "),
 		)
@@ -139,7 +170,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	}
 
 	if len(resp.Results) == 0 {
-		log.Info("web_search: no results", "query", args.Query, "category", args.Category)
+		log.Info("web_search: no results", "query", args.Query, "category", args.Category, "page", args.Page)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "no results"})
 		return "no results found"
 	}
@@ -148,7 +179,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, results)
+	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, args.Page, results)
 	return formatted
 }
 
@@ -171,7 +202,7 @@ type searchResultLike struct {
 // visible in the transcript/timeline, not just in server logs — the
 // model (and anyone reading the timeline) can tell when an answer came
 // from a degraded-SearXNG fallback instead of the primary path.
-func formatSearchResults(ctx *Context, provider, query, category string, results []searchResultLike) string {
+func formatSearchResults(ctx *Context, provider, query, category string, page int, results []searchResultLike) string {
 	urls := make([]string, 0, len(results))
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[via %s]\n\n", provider)
@@ -182,7 +213,7 @@ func formatSearchResults(ctx *Context, provider, query, category string, results
 	}
 	formatted := sb.String()
 
-	log.Info("web_search", "provider", provider, "query", query, "category", category, "results", len(results), "urls", urls)
+	log.Info("web_search", "provider", provider, "query", query, "category", category, "page", page, "results", len(results), "urls", urls)
 
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_search",
@@ -191,6 +222,42 @@ func formatSearchResults(ctx *Context, provider, query, category string, results
 	})
 
 	return formatted
+}
+
+// braveFallback tries Brave's Search API once SearXNG has confirmed
+// itself degraded and the caller has already checked the monthly usage
+// cap (see handleWebSearch). Only increments the persisted usage counter
+// once the request actually completed (err == nil), same reasoning as
+// parallelFallback below — a network failure or non-200 response never
+// reached Brave's own billing. Always requests offset 0 (page 1) —
+// unlike SearXNG's own multi-page support, this fallback fires on a
+// per-call basis with no page continuity to preserve, so there's nothing
+// to gain from a deeper offset here. Returns ok=false on any failure so
+// the caller falls through to Parallel instead.
+func braveFallback(ctx *Context, query string) (formatted string, ok bool) {
+	resp, err := ctx.Brave.Search(ctx.Ctx, query, 0)
+	if err != nil {
+		log.Warn("web_search: brave fallback failed", "query", query, "err", err)
+		return "", false
+	}
+	if ctx.IncrementBraveUsage != nil {
+		if incErr := ctx.IncrementBraveUsage(); incErr != nil {
+			log.Warn("web_search: recording brave usage failed", "query", query, "err", incErr)
+		}
+	}
+	if len(resp.Results) == 0 {
+		log.Warn("web_search: brave fallback returned no results", "query", query)
+		return "", false
+	}
+
+	results := make([]searchResultLike, 0, 5)
+	for i, r := range resp.Results {
+		if i >= 5 {
+			break // matches parallelFallback/tavilyFallback's own fixed 5-result cap
+		}
+		results = append(results, searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content})
+	}
+	return formatSearchResults(ctx, "Brave (SearXNG degraded)", query, "", 1, results), true
 }
 
 // parallelFallback tries Parallel's Search API once SearXNG has confirmed
@@ -223,7 +290,7 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", results), true
+	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", 1, results), true
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
@@ -242,5 +309,5 @@ func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", results), true
+	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", 1, results), true
 }

@@ -1,0 +1,2 @@
+# domain_rankings.yaml — hand-editable, or written by Atlas's ranking popover.
+# State: block | lower | raise | pin. Omitted domains are implicitly "default".

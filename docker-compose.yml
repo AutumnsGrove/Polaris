@@ -47,6 +47,7 @@ services:
       - OPENROUTER_API_KEY
       - FOURSQUARE_API_KEY
       - TAVILY_API_KEY
+      - BRAVE_API_KEY
       - PARALLEL_API_KEY
       - GITHUB_TOKEN
       - LASTFM_API_KEY
@@ -82,6 +83,14 @@ services:
       - ./prompts.yaml:/app/prompts.yaml:ro
       - ./blocked_sources.txt:/app/blocked_sources.txt:ro
       - ./tools/descriptions:/app/tools/descriptions:ro
+      # Not :ro like the three above — this one is also written by the
+      # ranking popover UI (search.SetDomainRanking), not just
+      # hand-edited. Without a real write path here, a Docker user's
+      # "block this domain" click would appear to succeed (writing into
+      # the container's own writable layer) and then silently vanish on
+      # the next `polaris update`/force-recreate. install.sh chmods the
+      # host file so the container's non-root uid can actually write it.
+      - ./domain_rankings.yaml:/app/domain_rankings.yaml
       # Plain host bind mount (not the polaris-data named volume) — the
       # host-side update watcher (compose/watcher/update.sh) needs
       # direct filesystem access to this from outside any container,

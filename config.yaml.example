@@ -26,8 +26,11 @@ foursquare:
 tavily:
   api_key: "${TAVILY_API_KEY}"   # optional — web_read's last-resort fallback for JS-rendered/paywalled pages that goquery and archive.org can't get through. Costs credits per call, so it's never the default fetch path. https://tavily.com
 
+brave:
+  api_key: "${BRAVE_API_KEY}"   # optional — web_search's first-tried fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), ahead of Parallel/Tavily; also Atlas's own fallback for real, multi-result listings. No ongoing free tier (a one-time $5/mo signup credit only) — see store.Store's api_usage table, which enforces a 1,000/mo cap in code. https://brave.com/search/api/
+
 parallel:
-  api_key: "${PARALLEL_API_KEY}"   # optional — web_search's fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), tried before Tavily's own fallback. Free tier: 5,000 searches/month, but the account has a card on file — see store.Store's api_usage table, which enforces that cap in code rather than trusting the free tier not to bill overage. https://parallel.ai
+  api_key: "${PARALLEL_API_KEY}"   # optional — web_search's fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), tried after Brave, before Tavily. Free tier: 5,000 searches/month, but the account has a card on file — see store.Store's api_usage table, which enforces that cap in code rather than trusting the free tier not to bill overage. https://parallel.ai
 
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens

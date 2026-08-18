@@ -118,6 +118,78 @@ func TestRunDockerSearch_ServerReportedError(t *testing.T) {
 	}
 }
 
+func TestRunDockerAtlasSearch_HappyPath(t *testing.T) {
+	fakeLocalPolarisServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/search" {
+			t.Errorf("path = %s, want /api/search", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != "rust async runtime" {
+			t.Errorf("q query param = %q, want %q", got, "rust async runtime")
+		}
+		if got := r.URL.Query().Get("max_results"); got != "3" {
+			t.Errorf("max_results query param = %q, want %q", got, "3")
+		}
+		if got := r.URL.Query().Get("page"); got != "1" {
+			t.Errorf("page query param = %q, want %q", got, "1")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"query": "rust async runtime",
+			"results": [
+				{"title": "Tokio", "url": "https://tokio.rs", "content": "An async runtime.", "score": 0.03, "engine": "duckduckgo", "rank_state": "raise"}
+			]
+		}`))
+	})
+
+	output := captureStdout(t, func() {
+		if err := runDockerAtlasSearch("rust async runtime", 3, 1); err != nil {
+			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
+		}
+	})
+
+	if !strings.Contains(output, "Tokio") || !strings.Contains(output, "https://tokio.rs") {
+		t.Errorf("output = %q, want the result's title and URL", output)
+	}
+	if !strings.Contains(output, "via duckduckgo") {
+		t.Errorf("output = %q, want the engine attribution", output)
+	}
+	if !strings.Contains(output, "raise") {
+		t.Errorf("output = %q, want the non-default rank state shown", output)
+	}
+}
+
+func TestRunDockerAtlasSearch_NoResults(t *testing.T) {
+	fakeLocalPolarisServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query": "asdfqwerty", "results": []}`))
+	})
+
+	output := captureStdout(t, func() {
+		if err := runDockerAtlasSearch("asdfqwerty", 8, 1); err != nil {
+			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
+		}
+	})
+
+	if !strings.Contains(output, "no results") {
+		t.Errorf("output = %q, want a no-results message", output)
+	}
+}
+
+func TestRunDockerAtlasSearch_ServerError(t *testing.T) {
+	fakeLocalPolarisServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("searxng unreachable"))
+	})
+
+	err := runDockerAtlasSearch("anything", 8, 1)
+	if err == nil {
+		t.Fatal("runDockerAtlasSearch() error = nil, want an error on a non-200")
+	}
+	if !strings.Contains(err.Error(), "searxng unreachable") {
+		t.Errorf("error = %q, want the server's response body included", err.Error())
+	}
+}
+
 // TestRunInstall_RefusesUnderDocker confirms `polaris install` doesn't
 // silently write a systemd/launchd unit for the orphaned host-side
 // binary when the current directory is actually a Docker install.

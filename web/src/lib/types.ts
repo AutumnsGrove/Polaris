@@ -228,3 +228,35 @@ export interface ChatTurn {
 	attachmentFilename?: string;
 	attachmentContentType?: string;
 }
+
+// Mirrors search/domain_rankings.go's RankState constants.
+export type RankState = 'block' | 'lower' | 'default' | 'raise' | 'pin' | '';
+
+// Mirrors search/searxng.go's SearchResult/SearchResponse — Atlas's own
+// wire format, distinct from the chat protocol above.
+export interface SearchResult {
+	title: string;
+	url: string;
+	content: string;
+	score: number;
+	thumbnail?: string;
+	engine?: string;
+	engines?: string[];
+	rank_state?: RankState;
+	pinned?: boolean;
+}
+
+export interface SearchResponse {
+	query: string;
+	answer?: string;
+	results: SearchResult[];
+}
+
+// Mirrors store.SearchHistoryEntry — Atlas's sidebar list.
+export interface SearchHistoryEntry {
+	id: number;
+	query: string;
+	favorite: boolean;
+	created_at: string;
+	updated_at: string;
+}

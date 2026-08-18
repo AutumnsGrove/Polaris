@@ -63,6 +63,18 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The first time an Atlas Quick Answer's thread is actually opened
+	// here (e.g. via its "Continue in Assistant" link) is what makes it
+	// start showing up in ListThreads — see continued_in_assistant's
+	// schema comment. Best-effort and off the response path, same
+	// reasoning as RecordSearch: a thread that loaded fine is worth
+	// showing even if this particular flip fails.
+	if thread.Source == "atlas" {
+		if err := s.db.MarkThreadContinued(id); err != nil {
+			log.Warn("marking thread continued failed", "thread", id, "err", err)
+		}
+	}
+
 	effectiveID, err := s.db.EffectiveThreadID(id)
 	if err != nil {
 		log.Warn("resolving active variant failed", "thread", id, "err", err)
@@ -228,7 +240,11 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 			title = title[:maxThreadTitleLen]
 		}
 		if err := s.db.SetThreadTitle(id, title); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		s.db.LogEvent(id, "info", "thread", "thread renamed", map[string]interface{}{"title": title}, "")
@@ -236,7 +252,11 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 
 	if req.Favorite != nil {
 		if err := s.db.SetThreadFavorite(id, *req.Favorite); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		s.db.LogEvent(id, "info", "thread", "thread favorite changed", map[string]interface{}{"favorite": *req.Favorite}, "")

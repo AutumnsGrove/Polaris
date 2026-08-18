@@ -9,22 +9,18 @@ import (
 	"testing"
 )
 
-func TestSearch_ParsesResultsAndNormalizesScore(t *testing.T) {
+func TestSearch_QueryAndCategoryParams(t *testing.T) {
 	var gotQuery, gotCategory string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query().Get("q")
 		gotCategory = r.URL.Query().Get("categories")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"query":"golang","results":[
-			{"title":"Go Blog","url":"https://go.dev/blog","content":"News","score":15.0,"thumbnail":""},
-			{"title":"Go Docs","url":"https://go.dev/doc","content":"Docs","score":5.0,"thumbnail":""}
-		]}`))
+		w.Write([]byte(`{"query":"golang","results":[]}`))
 	}))
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "golang", 5, "news")
-	if err != nil {
+	if _, err := client.Search(context.Background(), "golang", 5, "news", 1); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if gotQuery != "golang" {
@@ -33,15 +29,62 @@ func TestSearch_ParsesResultsAndNormalizesScore(t *testing.T) {
 	if gotCategory != "news" {
 		t.Errorf("categories param = %q, want news", gotCategory)
 	}
+}
+
+func TestSearch_FusesMultiEnginePositions(t *testing.T) {
+	// "single" is ranked #1 by one engine only. "double" is ranked #2 by
+	// two engines. Under RRF, agreement across engines should outrank a
+	// single engine's #1 pick — this is the whole point of fusing on
+	// per-engine rank instead of a raw, non-comparable score.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"single","url":"https://a.com/1","engine":"brave","engines":["brave"],"positions":[1]},
+			{"title":"double","url":"https://b.com/1","engine":"duckduckgo","engines":["duckduckgo","brave"],"positions":[2,2]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
 	if len(resp.Results) != 2 {
 		t.Fatalf("got %d results, want 2", len(resp.Results))
 	}
-	// score 15.0 / 10.0 = 1.5, clamped to 1.0.
-	if resp.Results[0].Score != 1.0 {
-		t.Errorf("Results[0].Score = %v, want clamped to 1.0", resp.Results[0].Score)
+	if resp.Results[0].Title != "double" {
+		t.Errorf("Results[0].Title = %q, want %q (two engines agreeing on rank 2 should beat one engine's rank 1)", resp.Results[0].Title, "double")
 	}
-	if resp.Results[1].Score != 0.5 {
-		t.Errorf("Results[1].Score = %v, want 0.5", resp.Results[1].Score)
+	if len(resp.Results[0].Engines) != 2 {
+		t.Errorf("Results[0].Engines = %v, want 2 engines", resp.Results[0].Engines)
+	}
+}
+
+func TestSearch_FallsBackToListPositionWhenPositionsOmitted(t *testing.T) {
+	// Older SearXNG versions (and hand-built fixtures) may omit "positions"
+	// entirely — Search should still rank by SearXNG's own list order
+	// rather than erroring or scoring everything identically.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"first","url":"https://a.com/1"},
+			{"title":"second","url":"https://a.com/2"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("got %d results, want 2", len(resp.Results))
+	}
+	if resp.Results[0].Title != "first" || resp.Results[0].Score <= resp.Results[1].Score {
+		t.Errorf("expected %q (list position 1) to outrank %q (list position 2), got scores %v, %v",
+			"first", "second", resp.Results[0].Score, resp.Results[1].Score)
 	}
 }
 
@@ -57,12 +100,42 @@ func TestSearch_TruncatesToMaxResults(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 2, "")
+	resp, err := client.Search(context.Background(), "q", 2, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if len(resp.Results) != 2 {
 		t.Errorf("got %d results, want capped at 2", len(resp.Results))
+	}
+}
+
+func TestSearch_PageParam(t *testing.T) {
+	var gotPageno string
+	sawPageno := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPageno = r.URL.Query().Has("pageno")
+		gotPageno = r.URL.Query().Get("pageno")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+
+	// page <= 1 omits &pageno entirely — SearXNG's own default, and the
+	// exact request shape every other test above relies on.
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if sawPageno {
+		t.Error("expected no pageno param for page 1")
+	}
+
+	if _, err := client.Search(context.Background(), "q", 5, "", 3); err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if !sawPageno || gotPageno != "3" {
+		t.Errorf("pageno param = %q (present: %v), want \"3\"", gotPageno, sawPageno)
 	}
 }
 
@@ -76,7 +149,7 @@ func TestSearch_NoCategoryOmitsParam(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	if _, err := client.Search(context.Background(), "q", 5, ""); err != nil {
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if sawCategories {
@@ -92,7 +165,7 @@ func TestSearch_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	if _, err := client.Search(context.Background(), "q", 5, ""); err == nil {
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err == nil {
 		t.Fatal("expected an error for a 500 response")
 	}
 }
@@ -115,7 +188,7 @@ func TestSearch_FiltersBlockedDomainsBeforeTruncating(t *testing.T) {
 	}
 
 	client := NewSearXNGClient(srv.URL, bl)
-	resp, err := client.Search(context.Background(), "q", 2, "")
+	resp, err := client.Search(context.Background(), "q", 2, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -142,7 +215,7 @@ func TestSearch_DegradedWhenAllGeneralCategoryEnginesUnresponsive(t *testing.T) 
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -170,7 +243,7 @@ func TestSearch_NotDegradedWhenOnlySomeEnginesUnresponsive(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -198,7 +271,7 @@ func TestSearch_NotDegradedForNonGeneralCategoryEvenIfUnresponsive(t *testing.T)
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "news")
+	resp, err := client.Search(context.Background(), "q", 5, "news", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -220,7 +293,7 @@ func TestSearch_NotDegradedWhenResultsPresentDespiteUnresponsiveEngines(t *testi
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -239,7 +312,7 @@ func TestSearch_NotDegradedWhenGenuinelyEmpty(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -279,7 +352,7 @@ func TestSearch_EntersCooldownAfterFullOutageAndSkipsSubsequentRequests(t *testi
 
 	client := NewSearXNGClient(srv.URL, nil)
 
-	first, err := client.Search(context.Background(), "q", 5, "")
+	first, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("first Search returned error: %v", err)
 	}
@@ -290,7 +363,7 @@ func TestSearch_EntersCooldownAfterFullOutageAndSkipsSubsequentRequests(t *testi
 		t.Fatalf("requestCount after first Search = %d, want 1", requestCount)
 	}
 
-	second, err := client.Search(context.Background(), "q", 5, "")
+	second, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("second Search returned error: %v", err)
 	}
@@ -318,7 +391,7 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	}))
 	defer outage.Close()
 	outageClient := NewSearXNGClient(outage.URL, nil)
-	if resp, err := outageClient.Search(context.Background(), "q", 5, ""); err != nil || !resp.Degraded {
+	if resp, err := outageClient.Search(context.Background(), "q", 5, "", 1); err != nil || !resp.Degraded {
 		t.Fatalf("setting up the outaged client failed: resp=%+v err=%v", resp, err)
 	}
 
@@ -329,7 +402,7 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	defer healthy.Close()
 	healthyClient := NewSearXNGClient(healthy.URL, nil)
 
-	resp, err := healthyClient.Search(context.Background(), "q", 5, "")
+	resp, err := healthyClient.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("healthy client Search returned error: %v", err)
 	}
@@ -338,6 +411,80 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	}
 	if len(resp.Results) != 1 {
 		t.Errorf("got %d results, want 1", len(resp.Results))
+	}
+}
+
+func TestSearch_DomainRankingBlockExcludesResult(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"blocked","url":"https://spam.example/1","positions":[1]},
+			{"title":"fine","url":"https://a.com/1","positions":[2]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "spam.example: block\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Title != "fine" {
+		t.Fatalf("got %+v, want only the non-blocked result", resp.Results)
+	}
+}
+
+func TestSearch_DomainRankingPinForcesToTop(t *testing.T) {
+	// "pinned" would rank last by fused score alone (position 5, no other
+	// engine agreement) — pin must override that entirely.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"top-ranked","url":"https://a.com/1","positions":[1,1]},
+			{"title":"pinned","url":"https://pin.example/1","positions":[5]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "pin.example: pin\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if len(resp.Results) != 2 || resp.Results[0].Title != "pinned" {
+		t.Fatalf("got %+v, want pinned result first despite its lower fused score", resp.Results)
+	}
+	if !resp.Results[0].Pinned {
+		t.Error("Results[0].Pinned = false, want true")
+	}
+}
+
+func TestSearch_DomainRankingRaiseCanOutrankHigherPosition(t *testing.T) {
+	// "boosted" starts behind "ahead" purely on fused rank, but a strong
+	// enough raise multiplier should be able to flip that ordering — this
+	// is the actual point of raise/lower existing at all.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[
+			{"title":"ahead","url":"https://a.com/1","positions":[1]},
+			{"title":"boosted","url":"https://boost.example/1","positions":[3]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil).
+		WithDomainRankings(writeRankingsFile(t, "boost.example: raise\n"))
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if resp.Results[0].Title != "boosted" {
+		t.Errorf("Results[0].Title = %q, want %q (raiseMultiplier should have flipped the ordering)", resp.Results[0].Title, "boosted")
+	}
+	if resp.Results[0].RankState != string(RankRaise) {
+		t.Errorf("Results[0].RankState = %q, want %q", resp.Results[0].RankState, RankRaise)
 	}
 }
 

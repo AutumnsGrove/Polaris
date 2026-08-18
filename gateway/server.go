@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"polaris/brave"
 	"polaris/config"
 	"polaris/logger"
 	"polaris/models"
@@ -53,6 +54,7 @@ type Server struct {
 	blocklist  *search.Blocklist
 	foursquare *places.FoursquareClient // nil if not configured
 	tavily     *tavily.Client           // nil if not configured
+	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
@@ -109,10 +111,11 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		cfgPath:    cfgPath,
 		version:    version,
 		db:         db,
-		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist),
+		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
 		blocklist:  blocklist,
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
+		brave:      brave.NewClient(cfg.Brave.APIKey),
 		parallel:   parallel.NewClient(cfg.Parallel.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
@@ -280,6 +283,11 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("POST /api/restart", s.handleRestart)
 	s.mux.HandleFunc("GET /api/update/status", s.handleUpdateStatus)
 	s.mux.HandleFunc("POST /api/ask", s.handleAsk)
+	s.mux.HandleFunc("POST /api/ask/stream", s.handleAskStream)
+	s.mux.HandleFunc("GET /api/search", s.handleSearch)
+	s.mux.HandleFunc("GET /api/search-history", s.handleListSearchHistory)
+	s.mux.HandleFunc("PATCH /api/search-history/{id}", s.handleUpdateSearchHistory)
+	s.mux.HandleFunc("PUT /api/domain-rankings", s.handleSetDomainRanking)
 	s.mux.HandleFunc("POST /api/debug-log", s.handleDebugLog)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

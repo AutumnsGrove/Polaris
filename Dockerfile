@@ -94,14 +94,18 @@ RUN apk add --no-cache ca-certificates && \
 WORKDIR /app
 COPY --from=build /out/polaris /app/polaris
 
-# prompt.md/prompts.yaml/blocked_sources.txt/tools/descriptions/*.yaml
-# are loaded relative to CWD and hot-reloaded from disk (see
-# prompts/prompts.go, agent's loadSystemPrompt, search.LoadBlocklist,
-# tools/catalog.go's loadCatalog) — baked in here so the image runs
-# standalone, but docker-compose.yml bind-mounts the repo's real copies
-# over these so editing them on the host still takes effect without a
-# rebuild, same as the bare-metal deployment.
-COPY prompt.md prompts.yaml blocked_sources.txt /app/
+# prompt.md/prompts.yaml/blocked_sources.txt/domain_rankings.yaml/
+# tools/descriptions/*.yaml are loaded relative to CWD and hot-reloaded
+# from disk (see prompts/prompts.go, agent's loadSystemPrompt,
+# search.LoadBlocklist, search.LoadDomainRankings, tools/catalog.go's
+# loadCatalog) — baked in here so the image runs standalone, but
+# docker-compose.yml bind-mounts the repo's real copies over these so
+# editing them on the host still takes effect without a rebuild, same as
+# the bare-metal deployment. domain_rankings.yaml's mount is read-write.
+# not read-only like the other three, since the ranking popover UI
+# writes to it too (see search.SetDomainRanking) — install.sh chmods the
+# host file so the container's non-root uid can write it.
+COPY prompt.md prompts.yaml blocked_sources.txt domain_rankings.yaml /app/
 COPY tools/descriptions/ /app/tools/descriptions/
 
 # /data holds everything config.yaml.example points relative paths at

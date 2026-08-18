@@ -38,10 +38,21 @@ CREATE TABLE IF NOT EXISTS threads (
 	compacted_summary TEXT NOT NULL DEFAULT '',
 	compacted_through_id INTEGER NOT NULL DEFAULT 0,
 	-- source: who started this thread — "web" for the normal chat UI,
+	-- "atlas" for one started as an Atlas Quick Answer (see gateway/ask.go),
 	-- or a caller-supplied label (e.g. "her-go") for threads created via
-	-- POST /api/ask. Purely informational: never changes how a thread
-	-- behaves, just lets future tooling/queries tell them apart.
+	-- POST /api/ask. Mostly informational, with one behavioral exception:
+	-- see continued_in_assistant below.
 	source TEXT NOT NULL DEFAULT 'web',
+	-- continued_in_assistant: an "atlas"-sourced thread starts out hidden
+	-- from ListThreads (the Assistant sidebar) until this flips to 1 —
+	-- set by handleGetThread the first time the thread is actually opened
+	-- there (e.g. via Quick Answer's "Continue in Assistant" link).
+	-- Without this, every one-off Quick Answer query — including repeat
+	-- searches for the same thing, each its own thread — permanently
+	-- cluttered the sidebar whether or not anyone ever followed up on it.
+	-- Meaningless for any other source, which ListThreads' filter never
+	-- even checks this column for.
+	continued_in_assistant INTEGER NOT NULL DEFAULT 0,
 	-- disabled: soft-delete flag. "Deleting" a thread from the UI just
 	-- sets this rather than issuing a real DELETE — the row (and its
 	-- messages/events) stay in the database as a durable record, they're
@@ -167,6 +178,29 @@ CREATE TABLE IF NOT EXISTS api_usage (
 	count INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (provider, month)
 );
+
+-- search_history backs Atlas's sidebar "Recent searches"/Favorites
+-- sections — the same shape as threads' recency+favorite model, but for
+-- one-shot queries rather than conversations, so it's its own table
+-- rather than shoehorned into threads. One row per distinct query
+-- (exact-match, case-sensitive — see RecordSearch): re-running the same
+-- search bumps updated_at instead of creating a duplicate entry, same
+-- "recency without clutter" idea as a browser's own history.
+CREATE TABLE IF NOT EXISTS search_history (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	query TEXT NOT NULL,
+	favorite INTEGER NOT NULL DEFAULT 0,
+	-- Millisecond precision, matching RecordSearch's ON CONFLICT bump
+	-- (strftime('%Y-%m-%d %H:%M:%f', 'now')) exactly — CURRENT_TIMESTAMP
+	-- only has second precision, so a fresh row and a bumped row could
+	-- otherwise get identical updated_at strings within the same second
+	-- and sort nondeterministically in ListSearchHistory's ORDER BY
+	-- updated_at DESC.
+	created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
+	updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_search_history_query ON search_history(query);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -193,6 +227,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN fork_at_index INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN active_variant_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN cards TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE threads ADD COLUMN continued_in_assistant INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -337,6 +372,27 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 	return err
 }
 
+// execOne runs a write that's expected to touch exactly one existing row
+// (an UPDATE targeting a single id), translating "the id didn't match
+// anything" into sql.ErrNoRows so callers — and, following the same
+// errors.Is(err, sql.ErrNoRows) -> 404 convention handleGetThread/
+// handleRegenerateTitle already use, their HTTP handlers — can tell a
+// missing id apart from a real database error instead of both silently
+// reporting success.
+func execOne(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // SetThreadTitle updates a thread's title — used both for the one-time
 // LLM-generated title after a new thread's first turn finishes, and for
 // a user-initiated rename from the sidebar. Either one replaces
@@ -344,11 +400,10 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 // since a rename happening at all is itself the signal that the title
 // is no longer just the auto-generated placeholder.
 func (s *Store) SetThreadTitle(id, title string) error {
-	_, err := s.db.Exec(
+	return execOne(s.db.Exec(
 		`UPDATE threads SET title = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		title, id,
-	)
-	return err
+	))
 }
 
 // SetThreadFavorite pins/unpins a thread to the sidebar's Favorites
@@ -356,7 +411,18 @@ func (s *Store) SetThreadTitle(id, title string) error {
 // "activity" on a thread the way a rename or a new message is, and
 // shouldn't reorder it within its section.
 func (s *Store) SetThreadFavorite(id string, favorite bool) error {
-	_, err := s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id)
+	return execOne(s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id))
+}
+
+// MarkThreadContinued flips continued_in_assistant to 1 — see that
+// column's schema comment. Called by handleGetThread the first time an
+// "atlas"-sourced thread is actually opened in the Assistant, which is
+// what makes it start showing up in ListThreads from then on. A no-op
+// (not an error) once it's already 1, and safe to call on a non-"atlas"
+// thread too — ListThreads never consults this column for those, so
+// setting it there just does nothing observable.
+func (s *Store) MarkThreadContinued(id string) error {
+	_, err := s.db.Exec(`UPDATE threads SET continued_in_assistant = 1 WHERE id = ?`, id)
 	return err
 }
 
@@ -588,13 +654,22 @@ func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 // the sidebar/history view. Favorite/non-favorite are interleaved here in
 // one recency order — the frontend splits them into the pinned Favorites
 // section and the rest, each keeping this same relative ordering.
+//
+// source = 'atlas' AND continued_in_assistant = 0 is excluded — a Quick
+// Answer creates a real thread on every query (see gateway/ask.go), and
+// without this, every one-off search (repeated ones most of all)
+// permanently cluttered this list whether or not anyone ever actually
+// followed up on it in the Assistant. See continued_in_assistant's schema
+// comment for how it flips to 1.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
-		 FROM threads WHERE disabled = 0 AND fork_root_id = '' ORDER BY updated_at DESC LIMIT ?`,
+		 FROM threads
+		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -624,6 +699,64 @@ func (s *Store) DeleteThread(id string) error {
 		id,
 	)
 	return err
+}
+
+type SearchHistoryEntry struct {
+	ID        int64     `json:"id"`
+	Query     string    `json:"query"`
+	Favorite  bool      `json:"favorite"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// RecordSearch logs a completed Atlas search — called once per query from
+// handleSearch, not per keystroke. An exact repeat of an existing query
+// (case-sensitive, trimmed by the caller) bumps its updated_at instead of
+// inserting a duplicate row, same recency-without-clutter idea as
+// TouchUpdatedAt for threads.
+func (s *Store) RecordSearch(query string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO search_history (query) VALUES (?)
+		 ON CONFLICT(query) DO UPDATE SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`,
+		query,
+	)
+	return err
+}
+
+// ListSearchHistory returns searches newest-first, for Atlas's sidebar —
+// same shape as ListThreads: favorite/non-favorite interleaved in one
+// recency order, split into sections by the frontend.
+func (s *Store) ListSearchHistory(limit int) ([]SearchHistoryEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(
+		`SELECT id, query, favorite, created_at, updated_at
+		 FROM search_history ORDER BY updated_at DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []SearchHistoryEntry
+	for rows.Next() {
+		var e SearchHistoryEntry
+		if err := rows.Scan(&e.ID, &e.Query, &e.Favorite, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// SetSearchHistoryFavorite pins/unpins a search to the sidebar's Favorites
+// section — deliberately doesn't touch updated_at, same reasoning as
+// SetThreadFavorite. Returns sql.ErrNoRows for an id that doesn't exist,
+// same convention as SetThreadFavorite/SetThreadTitle.
+func (s *Store) SetSearchHistoryFavorite(id int64, favorite bool) error {
+	return execOne(s.db.Exec(`UPDATE search_history SET favorite = ? WHERE id = ?`, favorite, id))
 }
 
 // AddCost bumps a thread's running cost without inserting a message row —

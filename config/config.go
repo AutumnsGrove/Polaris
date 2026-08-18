@@ -43,6 +43,14 @@ type Config struct {
 	// startup — see gateway.New/cmd/search.go).
 	BlockedSourcesFile string `yaml:"blocked_sources_file"`
 
+	// DomainRankingsFile holds per-domain search ranking preferences
+	// (block/lower/default/raise/pin — see search.DomainRankings), edited
+	// either by hand or by Atlas's ranking popover UI. Unlike
+	// BlockedSourcesFile this *is* hot-reloaded — re-read on its mtime
+	// changing, no restart needed, since the popover writes to it live
+	// while the server keeps running.
+	DomainRankingsFile string `yaml:"domain_rankings_file"`
+
 	Foursquare struct {
 		APIKey string `yaml:"api_key"` // Service API Key; empty disables nearby_search's Foursquare path (falls back to SearXNG)
 	} `yaml:"foursquare"`
@@ -64,6 +72,20 @@ type Config struct {
 		// https://parallel.ai
 		APIKey string `yaml:"api_key"`
 	} `yaml:"parallel"`
+
+	Brave struct {
+		// APIKey; empty disables the Brave fallback entirely — tried
+		// first among the paid fallbacks once SearXNG reports degraded
+		// (SearXNG -> Brave -> Parallel -> Tavily, see tools/web_search.go
+		// and gateway/search.go), since it's the only one returning real,
+		// multi-result listings rather than an AI-pre-summarized answer —
+		// what Atlas's browsing UI actually needs. No ongoing free tier
+		// (just a one-time $5/mo signup credit), so every query bills the
+		// account's card on file — see store.Store's api_usage table,
+		// which enforces the monthly cap this key alone doesn't.
+		// https://brave.com/search/api/
+		APIKey string `yaml:"api_key"`
+	} `yaml:"brave"`
 
 	GitHub struct {
 		// Token is an optional personal access token attached to
@@ -265,6 +287,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
+	}
+	if cfg.DomainRankingsFile == "" {
+		cfg.DomainRankingsFile = "./domain_rankings.yaml"
 	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./polaris.db"
