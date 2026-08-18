@@ -139,11 +139,17 @@
 		atlasPageEl?.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
-	// Google stretches the "o"s in its own logo the deeper you page in;
-	// this is Atlas's version, the second "a" from "point it anywhere" for
-	// how far you're willing to go. Capped well short of where it'd start
-	// breaking the header's layout on a narrow screen.
-	let pageWordmark = $derived('Atl' + 'a'.repeat(Math.min(searchState.page, 8)) + 's');
+	// Google stretches the "o"s in its own logo to show pages 1-10 as
+	// clickable letters right in the wordmark itself, not just once
+	// you're already several pages deep — this is Atlas's version, one
+	// "a" per page reachable from here (current page plus one more if
+	// hasMore says there's somewhere further to go), so it appears the
+	// moment page 1 comes back with more than a page's worth of results,
+	// not only after actually navigating. Capped well short of where it'd
+	// start breaking the header's layout on a narrow screen.
+	let pageLetterCount = $derived(
+		Math.min(searchState.page + (searchState.hasMore ? 1 : 0), 8)
+	);
 
 	onMount(() => {
 		function closeOnOutsideClick(e: MouseEvent) {
@@ -214,7 +220,16 @@
 						</button>
 					{/if}
 					<img class="mark" src="/atlas-touch-icon.png" alt="" width="20" height="20" />
-					<span class="name">{pageWordmark}<span class="sub">Search the web</span></span>
+					<span class="name"
+						>Atl{#each Array.from({ length: pageLetterCount }, (_, i) => i + 1) as n (n)}<button
+								type="button"
+								class="pw-a"
+								class:active={n === searchState.page}
+								disabled={n === searchState.page}
+								aria-label={`Page ${n}`}
+								onclick={() => goToPage(n)}>a</button
+							>{/each}s<span class="sub">Search the web</span></span
+					>
 				</div>
 				<div class="header-actions">
 					<ModeToggle mode="search" />
@@ -586,6 +601,38 @@
 		letter-spacing: normal;
 		color: var(--ink-faint);
 		margin-left: 7px;
+	}
+
+	/* Each extra "a" is a real page link (see pageLetterCount's doc
+	   comment) — styled to disappear into the wordmark at rest so it
+	   still just reads as "Atlas", with a hover/active treatment that
+	   only shows up on interaction. disabled (the current page's own
+	   letter) gets the "you are here" color without needing a separate
+	   affordance for "this one doesn't do anything". */
+	.pw-a {
+		appearance: none;
+		border: none;
+		background: transparent;
+		padding: 0;
+		margin: 0;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+		border-radius: 3px;
+	}
+
+	.pw-a:hover:not(:disabled) {
+		color: var(--accent);
+	}
+
+	.pw-a.active {
+		color: var(--accent);
+		cursor: default;
+	}
+
+	.pw-a:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
 
 	.header-actions {
