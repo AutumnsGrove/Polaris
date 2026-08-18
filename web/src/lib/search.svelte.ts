@@ -26,6 +26,16 @@ export class SearchState {
 	page = $state(1);
 	hasMore = $state(false);
 
+	// The first page (if any) that's actually confirmed empty for
+	// lastQuery — null until one is. +page.svelte's bottom page-picker
+	// shows a full run of 10 "a"s up front, optimistically, before any of
+	// them are confirmed (see its own doc comment on that trade-off); once
+	// a direct jump or Next actually lands on nothing, this remembers it
+	// so that specific dead end (and everything past it) isn't offered
+	// again for the rest of this query's session, instead of the same
+	// surprise landing on every revisit.
+	deadEndPage = $state<number | null>(null);
+
 	// Sidebar's "Recent searches"/Favorites data — see store.SearchHistoryEntry.
 	// Loaded independently of a live search (Sidebar needs it even before
 	// the user has searched anything this session) and refreshed after
@@ -70,6 +80,7 @@ export class SearchState {
 			// the wrong query's results under a "page N" label.
 			this.pageCache.clear();
 			this.pagePrefetches.clear();
+			this.deadEndPage = null;
 		}
 
 		const cached = this.pageCache.get(page);
@@ -78,6 +89,7 @@ export class SearchState {
 			this.lastQuery = trimmed;
 			this.page = page;
 			this.hasMore = cached.hasMore;
+			this.markIfDeadEnd(page, cached.results.length);
 			this.prefetchNextPage(trimmed, page);
 			return;
 		}
@@ -113,6 +125,7 @@ export class SearchState {
 			this.page = data.page;
 			this.hasMore = data.hasMore;
 			this.pageCache.set(data.page, { results: data.results, hasMore: data.hasMore });
+			this.markIfDeadEnd(data.page, data.results.length);
 			if (opts.record) void this.loadHistory();
 			this.prefetchNextPage(trimmed, data.page);
 		} catch {
@@ -174,6 +187,7 @@ export class SearchState {
 				this.pagePrefetches.delete(next);
 				if (!data || query !== this.lastQuery) return null;
 				this.pageCache.set(next, { results: data.results, hasMore: data.hasMore });
+				this.markIfDeadEnd(next, data.results.length);
 				if (this.page === fromPage && this.lastQuery === query) {
 					this.hasMore = data.results.length > 0;
 				}
@@ -184,6 +198,18 @@ export class SearchState {
 				return null;
 			});
 		this.pagePrefetches.set(next, promise);
+	}
+
+	// Records the first page that's actually confirmed empty for the
+	// current query — see deadEndPage's own doc comment. Keeps the
+	// smallest one found so far: jumping straight to page 9 and finding
+	// it empty, then later checking page 5 and finding it fine, should
+	// still leave the boundary at 9, not get confused by check order.
+	private markIfDeadEnd(page: number, resultCount: number) {
+		if (page <= 1 || resultCount > 0) return;
+		if (this.deadEndPage === null || page < this.deadEndPage) {
+			this.deadEndPage = page;
+		}
 	}
 
 	// Quick Answer, "?"-triggered per the plan — deliberately the full
@@ -322,6 +348,7 @@ export class SearchState {
 		this.error = '';
 		this.page = 1;
 		this.hasMore = false;
+		this.deadEndPage = null;
 		this.pageCache.clear();
 		this.pagePrefetches.clear();
 		++this.searchSeq; // discard any in-flight search() response

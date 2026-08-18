@@ -41,7 +41,11 @@
 			// There's no way to "follow up" on a one-shot search the way a
 			// thread can be continued, so revisiting one should never move it.
 			const fromHistory = page.url.searchParams.get('from') === 'history';
-			runQuery(q, { record: !fromHistory });
+			// &page=N (see goToPage) means a reload or a pasted/shared link
+			// lands back on the page it was on instead of always resetting
+			// to 1 — the whole point of putting it in the URL at all.
+			const urlPage = Number(page.url.searchParams.get('page')) || 1;
+			runQuery(q, { record: !fromHistory, page: urlPage });
 		}
 	});
 
@@ -50,7 +54,7 @@
 	// the plan's Kagi-matching omnibox convention) in parallel with the
 	// regular results search, and is stripped before either request so
 	// the literal "?" character never becomes part of the query itself.
-	function runQuery(q: string, opts: { record: boolean } = { record: true }) {
+	function runQuery(q: string, opts: { record: boolean; page?: number } = { record: true }) {
 		const wantsQuickAnswer = q.endsWith('?');
 		const bare = wantsQuickAnswer ? q.slice(0, -1).trim() : q;
 		if (!bare) return;
@@ -137,6 +141,17 @@
 		if (n < 1 || n === searchState.page || searchState.loading) return;
 		void searchState.search(searchState.lastQuery, { record: false, page: n });
 		atlasPageEl?.scrollTo({ top: 0, behavior: 'smooth' });
+
+		// &page=N in the address bar so a reload, a shared link, or just
+		// glancing at the URL bar (instead of scrolling all the way back
+		// down to the picker to check) all reflect which page is actually
+		// showing. replaceState, not a real navigation — page 4 isn't a
+		// distinct history entry the back button should stop on, same
+		// reasoning as submitSearch's own goto() below.
+		const params = new URLSearchParams(page.url.searchParams);
+		if (n > 1) params.set('page', String(n));
+		else params.delete('page');
+		void goto(`/search?${params}`, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
 	// Google stretches the "o"s in its own logo into clickable page
@@ -145,11 +160,19 @@
 	// as you actually reach each page: the moment page 1 comes back with
 	// more results waiting (hasMore), it shows the full run of 10 a's
 	// right away, optimistically, the same way Google's own footer
-	// doesn't wait to confirm page 10 exists before drawing it. A couple
-	// of those may occasionally dead-end past however deep this query
-	// actually goes — an acceptable trade for "it's all there immediately"
-	// over "it grows correctly but only one page at a time".
-	let pageLetterCount = $derived(searchState.hasMore || searchState.page > 1 ? 10 : 1);
+	// doesn't wait to confirm page 10 exists before drawing it. Once a
+	// jump actually lands on an empty page, though, searchState.deadEndPage
+	// remembers it and this stops re-offering that page (and anything past
+	// it) for the rest of this query's session — the "optimistic 10 up
+	// front" trade only applies to *undiscovered* territory, not to a spot
+	// already known to be a dead end.
+	let pageLetterCount = $derived(
+		searchState.deadEndPage !== null
+			? Math.max(searchState.deadEndPage - 1, 1)
+			: searchState.hasMore || searchState.page > 1
+				? 10
+				: 1
+	);
 
 	onMount(() => {
 		function closeOnOutsideClick(e: MouseEvent) {
@@ -306,6 +329,20 @@
 			<p class="status-line">Searching…</p>
 		{:else if searchState.error}
 			<p class="status-line error">{searchState.error}</p>
+		{:else if searchState.lastQuery && searchState.results.length === 0 && searchState.page > 1}
+			<!-- Distinct from the page-1-empty case below: this is "you paged
+			     past the end", not "this query has no results at all" — the
+			     bottom page-picker offering all 10 letters up front (see
+			     pageLetterCount) means landing here is expected to happen
+			     sometimes, not a failure, so it gets its own reassuring
+			     copy and a one-click way back instead of a bare dead end. -->
+			<p class="status-line">
+				That's the end of the results — page {searchState.page - 1} was the last one with anything on
+				it.
+				<button type="button" class="status-line-link" onclick={() => goToPage(searchState.page - 1)}>
+					Back to page {searchState.page - 1}
+				</button>
+			</p>
 		{:else if searchState.lastQuery && searchState.results.length === 0}
 			<p class="status-line">No results for "{searchState.lastQuery}".</p>
 		{/if}
@@ -833,6 +870,19 @@
 
 	.status-line.error {
 		color: var(--rank-block);
+	}
+
+	.status-line-link {
+		appearance: none;
+		border: none;
+		background: transparent;
+		padding: 0;
+		margin-left: 4px;
+		font: inherit;
+		font-weight: 600;
+		color: var(--accent);
+		cursor: pointer;
+		text-decoration: underline;
 	}
 
 	.quick-answer {
