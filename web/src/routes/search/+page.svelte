@@ -139,17 +139,17 @@
 		atlasPageEl?.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
-	// Google stretches the "o"s in its own logo to show pages 1-10 as
-	// clickable letters right in the wordmark itself, not just once
-	// you're already several pages deep — this is Atlas's version, one
-	// "a" per page reachable from here (current page plus one more if
-	// hasMore says there's somewhere further to go), so it appears the
-	// moment page 1 comes back with more than a page's worth of results,
-	// not only after actually navigating. Capped well short of where it'd
-	// start breaking the header's layout on a narrow screen.
-	let pageLetterCount = $derived(
-		Math.min(searchState.page + (searchState.hasMore ? 1 : 0), 8)
-	);
+	// Google stretches the "o"s in its own logo into clickable page
+	// links — this is Atlas's version, shown at the bottom of the results
+	// (see .page-wordmark). Deliberately not grown one letter at a time
+	// as you actually reach each page: the moment page 1 comes back with
+	// more results waiting (hasMore), it shows the full run of 10 a's
+	// right away, optimistically, the same way Google's own footer
+	// doesn't wait to confirm page 10 exists before drawing it. A couple
+	// of those may occasionally dead-end past however deep this query
+	// actually goes — an acceptable trade for "it's all there immediately"
+	// over "it grows correctly but only one page at a time".
+	let pageLetterCount = $derived(searchState.hasMore || searchState.page > 1 ? 10 : 1);
 
 	onMount(() => {
 		function closeOnOutsideClick(e: MouseEvent) {
@@ -220,16 +220,7 @@
 						</button>
 					{/if}
 					<img class="mark" src="/atlas-touch-icon.png" alt="" width="20" height="20" />
-					<span class="name"
-						>Atl{#each Array.from({ length: pageLetterCount }, (_, i) => i + 1) as n (n)}<button
-								type="button"
-								class="pw-a"
-								class:active={n === searchState.page}
-								disabled={n === searchState.page}
-								aria-label={`Page ${n}`}
-								onclick={() => goToPage(n)}>a</button
-							>{/each}s<span class="sub">Search the web</span></span
-					>
+					<span class="name">Atlas<span class="sub">Search the web</span></span>
 				</div>
 				<div class="header-actions">
 					<ModeToggle mode="search" />
@@ -410,6 +401,25 @@
 			     anyone actually reads this far and clicks, so "Next"
 			     disables itself instead of leading into a dead end. -->
 			{#if searchState.page > 1 || searchState.hasMore}
+				<!-- Google's own stretched-logo page picker, Atlas's take —
+				     see pageLetterCount's doc comment for why this shows the
+				     full run of 10 up front rather than growing one letter
+				     per page actually reached. Centered, on its own, above
+				     the numbered/chevron row below — that one stays the
+				     precise, always-correct way to move a page at a time;
+				     this one is the fun, speculative "jump anywhere" one. -->
+				<div class="page-wordmark" role="group" aria-label="Jump to a page">
+					<span
+						>Atl{#each Array.from({ length: pageLetterCount }, (_, i) => i + 1) as n (n)}<button
+								type="button"
+								class="pw-a"
+								class:active={n === searchState.page}
+								disabled={n === searchState.page}
+								aria-label={`Page ${n}`}
+								onclick={() => goToPage(n)}>a</button
+							>{/each}s</span
+					>
+				</div>
 				<nav class="pagination" aria-label="Search result pages">
 					<button
 						type="button"
@@ -603,26 +613,46 @@
 		margin-left: 7px;
 	}
 
-	/* Each extra "a" is a real page link (see pageLetterCount's doc
-	   comment) — styled to disappear into the wordmark at rest so it
-	   still just reads as "Atlas", with a hover/active treatment that
-	   only shows up on interaction. disabled (the current page's own
-	   letter) gets the "you are here" color without needing a separate
-	   affordance for "this one doesn't do anything". */
+	/* The stretched-wordmark page picker — see pageLetterCount's doc
+	   comment. Its own row, centered, above the precise numbered/chevron
+	   pagination below rather than folded into either the header or that
+	   row. */
+	.page-wordmark {
+		display: flex;
+		justify-content: center;
+		margin: 4px 0 18px;
+	}
+
+	.page-wordmark span {
+		font-family: var(--font-wordmark);
+		font-size: 26px;
+		font-weight: 400;
+		letter-spacing: 0.02em;
+		color: var(--ink-muted);
+	}
+
+	/* Each "a" is a real page link. Real padding on all sides, not just
+	   letter-spacing on the parent — this needs to be an actually
+	   tappable target on a phone, not just a visually-spaced glyph, so
+	   the hit area is padding (which is part of the target) rather than
+	   margin (which isn't). disabled (the current page's own letter)
+	   gets the "you are here" color without a separate affordance for
+	   "this one doesn't do anything". */
 	.pw-a {
 		appearance: none;
 		border: none;
 		background: transparent;
-		padding: 0;
+		padding: 8px 4px;
 		margin: 0;
 		font: inherit;
 		color: inherit;
 		cursor: pointer;
-		border-radius: 3px;
+		border-radius: 6px;
 	}
 
 	.pw-a:hover:not(:disabled) {
 		color: var(--accent);
+		background: var(--paper-sunken);
 	}
 
 	.pw-a.active {
