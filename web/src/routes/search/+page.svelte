@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { searchState } from '$lib/search.svelte';
@@ -9,6 +10,7 @@
 		Search as SearchIcon,
 		SlidersHorizontal,
 		Globe,
+		Earth,
 		X,
 		Sparkles,
 		Telescope,
@@ -167,7 +169,7 @@
 						</button>
 					{/if}
 					<img class="mark" src="/atlas-touch-icon.png" alt="" width="20" height="20" />
-					<span class="name">Atlas<span class="sub">self-hosted, over SearXNG</span></span>
+					<span class="name">Atlas<span class="sub">Search the web</span></span>
 				</div>
 				<div class="header-actions">
 					<ModeToggle mode="search" />
@@ -200,16 +202,20 @@
 			     (unlike ChatView's composer, which floats down here for its
 			     own welcome state) — there's no reason to relocate a search
 			     bar, so this just gives the otherwise-blank space below it
-			     something to look at before a first search. Same spirit as
-			     ChatView's .welcome (centered, one hero heading, a soft
-			     accent glow), Atlas's own palette. -->
-			<div class="welcome">
-				<img class="welcome-mark" src="/atlas-touch-icon.png" alt="" />
-				<h1 class="welcome-heading">Search the web with Atlas</h1>
-				<p class="welcome-subtitle">
-					Ranked results from your own SearXNG instance. End a query with
-					<b>?</b> for a sourced Quick Answer.
-				</p>
+			     something to look at before a first search. Deliberately
+			     one short line, not an explainer: "self-hosted, over
+			     SearXNG" and "? for answer" are already sitting right above
+			     this in the header, so restating either here was just the
+			     same information twice on one screen.
+
+			     The plain lucide Earth outline, not the desk-globe photo
+			     (atlas-touch-icon.png) used everywhere else — that one has
+			     a stand/arm molded into the artwork, which spins along
+			     with the sphere and reads as broken, not delightful. A
+			     bare sphere has no "wrong way up" to violate. -->
+			<div class="welcome" in:fade={{ duration: 350 }}>
+				<Earth size={56} class="welcome-mark" aria-hidden="true" />
+				<h1 class="welcome-heading">Point it anywhere.</h1>
 			</div>
 		{:else if searchState.quickAnswerLoading}
 			<section class="quick-answer">
@@ -475,17 +481,22 @@
 	}
 
 	.wordmark .name {
-		font-family: ui-serif, Georgia, serif;
-		font-size: 17px;
-		font-weight: 600;
+		font-family: var(--font-wordmark);
+		font-size: 18px;
+		font-weight: 400;
+		letter-spacing: 0.03em;
 	}
 
 	.wordmark .name .sub {
-		font-family: inherit;
+		/* Not inherit — Asimovian is a display face, too heavy-handed to
+		   read well this small. Falls back to .atlas-page's own base
+		   sans stack instead, same as the omnibox's plain UI text. */
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 		font-weight: 400;
 		font-size: 12px;
+		letter-spacing: normal;
 		color: var(--ink-faint);
-		margin-left: 6px;
+		margin-left: 7px;
 	}
 
 	.header-actions {
@@ -552,9 +563,8 @@
 
 	/* Start screen — the omnibox lives in the header, not here, so this is
 	   just giving the otherwise-blank space below it a real first
-	   impression instead of a flat void. Same idea as ChatView's
-	   .welcome (centered hero heading, one soft accent glow behind it),
-	   translated into Atlas's own serif/warm palette. */
+	   impression instead of a flat void. One line, not an explainer —
+	   see the markup comment above for why the copy stays this short. */
 	.welcome {
 		position: relative;
 		display: flex;
@@ -562,7 +572,7 @@
 		align-items: center;
 		justify-content: center;
 		text-align: center;
-		gap: 6px;
+		gap: 18px;
 		min-height: min(52vh, 460px);
 		isolation: isolate;
 	}
@@ -581,34 +591,44 @@
 		pointer-events: none;
 	}
 
-	.welcome-mark {
-		width: 56px;
-		height: 56px;
-		border-radius: 14px;
-		box-shadow: 0 10px 28px var(--shadow-ambient);
-		margin-bottom: 10px;
+	/* A globe that turns — the one piece of motion this screen gets, slow
+	   and continuous enough to read as ambient rather than attention-
+	   seeking (a full turn takes longer than anyone spends looking at an
+	   empty search page). Pauses on hover so it doesn't fight a click,
+	   and drops out entirely under reduced motion. :global() because the
+	   class lands on the <svg> Earth's own component renders, not on
+	   anything this file draws directly — same pattern as .icon-search
+	   below. */
+	.welcome :global(.welcome-mark) {
+		color: var(--ink-faint);
+		animation: welcome-mark-spin 34s linear infinite;
+	}
+
+	.welcome :global(.welcome-mark:hover) {
+		animation-play-state: paused;
+		color: var(--accent);
+	}
+
+	@keyframes welcome-mark-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.welcome :global(.welcome-mark) {
+			animation: none;
+		}
 	}
 
 	.welcome-heading {
 		margin: 0;
 		font-family: ui-serif, Georgia, serif;
-		font-size: clamp(26px, 4vw, 38px);
+		font-size: clamp(24px, 3.4vw, 32px);
 		font-weight: 600;
+		font-style: italic;
 		letter-spacing: -0.01em;
-		color: var(--ink);
-	}
-
-	.welcome-subtitle {
-		margin: 6px 0 0;
-		max-width: 46ch;
-		color: var(--ink-faint);
-		font-size: 14px;
-		line-height: 1.55;
-	}
-
-	.welcome-subtitle b {
 		color: var(--ink-muted);
-		font-weight: 600;
 	}
 
 	.status-line {
