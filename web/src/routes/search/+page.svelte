@@ -166,7 +166,7 @@
 							<PanelLeft size={17} />
 						</button>
 					{/if}
-					<span class="mark"></span>
+					<img class="mark" src="/atlas-touch-icon.png" alt="" width="20" height="20" />
 					<span class="name">Atlas<span class="sub">self-hosted, over SearXNG</span></span>
 				</div>
 				<div class="header-actions">
@@ -195,7 +195,23 @@
 	</header>
 
 	<main>
-		{#if searchState.quickAnswerLoading}
+		{#if !searchState.lastQuery && !searchState.loading && !searchState.error}
+			<!-- Start screen: the omnibox itself stays pinned in the header
+			     (unlike ChatView's composer, which floats down here for its
+			     own welcome state) — there's no reason to relocate a search
+			     bar, so this just gives the otherwise-blank space below it
+			     something to look at before a first search. Same spirit as
+			     ChatView's .welcome (centered, one hero heading, a soft
+			     accent glow), Atlas's own palette. -->
+			<div class="welcome">
+				<img class="welcome-mark" src="/atlas-touch-icon.png" alt="" />
+				<h1 class="welcome-heading">Search the web with Atlas</h1>
+				<p class="welcome-subtitle">
+					Ranked results from your own SearXNG instance. End a query with
+					<b>?</b> for a sourced Quick Answer.
+				</p>
+			</div>
+		{:else if searchState.quickAnswerLoading}
 			<section class="quick-answer">
 				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
 				<p class="qa-loading">Thinking…</p>
@@ -454,8 +470,8 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 5px;
-		background: var(--ink);
 		flex: none;
+		box-shadow: var(--shadow-ambient) 0 1px 3px;
 	}
 
 	.wordmark .name {
@@ -532,6 +548,67 @@
 
 	main {
 		padding: 28px 24px 80px;
+	}
+
+	/* Start screen — the omnibox lives in the header, not here, so this is
+	   just giving the otherwise-blank space below it a real first
+	   impression instead of a flat void. Same idea as ChatView's
+	   .welcome (centered hero heading, one soft accent glow behind it),
+	   translated into Atlas's own serif/warm palette. */
+	.welcome {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		gap: 6px;
+		min-height: min(52vh, 460px);
+		isolation: isolate;
+	}
+
+	.welcome::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background: radial-gradient(
+			ellipse 55% 45% at 50% 32%,
+			var(--accent-soft) 0%,
+			color-mix(in srgb, var(--accent-soft) 55%, transparent) 40%,
+			transparent 72%
+		);
+		pointer-events: none;
+	}
+
+	.welcome-mark {
+		width: 56px;
+		height: 56px;
+		border-radius: 14px;
+		box-shadow: 0 10px 28px var(--shadow-ambient);
+		margin-bottom: 10px;
+	}
+
+	.welcome-heading {
+		margin: 0;
+		font-family: ui-serif, Georgia, serif;
+		font-size: clamp(26px, 4vw, 38px);
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--ink);
+	}
+
+	.welcome-subtitle {
+		margin: 6px 0 0;
+		max-width: 46ch;
+		color: var(--ink-faint);
+		font-size: 14px;
+		line-height: 1.55;
+	}
+
+	.welcome-subtitle b {
+		color: var(--ink-muted);
+		font-weight: 600;
 	}
 
 	.status-line {
