@@ -106,17 +106,16 @@ const (
 	maxAlbumTrackResultsShown = 15
 	maxSimilarAlbumsShown     = 10
 
-	// descriptionTruncateLen bounds how much of a wiki summary/overview
-	// gets shown per recommendation line — fine to show in full once for
-	// the source track/album/title, but stacked under every one of up to
-	// 15 candidates it would swamp the actual result. 500 rather than a
-	// tighter bound because most wiki summaries and TMDB overviews run
-	// 1-3 sentences (150-400 chars) — a lower cap was cutting most of them
-	// off mid-sentence, which read as more garbled than useful. Shared
-	// with movies.go's equivalent per-candidate truncation (see
-	// truncateText). books.go deliberately shows full, untruncated
-	// descriptions instead — book blurbs are the point of the result, not
-	// incidental flavor text, so cutting them off defeats the tool.
+	// descriptionTruncateLen bounds how much of a TMDB overview gets shown
+	// per recommendation line in movies.go (see truncateText) — fine to
+	// show in full once for the source title, but stacked under every one
+	// of up to 15 candidates it would swamp the actual result. 500 rather
+	// than a tighter bound because most overviews run 1-3 sentences
+	// (150-400 chars) — a lower cap was cutting most of them off
+	// mid-sentence, which read as more garbled than useful. music.go and
+	// books.go both deliberately show full, untruncated descriptions
+	// instead — the recommendation blurb is the point of the result, not
+	// incidental flavor text, so cutting it off defeats the tool.
 	descriptionTruncateLen = 500
 )
 
@@ -280,7 +279,7 @@ func formatSimilarTrackResult(artist, track string, tags []string, description s
 	for i, t := range similar {
 		fmt.Fprintf(&sb, "%d. %s - %s", i+1, t.Artist.Name, t.Name)
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -346,7 +345,7 @@ func formatAlbumTracksResult(artist, album, description string, ranked []*simila
 			fmt.Fprintf(&sb, " (recommended by %d songs on the album)", c.Count)
 		}
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -464,7 +463,7 @@ func formatSimilarAlbumsResult(artist, album, description string, ranked []*simi
 			fmt.Fprintf(&sb, " (%d tracks pointed here independently)", len(c.Tracks))
 		}
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -600,10 +599,8 @@ func cleanLastFMWiki(raw string) string {
 }
 
 // truncateText bounds s to max runes, breaking at the last space before the
-// cutoff rather than mid-word, and appending "..." — used for per-candidate
-// descriptions (see descriptionTruncateLen) in both music.go and books.go,
-// where a full wiki/description paragraph is appropriate once for the
-// source item but not stacked under every recommendation.
+// cutoff rather than mid-word, and appending "..." — used by movies.go for
+// its per-candidate TMDB overviews (see descriptionTruncateLen).
 func truncateText(s string, max int) string {
 	if len(s) <= max {
 		return s
