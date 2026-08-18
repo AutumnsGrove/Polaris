@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -8,8 +9,18 @@ import (
 	"strconv"
 	"strings"
 
+	"polaris/brave"
 	"polaris/search"
 )
+
+// braveVirtualPageSize is how many results Atlas shows per page when
+// falling back to Brave — half of Brave's own maxCount-per-request (20),
+// so one real Brave fetch covers two Atlas pages before a second real
+// request is needed. This is purely a display-side split, not something
+// Brave's API itself knows about: braveFallbackSearch below maps an
+// Atlas page number to a (real Brave offset, half) pair and slices the
+// one real fetch accordingly.
+const braveVirtualPageSize = 10
 
 // handleSearch backs Atlas's results page — a thin wrapper around the same
 // search.SearXNGClient the web_search agent tool uses (see search.go's
@@ -45,9 +56,24 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.searxng.Search(r.Context(), query, maxResults, category, page)
 	if err != nil {
-		log.Warn("atlas search failed", "query", query, "category", category, "err", err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+		log.Warn("atlas search: searxng request failed, trying brave fallback", "query", query, "category", category, "err", err)
+		if braveResp, ok := s.braveFallbackSearch(r.Context(), query, page); ok {
+			resp = braveResp
+		} else {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+	} else if len(resp.Results) == 0 && resp.Degraded {
+		// Same degraded-vs-genuinely-empty distinction web_search's own
+		// fallback chain makes (see tools/web_search.go) — SearXNG's own
+		// engines are down, not "this query has no results". If Brave
+		// can't rescue it either, fall through and hand the frontend the
+		// degraded resp as-is (empty results + Degraded/UnresponsiveEngines
+		// set) so it can show its own "search is degraded" state.
+		log.Warn("atlas search: searxng degraded, trying brave fallback", "query", query, "unresponsive_engines", resp.UnresponsiveEngines)
+		if braveResp, ok := s.braveFallbackSearch(r.Context(), query, page); ok {
+			resp = braveResp
+		}
 	}
 
 	// record=0 is set by search.svelte.ts when the query came from
@@ -66,6 +92,71 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
+}
+
+// braveFallbackSearch tries Brave once SearXNG itself has failed or
+// confirmed degraded (see handleSearch). page is Atlas's own page
+// number (1-indexed); mapped to a (real Brave offset, half) pair so one
+// real Brave fetch (maxCount=20, see brave.Client.Search) covers two
+// Atlas pages of braveVirtualPageSize each — page 1-2 come from Brave
+// offset 0, page 3-4 from offset 1, and so on. Returns ok=false on any
+// failure (not configured, over the monthly cap, or the request itself
+// erroring) so the caller falls through to the plain degraded response.
+func (s *Server) braveFallbackSearch(ctx context.Context, query string, page int) (*search.SearchResponse, bool) {
+	if s.brave == nil {
+		return nil, false
+	}
+	used, err := s.db.GetAPIUsage("brave")
+	if err != nil {
+		log.Warn("atlas search: checking brave usage failed, skipping brave fallback", "query", query, "err", err)
+		return nil, false
+	}
+	if used >= brave.MonthlyCap {
+		log.Warn("atlas search: brave monthly cap reached, skipping brave fallback", "query", query, "used", used, "cap", brave.MonthlyCap)
+		return nil, false
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	realOffset := (page - 1) / 2
+	half := (page - 1) % 2
+
+	resp, err := s.brave.Search(ctx, query, realOffset)
+	if err != nil {
+		log.Warn("atlas search: brave fallback request failed", "query", query, "err", err)
+		return nil, false
+	}
+	if _, incErr := s.db.IncrementAPIUsage("brave"); incErr != nil {
+		log.Warn("atlas search: recording brave usage failed", "query", query, "err", incErr)
+	}
+
+	start := half * braveVirtualPageSize
+	if start > len(resp.Results) {
+		start = len(resp.Results)
+	}
+	end := start + braveVirtualPageSize
+	if end > len(resp.Results) {
+		end = len(resp.Results)
+	}
+
+	results := make([]search.SearchResult, end-start)
+	for i, r := range resp.Results[start:end] {
+		results[i] = search.SearchResult{Title: r.Title, URL: r.URL, Content: r.Content, Engine: "brave"}
+	}
+
+	// hasMore: the first half of a real fetch has more available the
+	// instant the second half exists in the same response (no extra
+	// request needed to know that); the second half only has more if
+	// Brave itself says another real page exists beyond this one.
+	hasMore := false
+	if half == 0 {
+		hasMore = len(resp.Results) > braveVirtualPageSize
+	} else {
+		hasMore = resp.MoreAvailable
+	}
+
+	return &search.SearchResponse{Query: query, Results: results, Page: page, HasMore: hasMore}, true
 }
 
 // handleListSearchHistory backs Atlas's sidebar — same shape as

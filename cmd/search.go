@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"polaris/agent"
+	"polaris/brave"
 	"polaris/config"
 	"polaris/gateway"
 	"polaris/llm"
@@ -76,17 +77,20 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile)
 	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
 	tavilyClient := tavily.NewClient(cfg.Tavily.APIKey)
+	braveClient := brave.NewClient(cfg.Brave.APIKey)
 	parallelClient := parallel.NewClient(cfg.Parallel.APIKey)
 
 	// Opened even for this one-shot CLI command specifically so
-	// web_search's Parallel monthly-usage cap (see tools/web_search.go)
-	// is checked against the *same* running total the web UI/assistant
-	// use, not a separate count that would let this path silently spend
-	// past the real cap — cmd/stats.go opens the same DB the same way
-	// for the same "one-shot CLI command still needs real state" reason.
+	// web_search's Brave/Parallel monthly-usage caps (see
+	// tools/web_search.go) are checked against the *same* running total
+	// the web UI/assistant use, not a separate count that would let this
+	// path silently spend past the real cap — cmd/stats.go opens the
+	// same DB the same way for the same "one-shot CLI command still
+	// needs real state" reason.
 	db, err := store.Open(cfg.Database.Path)
 	if err != nil {
-		log.Warn("opening database failed, Parallel's usage cap can't be enforced — disabling that fallback for this run", "path", cfg.Database.Path, "err", err)
+		log.Warn("opening database failed, Brave/Parallel usage caps can't be enforced — disabling those fallbacks for this run", "path", cfg.Database.Path, "err", err)
+		braveClient = nil
 		parallelClient = nil
 	} else {
 		defer db.Close()
@@ -121,6 +125,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		Blocklist:       blocklist,
 		Foursquare:      foursquare,
 		Tavily:          tavilyClient,
+		Brave:           braveClient,
 		Parallel:        parallelClient,
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
@@ -132,11 +137,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		MaxTurns:        cfg.MaxAgentTurns,
 	}
 	// Only set once db is known-good (see the store.Open error handling
-	// above, which also nils out parallelClient on failure) — handleWebSearch
-	// requires both Context.Parallel and these closures non-nil before
-	// ever calling Parallel, so leaving them nil here is enough to keep
-	// this path safe without a nil-db guard inside the closures themselves.
+	// above, which also nils out braveClient/parallelClient on failure) —
+	// handleWebSearch requires both Context.Brave/Parallel and their
+	// matching closures non-nil before ever calling out, so leaving them
+	// nil here is enough to keep this path safe without a nil-db guard
+	// inside the closures themselves.
 	if db != nil {
+		agentCtx.BraveUsageThisMonth = func() (int, error) { return db.GetAPIUsage("brave") }
+		agentCtx.IncrementBraveUsage = func() error { _, err := db.IncrementAPIUsage("brave"); return err }
 		agentCtx.ParallelUsageThisMonth = func() (int, error) { return db.GetAPIUsage("parallel") }
 		agentCtx.IncrementParallelUsage = func() error { _, err := db.IncrementAPIUsage("parallel"); return err }
 	}

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"polaris/brave"
 	"polaris/config"
 	"polaris/logger"
 	"polaris/models"
@@ -53,6 +54,7 @@ type Server struct {
 	blocklist  *search.Blocklist
 	foursquare *places.FoursquareClient // nil if not configured
 	tavily     *tavily.Client           // nil if not configured
+	brave      *brave.Client            // nil if not configured
 	parallel   *parallel.Client         // nil if not configured
 	stt        *voice.STTClient
 	tts        *voice.TTSClient
@@ -113,6 +115,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		blocklist:  blocklist,
 		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
 		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
+		brave:      brave.NewClient(cfg.Brave.APIKey),
 		parallel:   parallel.NewClient(cfg.Parallel.APIKey),
 		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
 		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),

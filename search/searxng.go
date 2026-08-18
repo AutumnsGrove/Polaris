@@ -107,12 +107,12 @@ const generalCategoryEngineCount = 4
 // Repeatedly hitting an instance whose engines are already rate-limited
 // or CAPTCHA'd doesn't help it recover — it very plausibly makes things
 // worse, and it definitely burns time on requests that were never going
-// to succeed. 20 minutes is a starting guess, not measured against how
-// long these providers' own suspensions actually last; adjust if it
-// turns out to be too short (still hitting the same outage) or too long
-// (SearXNG's clearly fine again but nothing tries it for the rest of
-// the window).
-const degradedCooldown = 20 * time.Minute
+// to succeed. Started at 20 minutes as a guess; raised to an hour after
+// live observation showed the underlying engines (Brave, Google CSE)
+// were still suspended well past the 20-minute mark on repeated checks
+// — 20 minutes was measurably too short for how long these providers'
+// own suspensions actually last.
+const degradedCooldown = time.Hour
 
 type SearXNGClient struct {
 	baseURL            string

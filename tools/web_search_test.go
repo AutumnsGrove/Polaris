@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"polaris/brave"
 	"polaris/parallel"
 	"polaris/search"
 	"polaris/tavily"
@@ -172,6 +173,27 @@ func TestHandleWebSearch_DegradedTavilyAlsoFailsReturnsDegradedMessage(t *testin
 	}
 }
 
+// fakeBrave serves a Brave-Web-Search-API-shaped response with one
+// result, recording how many times it was hit.
+func fakeBrave(t *testing.T) (srv *httptest.Server, hits *int) {
+	t.Helper()
+	count := 0
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": map[string]interface{}{"more_results_available": true},
+			"web": map[string]interface{}{
+				"results": []map[string]interface{}{
+					{"title": "From Brave", "url": "https://example.com/brave-result", "description": "steep overnight"},
+				},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &count
+}
+
 // fakeParallel serves a Parallel-Search-API-shaped response with one
 // result, recording how many times it was hit.
 func fakeParallel(t *testing.T) (srv *httptest.Server, hits *int) {
@@ -189,6 +211,126 @@ func fakeParallel(t *testing.T) (srv *httptest.Server, hits *int) {
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &count
+}
+
+func TestHandleWebSearch_DegradedPrefersBraveOverParallelAndTavily(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	braveSrv, braveHits := fakeBrave(t)
+
+	parallelHit := false
+	parallelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parallelHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(parallelSrv.Close)
+
+	tavilyHit := false
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tavilyHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	var incremented int
+	ctx := &Context{
+		Ctx:                 context.Background(),
+		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementBraveUsage: func() error { incremented++; return nil },
+		Parallel:            parallel.NewClientForTest("test-key", parallelSrv.URL),
+		Tavily:              tavily.NewClientForTest("test-key", tavilySrv.URL),
+		Emit:                func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Brave") || !strings.Contains(result, "example.com/brave-result") {
+		t.Errorf("result = %q, want the Brave fallback result formatted in", result)
+	}
+	if !strings.Contains(result, "[via Brave") {
+		t.Errorf("result = %q, want a provider tag naming Brave as the source", result)
+	}
+	if *braveHits != 1 {
+		t.Errorf("brave hits = %d, want 1", *braveHits)
+	}
+	if parallelHit || tavilyHit {
+		t.Error("parallel/tavily were hit, want them skipped — Brave succeeded first and is preferred")
+	}
+	if incremented != 1 {
+		t.Errorf("IncrementBraveUsage called %d times, want 1", incremented)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://example.com/brave-result" {
+		t.Errorf("Citations = %+v, want the Brave result's URL added", ctx.Citations)
+	}
+}
+
+func TestHandleWebSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	braveSrv, braveHits := fakeBrave(t)
+	parallelSrv, parallelHits := fakeParallel(t)
+
+	ctx := &Context{
+		Ctx:                 context.Background(),
+		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth: func() (int, error) { return brave.MonthlyCap, nil }, // already at the cap
+		IncrementBraveUsage: func() error {
+			t.Error("IncrementBraveUsage must not be called when the cap gates Brave out")
+			return nil
+		},
+		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
+		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementParallelUsage: func() error { return nil },
+		Emit:                   func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Parallel") {
+		t.Errorf("result = %q, want the Parallel fallback result — Brave should have been skipped at the cap", result)
+	}
+	if *braveHits != 0 {
+		t.Errorf("brave hits = %d, want 0 — must not call Brave once the monthly cap is reached", *braveHits)
+	}
+	if *parallelHits != 1 {
+		t.Errorf("parallel hits = %d, want 1", *parallelHits)
+	}
+}
+
+func TestHandleWebSearch_DegradedFallsBackToParallelWhenBraveErrors(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	braveSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(braveSrv.Close)
+	parallelSrv, parallelHits := fakeParallel(t)
+
+	var braveIncremented int
+	ctx := &Context{
+		Ctx:                 context.Background(),
+		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementBraveUsage: func() error { braveIncremented++; return nil },
+
+		Parallel:               parallel.NewClientForTest("test-key", parallelSrv.URL),
+		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementParallelUsage: func() error { return nil },
+		Emit:                   func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	if !strings.Contains(result, "From Parallel") {
+		t.Errorf("result = %q, want the Parallel fallback result when Brave itself errors", result)
+	}
+	if *parallelHits != 1 {
+		t.Errorf("parallel hits = %d, want 1", *parallelHits)
+	}
+	if braveIncremented != 0 {
+		t.Errorf("IncrementBraveUsage called %d times, want 0 — a failed Brave request never reached its own billing", braveIncremented)
+	}
 }
 
 func TestHandleWebSearch_DegradedPrefersParallelOverTavily(t *testing.T) {

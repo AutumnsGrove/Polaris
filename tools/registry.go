@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"polaris/brave"
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/parallel"
@@ -70,8 +71,17 @@ type Context struct {
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
-	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried before Tavily's own) is skipped without it
+	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
+	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+
+	// BraveUsageThisMonth/IncrementBraveUsage back the monthly cap on
+	// Brave calls (store.Store's api_usage table), same shape and same
+	// reasoning as ParallelUsageThisMonth/IncrementParallelUsage below —
+	// Brave has no ongoing free tier at all (just a one-time signup
+	// credit), so this cap matters even more than Parallel's.
+	BraveUsageThisMonth func() (int, error)
+	IncrementBraveUsage func() error
 
 	// ParallelUsageThisMonth/IncrementParallelUsage back the monthly cap
 	// on Parallel calls (store.Store's api_usage table) — narrow closures
