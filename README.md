@@ -13,26 +13,19 @@ Ask it something. It decides for itself whether it needs to search the web, read
 look up a nearby place, check the weather, or just answer directly — then streams the answer back
 with citations.
 
-- **Web search** via your own SearXNG instance (no API key, no per-query cost). In practice, though,
-  SearXNG's own underlying engines (Brave, Google, DuckDuckGo, Startpage) *do* rate-limit or
-  CAPTCHA a single self-hosted instance under real usage — even fairly modest query volume, not
-  just a burst. When that happens, SearXNG itself starts reporting a clean, error-free zero results
-  for every query, indistinguishable from a genuinely empty search unless you go looking for it. To
-  handle that: `web_search` detects a full outage (every general-category engine unresponsive at
-  once, not just one having a bad moment) and falls back to [Brave Search API](https://brave.com/search/api/)
-  first (real, multi-result listings — the same shape SearXNG itself returns, unlike the next two),
-  then [Parallel](https://parallel.ai)'s Search API, then [Tavily](https://tavily.com)'s — all three
-  optional — before finally just saying plainly that search is degraded rather than reporting a
-  false "no results". An hour-long cooldown kicks in after a detected outage too (raised from an
-  initial 20-minute guess after live observation showed the underlying engines still suspended well
-  past 20 minutes), so retrying doesn't keep hitting (and prolonging) the same rate limit — see
-  `search.SearXNGClient`'s cooldown docs. Every result set (primary or fallback) opens with a
-  `[via SearXNG/Brave/Parallel/Tavily]` tag, so it's always visible which provider actually
-  answered. `polaris search` (the CLI) shares this same fallback chain and usage caps as the web
-  UI/assistant, backed by the same on-disk database. Atlas's own results-browsing page (not just the
-  assistant's `web_search` tool) has its own, separate Brave fallback with virtual sub-pagination —
-  one real Brave fetch (20 results, Brave's own per-request max) is split into two 10-result Atlas
-  pages before a second real request is needed — see `gateway/search.go`'s `braveFallbackSearch`
+- **Web search** via your own SearXNG instance (no API key, no per-query cost) — but SearXNG's
+  underlying engines do rate-limit/CAPTCHA a self-hosted instance under real usage, silently
+  returning zero results instead of an error. `web_search` detects that (a full outage, not just an
+  ordinary empty result) and falls back through Brave → Parallel → Tavily (all optional, in that
+  order), before finally saying plainly that search is degraded rather than reporting a false "no
+  results" — see [Requirements](#requirements) for what each fallback needs. Every result set is
+  tagged `[via <provider>]` so a fallback firing is visible. `polaris search` (the CLI) and Atlas
+  (see below) share this same fallback logic
+- **Atlas** (`/search`) — a separate, Kagi-style search-results page alongside the chat assistant:
+  type a query, browse ranked SearXNG results directly (with your own per-domain
+  Block/Lower/Raise/Pin rankings), or end a query with `?` for a fast, sourced answer instead of
+  full results. Same fallback chain as `web_search` above, plus its own Brave-specific virtual
+  pagination (one real 20-result Brave fetch covers two 10-result Atlas pages)
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
@@ -98,19 +91,11 @@ Go backend
   │              weather / reference_lookup / github_repo / dictionary / music / books / movies, or
   │              just answer — independent tool calls in the same turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
-  ├── search   — SearXNG client; detects a full engine outage and enters a cooldown rather than
-  │              retrying into the same rate limit
+  ├── search   — SearXNG client; detects a full engine outage and enters a cooldown
   ├── places   — Foursquare + Nominatim geocoding
-  ├── brave    — Search API client, web_search's first fallback when SearXNG is degraded, and
-  │              Atlas's own separate fallback for its results-browsing page — real multi-result
-  │              listings, not an AI-summarized answer. No ongoing free tier, so monthly usage is
-  │              tracked in the DB and hard-capped
-  ├── tavily   — Extract API client (web_read's paid fallback for JS-rendered pages) and Search API
-  │              client (web_search's third fallback, after Brave and Parallel, when SearXNG is
-  │              degraded)
-  ├── parallel — Search API client, web_search's second fallback when SearXNG is degraded — its own
-  │              monthly usage is tracked in the DB and hard-capped under its free tier, since the
-  │              account needs a card on file
+  ├── brave, parallel, tavily — the paid search-fallback chain (Brave → Parallel → Tavily), plus
+  │              Tavily's separate Extract API for web_read's JS-rendering fallback — see
+  │              [Requirements](#requirements)
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
   ├── store    — SQLite: threads, messages, settings, running cost, per-provider API usage counts
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
@@ -142,27 +127,17 @@ app" is one file you can scp around if you ever needed to.
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search
-- Optional: a single [Tavily](https://tavily.com) API key covers two entirely separate Tavily
-  products used in two unrelated pipelines, not one combined fallback — don't conflate them: (1)
-  **Extract**, a *page-fetching* product (it actually renders JS), is `web_read`'s last-resort
-  fallback in the fetch chain — goquery → archive.org → Tavily Extract — for JS-rendered/paywalled
-  pages the free path can't see; (2) **Search**, a *web-search* product, is the last tier of
-  `web_search`'s entirely separate search chain — SearXNG → Brave → Parallel → Tavily Search — only
-  reached once SearXNG itself is confirmed fully rate-limited. Free tier: 1,000 credits/month
-  total (shared across however both products get used), no card required
-- Optional: a [Brave Search API](https://brave.com/search/api/) key — part of the *search* chain
-  only (SearXNG → Brave → Parallel → Tavily Search), tried first among the fallbacks, for both
-  `web_search` and Atlas's own results page — see "What it does" above. **No ongoing free tier**
-  — just a one-time $5/mo signup credit (~1,000 queries at $5/1,000) — so Polaris tracks its own
-  monthly usage count in the database and hard-stops at 1,000/mo (Brave's own dashboard also
-  auto-stops the key at that point, so this is belt-and-suspenders rather than the only safeguard)
-- Optional: a [Parallel](https://parallel.ai) API key — also part of the *search* chain only
-  (tried after Brave, ahead of Tavily Search) when SearXNG's own engines are all
-  rate-limited/CAPTCHA'd at once — see "What it does" above. Free tier: 5,000 requests/month, but
-  **the account needs a card on
-  file**, so Polaris tracks its own monthly usage count in the database and hard-stops calling it a
-  little under that free-tier limit rather than trusting the provider not to bill overage
-  automatically
+- Optional: one [Tavily](https://tavily.com) key covers two *unrelated* products, don't conflate
+  them — **Extract** (JS-rendering page fetch: `web_read`'s fallback, after archive.org) and
+  **Search** (the last tier of the web-search fallback chain below). Free tier: 1,000
+  credits/month total, no card required
+- Optional: a [Brave Search API](https://brave.com/search/api/) key, tried first in the web-search
+  fallback chain (SearXNG → Brave → Parallel → Tavily Search) — real result listings, used by both
+  `web_search` and Atlas. **No ongoing free tier** (a one-time $5/mo credit, ~1,000 queries), so
+  usage is capped at 1,000/mo in the DB (Brave's own dashboard enforces the same limit too)
+- Optional: a [Parallel](https://parallel.ai) API key, second in that same fallback chain. Free
+  tier: 5,000 requests/month, but the account has a card on file, so usage is capped in the DB a
+  little under that limit rather than trusting the free tier not to bill overage
 - Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
   can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — it works fine with
   no token at all for occasional lookups
@@ -292,39 +267,24 @@ docker compose up -d
 Open `http://localhost:8899`. (`POLARIS_INSTALL_MODE=docker curl -fsSL .../install.sh | bash` —
 see Quick start — does all of the above for you, plus the update watcher below.)
 
-Config is split across two files, not one — `.env` is what Docker Compose itself reads to
-interpolate secrets into the containers before they even start (its own standard mechanism, not
-something specific to this project); `compose/polaris/config.yaml` is the actual app config, same
-format and purpose as bare-metal's `config.yaml`, just with Docker-appropriate values (`/data/...`
-paths, `http://searxng:8080` instead of `localhost:18888`). The API keys in
-`compose/polaris/config.yaml` are `${VAR}`-style placeholders — the real values only ever live in
-`.env`.
+Config is split across two files — `.env` (Docker Compose's own secret-interpolation mechanism) and
+`compose/polaris/config.yaml` (the actual app config, same shape as bare-metal's `config.yaml` but
+with Docker-appropriate paths/URLs and `${VAR}` placeholders instead of real key values).
 
 ### Self-update, under Docker
 
-"Update Polaris" and "Restart Polaris" (settings panel, or `polaris update`/`polaris restart` over
-SSH — both auto-detect a Docker install from `docker-compose.yml` being present, no flag needed)
-work differently here than on bare-metal: there's no git pull or rebuild inside the container
-(there's no `.git` in the image at all). Instead, Polaris resolves the latest published image's
-digest from GHCR — waiting out an in-progress CI build first if a push just landed, so a click
-right after `git push` can't silently pull the *previous* build — and hands off to a host-side
-watcher — a systemd path unit + oneshot service (`compose/watcher/`), installed and enabled
-automatically by `install.sh`'s Docker mode on Linux — which does the actual
-`docker compose pull && up --force-recreate` outside any container. This is deliberate: the
-container that fetches arbitrary URLs and runs model-directed tool calls never gets any control
-over Docker itself. A restart pins the target to whatever's already running instead of resolving a
-fresh digest, so it never touches GHCR at all. Not wired up on macOS (no systemd, and it isn't the
-target production deployment for this project anyway — see "Why not just use \[existing tool\]?"
-above); a Docker install there still runs fine, the update button just won't have anything to
+"Update Polaris"/"Restart Polaris" (settings panel or `polaris update`/`polaris restart` over SSH,
+both auto-detecting Docker from `docker-compose.yml`) work differently than bare-metal: no git
+pull/rebuild inside the container. Instead Polaris resolves the latest published image's digest
+from GHCR (waiting out an in-progress CI build first) and hands off to a host-side systemd watcher
+(`compose/watcher/`, installed by `install.sh`'s Docker mode on Linux) that does
+`docker compose pull && up --force-recreate` — the container itself never gets control over
+Docker. A restart just recreates the currently-running image, no GHCR check. Not wired up on
+macOS (no systemd); a Docker install there still runs, the update button just has nothing to
 trigger.
 
-The CLI commands are a thin client to the exact same `/api/update`/`/api/restart` the settings
-panel hits — they can't drift apart in behavior, and `polaris update`/`polaris restart` genuinely
-work identically whether you're SSH'd into a bare-metal or a Docker install; no need to remember
-which one this host is.
-
-Images are published to `ghcr.io/autumnsgrove/polaris` (multi-arch: `amd64` + `arm64`) on every
-push to `main` via `.github/workflows/docker-publish.yml`.
+Images publish to `ghcr.io/autumnsgrove/polaris` (multi-arch) on every push to `main` via
+`.github/workflows/docker-publish.yml`.
 
 ## Configuration
 
@@ -374,13 +334,11 @@ polaris search --model deepseek "find a coffee shop near the Space Needle"
 polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
 ```
 
-`update`/`restart` are Docker-aware (see [Self-update](#self-update)); `search`/`stats`/`install`
-aren't yet — they read `./config.yaml` directly and (for `install`) manage a systemd/launchd unit,
-both bare-metal-only assumptions. Under a Docker install, run these the same way `update`/`restart`
-do internally instead: `curl -X POST http://127.0.0.1:8899/api/ask -d '{"content":"..."}'` for a
-one-off query, or open the settings panel's usage stats (small info-icon button) for the same
-numbers `stats` prints. `install` has no Docker equivalent to begin with — `docker compose up -d`
-(or `install.sh POLARIS_INSTALL_MODE=docker`, see [Docker install](#docker-install)) is that step.
+Every command auto-detects Docker vs. bare-metal from `docker-compose.yml`'s presence, no flag
+needed — `search`/`stats`/`update`/`restart` all hit the running container's own REST API under
+Docker instead of assuming a local `config.yaml`/git checkout. `install` is the one exception: it
+explicitly refuses under Docker (there's no systemd/launchd unit to write) rather than doing
+something misleading — `docker compose up -d` is that step instead.
 
 ## Deployment
 
