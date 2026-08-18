@@ -22,9 +22,14 @@ func fakeDegradedSearXNG(t *testing.T) *httptest.Server {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"query":   r.URL.Query().Get("q"),
 			"results": []map[string]interface{}{},
+			// All 4 of the general category's known engines (see
+			// search.generalCategoryEngineCount) — a real full outage,
+			// not just one or two engines having a bad moment.
 			"unresponsive_engines": [][]string{
 				{"brave", "Suspended: too many requests"},
 				{"duckduckgo", "CAPTCHA"},
+				{"google cse", "Suspended: too many requests"},
+				{"startpage", "Suspended: CAPTCHA"},
 			},
 		})
 	}))

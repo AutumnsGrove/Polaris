@@ -25,21 +25,42 @@ type SearchResponse struct {
 	Query   string         `json:"query"`
 	Answer  string         `json:"answer,omitempty"`
 	Results []SearchResult `json:"results"`
-	// Degraded is true when SearXNG came back with zero results *and* at
-	// least one engine reported itself unresponsive in the same response
-	// (rate-limited or CAPTCHA'd — see UnresponsiveEngines) — the signal
-	// that this is "the search infrastructure failed", not "this query
-	// genuinely has nothing", which look identical otherwise (both are
-	// just an empty Results slice with no error). Callers use this to
-	// decide whether an empty response is worth a fallback (Tavily) or a
-	// distinct "search is degraded" message, instead of silently
-	// reporting "no results found" for what's actually an outage.
+	// Degraded is true only when EVERY engine SearXNG queried for this
+	// category failed — not just one of several. A single engine being
+	// rate-limited while the others are fine still produces normal
+	// results (or a normal, genuine empty result if the healthy engines
+	// really do have nothing for this query); that's not an outage, and
+	// shouldn't spend a Tavily fallback credit on what's actually just
+	// this query having no coverage. Only "nothing came back because
+	// nothing *could*" counts. See generalCategoryEngineCount's comment
+	// for why this is a known count rather than something derived from
+	// the response itself.
 	Degraded bool `json:"degraded,omitempty"`
 	// UnresponsiveEngines is always populated when SearXNG reports any,
 	// regardless of Degraded — useful for logging even when other engines
 	// still returned enough to answer the query.
 	UnresponsiveEngines []string `json:"unresponsive_engines,omitempty"`
 }
+
+// generalCategoryEngineCount is how many engines SearXNG's "general"
+// category (category == "") actually queries on this deployment —
+// brave, duckduckgo, google cse, and startpage, confirmed empirically
+// against the real instance (curl .../search?format=json against a
+// scratch query showed exactly these 4 in unresponsive_engines during a
+// full outage). SearXNG's JSON API has no field reporting "how many
+// engines are configured for this category" — unresponsive_engines only
+// lists the ones that failed, so there's no way to derive "all of them
+// failed" from the response alone without knowing the total up front.
+//
+// This needs updating by hand if the engine set for "general" ever
+// changes (compose/searxng/settings.yml, dev/searxng/settings.yml use
+// use_default_settings: true, so SearXNG's own upstream defaults decide
+// this, not a file in this repo). A stale-but-too-high count just means
+// Degraded under-fires (a real full outage briefly gets reported as a
+// plain empty result instead) rather than over-firing on a single
+// engine's hiccup — the safer direction to be wrong in, given Tavily's
+// fallback credits are the scarce resource this whole check protects.
+const generalCategoryEngineCount = 4
 
 type SearXNGClient struct {
 	baseURL   string
@@ -152,10 +173,22 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		}
 	}
 
+	// Only the "general" category (category == "") has a known engine
+	// count to compare against — see generalCategoryEngineCount. Other
+	// categories (e.g. "news") have their own, different engine sets that
+	// haven't been measured, so there's no reliable "all of them" to
+	// check against; Degraded just never fires for those rather than
+	// guessing, consistent with under- rather than over-firing being the
+	// safe direction here.
+	degraded := false
+	if category == "" && len(results) == 0 {
+		degraded = len(unresponsive) >= generalCategoryEngineCount
+	}
+
 	return &SearchResponse{
 		Query:               query,
 		Results:             results,
-		Degraded:            len(results) == 0 && len(unresponsive) > 0,
+		Degraded:            degraded,
 		UnresponsiveEngines: unresponsive,
 	}, nil
 }

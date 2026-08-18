@@ -129,7 +129,37 @@ func TestSearch_FiltersBlockedDomainsBeforeTruncating(t *testing.T) {
 	}
 }
 
-func TestSearch_DegradedWhenEmptyWithUnresponsiveEngines(t *testing.T) {
+func TestSearch_DegradedWhenAllGeneralCategoryEnginesUnresponsive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
+			["brave","Suspended: too many requests"],
+			["duckduckgo","CAPTCHA"],
+			["google cse","Suspended: too many requests"],
+			["startpage","Suspended: CAPTCHA"]
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if !resp.Degraded {
+		t.Error("Degraded = false, want true (zero results, every known general-category engine unresponsive)")
+	}
+	want := []string{"brave", "duckduckgo", "google cse", "startpage"}
+	if !slicesEqual(resp.UnresponsiveEngines, want) {
+		t.Errorf("UnresponsiveEngines = %v, want %v", resp.UnresponsiveEngines, want)
+	}
+}
+
+func TestSearch_NotDegradedWhenOnlySomeEnginesUnresponsive(t *testing.T) {
+	// The actual point of the >= generalCategoryEngineCount check: 2 of 4
+	// engines down with the other 2 legitimately finding nothing for this
+	// query is a normal empty result, not an outage — must not burn a
+	// Tavily fallback credit on it.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
@@ -144,11 +174,36 @@ func TestSearch_DegradedWhenEmptyWithUnresponsiveEngines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
-	if !resp.Degraded {
-		t.Error("Degraded = false, want true (zero results, engines unresponsive)")
+	if resp.Degraded {
+		t.Error("Degraded = true, want false (only 2 of 4 engines down, not a full outage)")
 	}
+	// Still reported for logging even though it didn't cross the
+	// Degraded threshold.
 	if want := []string{"brave", "duckduckgo"}; !slicesEqual(resp.UnresponsiveEngines, want) {
 		t.Errorf("UnresponsiveEngines = %v, want %v", resp.UnresponsiveEngines, want)
+	}
+}
+
+func TestSearch_NotDegradedForNonGeneralCategoryEvenIfUnresponsive(t *testing.T) {
+	// No known engine count exists for categories other than "general" —
+	// see Search's own comment on why Degraded just never fires for them
+	// rather than guessing.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
+			["google news","Suspended: too many requests"],
+			["bing news","Suspended: too many requests"]
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "news")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if resp.Degraded {
+		t.Error("Degraded = true, want false (category != general has no known engine count to compare against)")
 	}
 }
 
