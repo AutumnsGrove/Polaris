@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import { searchState } from '$lib/search.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Compass } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -93,7 +93,7 @@
 <aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
 	<div class="brand">
 		{#if isAtlas}
-			<Compass size={20} class="brand-icon" />
+			<img class="brand-mark" src="/atlas-touch-icon.png" alt="" width="22" height="22" />
 			<span class="wordmark">Atlas</span>
 		{:else}
 			<img class="brand-mark" src="/apple-touch-icon.png" alt="" width="22" height="22" />
@@ -221,11 +221,6 @@
 		border-radius: 6px;
 		flex-shrink: 0;
 		box-shadow: var(--shadow-sm);
-	}
-
-	.sidebar :global(.brand-icon) {
-		flex-shrink: 0;
-		color: var(--color-accent);
 	}
 
 	.wordmark {
