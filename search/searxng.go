@@ -25,6 +25,20 @@ type SearchResponse struct {
 	Query   string         `json:"query"`
 	Answer  string         `json:"answer,omitempty"`
 	Results []SearchResult `json:"results"`
+	// Degraded is true when SearXNG came back with zero results *and* at
+	// least one engine reported itself unresponsive in the same response
+	// (rate-limited or CAPTCHA'd — see UnresponsiveEngines) — the signal
+	// that this is "the search infrastructure failed", not "this query
+	// genuinely has nothing", which look identical otherwise (both are
+	// just an empty Results slice with no error). Callers use this to
+	// decide whether an empty response is worth a fallback (Tavily) or a
+	// distinct "search is degraded" message, instead of silently
+	// reporting "no results found" for what's actually an outage.
+	Degraded bool `json:"degraded,omitempty"`
+	// UnresponsiveEngines is always populated when SearXNG reports any,
+	// regardless of Degraded — useful for logging even when other engines
+	// still returned enough to answer the query.
+	UnresponsiveEngines []string `json:"unresponsive_engines,omitempty"`
 }
 
 type SearXNGClient struct {
@@ -46,6 +60,12 @@ func NewSearXNGClient(baseURL string, blocklist *Blocklist) *SearXNGClient {
 type searxngResponse struct {
 	Query   string          `json:"query"`
 	Results []searxngResult `json:"results"`
+	// UnresponsiveEngines is SearXNG's own [["engine", "reason"], ...]
+	// shape (e.g. ["brave", "Suspended: too many requests"]) — a plain
+	// [][]string rather than a named struct since JSON can't decode a
+	// 2-element array into named fields, and the reason string is only
+	// ever used for logging, not branched on.
+	UnresponsiveEngines [][]string `json:"unresponsive_engines"`
 }
 
 type searxngResult struct {
@@ -125,5 +145,17 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		})
 	}
 
-	return &SearchResponse{Query: query, Results: results}, nil
+	unresponsive := make([]string, 0, len(searxngResp.UnresponsiveEngines))
+	for _, e := range searxngResp.UnresponsiveEngines {
+		if len(e) > 0 {
+			unresponsive = append(unresponsive, e[0])
+		}
+	}
+
+	return &SearchResponse{
+		Query:               query,
+		Results:             results,
+		Degraded:            len(results) == 0 && len(unresponsive) > 0,
+		UnresponsiveEngines: unresponsive,
+	}, nil
 }

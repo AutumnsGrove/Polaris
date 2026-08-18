@@ -1,9 +1,14 @@
-// Package tavily wraps Tavily's Extract API — a paid, remote fallback for
-// pages web_read's free goquery-based fetch can't get through: JS-rendered
-// SPAs whose content only exists after client-side JS runs. Tavily runs
-// that rendering on their infrastructure, not ours, which is the whole
-// point — a real headless-Chrome fallback isn't something the potato has
-// room for.
+// Package tavily wraps two of Tavily's paid APIs, both used as a fallback
+// of last resort rather than a primary path: Extract, for pages web_read's
+// free goquery-based fetch can't get through (JS-rendered SPAs whose
+// content only exists after client-side JS runs — Tavily runs that
+// rendering on their infrastructure, not ours, which is the whole point,
+// since a real headless-Chrome fallback isn't something the potato has
+// room for), and Search, for when the self-hosted SearXNG instance itself
+// is degraded (see search.SearchResponse.Degraded) rather than a query
+// genuinely having no results. Both share the same scarce monthly credit
+// budget — see handleWebSearch's doc comment on why Search only fires
+// when SearXNG explicitly signals it's failing, not on every empty query.
 package tavily
 
 import (
@@ -116,4 +121,68 @@ func (c *Client) Extract(ctx context.Context, rawURL string, advanced bool) (tex
 	}
 
 	return strings.TrimSpace(extractResp.Results[0].RawContent), nil
+}
+
+type SearchResult struct {
+	Title   string  `json:"title"`
+	URL     string  `json:"url"`
+	Content string  `json:"content"`
+	Score   float64 `json:"score"`
+}
+
+type SearchResponse struct {
+	Query   string         `json:"query"`
+	Answer  string         `json:"answer,omitempty"`
+	Results []SearchResult `json:"results"`
+}
+
+type searchRequest struct {
+	Query       string `json:"query"`
+	MaxResults  int    `json:"max_results,omitempty"`
+	SearchDepth string `json:"search_depth"`
+}
+
+// Search runs a query against Tavily's own Search API — a different
+// endpoint and a different service than SearXNG entirely (Tavily has its
+// own index/crawl, not a metasearch layer over other engines), used only
+// as a fallback when SearXNG itself reports it's degraded. Always
+// "basic" search depth (1 credit) rather than "advanced" (2) — this is
+// damage control for a scarce monthly budget, not a case where the
+// higher-quality tier is worth doubling the cost.
+func (c *Client) Search(ctx context.Context, query string, maxResults int) (*SearchResponse, error) {
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+
+	payload, err := json.Marshal(searchRequest{Query: query, MaxResults: maxResults, SearchDepth: "basic"})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/search", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tavily search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading tavily response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tavily error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp SearchResponse
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return nil, fmt.Errorf("parsing tavily response: %w", err)
+	}
+	return &searchResp, nil
 }

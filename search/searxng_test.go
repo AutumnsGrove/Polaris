@@ -129,6 +129,82 @@ func TestSearch_FiltersBlockedDomainsBeforeTruncating(t *testing.T) {
 	}
 }
 
+func TestSearch_DegradedWhenEmptyWithUnresponsiveEngines(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[],"unresponsive_engines":[
+			["brave","Suspended: too many requests"],
+			["duckduckgo","CAPTCHA"]
+		]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if !resp.Degraded {
+		t.Error("Degraded = false, want true (zero results, engines unresponsive)")
+	}
+	if want := []string{"brave", "duckduckgo"}; !slicesEqual(resp.UnresponsiveEngines, want) {
+		t.Errorf("UnresponsiveEngines = %v, want %v", resp.UnresponsiveEngines, want)
+	}
+}
+
+func TestSearch_NotDegradedWhenResultsPresentDespiteUnresponsiveEngines(t *testing.T) {
+	// Some engines down doesn't mean the search failed — the ones that
+	// answered may have been enough. Degraded is specifically "zero
+	// results AND something's reporting failure", not "anything's down".
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[
+			{"title":"fine","url":"https://a.com/1","score":1.0}
+		],"unresponsive_engines":[["brave","Suspended: too many requests"]]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if resp.Degraded {
+		t.Error("Degraded = true, want false (results still came back)")
+	}
+}
+
+func TestSearch_NotDegradedWhenGenuinelyEmpty(t *testing.T) {
+	// Zero results with no unresponsive engines at all is a real "nothing
+	// found for this query" — must not be mistaken for an outage.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"query":"q","results":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+	resp, err := client.Search(context.Background(), "q", 5, "")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if resp.Degraded {
+		t.Error("Degraded = true, want false (genuinely empty, not an outage)")
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func writeBlocklistFile(t *testing.T, contents string) string {
 	t.Helper()
 	path := t.TempDir() + "/blocked_sources.txt"

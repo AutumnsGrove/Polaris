@@ -79,6 +79,34 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		return "error: " + err.Error()
 	}
 
+	if len(resp.Results) == 0 && resp.Degraded {
+		// SearXNG itself is failing (its own engines are rate-limited or
+		// CAPTCHA'd — see search.SearchResponse.Degraded), not "this query
+		// has no results". Those look identical otherwise (both are just
+		// an empty slice with no error), and reporting the wrong one as
+		// the other is a real trust problem: it either says "no results"
+		// for a question that plainly has an answer, or (worse) lets the
+		// model quietly answer from ungrounded memory instead.
+		//
+		// Tavily is a completely different service (its own index, not a
+		// SearXNG engine) with a scarce shared monthly credit budget (see
+		// tavily package doc comment) — worth spending only on a confirmed
+		// SearXNG failure, never as a blanket fallback for an ordinary
+		// empty result.
+		if ctx.Tavily != nil {
+			if formatted, ok := tavilyFallback(ctx, args.Query); ok {
+				return formatted
+			}
+		}
+		log.Warn("web_search: searxng degraded", "query", args.Query, "category", args.Category, "unresponsive_engines", resp.UnresponsiveEngines)
+		msg := fmt.Sprintf(
+			"web search is temporarily degraded (SearXNG engines unresponsive: %s) — this is not a confirmed absence of results. Say so plainly if you rely on this, and prefer waiting or rephrasing over treating it as a real answer.",
+			strings.Join(resp.UnresponsiveEngines, ", "),
+		)
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": msg})
+		return msg
+	}
+
 	if len(resp.Results) == 0 {
 		log.Info("web_search: no results", "query", args.Query, "category", args.Category)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "no results"})
@@ -103,4 +131,35 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	})
 
 	return formatted
+}
+
+// tavilyFallback tries Tavily's Search API once SearXNG has confirmed
+// itself degraded (see handleWebSearch). Returns ok=false on any failure
+// or an empty result so the caller falls through to the plain "degraded"
+// message instead — this is a best-effort rescue, not something worth its
+// own error path back to the model.
+func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
+	resp, err := ctx.Tavily.Search(ctx.Ctx, query, 5)
+	if err != nil || len(resp.Results) == 0 {
+		log.Warn("web_search: tavily fallback failed", "query", query, "err", err)
+		return "", false
+	}
+
+	urls := make([]string, 0, len(resp.Results))
+	var sb strings.Builder
+	for i, r := range resp.Results {
+		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, r.Title, r.URL, r.Content)
+		ctx.AddCitation(Citation{Title: r.Title, URL: r.URL})
+		urls = append(urls, r.URL)
+	}
+	formatted = sb.String()
+
+	log.Info("web_search: served from tavily fallback (searxng degraded)", "query", query, "results", len(resp.Results), "urls", urls)
+
+	ctx.Emit("tool_result", map[string]interface{}{
+		"tool":      "web_search",
+		"result":    formatted,
+		"citations": ctx.CitationsSnapshot(),
+	})
+	return formatted, true
 }
