@@ -80,4 +80,16 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 	},
+	{
+		// Text-only (no image input) — NOT marked multimodal, matching
+		// mimo-pro above, so Config.MultimodalModel doesn't accidentally
+		// pick this for image-description duty. The ":free" slug routes
+		// through OpenRouter's no-cost provider pool; cost shows as $0.
+		ID:          "nemotron-ultra",
+		Name:        "NemoTron Ultra (Free)",
+		Model:       "nvidia/nemotron-3-ultra-550b-a55b:free",
+		Provider:    []string{"nvidia"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+	},
 }
