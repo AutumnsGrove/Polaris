@@ -51,7 +51,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"polaris/llm"
 )
@@ -105,17 +104,6 @@ const (
 	maxTrackResultsShown      = 10
 	maxAlbumTrackResultsShown = 15
 	maxSimilarAlbumsShown     = 10
-
-	// descriptionTruncateLen bounds how much of a wiki summary/overview
-	// gets shown per recommendation line — fine to show in full once for
-	// the source track/album/title, but stacked under every one of up to
-	// 15 candidates it would swamp the actual result. 500 rather than a
-	// tighter bound because most wiki summaries and TMDB overviews run
-	// 1-3 sentences (150-400 chars) — a lower cap was cutting most of them
-	// off mid-sentence, which read as more garbled than useful. Shared
-	// with books.go's and movies.go's equivalent per-candidate truncation
-	// (see truncateText).
-	descriptionTruncateLen = 500
 )
 
 func handleMusic(argsJSON string, ctx *Context) string {
@@ -278,7 +266,7 @@ func formatSimilarTrackResult(artist, track string, tags []string, description s
 	for i, t := range similar {
 		fmt.Fprintf(&sb, "%d. %s - %s", i+1, t.Artist.Name, t.Name)
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -344,7 +332,7 @@ func formatAlbumTracksResult(artist, album, description string, ranked []*simila
 			fmt.Fprintf(&sb, " (recommended by %d songs on the album)", c.Count)
 		}
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -462,7 +450,7 @@ func formatSimilarAlbumsResult(artist, album, description string, ranked []*simi
 			fmt.Fprintf(&sb, " (%d tracks pointed here independently)", len(c.Tracks))
 		}
 		if i < len(descriptions) && descriptions[i] != "" {
-			fmt.Fprintf(&sb, " — %s", truncateText(descriptions[i], descriptionTruncateLen))
+			fmt.Fprintf(&sb, " — %s", descriptions[i])
 		}
 		sb.WriteString("\n")
 	}
@@ -595,34 +583,6 @@ var lastfmReadMoreLinkRe = regexp.MustCompile(`\s*<a\s+href="[^"]*">[^<]*</a>\.?
 func cleanLastFMWiki(raw string) string {
 	cleaned := lastfmReadMoreLinkRe.ReplaceAllString(raw, "")
 	return strings.TrimSpace(html.UnescapeString(cleaned))
-}
-
-// truncateText bounds s to max runes, breaking at the last space before the
-// cutoff rather than mid-word, and appending "..." — used for per-candidate
-// descriptions (see descriptionTruncateLen) in both music.go and books.go,
-// where a full wiki/description paragraph is appropriate once for the
-// source item but not stacked under every recommendation.
-func truncateText(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	cut := s[:max]
-	// s[:max] is a byte-offset slice — for non-ASCII text (a foreign-film
-	// TMDB overview, say) that can land mid-rune, producing invalid UTF-8.
-	// Trim back byte-by-byte until the prefix is valid UTF-8 again, before
-	// searching for a word boundary below — a run of multi-byte characters
-	// with no space near the cutoff (nothing for LastIndex to find) can't
-	// return a broken trailing byte sequence this way. Bounded by at most
-	// utf8.UTFMax-1 iterations: s itself is assumed valid UTF-8 (it's
-	// decoded JSON text), so cutting one byte at a time off an invalid
-	// mid-rune prefix reaches a valid boundary in at most 3 steps.
-	for len(cut) > 0 && !utf8.ValidString(cut) {
-		cut = cut[:len(cut)-1]
-	}
-	if i := strings.LastIndex(cut, " "); i > 0 {
-		cut = cut[:i]
-	}
-	return strings.TrimSpace(cut) + "..."
 }
 
 // resolveTrack turns a user-supplied artist/track into Last.fm's

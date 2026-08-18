@@ -34,11 +34,16 @@ type Event struct {
 }
 
 // maxEventDataBytes caps how much a single event's JSON detail blob can
-// hold — a web_read result can run past 10K characters, and this is meant
-// to be a durable evidence trail, not an unbounded copy of every tool
-// response. Long values (e.g. a "result" field) are truncated before
-// marshaling; see truncateEventStrings.
-const maxEventDataBytes = 4000
+// hold — this is meant to be a durable evidence trail, not an unbounded
+// copy of every tool response. Long values (e.g. a "result" field) are
+// truncated before marshaling; see truncateEventStrings. Set above
+// web_read's own ~12K-char cap (tools/web_read.go's maxExtractedChars) and
+// books.go's full, deliberately untruncated multi-candidate descriptions
+// (see tools/books.go) so a normal result from either isn't silently
+// double-truncated on top of what the tool itself already decided to show
+// — this is a backstop against genuinely unbounded content, not a second
+// display-length policy layered on top of the tool's own.
+const maxEventDataBytes = 20000
 
 // LogEvent records one structured event. threadID empty means "not
 // scoped to a single thread" (startup, self-update, a config reload
