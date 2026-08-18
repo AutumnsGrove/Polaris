@@ -39,9 +39,14 @@ nothing to remember about which mode a given host is in.
 - **Bare-metal**: `polaris update` does `git pull && go build && restart` locally.
 - **Docker**: `polaris update` resolves the latest published image's digest from GHCR (waiting out
   an in-progress CI build first, so a click right after `git push` can't silently grab the
-  *previous* build), then hands off to a host-side systemd watcher
-  (`compose/watcher/update.sh`) that does `docker compose pull && up --force-recreate` — the
-  container itself never gets any control over Docker.
+  *previous* build), then hands off to a host-side systemd watcher (`compose/watcher/update.sh`)
+  that first `git fetch`/`merge --ff-only`s the host checkout (so `docker-compose.yml`'s env
+  passthrough list and the bind-mounted config templates land *with* the new image, not days
+  later on whoever next remembers to `git pull` by hand — a real gap found live: an image update
+  alone left a newly-added secret's passthrough line missing from `docker-compose.yml` until the
+  checkout was synced manually), then does `docker compose pull && up --force-recreate` — the
+  container itself never gets any control over Docker. The `--ff-only` refuses rather than
+  clobbering if the host checkout has diverged (uncommitted edits, a stray local commit).
 - If you rebuild the *host-side* `polaris` binary on the potato (needed after a CLI-only code
   change — `cd ~/Polaris && go build -o polaris .`) note that's separate from the running
   container's own image; the CLI binary is just a thin client hitting the container's REST API

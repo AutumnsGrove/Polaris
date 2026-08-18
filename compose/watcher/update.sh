@@ -101,6 +101,26 @@ fi
 PREVIOUS_IMAGE="$(current_pinned_image)"
 echo "updating polaris: $PREVIOUS_IMAGE -> $TARGET_IMAGE"
 
+# Sync the host-side checkout before touching the container — same
+# `git pull origin main` the bare-metal path runs (updater.go's Run),
+# so both deployment models trust identical git semantics rather than
+# Docker inventing its own stricter (and, tested live, not actually
+# safer) rule. The image alone isn't the whole deployment:
+# docker-compose.yml's env passthrough list, the bind-mounted config
+# templates, and this very script all live in this checkout, and
+# previously only advanced whenever someone happened to `git pull`
+# manually — potentially days after TARGET_IMAGE had already moved.
+# Caught live: a PR added PARALLEL_API_KEY to both the image and
+# docker-compose.yml's passthrough list; the image update alone left
+# the container running the new code with the key silently missing
+# from its environment until docker-compose.yml itself was pulled by
+# hand.
+if ! git pull origin main --quiet; then
+	write_result "failed" "git pull origin main failed, aborting before touching the container"
+	rm -f "$REQUESTED_FILE"
+	exit 1
+fi
+
 set_pinned_image "$TARGET_IMAGE"
 
 # Scoped to the polaris service specifically (not a bare `docker
