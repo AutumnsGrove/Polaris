@@ -20,7 +20,7 @@ func TestSearch_QueryAndCategoryParams(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	if _, err := client.Search(context.Background(), "golang", 5, "news"); err != nil {
+	if _, err := client.Search(context.Background(), "golang", 5, "news", 1); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if gotQuery != "golang" {
@@ -46,7 +46,7 @@ func TestSearch_FusesMultiEnginePositions(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSearch_FallsBackToListPositionWhenPositionsOmitted(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -100,12 +100,42 @@ func TestSearch_TruncatesToMaxResults(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 2, "")
+	resp, err := client.Search(context.Background(), "q", 2, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if len(resp.Results) != 2 {
 		t.Errorf("got %d results, want capped at 2", len(resp.Results))
+	}
+}
+
+func TestSearch_PageParam(t *testing.T) {
+	var gotPageno string
+	sawPageno := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPageno = r.URL.Query().Has("pageno")
+		gotPageno = r.URL.Query().Get("pageno")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewSearXNGClient(srv.URL, nil)
+
+	// page <= 1 omits &pageno entirely — SearXNG's own default, and the
+	// exact request shape every other test above relies on.
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if sawPageno {
+		t.Error("expected no pageno param for page 1")
+	}
+
+	if _, err := client.Search(context.Background(), "q", 5, "", 3); err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if !sawPageno || gotPageno != "3" {
+		t.Errorf("pageno param = %q (present: %v), want \"3\"", gotPageno, sawPageno)
 	}
 }
 
@@ -119,7 +149,7 @@ func TestSearch_NoCategoryOmitsParam(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	if _, err := client.Search(context.Background(), "q", 5, ""); err != nil {
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
 	if sawCategories {
@@ -135,7 +165,7 @@ func TestSearch_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	if _, err := client.Search(context.Background(), "q", 5, ""); err == nil {
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err == nil {
 		t.Fatal("expected an error for a 500 response")
 	}
 }
@@ -158,7 +188,7 @@ func TestSearch_FiltersBlockedDomainsBeforeTruncating(t *testing.T) {
 	}
 
 	client := NewSearXNGClient(srv.URL, bl)
-	resp, err := client.Search(context.Background(), "q", 2, "")
+	resp, err := client.Search(context.Background(), "q", 2, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -185,7 +215,7 @@ func TestSearch_DegradedWhenAllGeneralCategoryEnginesUnresponsive(t *testing.T) 
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -213,7 +243,7 @@ func TestSearch_NotDegradedWhenOnlySomeEnginesUnresponsive(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -241,7 +271,7 @@ func TestSearch_NotDegradedForNonGeneralCategoryEvenIfUnresponsive(t *testing.T)
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "news")
+	resp, err := client.Search(context.Background(), "q", 5, "news", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -263,7 +293,7 @@ func TestSearch_NotDegradedWhenResultsPresentDespiteUnresponsiveEngines(t *testi
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -282,7 +312,7 @@ func TestSearch_NotDegradedWhenGenuinelyEmpty(t *testing.T) {
 	defer srv.Close()
 
 	client := NewSearXNGClient(srv.URL, nil)
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -322,7 +352,7 @@ func TestSearch_EntersCooldownAfterFullOutageAndSkipsSubsequentRequests(t *testi
 
 	client := NewSearXNGClient(srv.URL, nil)
 
-	first, err := client.Search(context.Background(), "q", 5, "")
+	first, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("first Search returned error: %v", err)
 	}
@@ -333,7 +363,7 @@ func TestSearch_EntersCooldownAfterFullOutageAndSkipsSubsequentRequests(t *testi
 		t.Fatalf("requestCount after first Search = %d, want 1", requestCount)
 	}
 
-	second, err := client.Search(context.Background(), "q", 5, "")
+	second, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("second Search returned error: %v", err)
 	}
@@ -361,7 +391,7 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	}))
 	defer outage.Close()
 	outageClient := NewSearXNGClient(outage.URL, nil)
-	if resp, err := outageClient.Search(context.Background(), "q", 5, ""); err != nil || !resp.Degraded {
+	if resp, err := outageClient.Search(context.Background(), "q", 5, "", 1); err != nil || !resp.Degraded {
 		t.Fatalf("setting up the outaged client failed: resp=%+v err=%v", resp, err)
 	}
 
@@ -372,7 +402,7 @@ func TestSearch_CooldownDoesNotAffectAFreshClient(t *testing.T) {
 	defer healthy.Close()
 	healthyClient := NewSearXNGClient(healthy.URL, nil)
 
-	resp, err := healthyClient.Search(context.Background(), "q", 5, "")
+	resp, err := healthyClient.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("healthy client Search returned error: %v", err)
 	}
@@ -396,7 +426,7 @@ func TestSearch_DomainRankingBlockExcludesResult(t *testing.T) {
 
 	client := NewSearXNGClient(srv.URL, nil).
 		WithDomainRankings(writeRankingsFile(t, "spam.example: block\n"))
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -419,7 +449,7 @@ func TestSearch_DomainRankingPinForcesToTop(t *testing.T) {
 
 	client := NewSearXNGClient(srv.URL, nil).
 		WithDomainRankings(writeRankingsFile(t, "pin.example: pin\n"))
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}
@@ -446,7 +476,7 @@ func TestSearch_DomainRankingRaiseCanOutrankHigherPosition(t *testing.T) {
 
 	client := NewSearXNGClient(srv.URL, nil).
 		WithDomainRankings(writeRankingsFile(t, "boost.example: raise\n"))
-	resp, err := client.Search(context.Background(), "q", 5, "")
+	resp, err := client.Search(context.Background(), "q", 5, "", 1)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
 	}

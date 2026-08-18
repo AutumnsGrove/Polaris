@@ -19,6 +19,7 @@ import (
 )
 
 var atlasMaxResults int
+var atlasPage int
 
 // atlasCmd is a parent for Atlas-specific subcommands — just `search` for
 // now, but keeping it as its own namespace (rather than a top-level
@@ -38,7 +39,8 @@ var atlasSearchCmd = &cobra.Command{
 
 func init() {
 	atlasSearchCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install queries the running container instead)")
-	atlasSearchCmd.Flags().IntVarP(&atlasMaxResults, "max-results", "n", 8, "maximum number of results")
+	atlasSearchCmd.Flags().IntVarP(&atlasMaxResults, "max-results", "n", 20, "maximum number of results")
+	atlasSearchCmd.Flags().IntVarP(&atlasPage, "page", "p", 1, "SearXNG results page to fetch (1-indexed)")
 	atlasCmd.AddCommand(atlasSearchCmd)
 	rootCmd.AddCommand(atlasCmd)
 }
@@ -57,7 +59,7 @@ func runAtlasSearch(cmd *cobra.Command, args []string) error {
 	// SearXNGClient against a config/blocklist/domain-rankings file this
 	// process can't correctly see under Docker.
 	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		return runDockerAtlasSearch(query, atlasMaxResults)
+		return runDockerAtlasSearch(query, atlasMaxResults, atlasPage)
 	}
 
 	cfg, err := config.Load(configPath, models.Registry)
@@ -74,7 +76,7 @@ func runAtlasSearch(cmd *cobra.Command, args []string) error {
 
 	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile)
 
-	resp, err := searxng.Search(context.Background(), query, atlasMaxResults, "")
+	resp, err := searxng.Search(context.Background(), query, atlasMaxResults, "", atlasPage)
 	if err != nil {
 		log.Warn("atlas search failed", "query", query, "err", err)
 		return fmt.Errorf("search failed: %w", err)
@@ -88,8 +90,8 @@ func runAtlasSearch(cmd *cobra.Command, args []string) error {
 // GET the running container's own /api/search (gateway/search.go), the
 // same endpoint Atlas's web UI itself calls, instead of duplicating the
 // ranking pipeline here.
-func runDockerAtlasSearch(query string, maxResults int) error {
-	u := fmt.Sprintf("%s/api/search?q=%s&max_results=%d", dockerLocalBaseURL(), url.QueryEscape(query), maxResults)
+func runDockerAtlasSearch(query string, maxResults, page int) error {
+	u := fmt.Sprintf("%s/api/search?q=%s&max_results=%d&page=%d", dockerLocalBaseURL(), url.QueryEscape(query), maxResults, page)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(u)

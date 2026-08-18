@@ -67,6 +67,19 @@ type SearchResponse struct {
 	// user/model roughly how long to wait instead of an open-ended
 	// "try again later".
 	RetryAfter time.Time `json:"retry_after,omitempty"`
+	// Page is the 1-indexed page these results came from, echoed back so a
+	// caller doesn't have to separately track what it asked for.
+	Page int `json:"page"`
+	// HasMore is a heuristic, not a real "is there really another page"
+	// answer — SearXNG never reports a total result count. True when
+	// SearXNG's own raw response for this page had at least maxResults
+	// items, before this client's blocklist/ranking filtering trims that
+	// down further (checking the filtered, capped count instead would
+	// under-report — a page that lost half its results to the blocklist
+	// says nothing about whether SearXNG itself had more). Good enough to
+	// gate a "next page" control without a wasted round-trip most of the
+	// time; not a promise.
+	HasMore bool `json:"has_more"`
 }
 
 // generalCategoryEngineCount is how many engines SearXNG's "general"
@@ -208,16 +221,26 @@ func rrfScore(positions []int) float64 {
 }
 
 // Search performs a web search via SearXNG and returns up to maxResults
-// relevance-ranked results. SearXNG doesn't produce an AI-generated
-// answer summary, so Answer is always empty here (unlike Tavily).
-// category filters which SearXNG engines answer the query — "" (SearXNG's
-// default "general" category) searches ordinary web-indexed pages, which
-// for broad queries like "atlanta ga news" routinely surface each outlet's
-// homepage rather than a specific story, since the homepage's title/text
-// matches a broad phrase just as well as any article does. "news" routes
-// to dedicated news-search engines (Google News, Bing News, etc.), which
-// index actual articles rather than static pages.
-func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string) (*SearchResponse, error) {
+// relevance-ranked results from the given page (1-indexed; page <= 1 is
+// SearXNG's own default and omits &pageno entirely, matching this
+// function's pre-pagination request shape exactly). SearXNG doesn't
+// produce an AI-generated answer summary, so Answer is always empty here
+// (unlike Tavily). category filters which SearXNG engines answer the
+// query — "" (SearXNG's default "general" category) searches ordinary
+// web-indexed pages, which for broad queries like "atlanta ga news"
+// routinely surface each outlet's homepage rather than a specific story,
+// since the homepage's title/text matches a broad phrase just as well as
+// an article does. "news" routes to dedicated news-search engines
+// (Google News, Bing News, etc.), which index actual articles rather
+// than static pages.
+//
+// Each page is fused/sorted/truncated independently — SearXNG doesn't
+// report a total result count up front, so there's no single ranking to
+// slice across pages from; a caller wanting broad coverage (Atlas's own
+// pagination, or the assistant issuing several web_search calls across
+// pages at once) is trading exhaustiveness for that, same tradeoff behind
+// Google's own numbered pagination.
+func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string, page int) (*SearchResponse, error) {
 	if cooling, until := c.inCooldown(); cooling {
 		blocklistLog.Info("searxng: skipping request, still cooling down after a full outage", "query", query, "retry_after", until)
 		return &SearchResponse{Query: query, Degraded: true, RetryAfter: until}, nil
@@ -230,6 +253,9 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 	u := fmt.Sprintf("%s/search?format=json&q=%s", c.baseURL, url.QueryEscape(query))
 	if category != "" {
 		u += "&categories=" + url.QueryEscape(category)
+	}
+	if page > 1 {
+		u += fmt.Sprintf("&pageno=%d", page)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -314,6 +340,12 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		return results[i].Score > results[j].Score
 	})
 
+	// searxngResp.Results is untouched by the filtering loop above (it
+	// only reads from it to build results) — still the raw, pre-filter
+	// count SearXNG itself returned. See HasMore's doc comment on why
+	// that's the one that matters here, not len(results).
+	hasMore := len(searxngResp.Results) >= maxResults
+
 	if len(results) > maxResults {
 		results = results[:maxResults]
 	}
@@ -341,10 +373,15 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 		blocklistLog.Warn("searxng: full outage detected, entering cooldown", "query", query, "unresponsive_engines", unresponsive, "cooldown", degradedCooldown)
 	}
 
+	if page <= 0 {
+		page = 1
+	}
 	return &SearchResponse{
 		Query:               query,
 		Results:             results,
 		Degraded:            degraded,
 		UnresponsiveEngines: unresponsive,
+		Page:                page,
+		HasMore:             hasMore,
 	}, nil
 }

@@ -312,6 +312,34 @@ func TestHandleWebSearch_DegradedFallsBackToTavilyWhenParallelErrors(t *testing.
 	}
 }
 
+func TestHandleWebSearch_PageParamForwardedAndClamped(t *testing.T) {
+	var gotPageno string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPageno = r.URL.Query().Get("pageno")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": r.URL.Query().Get("q"), "results": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	handleWebSearch(`{"query":"golang release","page":3}`, ctx)
+	if gotPageno != "3" {
+		t.Errorf("pageno = %q, want %q", gotPageno, "3")
+	}
+
+	// Out-of-range values (0, negative, or past the 5-page cap) fall back
+	// to page 1 rather than forwarding something SearXNG might reject or
+	// that would silently run the agent past the documented cap.
+	handleWebSearch(`{"query":"golang release","page":99}`, ctx)
+	if gotPageno != "" {
+		t.Errorf("pageno = %q, want omitted (clamped back to page 1)", gotPageno)
+	}
+}
+
 func TestHandleWebSearch_QueryRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 	result := handleWebSearch(`{}`, ctx)

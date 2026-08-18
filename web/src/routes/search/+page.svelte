@@ -15,7 +15,9 @@
 		X,
 		Sparkles,
 		Telescope,
-		PanelLeft
+		PanelLeft,
+		ChevronLeft,
+		ChevronRight
 	} from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
 
@@ -123,6 +125,26 @@
 		void goto(`/search?q=${encodeURIComponent(q)}`, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
+	let atlasPageEl = $state<HTMLDivElement | undefined>(undefined);
+
+	// Turning the page isn't a new search (record: false — same reasoning
+	// as reopening a sidebar history entry) and it doesn't touch Quick
+	// Answer, which is tied to the original query, not to which page of
+	// web results is showing. lastQuery, not searchState.query, since the
+	// omnibox's live value could differ from what's actually on screen if
+	// the user's since typed something without submitting it.
+	function goToPage(n: number) {
+		if (n < 1 || n === searchState.page || searchState.loading) return;
+		void searchState.search(searchState.lastQuery, { record: false, page: n });
+		atlasPageEl?.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	// Google stretches the "o"s in its own logo the deeper you page in;
+	// this is Atlas's version, the second "a" from "point it anywhere" for
+	// how far you're willing to go. Capped well short of where it'd start
+	// breaking the header's layout on a narrow screen.
+	let pageWordmark = $derived('Atl' + 'a'.repeat(Math.min(searchState.page, 8)) + 's');
+
 	onMount(() => {
 		function closeOnOutsideClick(e: MouseEvent) {
 			if (!(e.target as HTMLElement)?.closest('.result-actions, .rank-popover')) {
@@ -169,7 +191,7 @@
 	</form>
 {/snippet}
 
-<div class="atlas-page">
+<div class="atlas-page" bind:this={atlasPageEl}>
 	<header class="top">
 		<div class="top-inner">
 			<div class="brand-row">
@@ -192,7 +214,7 @@
 						</button>
 					{/if}
 					<img class="mark" src="/atlas-touch-icon.png" alt="" width="20" height="20" />
-					<span class="name">Atlas<span class="sub">Search the web</span></span>
+					<span class="name">{pageWordmark}<span class="sub">Search the web</span></span>
 				</div>
 				<div class="header-actions">
 					<ModeToggle mode="search" />
@@ -362,6 +384,49 @@
 					</li>
 				{/each}
 			</ol>
+
+			<!-- A real page-scrubber, not a "load more" — each click is its
+			     own independent SearXNG page fetch (see search.svelte.ts's
+			     page option), not appended to what's already showing.
+			     hasMore starts as gateway/search.go's same-page heuristic
+			     (SearXNG never reports a total count) but search.svelte.ts
+			     prefetches the next page in the background and corrects it
+			     to the real answer once that lands — usually well before
+			     anyone actually reads this far and clicks, so "Next"
+			     disables itself instead of leading into a dead end. -->
+			{#if searchState.page > 1 || searchState.hasMore}
+				<nav class="pagination" aria-label="Search result pages">
+					<button
+						type="button"
+						class="page-nav"
+						disabled={searchState.page <= 1}
+						onclick={() => goToPage(searchState.page - 1)}
+						aria-label="Previous page"
+					>
+						<ChevronLeft size={16} />
+					</button>
+					{#each Array.from({ length: Math.min(searchState.page, 12) }, (_, i) => i + 1) as n (n)}
+						<button
+							type="button"
+							class="page-num"
+							class:active={n === searchState.page}
+							aria-current={n === searchState.page ? 'page' : undefined}
+							onclick={() => goToPage(n)}
+						>
+							{n}
+						</button>
+					{/each}
+					<button
+						type="button"
+						class="page-nav"
+						disabled={!searchState.hasMore}
+						onclick={() => goToPage(searchState.page + 1)}
+						aria-label="Next page"
+					>
+						<ChevronRight size={16} />
+					</button>
+				</nav>
+			{/if}
 		{/if}
 	</main>
 </div>
@@ -1039,6 +1104,64 @@
 		line-height: 1.55;
 		color: var(--ink-muted);
 		max-width: 68ch;
+	}
+
+	.pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 12px;
+		padding-top: 20px;
+	}
+
+	.page-nav,
+	.page-num {
+		appearance: none;
+		border: 1px solid var(--line);
+		background: var(--paper-raised);
+		color: var(--ink-muted);
+		border-radius: 8px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.page-nav {
+		width: 34px;
+		height: 34px;
+		flex: none;
+	}
+
+	.page-nav:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	.page-nav:not(:disabled):hover {
+		border-color: var(--line-strong);
+		color: var(--ink);
+	}
+
+	.page-num {
+		min-width: 34px;
+		height: 34px;
+		padding: 0 4px;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.page-num:hover {
+		border-color: var(--line-strong);
+		color: var(--ink);
+	}
+
+	.page-num.active {
+		background: var(--accent-soft);
+		border-color: var(--accent-soft-line);
+		color: var(--accent);
 	}
 
 	@media (max-width: 640px) {

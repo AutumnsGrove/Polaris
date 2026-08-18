@@ -24,14 +24,26 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	category := r.URL.Query().Get("category")
 
-	maxResults := 8
+	// 20, not the old 8 — SearXNG's own single-page response for a
+	// general query routinely already contains 20-30+ merged results
+	// (use_default_settings: true pulls in dozens of engines); the old
+	// cap was throwing away most of what SearXNG had already fetched,
+	// not actually limiting how much work anything did.
+	maxResults := 20
 	if raw := r.URL.Query().Get("max_results"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			maxResults = n
 		}
 	}
 
-	resp, err := s.searxng.Search(r.Context(), query, maxResults, category)
+	page := 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	resp, err := s.searxng.Search(r.Context(), query, maxResults, category, page)
 	if err != nil {
 		log.Warn("atlas search failed", "query", query, "category", category, "err", err)
 		http.Error(w, err.Error(), http.StatusBadGateway)

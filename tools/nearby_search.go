@@ -110,7 +110,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 
 	// No Foursquare (or it errored): plain web search for the same intent.
 	if ctx.SearXNG != nil {
-		resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query+" near "+geo.DisplayName, args.Limit, "")
+		resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query+" near "+geo.DisplayName, args.Limit, "", 1)
 		if err == nil {
 			var summary string
 			for i, r := range resp.Results {

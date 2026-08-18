@@ -35,7 +35,7 @@ var webSearchDef = llm.ToolDef{
 				},
 				"max_results": map[string]interface{}{
 					"type":        "integer",
-					"description": "Maximum results to return (default 5, max 10).",
+					"description": "Maximum results to return (default 5, max 20).",
 				},
 				"category": map[string]interface{}{
 					"type": "string",
@@ -44,6 +44,14 @@ var webSearchDef = llm.ToolDef{
 						"surfaces an outlet's homepage instead of a specific story for broad queries like " +
 						"\"<city> news\".",
 					"enum": []string{"general", "news"},
+				},
+				"page": map[string]interface{}{
+					"type": "integer",
+					"description": "Optional: which page of results to fetch (default 1, max 5). Each page is a " +
+						"different set of results, not more of the same ones — for a topic that needs unusually " +
+						"broad coverage, call web_search several times with different page values (they're " +
+						"independent queries, so issue them in the same turn to run concurrently) rather than " +
+						"calling page 1 repeatedly.",
 				},
 			},
 			"required": []string{"query"},
@@ -58,6 +66,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 		Category   string `json:"category"`
+		Page       int    `json:"page"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "web_search", nil, "error: "+err.Error())
@@ -65,16 +74,23 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	if args.Query == "" {
 		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query}, "error: query is required")
 	}
-	if args.MaxResults <= 0 || args.MaxResults > 10 {
+	if args.MaxResults <= 0 || args.MaxResults > 20 {
 		args.MaxResults = 5
 	}
 	if args.Category == "general" {
 		args.Category = "" // SearXNG's default category — no filter needed
 	}
+	if args.Page <= 0 || args.Page > 5 {
+		args.Page = 1
+	}
 
+	callArgs := map[string]interface{}{"query": args.Query}
+	if args.Page > 1 {
+		callArgs["page"] = args.Page
+	}
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool": "web_search",
-		"args": map[string]interface{}{"query": args.Query},
+		"args": callArgs,
 	})
 
 	if ctx.SearXNG == nil {
@@ -84,9 +100,9 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		return result
 	}
 
-	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category)
+	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category, args.Page)
 	if err != nil {
-		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "err", err)
+		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "page", args.Page, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
 	}
@@ -139,7 +155,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	}
 
 	if len(resp.Results) == 0 {
-		log.Info("web_search: no results", "query", args.Query, "category", args.Category)
+		log.Info("web_search: no results", "query", args.Query, "category", args.Category, "page", args.Page)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "no results"})
 		return "no results found"
 	}
@@ -148,7 +164,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, results)
+	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, args.Page, results)
 	return formatted
 }
 
@@ -171,7 +187,7 @@ type searchResultLike struct {
 // visible in the transcript/timeline, not just in server logs — the
 // model (and anyone reading the timeline) can tell when an answer came
 // from a degraded-SearXNG fallback instead of the primary path.
-func formatSearchResults(ctx *Context, provider, query, category string, results []searchResultLike) string {
+func formatSearchResults(ctx *Context, provider, query, category string, page int, results []searchResultLike) string {
 	urls := make([]string, 0, len(results))
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[via %s]\n\n", provider)
@@ -182,7 +198,7 @@ func formatSearchResults(ctx *Context, provider, query, category string, results
 	}
 	formatted := sb.String()
 
-	log.Info("web_search", "provider", provider, "query", query, "category", category, "results", len(results), "urls", urls)
+	log.Info("web_search", "provider", provider, "query", query, "category", category, "page", page, "results", len(results), "urls", urls)
 
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_search",
@@ -223,7 +239,7 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", results), true
+	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", 1, results), true
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
@@ -242,5 +258,5 @@ func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", results), true
+	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", 1, results), true
 }

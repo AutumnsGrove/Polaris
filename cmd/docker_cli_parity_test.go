@@ -129,6 +129,9 @@ func TestRunDockerAtlasSearch_HappyPath(t *testing.T) {
 		if got := r.URL.Query().Get("max_results"); got != "3" {
 			t.Errorf("max_results query param = %q, want %q", got, "3")
 		}
+		if got := r.URL.Query().Get("page"); got != "1" {
+			t.Errorf("page query param = %q, want %q", got, "1")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"query": "rust async runtime",
@@ -139,7 +142,7 @@ func TestRunDockerAtlasSearch_HappyPath(t *testing.T) {
 	})
 
 	output := captureStdout(t, func() {
-		if err := runDockerAtlasSearch("rust async runtime", 3); err != nil {
+		if err := runDockerAtlasSearch("rust async runtime", 3, 1); err != nil {
 			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
 		}
 	})
@@ -162,7 +165,7 @@ func TestRunDockerAtlasSearch_NoResults(t *testing.T) {
 	})
 
 	output := captureStdout(t, func() {
-		if err := runDockerAtlasSearch("asdfqwerty", 8); err != nil {
+		if err := runDockerAtlasSearch("asdfqwerty", 8, 1); err != nil {
 			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
 		}
 	})
@@ -178,7 +181,7 @@ func TestRunDockerAtlasSearch_ServerError(t *testing.T) {
 		_, _ = w.Write([]byte("searxng unreachable"))
 	})
 
-	err := runDockerAtlasSearch("anything", 8)
+	err := runDockerAtlasSearch("anything", 8, 1)
 	if err == nil {
 		t.Fatal("runDockerAtlasSearch() error = nil, want an error on a non-200")
 	}

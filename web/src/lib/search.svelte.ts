@@ -18,6 +18,14 @@ export class SearchState {
 	error = $state('');
 	lastQuery = $state('');
 
+	// Which SearXNG results page lastQuery is currently showing, and
+	// whether a next one might exist — see gateway/search.go's has_more
+	// doc comment for why that's a heuristic, not a promise. Reset to
+	// page 1 whenever a genuinely new query runs (search() with no page
+	// in opts); only goToPage-style navigation changes it otherwise.
+	page = $state(1);
+	hasMore = $state(false);
+
 	// Sidebar's "Recent searches"/Favorites data — see store.SearchHistoryEntry.
 	// Loaded independently of a live search (Sidebar needs it even before
 	// the user has searched anything this session) and refreshed after
@@ -34,9 +42,45 @@ export class SearchState {
 	// no way to "follow up" on a one-shot search, unlike a chat thread, so
 	// merely revisiting one should never move it — same as opening a
 	// thread never touches its position either.
-	async search(query: string, opts: { record: boolean } = { record: true }) {
+	//
+	// page: which SearXNG page to fetch (default 1, a genuinely new
+	// query). Pagination within the *same* query (goToPage in
+	// +page.svelte) calls this again with a higher page and record:
+	// false — turning the page isn't a new search, so it shouldn't touch
+	// history either.
+	//
+	// Pages are cached per query (see pageCache below) and the *next*
+	// page is speculatively prefetched in the background right after this
+	// one lands — so by the time a user actually reads the results and
+	// clicks "Next", that page either loads instantly from cache or,
+	// better, we already know for certain whether it's empty and can just
+	// disable the button instead of letting them click into a dead end.
+	// gateway/search.go's has_more is only a same-page heuristic (full
+	// page in ⇒ maybe more, short page in ⇒ definitely not); the
+	// prefetch's own has_more replaces that guess with the real answer as
+	// soon as it resolves.
+	async search(query: string, opts: { record: boolean; page?: number } = { record: true }) {
 		const trimmed = query.trim();
 		if (!trimmed) return;
+		const page = opts.page ?? 1;
+
+		if (trimmed !== this.lastQuery) {
+			// A genuinely different query — yesterday's page 2 has nothing
+			// to do with today's, and a stale hit here would silently show
+			// the wrong query's results under a "page N" label.
+			this.pageCache.clear();
+			this.pagePrefetches.clear();
+		}
+
+		const cached = this.pageCache.get(page);
+		if (cached) {
+			this.results = cached.results;
+			this.lastQuery = trimmed;
+			this.page = page;
+			this.hasMore = cached.hasMore;
+			this.prefetchNextPage(trimmed, page);
+			return;
+		}
 
 		// Cancels a still-outstanding previous search's actual network
 		// request (not just its effect on state) — the seq guards below
@@ -53,19 +97,24 @@ export class SearchState {
 		const seq = ++this.searchSeq;
 
 		try {
-			const url = `/api/search?q=${encodeURIComponent(trimmed)}${opts.record ? '' : '&record=0'}`;
-			const res = await fetch(url, { signal: controller.signal });
+			// A prefetch for this exact page may already be in flight from
+			// an earlier page's own lookahead — ride it instead of firing a
+			// second, redundant SearXNG request for the same page.
+			const inFlight = this.pagePrefetches.get(page);
+			const data = inFlight ? await inFlight : await this.fetchPage(trimmed, page, opts.record, controller.signal);
 			if (seq !== this.searchSeq) return; // superseded by a newer search
-			if (!res.ok) {
+			if (!data) {
 				this.error = 'Search failed — try again.';
 				this.results = [];
 				return;
 			}
-			const data = await res.json();
-			if (seq !== this.searchSeq) return;
-			this.results = data.results ?? [];
+			this.results = data.results;
 			this.lastQuery = trimmed;
+			this.page = data.page;
+			this.hasMore = data.hasMore;
+			this.pageCache.set(data.page, { results: data.results, hasMore: data.hasMore });
 			if (opts.record) void this.loadHistory();
+			this.prefetchNextPage(trimmed, data.page);
 		} catch {
 			if (seq !== this.searchSeq) return; // includes our own abort() above
 			this.error = "Couldn't reach the search backend.";
@@ -73,6 +122,68 @@ export class SearchState {
 		} finally {
 			if (seq === this.searchSeq) this.loading = false;
 		}
+	}
+
+	// Shared by search()'s own fetch and prefetchNextPage's background
+	// one — same request, same response shape, different caller. Returns
+	// null (not throwing) on a non-OK response so a failed *background*
+	// prefetch doesn't need its own try/catch at every call site; a failed
+	// *foreground* fetch is turned back into the user-visible error by
+	// search() itself.
+	private async fetchPage(
+		query: string,
+		page: number,
+		record: boolean,
+		signal?: AbortSignal
+	): Promise<{ results: SearchResult[]; page: number; hasMore: boolean } | null> {
+		const params = new URLSearchParams({ q: query });
+		if (!record) params.set('record', '0');
+		if (page > 1) params.set('page', String(page));
+		const res = await fetch(`/api/search?${params}`, { signal });
+		if (!res.ok) return null;
+		const data = await res.json();
+		return { results: data.results ?? [], page: data.page ?? page, hasMore: data.has_more ?? false };
+	}
+
+	// Fire-and-forget: fetches fromPage + 1 in the background and caches
+	// it, so goToPage's own search() call either serves it instantly from
+	// cache or (if this hasn't resolved yet) rides this same in-flight
+	// request rather than starting a duplicate one. Also corrects
+	// this.hasMore live if the user is still sitting on fromPage when this
+	// resolves and it turns out to be empty — the "Next" button disables
+	// itself before they ever click into the dead end, which is the
+	// actual point of prefetching rather than just caching.
+	private prefetchNextPage(query: string, fromPage: number) {
+		// this.hasMore reflects fromPage (the caller just set it, from
+		// either a cache hit or a fresh fetch) — a page that already came
+		// back short is essentially guaranteed to have nothing after it,
+		// so there's nothing worth confirming ahead of time.
+		if (!this.hasMore) return;
+		const next = fromPage + 1;
+		if (this.pageCache.has(next) || this.pagePrefetches.has(next)) return;
+
+		// .catch here, not just in search()'s own try/catch — this promise
+		// may never be awaited at all (the user might never click "Next"),
+		// and an unawaited rejection is an unhandled-rejection console
+		// error, not a quiet no-op. A network failure just means the
+		// eventual goToPage falls through to fetchPage's normal foreground
+		// path and surfaces the error there instead, same as if no
+		// prefetch had ever been attempted.
+		const promise = this.fetchPage(query, next, false)
+			.then((data) => {
+				this.pagePrefetches.delete(next);
+				if (!data || query !== this.lastQuery) return null;
+				this.pageCache.set(next, { results: data.results, hasMore: data.hasMore });
+				if (this.page === fromPage && this.lastQuery === query) {
+					this.hasMore = data.results.length > 0;
+				}
+				return data;
+			})
+			.catch(() => {
+				this.pagePrefetches.delete(next);
+				return null;
+			});
+		this.pagePrefetches.set(next, promise);
 	}
 
 	// Quick Answer, "?"-triggered per the plan — deliberately the full
@@ -209,6 +320,10 @@ export class SearchState {
 		this.results = [];
 		this.lastQuery = '';
 		this.error = '';
+		this.page = 1;
+		this.hasMore = false;
+		this.pageCache.clear();
+		this.pagePrefetches.clear();
 		++this.searchSeq; // discard any in-flight search() response
 		this.discardQuickAnswer();
 	}
@@ -251,6 +366,15 @@ export class SearchState {
 	private quickAnswerSeq = 0;
 	private searchController: AbortController | null = null;
 	private quickAnswerController: AbortController | null = null;
+
+	// Per-query page cache/in-flight-prefetch tracking — see search()'s
+	// doc comment. Both cleared together whenever the query itself
+	// changes (a different query's page 2 means nothing here).
+	private pageCache = new Map<number, { results: SearchResult[]; hasMore: boolean }>();
+	private pagePrefetches = new Map<
+		number,
+		Promise<{ results: SearchResult[]; page: number; hasMore: boolean } | null>
+	>();
 }
 
 export const searchState = new SearchState();
