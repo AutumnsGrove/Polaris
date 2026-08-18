@@ -37,7 +37,10 @@
 	});
 
 	function openSearch(query: string) {
-		void goto(`/search?q=${encodeURIComponent(query)}`);
+		// &from=history tells +page.svelte's $effect this is a revisit, not
+		// a fresh search — see its comment on why that must not bump this
+		// entry back to the top of the list it was just clicked from.
+		void goto(`/search?q=${encodeURIComponent(query)}&from=history`);
 	}
 </script>
 

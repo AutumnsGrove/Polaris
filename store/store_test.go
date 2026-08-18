@@ -188,6 +188,35 @@ func TestSetThreadTitle_NonexistentIDReturnsErrNoRows(t *testing.T) {
 	}
 }
 
+func TestListThreads_ExcludesUncontinuedAtlasThreads(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("web1", "web thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread(web): %v", err)
+	}
+	if err := s.CreateThread("atlas1", "atlas thread", "test-model", "atlas"); err != nil {
+		t.Fatalf("CreateThread(atlas): %v", err)
+	}
+
+	threads, err := s.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(threads) != 1 || threads[0].ID != "web1" {
+		t.Fatalf("threads = %+v, want only web1 (atlas1 not yet continued)", threads)
+	}
+
+	if err := s.MarkThreadContinued("atlas1"); err != nil {
+		t.Fatalf("MarkThreadContinued: %v", err)
+	}
+	threads, err = s.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads (after continue): %v", err)
+	}
+	if len(threads) != 2 {
+		t.Fatalf("threads = %+v, want both web1 and atlas1 once continued", threads)
+	}
+}
+
 func TestGetThread_NotFound(t *testing.T) {
 	s := openTestStore(t)
 	if _, err := s.GetThread("does-not-exist"); err == nil {

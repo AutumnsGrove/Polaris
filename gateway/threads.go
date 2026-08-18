@@ -63,6 +63,18 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The first time an Atlas Quick Answer's thread is actually opened
+	// here (e.g. via its "Continue in Assistant" link) is what makes it
+	// start showing up in ListThreads — see continued_in_assistant's
+	// schema comment. Best-effort and off the response path, same
+	// reasoning as RecordSearch: a thread that loaded fine is worth
+	// showing even if this particular flip fails.
+	if thread.Source == "atlas" {
+		if err := s.db.MarkThreadContinued(id); err != nil {
+			log.Warn("marking thread continued failed", "thread", id, "err", err)
+		}
+	}
+
 	effectiveID, err := s.db.EffectiveThreadID(id)
 	if err != nil {
 		log.Warn("resolving active variant failed", "thread", id, "err", err)

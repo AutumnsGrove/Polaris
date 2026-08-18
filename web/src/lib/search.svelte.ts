@@ -28,7 +28,13 @@ export class SearchState {
 	quickAnswerLoading = $state(false);
 	quickAnswerError = $state('');
 
-	async search(query: string) {
+	// record: false for reopening a search from the sidebar's history list
+	// (see +page.svelte's $effect) — it should just show the same results
+	// again, not bump that entry back to the top of its own list. There's
+	// no way to "follow up" on a one-shot search, unlike a chat thread, so
+	// merely revisiting one should never move it — same as opening a
+	// thread never touches its position either.
+	async search(query: string, opts: { record: boolean } = { record: true }) {
 		const trimmed = query.trim();
 		if (!trimmed) return;
 
@@ -47,9 +53,8 @@ export class SearchState {
 		const seq = ++this.searchSeq;
 
 		try {
-			const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
-				signal: controller.signal
-			});
+			const url = `/api/search?q=${encodeURIComponent(trimmed)}${opts.record ? '' : '&record=0'}`;
+			const res = await fetch(url, { signal: controller.signal });
 			if (seq !== this.searchSeq) return; // superseded by a newer search
 			if (!res.ok) {
 				this.error = 'Search failed — try again.';
@@ -60,7 +65,7 @@ export class SearchState {
 			if (seq !== this.searchSeq) return;
 			this.results = data.results ?? [];
 			this.lastQuery = trimmed;
-			void this.loadHistory();
+			if (opts.record) void this.loadHistory();
 		} catch {
 			if (seq !== this.searchSeq) return; // includes our own abort() above
 			this.error = "Couldn't reach the search backend.";

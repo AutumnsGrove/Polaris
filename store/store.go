@@ -38,10 +38,21 @@ CREATE TABLE IF NOT EXISTS threads (
 	compacted_summary TEXT NOT NULL DEFAULT '',
 	compacted_through_id INTEGER NOT NULL DEFAULT 0,
 	-- source: who started this thread — "web" for the normal chat UI,
+	-- "atlas" for one started as an Atlas Quick Answer (see gateway/ask.go),
 	-- or a caller-supplied label (e.g. "her-go") for threads created via
-	-- POST /api/ask. Purely informational: never changes how a thread
-	-- behaves, just lets future tooling/queries tell them apart.
+	-- POST /api/ask. Mostly informational, with one behavioral exception:
+	-- see continued_in_assistant below.
 	source TEXT NOT NULL DEFAULT 'web',
+	-- continued_in_assistant: an "atlas"-sourced thread starts out hidden
+	-- from ListThreads (the Assistant sidebar) until this flips to 1 —
+	-- set by handleGetThread the first time the thread is actually opened
+	-- there (e.g. via Quick Answer's "Continue in Assistant" link).
+	-- Without this, every one-off Quick Answer query — including repeat
+	-- searches for the same thing, each its own thread — permanently
+	-- cluttered the sidebar whether or not anyone ever followed up on it.
+	-- Meaningless for any other source, which ListThreads' filter never
+	-- even checks this column for.
+	continued_in_assistant INTEGER NOT NULL DEFAULT 0,
 	-- disabled: soft-delete flag. "Deleting" a thread from the UI just
 	-- sets this rather than issuing a real DELETE — the row (and its
 	-- messages/events) stay in the database as a durable record, they're
@@ -216,6 +227,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN fork_at_index INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN active_variant_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN cards TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE threads ADD COLUMN continued_in_assistant INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -400,6 +412,18 @@ func (s *Store) SetThreadTitle(id, title string) error {
 // shouldn't reorder it within its section.
 func (s *Store) SetThreadFavorite(id string, favorite bool) error {
 	return execOne(s.db.Exec(`UPDATE threads SET favorite = ? WHERE id = ?`, favorite, id))
+}
+
+// MarkThreadContinued flips continued_in_assistant to 1 — see that
+// column's schema comment. Called by handleGetThread the first time an
+// "atlas"-sourced thread is actually opened in the Assistant, which is
+// what makes it start showing up in ListThreads from then on. A no-op
+// (not an error) once it's already 1, and safe to call on a non-"atlas"
+// thread too — ListThreads never consults this column for those, so
+// setting it there just does nothing observable.
+func (s *Store) MarkThreadContinued(id string) error {
+	_, err := s.db.Exec(`UPDATE threads SET continued_in_assistant = 1 WHERE id = ?`, id)
+	return err
 }
 
 // TouchUpdatedAt bumps rootID's own updated_at to now, independent of
@@ -630,13 +654,22 @@ func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 // the sidebar/history view. Favorite/non-favorite are interleaved here in
 // one recency order — the frontend splits them into the pinned Favorites
 // section and the rest, each keeping this same relative ordering.
+//
+// source = 'atlas' AND continued_in_assistant = 0 is excluded — a Quick
+// Answer creates a real thread on every query (see gateway/ask.go), and
+// without this, every one-off search (repeated ones most of all)
+// permanently cluttered this list whether or not anyone ever actually
+// followed up on it in the Assistant. See continued_in_assistant's schema
+// comment for how it flips to 1.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
-		 FROM threads WHERE disabled = 0 AND fork_root_id = '' ORDER BY updated_at DESC LIMIT ?`,
+		 FROM threads
+		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {

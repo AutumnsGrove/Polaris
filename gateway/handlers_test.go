@@ -411,6 +411,45 @@ func TestHandleUpdateThread_NonexistentIDReturns404(t *testing.T) {
 	}
 }
 
+func TestHandleGetThread_ContinuesAnAtlasThreadIntoTheSidebar(t *testing.T) {
+	h := newTestHarness(t, "")
+
+	if err := h.db.CreateThread("web1", "web thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread(web): %v", err)
+	}
+	if err := h.db.CreateThread("atlas1", "atlas thread", "test-model", "atlas"); err != nil {
+		t.Fatalf("CreateThread(atlas): %v", err)
+	}
+
+	// Before ever being opened, the atlas thread is hidden from the
+	// sidebar — only the web thread shows up.
+	threads, err := h.db.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	if len(threads) != 1 || threads[0].ID != "web1" {
+		t.Fatalf("threads before opening atlas1 = %+v, want only web1", threads)
+	}
+
+	getResp, err := http.Get(h.url("/api/threads/atlas1"))
+	if err != nil {
+		t.Fatalf("GET /api/threads/atlas1: %v", err)
+	}
+	getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET atlas1 status = %d, want 200", getResp.StatusCode)
+	}
+
+	// Opening it (the "Continue in Assistant" path) should now surface it.
+	threads, err = h.db.ListThreads(100)
+	if err != nil {
+		t.Fatalf("ListThreads (after opening): %v", err)
+	}
+	if len(threads) != 2 {
+		t.Fatalf("threads after opening atlas1 = %+v, want both web1 and atlas1", threads)
+	}
+}
+
 func TestHandleRegenerateTitle(t *testing.T) {
 	srv := fakeLLMServer(t, "thread title (full context)", "Vacation Budget Planning")
 	h := newTestHarness(t, srv.URL)

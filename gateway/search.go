@@ -38,11 +38,19 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Best-effort, off the response path: a search that succeeded is worth
-	// showing even if recording it to history fails for some reason (a
-	// locked/corrupt DB shouldn't take Atlas itself down).
-	if err := s.db.RecordSearch(query); err != nil {
-		log.Warn("recording search history failed", "query", query, "err", err)
+	// record=0 is set by search.svelte.ts when the query came from
+	// clicking an existing sidebar history entry, not a fresh search —
+	// re-running the same query to redisplay it shouldn't bump it back to
+	// the top of that same list. Default (missing/anything else) is to
+	// record, same as every other query parameter here degrading
+	// gracefully rather than erroring on an unexpected value.
+	if r.URL.Query().Get("record") != "0" {
+		// Best-effort, off the response path: a search that succeeded is
+		// worth showing even if recording it to history fails for some
+		// reason (a locked/corrupt DB shouldn't take Atlas itself down).
+		if err := s.db.RecordSearch(query); err != nil {
+			log.Warn("recording search history failed", "query", query, "err", err)
+		}
 	}
 
 	writeJSON(w, resp)

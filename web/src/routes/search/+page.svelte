@@ -5,7 +5,15 @@
 	import { searchState } from '$lib/search.svelte';
 	import { appState } from '$lib/state.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
-	import { Search as SearchIcon, SlidersHorizontal, Globe, X, Sparkles, Telescope } from '@lucide/svelte';
+	import {
+		Search as SearchIcon,
+		SlidersHorizontal,
+		Globe,
+		X,
+		Sparkles,
+		Telescope,
+		PanelLeft
+	} from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
 
 	// Tracks the query the address bar has already been synced to (either
@@ -20,7 +28,15 @@
 		if (q && q !== syncedQuery) {
 			syncedQuery = q;
 			searchState.query = q;
-			runQuery(q);
+			// A sidebar click (see Sidebar.svelte's openSearch) tags its own
+			// navigation with &from=history so reopening a past search
+			// doesn't bump it back to the top of that same list — same
+			// "viewing isn't activity" rule ListThreads already follows for
+			// chat threads (opening one doesn't touch its position either).
+			// There's no way to "follow up" on a one-shot search the way a
+			// thread can be continued, so revisiting one should never move it.
+			const fromHistory = page.url.searchParams.get('from') === 'history';
+			runQuery(q, { record: !fromHistory });
 		}
 	});
 
@@ -29,12 +45,12 @@
 	// the plan's Kagi-matching omnibox convention) in parallel with the
 	// regular results search, and is stripped before either request so
 	// the literal "?" character never becomes part of the query itself.
-	function runQuery(q: string) {
+	function runQuery(q: string, opts: { record: boolean } = { record: true }) {
 		const wantsQuickAnswer = q.endsWith('?');
 		const bare = wantsQuickAnswer ? q.slice(0, -1).trim() : q;
 		if (!bare) return;
 
-		void searchState.search(bare);
+		void searchState.search(bare, opts);
 		if (wantsQuickAnswer) {
 			void searchState.askQuickAnswer(bare);
 		} else {
@@ -133,6 +149,23 @@
 		<div class="top-inner">
 			<div class="brand-row">
 				<div class="wordmark">
+					{#if !appState.sidebarOpen}
+						<!-- The sidebar shrinks to width: 0 when collapsed (see
+						     Sidebar.svelte) and takes its own collapse button
+						     with it — without a way to reopen it from here, a
+						     collapsed sidebar was a dead end on this page.
+						     Same reopen affordance ChatView.svelte's header
+						     already has for the assistant side. -->
+						<button
+							class="sidebar-toggle"
+							type="button"
+							onclick={() => appState.toggleSidebar()}
+							title="Open sidebar"
+							aria-label="Open sidebar"
+						>
+							<PanelLeft size={17} />
+						</button>
+					{/if}
 					<span class="mark"></span>
 					<span class="name">Atlas<span class="sub">self-hosted, over SearXNG</span></span>
 				</div>
@@ -370,9 +403,12 @@
 		background: var(--paper);
 	}
 
+	/* Full-bleed, not a centered fixed-width column — same choice
+	   ChatView.svelte's .header/.timeline-scroll make (no max-width at
+	   all there). A capped, centered column here meant collapsing the
+	   sidebar just grew the margins on both sides instead of giving this
+	   page any more room, unlike the assistant side. */
 	.top-inner {
-		max-width: 780px;
-		margin: 0 auto;
 		padding: 14px 24px 16px;
 		display: flex;
 		flex-direction: column;
@@ -389,6 +425,29 @@
 		display: flex;
 		align-items: baseline;
 		gap: 9px;
+	}
+
+	/* Atlas's own palette (--ink/--paper), not the global .icon-btn's
+	   --color-* tokens — same reasoning as .tune-btn just below. */
+	.sidebar-toggle {
+		appearance: none;
+		border: none;
+		background: transparent;
+		border-radius: 7px;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--ink-faint);
+		cursor: pointer;
+		flex: none;
+		align-self: center;
+	}
+
+	.sidebar-toggle:hover {
+		background: var(--paper-sunken);
+		color: var(--ink-muted);
 	}
 
 	.wordmark .mark {
@@ -472,8 +531,6 @@
 	}
 
 	main {
-		max-width: 780px;
-		margin: 0 auto;
 		padding: 28px 24px 80px;
 	}
 
