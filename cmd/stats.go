@@ -123,6 +123,26 @@ func printStats(s *store.Stats) {
 		}
 	}
 
+	fmt.Printf("\nweb_search providers (%s):\n", period)
+	if len(s.SearchProviderCounts) == 0 {
+		fmt.Println("  none")
+	} else {
+		total := 0
+		for _, c := range s.SearchProviderCounts {
+			total += c
+		}
+		providers := make([]string, 0, len(s.SearchProviderCounts))
+		for p := range s.SearchProviderCounts {
+			providers = append(providers, p)
+		}
+		sort.Strings(providers)
+		for _, p := range providers {
+			count := s.SearchProviderCounts[p]
+			pct := float64(count) / float64(total) * 100
+			fmt.Printf("  %-10s %5d searches   %5.1f%%\n", p, count, pct)
+		}
+	}
+
 	fmt.Printf("\nresearch loop steering (%s):\n", period)
 	fmt.Printf("  check-in nudges:      %d\n", s.CheckInCount)
 	fmt.Printf("  stale-streak warnings: %d\n", s.StaleStreakCount)

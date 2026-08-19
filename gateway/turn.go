@@ -245,6 +245,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["result"].(string); ok {
 			evt.Result = v
 		}
+		if v, ok := payload["provider"].(string); ok {
+			evt.Provider = v
+		}
 		if v, ok := payload["citations"].([]tools.Citation); ok {
 			evt.Citations = v
 		}
@@ -602,7 +605,7 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result, "citations": evt.Citations}, turnID)
+		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider}, turnID)
 	case "agent_nudge":
 		// Durable record of a research-steering signal firing (see
 		// agent.emitNudge) — evt.Args carries kind/call_count/

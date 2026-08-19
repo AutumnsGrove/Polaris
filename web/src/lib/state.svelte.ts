@@ -884,7 +884,7 @@ export class AppState {
 				for (let i = items.length - 1; i >= 0; i--) {
 					const item = items[i];
 					if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
-						items[i] = { ...item, result: e.result, citations: e.citations, done: true };
+						items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
 						break;
 					}
 				}

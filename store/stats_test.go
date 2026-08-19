@@ -43,3 +43,40 @@ func TestGetStats_AvgTurnDurationHandlesFractionalAverage(t *testing.T) {
 		t.Errorf("AvgTurnDurationMs = %d, want 4010", stats.AvgTurnDurationMs)
 	}
 }
+
+// TestGetStats_SearchProviderCounts guards against conflating this with
+// api_usage's billing-cap counters (see Stats.SearchProviderCounts' doc
+// comment) — only "tool call finished" events on tool.web_search with a
+// non-empty provider count, and different providers tally independently.
+func TestGetStats_SearchProviderCounts(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "...", "provider": "searxng"}, "turn-1")
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "...", "provider": "brave"}, "turn-2")
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "...", "provider": "brave"}, "turn-3")
+	// A degraded/no-results/error tool_result carries no provider at all
+	// (formatSearchResults is never reached) — must not show up as some
+	// empty-string bucket.
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "no results"}, "turn-4")
+	// A different tool's own "tool call finished" event must never be
+	// mistaken for a web_search provider hit even if it happened to carry
+	// a same-named field.
+	s.LogEvent("t1", "info", "tool.web_read", "tool call finished", map[string]interface{}{"result": "...", "provider": "brave"}, "turn-5")
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats returned error: %v", err)
+	}
+	want := map[string]int{"searxng": 1, "brave": 2}
+	if len(stats.SearchProviderCounts) != len(want) {
+		t.Fatalf("SearchProviderCounts = %+v, want %+v", stats.SearchProviderCounts, want)
+	}
+	for provider, count := range want {
+		if stats.SearchProviderCounts[provider] != count {
+			t.Errorf("SearchProviderCounts[%q] = %d, want %d", provider, stats.SearchProviderCounts[provider], count)
+		}
+	}
+}

@@ -31,6 +31,10 @@ export type ServerEvent =
 			thread_id?: string;
 			tool: string;
 			result: string;
+			// web_search's normalized fallback-source key ("searxng" /
+			// "brave" / "parallel" / "tavily") — see gateway/protocol.go's
+			// ServerEvent.Provider doc comment. Absent for every other tool.
+			provider?: string;
 			citations?: Citation[];
 			cards?: Card[];
 	  }
@@ -203,6 +207,8 @@ export type TimelineItem =
 			tool: string;
 			args?: Record<string, unknown>;
 			result?: string;
+			// web_search's fallback-source key, see ServerEvent's tool_result case.
+			provider?: string;
 			citations?: Citation[];
 			done: boolean;
 	  };

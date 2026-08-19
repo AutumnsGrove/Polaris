@@ -14,6 +14,17 @@
 	// in the {#each} above), so there's no later prop change to react to.
 	let open = $state(untrack(() => item.kind === 'reasoning'));
 
+	// web_search's provider key ("searxng"/"brave"/"parallel"/"tavily") is
+	// a stable machine value (see types.ts's doc comment) — this maps it
+	// to what a user should actually read, distinct from the tool-call
+	// label above (which just shows the query, not who answered it).
+	const providerLabels: Record<string, string> = {
+		searxng: 'SearXNG',
+		brave: 'Brave',
+		parallel: 'Parallel',
+		tavily: 'Tavily'
+	};
+
 	function label(item: Extract<TimelineItem, { kind: 'tool' }>): string {
 		if (item.tool === 'web_search') return `Searching: ${item.args?.query ?? ''}`;
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
@@ -90,6 +101,9 @@
 			{/if}
 		</button>
 		{#if open && item.result}
+			{#if item.tool === 'web_search' && item.provider}
+				<div class="provider-badge">Provided by {providerLabels[item.provider] ?? item.provider}</div>
+			{/if}
 			<pre class="tool-result">{item.result}</pre>
 		{/if}
 	</div>
@@ -178,6 +192,18 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Sits directly above .tool-result, inside the same expanded panel —
+	   a small, distinct label rather than relying on the "[via X]" line
+	   buried as the first line of the raw result text below it. */
+	.provider-badge {
+		padding: 4px 10px 0 10px;
+		font-size: 10.5px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-accent-2);
 	}
 
 	.tool-result {

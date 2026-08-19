@@ -40,6 +40,23 @@
 			? (appState.settings.usage.max_turns_wrapup_count / appState.settings.usage.turn_count) * 100
 			: 0
 	);
+
+	// Includes searxng itself (the baseline, not a fallback) so this row
+	// is a full picture of who's actually been answering web_search calls
+	// — not just "did a fallback ever fire", which would stay invisible
+	// (and look like nothing's being tracked at all) until the first one
+	// did.
+	const providerLabels: Record<string, string> = {
+		searxng: 'SearXNG',
+		brave: 'Brave',
+		parallel: 'Parallel',
+		tavily: 'Tavily'
+	};
+	let searchProviderCounts = $derived(
+		appState.settings.usage
+			? Object.entries(appState.settings.usage.search_provider_counts).sort((a, b) => b[1] - a[1])
+			: []
+	);
 </script>
 
 <div class="modal-backdrop" role="presentation">
@@ -75,6 +92,16 @@
 						<span>Ran out of turn budget</span>
 						<span>{appState.settings.usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
 					</div>
+					{#if searchProviderCounts.length > 0}
+						<div class="row">
+							<span>web_search providers</span>
+							<span
+								>{searchProviderCounts
+									.map(([provider, count]) => `${providerLabels[provider] ?? provider}: ${count}`)
+									.join(', ')}</span
+							>
+						</div>
+					{/if}
 					<div class="row">
 						<span>Check-in nudges</span>
 						<span>{appState.settings.usage.check_in_count}</span>

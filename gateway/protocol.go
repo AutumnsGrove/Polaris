@@ -132,6 +132,12 @@ type ServerEvent struct {
 	Tool      string           `json:"tool,omitempty"`
 	Args      map[string]any   `json:"args,omitempty"`
 	Result    string           `json:"result,omitempty"`
+	// Provider is web_search's normalized fallback-source key ("searxng",
+	// "brave", "parallel", "tavily") — set only on web_search's tool_result
+	// events, so store.Store.GetStats can tally how often each fallback
+	// actually fires without regex-parsing the free-text "[via X]" prefix
+	// in Result, which is a display label, not a stable machine key.
+	Provider  string           `json:"provider,omitempty"`
 	Citations []tools.Citation `json:"citations,omitempty"`
 	// Cards is a tool_result/done event's structured rich-result items
 	// (see tools.Card) — e.g. music's recommendation carousel. Same

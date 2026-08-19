@@ -179,7 +179,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted := formatSearchResults(ctx, "SearXNG", args.Query, args.Category, args.Page, results)
+	formatted := formatSearchResults(ctx, "SearXNG", "searxng", args.Query, args.Category, args.Page, results)
 	return formatted
 }
 
@@ -202,7 +202,12 @@ type searchResultLike struct {
 // visible in the transcript/timeline, not just in server logs — the
 // model (and anyone reading the timeline) can tell when an answer came
 // from a degraded-SearXNG fallback instead of the primary path.
-func formatSearchResults(ctx *Context, provider, query, category string, page int, results []searchResultLike) string {
+// providerKey is a separate, stable machine key ("searxng"/"brave"/
+// "parallel"/"tavily") from provider's human-readable display label
+// ("Brave (SearXNG degraded)") — store.Store.GetStats aggregates on the
+// key so fallback-hit counts don't depend on parsing display text that's
+// free to change wording without breaking stats.
+func formatSearchResults(ctx *Context, provider, providerKey, query, category string, page int, results []searchResultLike) string {
 	urls := make([]string, 0, len(results))
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[via %s]\n\n", provider)
@@ -219,6 +224,7 @@ func formatSearchResults(ctx *Context, provider, query, category string, page in
 		"tool":      "web_search",
 		"result":    formatted,
 		"citations": ctx.CitationsSnapshot(),
+		"provider":  providerKey,
 	})
 
 	return formatted
@@ -257,7 +263,7 @@ func braveFallback(ctx *Context, query string) (formatted string, ok bool) {
 		}
 		results = append(results, searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content})
 	}
-	return formatSearchResults(ctx, "Brave (SearXNG degraded)", query, "", 1, results), true
+	return formatSearchResults(ctx, "Brave (SearXNG degraded)", "brave", query, "", 1, results), true
 }
 
 // parallelFallback tries Parallel's Search API once SearXNG has confirmed
@@ -290,7 +296,7 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", query, "", 1, results), true
+	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", "parallel", query, "", 1, results), true
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
@@ -309,5 +315,5 @@ func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", query, "", 1, results), true
+	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", "tavily", query, "", 1, results), true
 }

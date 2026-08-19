@@ -46,6 +46,17 @@ type Stats struct {
 	MaxTurnsWrapupCount int `json:"max_turns_wrapup_count"`
 
 	CompactionCount int `json:"compaction_count"`
+
+	// SearchProviderCounts is how many web_search calls each provider key
+	// ("searxng"/"brave"/"parallel"/"tavily") actually answered — not the
+	// same thing as api_usage's monthly billing-cap counts (store.go's
+	// IncrementAPIUsage), which count every billed request regardless of
+	// whether it returned anything useful, and which Tavily's fallback
+	// doesn't participate in at all since it has no cap. This is scoped
+	// to genuine successes only (a tool_result actually returned to the
+	// model), so it answers "how often does each fallback actually save
+	// the day" rather than "how much have I spent".
+	SearchProviderCounts map[string]int `json:"search_provider_counts"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -54,9 +65,10 @@ type Stats struct {
 // the CLI/API/UI want without any write-side bookkeeping to keep correct.
 func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	stats := &Stats{
-		PeriodDays:      periodDays,
-		ToolCallCounts:  map[string]int{},
-		ToolErrorCounts: map[string]int{},
+		PeriodDays:           periodDays,
+		ToolCallCounts:       map[string]int{},
+		ToolErrorCounts:      map[string]int{},
+		SearchProviderCounts: map[string]int{},
 	}
 
 	var since string
@@ -141,6 +153,43 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		return nil, err
 	}
 	toolRows.Close()
+
+	// provider lives inside the JSON data blob (see gateway/turn.go's
+	// logTurnEvent), same "cheap enough to unmarshal per-row" reasoning as
+	// the nudge query below — only web_search's own finished-call events
+	// ever carry it, and only when a provider genuinely answered (empty
+	// string / absent for the "no results"/degraded/error tool_results,
+	// which never call formatSearchResults).
+	providerQuery := `SELECT data FROM events WHERE source = 'tool.web_search' AND message = 'tool call finished'`
+	providerArgs := []interface{}{}
+	if since != "" {
+		providerQuery += ` AND created_at >= ?`
+		providerArgs = append(providerArgs, since)
+	}
+	providerRows, err := s.db.Query(providerQuery, providerArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for providerRows.Next() {
+		var dataJSON string
+		if err := providerRows.Scan(&dataJSON); err != nil {
+			providerRows.Close()
+			return nil, err
+		}
+		var d struct {
+			Provider string `json:"provider"`
+		}
+		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil {
+			continue
+		}
+		if d.Provider != "" {
+			stats.SearchProviderCounts[d.Provider]++
+		}
+	}
+	if err := providerRows.Err(); err != nil {
+		return nil, err
+	}
+	providerRows.Close()
 
 	// Nudge kind lives inside the JSON data blob, not a column — cheap
 	// enough to unmarshal per-row at this data volume rather than reach
