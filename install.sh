@@ -57,6 +57,24 @@ docker_cmd() {
 	fi
 }
 
+# with_timeout runs a command bounded to $1 seconds if the `timeout`
+# binary is available, otherwise runs it unbounded — `timeout` is GNU
+# coreutils, present by default on Linux but NOT on stock macOS (unlike
+# the potato, which this script's Linux path targets, macOS here is a
+# dev machine that may have neither Homebrew nor coreutils installed).
+# Degrading to "no timeout" rather than failing outright keeps a fresh
+# macOS install working exactly as before; a slow/stalled network step
+# is still better than a script that refuses to even start.
+with_timeout() {
+	local seconds="$1"
+	shift
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "$seconds" "$@"
+	else
+		"$@"
+	fi
+}
+
 # ---- -1. install mode check ---------------------------------------------
 
 case "$INSTALL_MODE" in
@@ -111,13 +129,30 @@ step "Fetching Polaris into $INSTALL_DIR"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
 	info "Already cloned — pulling latest instead of re-cloning."
-	git -C "$INSTALL_DIR" pull --ff-only
+	# --ff-only can never leave a stuck merge (it refuses outright instead
+	# of attempting one on any real divergence), but that refusal's own
+	# error message gives no hint what to actually do about it — add one
+	# here rather than letting `set -e` exit on git's raw stderr alone.
+	if ! with_timeout 60 git -C "$INSTALL_DIR" pull --ff-only; then
+		warn "Couldn't fast-forward $INSTALL_DIR to the latest commit — it has"
+		warn "local changes or commits that don't match origin/main. Either"
+		warn "commit/stash whatever's there, or move $INSTALL_DIR aside and"
+		warn "re-run this script for a clean checkout."
+		exit 1
+	fi
 elif [ -e "$INSTALL_DIR" ]; then
 	warn "$INSTALL_DIR exists and isn't a git checkout. Move it aside or set"
 	warn "POLARIS_INSTALL_DIR to a different path, then re-run."
 	exit 1
 else
-	git clone "$REPO_URL" "$INSTALL_DIR"
+	# timeout 60: a stalled connection used to just hang here forever with
+	# no feedback — a curl-piped install looks frozen with nothing to Ctrl-C
+	# toward. Same reasoning as compose/watcher/update.sh's own git timeout.
+	if ! with_timeout 60 git clone "$REPO_URL" "$INSTALL_DIR"; then
+		warn "Cloning $REPO_URL timed out or failed — check your network"
+		warn "connection and re-run this script."
+		exit 1
+	fi
 fi
 
 cd "$INSTALL_DIR"
@@ -159,10 +194,21 @@ if ! command -v docker >/dev/null 2>&1; then
 	else
 		info "Installing Docker Engine via Docker's official install script (needs sudo)."
 		curl -fsSL https://get.docker.com | sh
-		sudo usermod -aG docker "$USER" || true
 		DOCKER_NEEDS_SUDO=1
-		info "Added $USER to the docker group — log out and back in for passwordless"
-		info "'docker' access afterward. Using sudo for the rest of this run."
+		if sudo usermod -aG docker "$USER"; then
+			info "Added $USER to the docker group — log out and back in for passwordless"
+			info "'docker' access afterward. Using sudo for the rest of this run."
+		else
+			# Doesn't block the install — DOCKER_NEEDS_SUDO=1 already makes
+			# this run correct either way — but silently swallowing this used
+			# to leave the info message above claiming passwordless access
+			# would work later when it actually wouldn't, with no indication
+			# why the next plain `docker` command outside this script still
+			# needed sudo.
+			warn "Couldn't add $USER to the docker group — you'll need to run"
+			warn "'docker' commands with sudo, or add yourself to the group"
+			warn "manually: sudo usermod -aG docker \$USER"
+		fi
 	fi
 else
 	info "Docker is already installed."
@@ -187,6 +233,22 @@ else
 	if ! docker_cmd info >/dev/null 2>&1; then
 		info "Starting the Docker service…"
 		sudo systemctl enable --now docker
+		# Unlike the macOS branch above, this used to assume success and
+		# fall straight through to "Docker daemon is up" — if the service
+		# failed to actually start (masked unit, resource issue, whatever),
+		# the first real symptom was an unrelated-looking failure several
+		# steps later (docker compose version, or the searxng container
+		# setup) instead of a clear message about the actual problem.
+		for _ in $(seq 1 30); do
+			docker_cmd info >/dev/null 2>&1 && break
+			sleep 2
+		done
+		if ! docker_cmd info >/dev/null 2>&1; then
+			warn "Docker service didn't come up after 'systemctl enable --now"
+			warn "docker'. Check its status yourself (systemctl status docker),"
+			warn "fix whatever's wrong, then re-run this script."
+			exit 1
+		fi
 	fi
 fi
 info "Docker daemon is up."

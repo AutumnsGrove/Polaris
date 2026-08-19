@@ -61,13 +61,36 @@ type Result struct {
 func Run(repoPath string) (*Result, error) {
 	binaryPath := filepath.Join(repoPath, "polaris")
 
+	// Defensive: a previous run that hit a real merge conflict below could
+	// have left the checkout mid-merge, which would make every update
+	// after it fail identically forever with no way for a fresh attempt to
+	// know that's what's wrong. Safe unconditionally: MERGE_HEAD only
+	// exists before a merge commit is actually made, so this can't discard
+	// any committed work — see abortLeftoverMerge's doc comment.
+	abortLeftoverMerge(repoPath)
+
 	pullCtx, pullCancel := context.WithTimeout(context.Background(), pullTimeout)
 	defer pullCancel()
-	pullCmd := exec.CommandContext(pullCtx, "git", "pull", "origin", "main")
+	// --no-rebase pins the reconciliation strategy explicitly rather than
+	// relying on the host's ambient pull.rebase/pull.ff git config.
+	// Verified live against the potato: with neither set (true there, and
+	// true of a fresh git init in general), a modern git (2.47+) refuses
+	// to even attempt a merge on a genuinely divergent checkout — it
+	// hard-fails with "Need to specify how to reconcile divergent
+	// branches" instead of merging, which would otherwise look like an
+	// ordinary transient failure rather than the same "wedged until
+	// someone manually fixes git" problem abortLeftoverMerge exists to
+	// avoid (found and fixed identically in compose/watcher/update.sh's
+	// equivalent step — this is the bare-metal side of the same bug).
+	pullCmd := exec.CommandContext(pullCtx, "git", "pull", "--no-rebase", "origin", "main")
 	pullCmd.Dir = repoPath
 	pullOut, err := pullCmd.CombinedOutput()
 	if err != nil {
 		log.Warn("git pull failed", "err", err, "timed_out", pullCtx.Err() != nil)
+		// A real conflict (not just a network failure) leaves .git
+		// mid-merge — clean that up now so the *next* Run starts fresh
+		// instead of failing the exact same way forever.
+		abortLeftoverMerge(repoPath)
 		return &Result{PullOutput: string(pullOut)}, fmt.Errorf("git pull failed: %w", err)
 	}
 
@@ -82,6 +105,25 @@ func Run(repoPath string) (*Result, error) {
 	}
 
 	return &Result{PullOutput: string(pullOut), BuildOutput: string(buildOut), BinaryPath: binaryPath}, nil
+}
+
+// abortLeftoverMerge aborts an in-progress git merge in repoPath, if any
+// — called both before Run's own pull (in case a previous run left one
+// behind) and after a failed pull (in case this run's own attempt just
+// created one). MERGE_HEAD only exists between a merge starting and its
+// commit landing, so aborting it can never discard committed work, only
+// an already-broken merge attempt that shouldn't have been left sitting
+// there. Errors are deliberately ignored — this is best-effort cleanup,
+// not something worth failing Run over; if MERGE_HEAD doesn't exist,
+// `git merge --abort` fails harmlessly and there's nothing to report.
+func abortLeftoverMerge(repoPath string) {
+	if _, err := os.Stat(filepath.Join(repoPath, ".git", "MERGE_HEAD")); err != nil {
+		return
+	}
+	log.Warn("found a leftover merge in progress, aborting it before continuing")
+	cmd := exec.Command("git", "merge", "--abort")
+	cmd.Dir = repoPath
+	_ = cmd.Run()
 }
 
 // RepoPath is just os.Getwd, wrapped for a clearer call site — both

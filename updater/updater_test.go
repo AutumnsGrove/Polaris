@@ -175,6 +175,65 @@ func TestWrapFlockError_DistinguishesContentionFromOtherFailures(t *testing.T) {
 	}
 }
 
+// TestRun_MergeConflictDoesNotWedgeTheNextRun guards against a
+// found-in-audit bug: git pull (no --ff-only) can hit a real conflict
+// and leave the checkout mid-merge (.git/MERGE_HEAD present) with no
+// cleanup — every future Run() would then fail the exact same way
+// forever, since a fresh `git pull` refuses outright while a merge is
+// already in progress. Verified by actually creating a real conflict
+// (not a mocked one) and confirming both that the first Run reports it
+// as a failure, and that a *second* Run — simulating the very next
+// `polaris update` — succeeds instead of failing identically.
+func TestRun_MergeConflictDoesNotWedgeTheNextRun(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+	repoPath := setupTestRepo(t)
+
+	// Diverge: a commit on origin, and a different local commit touching
+	// the same line — a real, unresolvable-by-git conflict.
+	clone := t.TempDir()
+	runGit(t, filepath.Dir(repoPath), "clone", filepath.Join(filepath.Dir(repoPath), "remote.git"), clone)
+	runGit(t, clone, "config", "user.email", "test@example.com")
+	runGit(t, clone, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(clone, "main.go"), []byte("package main\n\nfunc main() { println(\"origin\") }\n"), 0o644); err != nil {
+		t.Fatalf("writing conflicting origin change: %v", err)
+	}
+	runGit(t, clone, "commit", "-am", "origin change")
+	runGit(t, clone, "push", "-q", "origin", "main")
+
+	if err := os.WriteFile(filepath.Join(repoPath, "main.go"), []byte("package main\n\nfunc main() { println(\"local\") }\n"), 0o644); err != nil {
+		t.Fatalf("writing conflicting local change: %v", err)
+	}
+	runGit(t, repoPath, "commit", "-am", "local conflicting change")
+
+	// First Run: hits the real conflict and must report failure.
+	result, err := Run(repoPath)
+	if err == nil {
+		t.Fatal("expected Run to fail on a genuine merge conflict")
+	}
+	if !strings.Contains(err.Error(), "git pull failed") {
+		t.Errorf("err = %v, want it to identify the git pull step", err)
+	}
+	if result.BuildOutput != "" {
+		t.Errorf("BuildOutput = %q, want empty — build must not run after a failed pull", result.BuildOutput)
+	}
+
+	if _, statErr := os.Stat(filepath.Join(repoPath, ".git", "MERGE_HEAD")); statErr == nil {
+		t.Fatal("MERGE_HEAD still present after a failed Run — the checkout is left wedged")
+	}
+
+	// Resolve the actual divergence the way an operator would (or just
+	// take origin's version) so this second Run can succeed — this isn't
+	// testing conflict *resolution*, only that the checkout isn't
+	// permanently stuck refusing every future pull.
+	runGit(t, repoPath, "reset", "--hard", "origin/main")
+
+	if _, err := Run(repoPath); err != nil {
+		t.Fatalf("second Run (simulating the next `polaris update`) still failed after the conflict was cleared: %v", err)
+	}
+}
+
 func TestRepoPath_ReturnsWorkingDirectory(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
