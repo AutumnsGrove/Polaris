@@ -18,16 +18,6 @@
 <div class="mode-toggle" role="tablist" aria-label="Switch between Atlas and Polaris">
 	<button
 		type="button"
-		class:active={mode === 'search'}
-		onclick={() => goto('/search')}
-		role="tab"
-		aria-selected={mode === 'search'}
-	>
-		<Compass size={13} />
-		Atlas
-	</button>
-	<button
-		type="button"
 		class:active={mode === 'assistant'}
 		onclick={() => goto('/')}
 		role="tab"
@@ -35,6 +25,16 @@
 	>
 		<Telescope size={13} />
 		Polaris
+	</button>
+	<button
+		type="button"
+		class:active={mode === 'search'}
+		onclick={() => goto('/search')}
+		role="tab"
+		aria-selected={mode === 'search'}
+	>
+		<Compass size={13} />
+		Atlas
 	</button>
 </div>
 
