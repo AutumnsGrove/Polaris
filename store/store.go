@@ -201,6 +201,65 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_search_history_query ON search_history(query);
+
+-- search_cache/search_cache_results back Atlas's (and web_search's Brave
+-- fallback's) virtual pagination: one row here is one *real* page fetched
+-- from a provider (SearXNG's own pageno, or Brave's offset), cached so
+-- that (a) re-running the same search, paging back, or reopening a
+-- browser tab doesn't re-hit a rate-limited SearXNG or a billed Brave
+-- call for data already fetched this same day, and (b) a real page can be
+-- sliced into several smaller "virtual" pages on the way out (see
+-- gateway/search.go's resolveVirtualPage) without a second real fetch for
+-- each slice. provider distinguishes SearXNG's cache from Brave's since
+-- their real-page shapes (variable result count vs. Brave's fixed
+-- 20-per-request) are entirely different and must never collide on the
+-- same key. Query matching is exact/case-sensitive, same convention as
+-- search_history.
+CREATE TABLE IF NOT EXISTS search_cache (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	provider TEXT NOT NULL,
+	query TEXT NOT NULL,
+	category TEXT NOT NULL DEFAULT '',
+	-- real_page is 1-indexed for SearXNG (matches SearXNG's own pageno)
+	-- and for Brave too (converted from Brave's 0-indexed offset at the
+	-- call site) — one consistent numbering scheme across both providers
+	-- so the accumulate-until-enough walk in resolveVirtualPage doesn't
+	-- need provider-specific indexing logic.
+	real_page INTEGER NOT NULL,
+	-- max_results is part of the cache key, not just metadata: a page 1
+	-- fetched with max_results=20 and one fetched with max_results=40
+	-- are different real requests with different result sets, not
+	-- interchangeable.
+	max_results INTEGER NOT NULL,
+	has_more INTEGER NOT NULL DEFAULT 0,
+	degraded INTEGER NOT NULL DEFAULT 0,
+	fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(provider, query, category, real_page, max_results)
+);
+
+CREATE TABLE IF NOT EXISTS search_cache_results (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	cache_id INTEGER NOT NULL REFERENCES search_cache(id) ON DELETE CASCADE,
+	-- position preserves this real page's own ranked order — SQLite makes
+	-- no ordering guarantee on plain SELECT without ORDER BY, and this
+	-- table's insert order isn't reliably its read order once rows have
+	-- been through SQLite's own storage/vacuum churn.
+	position INTEGER NOT NULL,
+	title TEXT NOT NULL,
+	url TEXT NOT NULL,
+	content TEXT NOT NULL DEFAULT '',
+	score REAL NOT NULL DEFAULT 0,
+	thumbnail TEXT NOT NULL DEFAULT '',
+	engine TEXT NOT NULL DEFAULT '',
+	-- engines is a JSON-encoded []string (search.SearchResult.Engines) —
+	-- not worth a child table for what's always a handful of short engine
+	-- names read back as a single unit, never queried individually.
+	engines TEXT NOT NULL DEFAULT '[]',
+	rank_state TEXT NOT NULL DEFAULT '',
+	pinned INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_cache_results_cache ON search_cache_results(cache_id);
 `
 
 // migrations adds columns to a threads table created before they existed.

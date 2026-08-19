@@ -23,15 +23,18 @@ import (
 	"time"
 )
 
-// maxCount is Brave's own hard ceiling on results per request (the
+// MaxCount is Brave's own hard ceiling on results per request (the
 // "count" param) — asking for more doesn't get more, so Search always
 // requests this many rather than accepting a caller-supplied count that
 // might quietly get clamped server-side without the caller knowing.
-const maxCount = 20
+// Exported so callers building a cache key around "what did we actually
+// request" (see gateway's Atlas resolver) can reference the real value
+// instead of hardcoding 20 a second time.
+const MaxCount = 20
 
 // maxOffset is Brave's own hard ceiling on how many pages deep "offset"
 // can go (0-indexed, so offsets 0-9 are valid — 10 real pages). Combined
-// with maxCount, that's up to 200 total results reachable per query.
+// with MaxCount, that's up to 200 total results reachable per query.
 const maxOffset = 9
 
 // MonthlyCap is the hard ceiling on Brave Search API calls per calendar
@@ -105,7 +108,7 @@ type searchAPIResponse struct {
 
 // Search runs a query against Brave's Web Search API at the given
 // 0-indexed offset (clamped to [0, maxOffset]) — always requesting
-// maxCount results, Brave's own ceiling, so a caller doing its own
+// MaxCount results, Brave's own ceiling, so a caller doing its own
 // virtual sub-pagination (splitting one real 20-result page into two
 // 10-result display pages, say) gets the most raw results per real
 // request rather than under-asking.
@@ -117,7 +120,7 @@ func (c *Client) Search(ctx context.Context, query string, offset int) (*SearchR
 		offset = maxOffset
 	}
 
-	u := fmt.Sprintf("%s?q=%s&count=%d&offset=%d", c.baseURL, url.QueryEscape(query), maxCount, offset)
+	u := fmt.Sprintf("%s?q=%s&count=%d&offset=%d", c.baseURL, url.QueryEscape(query), MaxCount, offset)
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err

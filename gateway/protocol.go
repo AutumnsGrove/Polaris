@@ -126,12 +126,12 @@ type ClientMessage struct {
 //	                  tool falls back to config.yaml's default_location like before.
 //	"error"         — message: something failed
 type ServerEvent struct {
-	Type      string           `json:"type"`
-	ThreadID  string           `json:"thread_id,omitempty"`
-	Content   string           `json:"content,omitempty"`
-	Tool      string           `json:"tool,omitempty"`
-	Args      map[string]any   `json:"args,omitempty"`
-	Result    string           `json:"result,omitempty"`
+	Type     string         `json:"type"`
+	ThreadID string         `json:"thread_id,omitempty"`
+	Content  string         `json:"content,omitempty"`
+	Tool     string         `json:"tool,omitempty"`
+	Args     map[string]any `json:"args,omitempty"`
+	Result   string         `json:"result,omitempty"`
 	// Provider is web_search's normalized fallback-source key ("searxng",
 	// "brave", "parallel", "tavily") — set only on web_search's tool_result
 	// events, so store.Store.GetStats can tally how often each fallback

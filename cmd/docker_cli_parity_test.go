@@ -142,7 +142,7 @@ func TestRunDockerAtlasSearch_HappyPath(t *testing.T) {
 	})
 
 	output := captureStdout(t, func() {
-		if err := runDockerAtlasSearch("rust async runtime", 3, 1); err != nil {
+		if err := runDockerAtlasSearch("rust async runtime", 3, 1, ""); err != nil {
 			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
 		}
 	})
@@ -165,7 +165,7 @@ func TestRunDockerAtlasSearch_NoResults(t *testing.T) {
 	})
 
 	output := captureStdout(t, func() {
-		if err := runDockerAtlasSearch("asdfqwerty", 8, 1); err != nil {
+		if err := runDockerAtlasSearch("asdfqwerty", 8, 1, ""); err != nil {
 			t.Fatalf("runDockerAtlasSearch() error = %v, want nil", err)
 		}
 	})
@@ -181,7 +181,7 @@ func TestRunDockerAtlasSearch_ServerError(t *testing.T) {
 		_, _ = w.Write([]byte("searxng unreachable"))
 	})
 
-	err := runDockerAtlasSearch("anything", 8, 1)
+	err := runDockerAtlasSearch("anything", 8, 1, "")
 	if err == nil {
 		t.Fatal("runDockerAtlasSearch() error = nil, want an error on a non-200")
 	}

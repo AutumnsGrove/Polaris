@@ -60,6 +60,24 @@ func fakeBraveForSearch(t *testing.T, moreAvailable bool) (srv *httptest.Server,
 	return srv, &count
 }
 
+// fakeHealthySearXNGForSearch serves a fixed set of results, counting
+// how many times it was actually hit — for asserting the DB cache
+// avoids repeat real requests.
+func fakeHealthySearXNGForSearch(t *testing.T, results []map[string]interface{}) (srv *httptest.Server, hits *int) {
+	t.Helper()
+	count := 0
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query":   r.URL.Query().Get("q"),
+			"results": results,
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &count
+}
+
 func TestHandleSearch_FallsBackToBraveWhenSearXNGDegraded_FirstHalf(t *testing.T) {
 	h := newTestHarness(t, "")
 	h.srvObj.searxng = search.NewSearXNGClient(fakeDegradedSearXNGForSearch(t).URL, nil)
@@ -153,6 +171,102 @@ func TestHandleSearch_SkipsBraveFallbackWhenMonthlyCapReached(t *testing.T) {
 	}
 	if *hits != 0 {
 		t.Errorf("brave hits = %d, want 0 — must not call Brave once the monthly cap is reached", *hits)
+	}
+}
+
+func TestHandleSearch_CachesRealSearXNGPageAcrossRequests(t *testing.T) {
+	h := newTestHarness(t, "")
+	srv, hits := fakeHealthySearXNGForSearch(t, []map[string]interface{}{
+		{"title": "Go 1.24 released", "url": "https://go.dev/blog/go1.24", "content": "New release"},
+	})
+	h.srvObj.searxng = search.NewSearXNGClient(srv.URL, nil)
+
+	for i := 0; i < 2; i++ {
+		resp, err := http.Get(h.url("/api/search?q=golang+release&page=1&record=0"))
+		if err != nil {
+			t.Fatalf("GET /api/search (request %d): %v", i, err)
+		}
+		var got search.SearchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+			t.Fatalf("decoding response (request %d): %v", i, err)
+		}
+		resp.Body.Close()
+		if len(got.Results) != 1 || got.Results[0].Title != "Go 1.24 released" {
+			t.Fatalf("request %d: results = %+v, want the one SearXNG result", i, got.Results)
+		}
+	}
+
+	if *hits != 1 {
+		t.Errorf("searxng hits = %d, want 1 — the second request should have been served from cache", *hits)
+	}
+}
+
+// TestHandleSearch_VirtualPage2ReusesCachedRealPage1 exercises the actual
+// point of the accumulate-until-enough walk: real page 1 exactly
+// satisfies virtual page 1 (10 results, VirtualPageSize), and virtual
+// page 2 needs real page 2 too — but must reuse real page 1's already-
+// cached entry rather than re-fetching it, so answering virtual page 2
+// costs exactly one additional real request, not two.
+func TestHandleSearch_VirtualPage2ReusesCachedRealPage1(t *testing.T) {
+	h := newTestHarness(t, "")
+	var page1Hits, page2Hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		pageno := r.URL.Query().Get("pageno")
+		if pageno == "" || pageno == "1" {
+			page1Hits++
+			// Exactly 10 raw results with max_results=10 below makes
+			// SearXNGClient.Search's own HasMore heuristic (raw count >=
+			// maxResults) true, so the walk knows to try real page 2 once
+			// virtual page 2 needs more than page 1 alone can offer.
+			results := make([]map[string]interface{}, 10)
+			for i := range results {
+				results[i] = map[string]interface{}{"title": "p1", "url": "https://a.com/p1", "content": "c"}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"query": "q", "results": results})
+			return
+		}
+		page2Hits++
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": "q", "results": []map[string]interface{}{
+			{"title": "p2", "url": "https://a.com/p2", "content": "c"},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	h.srvObj.searxng = search.NewSearXNGClient(srv.URL, nil)
+
+	// Virtual page 1 — exactly satisfied by real page 1 alone (10 results
+	// == VirtualPageSize).
+	resp1, err := http.Get(h.url("/api/search?q=q&page=1&max_results=10&record=0"))
+	if err != nil {
+		t.Fatalf("GET /api/search page=1: %v", err)
+	}
+	var got1 search.SearchResponse
+	json.NewDecoder(resp1.Body).Decode(&got1)
+	resp1.Body.Close()
+	if len(got1.Results) != 10 || got1.Results[0].Title != "p1" {
+		t.Fatalf("virtual page 1 results = %+v, want 10 p1 results", got1.Results)
+	}
+	if page1Hits != 1 || page2Hits != 0 {
+		t.Fatalf("after virtual page 1: page1Hits=%d page2Hits=%d, want 1, 0", page1Hits, page2Hits)
+	}
+
+	// Virtual page 2 — needs real page 2, but must reuse the cached real
+	// page 1 rather than re-fetching it.
+	resp2, err := http.Get(h.url("/api/search?q=q&page=2&max_results=10&record=0"))
+	if err != nil {
+		t.Fatalf("GET /api/search page=2: %v", err)
+	}
+	var got2 search.SearchResponse
+	json.NewDecoder(resp2.Body).Decode(&got2)
+	resp2.Body.Close()
+	if len(got2.Results) != 1 || got2.Results[0].Title != "p2" {
+		t.Fatalf("virtual page 2 results = %+v, want 1 p2 result", got2.Results)
+	}
+	if page1Hits != 1 {
+		t.Errorf("page1Hits = %d after virtual page 2, want still 1 (real page 1 must be served from cache, not re-fetched)", page1Hits)
+	}
+	if page2Hits != 1 {
+		t.Errorf("page2Hits = %d, want 1", page2Hits)
 	}
 }
 
