@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
@@ -141,6 +142,25 @@ type pdfSearchMatch struct {
 	Snippet string
 }
 
+// searchWhitespaceRe collapses every run of whitespace — space, tab, and
+// crucially newline — to a single space, for search matching only.
+// pdfPageRawText's collapseWhitespace deliberately keeps single newlines
+// as line/paragraph breaks, which is right for display (see its doc
+// comment), but some PDFs' underlying text stream positions nearly every
+// individual word as its own line — found live on a real 300+-page model
+// card, where a heading rendered as "6.5.4.4\nIntentionally\ntaking\n..."
+// instead of space-separated. A literal substring search for the
+// space-separated query the model actually typed then matches nothing at
+// all, even though the text is right there. Normalizing both sides to
+// single-spaced text before matching makes search whitespace-insensitive
+// regardless of how a given PDF happens to break its lines, without
+// touching the newline-preserving text read/instructions-filter path.
+var searchWhitespaceRe = regexp.MustCompile(`\s+`)
+
+func normalizeForSearch(s string) string {
+	return strings.TrimSpace(searchWhitespaceRe.ReplaceAllString(s, " "))
+}
+
 // searchPDFPages does a literal, case-insensitive substring search across
 // every page of a fully-buffered PDF — the "grep calls in disguise" half
 // of read_attachment, deliberately not an LLM pass: cheap, deterministic,
@@ -156,15 +176,21 @@ func searchPDFPages(data []byte, query string) (matches []pdfSearchMatch, totalP
 		return nil, 0, fmt.Errorf("opening pdf: %w", err)
 	}
 	totalPages = r.NumPage()
-	lowerQuery := strings.ToLower(query)
+	normalizedQuery := strings.ToLower(normalizeForSearch(query))
 
 	for page := 1; page <= totalPages && len(matches) < maxPDFSearchMatches; page++ {
 		text, perr := pdfPageRawText(r.Page(page))
 		if perr != nil {
 			continue
 		}
-		lowerText := strings.ToLower(text)
-		idx := strings.Index(lowerText, lowerQuery)
+		// Matching and the snippet both operate on the normalized text —
+		// the snippet loses the page's original line breaks, but it's
+		// just short surrounding context for the model to judge relevance
+		// from, not the reading text itself (that comes from a follow-up
+		// page read, which keeps normal formatting).
+		normalizedText := normalizeForSearch(text)
+		lowerText := strings.ToLower(normalizedText)
+		idx := strings.Index(lowerText, normalizedQuery)
 		if idx == -1 {
 			continue
 		}
@@ -172,11 +198,11 @@ func searchPDFPages(data []byte, query string) (matches []pdfSearchMatch, totalP
 		if start < 0 {
 			start = 0
 		}
-		end := idx + len(query) + pdfSearchSnippetContext
-		if end > len(text) {
-			end = len(text)
+		end := idx + len(normalizedQuery) + pdfSearchSnippetContext
+		if end > len(normalizedText) {
+			end = len(normalizedText)
 		}
-		matches = append(matches, pdfSearchMatch{Page: page, Snippet: text[start:end]})
+		matches = append(matches, pdfSearchMatch{Page: page, Snippet: normalizedText[start:end]})
 	}
 	return matches, totalPages, nil
 }
