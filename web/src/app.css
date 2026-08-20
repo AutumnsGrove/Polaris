@@ -53,6 +53,24 @@
 	--color-danger: oklch(65% 0.19 25);
 	--color-danger-bg: oklch(28% 0.05 25);
 
+	/* Syntax-highlighting palette (see the global .hljs-* rules below).
+	   Keywords/functions/deletions reuse the existing accent/danger tokens
+	   (a keyword is structurally as prominent as a primary action; a diff
+	   deletion is the same "danger" semantic already used elsewhere) —
+	   strings/numbers/types/additions get three new low-chroma hues so
+	   code can distinguish token categories at a glance without going
+	   full rainbow. Chroma stays in the same ~0.08-0.19 range the rest of
+	   the palette already uses so nothing reads as neon next to it; hues
+	   are spaced away from both existing accents (78 warm gold, 235 cool
+	   blue) so they don't get mistaken for interactive chrome. */
+	--color-syntax-keyword: var(--color-accent);
+	--color-syntax-function: var(--color-accent-2);
+	--color-syntax-deletion: var(--color-danger);
+	--color-syntax-string: oklch(74% 0.1 165);
+	--color-syntax-number: oklch(78% 0.13 85);
+	--color-syntax-type: oklch(78% 0.08 300);
+	--color-syntax-addition: oklch(72% 0.11 150);
+
 	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
 	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
 	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
@@ -81,6 +99,10 @@
 	   appears as the brand mark — the sidebar wordmark and the "Polaris" in
 	   the welcome greeting — never other headings or body copy. */
 	--font-wordmark: 'Asimovian', var(--font-serif);
+	/* Code blocks/inline code across the app (ChatTurnView's answer prose,
+	   ToolEvent's commentary) — system monospace stack, no webfont fetch,
+	   same reasoning as --font-serif above. */
+	--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
 	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 	/* A slight overshoot-and-settle rather than a hard stop — reserved for
@@ -113,6 +135,16 @@
 	--color-accent-2-strong: oklch(40% 0.11 240);
 	--color-danger: oklch(52% 0.19 25);
 	--color-danger-bg: oklch(93% 0.04 25);
+
+	/* Same three new hues as the dark theme, darkened and given a touch
+	   more chroma to hold contrast against the warm-paper background
+	   (the same adjustment already made to --color-accent/--color-accent-2
+	   above). --color-syntax-keyword/function/deletion need no override —
+	   they inherit the light-theme accent/danger values automatically. */
+	--color-syntax-string: oklch(46% 0.11 165);
+	--color-syntax-number: oklch(50% 0.15 85);
+	--color-syntax-type: oklch(52% 0.1 300);
+	--color-syntax-addition: oklch(46% 0.13 150);
 
 	--shadow-xs: 0 1px 2px rgba(60, 48, 32, 0.1), 0 1px 1px rgba(60, 48, 32, 0.06);
 	--shadow-sm: 0 1px 2px rgba(60, 48, 32, 0.08);
@@ -507,4 +539,88 @@ a {
 	to {
 		transform: translateY(0);
 	}
+}
+
+/* Syntax highlighting for fenced code blocks — see web/src/lib/markdown.ts
+   (marked's code renderer, backed by highlight.js) and highlightjs.ts (the
+   registered language set). Global rather than scoped to one component:
+   ChatTurnView.svelte's final answers and ToolEvent.svelte's inline
+   commentary both render {@html} markdown through the same shared `marked`
+   instance, and Svelte's per-component style scoping can't reach markup
+   injected by a *different* component, so these classes need one
+   definition both can see. Each component still owns its own <pre>/<code>
+   box styling (background, padding, border) locally — this block only
+   colors the token classes highlight.js emits inside that box. */
+.hljs {
+	color: var(--color-text);
+}
+
+.hljs-comment,
+.hljs-quote {
+	color: var(--color-text-dim);
+	font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+	color: var(--color-syntax-keyword);
+}
+
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition,
+.hljs-regexp,
+.hljs-meta .hljs-string {
+	color: var(--color-syntax-string);
+}
+
+.hljs-number,
+.hljs-attr,
+.hljs-attribute {
+	color: var(--color-syntax-number);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+	color: var(--color-syntax-function);
+}
+
+.hljs-title.class_,
+.hljs-type,
+.hljs-class .hljs-title {
+	color: var(--color-syntax-type);
+}
+
+.hljs-deletion {
+	color: var(--color-syntax-deletion);
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params,
+.hljs-property {
+	color: var(--color-text);
+}
+
+.hljs-doctag,
+.hljs-strong {
+	font-weight: 600;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-punctuation,
+.hljs-operator,
+.hljs-meta,
+.hljs-subst {
+	color: var(--color-text-dim);
 }
