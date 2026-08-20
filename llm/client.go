@@ -196,6 +196,111 @@ type partialToolCall struct {
 	arguments strings.Builder
 }
 
+// reasoningLeakMarkers lists literal control tokens a reasoning-capable
+// provider is supposed to consume internally to gate its own
+// reasoning/content SSE split — never meant to reach a client at all.
+// Observed once in production straight from DeepSeek's official
+// OpenRouter endpoint: right at the boundary where a reasoning burst
+// ended and the model kept deliberating (still not a final answer, just
+// more "let me check X" before another tool call), the provider's own
+// tagging dropped the ball for that stretch and streamed the raw marker
+// plus everything after it through delta.content instead of
+// delta.reasoning. reasoningLeakSniffer treats each entry here as a
+// literal prefix to watch for — add newly observed markers as they turn up.
+var reasoningLeakMarkers = []string{"<|reasoning|>"}
+
+// reasoningLeakSniffer catches a reasoningLeakMarkers leak and redirects
+// it to onReasoning instead of onChunk — never discards it. The leaked
+// text is still genuine chain-of-thought the user should be able to see;
+// it just arrived mistagged, so the fix is re-filing it under the right
+// heading, not stripping it (stripping would silently delete real
+// reasoning the same way the original bug silently mislabeled it).
+//
+// It only re-checks at reasoning/content boundaries: arm() is called once
+// up front and again every time a real delta.Reasoning chunk arrives —
+// the only place a leak has ever been observed to start, since it's
+// exactly where the provider's own split can lose track. Content
+// chunks arriving mid-run, with no boundary in between, are trusted
+// without re-buffering.
+type reasoningLeakSniffer struct {
+	// content receives chunks confirmed to be real visible content —
+	// caller is responsible for both feeding the final response text and
+	// forwarding to the caller's own onChunk.
+	content func(string)
+	// reasoning receives chunks confirmed (or presumed, once leaking) to
+	// be misrouted reasoning — never added to the response's content.
+	reasoning func(string)
+
+	armed   bool
+	leaking bool
+	buf     strings.Builder
+}
+
+func (s *reasoningLeakSniffer) maxMarkerLen() int {
+	max := 0
+	for _, m := range reasoningLeakMarkers {
+		if len(m) > max {
+			max = len(m)
+		}
+	}
+	return max
+}
+
+// arm re-primes the sniffer to check the next content chunk(s) against
+// reasoningLeakMarkers, and clears any prior leaking verdict — called
+// right as a real delta.Reasoning chunk confirms the provider's own
+// split is (at that instant) working correctly, so whatever comes next
+// deserves a fresh look rather than inheriting the last verdict forever.
+func (s *reasoningLeakSniffer) arm() {
+	s.flush()
+	s.armed = true
+	s.leaking = false
+}
+
+func (s *reasoningLeakSniffer) onChunk(chunk string) {
+	if s.leaking {
+		s.reasoning(chunk)
+		return
+	}
+	if !s.armed {
+		s.content(chunk)
+		return
+	}
+	s.buf.WriteString(chunk)
+	if s.buf.Len() < s.maxMarkerLen() {
+		return
+	}
+	s.resolve()
+}
+
+func (s *reasoningLeakSniffer) resolve() {
+	s.armed = false
+	buf := s.buf.String()
+	s.buf.Reset()
+	if buf == "" {
+		return
+	}
+	for _, m := range reasoningLeakMarkers {
+		if strings.HasPrefix(buf, m) {
+			s.leaking = true
+			s.reasoning(buf)
+			return
+		}
+	}
+	s.content(buf)
+}
+
+// flush resolves whatever's still buffered as ordinary content — reached
+// either mid-stream (a reasoning boundary showed up again before enough
+// bytes arrived to rule out a marker, so it can't have been one) or at
+// the very end of the response.
+func (s *reasoningLeakSniffer) flush() {
+	if !s.armed {
+		return
+	}
+	s.resolve()
+}
+
 // requestTimeout bounds a single OpenRouter call. Deliberately NOT set as
 // an http.Client.Timeout — that applies to the entire round trip
 // including streaming the response body, so a client-level timeout would
@@ -367,6 +472,21 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 	var costUSD float64
 	var respModel, respProvider string
 
+	leakSniffer := &reasoningLeakSniffer{
+		content: func(s string) {
+			contentBuilder.WriteString(s)
+			if onChunk != nil {
+				onChunk(s)
+			}
+		},
+		reasoning: func(s string) {
+			if onReasoning != nil {
+				onReasoning(s)
+			}
+		},
+	}
+	leakSniffer.arm()
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "data: [DONE]" {
@@ -403,14 +523,19 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 		if chunk.Choices[0].FinishReason != "" {
 			finishReason = chunk.Choices[0].FinishReason
 		}
-		if delta.Reasoning != "" && onReasoning != nil {
-			onReasoning(delta.Reasoning)
+		if delta.Reasoning != "" {
+			if onReasoning != nil {
+				onReasoning(delta.Reasoning)
+			}
+			// A real reasoning chunk just confirmed the provider's own
+			// split is working right now — re-check the next content
+			// chunk(s) against reasoningLeakMarkers rather than trusting
+			// them on the strength of a verdict from earlier in the
+			// stream. See reasoningLeakSniffer's doc comment.
+			leakSniffer.arm()
 		}
 		if delta.Content != "" {
-			contentBuilder.WriteString(delta.Content)
-			if onChunk != nil {
-				onChunk(delta.Content)
-			}
+			leakSniffer.onChunk(delta.Content)
 		}
 		for _, tc := range delta.ToolCalls {
 			p, ok := partials[tc.Index]
@@ -430,6 +555,7 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 			p.arguments.WriteString(tc.Function.Arguments)
 		}
 	}
+	leakSniffer.flush()
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		return nil, fmt.Errorf("reading SSE stream: %w", err)
 	}

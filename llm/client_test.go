@@ -182,6 +182,112 @@ func TestWithReasoning_ExplicitlyDisabledIsSentOnTheWire(t *testing.T) {
 	}
 }
 
+// TestReasoningLeak_MarkerRedirectsToOnReasoningNotContent guards the fix
+// for a real production episode: DeepSeek's official OpenRouter endpoint
+// streamed its own internal `<|reasoning|>` control token straight through
+// delta.content instead of delta.reasoning, right at the boundary where a
+// reasoning burst ended and the model kept deliberating before its next
+// tool call. Left unhandled, that raw marker plus everything after it
+// showed up as if it were the assistant's real reply. The fix redirects a
+// detected leak to onReasoning rather than dropping it — the leaked text
+// is still genuine chain-of-thought, just mistagged.
+func TestReasoningLeak_MarkerRedirectsToOnReasoningNotContent(t *testing.T) {
+	srv := sseServer(t, []string{
+		`data: {"choices":[{"delta":{"reasoning":"thinking about it..."}}]}`,
+		`data: {"choices":[{"delta":{"content":"<|reasoning|>. They use a dedicated header when thinking."}}]}`,
+		`data: {"choices":[{"delta":{"reasoning":"back to normal reasoning"}}]}`,
+		`data: {"choices":[{"delta":{"content":"This is the real answer."}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+	})
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+
+	var streamedContent, streamedReasoning strings.Builder
+	resp, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}},
+		func(chunk string) { streamedContent.WriteString(chunk) },
+		func(chunk string) { streamedReasoning.WriteString(chunk) })
+	if err != nil {
+		t.Fatalf("ChatCompletionStreaming returned error: %v", err)
+	}
+
+	if resp.Content != "This is the real answer." {
+		t.Errorf("resp.Content = %q, want only the real answer — leaked reasoning must not be in the final content", resp.Content)
+	}
+	if streamedContent.String() != "This is the real answer." {
+		t.Errorf("streamed content = %q, want only the real answer", streamedContent.String())
+	}
+	wantReasoning := "thinking about it...<|reasoning|>. They use a dedicated header when thinking.back to normal reasoning"
+	if streamedReasoning.String() != wantReasoning {
+		t.Errorf("streamed reasoning = %q, want %q", streamedReasoning.String(), wantReasoning)
+	}
+}
+
+// TestReasoningLeak_MarkerSplitAcrossChunksIsStillDetected covers the case
+// where the SSE stream splits the marker token itself across two separate
+// delta.content chunks — realistic since providers don't guarantee a
+// control token arrives as one atomic chunk.
+func TestReasoningLeak_MarkerSplitAcrossChunksIsStillDetected(t *testing.T) {
+	srv := sseServer(t, []string{
+		`data: {"choices":[{"delta":{"reasoning":"pass 1"}}]}`,
+		`data: {"choices":[{"delta":{"content":"<|reas"}}]}`,
+		`data: {"choices":[{"delta":{"content":"oning|>leaked thought"}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+	})
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+
+	var streamedContent, streamedReasoning strings.Builder
+	resp, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}},
+		func(chunk string) { streamedContent.WriteString(chunk) },
+		func(chunk string) { streamedReasoning.WriteString(chunk) })
+	if err != nil {
+		t.Fatalf("ChatCompletionStreaming returned error: %v", err)
+	}
+
+	if resp.Content != "" {
+		t.Errorf("resp.Content = %q, want empty — the whole burst was a leaked marker split across chunks", resp.Content)
+	}
+	if !strings.Contains(streamedReasoning.String(), "<|reasoning|>leaked thought") {
+		t.Errorf("streamed reasoning = %q, want it to contain the reassembled marker and following text", streamedReasoning.String())
+	}
+	if streamedContent.Len() != 0 {
+		t.Errorf("streamed content = %q, want empty", streamedContent.String())
+	}
+}
+
+// TestReasoningLeak_OrdinaryContentAfterReasoningIsUnaffected is the
+// regression guard for the common case: content streaming normally right
+// after a reasoning burst, with no marker present, must pass straight
+// through and not get held back or misrouted.
+func TestReasoningLeak_OrdinaryContentAfterReasoningIsUnaffected(t *testing.T) {
+	srv := sseServer(t, []string{
+		`data: {"choices":[{"delta":{"reasoning":"figuring it out"}}]}`,
+		`data: {"choices":[{"delta":{"content":"Paris is the capital of France."}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+	})
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+
+	var streamedContent strings.Builder
+	resp, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}},
+		func(chunk string) { streamedContent.WriteString(chunk) }, func(string) {})
+	if err != nil {
+		t.Fatalf("ChatCompletionStreaming returned error: %v", err)
+	}
+	if resp.Content != "Paris is the capital of France." {
+		t.Errorf("resp.Content = %q, want the ordinary answer untouched", resp.Content)
+	}
+	if streamedContent.String() != "Paris is the capital of France." {
+		t.Errorf("streamed content = %q, want the ordinary answer untouched", streamedContent.String())
+	}
+}
+
 func TestChatCompletion_NonOKStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
