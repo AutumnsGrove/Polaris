@@ -8,6 +8,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,8 +32,11 @@ type AskRequest struct {
 	DeepResearch bool   `json:"deep_research,omitempty"`
 	QuickMode    bool   `json:"quick_mode,omitempty"`
 	// AttachmentID/AttachmentFilename/AttachmentContentType mirror
-	// ClientMessage's fields of the same name — see attachments.go. A
+	// ClientMessage's fields of the same name — see attachments.go. A JSON
 	// caller uploads via POST /api/upload first, then passes its ID here.
+	// A multipart/form-data caller can skip that step entirely and attach
+	// a file inline instead — see decodeAskRequest — in which case these
+	// three are populated automatically and don't need to be set directly.
 	AttachmentID          string `json:"attachment_id,omitempty"`
 	AttachmentFilename    string `json:"attachment_filename,omitempty"`
 	AttachmentContentType string `json:"attachment_content_type,omitempty"`
@@ -61,6 +65,80 @@ type AskResponse struct {
 	Title string `json:"title,omitempty"`
 }
 
+// decodeAskRequest reads an AskRequest from either a plain JSON body (the
+// original, still-supported shape — an existing caller doing the
+// upload-then-reference two-step via POST /api/upload followed by this
+// with attachment_id set is unaffected) or a multipart/form-data body
+// carrying an inline "file" part alongside the same fields as ordinary
+// form values. The multipart shape exists so a caller can upload and ask
+// in a single round trip — e.g. `curl -F file=@modelcard.pdf -F
+// content="the highlights from page 50"` — instead of needing a separate
+// POST /api/upload first just to get an ID to reference. Detected by
+// Content-Type, not a query param or extra field, so it's fully additive.
+// Writes its own error response and returns ok=false on any failure —
+// callers should just return immediately when ok is false.
+func (s *Server) decodeAskRequest(w http.ResponseWriter, r *http.Request) (req AskRequest, ok bool) {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return AskRequest{}, false
+		}
+		return req, true
+	}
+
+	// Same size cap and slack as handleUpload — a caller attaching a file
+	// here goes through the exact same saveUploadedFile path, so the same
+	// limit applies.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<20)
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		http.Error(w, "invalid or too-large multipart body (max 100MB file): "+err.Error(), http.StatusBadRequest)
+		return AskRequest{}, false
+	}
+
+	req = AskRequest{
+		Content:      r.FormValue("content"),
+		Model:        r.FormValue("model"),
+		ThreadID:     r.FormValue("thread_id"),
+		Source:       r.FormValue("source"),
+		FocusMode:    r.FormValue("focus_mode"),
+		DeepResearch: formBool(r, "deep_research"),
+		QuickMode:    formBool(r, "quick_mode"),
+	}
+
+	file, header, ferr := r.FormFile("file")
+	if ferr != nil {
+		if errors.Is(ferr, http.ErrMissingFile) {
+			// A multipart request with only text fields and no file part is
+			// a legitimate (if unusual) way to ask without an attachment —
+			// not an error.
+			return req, true
+		}
+		http.Error(w, "reading \"file\" field: "+ferr.Error(), http.StatusBadRequest)
+		return AskRequest{}, false
+	}
+	defer file.Close()
+
+	uploaded, uerr := s.saveUploadedFile(file, header)
+	if uerr != nil {
+		var ue *uploadError
+		status := http.StatusInternalServerError
+		if errors.As(uerr, &ue) {
+			status = ue.status
+		}
+		http.Error(w, uerr.Error(), status)
+		return AskRequest{}, false
+	}
+	req.AttachmentID = uploaded.ID
+	req.AttachmentFilename = uploaded.Filename
+	req.AttachmentContentType = uploaded.ContentType
+	return req, true
+}
+
+func formBool(r *http.Request, key string) bool {
+	v := r.FormValue(key)
+	return v == "true" || v == "1"
+}
+
 // handleAsk runs one full agent turn and blocks until it's done, unlike
 // /ws which streams progress as separate frames. answer is reassembled
 // from "token" chunks — the same content a WebSocket client renders
@@ -68,9 +146,8 @@ type AskResponse struct {
 // suggestions but not the answer text itself (the frontend doesn't need
 // it repeated there; a sync caller does).
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
-	var req AskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	req, ok := s.decodeAskRequest(w, r)
+	if !ok {
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -175,9 +252,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 // plain POST body is simpler to read from `fetch` than SSE's GET-only
 // EventSource API would have been.
 func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
-	var req AskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	req, ok := s.decodeAskRequest(w, r)
+	if !ok {
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {

@@ -11,9 +11,11 @@ package gateway
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,9 +29,14 @@ import (
 	"polaris/tools"
 )
 
-// maxUploadBytes caps a single attachment — generous for a PDF or photo,
-// tight enough that a stray huge upload can't fill the potato's disk.
-const maxUploadBytes = 20 << 20
+// maxUploadBytes caps a single attachment. Raised from an original 20MB
+// (found live: a real ~27MB multi-hundred-page PDF model card — exactly
+// the "massive PDF" case read_attachment exists for — bounced off the old
+// cap) to 100MB, still a real ceiling rather than unbounded, since the
+// whole file gets buffered into memory to parse (see saveUploadedFile and
+// tools.ExtractPDFText/pdfPageText) on hardware as constrained as the
+// potato.
+const maxUploadBytes = 100 << 20
 
 // allowedUploadContentType accepts exactly what ComposerMenu's file input
 // offers (accept="image/*,.pdf") — anything else is almost certainly a
@@ -53,11 +60,9 @@ type UploadResponse struct {
 // the client-supplied filename — that's only kept for display, see
 // store.Message.AttachmentFilename), and returns its ID.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	cfg := s.liveConfig()
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<20) // +1MiB slack for multipart overhead/headers
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
-		http.Error(w, "invalid or too-large upload (max 20MB): "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "invalid or too-large upload (max 100MB): "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -68,6 +73,44 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	resp, uerr := s.saveUploadedFile(file, header)
+	if uerr != nil {
+		var ue *uploadError
+		status := http.StatusInternalServerError
+		if errors.As(uerr, &ue) {
+			status = ue.status
+		}
+		http.Error(w, uerr.Error(), status)
+		return
+	}
+	writeJSON(w, resp)
+}
+
+// uploadError carries the HTTP status a failure from saveUploadedFile
+// should map to — shared between handleUpload and handleAsk/
+// handleAskStream's inline-multipart path (see ask.go), so both surface
+// the same status codes for the same failures (bad content type, oversized,
+// storage error) without duplicating that mapping in two places.
+type uploadError struct {
+	status int
+	msg    string
+}
+
+func (e *uploadError) Error() string { return e.msg }
+
+// saveUploadedFile validates and saves one already-opened multipart file
+// part to config.Attachments.Dir under a generated UUID name — the shared
+// core behind both POST /api/upload (a dedicated upload-then-reference
+// call) and POST /api/ask's inline multipart path (upload and ask in one
+// round trip, for a caller like `curl -F file=@modelcard.pdf -F
+// content="highlights from page 50"` that doesn't want a separate upload
+// step first). Never trusts a caller-supplied path or filename for
+// storage — same trust boundary either caller goes through, only the
+// filename is ever kept (for display), never used to name the file on
+// disk.
+func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHeader) (UploadResponse, error) {
+	cfg := s.liveConfig()
+
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = mime.TypeByExtension(filepath.Ext(header.Filename))
@@ -76,20 +119,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if parseErr != nil {
 		log.Warn("parsing upload content type failed", "filename", header.Filename, "raw_content_type", contentType, "err", parseErr)
 		s.db.LogEvent("", "warn", "upload", "parsing content type failed", map[string]interface{}{"filename": header.Filename, "err": parseErr.Error()}, "")
-		http.Error(w, fmt.Sprintf("couldn't parse content type %q", contentType), http.StatusBadRequest)
-		return
+		return UploadResponse{}, &uploadError{http.StatusBadRequest, fmt.Sprintf("couldn't parse content type %q", contentType)}
 	}
 	contentType = parsedType
 	if !allowedUploadContentType(contentType) {
-		http.Error(w, fmt.Sprintf("unsupported content type %q — only PDFs and images are accepted", contentType), http.StatusBadRequest)
-		return
+		return UploadResponse{}, &uploadError{http.StatusBadRequest,
+			fmt.Sprintf("unsupported content type %q — only PDFs and images are accepted", contentType)}
 	}
 
 	if err := os.MkdirAll(cfg.Attachments.Dir, 0o755); err != nil {
 		log.Warn("creating attachments dir failed", "dir", cfg.Attachments.Dir, "err", err)
 		s.db.LogEvent("", "error", "upload", "creating attachments dir failed", map[string]interface{}{"dir": cfg.Attachments.Dir, "err": err.Error()}, "")
-		http.Error(w, "server storage error", http.StatusInternalServerError)
-		return
+		return UploadResponse{}, &uploadError{http.StatusInternalServerError, "server storage error"}
 	}
 
 	id := uuid.NewString()
@@ -98,8 +139,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Warn("creating attachment file failed", "path", destPath, "err", err)
 		s.db.LogEvent("", "error", "upload", "creating attachment file failed", map[string]interface{}{"err": err.Error()}, "")
-		http.Error(w, "server storage error", http.StatusInternalServerError)
-		return
+		return UploadResponse{}, &uploadError{http.StatusInternalServerError, "server storage error"}
 	}
 	defer dest.Close()
 
@@ -111,23 +151,21 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Warn("writing attachment file failed", "path", destPath, "err", err)
 		s.db.LogEvent("", "error", "upload", "writing attachment file failed", map[string]interface{}{"err": err.Error()}, "")
-		http.Error(w, "server storage error", http.StatusInternalServerError)
-		return
+		return UploadResponse{}, &uploadError{http.StatusInternalServerError, "server storage error"}
 	}
 	if written > maxUploadBytes {
 		dest.Close()
 		if rmErr := os.Remove(destPath); rmErr != nil {
 			log.Warn("cleaning up oversized attachment failed", "path", destPath, "err", rmErr)
 		}
-		http.Error(w, "attachment too large (max 20MB)", http.StatusRequestEntityTooLarge)
-		return
+		return UploadResponse{}, &uploadError{http.StatusRequestEntityTooLarge, "attachment too large (max 100MB)"}
 	}
 
 	log.Info("attachment uploaded", "id", id, "filename", header.Filename, "content_type", contentType, "size_bytes", written)
 	s.db.LogEvent("", "info", "upload", "attachment uploaded", map[string]interface{}{
 		"id": id, "filename": header.Filename, "content_type": contentType, "size_bytes": written,
 	}, "")
-	writeJSON(w, UploadResponse{ID: id, Filename: header.Filename, ContentType: contentType, SizeBytes: written})
+	return UploadResponse{ID: id, Filename: header.Filename, ContentType: contentType, SizeBytes: written}, nil
 }
 
 func firstNonEmpty(vals ...string) string {
