@@ -3,7 +3,7 @@
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
-	import { marked } from 'marked';
+	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
@@ -712,6 +712,7 @@
 		box-shadow: var(--shadow-well);
 		padding: 10px 12px;
 		overflow-x: auto;
+		font-family: var(--font-mono);
 		font-size: 13px;
 		line-height: 1.5;
 	}
@@ -728,6 +729,7 @@
 		border-radius: 4px;
 		box-shadow: var(--shadow-well);
 		padding: 1px 5px;
+		font-family: var(--font-mono);
 		font-size: 13px;
 	}
 

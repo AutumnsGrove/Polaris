@@ -33,6 +33,7 @@ agent:
 
     Be concise. Cite sources inline as [Title](URL) when you used web_search or web_read to support a claim.
     Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).
+    Always tag fenced code blocks with their language (```go, ```python, ...) — untagged blocks render uncolored.
 
   # Appended (after a blank line) to the system prompt when this answer is
   # likely to be read aloud.
