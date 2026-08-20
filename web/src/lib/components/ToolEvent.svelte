@@ -35,6 +35,11 @@
 		// even starts, so an uploaded photo's vision-model description shows
 		// up on the timeline instead of leaving the screen blank while it runs.
 		if (item.tool === 'describe_image') return `Looking at: ${item.args?.filename ?? 'image'}`;
+		if (item.tool === 'read_attachment') {
+			const query = item.args?.query;
+			if (query) return `Searching attachment: ${query}`;
+			return `Reading attachment: page ${item.args?.page ?? 1}`;
+		}
 		return item.tool;
 	}
 

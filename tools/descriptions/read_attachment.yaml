@@ -1,0 +1,13 @@
+name: read_attachment
+requires: attachment
+description: >-
+  page through or search this turn's attached PDF, beyond the short preview already given.
+  Pass 'query' to search the whole document for a term and find which page it's on, or 'page'
+  to read a specific page (optionally with 'instructions' to extract just what's needed from it).
+api_description: >-
+  Page through or search the PDF the user attached to this turn, beyond the short preview
+  already given in the conversation. Pass 'query' to search the whole document for a literal
+  term and see which page(s) it appears on with surrounding context, before spending a call
+  reading one in full. Pass 'page' to read a specific page directly (1-indexed, defaults to 1),
+  optionally with 'instructions' to extract only specific information from that page instead of
+  its full text.

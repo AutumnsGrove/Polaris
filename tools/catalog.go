@@ -18,7 +18,7 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies",
+	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -51,6 +51,8 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.LastFMAPIKey != ""
 	case "tmdb_api_key":
 		return ctx.TMDBAPIKey != ""
+	case "attachment":
+		return len(ctx.AttachmentData) > 0
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -88,6 +90,8 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real book recommendations grounded in readers' curated lists and shared subject/genre data."},
 	"movies": {Name: "movies", Requires: "tmdb_api_key", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
+	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
+		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
 }
 
 var (

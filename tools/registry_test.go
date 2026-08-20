@@ -120,7 +120,7 @@ func TestDefs_OrderIsStable(t *testing.T) {
 // operator's live edit to tools/descriptions/*.yaml's api_description
 // never reached the model until a restart. Defs()/AllDefs() must overlay
 // the catalog's CURRENT APIDescription on every call — chdirs to the repo
-// root (see TestCatalog_AllTwelveFilesLoadAndNamesMatch) so this checks
+// root (see TestCatalog_AllFilesLoadAndNamesMatch) so this checks
 // against the real shipped YAML files, not catalogDefaults' fallback text.
 func TestDefs_AndAllDefs_DescriptionMatchesLiveCatalog(t *testing.T) {
 	orig, err := os.Getwd()

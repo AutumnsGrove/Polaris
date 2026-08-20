@@ -34,12 +34,15 @@ func mustDecodePDF(t *testing.T) []byte {
 
 func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"}, nil)
+	got, data, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"}, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
 	if got != "hello" {
 		t.Errorf("got %q, want unchanged content", got)
+	}
+	if data != nil {
+		t.Errorf("attachmentData = %v, want nil with no attachment", data)
 	}
 	if cost != 0 {
 		t.Errorf("cost = %v, want 0 with no attachment", cost)
@@ -48,7 +51,7 @@ func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 
 func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, nil)
+	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, nil)
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
 	}
@@ -70,7 +73,7 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 		AttachmentFilename:    "report.pdf",
 		AttachmentContentType: "application/pdf",
 	}
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
+	got, data, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -83,6 +86,9 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 	if !bytes.Contains([]byte(got), []byte("Hello World")) {
 		t.Errorf("got %q, want it to contain the PDF's actual extracted text", got)
 	}
+	if len(data) == 0 {
+		t.Error("attachmentData is empty, want the raw PDF bytes for read_attachment to use")
+	}
 	if cost != 0 {
 		t.Errorf("cost = %v, want 0 for a PDF (no model call)", cost)
 	}
@@ -92,7 +98,7 @@ func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Attachments.Dir = t.TempDir()
 
-	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
+	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
 		Content:               "hi",
 		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
 		AttachmentContentType: "application/pdf",
@@ -130,7 +136,7 @@ func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
 	}
 	// The selected model (config.ModelConfig{}, i.e. not multimodal) can't see
 	// the image itself, so this exercises the cfg.MultimodalModel() fallback.
-	got, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
+	got, _, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -190,7 +196,7 @@ func TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage(t *testin
 		AttachmentFilename:    "bike.jpg",
 		AttachmentContentType: "image/jpeg",
 	}
-	got, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg, nil)
+	got, _, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg, nil)
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
@@ -242,7 +248,7 @@ func TestResolveAttachment_ImageEmitsSyntheticToolCall(t *testing.T) {
 		events = append(events, payload)
 	}
 
-	if _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, emit); err != nil {
+	if _, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, emit); err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
 
@@ -274,7 +280,7 @@ func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing
 	cfg.Attachments.Dir = dir
 	cfg.Models = []config.ModelConfig{{ID: "deepseek", Multimodal: false}}
 
-	_, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
+	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
 		Content:               "what is this",
 		AttachmentID:          id,
 		AttachmentContentType: "image/png",

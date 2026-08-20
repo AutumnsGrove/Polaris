@@ -274,11 +274,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// resolveAttachment's doc comment), so the frontend has something to
 	// show during those few seconds instead of a blank wait before
 	// agent.Run even starts.
-	turnMessage, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg, emit)
+	turnMessage, attachmentData, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg, emit)
 	if err != nil {
 		log.Warn("resolving attachment failed, continuing without it", "err", err)
 		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
 		turnMessage = msg.Content
+		attachmentData = nil
 		attachmentCostUSD = 0
 	}
 	// The file's only ever read once, right above — nothing re-reads it
@@ -335,6 +336,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		LastFMAPIKey:           cfg.LastFM.APIKey,
 		HardcoverAPIKey:        cfg.Hardcover.APIKey,
 		TMDBAPIKey:             cfg.TMDB.APIKey,
+		AttachmentData:         attachmentData,
+		AttachmentFilename:     msg.AttachmentFilename,
 		DefaultLocation:        defaultLocation,
 		RequestLocation:        resolveLiveLocation,
 		VoiceMode:              msg.VoiceMode,

@@ -460,25 +460,27 @@ func isPDF(resp *http.Response, rawURL string) bool {
 // have no <title> tag; the first short line of extracted text is usually
 // the paper's actual title for arXiv-style academic PDFs, so that's used
 // as a best-effort title rather than leaving it blank. Exported — also
-// used directly by gateway's attachment handling for an uploaded PDF,
-// not just PDFs reached via web_read's URL fetch. Whole-document and
-// capped at maxExtractedChars — there's no pagination story for an
-// attachment the way there is for web_read's URL fetch (see
-// ExtractPDFPage), so it just returns as much as fits.
-func ExtractPDFText(data []byte) (title, text string, err error) {
+// used directly by gateway's attachment handling for an uploaded PDF, not
+// just PDFs reached via web_read's URL fetch. Whole-document and capped at
+// maxExtractedChars; totalPages/truncated let the caller (gateway's
+// resolveAttachment) decide how to phrase pointing the model at the
+// read_attachment tool for the rest, rather than baking any one tool's
+// name into this package-level text-extraction primitive.
+func ExtractPDFText(data []byte) (title, text string, totalPages int, truncated bool, err error) {
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return "", "", fmt.Errorf("opening pdf: %w", err)
+		return "", "", 0, false, fmt.Errorf("opening pdf: %w", err)
 	}
+	totalPages = r.NumPage()
 
 	contentReader, err := r.GetPlainText()
 	if err != nil {
-		return "", "", fmt.Errorf("extracting pdf text: %w", err)
+		return "", "", totalPages, false, fmt.Errorf("extracting pdf text: %w", err)
 	}
 
 	raw, err := io.ReadAll(contentReader)
 	if err != nil {
-		return "", "", fmt.Errorf("reading pdf text: %w", err)
+		return "", "", totalPages, false, fmt.Errorf("reading pdf text: %w", err)
 	}
 
 	text = collapseWhitespace(string(raw))
@@ -486,18 +488,36 @@ func ExtractPDFText(data []byte) (title, text string, err error) {
 		title = lines[0]
 	}
 	if len(text) > maxExtractedChars {
-		text = text[:maxExtractedChars] + "\n\n... [truncated]"
+		text = text[:maxExtractedChars]
+		truncated = true
 	}
-	return title, text, nil
+	return title, text, totalPages, truncated, nil
 }
 
-// ExtractPDFPage extracts a single page's text from a fully-buffered PDF,
-// for web_read's page-based PDF pagination — unlike HTML, a PDF has real
-// page boundaries, so "read the next chunk" means "read the next page"
-// rather than an arbitrary character offset. page is 1-indexed and clamped
-// into range; 0 (unset) defaults to page 1. totalPages lets the caller
-// know whether there's anything left to page through.
-func ExtractPDFPage(data []byte, page int) (title, text string, totalPages int, err error) {
+// pdfPageRawText extracts one page's plain text from an already-opened
+// reader — the font-table walk ledongthuc/pdf requires for GetPlainText is
+// identical whether the caller wants a single page's text (pdfPageText) or
+// is scanning every page for a literal match (searchPDFPages in
+// read_attachment.go), so both share this instead of duplicating it.
+func pdfPageRawText(p pdf.Page) (string, error) {
+	fonts := make(map[string]*pdf.Font)
+	for _, name := range p.Fonts() {
+		f := p.Font(name)
+		fonts[name] = &f
+	}
+	raw, err := p.GetPlainText(fonts)
+	if err != nil {
+		return "", err
+	}
+	return collapseWhitespace(raw), nil
+}
+
+// pdfPageText extracts a single page's text plus a best-effort title (page
+// 1 only), clamped/capped exactly like ExtractPDFPage below — but with no
+// tool-specific continuation hint appended, so callers can each write their
+// own (web_read's "call web_read again..." vs. read_attachment's
+// equivalent). page is 1-indexed; 0 (unset) defaults to page 1.
+func pdfPageText(data []byte, page int) (title, text string, totalPages int, err error) {
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", "", 0, fmt.Errorf("opening pdf: %w", err)
@@ -514,18 +534,11 @@ func ExtractPDFPage(data []byte, page int) (title, text string, totalPages int, 
 		page = totalPages
 	}
 
-	p := r.Page(page)
-	fonts := make(map[string]*pdf.Font)
-	for _, name := range p.Fonts() {
-		f := p.Font(name)
-		fonts[name] = &f
-	}
-	raw, err := p.GetPlainText(fonts)
+	text, err = pdfPageRawText(r.Page(page))
 	if err != nil {
 		return "", "", totalPages, fmt.Errorf("extracting pdf page %d text: %w", page, err)
 	}
 
-	text = collapseWhitespace(raw)
 	if page == 1 {
 		if lines := strings.SplitN(text, "\n", 2); len(lines) > 0 && len(lines[0]) < 150 {
 			title = lines[0]
@@ -533,6 +546,26 @@ func ExtractPDFPage(data []byte, page int) (title, text string, totalPages int, 
 	}
 	if len(text) > maxExtractedChars {
 		text = text[:maxExtractedChars] + "\n\n... [page truncated]"
+	}
+	return title, text, totalPages, nil
+}
+
+// ExtractPDFPage extracts a single page's text from a fully-buffered PDF,
+// for web_read's page-based PDF pagination — unlike HTML, a PDF has real
+// page boundaries, so "read the next chunk" means "read the next page"
+// rather than an arbitrary character offset. page is 1-indexed and clamped
+// into range; 0 (unset) defaults to page 1. totalPages lets the caller
+// know whether there's anything left to page through.
+func ExtractPDFPage(data []byte, page int) (title, text string, totalPages int, err error) {
+	title, text, totalPages, err = pdfPageText(data, page)
+	if err != nil {
+		return "", "", totalPages, err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages {
+		page = totalPages
 	}
 
 	if totalPages > 1 {

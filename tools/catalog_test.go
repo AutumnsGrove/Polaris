@@ -36,6 +36,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx := newTestContext()
 	ctx.LastFMAPIKey = "test-key"
 	ctx.TMDBAPIKey = "test-key"
+	ctx.AttachmentData = []byte("pdf bytes")
 	prompt := ToolsPrompt(ctx)
 
 	lastIdx := -1
@@ -51,13 +52,13 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	}
 }
 
-// TestCatalog_AllTwelveFilesLoadAndNamesMatch validates the real
+// TestCatalog_AllFilesLoadAndNamesMatch validates the real
 // tools/descriptions/*.yaml files shipped in the repo, not just
 // catalogDefaults' fallback text — catalogDescriptionsDir is relative to
 // the process's working directory (same hot-reload convention as
 // prompt.md/prompts.yaml), which is this package's own directory during
 // `go test`, not the repo root, so this chdirs up one level first.
-func TestCatalog_AllTwelveFilesLoadAndNamesMatch(t *testing.T) {
+func TestCatalog_AllFilesLoadAndNamesMatch(t *testing.T) {
 	orig, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -94,6 +95,8 @@ func TestCatalogEntry_Offered(t *testing.T) {
 	withKeys.LastFMAPIKey = "x"
 	withKeys.TMDBAPIKey = "x"
 	withoutKeys := newTestContext()
+	withAttachment := newTestContext()
+	withAttachment.AttachmentData = []byte("pdf bytes")
 
 	cases := []struct {
 		name  string
@@ -106,6 +109,8 @@ func TestCatalogEntry_Offered(t *testing.T) {
 		{"lastfm_api_key excluded when missing", catalogEntry{Requires: "lastfm_api_key"}, withoutKeys, false},
 		{"tmdb_api_key offered when configured", catalogEntry{Requires: "tmdb_api_key"}, withKeys, true},
 		{"tmdb_api_key excluded when missing", catalogEntry{Requires: "tmdb_api_key"}, withoutKeys, false},
+		{"attachment offered when this turn has one", catalogEntry{Requires: "attachment"}, withAttachment, true},
+		{"attachment excluded when this turn has none", catalogEntry{Requires: "attachment"}, withoutKeys, false},
 		{"unrecognized requires fails closed", catalogEntry{Name: "typo_tool", Requires: "last_fm_api_key"}, withKeys, false},
 	}
 	for _, c := range cases {

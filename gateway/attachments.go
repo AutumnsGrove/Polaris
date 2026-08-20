@@ -165,9 +165,17 @@ func firstNonEmpty(vals ...string) string {
 // there's finally something to look at instead of a blank wait. Nil is
 // fine (and used by tests below) — this attachment path also runs from
 // contexts with no live streaming connection to write to.
-func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel config.ModelConfig, msg ClientMessage, emit func(eventType string, payload map[string]interface{})) (content string, costUSD float64, err error) {
+//
+// attachmentData is only ever non-nil for a PDF — handleTurn threads it
+// into tools.Context.AttachmentData so the read_attachment tool can page
+// through or search the full document beyond the preview embedded in
+// content below, for the one turn this attachment was uploaded on (never
+// persisted past that — see AttachmentData's doc comment). Nil for every
+// other case: no attachment, an image (already fully described here, no
+// pagination story of its own), or any error path.
+func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel config.ModelConfig, msg ClientMessage, emit func(eventType string, payload map[string]interface{})) (content string, attachmentData []byte, costUSD float64, err error) {
 	if msg.AttachmentID == "" {
-		return msg.Content, 0, nil
+		return msg.Content, nil, 0, nil
 	}
 
 	// AttachmentID becomes a filesystem path component (see handleUpload,
@@ -175,12 +183,12 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 	// actually a UUID before joining it into a path, rather than trusting
 	// whatever a client sends here.
 	if _, err := uuid.Parse(msg.AttachmentID); err != nil {
-		return msg.Content, 0, fmt.Errorf("invalid attachment id: %w", err)
+		return msg.Content, nil, 0, fmt.Errorf("invalid attachment id: %w", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(cfg.Attachments.Dir, msg.AttachmentID))
 	if err != nil {
-		return msg.Content, 0, fmt.Errorf("reading attachment: %w", err)
+		return msg.Content, nil, 0, fmt.Errorf("reading attachment: %w", err)
 	}
 
 	filename := msg.AttachmentFilename
@@ -190,11 +198,19 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 
 	switch {
 	case msg.AttachmentContentType == "application/pdf":
-		_, text, err := tools.ExtractPDFText(data)
+		_, text, totalPages, truncated, err := tools.ExtractPDFText(data)
 		if err != nil {
-			return msg.Content, 0, fmt.Errorf("extracting pdf text: %w", err)
+			return msg.Content, nil, 0, fmt.Errorf("extracting pdf text: %w", err)
 		}
-		return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s", msg.Content, filename, text), 0, nil
+		note := ""
+		if truncated {
+			note = fmt.Sprintf("\n\n... [truncated — %d pages total; call the read_attachment tool with a page number "+
+				"to keep reading, or a query to search the full document]", totalPages)
+		} else if totalPages > 1 {
+			note = fmt.Sprintf("\n\n[%d pages total — call the read_attachment tool with a page number or a query "+
+				"if you need to revisit something specific]", totalPages)
+		}
+		return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s%s", msg.Content, filename, text, note), data, 0, nil
 
 	case strings.HasPrefix(msg.AttachmentContentType, "image/"):
 		visionModel := selectedModel
@@ -202,7 +218,7 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 			var ok bool
 			visionModel, ok = cfg.MultimodalModel()
 			if !ok {
-				return msg.Content, 0, fmt.Errorf("no multimodal model configured to describe images")
+				return msg.Content, nil, 0, fmt.Errorf("no multimodal model configured to describe images")
 			}
 		}
 		// Deliberately NOT pinned to visionModel.Provider the way the main
@@ -227,20 +243,20 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 			if emit != nil {
 				emit("tool_result", map[string]interface{}{"tool": "describe_image", "result": "error: " + err.Error()})
 			}
-			return msg.Content, 0, fmt.Errorf("describing image: %w", err)
+			return msg.Content, nil, 0, fmt.Errorf("describing image: %w", err)
 		}
 		if emit != nil {
 			emit("tool_result", map[string]interface{}{"tool": "describe_image", "result": description})
 		}
 		return fmt.Sprintf("%s\n\n[Attached image: %s]\nImage description (the model itself can't see "+
-			"the image — this description is all it has to go on): %s", msg.Content, filename, description), cost, nil
+			"the image — this description is all it has to go on): %s", msg.Content, filename, description), nil, cost, nil
 
 	default:
 		// Upload-time validation (handleUpload) only ever accepts PDF or
 		// image/*, so this shouldn't be reachable — but fail safe rather
 		// than silently drop an attachment type added there later without
 		// a matching case here.
-		return msg.Content, 0, fmt.Errorf("no extraction pipeline for content type %q", msg.AttachmentContentType)
+		return msg.Content, nil, 0, fmt.Errorf("no extraction pipeline for content type %q", msg.AttachmentContentType)
 	}
 }
 

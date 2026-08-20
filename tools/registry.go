@@ -120,6 +120,22 @@ type Context struct {
 	// fails with a clear "not configured" error rather than degrading.
 	TMDBAPIKey string
 
+	// AttachmentData is the raw bytes of this turn's uploaded PDF
+	// attachment, when there is one — read_attachment's raw material for
+	// paging/searching beyond the short preview resolveAttachment already
+	// folded into the message up front (see gateway/attachments.go). Nil
+	// for every other case: no attachment, or an image attachment, which
+	// is already fully described upfront with no pagination story of its
+	// own. Only ever populated for the single turn the attachment was
+	// uploaded on — never persisted, so read_attachment has nothing to
+	// work with on a later turn in the same thread.
+	AttachmentData []byte
+
+	// AttachmentFilename mirrors the uploaded file's display name, for
+	// read_attachment's tool_call event payloads. Empty whenever
+	// AttachmentData is.
+	AttachmentFilename string
+
 	// Blocklist rejects web_read fetches for blocked domains directly —
 	// web_search's own filtering happens inside SearXNG (nil-safe there
 	// too), so this only needs plumbing to the one other place a URL can
@@ -351,7 +367,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"think": thinkDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
-		"music": musicDef, "books": booksDef, "movies": moviesDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
 	}
 }
 
