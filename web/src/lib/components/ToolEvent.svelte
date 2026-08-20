@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { marked } from 'marked';
+	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
 	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen, Image } from '@lucide/svelte';
@@ -144,11 +144,33 @@
 	}
 
 	.commentary :global(code) {
-		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-family: var(--font-mono);
 		font-size: 0.9em;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-sm);
 		padding: 1px 4px;
+	}
+
+	/* Same treatment as ChatTurnView.svelte's .prose :global(pre) — kept in
+	   sync by eye since scoped styles can't be shared directly, see the
+	   doc comment on commentaryHtml above for why this duplicates. */
+	.commentary :global(pre) {
+		background: var(--color-surface-2);
+		border: none;
+		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-well);
+		padding: 10px 12px;
+		overflow-x: auto;
+		font-family: var(--font-mono);
+		font-size: 13px;
+		line-height: 1.5;
+		margin: 0 0 8px 0;
+	}
+
+	.commentary :global(pre code) {
+		background: transparent;
+		padding: 0;
+		font-size: inherit;
 	}
 
 	.tool-event {
