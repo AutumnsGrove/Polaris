@@ -37,6 +37,17 @@ describe('marked code renderer (syntax highlighting)', () => {
 		expect(html).toContain('<pre><code class="hljs">SELECT * FROM users;</code></pre>');
 	});
 
+	it('colors a ```svelte fence via the highlightjs-svelte grammar', () => {
+		// Svelte has no official highlight.js grammar (see highlightjs.ts's
+		// doc comment) — this pins the community one actually registering
+		// and producing real sub-language spans, not just silently falling
+		// through to the plain-text branch above.
+		const html = marked.parse('```svelte\n<script>\n  let count = 0;\n</script>\n<button>{count}</button>\n```') as string;
+		expect(html).toContain('<pre><code class="hljs language-svelte">');
+		expect(html).toContain('class="hljs-tag"');
+		expect(html).toContain('class="hljs-keyword">let<');
+	});
+
 	it('leaves ordinary prose untouched', () => {
 		const html = marked.parse('Just a **sentence**.') as string;
 		expect(html).toBe('<p>Just a <strong>sentence</strong>.</p>\n');

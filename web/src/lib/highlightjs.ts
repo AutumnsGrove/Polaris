@@ -44,6 +44,24 @@ import vbnet from 'highlight.js/lib/languages/vbnet';
 import wasm from 'highlight.js/lib/languages/wasm';
 import dockerfile from 'highlight.js/lib/languages/dockerfile';
 import nginx from 'highlight.js/lib/languages/nginx';
+// Not one of highlight.js's own ~190 bundled languages — Svelte has no
+// official grammar upstream, just this small (~700B minified), dependency-
+// free community one. Its definition leans on the xml/javascript/css
+// grammars already registered below (a .svelte file's <script>/<style>
+// blocks and template markup each get highlighted as their own
+// sub-language), so registerSvelte only needs to run sometime after those
+// three — see highlight.js's own subLanguage docs; resolution happens at
+// highlight time, not at registerLanguage time, so exact ordering here
+// isn't load-bearing, just kept last for clarity.
+// The exact .mjs subpath, not the bare 'highlightjs-svelte' specifier —
+// the package's package.json "browser" field points at a pre-built
+// no-export bundle meant for a plain <script> tag (it just mutates a
+// global `hljs`), and Vite's production build prefers that field over
+// "module", which made `vite build` fail with a real MISSING_EXPORT error
+// even though `vitest`'s dev-mode resolution picked the working ESM file
+// and made the same import look fine there. Importing the ESM entry point
+// directly sidesteps that field-priority ambiguity entirely.
+import registerSvelte from 'highlightjs-svelte/dist/index.mjs';
 
 hljs.registerLanguage('xml', xml);
 hljs.registerLanguage('html', xml);
@@ -101,5 +119,6 @@ hljs.registerLanguage('wasm', wasm);
 hljs.registerLanguage('dockerfile', dockerfile);
 hljs.registerLanguage('docker', dockerfile);
 hljs.registerLanguage('nginx', nginx);
+registerSvelte(hljs);
 
 export default hljs;
