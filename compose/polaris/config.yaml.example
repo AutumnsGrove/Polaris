@@ -67,6 +67,12 @@ database:
 logging:
   dir: "/data/logs"
 
+# backup:
+#   dir: "/data/backups"    # default: a "backups" folder next to database.path above —
+#                            # already inside the polaris-data named volume, no extra
+#                            # mount needed (see docker-compose.yml)
+#   retention_days: 30
+
 attachments:
   dir: "/data/attachments"
 

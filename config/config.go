@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"polaris/backup"
 	"polaris/logger"
 )
 
@@ -163,6 +164,20 @@ type Config struct {
 		Dir string `yaml:"dir"` // daily-rotated files (YYYY-MM-DD.log), 90-day retention
 	} `yaml:"logging"`
 
+	Backup struct {
+		// Dir defaults to a "backups" subdirectory next to the database
+		// file (see backup.Dir) — set this only to point backups
+		// somewhere other than right beside polaris.db, e.g. a second
+		// disk.
+		Dir string `yaml:"dir"`
+		// RetentionDays is how long a daily backup is kept before the
+		// scheduler (backup.RunScheduler, started by cmd/run.go) prunes
+		// it. 30 gives a full month of rollback room without the
+		// backups directory growing unbounded on the potato's limited
+		// disk.
+		RetentionDays int `yaml:"retention_days"`
+	} `yaml:"backup"`
+
 	Attachments struct {
 		// Dir stores uploaded files (PDFs, images) on disk next to the
 		// database — see gateway's handleUpload. Referenced by generated
@@ -296,6 +311,13 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.Logging.Dir == "" {
 		cfg.Logging.Dir = "./logs"
+	}
+	if cfg.Backup.Dir == "" {
+		// Depends on Database.Path already being defaulted above.
+		cfg.Backup.Dir = backup.Dir(cfg.Database.Path)
+	}
+	if cfg.Backup.RetentionDays <= 0 {
+		cfg.Backup.RetentionDays = backup.DefaultRetentionDays
 	}
 	if cfg.Attachments.Dir == "" {
 		cfg.Attachments.Dir = "./attachments"

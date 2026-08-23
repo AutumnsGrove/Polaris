@@ -67,6 +67,15 @@ database:
 logging:
   dir: "./logs"   # one file per day (YYYY-MM-DD.log), 90-day retention, pruned automatically
 
+# backup:
+#   dir: "./backups"        # default: a "backups" folder next to database.path above
+#   retention_days: 30      # how long a daily backup is kept before it's pruned
+#
+# Uncomment to override either default. A daily backup (via SQLite's own
+# VACUUM INTO — a consistent snapshot that doesn't block the running
+# server) is taken automatically in the background; `polaris backup list`/
+# `create`/`restore` manage them by hand. See README's Backups section.
+
 attachments:
   dir: "./attachments"   # uploaded PDFs/images from the composer's "+" menu
 

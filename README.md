@@ -77,6 +77,8 @@ with citations.
   citations get a recognizable source badge instead — a real per-paper image doesn't exist to show
 - **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
   that updates and restarts the service — no SSH required (see [Self-update](#self-update))
+- **Automatic backups** — a daily, consistent snapshot of the database, kept for 30 days and
+  pruned automatically, with a CLI to list/create/restore on demand (see [Backups](#backups))
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's homescreen
   as a standalone app (no browser chrome), since [mobile is the primary surface](PRODUCT.md)
@@ -98,6 +100,7 @@ Go backend
   │              [Requirements](#requirements)
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
   ├── store    — SQLite: threads, messages, settings, running cost, per-provider API usage counts
+  ├── backup   — daily VACUUM INTO snapshots of the database, rotation, and restore — see Backups
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
 ```
 
@@ -326,19 +329,51 @@ can never drift apart in behavior. Docker's version works meaningfully different
 (no git pull, resolves a GHCR image digest instead) — see
 [Self-update, under Docker](#self-update-under-docker) above for the full mechanism.
 
+## Backups
+
+The database (threads, messages, cost history, search history, settings — everything in
+`polaris.db`) is backed up automatically once a day via SQLite's own `VACUUM INTO` (a consistent
+snapshot that doesn't block the server while it runs), kept for 30 days by default, and pruned
+automatically past that — no cron job, no host-side timer, just a background goroutine in the
+Polaris process itself, so it works identically on both install methods with zero extra setup.
+Configurable via `backup.dir`/`backup.retention_days` in `config.yaml` — see that file's comments.
+
+```bash
+polaris backup list                # newest first: name, size, timestamp
+polaris backup create              # take one right now, outside the daily schedule
+polaris backup restore <name>      # replace the live database with a backup — see below
+```
+
+`restore` always preserves whatever database was live before overwriting it (copied alongside
+itself as `polaris.db.pre-restore-<timestamp>` first — a restore is itself always undoable) and
+verifies the backup passes SQLite's integrity check before touching anything. It needs the server
+stopped first — swapping the database file out from under a live connection risks corrupting
+whichever write is in flight. Bare-metal refuses if it detects Polaris still answering on its
+configured port; Docker installs can't be checked the same way (the CLI runs on the host, outside
+the container), so `polaris backup restore` prints the exact `docker compose stop` /
+`docker compose run` / `docker compose up` sequence to run by hand instead of guessing.
+
+Backups live in a `backups/` folder next to `polaris.db` itself — already inside the `polaris-data`
+named volume under Docker, so no extra bind mount is needed. They're local-disk only for now
+(no off-device copy yet, e.g. to R2 or another host) — worth pairing with a real off-device backup
+strategy for anything you'd genuinely be upset to lose.
+
 ## CLI usage
 
 ```bash
 polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
 polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
+polaris backup list        # see Backups above
 ```
 
 Every command auto-detects Docker vs. bare-metal from `docker-compose.yml`'s presence, no flag
-needed — `search`/`stats`/`update`/`restart` all hit the running container's own REST API under
-Docker instead of assuming a local `config.yaml`/git checkout. `install` is the one exception: it
-explicitly refuses under Docker (there's no systemd/launchd unit to write) rather than doing
-something misleading — `docker compose up -d` is that step instead.
+needed — `search`/`stats`/`update`/`restart`/`backup create`/`backup list` all hit the running
+container's own REST API under Docker instead of assuming a local `config.yaml`/git checkout.
+`install` and `backup restore` are the exceptions: both explicitly refuse under Docker (there's no
+systemd/launchd unit to write; there's no safe way to swap a live database file from the host)
+rather than doing something misleading — `docker compose up -d` and the printed restore sequence
+are those steps instead.
 
 ## Deployment
 
