@@ -10,6 +10,7 @@ import (
 
 	"polaris/backup"
 	"polaris/logger"
+	"polaris/r2"
 )
 
 // log writes to stderr only until logger.Init runs (see logger.go's doc
@@ -177,6 +178,25 @@ type Config struct {
 		// disk.
 		RetentionDays int `yaml:"retention_days"`
 	} `yaml:"backup"`
+
+	R2 struct {
+		// AccountID/AccessKeyID/SecretAccessKey/Bucket together enable
+		// mirroring every backup off-device to Cloudflare R2, in addition
+		// to (not instead of) the local backups/ folder — protects
+		// against the device itself failing, not just against needing to
+		// roll back a bad database state. All four empty (the default)
+		// disables mirroring entirely; local backups keep working exactly
+		// as before with no other change in behavior. Use a dedicated
+		// bucket and a scoped API token limited to Object Read & Write on
+		// that bucket only, not an account-wide key. See backup.Mirror/
+		// PruneRemote/Fetch, and r2.Client, which signs requests with
+		// AWS SigV4 by hand rather than pulling in aws-sdk-go-v2.
+		// https://developers.cloudflare.com/r2/api/tokens/
+		AccountID       string `yaml:"account_id"`
+		AccessKeyID     string `yaml:"access_key_id"`
+		SecretAccessKey string `yaml:"secret_access_key"`
+		Bucket          string `yaml:"bucket"`
+	} `yaml:"r2"`
 
 	Attachments struct {
 		// Dir stores uploaded files (PDFs, images) on disk next to the
@@ -436,6 +456,15 @@ func (c *Config) MultimodalModel() (model ModelConfig, ok bool) {
 		}
 	}
 	return ModelConfig{}, false
+}
+
+// R2Client builds an r2.Client from the R2 config section, or nil if R2
+// mirroring isn't configured (see r2.NewClient) — the single place every
+// caller (the backup scheduler, `polaris backup create`/`restore-remote`,
+// the Docker-mode REST handlers) gets a client from, so they all agree on
+// what "configured" means without duplicating the four-empty-fields check.
+func (c *Config) R2Client() *r2.Client {
+	return r2.NewClient(c.R2.AccountID, c.R2.AccessKeyID, c.R2.SecretAccessKey, c.R2.Bucket)
 }
 
 // DefaultModelOrFirst returns the configured default model ID, falling

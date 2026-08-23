@@ -94,7 +94,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// shutdown.
 	backupDone := make(chan struct{})
 	defer close(backupDone)
-	go backup.RunScheduler(backupDone, cfg.Database.Path, cfg.Backup.Dir, time.Duration(cfg.Backup.RetentionDays)*24*time.Hour)
+	go backup.RunScheduler(backupDone, cfg.Database.Path, cfg.Backup.Dir, time.Duration(cfg.Backup.RetentionDays)*24*time.Hour, cfg.R2Client())
 
 	var staticFS fs.FS
 	if !devMode {

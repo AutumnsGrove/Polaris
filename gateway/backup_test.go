@@ -65,3 +65,16 @@ func TestHandleListBackups_EmptyBeforeAnyBackup(t *testing.T) {
 		t.Errorf("got %d backups, want 0 before any have been taken", len(infos))
 	}
 }
+
+func TestHandleListBackups_RemoteWithoutR2ConfiguredReturns400(t *testing.T) {
+	h := newTestHarness(t, "")
+
+	resp, err := http.Get(h.url("/api/backup?remote=1"))
+	if err != nil {
+		t.Fatalf("GET /api/backup?remote=1: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (r2 isn't configured in the test config)", resp.StatusCode)
+	}
+}

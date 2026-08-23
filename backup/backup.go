@@ -2,11 +2,15 @@
 // database (via SQLite's own VACUUM INTO — a consistent single-file
 // snapshot that doesn't block concurrent readers/writers), prunes
 // anything past a configured retention window, and restores one back
-// into place. See cmd/backup.go for the `polaris backup` CLI and
-// gateway/backup.go for the Docker-mode REST endpoints it talks to.
+// into place. Optionally mirrors each backup off-device to Cloudflare R2
+// (Mirror/PruneRemote/Fetch, via the r2 package) so a backup survives the
+// device itself failing, not just a bad database state. See cmd/backup.go
+// for the `polaris backup` CLI and gateway/backup.go for the Docker-mode
+// REST endpoints it talks to.
 package backup
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -19,6 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"polaris/logger"
+	"polaris/r2"
 )
 
 var log = logger.WithPrefix("backup")
@@ -67,7 +72,7 @@ func fileName(t time.Time) string {
 
 // parseTime recovers the timestamp encoded in a backup's own filename,
 // rather than trusting the file's mtime — mtime wouldn't survive a
-// copy/rsync, or (once R2 support lands) a round trip through an
+// copy/rsync, or a round trip through an
 // object store that doesn't preserve it.
 func parseTime(name string) (time.Time, bool) {
 	if !strings.HasPrefix(name, filePrefix) || !strings.HasSuffix(name, fileExt) {
@@ -213,7 +218,14 @@ func Prune(dir string, retain time.Duration) ([]string, error) {
 // but a genuinely missed day should still catch up within the hour
 // rather than waiting for a full 24h-since-this-launch timer that a
 // frequently-restarted install might never reach.
-func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration) {
+//
+// r2Client is optional (nil disables it entirely, see r2.NewClient) — when
+// set, every backup this scheduler creates is also mirrored to R2 (Mirror)
+// and R2 is pruned to the same retention window (PruneRemote). A mirror or
+// remote-prune failure only logs a warning; it never blocks or undoes the
+// local backup, since the whole point is that local backups keep working
+// unchanged whether or not R2 is reachable.
+func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration, r2Client *r2.Client) {
 	runOnce := func() {
 		infos, err := List(dir)
 		if err != nil {
@@ -227,11 +239,21 @@ func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration
 			log.Warn("scheduled backup failed", "err", err)
 		} else {
 			log.Info("created scheduled backup", "name", info.Name, "size_bytes", info.SizeBytes)
+			if err := Mirror(info, r2Client); err != nil {
+				log.Warn("mirroring backup to r2 failed", "name", info.Name, "err", err)
+			} else if r2Client != nil {
+				log.Info("mirrored backup to r2", "name", info.Name)
+			}
 		}
 		if deleted, err := Prune(dir, retain); err != nil {
 			log.Warn("pruning old backups failed", "err", err)
 		} else if len(deleted) > 0 {
 			log.Info("pruned expired backups", "count", len(deleted))
+		}
+		if deleted, err := PruneRemote(r2Client, retain); err != nil {
+			log.Warn("pruning expired r2 backups failed", "err", err)
+		} else if len(deleted) > 0 {
+			log.Info("pruned expired r2 backups", "count", len(deleted))
 		}
 	}
 
@@ -246,6 +268,79 @@ func RunScheduler(done <-chan struct{}, dbPath, dir string, retain time.Duration
 			return
 		}
 	}
+}
+
+// Mirror uploads a backup to R2 under its own filename as the object key —
+// the same name List/Prune already use locally — so PruneRemote can parse
+// each object's timestamp straight from its key (parseTime) without R2
+// needing any separate metadata to track it. A nil r2Client (R2 not
+// configured) is a no-op, not an error, so every call site can call this
+// unconditionally rather than branching on whether R2 is set up.
+func Mirror(info Info, r2Client *r2.Client) error {
+	if r2Client == nil {
+		return nil
+	}
+	if err := r2Client.Upload(context.Background(), info.Name, info.Path); err != nil {
+		return fmt.Errorf("uploading %s to r2: %w", info.Name, err)
+	}
+	return nil
+}
+
+// PruneRemote deletes every R2 object past retain, mirroring Prune's local
+// retention policy so R2 doesn't accumulate forever once mirroring is on.
+// A nil r2Client is a no-op, matching Mirror.
+func PruneRemote(r2Client *r2.Client, retain time.Duration) ([]string, error) {
+	if r2Client == nil {
+		return nil, nil
+	}
+	objects, err := r2Client.List(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("listing r2 backups: %w", err)
+	}
+	cutoff := time.Now().Add(-retain)
+	var deleted []string
+	for _, obj := range objects {
+		t, ok := parseTime(obj.Key)
+		if !ok {
+			// Not one of this package's own backup filenames — e.g. an
+			// object a human put in the bucket by hand. Same "assume the
+			// directory/bucket holds only what we wrote" convention as
+			// List's local equivalent: skip it rather than risk deleting
+			// something this feature doesn't own.
+			continue
+		}
+		if t.Before(cutoff) {
+			if err := r2Client.Delete(context.Background(), obj.Key); err != nil {
+				return deleted, fmt.Errorf("removing expired r2 backup %s: %w", obj.Key, err)
+			}
+			deleted = append(deleted, obj.Key)
+		}
+	}
+	return deleted, nil
+}
+
+// Fetch downloads a backup object from R2 into dir (creating it if
+// needed), for disaster recovery when the local backups directory itself
+// is gone — the exact scenario R2 mirroring exists to protect against. See
+// cmd/backup.go's `restore-remote` command, which calls this and then
+// Restore with the result.
+func Fetch(r2Client *r2.Client, name, dir string) (Info, error) {
+	if r2Client == nil {
+		return Info{}, fmt.Errorf("r2 is not configured")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return Info{}, fmt.Errorf("creating backup directory: %w", err)
+	}
+	dest := filepath.Join(dir, name)
+	if err := r2Client.Download(context.Background(), name, dest); err != nil {
+		return Info{}, fmt.Errorf("downloading %s from r2: %w", name, err)
+	}
+	fi, err := os.Stat(dest)
+	if err != nil {
+		return Info{}, fmt.Errorf("stat'ing downloaded backup: %w", err)
+	}
+	t, _ := parseTime(name)
+	return Info{Name: name, Path: dest, SizeBytes: fi.Size(), CreatedAt: t}, nil
 }
 
 // Restore replaces the live database at dbPath with the contents of

@@ -78,7 +78,8 @@ with citations.
 - **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
   that updates and restarts the service — no SSH required (see [Self-update](#self-update))
 - **Automatic backups** — a daily, consistent snapshot of the database, kept for 30 days and
-  pruned automatically, with a CLI to list/create/restore on demand (see [Backups](#backups))
+  pruned automatically, with a CLI to list/create/restore on demand, optionally mirrored
+  off-device to Cloudflare R2 (see [Backups](#backups))
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's homescreen
   as a standalone app (no browser chrome), since [mobile is the primary surface](PRODUCT.md)
@@ -101,6 +102,7 @@ Go backend
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
   ├── store    — SQLite: threads, messages, settings, running cost, per-provider API usage counts
   ├── backup   — daily VACUUM INTO snapshots of the database, rotation, and restore — see Backups
+  ├── r2       — hand-rolled SigV4 client mirroring backups off-device to Cloudflare R2 — see Backups
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
 ```
 
@@ -354,9 +356,34 @@ the container), so `polaris backup restore` prints the exact `docker compose sto
 `docker compose run` / `docker compose up` sequence to run by hand instead of guessing.
 
 Backups live in a `backups/` folder next to `polaris.db` itself — already inside the `polaris-data`
-named volume under Docker, so no extra bind mount is needed. They're local-disk only for now
-(no off-device copy yet, e.g. to R2 or another host) — worth pairing with a real off-device backup
-strategy for anything you'd genuinely be upset to lose.
+named volume under Docker, so no extra bind mount is needed.
+
+### Off-device mirroring to R2
+
+Local backups protect against a bad database state, but not against the device itself failing —
+a dead SD card or a bricked SBC takes `backups/` down with it. Setting `r2.*` in `config.yaml`
+(see that file's comments, or `.env.example`'s `R2_ACCOUNT_ID`/`R2_ACCESS_KEY_ID`/
+`R2_SECRET_ACCESS_KEY` under Docker) mirrors every backup — scheduled or on-demand — to a
+dedicated Cloudflare R2 bucket right after it's taken, and prunes R2 to the same retention window.
+It's additive: leaving `r2.*` unset disables mirroring entirely and local backups keep working
+exactly as before. Use a bucket dedicated to this and a scoped R2 API token (Object Read & Write
+on that bucket only) rather than an account-wide key —
+[creating one](https://developers.cloudflare.com/r2/api/tokens/). The client signs requests with
+AWS Signature V4 by hand rather than pulling in `aws-sdk-go-v2`, matching the small hand-rolled
+HTTP clients this project already uses for Brave/Parallel/Tavily instead of their SDKs.
+
+```bash
+polaris backup list --remote               # what's actually recoverable from R2, not local disk
+polaris backup restore-remote <name>       # disaster recovery: download from R2, then restore
+```
+
+`restore-remote` is the actual "device failed" path: on a fresh install with `r2.*` already
+configured, it downloads the named backup from R2 into `backup.dir` and then runs the exact same
+verify/preserve/swap sequence `restore` does. Under Docker it can't run directly from the host CLI
+either (same reasoning as plain `restore`), but — unlike plain restore — it *can* run for real
+inside the one-off container `polaris backup restore-remote` prints instructions for: that
+container shares the same bind-mounted `config.yaml` (so it has the R2 credentials) and the same
+data volume as the real service.
 
 ## CLI usage
 

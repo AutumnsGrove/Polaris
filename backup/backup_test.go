@@ -1,14 +1,78 @@
 package backup
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"polaris/r2"
 )
+
+// newFakeR2Client spins up an in-memory stand-in for R2's S3-compatible
+// API — just enough of PUT/GET/DELETE/ListObjectsV2 for Mirror/
+// PruneRemote/Fetch's tests to exercise a real HTTP round trip (SigV4
+// headers, request/response shapes) rather than mocking r2.Client itself,
+// which has no exported fields a test could fake directly.
+func newFakeR2Client(t *testing.T) *r2.Client {
+	t.Helper()
+	var mu sync.Mutex
+	objects := map[string][]byte{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/test-bucket/", func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimPrefix(r.URL.Path, "/test-bucket/")
+		switch r.Method {
+		case http.MethodPut:
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			objects[key] = body
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			mu.Lock()
+			delete(objects, key)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodGet:
+			if r.URL.Query().Get("list-type") == "2" {
+				mu.Lock()
+				var b strings.Builder
+				b.WriteString(`<ListBucketResult><IsTruncated>false</IsTruncated>`)
+				for k, v := range objects {
+					fmt.Fprintf(&b, `<Contents><Key>%s</Key><Size>%d</Size><LastModified>2026-01-01T00:00:00.000Z</LastModified></Contents>`, k, len(v))
+				}
+				b.WriteString(`</ListBucketResult>`)
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/xml")
+				w.Write([]byte(b.String()))
+				return
+			}
+			mu.Lock()
+			body, ok := objects[key]
+			mu.Unlock()
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Write(body)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return r2.NewClientForTest("test-account", "test-key", "test-secret", "test-bucket", srv.URL)
+}
 
 // openTestDB creates a small real SQLite database (WAL mode, matching
 // production's DSN — see store.Open) with one row, so Create is
@@ -151,7 +215,7 @@ func TestRunScheduler_SkipsCreatingASecondBackupWithinMinInterval(t *testing.T) 
 	// runOnce() fires synchronously once before RunScheduler starts its
 	// ticker loop, so a single call is enough to observe "already have a
 	// recent backup, do nothing" without waiting an hour for the ticker.
-	go RunScheduler(done, dbPath, dir, 30*24*time.Hour)
+	go RunScheduler(done, dbPath, dir, 30*24*time.Hour, nil)
 	// Give the synchronous first runOnce() a moment to finish before we
 	// stop it and inspect the directory.
 	time.Sleep(200 * time.Millisecond)
@@ -306,4 +370,153 @@ func TestParseTime_RejectsUnrecognizedNames(t *testing.T) {
 			t.Errorf("parseTime(%q) = ok, want it rejected", name)
 		}
 	}
+}
+
+func TestMirror_NilClientIsANoop(t *testing.T) {
+	dbPath := openTestDB(t)
+	info, err := Create(dbPath, Dir(dbPath))
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if err := Mirror(info, nil); err != nil {
+		t.Errorf("Mirror with a nil client returned an error, want a no-op: %v", err)
+	}
+}
+
+func TestMirrorAndFetch_RoundTripsABackupThroughR2(t *testing.T) {
+	client := newFakeR2Client(t)
+	dbPath := openTestDB(t)
+	info, err := Create(dbPath, Dir(dbPath))
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	if err := Mirror(info, client); err != nil {
+		t.Fatalf("Mirror returned error: %v", err)
+	}
+
+	// Fetch into a directory distinct from the original local backups/
+	// folder — the whole point of R2 mirroring is recovering when that
+	// original directory (and the device it was on) is gone entirely.
+	recoveryDir := t.TempDir()
+	fetched, err := Fetch(client, info.Name, recoveryDir)
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+	if fetched.Name != info.Name {
+		t.Errorf("fetched.Name = %s, want %s", fetched.Name, info.Name)
+	}
+	if fetched.SizeBytes != info.SizeBytes {
+		t.Errorf("fetched.SizeBytes = %d, want %d", fetched.SizeBytes, info.SizeBytes)
+	}
+
+	original, err := os.ReadFile(info.Path)
+	if err != nil {
+		t.Fatalf("reading original backup: %v", err)
+	}
+	got, err := os.ReadFile(fetched.Path)
+	if err != nil {
+		t.Fatalf("reading fetched backup: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Error("fetched backup's contents don't match the original")
+	}
+
+	// The fetched file must itself be a valid, openable database — Fetch
+	// exists specifically so Restore can be handed its result directly.
+	bdb, err := sql.Open("sqlite", fetched.Path)
+	if err != nil {
+		t.Fatalf("opening fetched backup: %v", err)
+	}
+	defer bdb.Close()
+	var title string
+	if err := bdb.QueryRow(`SELECT title FROM threads WHERE id = 't1'`).Scan(&title); err != nil {
+		t.Fatalf("querying fetched backup: %v", err)
+	}
+	if title != "hello" {
+		t.Errorf("title = %q, want %q", title, "hello")
+	}
+}
+
+func TestFetch_NilClientReturnsError(t *testing.T) {
+	if _, err := Fetch(nil, "polaris-20260101-000000.db", t.TempDir()); err == nil {
+		t.Error("Fetch with a nil client returned no error, want one explaining R2 isn't configured")
+	}
+}
+
+func TestPruneRemote_DeletesOnlyExpiredObjects(t *testing.T) {
+	client := newFakeR2Client(t)
+	old := fileName(time.Now().AddDate(0, 0, -40))
+	recent := fileName(time.Now().AddDate(0, 0, -5))
+	for _, name := range []string{old, recent} {
+		if err := client.Upload(context.Background(), name, writeTempFile(t, name, "x")); err != nil {
+			t.Fatalf("seeding r2 fixture %s: %v", name, err)
+		}
+	}
+
+	deleted, err := PruneRemote(client, 30*24*time.Hour)
+	if err != nil {
+		t.Fatalf("PruneRemote returned error: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0] != old {
+		t.Errorf("deleted = %v, want [%s]", deleted, old)
+	}
+
+	remaining, err := client.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Key != recent {
+		t.Errorf("remaining r2 objects = %v, want only %s", remaining, recent)
+	}
+}
+
+func TestPruneRemote_NilClientIsANoop(t *testing.T) {
+	deleted, err := PruneRemote(nil, 30*24*time.Hour)
+	if err != nil {
+		t.Errorf("PruneRemote with a nil client returned an error, want a no-op: %v", err)
+	}
+	if deleted != nil {
+		t.Errorf("deleted = %v, want nil", deleted)
+	}
+}
+
+func TestRunScheduler_MirrorsNewBackupsToR2(t *testing.T) {
+	client := newFakeR2Client(t)
+	dbPath := openTestDB(t)
+	dir := Dir(dbPath)
+
+	done := make(chan struct{})
+	go RunScheduler(done, dbPath, dir, 30*24*time.Hour, client)
+	time.Sleep(200 * time.Millisecond)
+	close(done)
+
+	infos, err := List(dir)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("got %d local backups, want exactly 1", len(infos))
+	}
+
+	remote, err := client.List(context.Background())
+	if err != nil {
+		t.Fatalf("listing r2 objects: %v", err)
+	}
+	if len(remote) != 1 || remote[0].Key != infos[0].Name {
+		t.Errorf("r2 objects = %v, want exactly [%s]", remote, infos[0].Name)
+	}
+}
+
+// writeTempFile creates a small file with the given contents and returns
+// its path — used where a test needs a real local file to Upload (r2.Client
+// reads from disk, not from an in-memory byte slice) but doesn't otherwise
+// care about it being a real backup.
+func writeTempFile(t *testing.T, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+	return path
 }
