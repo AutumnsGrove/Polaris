@@ -434,7 +434,7 @@
 			position: fixed;
 			inset: 0 auto 0 0;
 			width: 280px;
-			z-index: 50;
+			z-index: var(--z-sidebar);
 			transform: translateX(-100%);
 			transition: transform 0.2s ease;
 			box-shadow: 2px 0 16px rgba(0, 0, 0, 0.4);

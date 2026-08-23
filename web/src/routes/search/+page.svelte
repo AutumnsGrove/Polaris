@@ -571,7 +571,7 @@
 	.top {
 		position: sticky;
 		top: 0;
-		z-index: 10;
+		z-index: var(--z-sticky);
 		border-bottom: 1px solid var(--line);
 		background: var(--paper);
 	}
@@ -785,7 +785,7 @@
 		content: '';
 		position: absolute;
 		inset: 0;
-		z-index: -1;
+		z-index: var(--z-behind);
 		background: radial-gradient(
 			ellipse 55% 45% at 50% 32%,
 			var(--accent-soft) 0%,
@@ -1091,7 +1091,7 @@
 		box-shadow:
 			0 18px 40px var(--shadow-ambient),
 			0 3px 10px var(--shadow-ambient);
-		z-index: 30;
+		z-index: var(--z-popover);
 		padding: 16px 16px 17px;
 	}
 

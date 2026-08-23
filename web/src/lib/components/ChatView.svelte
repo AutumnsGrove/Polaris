@@ -475,7 +475,7 @@
 		content: '';
 		position: absolute;
 		inset: 0;
-		z-index: -1;
+		z-index: var(--z-behind);
 		background:
 			radial-gradient(
 				ellipse 60% 45% at 38% 34%,

@@ -183,7 +183,7 @@
 		position: absolute;
 		top: calc(100% + 8px);
 		right: 0;
-		z-index: 60;
+		z-index: var(--z-dropdown);
 		min-width: 190px;
 		background: var(--color-surface-3);
 		border-radius: var(--radius-md);

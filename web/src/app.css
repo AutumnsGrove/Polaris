@@ -110,6 +110,37 @@
 	   never for routine hover/press feedback, so it reads as "arriving"
 	   rather than making the whole UI feel bouncy. */
 	--ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+	/* Single source of truth for every stacking layer in the app — a new
+	   fixed/sticky/absolute element should pull one of these rather than
+	   inventing its own number, so "what's free to use next" is answered by
+	   reading this list instead of grepping every component for z-index.
+	   Low to high:
+	     --z-behind   decorative glow/gradient sunk behind sibling content
+	                  inside a local `isolation: isolate` context (welcome
+	                  screen hero glows). Never escapes its own isolated
+	                  stacking context, so it can't collide with anything
+	                  else on this list.
+	     --z-noise    page-wide grain texture (body::after) — above ordinary
+	                  content, below all interactive chrome.
+	     --z-sticky   sticky in-page headers (e.g. Atlas results top bar).
+	     --z-popover  small anchored popovers/menus with no backdrop of
+	                  their own.
+	     --z-backdrop full-screen dim/blur behind a slide-in panel.
+	     --z-sidebar  the slide-in sidebar, above its own backdrop.
+	     --z-dropdown anchored dropdowns that must clear the sidebar when
+	                  both can be open at once (e.g. a thread's menu).
+	     --z-modal    centered modal dialogs and their backdrop.
+	     --z-toast    transient toasts — always the topmost layer. */
+	--z-behind: -1;
+	--z-noise: 2;
+	--z-sticky: 10;
+	--z-popover: 30;
+	--z-backdrop: 40;
+	--z-sidebar: 50;
+	--z-dropdown: 60;
+	--z-modal: 100;
+	--z-toast: 200;
 }
 
 /* Applied via document.documentElement.setAttribute('data-theme', ...) in
@@ -192,13 +223,13 @@ body {
    tiled by the browser. mix-blend-mode: overlay means it darkens light
    pixels and lightens dark ones instead of just washing a gray haze over
    everything, so it stays visible on both themes without needing two
-   separate assets. z-index sits above ordinary content but well below
-   modals (100) and toasts (200) — texture on the page, never on the UI. */
+   separate assets. Layer order (--z-noise, etc.) is defined once in :root
+   above — texture on the page, never on the UI. */
 body::after {
 	content: '';
 	position: fixed;
 	inset: 0;
-	z-index: 2;
+	z-index: var(--z-noise);
 	pointer-events: none;
 	opacity: 0.05;
 	mix-blend-mode: overlay;
@@ -382,7 +413,7 @@ a {
 .modal-backdrop {
 	position: fixed;
 	inset: 0;
-	z-index: 100;
+	z-index: var(--z-modal);
 	display: flex;
 	align-items: center;
 	justify-content: center;
