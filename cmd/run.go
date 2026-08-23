@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"polaris/backup"
 	"polaris/config"
 	"polaris/gateway"
 	"polaris/logger"
@@ -85,6 +86,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 		log.Warn("pruning old attachments failed", "err", err)
 	}
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
+
+	// Runs for the life of the process, roughly once a day (see
+	// RunScheduler's doc comment for why "roughly" rather than a plain
+	// 24h ticker) — closing backupDone on every exit path below stops it
+	// cleanly rather than leaking a goroutine past the server's own
+	// shutdown.
+	backupDone := make(chan struct{})
+	defer close(backupDone)
+	go backup.RunScheduler(backupDone, cfg.Database.Path, cfg.Backup.Dir, time.Duration(cfg.Backup.RetentionDays)*24*time.Hour, cfg.R2Client())
 
 	var staticFS fs.FS
 	if !devMode {

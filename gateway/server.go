@@ -289,6 +289,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PATCH /api/search-history/{id}", s.handleUpdateSearchHistory)
 	s.mux.HandleFunc("PUT /api/domain-rankings", s.handleSetDomainRanking)
 	s.mux.HandleFunc("POST /api/debug-log", s.handleDebugLog)
+	s.mux.HandleFunc("GET /api/backup", s.handleListBackups)
+	s.mux.HandleFunc("POST /api/backup", s.handleCreateBackup)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

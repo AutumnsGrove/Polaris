@@ -67,6 +67,33 @@ database:
 logging:
   dir: "./logs"   # one file per day (YYYY-MM-DD.log), 90-day retention, pruned automatically
 
+# backup:
+#   dir: "./backups"        # default: a "backups" folder next to database.path above
+#   retention_days: 30      # how long a daily backup is kept before it's pruned
+#
+# Uncomment to override either default. A daily backup (via SQLite's own
+# VACUUM INTO — a consistent snapshot that doesn't block the running
+# server) is taken automatically in the background; `polaris backup list`/
+# `create`/`restore` manage them by hand. See README's Backups section.
+
+# r2:
+#   account_id: "${R2_ACCOUNT_ID}"
+#   access_key_id: "${R2_ACCESS_KEY_ID}"
+#   secret_access_key: "${R2_SECRET_ACCESS_KEY}"
+#   bucket: "polaris-backups"
+#
+# Uncomment and fill in to mirror every backup to a dedicated Cloudflare R2
+# bucket, off this device — in addition to, not instead of, the local
+# backups/ folder above, so the device itself failing doesn't take every
+# backup with it. Create a bucket just for this and a scoped R2 API token
+# (Object Read & Write on that bucket only, not an account-wide key):
+# https://developers.cloudflare.com/r2/api/tokens/
+# Once configured, `polaris backup list --remote` shows what's actually
+# recoverable from R2, and `polaris backup restore-remote <name>` is the
+# disaster-recovery path — pulls a backup down from R2 and restores it, for
+# when the local backups/ folder itself is gone. Leaving this whole section
+# unset disables R2 entirely; nothing else about local backups changes.
+
 attachments:
   dir: "./attachments"   # uploaded PDFs/images from the composer's "+" menu
 

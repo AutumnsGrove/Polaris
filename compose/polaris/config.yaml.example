@@ -67,6 +67,22 @@ database:
 logging:
   dir: "/data/logs"
 
+# backup:
+#   dir: "/data/backups"    # default: a "backups" folder next to database.path above —
+#                            # already inside the polaris-data named volume, no extra
+#                            # mount needed (see docker-compose.yml)
+#   retention_days: 30
+
+# r2:
+#   account_id: "${R2_ACCOUNT_ID}"
+#   access_key_id: "${R2_ACCESS_KEY_ID}"
+#   secret_access_key: "${R2_SECRET_ACCESS_KEY}"
+#   bucket: "polaris-backups"
+#
+# Mirrors every backup off-device to R2 — see ../../config.yaml.example's
+# comment for the full explanation. docker-compose.yml already passes the
+# three R2_* vars through from .env the same way the other secrets are.
+
 attachments:
   dir: "/data/attachments"
 

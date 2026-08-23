@@ -46,6 +46,12 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Database.Path != "./polaris.db" {
 		t.Errorf("Database.Path = %q, want ./polaris.db", cfg.Database.Path)
 	}
+	if cfg.Backup.Dir != "backups" {
+		t.Errorf("Backup.Dir = %q, want backups (derived from Database.Path's directory)", cfg.Backup.Dir)
+	}
+	if cfg.Backup.RetentionDays != 30 {
+		t.Errorf("Backup.RetentionDays = %d, want 30", cfg.Backup.RetentionDays)
+	}
 	if cfg.ContextWindowTokens != 100_000 {
 		t.Errorf("ContextWindowTokens = %d, want 100000", cfg.ContextWindowTokens)
 	}
