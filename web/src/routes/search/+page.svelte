@@ -571,7 +571,7 @@
 	.top {
 		position: sticky;
 		top: 0;
-		z-index: 10;
+		z-index: var(--z-sticky);
 		border-bottom: 1px solid var(--line);
 		background: var(--paper);
 	}
@@ -582,10 +582,10 @@
 	   sidebar just grew the margins on both sides instead of giving this
 	   page any more room, unlike the assistant side. */
 	.top-inner {
-		padding: 14px 24px 16px;
+		padding: var(--space-lg) var(--space-xl) var(--space-lg);
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: var(--space-lg);
 	}
 
 	.brand-row {
@@ -597,7 +597,7 @@
 	.wordmark {
 		display: flex;
 		align-items: baseline;
-		gap: 9px;
+		gap: var(--space-sm);
 	}
 
 	/* Atlas's own palette (--ink/--paper), not the global .icon-btn's
@@ -606,7 +606,7 @@
 		appearance: none;
 		border: none;
 		background: transparent;
-		border-radius: 7px;
+		border-radius: var(--radius-sm);
 		width: 28px;
 		height: 28px;
 		display: flex;
@@ -626,7 +626,7 @@
 	.wordmark .mark {
 		width: 20px;
 		height: 20px;
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		flex: none;
 		box-shadow: var(--shadow-ambient) 0 1px 3px;
 	}
@@ -647,7 +647,7 @@
 		font-size: 12px;
 		letter-spacing: normal;
 		color: var(--ink-faint);
-		margin-left: 7px;
+		margin-left: var(--space-sm);
 	}
 
 	/* The stretched-wordmark page picker — see pageLetterCount's doc
@@ -657,7 +657,7 @@
 	.page-wordmark {
 		display: flex;
 		justify-content: center;
-		margin: 4px 0 18px;
+		margin: var(--space-xs) 0 var(--space-lg);
 	}
 
 	.page-wordmark span {
@@ -679,12 +679,12 @@
 		appearance: none;
 		border: none;
 		background: transparent;
-		padding: 8px 4px;
+		padding: var(--space-sm) var(--space-xs);
 		margin: 0;
 		font: inherit;
 		color: inherit;
 		cursor: pointer;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 	}
 
 	.pw-a:hover:not(:disabled) {
@@ -705,17 +705,17 @@
 	.header-actions {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-md);
 	}
 
 	.omnibox {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-md);
 		background: var(--paper-raised);
 		border: 1px solid var(--line-strong);
-		border-radius: 10px;
-		padding: 11px 14px;
+		border-radius: var(--radius-md);
+		padding: var(--space-md) var(--space-lg);
 	}
 
 	.omnibox:focus-within {
@@ -744,15 +744,15 @@
 		color: var(--ink-faint);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 5px;
-		padding: 3px 6px;
+		border-radius: var(--radius-sm);
+		padding: var(--space-xs) var(--space-sm);
 		white-space: nowrap;
 	}
 
 	.meta-line {
 		font-size: 12px;
 		color: var(--ink-faint);
-		padding-left: 2px;
+		padding-left: var(--space-xs);
 	}
 
 	.meta-line b {
@@ -761,7 +761,7 @@
 	}
 
 	main {
-		padding: 28px 24px 80px;
+		padding: var(--space-2xl) var(--space-xl) var(--space-6xl);
 	}
 
 	/* Start screen — centered branding + the omnibox itself, unified with
@@ -776,7 +776,7 @@
 		align-items: center;
 		justify-content: center;
 		text-align: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		min-height: min(60vh, 520px);
 		isolation: isolate;
 	}
@@ -785,7 +785,7 @@
 		content: '';
 		position: absolute;
 		inset: 0;
-		z-index: -1;
+		z-index: var(--z-behind);
 		background: radial-gradient(
 			ellipse 55% 45% at 50% 32%,
 			var(--accent-soft) 0%,
@@ -805,7 +805,7 @@
 	   below. */
 	.welcome :global(.welcome-mark) {
 		color: var(--ink-faint);
-		margin-bottom: 4px;
+		margin-bottom: var(--space-xs);
 		animation: welcome-mark-spin 34s linear infinite;
 	}
 
@@ -839,7 +839,7 @@
 	}
 
 	.welcome-tagline {
-		margin: 0 0 22px;
+		margin: 0 0 var(--space-xl);
 		font-family: ui-serif, Georgia, serif;
 		font-style: italic;
 		font-size: 15px;
@@ -855,7 +855,7 @@
 	   ChatView's .welcome-composer focus ring — since this instance is
 	   the whole point of the screen, not a secondary control up top. */
 	.welcome-omnibox :global(.omnibox) {
-		padding: 14px 16px;
+		padding: var(--space-lg) var(--space-lg);
 	}
 
 	.welcome-omnibox :global(.omnibox:focus-within) {
@@ -865,7 +865,7 @@
 	.status-line {
 		font-size: 14px;
 		color: var(--ink-faint);
-		padding: 8px 2px;
+		padding: var(--space-sm) var(--space-xs);
 	}
 
 	.status-line.error {
@@ -877,7 +877,7 @@
 		border: none;
 		background: transparent;
 		padding: 0;
-		margin-left: 4px;
+		margin-left: var(--space-xs);
 		font: inherit;
 		font-weight: 600;
 		color: var(--accent);
@@ -888,21 +888,21 @@
 	.quick-answer {
 		background: var(--paper-raised);
 		border: 1px solid var(--line);
-		border-radius: 10px;
-		padding: 18px 20px 16px;
-		margin-bottom: 28px;
+		border-radius: var(--radius-md);
+		padding: var(--space-lg) var(--space-xl) var(--space-lg);
+		margin-bottom: var(--space-2xl);
 	}
 
 	.qa-label {
 		display: flex;
 		align-items: center;
-		gap: 7px;
+		gap: var(--space-sm);
 		font-size: 11.5px;
 		font-weight: 600;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--accent);
-		margin-bottom: 12px;
+		margin-bottom: var(--space-md);
 	}
 
 	.qa-loading {
@@ -916,7 +916,7 @@
 		font-size: 16px;
 		line-height: 1.6;
 		color: var(--ink);
-		margin: 0 0 14px;
+		margin: 0 0 var(--space-lg);
 		max-width: 68ch;
 		white-space: pre-wrap;
 	}
@@ -924,21 +924,21 @@
 	.qa-sources {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
-		padding-top: 12px;
+		gap: var(--space-sm);
+		padding-top: var(--space-md);
 		border-top: 1px solid var(--line);
 	}
 
 	.qa-source {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		font-size: 12px;
 		color: var(--ink-muted);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 999px;
-		padding: 5px 10px 5px 7px;
+		border-radius: var(--radius-full);
+		padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-sm);
 		text-decoration: none;
 	}
 
@@ -952,7 +952,7 @@
 		font-weight: 700;
 		color: var(--accent);
 		background: var(--accent-soft);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		width: 15px;
 		height: 15px;
 		display: flex;
@@ -964,8 +964,8 @@
 	.qa-continue {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		margin-top: 14px;
+		gap: var(--space-sm);
+		margin-top: var(--space-lg);
 		font-size: 12.5px;
 		font-weight: 600;
 		color: var(--accent);
@@ -982,7 +982,7 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--ink-faint);
-		margin: 0 0 6px;
+		margin: 0 0 var(--space-sm);
 	}
 
 	.results {
@@ -992,25 +992,25 @@
 	}
 
 	.result {
-		padding: 18px 2px;
+		padding: var(--space-lg) var(--space-xs);
 		border-bottom: 1px solid var(--line);
 	}
 
 	.result:first-of-type {
-		padding-top: 8px;
+		padding-top: var(--space-sm);
 	}
 
 	.result-top {
 		display: flex;
 		align-items: center;
-		gap: 9px;
-		margin-bottom: 6px;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-sm);
 	}
 
 	.favicon {
 		width: 20px;
 		height: 20px;
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		flex: none;
 		display: flex;
 		align-items: center;
@@ -1029,8 +1029,8 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 10px;
-		margin-bottom: 6px;
+		gap: var(--space-md);
+		margin-bottom: var(--space-sm);
 		position: relative;
 	}
 
@@ -1061,7 +1061,7 @@
 		appearance: none;
 		border: 1px solid transparent;
 		background: transparent;
-		border-radius: 7px;
+		border-radius: var(--radius-sm);
 		width: 28px;
 		height: 28px;
 		display: flex;
@@ -1087,25 +1087,25 @@
 		width: 280px;
 		background: var(--paper-raised);
 		border: 1px solid var(--line);
-		border-radius: 13px;
+		border-radius: var(--radius-md);
 		box-shadow:
 			0 18px 40px var(--shadow-ambient),
 			0 3px 10px var(--shadow-ambient);
-		z-index: 30;
-		padding: 16px 16px 17px;
+		z-index: var(--z-popover);
+		padding: var(--space-lg) var(--space-lg) var(--space-lg);
 	}
 
 	.popover-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 14px;
+		margin-bottom: var(--space-lg);
 	}
 
 	.popover-domain {
 		display: flex;
 		align-items: center;
-		gap: 7px;
+		gap: var(--space-sm);
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--ink);
@@ -1123,7 +1123,7 @@
 		cursor: pointer;
 		width: 24px;
 		height: 24px;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -1136,16 +1136,16 @@
 	.rank-group {
 		display: grid;
 		grid-template-columns: repeat(5, 1fr);
-		gap: 5px;
-		margin-bottom: 12px;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-md);
 	}
 
 	.rank-option {
 		appearance: none;
 		font-size: 10px;
 		font-weight: 600;
-		padding: 8px 2px;
-		border-radius: 6px;
+		padding: var(--space-sm) var(--space-xs);
+		border-radius: var(--radius-sm);
 		border: 1px solid var(--line);
 		background: var(--paper);
 		color: var(--ink-muted);
@@ -1187,7 +1187,7 @@
 		font-size: 12px;
 		line-height: 1.5;
 		color: var(--ink-faint);
-		margin: 0 0 10px;
+		margin: 0 0 var(--space-md);
 	}
 
 	.popover-help b {
@@ -1196,7 +1196,7 @@
 	}
 
 	.popover-section {
-		padding-top: 10px;
+		padding-top: var(--space-md);
 		border-top: 1px solid var(--line);
 	}
 
@@ -1206,13 +1206,13 @@
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
 		color: var(--ink-faint);
-		margin: 0 0 8px;
+		margin: 0 0 var(--space-sm);
 	}
 
 	.engine-chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: var(--space-sm);
 	}
 
 	.engine-chip {
@@ -1221,8 +1221,8 @@
 		color: var(--ink-muted);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 999px;
-		padding: 4px 10px;
+		border-radius: var(--radius-full);
+		padding: var(--space-xs) var(--space-md);
 	}
 
 	.snippet {
@@ -1238,9 +1238,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 12px;
-		padding-top: 20px;
+		gap: var(--space-sm);
+		margin-top: var(--space-md);
+		padding-top: var(--space-xl);
 	}
 
 	.page-nav,
@@ -1249,7 +1249,7 @@
 		border: 1px solid var(--line);
 		background: var(--paper-raised);
 		color: var(--ink-muted);
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 		display: flex;
 		align-items: center;
@@ -1275,7 +1275,7 @@
 	.page-num {
 		min-width: 34px;
 		height: 34px;
-		padding: 0 4px;
+		padding: 0 var(--space-xs);
 		font-size: 13px;
 		font-weight: 600;
 	}
@@ -1293,7 +1293,7 @@
 
 	@media (max-width: 640px) {
 		.top-inner {
-			padding: 12px 16px 14px;
+			padding: var(--space-md) var(--space-lg) var(--space-lg);
 		}
 		.wordmark .name .sub {
 			display: none;
@@ -1302,7 +1302,7 @@
 			display: none;
 		}
 		main {
-			padding: 22px 16px 64px;
+			padding: var(--space-xl) var(--space-lg) var(--space-5xl);
 		}
 		.result h3 {
 			font-size: 16.5px;

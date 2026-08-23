@@ -199,13 +199,13 @@
 	.trigger {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		min-width: 0;
 		max-width: 100%;
 		border: none;
 		background: var(--color-surface-2);
-		border-radius: 999px;
-		padding: 8px 12px 8px 10px;
+		border-radius: var(--radius-full);
+		padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-md);
 		height: 38px;
 		color: var(--color-text-dim);
 		box-shadow: var(--shadow-xs);
@@ -240,8 +240,8 @@
 		font-weight: 600;
 		color: var(--color-accent-2);
 		background: color-mix(in srgb, var(--color-accent-2) 16%, transparent);
-		border-radius: 999px;
-		padding: 2px 8px;
+		border-radius: var(--radius-full);
+		padding: var(--space-xs) var(--space-sm);
 	}
 
 	.trigger-badge.deep {
@@ -261,7 +261,7 @@
 	.header-title {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: var(--space-xs);
 	}
 
 	.back-btn {
@@ -283,8 +283,8 @@
 	}
 
 	section {
-		margin-bottom: 18px;
-		padding-bottom: 18px;
+		margin-bottom: var(--space-lg);
+		padding-bottom: var(--space-lg);
 	}
 
 	section:last-child {
@@ -295,12 +295,12 @@
 	.row-btn {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-md);
 		width: 100%;
 		border: none;
 		background: transparent;
 		border-radius: var(--radius-md);
-		padding: 10px 6px;
+		padding: var(--space-md) var(--space-sm);
 		text-align: left;
 		font-size: 14px;
 		color: var(--color-text);
@@ -386,7 +386,7 @@
 		inset: 0;
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		cursor: pointer;
 		transition: background 0.15s ease;
 	}

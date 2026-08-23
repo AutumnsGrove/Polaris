@@ -118,8 +118,8 @@
 	.thinking {
 		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
-		padding: 6px 10px;
-		margin-bottom: 4px;
+		padding: var(--space-sm) var(--space-md);
+		margin-bottom: var(--space-xs);
 		font-size: 12px;
 		font-style: italic;
 		color: var(--color-text-dim);
@@ -130,14 +130,14 @@
 	   or .thinking — it reads as part of the answer, just positioned
 	   where it actually happened rather than pushed to the end. */
 	.commentary {
-		margin-bottom: 8px;
+		margin-bottom: var(--space-sm);
 		font-size: 14px;
 		line-height: 1.6;
 		color: var(--color-text);
 	}
 
 	.commentary :global(p) {
-		margin: 0 0 8px 0;
+		margin: 0 0 var(--space-sm) 0;
 	}
 
 	.commentary :global(p:last-child) {
@@ -153,7 +153,7 @@
 		font-size: 0.9em;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-sm);
-		padding: 1px 4px;
+		padding: var(--space-xs) var(--space-xs);
 	}
 
 	/* Same treatment as ChatTurnView.svelte's .prose :global(pre) — kept in
@@ -164,12 +164,12 @@
 		border: none;
 		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-well);
-		padding: 10px 12px;
+		padding: var(--space-md) var(--space-md);
 		overflow-x: auto;
 		font-family: var(--font-mono);
 		font-size: 13px;
 		line-height: 1.5;
-		margin: 0 0 8px 0;
+		margin: 0 0 var(--space-sm) 0;
 	}
 
 	.commentary :global(pre code) {
@@ -183,7 +183,7 @@
 		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
 		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-xs);
-		margin-bottom: 4px;
+		margin-bottom: var(--space-xs);
 		font-size: 12px;
 		overflow: hidden;
 	}
@@ -192,10 +192,10 @@
 		display: flex;
 		width: 100%;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		border: none;
 		background: transparent;
-		padding: 6px 10px;
+		padding: var(--space-sm) var(--space-md);
 		text-align: left;
 		color: var(--color-text-dim);
 		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
@@ -225,7 +225,7 @@
 	   a small, distinct label rather than relying on the "[via X]" line
 	   buried as the first line of the raw result text below it. */
 	.provider-badge {
-		padding: 4px 10px 0 10px;
+		padding: var(--space-xs) var(--space-md) 0 var(--space-md);
 		font-size: 10.5px;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -241,7 +241,7 @@
 		   "recessed" language used for inputs/readouts elsewhere. */
 		background: color-mix(in srgb, black 12%, transparent);
 		box-shadow: var(--shadow-well);
-		padding: 8px 10px;
+		padding: var(--space-sm) var(--space-md);
 		margin: 0;
 		color: var(--color-text-dim);
 		font-family: inherit;

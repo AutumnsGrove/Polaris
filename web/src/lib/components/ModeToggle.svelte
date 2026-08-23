@@ -44,23 +44,23 @@
 		flex-shrink: 0;
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
-		padding: 3px;
-		gap: 2px;
+		border-radius: var(--radius-full);
+		padding: var(--space-xs);
+		gap: var(--space-xs);
 	}
 
 	.mode-toggle button {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		appearance: none;
 		border: none;
 		background: transparent;
 		font-family: var(--font-sans);
 		font-size: 12.5px;
 		font-weight: 500;
-		padding: 6px 14px;
-		border-radius: 999px;
+		padding: var(--space-sm) var(--space-lg);
+		border-radius: var(--radius-full);
 		color: var(--color-text-dim);
 		cursor: pointer;
 		transition:

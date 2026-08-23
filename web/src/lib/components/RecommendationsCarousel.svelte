@@ -27,9 +27,9 @@
 	   swipeToDismiss action) rather than a loose scrollable div. */
 	.carousel {
 		display: flex;
-		gap: 10px;
-		margin-top: 10px;
-		padding-bottom: 4px;
+		gap: var(--space-md);
+		margin-top: var(--space-md);
+		padding-bottom: var(--space-xs);
 		overflow-x: auto;
 		scroll-snap-type: x proximity;
 		-webkit-overflow-scrolling: touch;
@@ -41,7 +41,7 @@
 
 	.carousel::-webkit-scrollbar-thumb {
 		background: var(--color-surface-3);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 	}
 
 	.card {
@@ -50,7 +50,7 @@
 		display: flex;
 		flex-direction: column;
 		width: 108px;
-		gap: 5px;
+		gap: var(--space-xs);
 		text-decoration: none;
 		color: inherit;
 	}

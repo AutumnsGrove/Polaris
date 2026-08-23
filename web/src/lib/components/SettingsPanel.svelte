@@ -322,7 +322,7 @@
 	   between sections reads as more considered than a hairline, and pairs
 	   with the modal's own step up to a deeper, glass-like surface. */
 	section {
-		margin-bottom: 26px;
+		margin-bottom: var(--space-xl);
 		padding-bottom: 0;
 	}
 
@@ -335,7 +335,7 @@
 	   rather than timid. Text color pushed up a notch so labels aren't
 	   ghost-dim. */
 	section h3 {
-		margin: 0 0 12px 0;
+		margin: 0 0 var(--space-md) 0;
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -346,22 +346,22 @@
 	.header-actions {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: var(--space-xs);
 	}
 
 	.row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 12px;
-		margin-bottom: 8px;
+		gap: var(--space-md);
+		margin-bottom: var(--space-sm);
 		font-size: 14px;
 	}
 
 	.hint {
 		font-size: 12px;
 		color: var(--color-text-dim);
-		margin: 6px 0 0 0;
+		margin: var(--space-sm) 0 0 0;
 	}
 
 	.hint code {
@@ -378,21 +378,21 @@
 	   rather than sharing one uniform radius throughout. */
 	.theme-toggle {
 		display: flex;
-		gap: 2px;
+		gap: var(--space-xs);
 		background: var(--color-bg);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
-		padding: 3px;
+		padding: var(--space-xs);
 	}
 
 	.theme-toggle button {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		border: none;
 		background: transparent;
 		border-radius: calc(var(--radius-md) - 3px);
-		padding: 6px 12px;
+		padding: var(--space-sm) var(--space-md);
 		font-size: 13px;
 		color: var(--color-text-dim);
 		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
@@ -414,7 +414,7 @@
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
-		padding: 6px 10px;
+		padding: var(--space-sm) var(--space-md);
 		font-size: 13px;
 	}
 
@@ -424,7 +424,7 @@
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
-		padding: 7px 10px;
+		padding: var(--space-sm) var(--space-md);
 		font-size: 13px;
 		color: var(--color-text);
 	}
@@ -434,7 +434,7 @@
 	}
 
 	.version-row {
-		margin-bottom: 12px;
+		margin-bottom: var(--space-md);
 	}
 
 	.version {
@@ -442,7 +442,7 @@
 		font-size: 12px;
 		color: var(--color-text-dim);
 		background: var(--color-bg);
-		padding: 4px 8px;
+		padding: var(--space-xs) var(--space-sm);
 		border-radius: var(--radius-sm);
 		border: none;
 		box-shadow: var(--shadow-well);
@@ -451,7 +451,7 @@
 	.version-info {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 	}
 
 	/* Matches PRODUCT.md's "calm over clever" — a plain muted glyph, not a
@@ -464,7 +464,7 @@
 	.update-actions {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: var(--space-sm);
 	}
 
 	.update-btn,
@@ -473,8 +473,8 @@
 	}
 
 	.log {
-		margin-top: 12px;
-		padding: 10px 12px;
+		margin-top: var(--space-md);
+		padding: var(--space-md) var(--space-md);
 		background: var(--color-bg);
 		border: none;
 		box-shadow: var(--shadow-well);

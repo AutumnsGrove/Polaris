@@ -139,7 +139,7 @@
 			background: rgba(0, 0, 0, 0.5);
 			backdrop-filter: blur(4px);
 			-webkit-backdrop-filter: blur(4px);
-			z-index: 40;
+			z-index: var(--z-backdrop);
 		}
 
 		/* The sidebar's opening edge-swipe (see edgeSwipeSidebar.ts) starts
