@@ -21,7 +21,7 @@
 		display: flex;
 		flex-direction: column-reverse;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		pointer-events: none;
 	}
 
@@ -30,7 +30,7 @@
 		color: var(--color-text);
 		border: none;
 		border-radius: var(--radius-md);
-		padding: 9px 16px;
+		padding: var(--space-sm) var(--space-lg);
 		font-size: 13px;
 		box-shadow:
 			0 12px 32px -12px rgba(0, 0, 0, 0.45),

@@ -102,7 +102,7 @@
 		background: var(--color-surface-2);
 		box-shadow: var(--shadow-well);
 		border-radius: var(--radius-lg);
-		padding: 14px 16px;
+		padding: var(--space-lg) var(--space-lg);
 		font-size: 16px;
 		line-height: 1.5;
 		font-family: var(--font-sans);
@@ -114,13 +114,13 @@
 	.modal-actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: 8px;
-		margin-top: 18px;
+		gap: var(--space-sm);
+		margin-top: var(--space-lg);
 	}
 
 	.modal-actions .btn-accent {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 	}
 </style>

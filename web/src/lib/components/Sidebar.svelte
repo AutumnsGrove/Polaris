@@ -204,14 +204,14 @@
 	.brand {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-md);
 		/* On mobile the sidebar becomes a fixed, full-height overlay (see the
 		   media query below) starting at the true viewport top, same as
 		   .header in +page.svelte — needs the same safe-area-inset-top
 		   clearance so the collapse button isn't under the iOS status bar
 		   in standalone PWA mode. max() collapses to the plain 16px
 		   everywhere else, where env() is 0. */
-		padding: max(16px, env(safe-area-inset-top)) 16px 16px;
+		padding: max(var(--space-lg), env(safe-area-inset-top)) var(--space-lg) var(--space-lg);
 		white-space: nowrap;
 	}
 
@@ -238,18 +238,18 @@
 	}
 
 	.new-thread {
-		margin: 12px;
+		margin: var(--space-md);
 		white-space: nowrap;
 	}
 
 	.thread-list {
 		flex: 1;
 		overflow-y: auto;
-		padding: 4px 8px 8px;
+		padding: var(--space-xs) var(--space-sm) var(--space-sm);
 	}
 
 	.thread-empty {
-		margin: 12px 8px;
+		margin: var(--space-md) var(--space-sm);
 		font-size: 12px;
 		line-height: 1.5;
 		color: var(--color-text-dim);
@@ -260,8 +260,8 @@
 	.section-label {
 		display: flex;
 		align-items: center;
-		gap: 5px;
-		margin: 14px 10px 6px;
+		gap: var(--space-xs);
+		margin: var(--space-lg) var(--space-md) var(--space-sm);
 		font-size: 10.5px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -270,7 +270,7 @@
 	}
 
 	.section-label:first-child {
-		margin-top: 4px;
+		margin-top: var(--space-xs);
 	}
 
 	.section-label :global(svg) {
@@ -281,9 +281,9 @@
 		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		border-radius: var(--radius-sm);
-		padding: 10px 10px;
+		padding: var(--space-md) var(--space-md);
 		cursor: pointer;
 		transition:
 			background-color 0.15s var(--ease-out-expo),
@@ -392,13 +392,13 @@
 	.status {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		/* Recessed strip rather than a border line — the whole footer reads
 		   as a shallow well the connection dot and settings button sit in,
 		   consistent with the "carved, not drawn" treatment used on inputs
 		   and readouts elsewhere (see --shadow-well in app.css). */
 		box-shadow: var(--shadow-well);
-		padding: 12px;
+		padding: var(--space-md);
 		font-size: 12px;
 		color: var(--color-text-dim);
 		white-space: nowrap;

@@ -187,19 +187,19 @@
 		min-width: 190px;
 		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
-		padding: 6px;
+		padding: var(--space-sm);
 		box-shadow: var(--shadow-md), var(--shadow-glass-edge);
 	}
 
 	.dropdown-item {
 		display: flex;
 		align-items: center;
-		gap: 9px;
+		gap: var(--space-sm);
 		width: 100%;
 		border: none;
 		background: transparent;
 		border-radius: var(--radius-sm);
-		padding: 8px 10px;
+		padding: var(--space-sm) var(--space-md);
 		font-size: 13px;
 		font-family: inherit;
 		text-align: left;
@@ -256,15 +256,15 @@
 	   section spacing), just a tonal step instead of a line. */
 	.divider {
 		height: 1px;
-		margin: 6px 4px;
+		margin: var(--space-sm) var(--space-xs);
 		background: color-mix(in srgb, var(--color-border) 60%, transparent);
 	}
 
 	.info-row {
 		display: flex;
 		align-items: center;
-		gap: 9px;
-		padding: 7px 10px;
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
 		font-size: 12.5px;
 		color: var(--color-text-dim);
 	}
@@ -288,14 +288,14 @@
 	}
 
 	.confirm {
-		padding: 8px 8px 6px;
+		padding: var(--space-sm) var(--space-sm) var(--space-sm);
 	}
 
 	.confirm-message {
 		display: flex;
 		align-items: center;
-		gap: 7px;
-		margin-bottom: 10px;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-md);
 		font-size: 13px;
 		color: var(--color-text);
 	}
@@ -307,7 +307,7 @@
 
 	.confirm-actions {
 		display: flex;
-		gap: 6px;
+		gap: var(--space-sm);
 	}
 
 	.confirm-actions .dropdown-item {

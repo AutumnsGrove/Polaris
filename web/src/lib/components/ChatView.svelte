@@ -394,16 +394,16 @@
 		   of pushing content down like ordinary Safari does — without this,
 		   the status bar's clock/battery area sits directly on top of the
 		   sidebar toggle button, making it untappable. Falls back to the
-		   plain 10px on browsers without safe-area support, same pattern as
+		   plain 12px on browsers without safe-area support, same pattern as
 		   the composer's safe-area-inset-bottom handling below. */
-		padding: max(10px, env(safe-area-inset-top)) 16px 10px;
-		gap: 12px;
+		padding: max(var(--space-md), env(safe-area-inset-top)) var(--space-lg) var(--space-md);
+		gap: var(--space-md);
 	}
 
 	.header-left {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		min-width: 0;
 		flex: 1;
 	}
@@ -431,7 +431,7 @@
 	.header-right {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 		flex-shrink: 0;
 	}
 
@@ -454,8 +454,8 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 6px;
-		padding: 48px 24px;
+		gap: var(--space-sm);
+		padding: var(--space-4xl) var(--space-xl);
 		text-align: center;
 		/* A first attempt here removed this entirely to stop mobile
 		   browsers from auto-scrolling this container to bring a
@@ -497,7 +497,7 @@
 	}
 
 	.welcome-heading {
-		margin: 0 0 4px 0;
+		margin: 0 0 var(--space-xs) 0;
 		font-family: var(--font-serif);
 		/* Real hero scale — this is the one heading in the app allowed to
 		   run large, since there's no competing content on this screen. */
@@ -516,7 +516,7 @@
 	}
 
 	.welcome .subtitle {
-		margin: 10px 0 40px 0;
+		margin: var(--space-md) 0 var(--space-3xl) 0;
 		color: var(--color-text-dim);
 		line-height: 1.5;
 	}
@@ -536,7 +536,7 @@
 
 	.welcome-composer :global(.composer) {
 		border-top: none;
-		padding: 0 0 12px 0;
+		padding: 0 0 var(--space-md) 0;
 	}
 
 	/* Composer inside the welcome state gets a touch more presence —
@@ -559,10 +559,10 @@
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
-		padding: 28px 20px;
+		padding: var(--space-2xl) var(--space-xl);
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: var(--space-xl);
 	}
 
 	/* Appears once the user scrolls away from the bottom (see
@@ -628,19 +628,19 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
+		gap: var(--space-lg);
 		flex-wrap: wrap;
 		max-width: 680px;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sm);
-		padding: 16px 18px;
+		padding: var(--space-lg) var(--space-lg);
 	}
 
 	.interrupted-message {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--space-md);
 		flex: 1;
 		min-width: 220px;
 		font-size: 13.5px;
@@ -659,7 +659,7 @@
 	.suggestions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: var(--space-sm);
 		margin-top: -6px;
 	}
 
@@ -668,7 +668,7 @@
 		background: var(--color-surface-2);
 		color: var(--color-text-dim);
 		border-radius: var(--radius-full);
-		padding: 7px 14px;
+		padding: var(--space-sm) var(--space-lg);
 		font-size: 12.5px;
 		font-family: var(--font-sans);
 		text-align: left;
@@ -696,18 +696,18 @@
 	.composer {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: var(--space-sm);
 		box-shadow: 0 -8px 16px -14px rgba(0, 0, 0, 0.5);
-		padding: 16px;
+		padding: var(--space-lg);
 		/* Clears iOS Safari's bottom toolbar / home-indicator area — falls
 		   back to the plain 12px on browsers without safe-area support. */
-		padding-bottom: max(12px, env(safe-area-inset-bottom));
+		padding-bottom: max(var(--space-md), env(safe-area-inset-bottom));
 	}
 
 	.composer-toolbar {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--space-sm);
 	}
 
 	.toolbar-spacer {
@@ -717,13 +717,13 @@
 	.attachment-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		align-self: flex-start;
 		max-width: 100%;
 		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-full);
-		padding: 5px 6px 5px 10px;
+		padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
 		font-size: 12.5px;
 		color: var(--color-text-dim);
 		box-shadow: var(--shadow-xs);
@@ -766,7 +766,7 @@
 		   already centers a single line of text the same height as the
 		   textarea's own single row, so flex's vertical centering was
 		   never actually needed here. */
-		padding: 14px 16px;
+		padding: var(--space-lg) var(--space-lg);
 		font-size: 16px;
 		line-height: 1.5;
 		font-family: var(--font-sans);
@@ -804,7 +804,7 @@
 		background: var(--color-surface-2);
 		box-shadow: var(--shadow-well);
 		border-radius: var(--radius-lg);
-		padding: 14px 16px;
+		padding: var(--space-lg) var(--space-lg);
 		/* 16px, not 14 — anything smaller makes iOS Safari zoom the whole
 		   page in on focus (it does this for any input/textarea under
 		   16px), which is what was pushing the send button out of the

@@ -306,18 +306,18 @@
 	.row-user {
 		flex-direction: column;
 		align-items: flex-end;
-		gap: 6px;
+		gap: var(--space-sm);
 	}
 
 	.row-user .attachment-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
+		gap: var(--space-xs);
 		max-width: 640px;
 		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-full);
-		padding: 4px 10px;
+		padding: var(--space-xs) var(--space-md);
 		font-size: 12px;
 		color: var(--color-text-dim);
 		box-shadow: var(--shadow-xs);
@@ -336,7 +336,7 @@
 	.user-block {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-sm);
 		max-width: 640px;
 	}
 
@@ -365,7 +365,7 @@
 		   card rather than a bordered box. Padding grown a notch too; the
 		   original 10/14 read tight enough to feel like a form field. */
 		box-shadow: var(--shadow-sm);
-		padding: 11px 16px;
+		padding: var(--space-md) var(--space-lg);
 		color: var(--color-text);
 		white-space: pre-wrap;
 		word-break: break-word;
@@ -390,7 +390,7 @@
 	.edit-box {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: var(--space-sm);
 		width: 100%;
 	}
 
@@ -399,7 +399,7 @@
 		border: 1px solid var(--color-accent-2);
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
-		padding: 10px 12px;
+		padding: var(--space-md) var(--space-md);
 		/* 16px, matching the main composer — anything smaller triggers
 		   iOS Safari's zoom-on-focus. autoResize (see the action import
 		   above) grows this with content instead of squeezing multi-line
@@ -417,11 +417,11 @@
 	.edit-actions {
 		display: flex;
 		justify-content: flex-end;
-		gap: 4px;
+		gap: var(--space-xs);
 	}
 
 	.timeline {
-		margin-bottom: 8px;
+		margin-bottom: var(--space-sm);
 	}
 
 	/* A static "…" reads as stalled, not working — a slow, low-amplitude
@@ -443,16 +443,16 @@
 	}
 
 	.sources {
-		margin-top: 10px;
+		margin-top: var(--space-md);
 	}
 
 	.sources-toggle {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
+		gap: var(--space-xs);
 		border: none;
 		background: transparent;
-		padding: 2px 0;
+		padding: var(--space-xs) 0;
 		font-size: 12px;
 		color: var(--color-text-dim);
 		transition: color 0.15s var(--ease-out-expo);
@@ -468,7 +468,7 @@
 		justify-content: center;
 		min-width: 16px;
 		height: 16px;
-		padding: 0 4px;
+		padding: 0 var(--space-xs);
 		border-radius: var(--radius-full);
 		background: var(--color-surface-3);
 		font-size: 10px;
@@ -479,8 +479,8 @@
 	.citations {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 8px;
+		gap: var(--space-sm);
+		margin-top: var(--space-sm);
 	}
 
 	/* Fixed max-width + ellipsis is the whole fix — a 90-character arXiv
@@ -491,12 +491,12 @@
 	.source-chip {
 		display: flex;
 		align-items: center;
-		gap: 7px;
+		gap: var(--space-sm);
 		max-width: 220px;
 		border: none;
 		background: var(--color-surface-2);
 		border-radius: var(--radius-sm);
-		padding: 5px 9px;
+		padding: var(--space-xs) var(--space-sm);
 		text-decoration: none;
 		box-shadow: var(--shadow-xs);
 		transition: background-color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
@@ -520,8 +520,8 @@
 		display: inline-flex;
 		align-items: center;
 		max-width: 180px;
-		margin: 0 0 0 5px;
-		padding: 1px 8px;
+		margin: 0 0 0 var(--space-xs);
+		padding: var(--space-xs) var(--space-sm);
 		border: none;
 		border-radius: var(--radius-full);
 		background: var(--color-surface-2);
@@ -580,7 +580,7 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 1px;
+		gap: var(--space-xs);
 	}
 
 	.source-title {
@@ -602,15 +602,15 @@
 	.turn-footer {
 		display: flex;
 		align-items: center;
-		gap: 4px;
-		margin-top: 6px;
+		gap: var(--space-xs);
+		margin-top: var(--space-sm);
 	}
 
 	.turn-cost,
 	.turn-duration {
 		font-size: 11px;
 		color: var(--color-text-dim);
-		margin-right: 4px;
+		margin-right: var(--space-xs);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -622,13 +622,13 @@
 	.variant-switcher {
 		display: flex;
 		align-items: center;
-		gap: 2px;
-		margin-right: 6px;
+		gap: var(--space-xs);
+		margin-right: var(--space-sm);
 	}
 
 	.variant-position {
 		min-width: 28px;
-		padding: 2px 4px;
+		padding: var(--space-xs) var(--space-xs);
 		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-well);
 		text-align: center;
@@ -638,7 +638,7 @@
 	}
 
 	.prose :global(p) {
-		margin: 0 0 12px 0;
+		margin: 0 0 var(--space-md) 0;
 	}
 
 	.prose :global(p:last-child) {
@@ -656,7 +656,7 @@
 		font-weight: 700;
 		line-height: 1.2;
 		letter-spacing: -0.01em;
-		margin: 22px 0 8px;
+		margin: var(--space-xl) 0 var(--space-sm);
 		color: var(--color-text);
 	}
 
@@ -664,7 +664,7 @@
 		font-family: var(--font-serif);
 		font-weight: 700;
 		line-height: 1.3;
-		margin: 18px 0 6px;
+		margin: var(--space-lg) 0 var(--space-sm);
 		color: var(--color-text);
 	}
 
@@ -689,17 +689,17 @@
 
 	.prose :global(ul),
 	.prose :global(ol) {
-		margin: 0 0 12px 0;
-		padding-left: 22px;
+		margin: 0 0 var(--space-md) 0;
+		padding-left: var(--space-xl);
 	}
 
 	.prose :global(li) {
-		margin-bottom: 4px;
+		margin-bottom: var(--space-xs);
 	}
 
 	.prose :global(blockquote) {
-		margin: 12px 0;
-		padding: 2px 0 2px 14px;
+		margin: var(--space-md) 0;
+		padding: var(--space-xs) 0 var(--space-xs) var(--space-lg);
 		border-left: 2px solid var(--color-border-strong);
 		color: var(--color-text-dim);
 		font-style: italic;
@@ -710,7 +710,7 @@
 		border: none;
 		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-well);
-		padding: 10px 12px;
+		padding: var(--space-md) var(--space-md);
 		overflow-x: auto;
 		font-family: var(--font-mono);
 		font-size: 13px;
@@ -728,7 +728,7 @@
 		border: none;
 		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-well);
-		padding: 1px 5px;
+		padding: var(--space-xs) var(--space-xs);
 		font-family: var(--font-mono);
 		font-size: 13px;
 	}
@@ -746,14 +746,14 @@
 		max-width: 100%;
 		overflow-x: auto;
 		border-collapse: collapse;
-		margin: 0 0 12px 0;
+		margin: 0 0 var(--space-md) 0;
 		font-size: 13.5px;
 	}
 
 	.prose :global(th),
 	.prose :global(td) {
 		border: 1px solid var(--color-border);
-		padding: 6px 10px;
+		padding: var(--space-sm) var(--space-md);
 		text-align: left;
 		vertical-align: top;
 	}
