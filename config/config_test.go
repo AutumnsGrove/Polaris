@@ -108,6 +108,33 @@ func TestLoad_ExpandsEnvVars(t *testing.T) {
 	}
 }
 
+// TestLoad_EnvVarSetButConfigYamlMissingBlockLeavesKeyEmpty locks in the
+// exact shape of a real production incident: BRAVE_API_KEY/PARALLEL_API_KEY
+// were live in the container's environment, but config.yaml (gitignored,
+// hand-maintained, never synced by git pull) had no brave:/parallel: block
+// referencing them via ${...}. os.ExpandEnv only substitutes placeholders
+// that literally appear in the file, so the env var being set didn't help —
+// cfg.Brave.APIKey stayed empty, brave.NewClient("") returned nil, and
+// web_search's SearXNG -> Brave -> Parallel -> Tavily chain silently
+// skipped straight to Tavily with no error anywhere. Load must not error in
+// this case (the key is genuinely optional) — the warning that catches this
+// now lives right after this check in Load; this test documents why the
+// warning exists and that Load stays lenient rather than failing.
+func TestLoad_EnvVarSetButConfigYamlMissingBlockLeavesKeyEmpty(t *testing.T) {
+	t.Setenv("BRAVE_API_KEY", "brave-live-key-in-env")
+	path := writeTestConfig(t, `openrouter:
+  api_key: "sk-test"
+`)
+
+	cfg, err := Load(path, testRegistry)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Brave.APIKey != "" {
+		t.Errorf("Brave.APIKey = %q, want empty — config.yaml never referenced BRAVE_API_KEY", cfg.Brave.APIKey)
+	}
+}
+
 func TestLoad_AppliesModelOverrides(t *testing.T) {
 	path := writeTestConfig(t, `
 openrouter:

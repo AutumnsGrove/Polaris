@@ -320,6 +320,25 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		// back to this being unset.
 		log.Warn("searxng.base_url is not set — web_search and nearby_search's web-search fallback will be unavailable")
 	}
+	// Catches a real, previously-silent production gap: a deploy can have
+	// BRAVE_API_KEY/PARALLEL_API_KEY/TAVILY_API_KEY set in its actual
+	// environment (e.g. Docker's .env, passed through docker-compose.yml)
+	// while config.yaml — gitignored, hand-maintained, never synced by
+	// `git pull` — still lacks the brave:/parallel:/tavily: block that
+	// would reference it via ${...}. os.ExpandEnv above only substitutes
+	// placeholders that literally appear in the file, so the env var being
+	// set gives false confidence the fallback tier is live: web_search's
+	// SearXNG -> Brave -> Parallel -> Tavily chain (tools/web_search.go)
+	// silently skips any tier whose APIKey ends up empty, with nothing in
+	// the logs pointing back to this being the reason.
+	warnIfEnvSetButUnconfigured := func(envVar, configuredKey, yamlPath string) {
+		if configuredKey == "" && os.Getenv(envVar) != "" {
+			log.Warn(envVar+" is set in the environment but config.yaml has no "+yamlPath+" referencing it — this fallback tier will be silently disabled", "env_var", envVar, "yaml_path", yamlPath)
+		}
+	}
+	warnIfEnvSetButUnconfigured("BRAVE_API_KEY", cfg.Brave.APIKey, "brave.api_key")
+	warnIfEnvSetButUnconfigured("PARALLEL_API_KEY", cfg.Parallel.APIKey, "parallel.api_key")
+	warnIfEnvSetButUnconfigured("TAVILY_API_KEY", cfg.Tavily.APIKey, "tavily.api_key")
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
 	}
