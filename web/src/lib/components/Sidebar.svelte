@@ -218,7 +218,7 @@
 	.brand-mark {
 		width: 22px;
 		height: 22px;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		flex-shrink: 0;
 		box-shadow: var(--shadow-sm);
 	}
@@ -361,7 +361,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		color: var(--color-text-dim);
 		cursor: pointer;
 		opacity: 0;

@@ -204,7 +204,7 @@
 		max-width: 100%;
 		border: none;
 		background: var(--color-surface-2);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 8px 12px 8px 10px;
 		height: 38px;
 		color: var(--color-text-dim);
@@ -240,7 +240,7 @@
 		font-weight: 600;
 		color: var(--color-accent-2);
 		background: color-mix(in srgb, var(--color-accent-2) 16%, transparent);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 2px 8px;
 	}
 
@@ -386,7 +386,7 @@
 		inset: 0;
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		cursor: pointer;
 		transition: background 0.15s ease;
 	}

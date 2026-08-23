@@ -41,7 +41,7 @@
 
 	.carousel::-webkit-scrollbar-thumb {
 		background: var(--color-surface-3);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 	}
 
 	.card {

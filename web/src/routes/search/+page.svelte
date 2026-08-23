@@ -606,7 +606,7 @@
 		appearance: none;
 		border: none;
 		background: transparent;
-		border-radius: 7px;
+		border-radius: var(--radius-sm);
 		width: 28px;
 		height: 28px;
 		display: flex;
@@ -626,7 +626,7 @@
 	.wordmark .mark {
 		width: 20px;
 		height: 20px;
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		flex: none;
 		box-shadow: var(--shadow-ambient) 0 1px 3px;
 	}
@@ -684,7 +684,7 @@
 		font: inherit;
 		color: inherit;
 		cursor: pointer;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 	}
 
 	.pw-a:hover:not(:disabled) {
@@ -714,7 +714,7 @@
 		gap: 10px;
 		background: var(--paper-raised);
 		border: 1px solid var(--line-strong);
-		border-radius: 10px;
+		border-radius: var(--radius-md);
 		padding: 11px 14px;
 	}
 
@@ -744,7 +744,7 @@
 		color: var(--ink-faint);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		padding: 3px 6px;
 		white-space: nowrap;
 	}
@@ -888,7 +888,7 @@
 	.quick-answer {
 		background: var(--paper-raised);
 		border: 1px solid var(--line);
-		border-radius: 10px;
+		border-radius: var(--radius-md);
 		padding: 18px 20px 16px;
 		margin-bottom: 28px;
 	}
@@ -937,7 +937,7 @@
 		color: var(--ink-muted);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 5px 10px 5px 7px;
 		text-decoration: none;
 	}
@@ -952,7 +952,7 @@
 		font-weight: 700;
 		color: var(--accent);
 		background: var(--accent-soft);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		width: 15px;
 		height: 15px;
 		display: flex;
@@ -1010,7 +1010,7 @@
 	.favicon {
 		width: 20px;
 		height: 20px;
-		border-radius: 5px;
+		border-radius: var(--radius-sm);
 		flex: none;
 		display: flex;
 		align-items: center;
@@ -1061,7 +1061,7 @@
 		appearance: none;
 		border: 1px solid transparent;
 		background: transparent;
-		border-radius: 7px;
+		border-radius: var(--radius-sm);
 		width: 28px;
 		height: 28px;
 		display: flex;
@@ -1087,7 +1087,7 @@
 		width: 280px;
 		background: var(--paper-raised);
 		border: 1px solid var(--line);
-		border-radius: 13px;
+		border-radius: var(--radius-md);
 		box-shadow:
 			0 18px 40px var(--shadow-ambient),
 			0 3px 10px var(--shadow-ambient);
@@ -1123,7 +1123,7 @@
 		cursor: pointer;
 		width: 24px;
 		height: 24px;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -1145,7 +1145,7 @@
 		font-size: 10px;
 		font-weight: 600;
 		padding: 8px 2px;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		border: 1px solid var(--line);
 		background: var(--paper);
 		color: var(--ink-muted);
@@ -1221,7 +1221,7 @@
 		color: var(--ink-muted);
 		background: var(--paper-sunken);
 		border: 1px solid var(--line);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 4px 10px;
 	}
 
@@ -1249,7 +1249,7 @@
 		border: 1px solid var(--line);
 		background: var(--paper-raised);
 		color: var(--ink-muted);
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 		display: flex;
 		align-items: center;

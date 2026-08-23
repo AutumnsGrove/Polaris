@@ -316,7 +316,7 @@
 		max-width: 640px;
 		border: none;
 		background: var(--color-surface-2);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 4px 10px;
 		font-size: 12px;
 		color: var(--color-text-dim);
@@ -469,7 +469,7 @@
 		min-width: 16px;
 		height: 16px;
 		padding: 0 4px;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		background: var(--color-surface-3);
 		font-size: 10px;
 		font-variant-numeric: tabular-nums;
@@ -523,7 +523,7 @@
 		margin: 0 0 0 5px;
 		padding: 1px 8px;
 		border: none;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		background: var(--color-surface-2);
 		color: var(--color-text-dim);
 		font-size: 11.5px;
@@ -726,7 +726,7 @@
 	.prose :global(code) {
 		background: var(--color-surface-2);
 		border: none;
-		border-radius: 4px;
+		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-well);
 		padding: 1px 5px;
 		font-family: var(--font-mono);

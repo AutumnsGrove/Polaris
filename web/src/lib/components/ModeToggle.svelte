@@ -44,7 +44,7 @@
 		flex-shrink: 0;
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 3px;
 		gap: 2px;
 	}
@@ -60,7 +60,7 @@
 		font-size: 12.5px;
 		font-weight: 500;
 		padding: 6px 14px;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		color: var(--color-text-dim);
 		cursor: pointer;
 		transition:

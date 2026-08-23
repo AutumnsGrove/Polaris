@@ -581,7 +581,7 @@
 		justify-content: center;
 		width: 36px;
 		height: 36px;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		border: none;
 		background: var(--color-surface-2);
 		color: var(--color-text);
@@ -602,7 +602,7 @@
 		right: -2px;
 		width: 9px;
 		height: 9px;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		background: var(--color-accent);
 		animation: jump-to-bottom-pulse 1.4s ease-in-out infinite;
 	}
@@ -667,7 +667,7 @@
 		border: none;
 		background: var(--color-surface-2);
 		color: var(--color-text-dim);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 7px 14px;
 		font-size: 12.5px;
 		font-family: var(--font-sans);
@@ -722,7 +722,7 @@
 		max-width: 100%;
 		border: none;
 		background: var(--color-surface-2);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 5px 6px 5px 10px;
 		font-size: 12.5px;
 		color: var(--color-text-dim);
@@ -741,7 +741,7 @@
 		justify-content: center;
 		width: 20px;
 		height: 20px;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		flex-shrink: 0;
 		color: var(--color-text-dim);
 	}
