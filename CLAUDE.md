@@ -192,3 +192,7 @@ four pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not j
   incidents, races being guarded against. Match that density when adding new code; a lot of the
   Docker-path bugs were specifically caught because a doc comment recorded the exact reasoning a
   reviewer needed to spot the gap.
+- UI work (`web/src`) must use the shared CSS custom properties in `app.css`'s `:root` —
+  `--z-*` for stacking, `--radius-*` for corner rounding, `--space-*` for padding/margin/gap —
+  instead of a new raw px literal. Pick the nearest existing step rather than inventing a value;
+  only add a new token when nothing on the scale actually fits.
