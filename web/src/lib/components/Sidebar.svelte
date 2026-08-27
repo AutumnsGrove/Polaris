@@ -4,11 +4,11 @@
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import { searchState } from '$lib/search.svelte';
-	import { Plus, PanelLeftClose, Settings, Star } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { Thread, SearchHistoryEntry } from '$lib/types';
+	import type { Thread, SearchHistoryEntry, MessageSearchResult } from '$lib/types';
 
 	// The sidebar SHELL (this component, its layout/collapse/mobile-overlay
 	// behavior) is shared between Atlas and the chat assistant — see
@@ -41,6 +41,26 @@
 		// a fresh search — see its comment on why that must not bump this
 		// entry back to the top of the list it was just clicked from.
 		void goto(`/search?q=${encodeURIComponent(query)}&from=history`);
+	}
+
+	function openMatch(result: MessageSearchResult) {
+		appState.clearThreadSearch();
+		appState.openThread(result.thread_id);
+	}
+
+	// Splits a snippet on the \x02/\x03 markers store.SearchMessages wraps
+	// each matched term in (see MessageSearchResult's doc comment in
+	// types.ts) into plain segments — rendered as real text nodes below via
+	// {#if seg.match}<mark> / plain text otherwise, deliberately never
+	// {@html}, so a search result built out of past user/assistant message
+	// content can never be interpreted as markup.
+	function snippetSegments(snippet: string): { text: string; match: boolean }[] {
+		return snippet.split(/([\x02][^\x02\x03]*[\x03])/).map((part) => {
+			if (part.startsWith('\x02') && part.endsWith('\x03')) {
+				return { text: part.slice(1, -1), match: true };
+			}
+			return { text: part, match: false };
+		});
 	}
 </script>
 
@@ -90,6 +110,27 @@
 	</div>
 {/snippet}
 
+{#snippet matchRow(result: MessageSearchResult, i: number)}
+	<div
+		class="thread-item match-item"
+		onclick={() => openMatch(result)}
+		onkeydown={(e) => e.key === 'Enter' && openMatch(result)}
+		role="button"
+		tabindex="0"
+		in:fly={{ y: 8, duration: 180, delay: Math.min(i, 10) * 18, easing: quintOut }}
+	>
+		<span class="thread-dot" aria-hidden="true"></span>
+		<div class="thread-meta">
+			<div class="thread-title">{result.thread_title || 'Untitled'}</div>
+			<div class="match-snippet">
+				{#each snippetSegments(result.snippet) as seg}
+					{#if seg.match}<mark>{seg.text}</mark>{:else}{seg.text}{/if}
+				{/each}
+			</div>
+		</div>
+	</div>
+{/snippet}
+
 <aside class="sidebar" class:open={appState.sidebarOpen} use:edgeSwipeSidebar>
 	<div class="brand">
 		{#if isAtlas}
@@ -120,6 +161,21 @@
 			<Plus size={16} />
 			New thread
 		</button>
+		<div class="thread-search">
+			<Search size={14} class="icon-search" aria-hidden="true" />
+			<input
+				type="text"
+				value={appState.threadSearchQuery}
+				oninput={(e) => appState.searchThreads(e.currentTarget.value)}
+				placeholder="Search past chats"
+				spellcheck="false"
+			/>
+			{#if appState.threadSearchQuery}
+				<button class="icon-btn clear-btn" onclick={() => appState.clearThreadSearch()} aria-label="Clear search">
+					<X size={13} />
+				</button>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="thread-list">
@@ -142,6 +198,21 @@
 			{#each searchRecents as entry, i (entry.id)}
 				{@render searchRow(entry, i)}
 			{/each}
+		{:else if appState.threadSearchQuery}
+			<!-- Live full-text search over every past message's content
+			     (GET /api/threads/search) — see AppState.searchThreads' doc
+			     comment. Replaces the normal Favorites/Recents view entirely
+			     while a query is active, same as Atlas's own results list
+			     replacing its default state. -->
+			{#if appState.threadSearchLoading}
+				<p class="thread-empty">Searching…</p>
+			{:else if appState.threadSearchResults.length === 0}
+				<p class="thread-empty">No matches for "{appState.threadSearchQuery}".</p>
+			{:else}
+				{#each appState.threadSearchResults as result, i (result.thread_id + '-' + i)}
+					{@render matchRow(result, i)}
+				{/each}
+			{/if}
 		{:else}
 			{#if appState.threads.length === 0}
 				<p class="thread-empty">No threads yet. Ask something to start.</p>
@@ -240,6 +311,67 @@
 	.new-thread {
 		margin: var(--space-md);
 		white-space: nowrap;
+	}
+
+	.thread-search {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin: 0 var(--space-md) var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		transition: border-color 0.15s var(--ease-out-expo);
+	}
+
+	.thread-search:focus-within {
+		border-color: var(--color-accent);
+	}
+
+	.thread-search :global(.icon-search) {
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+	}
+
+	.thread-search input {
+		flex: 1;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		font: inherit;
+		font-size: 13px;
+		color: var(--color-text);
+	}
+
+	.thread-search input:focus {
+		outline: none;
+	}
+
+	.thread-search input::placeholder {
+		color: var(--color-text-dim);
+	}
+
+	.clear-btn {
+		flex-shrink: 0;
+		width: 20px;
+		height: 20px;
+	}
+
+	.match-snippet {
+		margin-top: 2px;
+		font-size: 11.5px;
+		line-height: 1.4;
+		color: var(--color-text-dim);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.match-snippet mark {
+		background: transparent;
+		color: var(--color-accent);
+		font-weight: 600;
 	}
 
 	.thread-list {

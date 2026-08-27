@@ -266,3 +266,16 @@ export interface SearchHistoryEntry {
 	created_at: string;
 	updated_at: string;
 }
+
+// Mirrors store.MessageSearchResult — one matching message from
+// GET /api/threads/search, backing the sidebar's chat-thread search box.
+// snippet wraps each matched term in \x02...\x03 (ASCII STX/ETX) rather
+// than HTML — see Sidebar.svelte's renderSnippet, which splits on these
+// markers into real text nodes instead of using {@html}.
+export interface MessageSearchResult {
+	thread_id: string;
+	thread_title: string;
+	role: string;
+	snippet: string;
+	created_at: string;
+}

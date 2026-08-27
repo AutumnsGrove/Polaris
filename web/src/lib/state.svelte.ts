@@ -9,7 +9,8 @@ import type {
 	TimelineItem,
 	FocusMode,
 	UploadedAttachment,
-	VariantGroup
+	VariantGroup,
+	MessageSearchResult
 } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
@@ -102,6 +103,15 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 export class AppState {
 	turns = $state<ChatTurn[]>([]);
 	threads = $state<Thread[]>([]);
+
+	// Sidebar's "search past chats" box — see searchThreads' doc comment.
+	// Separate from `threads` (the plain recency list) rather than
+	// filtering it client-side, since this searches every message's full
+	// content via the server's FTS5 index, not just what's already loaded
+	// here.
+	threadSearchQuery = $state('');
+	threadSearchResults = $state<MessageSearchResult[]>([]);
+	threadSearchLoading = $state(false);
 	models = $state<ModelOption[]>([]);
 	selectedModel = $state<string>('');
 	currentThreadId = $state<string | null>(null);
@@ -217,6 +227,13 @@ export class AppState {
 	// pointed at whichever happened to respond second, not whichever was
 	// clicked last.
 	private openThreadSeq = 0;
+
+	// searchThreads' debounce timer/cancellation state — see its own doc
+	// comment for why both the timer and the seq/AbortController pair are
+	// needed together.
+	private threadSearchSeq = 0;
+	private threadSearchController: AbortController | null = null;
+	private threadSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	private socket: AgentSocket;
 
@@ -399,6 +416,61 @@ export class AppState {
 	async loadThreads() {
 		const res = await fetch('/api/threads');
 		this.threads = (await res.json()) ?? [];
+	}
+
+	// Debounced, cancellable full-text search over past chat content
+	// (GET /api/threads/search) — called on every keystroke in the
+	// sidebar's search box, so both a client-side debounce (this doesn't
+	// fire a request per character) and the seq/AbortController guard
+	// (a slow response for an earlier keystroke can't clobber a faster
+	// one for a later keystroke) matter here, same reasoning as
+	// SearchState.search() in search.svelte.ts.
+	searchThreads(query: string) {
+		this.threadSearchQuery = query;
+		if (this.threadSearchDebounce !== null) clearTimeout(this.threadSearchDebounce);
+
+		const trimmed = query.trim();
+		if (!trimmed) {
+			this.threadSearchController?.abort();
+			this.threadSearchResults = [];
+			this.threadSearchLoading = false;
+			return;
+		}
+
+		this.threadSearchLoading = true;
+		this.threadSearchDebounce = setTimeout(() => void this.runThreadSearch(trimmed), 250);
+	}
+
+	private async runThreadSearch(query: string) {
+		this.threadSearchController?.abort();
+		const controller = new AbortController();
+		this.threadSearchController = controller;
+		const seq = ++this.threadSearchSeq;
+
+		try {
+			const res = await fetch(`/api/threads/search?q=${encodeURIComponent(query)}`, {
+				signal: controller.signal
+			});
+			if (seq !== this.threadSearchSeq) return; // superseded by a newer keystroke
+			this.threadSearchResults = res.ok ? ((await res.json()) ?? []) : [];
+		} catch {
+			if (seq !== this.threadSearchSeq) return; // includes our own abort() above
+			this.threadSearchResults = [];
+		} finally {
+			if (seq === this.threadSearchSeq) this.threadSearchLoading = false;
+		}
+	}
+
+	// Clears the search box back to the plain recency-ordered thread list —
+	// called by the box's own clear button and when a result is clicked
+	// (opening a thread shouldn't leave a stale search sitting above it).
+	clearThreadSearch() {
+		if (this.threadSearchDebounce !== null) clearTimeout(this.threadSearchDebounce);
+		this.threadSearchController?.abort();
+		this.threadSearchQuery = '';
+		this.threadSearchResults = [];
+		this.threadSearchLoading = false;
+		++this.threadSearchSeq;
 	}
 
 	// Shared by openThread and swapVariant — both end up with the exact

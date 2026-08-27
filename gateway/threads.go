@@ -27,6 +27,28 @@ func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, threads)
 }
 
+// handleSearchThreads backs the sidebar's search box — full-text search
+// over every past message's content, not just thread titles (see
+// store.Store.SearchMessages's doc comment for why title-only wouldn't
+// actually answer "find that thing I asked last month"). An empty/missing
+// q returns an empty list rather than erroring, since the frontend calls
+// this live as the user types and a not-yet-typed query isn't a client
+// mistake.
+func (s *Server) handleSearchThreads(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, []store.MessageSearchResult{})
+		return
+	}
+	results, err := s.db.SearchMessages(query, 30)
+	if err != nil {
+		log.Warn("searching threads failed", "query", query, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, results)
+}
+
 // VariantGroup describes the alternatives available at one message
 // position — every reply an edit/regenerate at that spot has ever
 // produced, oldest first, plus which one is currently being shown.

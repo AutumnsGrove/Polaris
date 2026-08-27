@@ -265,6 +265,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/threads", s.handleListThreads)
+	s.mux.HandleFunc("GET /api/threads/search", s.handleSearchThreads)
 	s.mux.HandleFunc("GET /api/threads/{id}", s.handleGetThread)
 	s.mux.HandleFunc("PATCH /api/threads/{id}", s.handleUpdateThread)
 	s.mux.HandleFunc("POST /api/threads/{id}/regenerate-title", s.handleRegenerateTitle)
