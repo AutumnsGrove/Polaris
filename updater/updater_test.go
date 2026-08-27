@@ -31,7 +31,7 @@ func setupTestRepo(t *testing.T) (repoPath string) {
 	remote := filepath.Join(base, "remote.git")
 	local := filepath.Join(base, "local")
 
-	runGit(t, base, "init", "--bare", remote)
+	runGit(t, base, "init", "--bare", "-b", "main", remote)
 	runGit(t, base, "init", "-b", "main", local)
 	runGit(t, local, "config", "user.email", "test@example.com")
 	runGit(t, local, "config", "user.name", "Test")
