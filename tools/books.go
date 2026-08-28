@@ -282,14 +282,30 @@ func rankHardcoverCandidates(agg map[string]*bookCandidate, sourceGenres []strin
 	// Count) over-corrects: a single-list candidate matching on two
 	// generic-ish tags (a fantasy/vampire romance sharing "Historical
 	// Fiction"+"Romance" with Monte Cristo) beat real 4-list community
-	// consensus (Catch-22) outright. (1+overlap)*(1+count) lets either
-	// signal earn a candidate's way to the top — strong consensus with weak
-	// overlap and weak consensus with strong overlap both score
-	// competitively — while a candidate with genuinely neither (Heart of
-	// Darkness: 0 overlap, Count from lists that turned out to be generic
-	// "greatest classics" meta-lists) still sinks to the bottom.
+	// consensus (Catch-22) outright.
+	//
+	// Overlap is squared, not linear — (1+overlap)²*(1+count), not
+	// (1+overlap)*(1+count) — found live to be a real, separate gap from
+	// the additive-vs-multiplicative question above: the plain linear
+	// version still let list-count alone dominate on books whose real
+	// curated-list ecosystem is itself dominated by "greatest classics"
+	// meta-lists (Monte Cristo again — pulling from a 100-list pool instead
+	// of 25 changed nothing, confirmed live, so this isn't a
+	// not-enough-lists problem). Concretely: Lonesome Dove (shares 3 of
+	// Monte Cristo's own genres, including the specific "Adventure" tag,
+	// but only 1 curated list) scored 8 under the linear formula while
+	// Catch-22 (shares only 1 genre, "Historical Fiction", but 4 lists)
+	// scored 10 — count alone won despite being the weaker content match.
+	// Squaring flips that (32 vs 20) without reintroducing the additive
+	// scheme's own regression above — Catch-22 (20) still comfortably
+	// outranks the vampire-romance case (18), re-verified against the same
+	// real data before this changed. A candidate with genuinely neither
+	// signal (Heart of Darkness / To Kill a Mockingbird: 0 overlap, Count
+	// only from those same generic meta-lists) still sinks to the bottom —
+	// (1+0)² is still just 1, unchanged from before.
 	score := func(c *bookCandidate) int {
-		s := (1 + genreOverlapCount(c.Genres, sourceGenres)) * (1 + c.Count)
+		overlap := 1 + genreOverlapCount(c.Genres, sourceGenres)
+		s := overlap * overlap * (1 + c.Count)
 		// Keyed by title+author, not title alone — matching every other
 		// dedup/match key in this file (see aggregateListBooks,
 		// aggregateOpenLibrarySubjects, openLibraryExtras). Title-only

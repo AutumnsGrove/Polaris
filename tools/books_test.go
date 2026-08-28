@@ -245,7 +245,7 @@ func TestHandleBooks_GenreOverlap_OutranksRawListCount(t *testing.T) {
 			// Canon Pick: no genre overlap, but on both lists (Count=2).
 			// Genre Match: overlaps on both source genres, but only on one
 			// list (Count=1) — despite the weaker list signal, it must
-			// still outrank Canon Pick: (1+2)*(1+1)=6 vs (1+0)*(1+2)=3.
+			// still outrank Canon Pick: (1+2)²*(1+1)=18 vs (1+0)²*(1+2)=3.
 			books := []map[string]interface{}{
 				hcBookRowWithGenres(5, "Canon Pick", "canon-pick", "Canon Author", []string{"Literary Fiction"}),
 			}
