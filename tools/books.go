@@ -28,16 +28,24 @@
 //     modest ranking bonus when an independent signal agrees), backstops
 //     thin Hardcover list data (new/obscure titles — see
 //     hardcoverMinCandidates), and stands in entirely when Hardcover isn't
-//     configured, its token is invalid/expired (see hardcoverAuthError),
-//     or the title can't be resolved there at all.
+//     configured, its auth is failing for any reason (see
+//     hardcoverAuthError), or the title can't be resolved there at all.
 //
 // Unlike music.go's LastFMAPIKey, HardcoverAPIKey is optional (see
-// tools/registry.go's Context.HardcoverAPIKey doc comment). Hardcover
-// issues personal-account JWTs, not stable service keys, with roughly a
-// one-year expiry — a previously-working deployment can start hitting auth
-// failures with no config change on this end, which is exactly why the
-// Open Library path exists independently: expiry degrades the tool to a
-// weaker signal instead of breaking it outright.
+// tools/registry.go's Context.HardcoverAPIKey doc comment). Hardcover's key
+// format itself isn't stable either: it originally issued personal-account
+// JWTs with roughly a one-year expiry, then switched to `hc_pat_...`
+// personal access tokens with a configurable (including non-expiring)
+// lifetime — same `Bearer <token>` auth scheme either way, confirmed live,
+// so no code change was needed for the format switch itself. What isn't
+// stable is the *account* behind the token: confirmed live, a token can be
+// well within its own validity window and still fail with
+// error_description "User account is not active" if Hardcover deactivates
+// the account server-side — indistinguishable from a bad token without
+// reading error_description (see hardcoverQuery's doc comment). Either
+// failure — token or account — degrades the tool to Open Library's weaker
+// signal instead of breaking it outright, which is exactly why the Open
+// Library path exists independently.
 package tools
 
 import (
@@ -152,7 +160,7 @@ func lookupSimilarBooks(ctx *Context, title, author string) (string, error) {
 			return result, nil
 		}
 		if isHardcoverAuthError(err) {
-			log.Warn("books: hardcover token missing/invalid/expired, falling back to open library", "err", err)
+			log.Warn("books: hardcover auth failed, falling back to open library", "err", err)
 		} else {
 			log.Warn("books: hardcover lookup failed, falling back to open library", "title", title, "err", err)
 		}
@@ -374,13 +382,27 @@ func formatBooksResult(title, author, description string, tags []string, ranked 
 // this specific case gets logged as an auth problem pointing at
 // hardcover.app's account settings; the caller falls back to Open Library
 // either way; see lookupSimilarBooks.
-type hardcoverAuthError struct{ message string }
+//
+// description carries Hardcover's error_description field, which turned out
+// to matter more than the bare "error" code once seen live: a still-valid,
+// non-expired token started failing with error="invalid_token", and without
+// description that's indistinguishable from an actually-expired token —
+// description was the only thing that said error_description="User account
+// is not active", i.e. the Hardcover *account* itself had been deactivated
+// server-side, not a token problem at all. Both fields are captured now so
+// that distinction shows up in the logs instead of requiring a live curl
+// probe to discover, same as it did the first time.
+type hardcoverAuthError struct{ message, description string }
 
 func (e *hardcoverAuthError) Error() string {
-	if e.message == "" {
+	switch {
+	case e.message == "":
 		return "hardcover: authorization failed (token missing, invalid, or expired)"
+	case e.description != "":
+		return fmt.Sprintf("hardcover: %s (%s) — check both the token's validity and the account's status at hardcover.app, they fail independently", e.message, e.description)
+	default:
+		return "hardcover: " + e.message
 	}
-	return "hardcover: " + e.message
 }
 
 func isHardcoverAuthError(err error) bool {
@@ -390,9 +412,15 @@ func isHardcoverAuthError(err error) bool {
 
 // hardcoverQuery POSTs a GraphQL query and returns its "data" field.
 // Hardcover has two distinct error shapes, both handled here rather than at
-// each call site: a top-level `{"error": "..."}` for auth failures (seen
-// live: `{"error":"Unable to verify token"}`, HTTP 401), and the standard
-// GraphQL `{"errors": [...]}` array for query-level failures (HTTP 200).
+// each call site: a top-level `{"error": "...", "error_description": "..."}`
+// for auth failures (seen live: `{"error":"Unable to verify token"}` for a
+// malformed/bad token, and separately `{"error":"invalid_token",
+// "error_description":"User account is not active"}` for a perfectly valid,
+// non-expired token whose *account* had been deactivated server-side —
+// error_description is the field that actually distinguishes "get a new
+// token" from "check your account status", not the bare error code), and
+// the standard GraphQL `{"errors": [...]}` array for query-level failures
+// (HTTP 200).
 func hardcoverQuery(ctx *Context, query string, variables map[string]interface{}) (json.RawMessage, error) {
 	payload, err := json.Marshal(map[string]interface{}{"query": query, "variables": variables})
 	if err != nil {
@@ -418,9 +446,10 @@ func hardcoverQuery(ctx *Context, query string, variables map[string]interface{}
 	}
 
 	var parsed struct {
-		Error  string          `json:"error"`
-		Data   json.RawMessage `json:"data"`
-		Errors []struct {
+		Error            string          `json:"error"`
+		ErrorDescription string          `json:"error_description"`
+		Data             json.RawMessage `json:"data"`
+		Errors           []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
@@ -428,7 +457,7 @@ func hardcoverQuery(ctx *Context, query string, variables map[string]interface{}
 		return nil, fmt.Errorf("parsing hardcover response: %w", err)
 	}
 	if parsed.Error != "" || resp.StatusCode == http.StatusUnauthorized {
-		return nil, &hardcoverAuthError{message: parsed.Error}
+		return nil, &hardcoverAuthError{message: parsed.Error, description: parsed.ErrorDescription}
 	}
 	if len(parsed.Errors) > 0 {
 		return nil, fmt.Errorf("hardcover: %s", parsed.Errors[0].Message)

@@ -303,6 +303,50 @@ func TestHandleBooks_HardcoverAuthError_FallsBackToOpenLibrary(t *testing.T) {
 	}
 }
 
+// TestHardcoverAuthError_SurfacesAccountInactiveDescription locks down a
+// real gap found live: a token well within its own validity window can
+// still fail if Hardcover deactivates the *account* behind it — same
+// resp.StatusCode/parsed.Error shape as a plain bad token, indistinguishable
+// without reading error_description too. Before this, hardcoverAuthError
+// discarded that field entirely, so the log just said "invalid_token" for
+// both cases and there was no way to tell "get a new token" from "check
+// your account status" without a live curl probe against Hardcover's API.
+func TestHardcoverAuthError_SurfacesAccountInactiveDescription(t *testing.T) {
+	err := &hardcoverAuthError{message: "invalid_token", description: "User account is not active"}
+	msg := err.Error()
+	if !strings.Contains(msg, "User account is not active") {
+		t.Errorf("Error() = %q, want it to include the account-inactive description, not just the bare error code", msg)
+	}
+	if !isHardcoverAuthError(err) {
+		t.Error("isHardcoverAuthError() = false, want true — this must still be treated as an auth failure so the caller falls back to Open Library")
+	}
+}
+
+// TestHardcoverQuery_ParsesErrorDescriptionFromWire covers the actual JSON
+// response Hardcover sends for a deactivated account (confirmed live), not
+// just the hardcoverAuthError struct in isolation — makes sure
+// error_description survives the real unmarshal path in hardcoverQuery.
+func TestHardcoverQuery_ParsesErrorDescriptionFromWire(t *testing.T) {
+	fakeHardcover(t, func(query string, vars map[string]interface{}) (interface{}, int) {
+		return map[string]interface{}{
+			"error":             "invalid_token",
+			"error_description": "User account is not active",
+		}, http.StatusUnauthorized
+	})
+
+	ctx := &Context{Ctx: context.Background(), HardcoverAPIKey: "well-formed-but-account-deactivated"}
+	_, err := hardcoverQuery(ctx, "query { me { id } }", nil)
+	if err == nil {
+		t.Fatal("hardcoverQuery() error = nil, want an auth error")
+	}
+	if !strings.Contains(err.Error(), "User account is not active") {
+		t.Errorf("error = %q, want error_description to survive the real parse path, not just be discarded", err.Error())
+	}
+	if !isHardcoverAuthError(err) {
+		t.Error("isHardcoverAuthError() = false, want true")
+	}
+}
+
 func TestHandleBooks_ThinHardcoverData_SupplementedWithOpenLibrary(t *testing.T) {
 	fakeHardcover(t, func(query string, vars map[string]interface{}) (interface{}, int) {
 		switch {
