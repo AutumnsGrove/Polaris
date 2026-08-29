@@ -108,7 +108,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	modelCfg := cfg.ModelByID(requestedModel)
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
-		WithSessionID(threadID) // sticky routing — same provider endpoint across the thread, for cache hits
+		// WithSessionID is a no-op for provider stickiness here: every
+		// model in the registry sets Provider above, and OpenRouter
+		// ignores session_id sticky routing whenever provider.order is
+		// present (see llm.Client's sessionID doc comment). Cache
+		// stability across the thread comes from OpenRouter preferring
+		// Provider[0] while it's healthy, not from this call.
+		WithSessionID(threadID)
 	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
