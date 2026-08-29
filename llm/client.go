@@ -46,13 +46,27 @@ type Client struct {
 	httpClient  *http.Client
 
 	// Provider routing — OpenRouter-specific. Pins requests to a specific
-	// provider (e.g. "xiaomi/fp8") so prompt caching stays consistent —
-	// switching providers for the same model usually means losing the cache.
+	// provider (e.g. "xiaomi/fp8") — or an ordered list of them — so prompt
+	// caching stays consistent — switching providers for the same model
+	// usually means losing the cache. With a single entry this is a hard
+	// pin; with more than one (a primary plus fallback(s), e.g.
+	// models/models.go's DeepSeek entries) OpenRouter keeps preferring
+	// entry 0 as long as it's healthy, so caching stays stable in
+	// practice, but a mid-thread failover to a later entry does lose the
+	// cache for that exchange — see sessionID below for why nothing here
+	// papers over that.
 	provider *ProviderRouting
 
-	// sessionID enables OpenRouter sticky routing — all requests with the
-	// same session_id are pinned to the same provider endpoint, maximizing
-	// prompt cache hits across a thread.
+	// sessionID is sent as OpenRouter's session_id, but per their own
+	// docs it's a no-op whenever `provider` above is set: "Sticky routing
+	// is not used when you specify a manual provider order via
+	// provider.order — in that case, your explicit ordering takes
+	// priority." Every caller in this codebase sets provider, so this
+	// field currently does nothing for cache stickiness — whatever
+	// consistency callers get comes from OpenRouter's own preference for
+	// provider.Order[0], not from this. Kept because a provider-less
+	// caller could still benefit from it, and because dropping it now
+	// would be removing working API surface for no reason.
 	sessionID string
 
 	// reasoning requests OpenRouter's unified reasoning-token stream for
