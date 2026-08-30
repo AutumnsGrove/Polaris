@@ -37,6 +37,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.LastFMAPIKey = "test-key"
 	ctx.TMDBAPIKey = "test-key"
 	ctx.AttachmentData = []byte("pdf bytes")
+	ctx.RequestLocation = func() (string, bool) { return "", false }
 	prompt := ToolsPrompt(ctx)
 
 	lastIdx := -1

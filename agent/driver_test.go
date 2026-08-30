@@ -185,6 +185,56 @@ func TestRun_ToolCallThenAnswer(t *testing.T) {
 	}
 }
 
+// TestRun_AskUserQuestionEndsTurn covers the whole "pause the turn instead
+// of blocking in memory" design: ask_user_question must make Run return
+// immediately after dispatching it — never looping back to the model for
+// a second completion. Only one mock response is queued on purpose; if
+// Run incorrectly called the LLM again, MockClient would run out of
+// responses and this test would fail loudly instead of silently passing.
+func TestRun_AskUserQuestionEndsTurn(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{
+							Name:      "ask_user_question",
+							Arguments: `{"question":"What's your current location?","options":["Share my location"],"wants_location":true}`,
+						},
+					}},
+					PromptTokens: 15, CompletionTokens: 5,
+				},
+			},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "find me a coffee shop")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if mock.CallCount() != 1 {
+		t.Fatalf("CallCount = %d, want 1 (Run must not loop back to the model after ask_user_question)", mock.CallCount())
+	}
+	if result.Answer != "What's your current location?" {
+		t.Errorf("Answer = %q, want the literal question text", result.Answer)
+	}
+	if result.PendingQuestion == nil {
+		t.Fatal("PendingQuestion is nil, want it populated")
+	}
+	if result.PendingQuestion.Question != "What's your current location?" {
+		t.Errorf("PendingQuestion.Question = %q", result.PendingQuestion.Question)
+	}
+	if !result.PendingQuestion.WantsLocation {
+		t.Error("PendingQuestion.WantsLocation = false, want true")
+	}
+	if len(result.PendingQuestion.Options) != 1 || result.PendingQuestion.Options[0] != "Share my location" {
+		t.Errorf("PendingQuestion.Options = %v", result.PendingQuestion.Options)
+	}
+}
+
 func TestRun_ParallelToolCallsDispatchedAsOneBatch(t *testing.T) {
 	// Two independent tool calls in the SAME model turn — the model
 	// batched them (see llm.Client's parallel_tool_calls request field).

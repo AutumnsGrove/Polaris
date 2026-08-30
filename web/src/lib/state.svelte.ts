@@ -5,6 +5,7 @@ import type {
 	ServerEvent,
 	Citation,
 	Card,
+	PendingQuestion,
 	StoredEvent,
 	TimelineItem,
 	FocusMode,
@@ -500,6 +501,7 @@ export class AppState {
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			cards: safeParseJSON<Card>(m.cards),
+			pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
 			id: m.role === 'user' ? m.id : undefined,
@@ -998,6 +1000,7 @@ export class AppState {
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.cards = e.cards;
+				turn.pendingQuestion = e.pending_question;
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
 				this.busy = false;

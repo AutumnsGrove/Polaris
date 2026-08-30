@@ -22,6 +22,16 @@ export interface Card {
 	url: string;
 }
 
+// A clarifying question the model asked instead of answering, ending its
+// turn — see tools/registry.go's PendingQuestion doc comment. Answering
+// it is just sending the next ordinary chat message, not a dedicated
+// response frame.
+export interface PendingQuestion {
+	question: string;
+	options?: string[];
+	wants_location?: boolean;
+}
+
 export type ServerEvent =
 	| { type: 'thinking'; thread_id?: string; content: string }
 	| { type: 'reasoning'; thread_id?: string; content: string }
@@ -55,6 +65,9 @@ export type ServerEvent =
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
 			duration_ms?: number;
+			// Set when this turn ended with ask_user_question instead of a
+			// normal finished answer — see PendingQuestion above.
+			pending_question?: PendingQuestion;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -178,6 +191,10 @@ export interface StoredMessage {
 	// store.Store.SetMessageAttachment. '' on every other message.
 	attachment_filename?: string;
 	attachment_content_type?: string;
+	// JSON-encoded PendingQuestion, set only on an assistant message that
+	// ended its turn via ask_user_question — see
+	// store.Store.SetMessagePendingQuestion. '' on every other message.
+	pending_question?: string;
 	created_at: string;
 }
 
@@ -219,6 +236,12 @@ export interface ChatTurn {
 	timeline?: TimelineItem[];
 	citations?: Citation[];
 	cards?: Card[];
+	// A clarifying question this turn ended with instead of a normal
+	// finished answer — see PendingQuestion above. Rendered as an
+	// interactive card only when this is the thread's current last turn
+	// (see AskUserQuestionCard.svelte); any later message already implies
+	// it's resolved.
+	pendingQuestion?: PendingQuestion;
 	costUsd?: number;
 	streaming?: boolean;
 	// DB message id. Only ever set on 'user' turns — needed to retry/edit

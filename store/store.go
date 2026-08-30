@@ -120,6 +120,13 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- '[]' for user messages and for any assistant message no tool call
 	-- populated cards for.
 	cards TEXT NOT NULL DEFAULT '[]',
+	-- pending_question: JSON-encoded tools.PendingQuestion, set only on an
+	-- assistant message that ended its turn by calling ask_user_question
+	-- instead of finishing normally — see SetMessagePendingQuestion.
+	-- Answering it is just the next ordinary message in the thread, so
+	-- there's no separate "answered" flag: any message after this one
+	-- already implies it's resolved. '' for every other message.
+	pending_question TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -326,6 +333,7 @@ var migrations = []string{
 	// user_version tracking (see applyMigrations); it is not safe to
 	// replay by hand.
 	`INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages`,
+	`ALTER TABLE messages ADD COLUMN pending_question TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -454,8 +462,12 @@ type Message struct {
 	AttachmentFilename    string `json:"attachment_filename,omitempty"`
 	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
-	Cards     string    `json:"cards"`
-	CreatedAt time.Time `json:"created_at"`
+	Cards string `json:"cards"`
+	// PendingQuestion is JSON-encoded *tools.PendingQuestion, set only on
+	// an assistant message that ended its turn via ask_user_question —
+	// see SetMessagePendingQuestion. "" for every other message.
+	PendingQuestion string    `json:"pending_question,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -601,8 +613,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, pending_question, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, pending_question, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1090,7 +1102,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, cards, created_at
+			attachment_filename, attachment_content_type, cards, pending_question, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -1103,7 +1115,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.PendingQuestion, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
@@ -1127,6 +1139,14 @@ func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
 // citations) are only known once agent.Run has already returned.
 func (s *Store) SetMessageCards(messageID int64, cardsJSON string) error {
 	_, err := s.db.Exec(`UPDATE messages SET cards = ? WHERE id = ?`, cardsJSON, messageID)
+	return err
+}
+
+// SetMessagePendingQuestion records a turn-ending ask_user_question call
+// (see tools.PendingQuestion) after the assistant message was already
+// persisted — same post-hoc-UPDATE shape as SetMessageCards above.
+func (s *Store) SetMessagePendingQuestion(messageID int64, pendingQuestionJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET pending_question = ? WHERE id = ?`, pendingQuestionJSON, messageID)
 	return err
 }
 

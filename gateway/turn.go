@@ -484,6 +484,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	if result.PendingQuestion != nil {
+		if pendingJSON, err := json.Marshal(result.PendingQuestion); err != nil {
+			log.Warn("failed to marshal pending question, message persisted without it", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
+		} else if err := s.db.SetMessagePendingQuestion(assistantMsgID, string(pendingJSON)); err != nil {
+			log.Warn("failed to record pending question", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "recording pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+	}
+
 	// Auto-compact once this thread crosses the configured threshold: the
 	// model summarizes everything covered so far, and future turns build
 	// history from that summary instead of the full raw text. The
@@ -523,14 +533,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}, turnID)
 
 	send(ServerEvent{
-		Type:          "done",
-		ThreadID:      threadID,
-		UserMessageID: userMsgID,
-		Citations:     result.Citations,
-		Cards:         result.Cards,
-		CostUSD:       totalCost,
-		ContextTokens: contextTokens,
-		DurationMs:    durationMs,
+		Type:            "done",
+		ThreadID:        threadID,
+		UserMessageID:   userMsgID,
+		Citations:       result.Citations,
+		Cards:           result.Cards,
+		CostUSD:         totalCost,
+		ContextTokens:   contextTokens,
+		DurationMs:      durationMs,
+		PendingQuestion: result.PendingQuestion,
 	})
 
 	// Follow-up suggestions, Perplexity-style — generated in a detached
@@ -547,7 +558,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// isn't useful. assistantMsgID/storageThreadID are already persisted
 	// at this point, so this only ever does a post-hoc UPDATE, never
 	// blocks the message existing.
-	if ctx.Err() == nil && result.Answer != "" {
+	if ctx.Err() == nil && result.Answer != "" && result.PendingQuestion == nil {
 		go func() {
 			// Same rationale as ws.go's turn goroutine: this runs outside
 			// any call stack net/http recovers, so an unrecovered panic

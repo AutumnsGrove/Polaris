@@ -1,0 +1,20 @@
+name: ask_user_question
+requires: interactive_chat
+description: >-
+  ask the user a single focused clarifying question when a detail you genuinely need is missing —
+  not for trivial or optional clarifications. Calling this ends the turn; the user's next message
+  is the answer.
+api_description: >-
+  Ask the user a single focused clarifying question when you genuinely can't proceed without an
+  answer — most often their location, or which of several likely options they mean. Do not use
+  this for details that are merely nice-to-have; make a reasonable assumption and say what you
+  assumed instead.
+
+  Calling this tool ENDS the turn: your question becomes your reply, and whatever the user sends
+  next is their answer — there is no way to call this more than once in the same turn, so ask the
+  single most important question first.
+
+  Include `options` (up to 6 short strings) when there's a natural finite set of likely answers,
+  e.g. ["Build muscle", "Lose fat", "General health"] — the user can still type something else
+  entirely, options are just a shortcut. Set `wants_location: true` only when the question is
+  specifically about where the user is or wants something near; leave it false otherwise.

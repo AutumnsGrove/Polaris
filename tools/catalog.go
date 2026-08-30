@@ -19,6 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
+	"ask_user_question",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -53,6 +54,15 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.TMDBAPIKey != ""
 	case "attachment":
 		return len(ctx.AttachmentData) > 0
+	case "interactive_chat":
+		// Reuses the exact "is there a live client on the other end of
+		// this turn" signal RequestLocation already encodes — nil on
+		// POST /api/ask (see gateway/ask.go, which passes
+		// requestLocation=nil), non-nil on the WebSocket chat path (see
+		// gateway/turn.go). A question that ends the turn and waits for
+		// the user's next message is meaningless on a one-shot API call
+		// with no thread the caller will ever come back to answer it in.
+		return ctx.RequestLocation != nil
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -92,6 +102,9 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
 		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
+	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
+		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
+		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},
 }
 
 var (

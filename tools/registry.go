@@ -205,6 +205,44 @@ type Context struct {
 	// dispatch within one turn).
 	cardsMu sync.Mutex
 	Cards   []Card
+
+	// PendingQuestion, once set, tells agent.Run to end the turn right
+	// after this batch of tool calls instead of looping back to the
+	// model — see ask_user_question.go. Unlike Citations/Cards this is
+	// first-write-wins, not an accumulator: the tool's own description
+	// tells the model to ask one focused question per turn, and only the
+	// first call in a batch should ever actually end it. pendingQuestionMu
+	// guards it for the same concurrent-dispatch reason Citations/Cards
+	// need their own mutexes.
+	pendingQuestionMu sync.Mutex
+	PendingQuestion   *PendingQuestion
+}
+
+// PendingQuestion is a clarifying question the model asked instead of
+// answering — see ask_user_question.go. Persisted as part of the
+// assistant message that asked it (store.Message.PendingQuestion) so it
+// survives reloads and restarts: answering it is just sending the next
+// ordinary chat message in the thread, not a live round trip, so there's
+// nothing else to keep alive in memory.
+type PendingQuestion struct {
+	Question      string   `json:"question"`
+	Options       []string `json:"options,omitempty"`
+	WantsLocation bool     `json:"wants_location,omitempty"`
+}
+
+// SetPendingQuestion records the turn-ending question, if none has been
+// recorded yet this turn. First-write-wins rather than overwriting or
+// erroring on a second call — dispatchToolCallsConcurrently could in
+// principle run two ask_user_question calls from the same batch in
+// parallel (the model was told not to, but nothing enforces that), and
+// silently keeping whichever one landed first is a safer failure mode
+// than a data race or a nondeterministic "last one wins".
+func (c *Context) SetPendingQuestion(q *PendingQuestion) {
+	c.pendingQuestionMu.Lock()
+	defer c.pendingQuestionMu.Unlock()
+	if c.PendingQuestion == nil {
+		c.PendingQuestion = q
+	}
 }
 
 // ResolveLocation is the one place nearby_search and weather figure out
@@ -368,6 +406,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
+		"ask_user_question": askUserQuestionDef,
 	}
 }
 

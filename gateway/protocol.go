@@ -114,6 +114,13 @@ type ClientMessage struct {
 //	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
 //	                  and was auto-summarized; content is the summary, shown as a collapsible
 //	                  timeline note like a tool call, not a normal answer
+//	"done" (continued)  — PendingQuestion, when non-nil, means this turn ended with
+//	                  ask_user_question instead of a normal finished answer (see
+//	                  tools.PendingQuestion, store.Message.PendingQuestion) — the frontend should
+//	                  render its interactive controls under this turn's answer bubble instead of
+//	                  (or in addition to) treating it as a fully-finished reply. Answering it is
+//	                  just sending the next ordinary "message" — there's no dedicated response
+//	                  frame for this.
 //	"location_request" — thread_id only: nearby_search or weather wants a live GPS fix for this
 //	                  turn and none of the cheaper sources (query text, cached cookie) had one —
 //	                  see tools.Context.RequestLocation. The frontend should call
@@ -162,4 +169,7 @@ type ServerEvent struct {
 	// always takes measurably more than 0ms, so there's no legitimate zero
 	// value being silently dropped.
 	DurationMs int64 `json:"duration_ms,omitempty"`
+	// PendingQuestion mirrors store.Message.PendingQuestion for the live
+	// "done" event — see the doc comment above.
+	PendingQuestion *tools.PendingQuestion `json:"pending_question,omitempty"`
 }

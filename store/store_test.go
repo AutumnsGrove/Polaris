@@ -766,9 +766,23 @@ func TestSearchMessages_BackfillsExistingMessages(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', ?, ?)`, msgID, oldContent); err != nil {
 		t.Fatalf("clearing messages_fts: %v", err)
 	}
+	// Rewind to just before the backfill migration specifically — found by
+	// content, not assumed to be the last entry in the slice, since later
+	// migrations get appended after it over time (see migrations' own
+	// doc comment: append-only, never reordered).
+	backfillIdx := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "messages_fts") && strings.Contains(m, "INSERT") {
+			backfillIdx = i
+			break
+		}
+	}
+	if backfillIdx == -1 {
+		t.Fatal("couldn't find the messages_fts backfill migration in the migrations slice")
+	}
 	// PRAGMA doesn't accept bound parameters — same reasoning as
 	// applyMigrations' own `PRAGMA user_version = %d` write.
-	if _, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-1)); err != nil {
+	if _, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, backfillIdx)); err != nil {
 		t.Fatalf("rewinding user_version: %v", err)
 	}
 

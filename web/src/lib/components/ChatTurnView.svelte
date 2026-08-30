@@ -3,6 +3,7 @@
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
+	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
@@ -181,6 +182,10 @@
 				<div class="prose">{@html renderedHtml}</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
+			{/if}
+
+			{#if turn.pendingQuestion}
+				<AskUserQuestionCard {turn} isLast={index === appState.turns.length - 1} />
 			{/if}
 
 			{#if turn.cards?.length}

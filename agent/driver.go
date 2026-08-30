@@ -243,6 +243,13 @@ type Result struct {
 	// context this thread now occupies, since it reflects every message,
 	// tool result, and reasoning pass accumulated through the whole loop.
 	ContextTokens int
+	// PendingQuestion is non-nil when the turn ended early because
+	// ask_user_question was called — Answer holds the literal question
+	// text (so it reads naturally as this turn's assistant reply), and
+	// the caller (gateway.handleTurn) should persist this alongside the
+	// message and skip anything that assumes the turn produced a normal
+	// finished answer (follow-up suggestions, most notably).
+	PendingQuestion *tools.PendingQuestion
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -350,6 +357,24 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		for _, r := range results {
 			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
 		}
+
+		// ask_user_question was called — end the turn now instead of
+		// looping back to the model. See tools.PendingQuestion's doc
+		// comment for why this is a clean early return rather than a
+		// blocking wait: the answer is just whatever message the user
+		// sends next, handled by a brand-new Run call on the next turn,
+		// not by anything still alive in this goroutine.
+		if ctx.PendingQuestion != nil {
+			return &Result{
+				Answer:          ctx.PendingQuestion.Question,
+				Citations:       ctx.Citations,
+				Cards:           ctx.Cards,
+				CostUSD:         totalCost,
+				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
+				PendingQuestion: ctx.PendingQuestion,
+			}, nil
+		}
+
 		for _, r := range results {
 			if isResearchTool(r.call.Function.Name) {
 				for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
