@@ -416,6 +416,86 @@ func TestRun_MaxTurnsExhausted_ForcesWrapUp(t *testing.T) {
 	}
 }
 
+func TestRun_EmptyContentNoToolCallsRetriesInsteadOfReturningEmpty(t *testing.T) {
+	// A turn with no tool calls and no content used to be trusted as a
+	// valid final answer outright — the exact shape a model produces when
+	// it burns its whole response on private reasoning (visible only via
+	// onReasoning) without ever committing to a tool call or answer text.
+	// Confirms Run nudges and retries instead of returning that as Result.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: ""}},
+			{Resp: &llm.ChatResponse{Content: "Real answer"}, Chunks: []string{"Real answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "a question the model reasons about but never answers")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "Real answer" {
+		t.Errorf("Answer = %q, want %q (the retry's answer)", result.Answer, "Real answer")
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("CallCount = %d, want 2 (empty turn + retry)", mock.CallCount())
+	}
+
+	retryMsgs := mock.Calls[1].Messages
+	last := retryMsgs[len(retryMsgs)-1]
+	if !strings.Contains(last.Content, "no answer and no tool call") {
+		t.Errorf("last message before retry = %q, want the empty-answer nudge", last.Content)
+	}
+
+	foundNudge := false
+	for _, e := range rec.events {
+		if e.eventType == "agent_nudge" {
+			if args, ok := e.payload["args"].(map[string]interface{}); ok && args["kind"] == "empty_answer" {
+				foundNudge = true
+			}
+		}
+	}
+	if !foundNudge {
+		t.Error("expected an agent_nudge event with kind=empty_answer")
+	}
+}
+
+func TestRun_EmptyWrapUpStaysEmptyForCallerToHandle(t *testing.T) {
+	// The forced wrap-up (last LLM call Run makes, after maxTurns runs
+	// out) deliberately does NOT paper over an empty answerText the way
+	// the main loop's mid-turn retry does above — there's no budget left
+	// to retry, and callers already have their own contract for a
+	// genuinely empty Result.Answer (gateway/turn.go's handleTurn checks
+	// for it and surfaces a proper "error" event instead of persisting a
+	// blank assistant turn — see TestWebSocket_EmptyAnswerSurfacesAsErrorEvent
+	// in gateway/ws_test.go). Silently rewriting it into placeholder text
+	// here would defeat that downstream check for every caller.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"still working"}`},
+					}},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: ""}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 1)
+
+	result, err := Run(context.Background(), ctx, nil, "a hard multi-step question")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "" {
+		t.Errorf("Answer = %q, want empty — the wrap-up must not fabricate placeholder text", result.Answer)
+	}
+}
+
 func TestRun_PseudoToolCallDetectedAndDispatched(t *testing.T) {
 	// A provider that falls back to writing the tool call as literal XML
 	// in the content field instead of populating ToolCalls (see

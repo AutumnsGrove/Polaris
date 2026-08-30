@@ -39,6 +39,7 @@ type Set struct {
 		FocusModes              map[string]string `yaml:"focus_modes"`
 		ResearchCheckIn         string            `yaml:"research_check_in"`
 		StaleStreakWarning      string            `yaml:"stale_streak_warning"`
+		EmptyAnswerRetry        string            `yaml:"empty_answer_retry"`
 	} `yaml:"agent"`
 
 	Turn struct {
@@ -128,6 +129,12 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"with what you've gathered, or try a meaningfully different angle (a different tool, a " +
 		"very different search term, or a specific named source) — not a reworded version of a " +
 		"query you've already tried."
+
+	d.Agent.EmptyAnswerRetry = "Your last turn produced no answer and no tool call — you likely spent your " +
+		"whole response reasoning privately without ever committing to output. Stop reasoning silently: " +
+		"either call a tool now if you genuinely need more information, or write out your answer directly " +
+		"starting with \"Explanation:\" right now. Do not repeat the same private reasoning again without " +
+		"producing visible output."
 
 	d.Turn.SuggestionsSystem = "You write short follow-up-question suggestions for a Q&A search app's " +
 		"UI. You never continue, restate, or add commentary to the previous answer — your only output " +
@@ -257,6 +264,9 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.StaleStreakWarning == "" {
 		s.Agent.StaleStreakWarning = defaults.Agent.StaleStreakWarning
+	}
+	if s.Agent.EmptyAnswerRetry == "" {
+		s.Agent.EmptyAnswerRetry = defaults.Agent.EmptyAnswerRetry
 	}
 	if s.Agent.FocusModes == nil {
 		s.Agent.FocusModes = defaults.Agent.FocusModes
