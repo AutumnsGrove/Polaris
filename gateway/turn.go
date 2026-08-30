@@ -557,8 +557,14 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// suggesting where to go next from an answer the user just cut off
 	// isn't useful. assistantMsgID/storageThreadID are already persisted
 	// at this point, so this only ever does a post-hoc UPDATE, never
-	// blocks the message existing.
-	if ctx.Err() == nil && result.Answer != "" && result.PendingQuestion == nil {
+	// blocks the message existing. Also skipped whenever the answer
+	// itself already ends in a question — not just the ask_user_question
+	// case above, but any ordinary turn where the model asks its own
+	// follow-up in plain prose instead of calling the tool. A row of
+	// "questions you could ask next" directly under an assistant message
+	// that's itself a question reads as more questions piling up, not
+	// answer shortcuts — a real, confusing collision caught live.
+	if ctx.Err() == nil && result.Answer != "" && result.PendingQuestion == nil && !answerEndsInQuestion(result.Answer) {
 		go func() {
 			// Same rationale as ws.go's turn goroutine: this runs outside
 			// any call stack net/http recovers, so an unrecovered panic
@@ -640,6 +646,19 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 // (requires the punctuation/space right after digits) so it never eats a
 // genuine leading number in a question, e.g. "2024 election results?".
 var suggestionListPrefix = regexp.MustCompile(`^(?:[-*•]\s+|\d+[.)]\s+)`)
+
+// answerEndsInQuestion reports whether an assistant answer's last
+// non-blank line ends in a question mark — the model asking its own
+// follow-up in plain prose rather than via ask_user_question. Checked
+// against handleTurn's suggestions gate, not just the tool-call case:
+// a "what to ask next" chip row directly under a message that's itself
+// a question reads as more questions piling up, not answer shortcuts.
+// Trailing markdown/whitespace (a closing bold marker, a stray newline)
+// is trimmed first so it doesn't mask the real last character.
+func answerEndsInQuestion(answer string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(answer), "*_ \t\n")
+	return strings.HasSuffix(trimmed, "?") || strings.HasSuffix(trimmed, "？")
+}
 
 // maxSuggestionLen caps how long a parsed line can be and still count as
 // a follow-up question — a real one reads like "Which company has built

@@ -365,6 +365,14 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// sends next, handled by a brand-new Run call on the next turn,
 		// not by anything still alive in this goroutine.
 		if ctx.PendingQuestion != nil {
+			// The question text never streamed as "token" chunks the way a
+			// normal final answer does — it came from the tool call's
+			// arguments (a different part of the SSE stream), not a content
+			// completion onChunk ever saw. Without this, a live session's
+			// turn.content stays empty until the next reload re-reads it
+			// from the persisted message instead — the question would be
+			// invisible in the very session that just asked it.
+			ctx.Emit("token", map[string]interface{}{"content": ctx.PendingQuestion.Question})
 			return &Result{
 				Answer:          ctx.PendingQuestion.Question,
 				Citations:       ctx.Citations,

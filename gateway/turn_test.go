@@ -161,6 +161,26 @@ func fakeLLMServer(t *testing.T, systemPrompt, answer string) *httptest.Server {
 	return srv
 }
 
+func TestAnswerEndsInQuestion(t *testing.T) {
+	cases := []struct {
+		answer string
+		want   bool
+	}{
+		{"Here's a muscle-building routine.", false},
+		{"What are you actually training for?", true},
+		{"What are you actually training for?\n", true},
+		{"**What are you actually training for?**", true},
+		{"Does the love of the craft feel most alive in the process itself, or in the result?", true},
+		{"是的，这样可以吗？", true},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := answerEndsInQuestion(c.answer); got != c.want {
+			t.Errorf("answerEndsInQuestion(%q) = %v, want %v", c.answer, got, c.want)
+		}
+	}
+}
+
 func TestGenerateSuggestions(t *testing.T) {
 	srv := fakeLLMServer(t, "follow-up questions", "What is X?\nWhat is Y?\n1. What is Z?")
 	cfg, err := config.Load(writeTestConfig(t, t.TempDir(), srv.URL), models.Registry)

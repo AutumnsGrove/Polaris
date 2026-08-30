@@ -233,6 +233,14 @@ func TestRun_AskUserQuestionEndsTurn(t *testing.T) {
 	if len(result.PendingQuestion.Options) != 1 || result.PendingQuestion.Options[0] != "Share my location" {
 		t.Errorf("PendingQuestion.Options = %v", result.PendingQuestion.Options)
 	}
+	// The question text must also reach the frontend as a "token" event —
+	// a tool call's arguments never flow through the normal content-chunk
+	// onChunk path, so without an explicit emit here a live session's
+	// turn.content stays empty until the next reload re-reads it from the
+	// persisted message instead (a real bug caught by manual testing).
+	if got := rec.tokenContent(); got != "What's your current location?" {
+		t.Errorf("streamed token content = %q, want the question text", got)
+	}
 }
 
 func TestRun_ParallelToolCallsDispatchedAsOneBatch(t *testing.T) {
