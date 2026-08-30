@@ -158,6 +158,13 @@ app" is one file you can scp around if you ever needed to.
 - Required for the `movies` tool: a free [TMDB API key](https://www.themoviedb.org/settings/api)
   (self-service signup, no approval wait) — like `lastfm`, there's no unauthenticated fallback, so
   `movies` is unavailable without one
+- Optional: a local [Ollama](https://ollama.com) instance serving `nomic-embed-text`, for a
+  research-loop signal that nudges the model when consecutive `web_search` queries embed as
+  near-duplicates of each other — catches a rephrasing loop that a plain "found nothing new" check
+  can miss. Without it, that one signal is just disabled; everything else works the same. Under
+  Docker, this needs Ollama rebound beyond `127.0.0.1` and a `docker-compose.yml` route to the
+  host — see `compose/polaris/config.yaml.example`'s `ollama` section for the full tradeoff before
+  turning it on
 
 ### SearXNG's JSON API
 
@@ -392,6 +399,7 @@ polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
 polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
 polaris backup list        # see Backups above
+polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
 ```
 
 Every command auto-detects Docker vs. bare-metal from `docker-compose.yml`'s presence, no flag
