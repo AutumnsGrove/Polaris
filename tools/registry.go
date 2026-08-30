@@ -95,6 +95,16 @@ type Context struct {
 	ParallelUsageThisMonth func() (int, error)
 	IncrementParallelUsage func() error
 
+	// PinnedProvider, when non-empty, forces web_search to a single
+	// provider on every call instead of the normal SearXNG-first,
+	// fallback-on-degraded chain — see handleWebSearch in
+	// tools/web_search.go. Only "brave" is implemented, for the benchmark
+	// harness (cmd/benchmark.go): a reproducible run needs every result to
+	// come from the same index across the whole run, not whichever
+	// provider happened to answer that particular call. Empty (the
+	// default) means normal behavior for every other caller.
+	PinnedProvider string
+
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
 	// unauthenticated" — GitHub's REST API works fine without one, just

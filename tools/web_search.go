@@ -94,6 +94,10 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		"args": callArgs,
 	})
 
+	if ctx.PinnedProvider == "brave" {
+		return handlePinnedBraveSearch(ctx, args.Query)
+	}
+
 	if ctx.SearXNG == nil {
 		result := "error: web search is not configured"
 		log.Warn("web_search called with no SearXNG client configured", "query", args.Query)
@@ -134,7 +138,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveFallback(ctx, args.Query); ok {
+			} else if formatted, ok := braveFallback(ctx, args.Query, "Brave (SearXNG degraded)"); ok {
 				return formatted
 			}
 		}
@@ -230,6 +234,29 @@ func formatSearchResults(ctx *Context, provider, providerKey, query, category st
 	return formatted
 }
 
+// handlePinnedBraveSearch is web_search's entire implementation when
+// Context.PinnedProvider == "brave" — every call goes straight to Brave,
+// bypassing SearXNG entirely and skipping brave.MonthlyCap/
+// BraveUsageThisMonth's cap check (a pinned benchmark run is a
+// deliberate, known-cost decision, not the accidental-overspend path
+// that cap guards against elsewhere). IncrementBraveUsage is still
+// called when set, purely so the run's own usage is visible to whatever
+// isolated store the caller wired it against — see cmd/benchmark.go.
+func handlePinnedBraveSearch(ctx *Context, query string) string {
+	if ctx.Brave == nil {
+		result := "error: web search is not configured (PinnedProvider=brave but no Brave client set)"
+		log.Warn("web_search: PinnedProvider=brave with no Brave client", "query", query)
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		return result
+	}
+	if formatted, ok := braveFallback(ctx, query, "Brave (pinned)"); ok {
+		return formatted
+	}
+	result := "no results found"
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+	return result
+}
+
 // braveFallback tries Brave's Search API once SearXNG has confirmed
 // itself degraded and the caller has already checked the monthly usage
 // cap (see handleWebSearch). Only increments the persisted usage counter
@@ -239,8 +266,11 @@ func formatSearchResults(ctx *Context, provider, providerKey, query, category st
 // unlike SearXNG's own multi-page support, this fallback fires on a
 // per-call basis with no page continuity to preserve, so there's nothing
 // to gain from a deeper offset here. Returns ok=false on any failure so
-// the caller falls through to Parallel instead.
-func braveFallback(ctx *Context, query string) (formatted string, ok bool) {
+// the caller falls through to Parallel instead. label is the
+// human-readable provider string shown in the "[via ...]" transcript
+// line — callers pass a different one depending on why Brave fired
+// (degraded-SearXNG fallback vs. handlePinnedBraveSearch's pinned mode).
+func braveFallback(ctx *Context, query, label string) (formatted string, ok bool) {
 	resp, err := ctx.Brave.Search(ctx.Ctx, query, 0)
 	if err != nil {
 		log.Warn("web_search: brave fallback failed", "query", query, "err", err)
@@ -263,7 +293,7 @@ func braveFallback(ctx *Context, query string) (formatted string, ok bool) {
 		}
 		results = append(results, searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content})
 	}
-	return formatSearchResults(ctx, "Brave (SearXNG degraded)", "brave", query, "", 1, results), true
+	return formatSearchResults(ctx, label, "brave", query, "", 1, results), true
 }
 
 // parallelFallback tries Parallel's Search API once SearXNG has confirmed
