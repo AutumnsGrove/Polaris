@@ -57,6 +57,31 @@ docker_cmd() {
 	fi
 }
 
+# ask_yes_no prompts $1 and returns 0 for yes, 1 for no (including every
+# non-interactive case) — the only interactive prompt anywhere in this
+# script, so it earns its own helper rather than being inlined once.
+# Reads from /dev/tty explicitly, not plain stdin: this script's primary
+# documented invocation is `curl -fsSL ... | bash`, which feeds the
+# script's own bytes into stdin — a bare `read -p` there either hangs or
+# silently reads empty input, never the actual person running it. /dev/tty
+# is the real controlling terminal even under that pipe, as long as one
+# is actually attached (an interactive shell session); falls through to
+# the default "no" when it isn't (CI, cron, any other genuinely
+# non-interactive context) rather than hanging forever waiting on input
+# that will never come.
+ask_yes_no() {
+	local prompt="$1"
+	if [ ! -r /dev/tty ]; then
+		return 1
+	fi
+	local reply
+	read -r -p "    $prompt [y/N] " reply 2>/dev/null </dev/tty || return 1
+	case "$reply" in
+		[yY] | [yY][eE][sS]) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
 # with_timeout runs a command bounded to $1 seconds if the `timeout`
 # binary is available, otherwise runs it unbounded — `timeout` is GNU
 # coreutils, present by default on Linux but NOT on stock macOS (unlike
@@ -292,6 +317,9 @@ fi
 
 # ---- 5. config -------------------------------------------------------------
 
+CONFIG_WAS_FRESH=0
+COMPOSE_CONFIG_WAS_FRESH=0
+
 if [ "$INSTALL_MODE" = "bare-metal" ]; then
 	step "Setting up config.yaml"
 
@@ -300,6 +328,7 @@ if [ "$INSTALL_MODE" = "bare-metal" ]; then
 	else
 		cp config.yaml.example config.yaml
 		info "Copied config.yaml.example to config.yaml."
+		CONFIG_WAS_FRESH=1
 	fi
 else
 	step "Setting up .env and compose/polaris/config.yaml"
@@ -331,6 +360,7 @@ else
 	else
 		cp compose/polaris/config.yaml.example compose/polaris/config.yaml
 		info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
+		COMPOSE_CONFIG_WAS_FRESH=1
 	fi
 
 	# 777, not the default 755: this is bind-mounted into the polaris
@@ -359,6 +389,131 @@ else
 	if [ -f domain_rankings.yaml ]; then
 		chmod 666 domain_rankings.yaml
 	fi
+fi
+
+# ---- 5b. optional: Ollama for the query-similarity research signal --------
+#
+# Entirely optional — nudges the model when consecutive web_search
+# queries embed as near-duplicates of each other, catching a rephrasing
+# loop that a plain "found nothing new" citation check can miss (see
+# README's Requirements section and agent/query_similarity.go). Declining
+# just leaves that one signal disabled; nothing else is affected. Both
+# example config files default to assuming Ollama IS set up (see their
+# own ollama.base_url comments) — this step blanks that back out below
+# when the answer is no, rather than leaving a dangling URL that fails
+# every turn.
+
+step "Optional: Ollama for the query-similarity research signal"
+OLLAMA_BASE_URL=""
+if command -v ollama >/dev/null 2>&1; then
+	info "Ollama is already installed — leaving it as-is (not re-configuring it)."
+	OLLAMA_BASE_URL="http://localhost:11434"
+else
+	info "Nudges the model when it repeats a search that isn't working — see"
+	info "README's Requirements section for the full tradeoff. Needs ~300MB RAM"
+	info "while active, so it's worth a firm no on very memory-constrained hardware."
+	if ask_yes_no "Install Ollama + nomic-embed-text for this?"; then
+		if [ "$OS" = "Darwin" ]; then
+			if command -v brew >/dev/null 2>&1; then
+				brew install ollama
+				brew services start ollama
+				OLLAMA_BASE_URL="http://localhost:11434"
+			else
+				warn "Homebrew isn't installed, so Ollama can't be installed automatically."
+				warn "Install it yourself: https://ollama.com/download"
+				warn "Then re-run this script, or add ollama.base_url to config.yaml by hand."
+			fi
+		else
+			info "Installing Ollama via its official install script (needs sudo)."
+			curl -fsSL https://ollama.com/install.sh | sh
+			OLLAMA_BASE_URL="http://localhost:11434"
+		fi
+	else
+		info "Skipping — this signal will just be disabled, nothing else is affected."
+	fi
+fi
+
+if [ -n "$OLLAMA_BASE_URL" ]; then
+	# Give the service a moment to actually come up before pulling — both
+	# install paths above start it, but not synchronously enough to
+	# guarantee `ollama pull` won't race a not-yet-listening server.
+	for _ in $(seq 1 15); do
+		curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+		sleep 1
+	done
+	if curl -fsS http://127.0.0.1:11434/api/tags 2>/dev/null | grep -q nomic-embed-text; then
+		info "nomic-embed-text is already pulled."
+	else
+		info "Pulling nomic-embed-text (small, ~274MB)…"
+		# Soft-fail deliberately: Ollama itself is already installed by
+		# this point, so a transient pull failure (network blip, disk
+		# space) shouldn't abort an otherwise-successful Polaris install
+		# under this script's `set -e` — same reasoning as with_timeout's
+		# git-clone handling above. config.yaml still ends up pointing at
+		# Ollama; the model just needs a manual `ollama pull
+		# nomic-embed-text` before the signal actually works.
+		if ! ollama pull nomic-embed-text; then
+			warn "Pulling nomic-embed-text failed — Ollama itself is installed, but"
+			warn "the query-similarity signal won't work until you run this by hand:"
+			warn "  ollama pull nomic-embed-text"
+		fi
+	fi
+
+	if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
+		# Docker on Linux specifically needs Ollama reachable from the
+		# container, not just localhost — its default 127.0.0.1-only bind
+		# REFUSES a connection arriving via the Docker bridge gateway
+		# (confirmed live: "connection refused", not just slow — see
+		# docker-compose.yml's extra_hosts comment). A systemd drop-in
+		# (not editing Ollama's own unit file directly, which its
+		# installer manages and could overwrite on update) survives
+		# Ollama's own updates.
+		warn "Docker on Linux needs Ollama to accept non-localhost connections to"
+		warn "be reachable from the container. This widens Ollama's reach to your"
+		warn "whole LAN too, since it has no built-in auth — only proceed if"
+		warn "that's fine on this network."
+		if ask_yes_no "Rebind Ollama to 0.0.0.0 so the Polaris container can reach it?"; then
+			sudo mkdir -p /etc/systemd/system/ollama.service.d
+			printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0:11434"\n' |
+				sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null
+			sudo systemctl daemon-reload
+			sudo systemctl restart ollama
+			info "Ollama now listens on 0.0.0.0:11434."
+			OLLAMA_BASE_URL="http://host.docker.internal:11434"
+		else
+			info "Leaving Ollama on localhost — the query-similarity signal stays"
+			info "disabled under Docker until this is revisited."
+			OLLAMA_BASE_URL=""
+		fi
+	elif [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Darwin" ]; then
+		# Docker Desktop's host.docker.internal is a userland proxy that
+		# reaches loopback-bound services fine — unlike Linux Docker
+		# Engine's real bridge-gateway routing, no rebind needed here.
+		OLLAMA_BASE_URL="http://host.docker.internal:11434"
+	fi
+fi
+
+# Only touch a config file this run FRESHLY created (see step 5 above) —
+# a pre-existing config.yaml/compose config might carry the operator's
+# own edits, and re-running this script must never clobber those, same
+# as every other config step here leaves an existing file alone.
+if [ "$INSTALL_MODE" = "bare-metal" ] && [ "$CONFIG_WAS_FRESH" = 1 ] && [ -z "$OLLAMA_BASE_URL" ]; then
+	if [ "$OS" = "Darwin" ]; then
+		sed -i '' 's|base_url: "http://localhost:11434"|base_url: ""|' config.yaml
+	else
+		sed -i 's|base_url: "http://localhost:11434"|base_url: ""|' config.yaml
+	fi
+elif [ "$INSTALL_MODE" = "docker" ] && [ "$COMPOSE_CONFIG_WAS_FRESH" = 1 ]; then
+	if [ -z "$OLLAMA_BASE_URL" ]; then
+		if [ "$OS" = "Darwin" ]; then
+			sed -i '' 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
+		else
+			sed -i 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
+		fi
+	fi
+	# else: OLLAMA_BASE_URL already equals the example's own default
+	# ("http://host.docker.internal:11434") in every success path above,
+	# so there's nothing to write — the copied file is already correct.
 fi
 
 # ---- 6. host update watcher (docker mode, Linux only) ---------------------
