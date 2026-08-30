@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"polaris/brave"
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/parallel"
@@ -74,6 +75,14 @@ type Context struct {
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
+
+	// Embed is a local Ollama client used only by agent.Run's
+	// query-similarity stale-search signal (see agent/query_similarity.go)
+	// — nil disables that one signal, same optional-dependency shape as
+	// Brave/Parallel/Tavily above. Never used for anything web_search
+	// itself does; the tool package only carries it because Context is
+	// where agent.Run reaches for every per-turn dependency.
+	Embed *embed.Client
 
 	// BraveUsageThisMonth/IncrementBraveUsage back the monthly cap on
 	// Brave calls (store.Store's api_usage table), same shape and same

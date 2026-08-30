@@ -15,6 +15,7 @@ import (
 	"polaris/agent"
 	"polaris/brave"
 	"polaris/config"
+	"polaris/embed"
 	"polaris/gateway"
 	"polaris/llm"
 	"polaris/models"
@@ -79,6 +80,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	tavilyClient := tavily.NewClient(cfg.Tavily.APIKey)
 	braveClient := brave.NewClient(cfg.Brave.APIKey)
 	parallelClient := parallel.NewClient(cfg.Parallel.APIKey)
+	embedClient := embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel)
 
 	// Opened even for this one-shot CLI command specifically so
 	// web_search's Brave/Parallel monthly-usage caps (see
@@ -127,6 +129,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		Tavily:          tavilyClient,
 		Brave:           braveClient,
 		Parallel:        parallelClient,
+		Embed:           embedClient,
 		GitHubToken:     cfg.GitHub.Token,
 		LastFMAPIKey:    cfg.LastFM.APIKey,
 		HardcoverAPIKey: cfg.Hardcover.APIKey,

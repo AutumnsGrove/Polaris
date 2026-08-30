@@ -14,6 +14,7 @@ import (
 	"polaris/benchmark"
 	"polaris/brave"
 	"polaris/config"
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/models"
 	"polaris/store"
@@ -91,6 +92,12 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("brave.api_key is not set in %s — the benchmark pins search to Brave, so it's a hard requirement", configPath)
 	}
 	braveClient := brave.NewClient(cfg.Brave.APIKey)
+	// nil (feature disabled) unless ollama.base_url is set in config.yaml —
+	// this is exactly the harness meant to validate/tune
+	// querySimilarityThreshold/querySimilarityStreakThreshold (see
+	// agent/query_similarity.go) against real BrowseComp runs before
+	// trusting them as tightly as the citation-based signals.
+	embedClient := embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel)
 
 	// Deliberately NOT cfg.Database.Path — see the command's Long
 	// description. A separate DB file means gateway/stats.go's
@@ -136,6 +143,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			Ctx:                 context.Background(),
 			Brave:               braveClient,
 			PinnedProvider:      "brave",
+			Embed:               embedClient,
 			LLM:                 client,
 			MaxTurns:            cfg.MaxAgentTurns,
 			Emit:                func(string, map[string]interface{}) {},

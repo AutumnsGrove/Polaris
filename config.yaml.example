@@ -32,6 +32,10 @@ brave:
 parallel:
   api_key: "${PARALLEL_API_KEY}"   # optional — web_search's fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), tried after Brave, before Tavily. Free tier: 5,000 searches/month, but the account has a card on file — see store.Store's api_usage table, which enforces that cap in code rather than trusting the free tier not to bill overage. https://parallel.ai
 
+ollama:
+  base_url: "http://localhost:11434"   # optional — empty disables agent.Run's query-similarity stale-search signal (agent/query_similarity.go) only, nothing else. Point at a LOCAL Ollama instance serving embed_model, never a shared/remote one — see config.Config's Ollama field doc comment.
+  embed_model: "nomic-embed-text"   # defaults to this if left empty
+
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens
 

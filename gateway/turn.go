@@ -338,6 +338,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Parallel:               s.parallel,
 		ParallelUsageThisMonth: func() (int, error) { return s.db.GetAPIUsage("parallel") },
 		IncrementParallelUsage: func() error { _, err := s.db.IncrementAPIUsage("parallel"); return err },
+		Embed:                  s.embed,
 		GitHubToken:            cfg.GitHub.Token,
 		LastFMAPIKey:           cfg.LastFM.APIKey,
 		HardcoverAPIKey:        cfg.Hardcover.APIKey,

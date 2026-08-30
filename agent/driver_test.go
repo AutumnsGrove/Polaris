@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/llm/llmtest"
 	"polaris/search"
@@ -493,6 +494,55 @@ func TestRun_EmptyWrapUpStaysEmptyForCallerToHandle(t *testing.T) {
 	}
 	if result.Answer != "" {
 		t.Errorf("Answer = %q, want empty — the wrap-up must not fabricate placeholder text", result.Answer)
+	}
+}
+
+func TestRun_InjectsQuerySimilarityWarningAfterRepeatedNearDuplicateQueries(t *testing.T) {
+	// A fake Ollama server that always returns the same embedding
+	// regardless of the query text — this test is about the tracking/
+	// threshold wiring in query_similarity.go, not about whether
+	// nomic-embed-text itself judges two strings similar, so pinning the
+	// embedding removes that variable and makes every consecutive pair
+	// deterministically identical (cosine similarity 1.0).
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"embedding": []float32{0.9, 0.1, 0.1}})
+	}))
+	defer embedSrv.Close()
+
+	webSearchResp := func(id, query string) *llm.ChatResponse {
+		return &llm.ChatResponse{ToolCalls: []llm.ToolCall{{
+			ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "web_search", Arguments: fmt.Sprintf(`{"query":%q}`, query)},
+		}}}
+	}
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: webSearchResp("1", "cat facts")},
+			{Resp: webSearchResp("2", "cat facts info")},
+			{Resp: webSearchResp("3", "facts about cats")},
+			{Resp: &llm.ChatResponse{Content: "Done"}, Chunks: []string{"Done"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 10)
+	ctx.Embed = embed.NewClient(embedSrv.URL, "")
+
+	if _, err := Run(context.Background(), ctx, nil, "tell me about cats"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// After the 2nd consecutive near-duplicate query (querySimilarityStreakThreshold),
+	// the very next LLM call must have been warned about it.
+	msgs := mock.Calls[3].Messages
+	found := false
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, "semantically almost identical") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("messages before call 3 = %+v, want a query-similarity warning", msgs)
 	}
 }
 

@@ -130,6 +130,23 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"tmdb"`
 
+	Ollama struct {
+		// BaseURL points at a local Ollama instance serving EmbedModel —
+		// used only for agent.Run's query-similarity stale-search signal
+		// (a third check alongside researchCheckInInterval/staleStreakThreshold,
+		// see agent/query_similarity.go), never for chat completions.
+		// Empty disables the signal entirely rather than failing turns —
+		// same "optional dependency, degrade don't break" shape as
+		// Foursquare/Tavily above. Each deployment talks to its OWN local
+		// Ollama (bare-metal: http://localhost:11434; Docker: the host's
+		// Ollama via host.docker.internal, since Ollama itself isn't
+		// containerized) — never a shared/remote instance, so there's no
+		// cross-host reachability to configure.
+		BaseURL string `yaml:"base_url"`
+		// EmbedModel defaults to "nomic-embed-text" (see NewClient) if empty.
+		EmbedModel string `yaml:"embed_model"`
+	} `yaml:"ollama"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

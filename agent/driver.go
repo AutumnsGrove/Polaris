@@ -281,6 +281,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	researchCalls := 0
 	lastCitationCount := 0
 	staleStreak := 0
+	queryTracker := searchQueryTracker{}
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
@@ -314,6 +315,13 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 					if isResearchTool(pc.name) {
 						for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+						}
+					}
+					if pc.name == "web_search" {
+						if q := extractSearchQuery(pc.argsJSON); q != "" {
+							if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+								messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+							}
 						}
 					}
 				}
@@ -370,6 +378,13 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			if isResearchTool(r.call.Function.Name) {
 				for _, nudge := range trackResearchCall(ctx, &researchCalls, &lastCitationCount, &staleStreak, checkInInterval, staleThreshold) {
 					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+				}
+			}
+			if r.call.Function.Name == "web_search" {
+				if q := extractSearchQuery(r.call.Function.Arguments); q != "" {
+					if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+						messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+					}
 				}
 			}
 		}

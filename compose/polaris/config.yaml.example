@@ -39,6 +39,17 @@ brave:
 parallel:
   api_key: "${PARALLEL_API_KEY}"
 
+ollama:
+  # Empty by default under Docker: Ollama isn't containerized in this
+  # compose stack, and the container has no route to the host yet (no
+  # extra_hosts entry in docker-compose.yml) — set base_url only after
+  # adding one (host.docker.internal:host-gateway on Linux) and
+  # confirming the container can actually reach it. Until then this only
+  # disables agent.Run's query-similarity stale-search signal, nothing
+  # else — see config.Config's Ollama field doc comment.
+  base_url: ""
+  embed_model: "nomic-embed-text"
+
 github:
   token: "${GITHUB_TOKEN}"
 
