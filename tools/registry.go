@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"polaris/brave"
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/parallel"
@@ -75,6 +76,14 @@ type Context struct {
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
 
+	// Embed is a local Ollama client used only by agent.Run's
+	// query-similarity stale-search signal (see agent/query_similarity.go)
+	// — nil disables that one signal, same optional-dependency shape as
+	// Brave/Parallel/Tavily above. Never used for anything web_search
+	// itself does; the tool package only carries it because Context is
+	// where agent.Run reaches for every per-turn dependency.
+	Embed *embed.Client
+
 	// BraveUsageThisMonth/IncrementBraveUsage back the monthly cap on
 	// Brave calls (store.Store's api_usage table), same shape and same
 	// reasoning as ParallelUsageThisMonth/IncrementParallelUsage below —
@@ -94,6 +103,16 @@ type Context struct {
 	// out before reaching Parallel doesn't count against the budget.
 	ParallelUsageThisMonth func() (int, error)
 	IncrementParallelUsage func() error
+
+	// PinnedProvider, when non-empty, forces web_search to a single
+	// provider on every call instead of the normal SearXNG-first,
+	// fallback-on-degraded chain — see handleWebSearch in
+	// tools/web_search.go. Only "brave" is implemented, for the benchmark
+	// harness (cmd/benchmark.go): a reproducible run needs every result to
+	// come from the same index across the whole run, not whichever
+	// provider happened to answer that particular call. Empty (the
+	// default) means normal behavior for every other caller.
+	PinnedProvider string
 
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call

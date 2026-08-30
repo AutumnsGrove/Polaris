@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"polaris/embed"
 	"polaris/llm"
 	"polaris/llm/llmtest"
 	"polaris/search"
@@ -471,6 +472,135 @@ func TestRun_MaxTurnsExhausted_ForcesWrapUp(t *testing.T) {
 	last := wrapUpMsgs[len(wrapUpMsgs)-1]
 	if !strings.Contains(last.Content, "Wrap up now") {
 		t.Errorf("last message before wrap-up call = %q, want it to instruct wrapping up", last.Content)
+	}
+}
+
+func TestRun_EmptyContentNoToolCallsRetriesInsteadOfReturningEmpty(t *testing.T) {
+	// A turn with no tool calls and no content used to be trusted as a
+	// valid final answer outright — the exact shape a model produces when
+	// it burns its whole response on private reasoning (visible only via
+	// onReasoning) without ever committing to a tool call or answer text.
+	// Confirms Run nudges and retries instead of returning that as Result.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: ""}},
+			{Resp: &llm.ChatResponse{Content: "Real answer"}, Chunks: []string{"Real answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "a question the model reasons about but never answers")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "Real answer" {
+		t.Errorf("Answer = %q, want %q (the retry's answer)", result.Answer, "Real answer")
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("CallCount = %d, want 2 (empty turn + retry)", mock.CallCount())
+	}
+
+	retryMsgs := mock.Calls[1].Messages
+	last := retryMsgs[len(retryMsgs)-1]
+	if !strings.Contains(last.Content, "no answer and no tool call") {
+		t.Errorf("last message before retry = %q, want the empty-answer nudge", last.Content)
+	}
+
+	foundNudge := false
+	for _, e := range rec.events {
+		if e.eventType == "agent_nudge" {
+			if args, ok := e.payload["args"].(map[string]interface{}); ok && args["kind"] == "empty_answer" {
+				foundNudge = true
+			}
+		}
+	}
+	if !foundNudge {
+		t.Error("expected an agent_nudge event with kind=empty_answer")
+	}
+}
+
+func TestRun_EmptyWrapUpStaysEmptyForCallerToHandle(t *testing.T) {
+	// The forced wrap-up (last LLM call Run makes, after maxTurns runs
+	// out) deliberately does NOT paper over an empty answerText the way
+	// the main loop's mid-turn retry does above — there's no budget left
+	// to retry, and callers already have their own contract for a
+	// genuinely empty Result.Answer (gateway/turn.go's handleTurn checks
+	// for it and surfaces a proper "error" event instead of persisting a
+	// blank assistant turn — see TestWebSocket_EmptyAnswerSurfacesAsErrorEvent
+	// in gateway/ws_test.go). Silently rewriting it into placeholder text
+	// here would defeat that downstream check for every caller.
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"still working"}`},
+					}},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: ""}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 1)
+
+	result, err := Run(context.Background(), ctx, nil, "a hard multi-step question")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.Answer != "" {
+		t.Errorf("Answer = %q, want empty — the wrap-up must not fabricate placeholder text", result.Answer)
+	}
+}
+
+func TestRun_InjectsQuerySimilarityWarningAfterRepeatedNearDuplicateQueries(t *testing.T) {
+	// A fake Ollama server that always returns the same embedding
+	// regardless of the query text — this test is about the tracking/
+	// threshold wiring in query_similarity.go, not about whether
+	// nomic-embed-text itself judges two strings similar, so pinning the
+	// embedding removes that variable and makes every consecutive pair
+	// deterministically identical (cosine similarity 1.0).
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"embedding": []float32{0.9, 0.1, 0.1}})
+	}))
+	defer embedSrv.Close()
+
+	webSearchResp := func(id, query string) *llm.ChatResponse {
+		return &llm.ChatResponse{ToolCalls: []llm.ToolCall{{
+			ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "web_search", Arguments: fmt.Sprintf(`{"query":%q}`, query)},
+		}}}
+	}
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: webSearchResp("1", "cat facts")},
+			{Resp: webSearchResp("2", "cat facts info")},
+			{Resp: webSearchResp("3", "facts about cats")},
+			{Resp: &llm.ChatResponse{Content: "Done"}, Chunks: []string{"Done"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 10)
+	ctx.Embed = embed.NewClient(embedSrv.URL, "")
+
+	if _, err := Run(context.Background(), ctx, nil, "tell me about cats"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// After the 2nd consecutive near-duplicate query (querySimilarityStreakThreshold),
+	// the very next LLM call must have been warned about it.
+	msgs := mock.Calls[3].Messages
+	found := false
+	for _, m := range msgs {
+		if m.Role == "user" && strings.Contains(m.Content, "semantically almost identical") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("messages before call 3 = %+v, want a query-similarity warning", msgs)
 	}
 }
 

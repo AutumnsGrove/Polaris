@@ -130,6 +130,33 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"tmdb"`
 
+	Ollama struct {
+		// BaseURL points at a local Ollama instance serving EmbedModel —
+		// used only for agent.Run's query-similarity stale-search signal
+		// (a third check alongside researchCheckInInterval/staleStreakThreshold,
+		// see agent/query_similarity.go), never for chat completions.
+		// Empty disables the signal entirely rather than failing turns —
+		// same "optional dependency, degrade don't break" shape as
+		// Foursquare/Tavily above. Each deployment talks to its OWN local
+		// Ollama (bare-metal: http://localhost:11434; Docker: the host's
+		// Ollama via host.docker.internal — docker-compose.yml's
+		// extra_hosts entry) — never a shared/remote instance, so there's
+		// no cross-host reachability to configure.
+		//
+		// Docker specifically needs Ollama itself rebound to 0.0.0.0 (its
+		// default is 127.0.0.1-only, which REFUSES a container's
+		// connection arriving via the bridge gateway — confirmed live on
+		// the potato, not a guess: extra_hosts alone got "connection
+		// refused" until OLLAMA_HOST=0.0.0.0:11434 was set). That widens
+		// Ollama's reach to the whole LAN, not just Docker, since it has
+		// no built-in auth — see compose/polaris/config.yaml.example's
+		// fuller warning before doing this on a host with untrusted local
+		// network users.
+		BaseURL string `yaml:"base_url"`
+		// EmbedModel defaults to "nomic-embed-text" (see NewClient) if empty.
+		EmbedModel string `yaml:"embed_model"`
+	} `yaml:"ollama"`
+
 	// DefaultLocation is geocoded and used when nearby_search omits an
 	// explicit location — e.g. "Seattle, WA" or raw "47.6062, -122.3321".
 	// Optional; without it, nearby_search requires a location argument.

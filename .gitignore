@@ -21,3 +21,11 @@ update-signal/
 # every self-update. Built locally instead; the .githooks/pre-commit
 # hook rebuilds it automatically whenever web/src/ changes, so it can't
 # drift from source. See gitconfig core.hooksPath and README.
+
+# BrowseComp dataset/results (cmd/benchmark.go) — OpenAI's canary/leakage
+# note asks that examples not be republished in plain text, and the run
+# outputs (decrypted questions/answers/harness responses) fall under the
+# same ask.
+benchmark/data/
+benchmark-results*.jsonl
+polaris-benchmark.db*

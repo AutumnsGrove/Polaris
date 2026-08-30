@@ -288,6 +288,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	researchCalls := 0
 	lastCitationCount := 0
 	staleStreak := 0
+	queryTracker := searchQueryTracker{}
 
 	for turn := 0; turn < maxTurns; turn++ {
 		answer.Reset()
@@ -323,7 +324,30 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 							messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 						}
 					}
+					if pc.name == "web_search" {
+						if q := extractSearchQuery(pc.argsJSON); q != "" {
+							if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+								messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+							}
+						}
+					}
 				}
+				continue
+			}
+			if strings.TrimSpace(resp.Content) == "" {
+				// No tool call AND no answer text — the model spent this
+				// whole turn on private reasoning (visible only via
+				// onReasoning, never onChunk) without ever committing to
+				// output, and stopped before producing anything. Returning
+				// this as a "final answer" would silently hand back an
+				// empty Result with a nil error — indistinguishable from a
+				// real, considered response. Nudge and let it try again
+				// instead; bounded by maxTurns like every other branch of
+				// this loop, so a model that keeps doing this still
+				// terminates via the wrap-up path below rather than
+				// looping forever.
+				emitNudge(ctx, "empty_answer", researchCalls, len(ctx.Citations))
+				messages = append(messages, llm.ChatMessage{Role: "user", Content: prompts.Get().Agent.EmptyAnswerRetry})
 				continue
 			}
 			// Plain content = the final answer. It was already streamed
@@ -389,6 +413,13 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 					messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 				}
 			}
+			if r.call.Function.Name == "web_search" {
+				if q := extractSearchQuery(r.call.Function.Arguments); q != "" {
+					if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+						messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
+					}
+				}
+			}
 		}
 	}
 
@@ -438,6 +469,15 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			"try asking again, or narrow the question a bit."
 		ctx.Emit("token", map[string]interface{}{"content": answerText})
 	}
+	// Deliberately no empty-answerText fallback here (unlike the main
+	// loop's mid-turn retry above) — this is the last LLM call Run makes,
+	// so there's no budget left to nudge-and-retry, and callers already
+	// have their own contract for a genuinely empty Result.Answer:
+	// gateway/turn.go's handleTurn checks for it and surfaces a proper
+	// "error" event plus a warn-level log instead of persisting a blank
+	// assistant turn (see TestWebSocket_EmptyAnswerSurfacesAsErrorEvent).
+	// Rewriting it into placeholder text here would silently defeat that
+	// downstream check for every caller, not just the ones lacking it.
 
 	return &Result{
 		Answer:        answerText,

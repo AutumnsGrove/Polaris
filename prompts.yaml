@@ -84,6 +84,17 @@ agent:
     Only continue if there's a specific, concrete gap in what you know that a further search could
     plausibly fill.
 
+  # Sent when a turn ends with no tool call AND no answer content — the
+  # model burned its whole response on private reasoning (visible via
+  # onReasoning) without ever emitting a tool call or final text. No
+  # placeholders.
+  empty_answer_retry: >-
+    Your last turn produced no answer and no tool call — you likely spent your whole response
+    reasoning privately without ever committing to output. Stop reasoning silently: either call a
+    tool now if you genuinely need more information, or write out your answer directly starting
+    with "Explanation:" right now. Do not repeat the same private reasoning again without producing
+    visible output.
+
   # Sent when several research calls in a row surfaced zero new citations —
   # %d order: consecutive stale calls, then total sources gathered.
   stale_streak_warning: >-
@@ -91,6 +102,18 @@ agent:
     already have. Searching again with a similar query will not help. Either answer now with what
     you've gathered, or try a meaningfully different angle (a different tool, a very different
     search term, or a specific named source) — not a reworded version of a query you've already tried.
+
+  # Sent when consecutive web_search queries embed as near-duplicates of
+  # each other (cosine similarity, via a local Ollama instance) —
+  # independent of stale_streak_warning above, which only catches zero
+  # NEW citations. A rephrased query that keeps surfacing different junk
+  # URLs each time defeats that check but is still visibly the same
+  # search. %d order: consecutive near-identical queries.
+  query_similarity_warning: >-
+    Your last %d search queries were semantically almost identical to each other — rephrasing the
+    same question won't surface anything new. Either answer now with what you've gathered, or try
+    a genuinely different angle: a different tool, a specific named source, or a completely
+    different set of search terms — not another variation of a query you've already tried.
 
 # One-off, non-streamed LLM calls made from gateway/turn.go around a normal
 # turn — see that file's generateSuggestions/generateTitle/compactThread.

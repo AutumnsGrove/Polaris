@@ -39,6 +39,21 @@ brave:
 parallel:
   api_key: "${PARALLEL_API_KEY}"
 
+ollama:
+  # docker-compose.yml's extra_hosts entry routes host.docker.internal to
+  # the Docker bridge gateway — but that alone isn't enough: Ollama
+  # defaults to binding 127.0.0.1 only, which REFUSES connections
+  # arriving via the bridge gateway (confirmed live: "connection
+  # refused", not just slow). Ollama itself must be rebound to 0.0.0.0
+  # (OLLAMA_HOST=0.0.0.0:11434 in its systemd unit/launch config) before
+  # this URL does anything. That widens Ollama's reach to your whole LAN,
+  # not just Docker, since it has no built-in auth — only do this on a
+  # host with no untrusted local network users. Empty base_url just
+  # disables agent.Run's query-similarity stale-search signal, nothing
+  # else breaks — see config.Config's Ollama field doc comment.
+  base_url: "http://host.docker.internal:11434"
+  embed_model: "nomic-embed-text"
+
 github:
   token: "${GITHUB_TOKEN}"
 
