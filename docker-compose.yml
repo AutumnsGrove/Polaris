@@ -36,6 +36,19 @@ services:
     depends_on:
       searxng:
         condition: service_healthy
+    # Lets the container reach host.docker.internal — needed only for
+    # config.yaml's ollama.base_url (agent/query_similarity.go's
+    # query-similarity signal), since Ollama itself isn't containerized
+    # in this stack. host-gateway resolves to the Docker bridge's gateway
+    # IP on Linux (e.g. 172.17.0.1) — a loopback-only Ollama (the default)
+    # refuses that connection; it must be bound to 0.0.0.0 (or at least
+    # the bridge IP) on the host for this to actually work. Verified live
+    # against the potato: 127.0.0.1-bound Ollama got "connection refused"
+    # from inside a container even with this entry present; rebinding to
+    # 0.0.0.0 fixed it. Harmless to leave in place even when
+    # ollama.base_url is unset (config.go's default) — an unused DNS entry.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # config.yaml's ${VAR} placeholders are expanded inside the polaris
     # process itself (config.Load -> os.ExpandEnv), so these have to
     # reach the *container's* environment, not just the host shell that

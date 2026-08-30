@@ -139,9 +139,19 @@ type Config struct {
 		// same "optional dependency, degrade don't break" shape as
 		// Foursquare/Tavily above. Each deployment talks to its OWN local
 		// Ollama (bare-metal: http://localhost:11434; Docker: the host's
-		// Ollama via host.docker.internal, since Ollama itself isn't
-		// containerized) — never a shared/remote instance, so there's no
-		// cross-host reachability to configure.
+		// Ollama via host.docker.internal — docker-compose.yml's
+		// extra_hosts entry) — never a shared/remote instance, so there's
+		// no cross-host reachability to configure.
+		//
+		// Docker specifically needs Ollama itself rebound to 0.0.0.0 (its
+		// default is 127.0.0.1-only, which REFUSES a container's
+		// connection arriving via the bridge gateway — confirmed live on
+		// the potato, not a guess: extra_hosts alone got "connection
+		// refused" until OLLAMA_HOST=0.0.0.0:11434 was set). That widens
+		// Ollama's reach to the whole LAN, not just Docker, since it has
+		// no built-in auth — see compose/polaris/config.yaml.example's
+		// fuller warning before doing this on a host with untrusted local
+		// network users.
 		BaseURL string `yaml:"base_url"`
 		// EmbedModel defaults to "nomic-embed-text" (see NewClient) if empty.
 		EmbedModel string `yaml:"embed_model"`
