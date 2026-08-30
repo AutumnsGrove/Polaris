@@ -264,6 +264,7 @@ type Result struct {
 func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, userMessage string) (*Result, error) {
 	client := ctx.LLM
 	ctx.Ctx = reqCtx
+	warmUpEmbedClient(ctx)
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
 	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch)})
@@ -326,7 +327,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 					}
 					if pc.name == "web_search" {
 						if q := extractSearchQuery(pc.argsJSON); q != "" {
-							if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+							if nudge, fired := trackSearchQuery(ctx, &queryTracker, q); fired {
 								messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 							}
 						}
@@ -415,7 +416,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			}
 			if r.call.Function.Name == "web_search" {
 				if q := extractSearchQuery(r.call.Function.Arguments); q != "" {
-					if nudge, fired := trackSearchQuery(reqCtx, ctx.Embed, &queryTracker, q); fired {
+					if nudge, fired := trackSearchQuery(ctx, &queryTracker, q); fired {
 						messages = append(messages, llm.ChatMessage{Role: "user", Content: nudge})
 					}
 				}

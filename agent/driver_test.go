@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"polaris/embed"
 	"polaris/llm"
@@ -99,6 +100,47 @@ func TestRun_FocusModeInstructionReachesSystemPrompt(t *testing.T) {
 	}
 	if !strings.Contains(systemMsg.Content, "Focus mode: Academic") {
 		t.Errorf("system prompt sent to the LLM doesn't contain the Academic focus mode instruction: %q", systemMsg.Content)
+	}
+}
+
+func TestRun_DoesNotBlockOnEmbedWarmUp(t *testing.T) {
+	// The whole point of warmUpEmbedClient firing in a goroutine is that a
+	// slow (or cold-starting) Ollama never holds up the actual turn — Run
+	// must return based on the LLM's own response time, not wait around
+	// for the warm-up request it kicked off.
+	requestArrived := make(chan struct{}, 1)
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond) // stand-in for a slow/cold-starting Ollama
+		select {
+		case requestArrived <- struct{}{}:
+		default:
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"embedding": []float32{0.1, 0.2}})
+	}))
+	defer embedSrv.Close()
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "answer"}, Chunks: []string{"answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.Embed = embed.NewClient(embedSrv.URL, "")
+
+	start := time.Now()
+	if _, err := Run(context.Background(), ctx, nil, "hi"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Errorf("Run took %v, want it to return well before the 200ms embed warm-up finishes", elapsed)
+	}
+
+	select {
+	case <-requestArrived:
+	case <-time.After(2 * time.Second):
+		t.Error("warm-up request never reached the fake Ollama server")
 	}
 }
 

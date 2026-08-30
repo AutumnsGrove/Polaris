@@ -140,13 +140,25 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		fmt.Printf("[%d/%d] ", i+1, len(sample))
 
 		agentCtx := &tools.Context{
-			Ctx:                 context.Background(),
-			Brave:               braveClient,
-			PinnedProvider:      "brave",
-			Embed:               embedClient,
-			LLM:                 client,
-			MaxTurns:            cfg.MaxAgentTurns,
-			Emit:                func(string, map[string]interface{}) {},
+			Ctx:            context.Background(),
+			Brave:          braveClient,
+			PinnedProvider: "brave",
+			Embed:          embedClient,
+			LLM:            client,
+			MaxTurns:       cfg.MaxAgentTurns,
+			Emit: func(eventType string, payload map[string]interface{}) {
+				// agent_nudge is the only event this harness surfaces —
+				// check-in/stale-streak/query-similarity/max-turns-wrapup
+				// firing (or NOT firing) is exactly what a benchmark run
+				// is for validating; everything else (tokens, individual
+				// tool calls) is already visible via the search-provider
+				// log lines tools/web_search.go emits on its own.
+				if eventType != "agent_nudge" {
+					return
+				}
+				args, _ := payload["args"].(map[string]interface{})
+				fmt.Printf("  [nudge] %v (call/streak=%v, citations=%v)\n", args["kind"], args["call_count"], args["citation_count"])
+			},
 			BraveUsageThisMonth: func() (int, error) { return db.GetAPIUsage("brave") },
 			IncrementBraveUsage: func() error { _, err := db.IncrementAPIUsage("brave"); return err },
 		}

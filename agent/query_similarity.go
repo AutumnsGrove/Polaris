@@ -1,12 +1,12 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
 	"polaris/embed"
 	"polaris/prompts"
+	"polaris/tools"
 )
 
 // extractSearchQuery pulls the "query" argument out of a web_search
@@ -53,6 +53,34 @@ func querySimilarityMessage(streak int) string {
 	return fmt.Sprintf(prompts.Get().Agent.QuerySimilarityWarning, streak)
 }
 
+// warmUpEmbedClient fires a throwaway embedding request in the
+// background the instant a turn starts, so a cold Ollama has a head
+// start loading EmbedModel into memory before the model's first
+// web_search call actually needs trackSearchQuery's real embedding.
+// Confirmed live on the potato: Ollama unloads an idle model after ~5
+// minutes, and reloading it costs ~14s on that hardware — hiding that
+// behind the first LLM round-trip's own latency (which takes at least a
+// few seconds itself) means trackSearchQuery's real call usually lands
+// on an already-warm model instead of eating the cold-start cost
+// directly in web_search's critical path.
+//
+// Fire-and-forget: any failure here is silently logged at Debug and
+// otherwise ignored — this is a pure latency optimization, never a
+// correctness dependency. If it doesn't help (client is nil, the
+// request fails, or it just doesn't finish in time), trackSearchQuery's
+// own call is unaffected either way — same behavior as if this function
+// didn't exist.
+func warmUpEmbedClient(ctx *tools.Context) {
+	if ctx.Embed == nil {
+		return
+	}
+	go func() {
+		if _, err := ctx.Embed.Embed(ctx.Ctx, "warmup"); err != nil {
+			log.Debug("query-similarity: embed warm-up failed (non-fatal, just a latency optimization)", "err", err)
+		}
+	}()
+}
+
 // searchQueryTracker holds trackSearchQuery's running state across a
 // turn's web_search calls — just the previous query's embedding and how
 // many consecutive queries have been near-duplicates of it. Lives on the
@@ -74,11 +102,20 @@ type searchQueryTracker struct {
 // first call with no prior embedding to compare against) rather than
 // erroring or blocking — this signal degrading gracefully is never worth
 // slowing down, let alone failing, the actual research loop over.
-func trackSearchQuery(reqCtx context.Context, embedClient *embed.Client, tracker *searchQueryTracker, query string) (nudge string, fired bool) {
-	if embedClient == nil {
+//
+// Calls emitNudge(ctx, "query_similarity", ...) when it fires — same
+// durable-event trail as "check_in"/"stale_streak"/"empty_answer", so a
+// caller with a real Emit (the web UI, or cmd/benchmark.go's own printed
+// summary) can actually SEE this signal firing instead of it only ever
+// showing up as an invisible injected message in the LLM request body.
+// That visibility is the whole point of a still-untuned signal: there's
+// no way to validate querySimilarityThreshold/querySimilarityStreakThreshold
+// against real runs if firing is silent.
+func trackSearchQuery(ctx *tools.Context, tracker *searchQueryTracker, query string) (nudge string, fired bool) {
+	if ctx.Embed == nil {
 		return "", false
 	}
-	vec, err := embedClient.Embed(reqCtx, query)
+	vec, err := ctx.Embed.Embed(ctx.Ctx, query)
 	if err != nil {
 		log.Warn("query-similarity: embedding failed, skipping this signal for this call", "query", query, "err", err)
 		return "", false
@@ -96,6 +133,7 @@ func trackSearchQuery(reqCtx context.Context, embedClient *embed.Client, tracker
 	tracker.streak++
 	if tracker.streak >= querySimilarityStreakThreshold {
 		msg := querySimilarityMessage(tracker.streak)
+		emitNudge(ctx, "query_similarity", tracker.streak, len(ctx.Citations))
 		tracker.streak = 0 // fire once per streak, matching trackResearchCall's staleStreak reset
 		return msg, true
 	}
