@@ -135,7 +135,19 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 		}
 		return "error: " + err.Error()
 	}
-	return fmt.Sprintf("saved memory %q", name)
+	return fmt.Sprintf("saved memory %q\n\n%s", name, formatMemoryBody(memType, description, content))
+}
+
+// formatMemoryBody renders a memory's full type/description/content — used
+// by both handleMemoryWrite/handleMemoryEdit's confirmation text and
+// handleMemoryView's single-memory lookup, so the tool_call/tool_result
+// event a write or edit produces shows exactly what got saved, not just a
+// bare "saved memory X" confirmation with no way to see what X actually
+// contains short of a follow-up view call. This is also what a user
+// expanding that tool-call block in the chat transcript UI sees, per its
+// own doc comment in ToolEvent.svelte.
+func formatMemoryBody(memType, description, content string) string {
+	return fmt.Sprintf("[%s] %s\n\n%s", memType, description, content)
 }
 
 // handleMemoryEdit passes name/memType/description/content straight through
@@ -162,6 +174,16 @@ func handleMemoryEdit(ctx *Context, name, memType, description, content string) 
 			return fmt.Sprintf("error: no memory named %q — use action=write to create it", name)
 		}
 		return "error: " + err.Error()
+	}
+	// A partial edit (e.g. description only) needs the resolved current
+	// row, not just the fields this call happened to pass, to show the
+	// memory's actual full state after the merge EditMemory did — a
+	// second GetMemory here is safe (no race to reintroduce) since the
+	// atomic UPDATE already committed before this read starts.
+	if ctx.GetMemory != nil {
+		if m, err := ctx.GetMemory(name); err == nil {
+			return fmt.Sprintf("updated memory %q\n\n%s", name, formatMemoryBody(m.Type, m.Description, m.Content))
+		}
 	}
 	return fmt.Sprintf("updated memory %q", name)
 }

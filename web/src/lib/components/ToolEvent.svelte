@@ -40,6 +40,25 @@
 			if (query) return `Searching attachment: ${query}`;
 			return `Reading attachment: page ${item.args?.page ?? 1}`;
 		}
+		if (item.tool === 'memory') {
+			// Mirrors tools/memory.go's handleMemory, which only ever logs
+			// {action, name} (never description/content — those can be
+			// long, and this label is meant to be a one-line summary, not
+			// a place to read the full memory).
+			const name = item.args?.name as string | undefined;
+			switch (item.args?.action) {
+				case 'write':
+					return `Remembering: ${name ?? '…'}`;
+				case 'edit':
+					return `Updating memory: ${name ?? '…'}`;
+				case 'forget':
+					return `Forgetting: ${name ?? '…'}`;
+				case 'view':
+					return name ? `Checking memory: ${name}` : 'Reviewing memories';
+				default:
+					return 'Memory';
+			}
+		}
 		return item.tool;
 	}
 
@@ -95,6 +114,8 @@
 				<BookOpen size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'describe_image'}
 				<Image size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'memory'}
+				<Brain size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}

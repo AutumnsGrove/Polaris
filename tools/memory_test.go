@@ -83,6 +83,15 @@ func TestHandleMemory_WriteThenView(t *testing.T) {
 	if !strings.Contains(result, "saved memory") {
 		t.Fatalf("write result = %q", result)
 	}
+	// The write result itself must show what was actually saved — not
+	// just a bare confirmation — since this is exactly what a user
+	// expanding the tool-call block in the chat transcript sees (see
+	// ToolEvent.svelte). Regression test for a real gap: this used to
+	// return only `saved memory "user-timezone"` with no way to tell what
+	// that memory actually contained short of a separate view call.
+	if !strings.Contains(result, "US/Pacific") {
+		t.Errorf("write result = %q, want it to contain the full content, not just a bare confirmation", result)
+	}
 
 	result = Dispatch("memory", `{"action":"view","name":"user-timezone"}`, ctx)
 	if !strings.Contains(result, "US/Pacific") {
@@ -123,12 +132,19 @@ func TestHandleMemory_EditIsPartial(t *testing.T) {
 	// Only description supplied — content must survive untouched, exercising
 	// the same empty-means-unchanged contract store.UpdateMemory relies on
 	// to stay race-free (see store/memory.go).
-	Dispatch("memory", `{"action":"edit","name":"partial","description":"new desc"}`, ctx)
+	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"new desc"}`, ctx)
 	if fs.rows["partial"].Content != "orig content" {
 		t.Errorf("Content = %q after description-only edit, want it untouched", fs.rows["partial"].Content)
 	}
 	if fs.rows["partial"].Description != "new desc" {
 		t.Errorf("Description = %q after edit, want %q", fs.rows["partial"].Description, "new desc")
+	}
+	// The edit result must reflect the resolved row (description just
+	// changed, content untouched from the original write) — not just the
+	// fields this one call happened to pass, which would silently omit
+	// content from the confirmation entirely.
+	if !strings.Contains(result, "new desc") || !strings.Contains(result, "orig content") {
+		t.Errorf("edit result = %q, want it to contain both the new description and the untouched content", result)
 	}
 }
 
