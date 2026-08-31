@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Trash2, TriangleAlert, Send, Brain } from '@lucide/svelte';
+	import { Trash2, TriangleAlert, Send, Brain, LoaderPinwheel } from '@lucide/svelte';
 
 	// Re-fetched every time this mounts (the panel unmounts this entirely
 	// on close, same as the rest of SettingsPanel's sub-pages) rather than
@@ -93,7 +93,11 @@
 			title="Send"
 			aria-label="Send"
 		>
-			<Send size={16} class={appState.settings.memoryChatBusy ? 'spin' : ''} />
+			{#if appState.settings.memoryChatBusy}
+				<LoaderPinwheel size={16} class="spin" />
+			{:else}
+				<Send size={16} />
+			{/if}
 		</button>
 	</div>
 	<p class="hint">
@@ -163,7 +167,11 @@
 							title="Send"
 							aria-label="Send"
 						>
-							<Send size={14} class={appState.settings.memoryChatBusy ? 'spin' : ''} />
+							{#if appState.settings.memoryChatBusy}
+								<LoaderPinwheel size={14} class="spin" />
+							{:else}
+								<Send size={14} />
+							{/if}
 						</button>
 					</div>
 				{/if}
