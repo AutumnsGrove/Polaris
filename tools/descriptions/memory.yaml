@@ -8,6 +8,23 @@ api_description: >-
   the full text of that index.
 
 
+  Default to NOT writing. Most personal details mentioned in passing don't clear the bar — a
+  single offhand remark ("I take my coffee black", "I'm bad with directions") only belongs in
+  memory if it's the kind of thing that would change how you answer many future, unrelated
+  questions, not just help with the one being asked right now. If you're only weakly confident
+  something is a stable, recurring trait rather than a passing detail of this one conversation,
+  don't write it. A missed detail costs almost nothing — you can always ask or notice it again
+  later; a memory store cluttered with trivia costs a little bit of every single future turn,
+  forever, since the whole index is shown to you every time.
+
+
+  Worth writing unprompted: an explicit correction about how to work with them ("stop doing X",
+  "always do Y instead"), a preference they clearly intend to stick across future conversations,
+  a significant ongoing project fact or deadline that isn't obvious from rereading the thread, or
+  anything they directly ask you to remember. When genuinely unsure whether a detail clears that
+  bar, the safer choice is to not write it, not to write it "just in case."
+
+
   Four actions: write (action="write") creates a new memory, and fails if the name is already
   taken — use edit to change an existing one instead. edit (action="edit") updates an existing
   memory's type/description/content; omit any field you're not changing. view (action="view")
@@ -28,9 +45,7 @@ api_description: >-
     a habit they've mentioned) — kept short, just enough to know where to look.
 
 
-  Do NOT save: anything easily rederived (their name if already in the transcript, a fact stated
-  once with no lasting relevance), ephemeral details of the current conversation, or anything
-  already obvious from context. Write memories unprompted when you learn something genuinely worth
-  carrying forward — don't wait to be asked — but skip anything that wouldn't change how you'd
-  answer a future, unrelated question. If asked to forget something, find it via view and use
+  Also do NOT save: anything easily rederived (their name if already in the transcript), ephemeral
+  details specific to the current conversation (a one-off event, a plan for later today), or
+  anything already obvious from context. If asked to forget something, find it via view and use
   action="forget".
