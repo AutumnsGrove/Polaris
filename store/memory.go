@@ -60,13 +60,27 @@ func (s *Store) CreateMemory(name, memType, description, content string) error {
 }
 
 // UpdateMemory overwrites an existing memory's type/description/content in
-// place — name is the stable identity and never changes. Returns
-// ErrMemoryNotFound if name doesn't exist, so the memory tool's "edit"
-// action never silently no-ops.
+// place — name is the stable identity and never changes. An empty
+// memType/description/content means "leave this field as it is", so the
+// memory tool's "edit" action can change just one field without a caller
+// ever needing to read the row first. That's done here as a single CASE-WHEN
+// UPDATE, not a Go-side read-then-write, specifically because
+// agent/driver.go's dispatchToolCallsConcurrently runs every tool call in a
+// batch on its own goroutine: two concurrent edits to the same memory (one
+// changing description, one changing content) reading a shared snapshot
+// before either writes back would let whichever write lands second silently
+// clobber the other's change. A single UPDATE statement has no such window —
+// SQLite applies it atomically. Returns ErrMemoryNotFound if name doesn't
+// exist, so the memory tool's "edit" action never silently no-ops.
 func (s *Store) UpdateMemory(name, memType, description, content string) error {
 	res, err := s.db.Exec(
-		`UPDATE memories SET type = ?, description = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
-		memType, description, content, name,
+		`UPDATE memories SET
+			type = CASE WHEN ? = '' THEN type ELSE ? END,
+			description = CASE WHEN ? = '' THEN description ELSE ? END,
+			content = CASE WHEN ? = '' THEN content ELSE ? END,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE name = ?`,
+		memType, memType, description, description, content, content, name,
 	)
 	if err != nil {
 		return fmt.Errorf("update memory: %w", err)

@@ -44,8 +44,8 @@ var memoryDef = llm.ToolDef{
 					"description": "user: who they are, their role/preferences. feedback: guidance on how to approach work, corrections or confirmed approaches. project: facts about ongoing work/goals not obvious from context. reference: pointers to where more detail lives. Required for write; optional for edit (omit to leave unchanged).",
 				},
 				"description": map[string]interface{}{
-					"type":        "string",
-					"description": "One line summarizing this memory — sent to you every turn as part of the always-visible index, so keep it short and specific. Required for write; optional for edit (omit to leave unchanged).",
+					"type": "string",
+					"description": fmt.Sprintf("One line summarizing this memory — sent to you every turn as part of the always-visible index, so keep it short and specific (max %d characters). Required for write; optional for edit (omit to leave unchanged).", maxMemoryDescriptionChars),
 				},
 				"content": map[string]interface{}{
 					"type":        "string",
@@ -66,6 +66,17 @@ func init() { Register("memory", handleMemory) }
 // model accidentally passing a whole sentence as the name early rather
 // than storing it and discovering the mess later.
 var memoryNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// maxMemoryDescriptionChars bounds description, not content — description
+// is what MemoryIndexPrompt replays into the system prompt on every single
+// future turn, in every thread, forever, so an unbounded one is a standing
+// per-turn cost that only grows; content is only ever fetched on demand via
+// memory(action=view). 2000 is deliberately generous — a few sentences of
+// real context (see the write/edit "Why:"/"How to apply:" convention this
+// project's own memory files use), not a one-line-only limit — the tool
+// description's own "keep it short" guidance is what should keep the common
+// case far under this in practice, not the cap itself.
+const maxMemoryDescriptionChars = 2000
 
 func handleMemory(argsJSON string, ctx *Context) string {
 	var args struct {
@@ -115,6 +126,9 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 	if description == "" || content == "" {
 		return "error: description and content are required to write a memory"
 	}
+	if len(description) > maxMemoryDescriptionChars {
+		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), maxMemoryDescriptionChars)
+	}
 	if err := ctx.WriteMemory(name, memType, description, content); err != nil {
 		if err == store.ErrMemoryExists {
 			return fmt.Sprintf("error: a memory named %q already exists — use action=edit to update it", name)
@@ -124,32 +138,29 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 	return fmt.Sprintf("saved memory %q", name)
 }
 
+// handleMemoryEdit passes name/memType/description/content straight through
+// to ctx.EditMemory with no read-modify-write in between — see
+// store.UpdateMemory's doc comment for why a Go-side pre-fetch here would
+// reintroduce exactly the concurrent-edit race that a single atomic UPDATE
+// avoids. An empty memType/description/content is EditMemory's own signal
+// for "leave this field alone", so there's nothing here to merge.
 func handleMemoryEdit(ctx *Context, name, memType, description, content string) string {
-	if ctx.GetMemory == nil || ctx.EditMemory == nil {
+	if ctx.EditMemory == nil {
 		return "error: memory is not available in this context"
 	}
 	if name == "" {
 		return "error: name is required to edit a memory"
 	}
-	existing, err := ctx.GetMemory(name)
-	if err != nil {
+	if memType != "" && !isValidMemoryType(memType) {
+		return "error: type must be one of user, feedback, project, reference"
+	}
+	if len(description) > maxMemoryDescriptionChars {
+		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), maxMemoryDescriptionChars)
+	}
+	if err := ctx.EditMemory(name, memType, description, content); err != nil {
 		if err == store.ErrMemoryNotFound {
 			return fmt.Sprintf("error: no memory named %q — use action=write to create it", name)
 		}
-		return "error: " + err.Error()
-	}
-	if memType == "" {
-		memType = existing.Type
-	} else if !isValidMemoryType(memType) {
-		return "error: type must be one of user, feedback, project, reference"
-	}
-	if description == "" {
-		description = existing.Description
-	}
-	if content == "" {
-		content = existing.Content
-	}
-	if err := ctx.EditMemory(name, memType, description, content); err != nil {
 		return "error: " + err.Error()
 	}
 	return fmt.Sprintf("updated memory %q", name)
@@ -180,14 +191,7 @@ func handleMemoryView(ctx *Context, name string) string {
 	if len(entries) == 0 {
 		return "no memories saved yet"
 	}
-	var sb strings.Builder
-	for i, e := range entries {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-		fmt.Fprintf(&sb, "[%s] %s — %s", e.Type, e.Name, e.Description)
-	}
-	return sb.String()
+	return formatMemoryIndex(entries)
 }
 
 func handleMemoryForget(ctx *Context, name string) string {
@@ -216,13 +220,13 @@ func isValidMemoryType(t string) bool {
 }
 
 // MemoryIndexPrompt renders the always-injected {memories} placeholder's
-// replacement text — one "[type] name — description" line per saved
-// memory, or a short "nothing yet" line when there are none, so prompt.md
-// never has to special-case an empty memory store. Mirrors
-// tools.ToolsPrompt's shape/rationale exactly. Returns "" (and callers
-// should render nothing at all) when memory isn't wired into ctx, e.g. the
-// benchmark harness's isolated Context — see agent/driver.go's
-// applyMemoriesPlaceholder.
+// replacement text — the same per-entry format as memory(action=view)'s
+// list-all output (see formatMemoryIndex), or a short "nothing yet" line
+// when there are none, so prompt.md never has to special-case an empty
+// memory store. Mirrors tools.ToolsPrompt's shape/rationale exactly.
+// Returns "" (and callers should render nothing at all) when memory isn't
+// wired into ctx, e.g. the benchmark harness's isolated Context — see
+// agent/driver.go's applyMemoriesPlaceholder.
 func MemoryIndexPrompt(ctx *Context) string {
 	if ctx.ListMemories == nil {
 		return ""
@@ -235,6 +239,16 @@ func MemoryIndexPrompt(ctx *Context) string {
 	if len(entries) == 0 {
 		return "(none saved yet)"
 	}
+	return formatMemoryIndex(entries)
+}
+
+// formatMemoryIndex renders one "- [type] name: description" line per
+// entry — the single formatting used both by the always-injected
+// {memories} prompt block (MemoryIndexPrompt) and by memory(action=view)'s
+// list-all output (handleMemoryView), so a model that's learned to read one
+// never sees the same data reformatted differently when it double-checks
+// via the other.
+func formatMemoryIndex(entries []store.MemoryIndexEntry) string {
 	var sb strings.Builder
 	for i, e := range entries {
 		if i > 0 {

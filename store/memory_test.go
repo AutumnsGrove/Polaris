@@ -51,6 +51,40 @@ func TestMemory_CreateGetListUpdateDelete(t *testing.T) {
 	}
 }
 
+func TestMemory_UpdatePartialFieldsLeavesOthersUnchanged(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.CreateMemory("partial", "user", "original description", "original content"); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+
+	// Empty type/content: only description changes.
+	if err := s.UpdateMemory("partial", "", "new description", ""); err != nil {
+		t.Fatalf("UpdateMemory (description only): %v", err)
+	}
+	m, err := s.GetMemory("partial")
+	if err != nil {
+		t.Fatalf("GetMemory: %v", err)
+	}
+	if m.Type != "user" || m.Description != "new description" || m.Content != "original content" {
+		t.Errorf("GetMemory returned %+v, want type/content untouched and description updated", m)
+	}
+
+	// Empty type/description: only content changes — the shape a second,
+	// independent edit call (e.g. from a concurrent tool dispatch batch)
+	// would use.
+	if err := s.UpdateMemory("partial", "", "", "new content"); err != nil {
+		t.Fatalf("UpdateMemory (content only): %v", err)
+	}
+	m, err = s.GetMemory("partial")
+	if err != nil {
+		t.Fatalf("GetMemory: %v", err)
+	}
+	if m.Description != "new description" || m.Content != "new content" {
+		t.Errorf("GetMemory returned %+v, want description untouched from the prior update and content updated", m)
+	}
+}
+
 func TestMemory_CreateDuplicateNameFails(t *testing.T) {
 	s := openTestStore(t)
 
