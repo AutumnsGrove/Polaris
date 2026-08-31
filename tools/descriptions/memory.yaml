@@ -24,6 +24,16 @@ api_description: >-
   anything they directly ask you to remember. When genuinely unsure whether a detail clears that
   bar, the safer choice is to not write it, not to write it "just in case."
 
+  Keep memories current, not just growing: before writing something new, check the index above for
+  an existing memory the new information supersedes or contradicts — a role/job change, a moved
+  location, a reversed preference. When one exists, edit that memory in place (update its
+  description/content to reflect what's true now) rather than leaving the old one stale or writing
+  a second, separate memory that now disagrees with it. This applies even when the correction shows
+  up mid-conversation about something else entirely — e.g. they mentioned once being a backend
+  engineer, and later, while asking an unrelated question, mention having just started a new role —
+  notice the contradiction and update the existing memory unprompted, the same way you'd write a
+  brand new one unprompted for a fact worth remembering.
+
 
   Four actions: write (action="write") creates a new memory, and fails if the name is already
   taken — use edit to change an existing one instead. edit (action="edit") updates an existing
