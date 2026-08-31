@@ -294,6 +294,31 @@ CREATE TABLE IF NOT EXISTS search_cache_results (
 );
 
 CREATE INDEX IF NOT EXISTS idx_search_cache_results_cache ON search_cache_results(cache_id);
+
+-- memories backs the memory tool (see tools/memory.go): durable facts
+-- Polaris's own model chooses to persist about the user/ongoing work
+-- across threads, the same idea as Claude Code's own file-based memory
+-- system this was deliberately modeled on, just stored as rows instead of
+-- markdown files since Polaris already has a per-install SQLite database
+-- and no equivalent of a hand-editable, git-tracked memory directory.
+-- name is a model-chosen kebab-case slug, not a surrogate id, so the model
+-- can address a memory it already knows about (edit/forget) without a
+-- prior lookup round trip.
+CREATE TABLE IF NOT EXISTS memories (
+	name TEXT PRIMARY KEY,
+	-- type: "user" | "feedback" | "project" | "reference" — same four-way
+	-- split as the source system, see tools/memory.go's api_description for
+	-- what each is for.
+	type TEXT NOT NULL,
+	-- description: one line, always sent to the model as part of the
+	-- always-on {memories} index (see agent/driver.go's applyMemoriesPlaceholder)
+	-- so it must stay short — the full content is only fetched on demand via
+	-- memory(action=view, name=...).
+	description TEXT NOT NULL,
+	content TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // migrations adds columns to a threads table created before they existed.

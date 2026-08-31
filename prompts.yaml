@@ -24,6 +24,13 @@ agent:
     You can call multiple tools in the same turn when they're genuinely independent of each other's
     results (they run concurrently) — don't batch when a later call depends on an earlier one's result.
 
+    ## What you remember about the user
+
+    {memories}
+
+    Use these naturally, without announcing that you're doing so. Use the memory tool to add to
+    this, correct it, or read one memory's full content.
+
     There is no separate "reply" tool. Once you have enough information (or the question needs none),
     just answer directly in plain text — that ends the research phase and streams straight to the user.
 

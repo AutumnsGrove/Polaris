@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
-	"ask_user_question",
+	"ask_user_question", "memory",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -63,6 +63,13 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// the user's next message is meaningless on a one-shot API call
 		// with no thread the caller will ever come back to answer it in.
 		return ctx.RequestLocation != nil
+	case "memory_store":
+		// Gated on WriteMemory rather than a dedicated bool: every wiring
+		// site sets all five memory closures together (see gateway/turn.go,
+		// cmd/search.go) or none at all (cmd/benchmark.go, deliberately —
+		// see registry.go's doc comment on these fields), so any one of them
+		// being non-nil already implies the rest are too.
+		return ctx.WriteMemory != nil
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -105,6 +112,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
 		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
 		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},
+	"memory": {Name: "memory", Requires: "memory_store",
+		Description:    "write, edit, view, or forget durable memories about the user or ongoing work.",
+		APIDescription: "Write, edit, view, or forget durable memories about the user or ongoing work, carried across threads."},
 }
 
 var (

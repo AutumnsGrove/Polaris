@@ -18,6 +18,7 @@ import (
 	"polaris/parallel"
 	"polaris/places"
 	"polaris/search"
+	"polaris/store"
 	"polaris/tavily"
 )
 
@@ -113,6 +114,20 @@ type Context struct {
 	// provider happened to answer that particular call. Empty (the
 	// default) means normal behavior for every other caller.
 	PinnedProvider string
+
+	// ListMemories/GetMemory/WriteMemory/EditMemory/ForgetMemory back the
+	// memory tool (tools/memory.go) — narrow closures over store.Store
+	// rather than handing tools the whole store, same pattern as
+	// BraveUsageThisMonth/IncrementBraveUsage above. All nil together
+	// wherever memory shouldn't be offered at all (e.g. the benchmark
+	// harness's isolated runs, which want reproducible tool availability,
+	// not a real memory store growing from bench queries) — see catalog.go's
+	// "memory_store" Requires case, gated on WriteMemory != nil.
+	ListMemories func() ([]store.MemoryIndexEntry, error)
+	GetMemory    func(name string) (*store.Memory, error)
+	WriteMemory  func(name, memType, description, content string) error
+	EditMemory   func(name, memType, description, content string) error
+	ForgetMemory func(name string) error
 
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
@@ -425,7 +440,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
-		"ask_user_question": askUserQuestionDef,
+		"ask_user_question": askUserQuestionDef, "memory": memoryDef,
 	}
 }
 

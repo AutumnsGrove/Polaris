@@ -1,0 +1,36 @@
+name: memory
+requires: memory_store
+description: >-
+  write, edit, view, or forget durable memories about the user or ongoing work.
+api_description: >-
+  Persist durable facts across threads — the current index of everything you already know is
+  always shown to you above, in the "Memories" section; use this tool to add to, correct, or fetch
+  the full text of that index.
+
+
+  Four actions: write (action="write") creates a new memory, and fails if the name is already
+  taken — use edit to change an existing one instead. edit (action="edit") updates an existing
+  memory's type/description/content; omit any field you're not changing. view (action="view")
+  with no name lists every memory's name/type/description (the same index shown above, useful if
+  it's grown long); view with a name fetches that one memory's full content. forget
+  (action="forget") deletes a memory outright.
+
+
+  Four types, matching what's worth remembering:
+  - user: who they are, their role, and their preferences — write these to tailor future answers
+    to what they already know and care about.
+  - feedback: guidance on how to approach work — a correction ("don't do X"), or a confirmed
+    approach worth repeating. Structure the content as the rule, then a "Why:" line (their stated
+    reason) and a "How to apply:" line (when it kicks in).
+  - project: an ongoing goal, deadline, or decision that isn't derivable just by rereading the
+    conversation — same rule/Why/How-to-apply shape as feedback.
+  - reference: a pointer to where something lives outside this conversation (a tool, a document,
+    a habit they've mentioned) — kept short, just enough to know where to look.
+
+
+  Do NOT save: anything easily rederived (their name if already in the transcript, a fact stated
+  once with no lasting relevance), ephemeral details of the current conversation, or anything
+  already obvious from context. Write memories unprompted when you learn something genuinely worth
+  carrying forward — don't wait to be asked — but skip anything that wouldn't change how you'd
+  answer a future, unrelated question. If asked to forget something, find it via view and use
+  action="forget".

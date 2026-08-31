@@ -150,6 +150,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		agentCtx.IncrementBraveUsage = func() error { _, err := db.IncrementAPIUsage("brave"); return err }
 		agentCtx.ParallelUsageThisMonth = func() (int, error) { return db.GetAPIUsage("parallel") }
 		agentCtx.IncrementParallelUsage = func() error { _, err := db.IncrementAPIUsage("parallel"); return err }
+		agentCtx.ListMemories = db.ListMemories
+		agentCtx.GetMemory = db.GetMemory
+		agentCtx.WriteMemory = db.CreateMemory
+		agentCtx.EditMemory = db.UpdateMemory
+		agentCtx.ForgetMemory = db.DeleteMemory
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)

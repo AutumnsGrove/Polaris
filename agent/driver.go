@@ -185,6 +185,7 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		log.Warn("failed to read prompt.md, using fallback system prompt", "err", err)
 	}
 	prompt = applyToolsPlaceholder(prompt, ctx)
+	prompt = applyMemoriesPlaceholder(prompt, ctx)
 	if voiceMode {
 		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
@@ -204,6 +205,18 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 // rendered tool list is identical.
 func applyToolsPlaceholder(prompt string, ctx *tools.Context) string {
 	return strings.ReplaceAll(prompt, "{tools}", tools.ToolsPrompt(ctx))
+}
+
+// applyMemoriesPlaceholder replaces every "{memories}" occurrence with the
+// current memory index — see tools.MemoryIndexPrompt. When memory isn't
+// wired into ctx (the benchmark harness's isolated Context — see
+// catalog.go's "memory_store" Requires case), MemoryIndexPrompt returns "",
+// which collapses the "## What you remember" heading down to an empty
+// section rather than leaving a literal "{memories}" token or a dangling
+// heading with nothing under it; that's an acceptable cosmetic wrinkle for
+// a code path that never shows its system prompt to anyone.
+func applyMemoriesPlaceholder(prompt string, ctx *tools.Context) string {
+	return strings.ReplaceAll(prompt, "{memories}", tools.MemoryIndexPrompt(ctx))
 }
 
 // deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the
