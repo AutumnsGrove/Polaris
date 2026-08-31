@@ -2,15 +2,27 @@
 	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import { requestFreshLocation } from '$lib/geolocation';
-	import { Send, MapPin, Loader2 } from '@lucide/svelte';
+	import { Send, MapPin, Loader2, Check } from '@lucide/svelte';
 
 	// isLast: only the thread's current last turn gets working controls —
 	// any later message already implies this question is resolved
 	// (answering it is just an ordinary chat message, see
-	// tools/registry.go's PendingQuestion doc comment), so an older one in
-	// history renders as plain inert text instead of stale, unusable
-	// buttons.
-	let { turn, isLast }: { turn: ChatTurn; isLast: boolean } = $props();
+	// tools/registry.go's PendingQuestion doc comment). answeredWith is
+	// that next message's content, if there is one — used to render a
+	// static, resolved view (which option was picked) instead of the
+	// question disappearing entirely once it's no longer live. undefined
+	// means either isLast (nothing to resolve with yet) or, on a genuinely
+	// interrupted thread, that no answer ever came.
+	let { turn, isLast, answeredWith }: { turn: ChatTurn; isLast: boolean; answeredWith?: string } =
+		$props();
+
+	// Exact match against the offered options — a freeform reply (typed
+	// instead of tapped, or a shared location) won't match any of them,
+	// which is a real, valid outcome: the resolved view falls back to
+	// showing the raw answer text instead of a false-highlighted option.
+	let matchedOption = $derived(
+		answeredWith !== undefined ? turn.pendingQuestion?.options?.find((o) => o === answeredWith) : undefined
+	);
 
 	let freeform = $state('');
 	let locatingInProgress = $state(false);
@@ -81,6 +93,35 @@
 			</button>
 		</form>
 	</div>
+{:else if turn.pendingQuestion && answeredWith !== undefined}
+	<!-- Resolved: the question already got a real answer (the next message
+	     in the thread), so this renders as plain historical record — the
+	     same options list, but inert, with whichever one matches the
+	     answer picked out. No location/freeform controls; there's nothing
+	     left to do here. -->
+	<div class="question-card resolved">
+		{#if turn.pendingQuestion.options?.length}
+			<div class="options">
+				{#each turn.pendingQuestion.options as option, i (option)}
+					<div class="option-row" class:picked={option === matchedOption}>
+						{#if option === matchedOption}
+							<span class="option-index picked-index"><Check size={12} /></span>
+						{:else}
+							<span class="option-index">{i + 1}</span>
+						{/if}
+						<span class="option-text">{option}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
+		{#if matchedOption === undefined}
+			<!-- A freeform reply or a shared location matches none of the
+			     offered options — still worth showing what was actually
+			     answered, rather than leaving the resolved card silent
+			     about it. -->
+			<p class="answered-freeform">Answered: {answeredWith}</p>
+		{/if}
+	</div>
 {/if}
 
 <style>
@@ -150,6 +191,35 @@
 		color: var(--color-text-dim);
 		font-size: 11px;
 		font-weight: 600;
+	}
+
+	/* Resolved (historical) rendering — same list, but inert: dimmed
+	   overall, with the one that was actually picked brought back to full
+	   opacity and marked with a check instead of its number. */
+	.question-card.resolved .option-row {
+		cursor: default;
+		opacity: 0.55;
+	}
+
+	.question-card.resolved .option-row.picked {
+		opacity: 1;
+	}
+
+	.picked-index {
+		background: var(--color-accent);
+		color: oklch(18% 0.02 75);
+	}
+
+	:root[data-theme='light'] .picked-index {
+		color: oklch(98% 0.005 80);
+	}
+
+	.answered-freeform {
+		margin: 0;
+		padding: var(--space-sm) var(--space-md);
+		font-size: 12.5px;
+		font-style: italic;
+		color: var(--color-text-dim);
 	}
 
 	.location-action {

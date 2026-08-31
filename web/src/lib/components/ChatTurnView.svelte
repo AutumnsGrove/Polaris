@@ -185,7 +185,18 @@
 			{/if}
 
 			{#if turn.pendingQuestion}
-				<AskUserQuestionCard {turn} isLast={index === appState.turns.length - 1} />
+				<!-- The turn right after one that ended with a pending question
+				     is, definitionally, however it was answered — see
+				     tools/registry.go's PendingQuestion doc comment: "answering
+				     it is just sending the next ordinary chat message". Passing
+				     that content down lets the card show a resolved, static view
+				     (which option was picked) instead of vanishing once it's no
+				     longer the live, interactive one. -->
+				<AskUserQuestionCard
+					{turn}
+					isLast={index === appState.turns.length - 1}
+					answeredWith={appState.turns[index + 1]?.role === 'user' ? appState.turns[index + 1].content : undefined}
+				/>
 			{/if}
 
 			{#if turn.cards?.length}

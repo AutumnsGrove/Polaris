@@ -3,7 +3,7 @@
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen, Image } from '@lucide/svelte';
+	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen, Image, MessageCircleQuestion } from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 	// Tool calls start collapsed (their result is secondary detail) but a
@@ -40,6 +40,13 @@
 			if (query) return `Searching attachment: ${query}`;
 			return `Reading attachment: page ${item.args?.page ?? 1}`;
 		}
+		// The real interactive UI for this lives in AskUserQuestionCard.svelte
+		// (the options list + resolved/picked state) — this chip is just a
+		// one-line timeline marker for it, so it names the question rather
+		// than the literal tool name or ask_user_question.go's stale
+		// "waiting for a reply" placeholder result (accurate only at the
+		// instant the call happened, not after it's been answered).
+		if (item.tool === 'ask_user_question') return `Asked: ${item.args?.question ?? ''}`;
 		if (item.tool === 'memory') {
 			// Mirrors tools/memory.go's handleMemory, which only ever logs
 			// {action, name} (never description/content — those can be
@@ -116,6 +123,8 @@
 				<Image size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'memory'}
 				<Brain size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'ask_user_question'}
+				<MessageCircleQuestion size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}
