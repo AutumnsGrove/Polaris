@@ -257,6 +257,13 @@ type Result struct {
 	// cmd/benchmark.go's per-question tracking (see benchmark/tracking.go);
 	// not otherwise consumed today.
 	TurnCount int
+	// ResearchCalls is how many research tool calls (web_search/web_read/
+	// etc — see isResearchTool) fired this turn, mirroring the loop's own
+	// researchCalls counter used for the check-in/stale-streak nudges.
+	// Distinct from TurnCount: concurrent tool dispatch can fire several
+	// research calls within a single LLM round-trip, so the two diverge.
+	// Exposed for cmd/benchmark.go's tracking DB (research_calls column).
+	ResearchCalls int
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -367,6 +374,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				CostUSD:       totalCost,
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:     turn + 1,
+				ResearchCalls: researchCalls,
 			}, nil
 		}
 
@@ -413,6 +421,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				CostUSD:         totalCost,
 				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:       turn + 1,
+				ResearchCalls:   researchCalls,
 				PendingQuestion: ctx.PendingQuestion,
 			}, nil
 		}
@@ -496,6 +505,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 		TurnCount:     maxTurns + 1, // every loop iteration ran, plus this forced wrap-up call
+		ResearchCalls: researchCalls,
 	}, nil
 }
 

@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	benchmarkSuite    string
 	benchmarkDataset  string
 	benchmarkN        int
 	benchmarkSeed     int64
@@ -33,23 +34,29 @@ var (
 
 var benchmarkCmd = &cobra.Command{
 	Use:   "benchmark",
-	Short: "Run the Polaris harness against a local BrowseComp sample, graded by an LLM judge",
-	Long: "Runs a sample of OpenAI's BrowseComp dataset (openai/simple-evals) through the Polaris\n" +
-		"harness and grades each answer with an LLM judge, the same way the published BrowseComp\n" +
-		"scores are produced. This is entirely separate from a normal Polaris run: it opens its own\n" +
-		"SQLite database (--db) instead of config.yaml's, so it never touches production stats or\n" +
-		"the real Brave/Parallel monthly usage caps, and it pins every search to Brave (no SearXNG/\n" +
-		"Parallel/Tavily fallback chain) so results come from the same provider on every question and\n" +
-		"across repeated runs.\n\n" +
-		"You need the dataset file yourself first — download browse_comp_test_set.csv from\n" +
+	Short: "Run the Polaris harness against a local BrowseComp/SimpleQA/LiveNewsBench sample, graded by an LLM judge",
+	Long: "Runs a sample of a published benchmark dataset (--suite: browsecomp, simpleqa, or\n" +
+		"livenewsbench) through the Polaris harness and grades each answer with an LLM judge, the same\n" +
+		"way the published scores are produced. This is entirely separate from a normal Polaris run:\n" +
+		"it opens its own SQLite database (--db) instead of config.yaml's, so it never touches\n" +
+		"production stats or the real Brave/Parallel monthly usage caps, and it pins every search to\n" +
+		"Brave (no SearXNG/Parallel/Tavily fallback chain) so results come from the same provider on\n" +
+		"every question and across repeated runs.\n\n" +
+		"You need the dataset file yourself first. browsecomp: download browse_comp_test_set.csv from\n" +
 		"https://www.kaggle.com/datasets/openai/browsecomp-a-benchmark-for-browsing-agents (requires\n" +
-		"a free Kaggle account; this command doesn't script that download) and point --dataset at it.",
+		"a free Kaggle account). simpleqa: download simple_qa_test_set.csv from\n" +
+		"https://openaipublic.blob.core.windows.net/simple-evals/simple_qa_test_set.csv (no account\n" +
+		"needed). livenewsbench: download human_verified_test.jsonl from\n" +
+		"https://github.com/YunfanZhang42/LiveNewsBench's datasets/<release>/ directory (no account\n" +
+		"needed). This command doesn't script any of these downloads — point --dataset at whichever\n" +
+		"file you fetched, matching --suite.",
 	RunE: runBenchmark,
 }
 
 func init() {
 	benchmarkCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (used only for API keys/URLs)")
-	benchmarkCmd.Flags().StringVar(&benchmarkDataset, "dataset", "", "path to the (encrypted) browse_comp_test_set.csv (required)")
+	benchmarkCmd.Flags().StringVar(&benchmarkSuite, "suite", "browsecomp", fmt.Sprintf("benchmark suite to run: %v", benchmark.SuiteNames()))
+	benchmarkCmd.Flags().StringVar(&benchmarkDataset, "dataset", "", "path to the suite's dataset CSV (required) — browsecomp: the encrypted browse_comp_test_set.csv; simpleqa: simple_qa_test_set.csv")
 	benchmarkCmd.Flags().IntVar(&benchmarkN, "n", 50, "number of questions to sample")
 	benchmarkCmd.Flags().Int64Var(&benchmarkSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run (default), pass an explicit value to reproduce a specific run's subset")
 	benchmarkCmd.Flags().StringVarP(&benchmarkModel, "model", "m", "", "model id, used for BOTH the harness under test and the LLM grader (defaults to default_model)")
@@ -84,6 +91,11 @@ type benchmarkResult struct {
 }
 
 func runBenchmark(cmd *cobra.Command, args []string) error {
+	suite, err := benchmark.LookupSuite(benchmarkSuite)
+	if err != nil {
+		return err
+	}
+
 	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -126,7 +138,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	}
 	defer trackingDB.Close()
 
-	rows, err := benchmark.LoadDataset(benchmarkDataset)
+	rows, err := suite.LoadDataset(benchmarkDataset)
 	if err != nil {
 		return fmt.Errorf("loading dataset: %w", err)
 	}
@@ -139,8 +151,20 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		seed = time.Now().UnixNano()
 	}
 	sample := benchmark.Sample(rows, benchmarkN, seed)
-	fmt.Printf("model: %s\ndataset: %d questions, sampled %d (seed %d)\nbenchmark db: %s\n\n",
-		modelCfg.Name, len(rows), len(sample), seed, benchmarkDB)
+
+	// One table per invocation (see benchmark.TrackingDB's doc comment) —
+	// runAt is fixed once here and reused for every row's implicit
+	// membership in this run, rather than recomputed per-question, so a
+	// long-running sample can't straddle a table-name-changing second
+	// boundary partway through.
+	runAt := time.Now().UTC().Format(time.RFC3339)
+	run, err := trackingDB.StartRun(runAt, suite.Name(), modelCfg.ID)
+	if err != nil {
+		return fmt.Errorf("starting tracking run: %w", err)
+	}
+
+	fmt.Printf("suite: %s\nmodel: %s\ndataset: %d questions, sampled %d (seed %d)\nbenchmark db: %s\ntracking table: %s\n\n",
+		suite.Name(), modelCfg.Name, len(rows), len(sample), seed, benchmarkDB, run.Table)
 
 	outFile, err := os.Create(benchmarkOut)
 	if err != nil {
@@ -161,8 +185,6 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		// question specifically, rather than the run as a whole.
 		braveBefore, _ := db.GetAPIUsage("brave")
 		record := benchmark.RunRecord{
-			RunAt:      time.Now().UTC().Format(time.RFC3339),
-			Model:      modelCfg.ID,
 			DatasetRow: row.Index,
 		}
 
@@ -200,12 +222,12 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			record.BraveCalls = braveAfter - braveBefore
 			record.Verdict = verdict
 			record.Error = errMsg
-			if err := trackingDB.Record(record); err != nil {
+			if err := run.Record(record); err != nil {
 				fmt.Printf("(tracking-db write failed: %v) ", err)
 			}
 		}
 
-		result, err := agent.Run(context.Background(), agentCtx, nil, benchmark.BuildQuery(row.Problem))
+		result, err := agent.Run(context.Background(), agentCtx, nil, suite.BuildQuery(row.Problem))
 		if err != nil {
 			fmt.Printf("agent run failed: %v\n", err)
 			recordAndLog("error", err.Error())
@@ -215,6 +237,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		totalCost += result.CostUSD
 		record.SubjectCostUSD = result.CostUSD
 		record.AssistantTurns = result.TurnCount
+		record.ResearchCalls = result.ResearchCalls
 
 		// agent.Run can legitimately return a nil error with an empty
 		// Answer — the model exhausted every retry inside a turn and its
@@ -232,7 +255,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		graderPrompt := benchmark.BuildGraderPrompt(row.Problem, result.Answer, row.Answer)
+		graderPrompt := suite.BuildGraderPrompt(row.Problem, result.Answer, row.Answer)
 		graderResp, err := client.ChatCompletionStreaming(context.Background(),
 			[]llm.ChatMessage{{Role: "user", Content: graderPrompt}}, nil, nil)
 		if err != nil {
@@ -244,7 +267,7 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		totalCost += graderResp.CostUSD
 		record.GraderCostUSD = graderResp.CostUSD
 
-		isCorrect, verdict := benchmark.Grade(graderResp.Content)
+		isCorrect, verdict := suite.Grade(graderResp.Content)
 		graded++
 		if isCorrect {
 			correct++
@@ -269,8 +292,8 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	}
 
 	braveUsed, _ := db.GetAPIUsage("brave")
-	fmt.Printf("\naccuracy: %d/%d (%.1f%%)\ntotal cost: $%.4f\nbrave requests this run: %d\nresults written to: %s\ntracking db: %s\n",
-		correct, graded, safePct(correct, graded), totalCost, braveUsed, benchmarkOut, benchmarkTracking)
+	fmt.Printf("\naccuracy: %d/%d (%.1f%%)\ntotal cost: $%.4f\nbrave requests this run: %d\nresults written to: %s\ntracking db: %s (table: %s)\n",
+		correct, graded, safePct(correct, graded), totalCost, braveUsed, benchmarkOut, benchmarkTracking, run.Table)
 	return nil
 }
 
