@@ -250,6 +250,13 @@ type Result struct {
 	// message and skip anything that assumes the turn produced a normal
 	// finished answer (follow-up suggestions, most notably).
 	PendingQuestion *tools.PendingQuestion
+	// TurnCount is how many iterations of the main loop below actually
+	// ran before this Result was produced (1 for a plain first-turn
+	// answer, more for each tool-call round-trip) — including the forced
+	// wrap-up call, if the loop reached it. Primarily for
+	// cmd/benchmark.go's per-question tracking (see benchmark/tracking.go);
+	// not otherwise consumed today.
+	TurnCount int
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -359,6 +366,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				Cards:         ctx.Cards,
 				CostUSD:       totalCost,
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
+				TurnCount:     turn + 1,
 			}, nil
 		}
 
@@ -404,6 +412,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				Cards:           ctx.Cards,
 				CostUSD:         totalCost,
 				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
+				TurnCount:       turn + 1,
 				PendingQuestion: ctx.PendingQuestion,
 			}, nil
 		}
@@ -486,6 +495,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		Cards:         ctx.Cards,
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
+		TurnCount:     maxTurns + 1, // every loop iteration ran, plus this forced wrap-up call
 	}, nil
 }
 

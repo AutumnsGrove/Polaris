@@ -20,6 +20,14 @@ import (
 // Row is one decrypted BrowseComp question. Problem/Answer are already
 // decrypted — see LoadDataset — never the raw ciphertext from the CSV.
 type Row struct {
+	// Index is this row's 0-based position in the source CSV, stable
+	// across runs as long as the CSV file itself doesn't change (it's a
+	// fixed Kaggle download, so it doesn't) — used as the question
+	// identifier in the tracking DB (see tracking.go) specifically so
+	// that DB never needs to store BrowseComp's actual question/answer
+	// text, only "row 868 was correct" — see the canary/leakage note in
+	// .gitignore's benchmark/data/ entry.
+	Index        int
 	Problem      string
 	Answer       string
 	ProblemTopic string
@@ -99,7 +107,7 @@ func LoadDataset(csvPath string) ([]Row, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decrypting answer for row %d: %w", len(rows)+1, err)
 		}
-		row := Row{Problem: problem, Answer: answer, Canary: canary}
+		row := Row{Index: len(rows), Problem: problem, Answer: answer, Canary: canary}
 		if i, ok := col["problem_topic"]; ok && i < len(record) {
 			row.ProblemTopic = record[i]
 		}

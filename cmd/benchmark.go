@@ -22,12 +22,13 @@ import (
 )
 
 var (
-	benchmarkDataset string
-	benchmarkN       int
-	benchmarkSeed    int64
-	benchmarkModel   string
-	benchmarkDB      string
-	benchmarkOut     string
+	benchmarkDataset  string
+	benchmarkN        int
+	benchmarkSeed     int64
+	benchmarkModel    string
+	benchmarkDB       string
+	benchmarkOut      string
+	benchmarkTracking string
 )
 
 var benchmarkCmd = &cobra.Command{
@@ -54,14 +55,21 @@ func init() {
 	benchmarkCmd.Flags().StringVarP(&benchmarkModel, "model", "m", "", "model id, used for BOTH the harness under test and the LLM grader (defaults to default_model)")
 	benchmarkCmd.Flags().StringVar(&benchmarkDB, "db", "polaris-benchmark.db", "path to the isolated benchmark database (never the production one)")
 	benchmarkCmd.Flags().StringVar(&benchmarkOut, "out", "benchmark-results.jsonl", "path to write per-question JSONL results")
+	benchmarkCmd.Flags().StringVar(&benchmarkTracking, "tracking-db", "benchmark-tracking.db", "persistent SQLite DB of per-question outcomes across every run (accumulates — never wiped, unlike --db)")
 	if err := benchmarkCmd.MarkFlagRequired("dataset"); err != nil {
 		panic(err)
 	}
 	rootCmd.AddCommand(benchmarkCmd)
 }
 
-// benchmarkResult is one line of the --out JSONL file.
+// benchmarkResult is one line of the --out JSONL file. Kept alongside
+// (not instead of) --tracking-db's SQLite record: this file carries the
+// full text (question/answer/grader reasoning) for reading a single run
+// by eye, while the tracking DB deliberately omits that text and
+// accumulates across every run for querying trends. DatasetRow ties a
+// line here back to its tracking-DB row.
 type benchmarkResult struct {
+	DatasetRow      int     `json:"dataset_row"`
 	Question        string  `json:"question"`
 	ReferenceAnswer string  `json:"reference_answer"`
 	HarnessAnswer   string  `json:"harness_answer"`
@@ -70,6 +78,8 @@ type benchmarkResult struct {
 	GraderReasoning string  `json:"grader_reasoning,omitempty"`
 	SubjectCostUSD  float64 `json:"subject_cost_usd"`
 	GraderCostUSD   float64 `json:"grader_cost_usd"`
+	AssistantTurns  int     `json:"assistant_turns"`
+	BraveCalls      int     `json:"brave_calls"`
 	Error           string  `json:"error,omitempty"`
 }
 
@@ -110,6 +120,12 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	trackingDB, err := benchmark.OpenTracking(benchmarkTracking)
+	if err != nil {
+		return fmt.Errorf("opening tracking database %s: %w", benchmarkTracking, err)
+	}
+	defer trackingDB.Close()
+
 	rows, err := benchmark.LoadDataset(benchmarkDataset)
 	if err != nil {
 		return fmt.Errorf("loading dataset: %w", err)
@@ -137,7 +153,18 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	var totalCost float64
 
 	for i, row := range sample {
-		fmt.Printf("[%d/%d] ", i+1, len(sample))
+		fmt.Printf("[%d/%d] (row %d) ", i+1, len(sample), row.Index)
+
+		// Brave calls are only ever incremented (never per-question reset)
+		// against this run's single isolated db — a before/after delta on
+		// the running total is the only way to attribute calls to THIS
+		// question specifically, rather than the run as a whole.
+		braveBefore, _ := db.GetAPIUsage("brave")
+		record := benchmark.RunRecord{
+			RunAt:      time.Now().UTC().Format(time.RFC3339),
+			Model:      modelCfg.ID,
+			DatasetRow: row.Index,
+		}
 
 		agentCtx := &tools.Context{
 			Ctx:            context.Background(),
@@ -163,13 +190,31 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			IncrementBraveUsage: func() error { _, err := db.IncrementAPIUsage("brave"); return err },
 		}
 
+		// recordAndLog fills in whatever RunRecord fields are known so far
+		// (brave_calls via the before/after delta, always computable) and
+		// writes the tracking-DB row — called from every exit point below,
+		// success or failure, so the tracking DB's history is complete
+		// even for questions that never made it to grading.
+		recordAndLog := func(verdict, errMsg string) {
+			braveAfter, _ := db.GetAPIUsage("brave")
+			record.BraveCalls = braveAfter - braveBefore
+			record.Verdict = verdict
+			record.Error = errMsg
+			if err := trackingDB.Record(record); err != nil {
+				fmt.Printf("(tracking-db write failed: %v) ", err)
+			}
+		}
+
 		result, err := agent.Run(context.Background(), agentCtx, nil, benchmark.BuildQuery(row.Problem))
 		if err != nil {
 			fmt.Printf("agent run failed: %v\n", err)
-			_ = enc.Encode(benchmarkResult{Question: row.Problem, ReferenceAnswer: row.Answer, Error: err.Error()})
+			recordAndLog("error", err.Error())
+			_ = enc.Encode(benchmarkResult{DatasetRow: row.Index, Question: row.Problem, ReferenceAnswer: row.Answer, Error: err.Error()})
 			continue
 		}
 		totalCost += result.CostUSD
+		record.SubjectCostUSD = result.CostUSD
+		record.AssistantTurns = result.TurnCount
 
 		// agent.Run can legitimately return a nil error with an empty
 		// Answer — the model exhausted every retry inside a turn and its
@@ -182,7 +227,8 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		// it actually is.
 		if strings.TrimSpace(result.Answer) == "" {
 			fmt.Printf("empty answer (model exhausted its turn budget without producing one)\n")
-			_ = enc.Encode(benchmarkResult{Question: row.Problem, ReferenceAnswer: row.Answer, SubjectCostUSD: result.CostUSD, Error: "empty answer"})
+			recordAndLog("empty", "empty answer")
+			_ = enc.Encode(benchmarkResult{DatasetRow: row.Index, Question: row.Problem, ReferenceAnswer: row.Answer, SubjectCostUSD: result.CostUSD, AssistantTurns: result.TurnCount, Error: "empty answer"})
 			continue
 		}
 
@@ -191,10 +237,12 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			[]llm.ChatMessage{{Role: "user", Content: graderPrompt}}, nil, nil)
 		if err != nil {
 			fmt.Printf("grading failed: %v\n", err)
-			_ = enc.Encode(benchmarkResult{Question: row.Problem, ReferenceAnswer: row.Answer, HarnessAnswer: result.Answer, SubjectCostUSD: result.CostUSD, Error: err.Error()})
+			recordAndLog("error", err.Error())
+			_ = enc.Encode(benchmarkResult{DatasetRow: row.Index, Question: row.Problem, ReferenceAnswer: row.Answer, HarnessAnswer: result.Answer, SubjectCostUSD: result.CostUSD, AssistantTurns: result.TurnCount, Error: err.Error()})
 			continue
 		}
 		totalCost += graderResp.CostUSD
+		record.GraderCostUSD = graderResp.CostUSD
 
 		isCorrect, verdict := benchmark.Grade(graderResp.Content)
 		graded++
@@ -202,8 +250,11 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			correct++
 		}
 		fmt.Printf("correct: %s (running: %d/%d)\n", verdict, correct, graded)
+		record.Correct = &isCorrect
+		recordAndLog(verdict, "")
 
 		_ = enc.Encode(benchmarkResult{
+			DatasetRow:      row.Index,
 			Question:        row.Problem,
 			ReferenceAnswer: row.Answer,
 			HarnessAnswer:   result.Answer,
@@ -212,12 +263,14 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			GraderReasoning: graderResp.Content,
 			SubjectCostUSD:  result.CostUSD,
 			GraderCostUSD:   graderResp.CostUSD,
+			AssistantTurns:  result.TurnCount,
+			BraveCalls:      record.BraveCalls,
 		})
 	}
 
 	braveUsed, _ := db.GetAPIUsage("brave")
-	fmt.Printf("\naccuracy: %d/%d (%.1f%%)\ntotal cost: $%.4f\nbrave requests this run: %d\nresults written to: %s\n",
-		correct, graded, safePct(correct, graded), totalCost, braveUsed, benchmarkOut)
+	fmt.Printf("\naccuracy: %d/%d (%.1f%%)\ntotal cost: $%.4f\nbrave requests this run: %d\nresults written to: %s\ntracking db: %s\n",
+		correct, graded, safePct(correct, graded), totalCost, braveUsed, benchmarkOut, benchmarkTracking)
 	return nil
 }
 
