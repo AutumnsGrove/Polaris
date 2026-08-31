@@ -44,8 +44,8 @@ var memoryDef = llm.ToolDef{
 					"description": "user: who they are, their role/preferences. feedback: guidance on how to approach work, corrections or confirmed approaches. project: facts about ongoing work/goals not obvious from context. reference: pointers to where more detail lives. Required for write; optional for edit (omit to leave unchanged).",
 				},
 				"description": map[string]interface{}{
-					"type": "string",
-					"description": fmt.Sprintf("One line summarizing this memory — sent to you every turn as part of the always-visible index, so keep it short and specific (max %d characters). Required for write; optional for edit (omit to leave unchanged).", maxMemoryDescriptionChars),
+					"type":        "string",
+					"description": fmt.Sprintf("One line summarizing this memory — sent to you every turn as part of the always-visible index, so keep it short and specific (max %d characters). Required for write; optional for edit (omit to leave unchanged).", MaxMemoryDescriptionChars),
 				},
 				"content": map[string]interface{}{
 					"type":        "string",
@@ -67,7 +67,7 @@ func init() { Register("memory", handleMemory) }
 // than storing it and discovering the mess later.
 var memoryNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// maxMemoryDescriptionChars bounds description, not content — description
+// MaxMemoryDescriptionChars bounds description, not content — description
 // is what MemoryIndexPrompt replays into the system prompt on every single
 // future turn, in every thread, forever, so an unbounded one is a standing
 // per-turn cost that only grows; content is only ever fetched on demand via
@@ -76,7 +76,7 @@ var memoryNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // project's own memory files use), not a one-line-only limit — the tool
 // description's own "keep it short" guidance is what should keep the common
 // case far under this in practice, not the cap itself.
-const maxMemoryDescriptionChars = 2000
+const MaxMemoryDescriptionChars = 2000
 
 func handleMemory(argsJSON string, ctx *Context) string {
 	var args struct {
@@ -126,8 +126,8 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 	if description == "" || content == "" {
 		return "error: description and content are required to write a memory"
 	}
-	if len(description) > maxMemoryDescriptionChars {
-		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), maxMemoryDescriptionChars)
+	if len(description) > MaxMemoryDescriptionChars {
+		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), MaxMemoryDescriptionChars)
 	}
 	if err := ctx.WriteMemory(name, memType, description, content); err != nil {
 		if err == store.ErrMemoryExists {
@@ -154,8 +154,8 @@ func handleMemoryEdit(ctx *Context, name, memType, description, content string) 
 	if memType != "" && !isValidMemoryType(memType) {
 		return "error: type must be one of user, feedback, project, reference"
 	}
-	if len(description) > maxMemoryDescriptionChars {
-		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), maxMemoryDescriptionChars)
+	if len(description) > MaxMemoryDescriptionChars {
+		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), MaxMemoryDescriptionChars)
 	}
 	if err := ctx.EditMemory(name, memType, description, content); err != nil {
 		if err == store.ErrMemoryNotFound {

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
+	import MemorySettings from './MemorySettings.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -14,6 +15,7 @@
 	// in-flight to preserve here. The panel always reopens on the normal
 	// settings view, which is the right default every time.
 	let showStats = $state(false);
+	let showMemory = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
@@ -124,6 +126,16 @@
 					<p class="hint">Loading…</p>
 				</section>
 			{/if}
+		{:else if showMemory}
+			<div class="modal-panel-header">
+				<button class="icon-btn" onclick={() => (showMemory = false)} title="Back to settings">
+					<ChevronLeft size={18} />
+				</button>
+				<h2>Memory</h2>
+				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
+			</div>
+
+			<MemorySettings />
 		{:else}
 			<div class="modal-panel-header">
 				<h2>Settings</h2>
@@ -233,6 +245,19 @@
 					Used by "near me" questions when the browser can't get your real location (it needs
 					https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
 					is available.
+				</p>
+			</section>
+
+			<section>
+				<h3>Memory</h3>
+				<div class="row">
+					<span>What it remembers about you</span>
+					<button class="btn manage-btn" onclick={() => (showMemory = true)}>
+						<Brain size={14} /> Manage
+					</button>
+				</div>
+				<p class="hint">
+					View, edit by telling it what to change, or forget things it's saved across conversations.
 				</p>
 			</section>
 

@@ -109,7 +109,7 @@ func TestHandleMemory_WriteRejectsInvalidName(t *testing.T) {
 
 func TestHandleMemory_WriteRejectsOverlongDescription(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	long := strings.Repeat("a", maxMemoryDescriptionChars+1)
+	long := strings.Repeat("a", MaxMemoryDescriptionChars+1)
 	result := Dispatch("memory", `{"action":"write","name":"too-long","type":"user","description":"`+long+`","content":"c"}`, ctx)
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error for an over-cap description", result)
@@ -135,7 +135,7 @@ func TestHandleMemory_EditIsPartial(t *testing.T) {
 func TestHandleMemory_EditRejectsOverlongDescription(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
 	Dispatch("memory", `{"action":"write","name":"partial","type":"user","description":"orig","content":"orig"}`, ctx)
-	long := strings.Repeat("a", maxMemoryDescriptionChars+1)
+	long := strings.Repeat("a", MaxMemoryDescriptionChars+1)
 	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"`+long+`"}`, ctx)
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error for an over-cap description", result)

@@ -295,6 +295,10 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("POST /api/debug-log", s.handleDebugLog)
 	s.mux.HandleFunc("GET /api/backup", s.handleListBackups)
 	s.mux.HandleFunc("POST /api/backup", s.handleCreateBackup)
+	s.mux.HandleFunc("GET /api/memories", s.handleListMemories)
+	s.mux.HandleFunc("PATCH /api/memories/{name}", s.handleUpdateMemory)
+	s.mux.HandleFunc("DELETE /api/memories/{name}", s.handleDeleteMemory)
+	s.mux.HandleFunc("POST /api/memories/chat", s.handleMemoryChat)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

@@ -133,6 +133,31 @@ func (s *Store) ListMemories() ([]MemoryIndexEntry, error) {
 	return entries, rows.Err()
 }
 
+// ListMemoriesFull returns every memory's full row (including content and
+// timestamps) — for the settings panel's memory list, which shows full
+// content inline rather than a name-only index. Deliberately a separate
+// method from ListMemories rather than an option/flag on it: ListMemories
+// runs on every single agent turn via MemoryIndexPrompt, so keeping it
+// narrow (three short columns) matters there in a way it doesn't for a
+// settings-panel page load.
+func (s *Store) ListMemoriesFull() ([]Memory, error) {
+	rows, err := s.db.Query(`SELECT name, type, description, content, created_at, updated_at FROM memories ORDER BY type, name`)
+	if err != nil {
+		return nil, fmt.Errorf("list memories: %w", err)
+	}
+	defer rows.Close()
+
+	memories := []Memory{}
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.Name, &m.Type, &m.Description, &m.Content, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("list memories: %w", err)
+		}
+		memories = append(memories, m)
+	}
+	return memories, rows.Err()
+}
+
 // DeleteMemory removes a memory outright — the memory tool's "forget"
 // action, for a memory the model has confirmed is wrong, stale, or the
 // user explicitly asked to have forgotten. Returns ErrMemoryNotFound if

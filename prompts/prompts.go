@@ -50,6 +50,7 @@ type Set struct {
 		TitleRegenerateSystem string `yaml:"title_regenerate_system"`
 		TitleRegenerateTask   string `yaml:"title_regenerate_task"`
 		CompactionSystem      string `yaml:"compaction_system"`
+		MemoryChatSystem      string `yaml:"memory_chat_system"`
 	} `yaml:"turn"`
 
 	Tools struct {
@@ -182,6 +183,17 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
 		"fully replace the conversation history, so omitting something means it's gone for good. Write " +
 		"it as plain prose, not a transcript."
+
+	d.Turn.MemoryChatSystem = "You are managing Polaris's saved memories directly, on the Memory settings page — " +
+		"this is not a general conversation, and the user isn't asking a question to be answered in prose. " +
+		"Interpret their instruction below and make the requested change using the memory tool (edit an " +
+		"existing memory, forget one, or write a new one if they're clearly asking to add something) — you " +
+		"may call it more than once if the instruction implies several changes. Once you're done, reply with " +
+		"one short, plain-text sentence confirming exactly what changed — no markdown, no restating the full " +
+		"memory content back, no extra commentary.\n\n" +
+		"If the instruction is ambiguous about which memory it refers to, use the index below to pick the " +
+		"single best match rather than asking a clarifying question — there's no back-and-forth here, just " +
+		"one instruction and one resulting action.\n\nCurrent memories:\n%s"
 
 	d.Tools.WebReadFilterSystem = "You are the filter pass for a research assistant's web_read tool: a narrow, " +
 		"mechanical extraction step, not a general assistant. You will be given an instruction and a page's " +

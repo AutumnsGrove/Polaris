@@ -35,6 +35,20 @@ export interface UsageStats {
 	compaction_count: number;
 }
 
+// Mirrors store.Memory (store/memory.go) — the full row, content included,
+// for the settings panel's Memory list. Distinct from the lean name/type/
+// description index the model gets every turn (see tools.MemoryIndexEntry)
+// since a settings-panel page load isn't cost-sensitive the way every
+// single agent turn is.
+export interface Memory {
+	name: string;
+	type: 'user' | 'feedback' | 'project' | 'reference';
+	description: string;
+	content: string;
+	created_at: string;
+	updated_at: string;
+}
+
 // User-adjustable UI preferences, split out of state.svelte.ts since
 // they're a self-contained concern: load once, persist to /api/settings,
 // apply the theme attribute — none of it touches thread/turn state.
@@ -88,6 +102,23 @@ export class SettingsState {
 	// panel just doesn't render that section then). Trailing-30-day scope
 	// matches the CLI's `polaris stats` default.
 	usage = $state<UsageStats | null>(null);
+
+	// Memory settings section — see MemorySettings.svelte. memoriesLoaded
+	// mirrors `loaded` above: null/empty is a real, valid state ("nothing
+	// saved yet"), so a separate flag is what distinguishes "hasn't fetched
+	// yet" from "fetched, and there's nothing there".
+	memories = $state<Memory[]>([]);
+	memoriesLoaded = $state(false);
+	// True only while a memory-chat instruction is in flight — a real LLM
+	// round trip (see gateway/memories.go's handleMemoryChat), not
+	// instant, so the input needs a visible busy state same as the
+	// composer does for a normal turn.
+	memoryChatBusy = $state(false);
+	// Last instruction's plain-text confirmation, shown under the input
+	// until the next one replaces it or the panel closes — not an error
+	// channel; a failed request uses showToast instead (see
+	// sendMemoryInstruction).
+	memoryChatMessage = $state('');
 
 	// True once load() has resolved — +page.svelte's composer uses this
 	// (not just checking defaultFocusMode's value) to apply the loaded
@@ -427,6 +458,58 @@ export class SettingsState {
 			// Best-effort — same rationale as checkUpdateStatus: a network
 			// hiccup here shouldn't surface as an error, the section just
 			// stays hidden.
+		}
+	}
+
+	// Re-fetched every time MemorySettings mounts, same "don't trust a
+	// stale snapshot from the last time this was open" reasoning as
+	// loadUsage.
+	async loadMemories() {
+		try {
+			const res = await fetch('/api/memories');
+			if (!res.ok) return;
+			this.memories = await res.json();
+		} catch {
+			// Best-effort — the section just shows its loading/empty state.
+		} finally {
+			this.memoriesLoaded = true;
+		}
+	}
+
+	async deleteMemory(name: string) {
+		const res = await fetch(`/api/memories/${encodeURIComponent(name)}`, { method: 'DELETE' });
+		if (res.ok) {
+			this.memories = this.memories.filter((m) => m.name !== name);
+		}
+		return res.ok;
+	}
+
+	// Drives the "tell it what to change or remove" box — a single
+	// stateless instruction (see gateway/memories.go's handleMemoryChat's
+	// doc comment for why this isn't a persisted conversation), resolved
+	// server-side into whatever memory tool calls it implies, then
+	// returned as a short confirmation plus the fully refreshed list so
+	// this doesn't need a separate loadMemories() round trip after.
+	async sendMemoryInstruction(instruction: string) {
+		this.memoryChatBusy = true;
+		this.memoryChatMessage = '';
+		try {
+			const res = await fetch('/api/memories/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ instruction })
+			});
+			if (!res.ok) {
+				this.memoryChatMessage = "Couldn't process that — try rephrasing.";
+				return;
+			}
+			const data = await res.json();
+			this.memoryChatMessage = data.message ?? '';
+			this.memories = data.memories ?? this.memories;
+		} catch {
+			this.memoryChatMessage = "Couldn't reach the server — try again.";
+		} finally {
+			this.memoryChatBusy = false;
 		}
 	}
 
