@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { Trash2, TriangleAlert, Send, Brain, LoaderPinwheel } from '@lucide/svelte';
+	import { autoResize } from '$lib/actions/autoResize';
 
 	// Re-fetched every time this mounts (the panel unmounts this entirely
 	// on close, same as the rest of SettingsPanel's sub-pages) rather than
@@ -79,13 +80,14 @@
 		What would you like <span class="wordmark">Polaris</span> to remember about you?
 	</h3>
 	<div class="instruction-bar">
-		<input
-			type="text"
+		<textarea
+			rows="1"
 			placeholder="e.g. I prefer metric units, or I'm a backend engineer"
 			bind:value={addText}
+			use:autoResize={{ value: addText, maxHeight: 140 }}
 			onkeydown={(e) => handleKeydown(e, submitAdd)}
 			disabled={appState.settings.memoryChatBusy}
-		/>
+		></textarea>
 		<button
 			class="icon-btn send-btn"
 			onclick={submitAdd}
@@ -153,13 +155,14 @@
 				{#if expandedName === memory.name}
 					<p class="memory-content">{memory.content}</p>
 					<div class="instruction-bar adjust-bar">
-						<input
-							type="text"
+						<textarea
+							rows="1"
 							placeholder="Tell it what to change about this memory"
 							bind:value={adjustText}
+							use:autoResize={{ value: adjustText, maxHeight: 140 }}
 							onkeydown={(e) => handleKeydown(e, () => submitAdjust(memory.name))}
 							disabled={appState.settings.memoryChatBusy}
-						/>
+						></textarea>
 						<button
 							class="icon-btn send-btn"
 							onclick={() => submitAdjust(memory.name)}
@@ -214,7 +217,7 @@
 
 	.instruction-bar {
 		display: flex;
-		align-items: center;
+		align-items: flex-end;
 		gap: var(--space-sm);
 		background: var(--color-surface-2);
 		border-radius: var(--radius-md);
@@ -222,26 +225,36 @@
 		padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md);
 	}
 
-	.instruction-bar input {
+	/* Same auto-growing box as the main composer's own textarea (see
+	   ChatView.svelte + $lib/actions/autoResize) — a long instruction no
+	   longer scrolls sideways in a fixed-height single-line box. */
+	.instruction-bar textarea {
 		flex: 1;
+		resize: none;
 		border: none;
 		background: transparent;
+		font-family: inherit;
 		font-size: 13px;
 		color: var(--color-text);
+		line-height: 1.4;
 		padding: var(--space-sm) 0;
 	}
 
-	.instruction-bar input::placeholder {
+	.instruction-bar textarea::placeholder {
 		color: var(--color-text-dim);
 	}
 
-	.instruction-bar input:disabled {
+	.instruction-bar textarea:disabled {
 		opacity: 0.6;
 	}
 
 	.send-btn {
 		flex-shrink: 0;
 		background: var(--color-surface-3);
+		/* Keeps the button visually anchored to the textarea's first line
+		   as it grows downward, rather than drifting to a vertical center
+		   that no longer matches once there's several lines of text. */
+		margin-bottom: 2px;
 	}
 
 	.send-btn:disabled {
@@ -343,7 +356,7 @@
 		background: var(--color-surface-3);
 	}
 
-	.adjust-bar input {
+	.adjust-bar textarea {
 		font-size: 12.5px;
 	}
 
