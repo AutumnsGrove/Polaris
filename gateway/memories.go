@@ -74,6 +74,11 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteMemory is a DELETE endpoint in name only — store.DeleteMemory
+// soft-deletes (sets disabled = 1), same as handleDeleteThread does for
+// threads, so a forgotten memory's record survives and its name is
+// revivable later (see store/memory.go's CreateMemory) rather than being
+// erased outright.
 func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := s.db.DeleteMemory(name); err != nil {
@@ -85,7 +90,7 @@ func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.db.LogEvent("", "info", "memory", "memory deleted via settings panel", map[string]interface{}{"name": name}, "")
+	s.db.LogEvent("", "info", "memory", "memory disabled (soft delete) via settings panel", map[string]interface{}{"name": name}, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

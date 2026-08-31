@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Trash2, TriangleAlert, Send, Brain, LoaderPinwheel } from '@lucide/svelte';
+	import { Trash2, Send, Brain, LoaderPinwheel } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
+	import ConfirmModal from './ConfirmModal.svelte';
 
 	// Re-fetched every time this mounts (the panel unmounts this entirely
 	// on close, same as the rest of SettingsPanel's sub-pages) rather than
@@ -51,7 +52,9 @@
 		}
 	}
 
-	async function confirmDelete(name: string) {
+	async function confirmDelete() {
+		const name = confirmingDeleteName;
+		if (!name) return;
 		confirmingDeleteName = null;
 		if (expandedName === name) expandedName = null;
 		await appState.settings.deleteMemory(name);
@@ -131,27 +134,14 @@
 					</div>
 					<p class="memory-description">{memory.description}</p>
 				</div>
-				{#if confirmingDeleteName === memory.name}
-					<div class="row-confirm">
-						<div class="row-confirm-message">
-							<TriangleAlert size={13} />
-							<span>Forget this memory?</span>
-						</div>
-						<div class="row-confirm-actions">
-							<button class="text-btn" onclick={() => (confirmingDeleteName = null)}>Cancel</button>
-							<button class="text-btn danger" onclick={() => confirmDelete(memory.name)}>Forget</button>
-						</div>
-					</div>
-				{:else}
-					<button
-						class="icon-btn delete-btn"
-						onclick={() => (confirmingDeleteName = memory.name)}
-						title="Forget this memory"
-						aria-label="Forget this memory"
-					>
-						<Trash2 size={14} />
-					</button>
-				{/if}
+				<button
+					class="icon-btn delete-btn"
+					onclick={() => (confirmingDeleteName = memory.name)}
+					title="Forget this memory"
+					aria-label="Forget this memory"
+				>
+					<Trash2 size={14} />
+				</button>
 				{#if expandedName === memory.name}
 					<p class="memory-content">{memory.content}</p>
 					<div class="instruction-bar adjust-bar">
@@ -182,6 +172,16 @@
 		{/each}
 	{/if}
 </section>
+
+{#if confirmingDeleteName}
+	<ConfirmModal
+		heading="Forget memory"
+		message={`Forget "${confirmingDeleteName}"? Polaris won't bring this up on its own again — you'd need to tell it again for it to come back.`}
+		confirmLabel="Forget"
+		onConfirm={confirmDelete}
+		onCancel={() => (confirmingDeleteName = null)}
+	/>
+{/if}
 
 <style>
 	/* Not shared with SettingsPanel.svelte's own .hint — Svelte's
@@ -369,58 +369,6 @@
 
 	.delete-btn:hover {
 		color: var(--color-danger);
-	}
-
-	.row-confirm {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-sm);
-		margin-top: var(--space-sm);
-		padding-top: var(--space-sm);
-		box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border) 60%, transparent);
-	}
-
-	.row-confirm-message {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		font-size: 12.5px;
-		color: var(--color-text);
-	}
-
-	.row-confirm-message :global(svg) {
-		color: var(--color-danger);
-		flex-shrink: 0;
-	}
-
-	.row-confirm-actions {
-		display: flex;
-		gap: var(--space-sm);
-		flex-shrink: 0;
-	}
-
-	.text-btn {
-		border: none;
-		background: transparent;
-		font-size: 12.5px;
-		font-family: inherit;
-		color: var(--color-text-dim);
-		padding: var(--space-xs) var(--space-sm);
-		border-radius: var(--radius-sm);
-	}
-
-	.text-btn:hover {
-		background: var(--color-surface-3);
-		color: var(--color-text);
-	}
-
-	.text-btn.danger {
-		color: var(--color-danger);
-	}
-
-	.text-btn.danger:hover {
-		background: var(--color-danger-bg);
 	}
 
 	:global(.spin) {

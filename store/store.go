@@ -317,7 +317,15 @@ CREATE TABLE IF NOT EXISTS memories (
 	description TEXT NOT NULL,
 	content TEXT NOT NULL,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- disabled: soft-delete flag, same shape as threads.disabled above —
+	-- "forgetting" a memory sets this rather than issuing a real DELETE,
+	-- so the record survives but is excluded from every read path
+	-- (ListMemories, ListMemoriesFull, GetMemory). See store/memory.go's
+	-- DeleteMemory/CreateMemory doc comments for the full reasoning,
+	-- including why a forgotten name can be reused (CreateMemory revives
+	-- a disabled row instead of failing on it).
+	disabled INTEGER NOT NULL DEFAULT 0
 );
 `
 
@@ -359,6 +367,10 @@ var migrations = []string{
 	// replay by hand.
 	`INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages`,
 	`ALTER TABLE messages ADD COLUMN pending_question TEXT NOT NULL DEFAULT ''`,
+	// memories shipped before the disabled column existed — an install
+	// that already ran CREATE TABLE IF NOT EXISTS memories (above) without
+	// it needs this added explicitly, same as every other column here.
+	`ALTER TABLE memories ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {

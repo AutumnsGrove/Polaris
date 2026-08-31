@@ -106,3 +106,72 @@ func TestMemory_UpdateOrDeleteMissingReturnsNotFound(t *testing.T) {
 		t.Errorf("DeleteMemory on missing name: err = %v, want ErrMemoryNotFound", err)
 	}
 }
+
+// TestMemory_DeleteIsSoftAndExcludesEverywhere guards the actual soft-delete
+// contract: the row survives (a real DELETE would make it un-revivable),
+// but is unreachable through GetMemory/ListMemories/ListMemoriesFull, and a
+// second forget of the same name reports not-found rather than a silent
+// no-op success.
+func TestMemory_DeleteIsSoftAndExcludesEverywhere(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateMemory("temp", "project", "d", "c"); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+
+	if err := s.DeleteMemory("temp"); err != nil {
+		t.Fatalf("DeleteMemory: %v", err)
+	}
+
+	if _, err := s.GetMemory("temp"); err != ErrMemoryNotFound {
+		t.Errorf("GetMemory after delete: err = %v, want ErrMemoryNotFound", err)
+	}
+	if entries, err := s.ListMemories(); err != nil || len(entries) != 0 {
+		t.Errorf("ListMemories after delete = %+v, err %v, want empty", entries, err)
+	}
+	if full, err := s.ListMemoriesFull(); err != nil || len(full) != 0 {
+		t.Errorf("ListMemoriesFull after delete = %+v, err %v, want empty", full, err)
+	}
+	if err := s.UpdateMemory("temp", "project", "new", "new"); err != ErrMemoryNotFound {
+		t.Errorf("UpdateMemory on a disabled name: err = %v, want ErrMemoryNotFound", err)
+	}
+
+	// The row must still physically exist (soft delete, not a real
+	// DELETE) — otherwise there'd be nothing for CreateMemory to revive.
+	var disabled int
+	if err := s.db.QueryRow(`SELECT disabled FROM memories WHERE name = 'temp'`).Scan(&disabled); err != nil {
+		t.Fatalf("row is gone entirely, want a soft-deleted row to survive: %v", err)
+	}
+	if disabled != 1 {
+		t.Errorf("disabled = %d, want 1", disabled)
+	}
+
+	// A second forget of an already-forgotten name is not-found, not a
+	// silent success — there's nothing active left to forget.
+	if err := s.DeleteMemory("temp"); err != ErrMemoryNotFound {
+		t.Errorf("second DeleteMemory: err = %v, want ErrMemoryNotFound", err)
+	}
+}
+
+// TestMemory_CreateRevivesForgottenName is the other half of the soft-delete
+// contract: a name freed up by forgetting a memory must be reusable, not
+// permanently blocked by a disabled row still occupying the primary key.
+func TestMemory_CreateRevivesForgottenName(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateMemory("reused", "user", "original", "original content"); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+	if err := s.DeleteMemory("reused"); err != nil {
+		t.Fatalf("DeleteMemory: %v", err)
+	}
+
+	if err := s.CreateMemory("reused", "project", "brand new", "brand new content"); err != nil {
+		t.Fatalf("CreateMemory (revival): %v", err)
+	}
+	m, err := s.GetMemory("reused")
+	if err != nil {
+		t.Fatalf("GetMemory after revival: %v", err)
+	}
+	if m.Type != "project" || m.Description != "brand new" || m.Content != "brand new content" {
+		t.Errorf("GetMemory after revival = %+v, want the freshly written values, not the forgotten ones", m)
+	}
+}
