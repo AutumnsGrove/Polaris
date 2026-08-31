@@ -68,6 +68,16 @@ with citations.
   in a real voice (Kokoro-82M), not the browser's default robotic TTS. Replies are synthesized and
   played back sentence by sentence as they're ready, not as one call that waits for the whole
   answer — audio starts noticeably sooner on a long reply
+- **Memory** — remembers durable facts about you and your preferences across threads, not just
+  within one conversation: an explicit correction ("keep answers short"), a stated preference meant
+  to stick, or a significant project fact gets saved unprompted, and a compact index of everything
+  it knows rides along in every turn's context so it's actually used, not just stored. A Memory
+  section in Settings shows the full list (view, edit, or forget one directly), plus a
+  "what would you like Polaris to remember about you" box that turns a plain-English instruction
+  ("forget the one about my old job", "change my timezone to Eastern") into the right edit
+- **Clarifying questions** — when a genuinely necessary detail is missing (which city, which of two
+  same-titled books), it can ask a single focused question with tappable options instead of guessing
+  or interrogating you with several questions at once
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   the old version is never deleted, just tucked behind a `‹ 2/3 ›` switcher on the reply, so you can
   browse back to it (or keep going from it) without losing whichever branch you're not looking at
@@ -75,8 +85,9 @@ with citations.
 - **Illustrated sources** — a citation carries a thumbnail (a page's own lead image, a Wikipedia
   article's photo) whenever one's genuinely available, instead of just a bare text chip. arXiv
   citations get a recognizable source badge instead — a real per-paper image doesn't exist to show
-- **Settings panel** — dark/light theme, default model, and a one-click "Update Polaris" button
-  that updates and restarts the service — no SSH required (see [Self-update](#self-update))
+- **Settings panel** — dark/light theme, default model, the Memory list above, and a one-click
+  "Update Polaris" button that updates and restarts the service — no SSH required (see
+  [Self-update](#self-update))
 - **Automatic backups** — a daily, consistent snapshot of the database, kept for 30 days and
   pruned automatically, with a CLI to list/create/restore on demand, optionally mirrored
   off-device to Cloudflare R2 (see [Backups](#backups))
@@ -91,8 +102,9 @@ Browser (SvelteKit SPA, embedded in the Go binary via go:embed)
   ↕ WebSocket (/ws) + REST (/api/*)
 Go backend
   ├── agent    — tool-use loop: think / web_search / web_read / nearby_search / youtube_transcript /
-  │              weather / reference_lookup / github_repo / dictionary / music / books / movies, or
-  │              just answer — independent tool calls in the same turn run concurrently
+  │              weather / reference_lookup / github_repo / dictionary / music / books / movies /
+  │              memory / ask_user_question, or just answer — independent tool calls in the same
+  │              turn run concurrently
   ├── llm      — OpenRouter client, provider-pinned per model for consistent prompt-cache pricing
   ├── search   — SearXNG client; detects a full engine outage and enters a cooldown
   ├── places   — Foursquare + Nominatim geocoding
@@ -100,7 +112,8 @@ Go backend
   │              Tavily's separate Extract API for web_read's JS-rendering fallback — see
   │              [Requirements](#requirements)
   ├── voice    — Voxtral (speech-to-text) + Kokoro-82M (text-to-speech), both via OpenRouter
-  ├── store    — SQLite: threads, messages, settings, running cost, per-provider API usage counts
+  ├── store    — SQLite: threads, messages, memories, settings, running cost, per-provider API
+  │              usage counts
   ├── backup   — daily VACUUM INTO snapshots of the database, rotation, and restore — see Backups
   ├── r2       — hand-rolled SigV4 client mirroring backups off-device to Cloudflare R2 — see Backups
   └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
