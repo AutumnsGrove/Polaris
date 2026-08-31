@@ -94,12 +94,18 @@ func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 // is the only place outside the tools package that needs the same check.
 var validMemoryTypes = map[string]bool{"user": true, "feedback": true, "project": true, "reference": true}
 
-// maxMemoryChatToolTurns bounds handleMemoryChat's tool-call loop — a
-// single instruction should resolve in one or two memory tool calls
-// (edit, maybe a disambiguating view first); this is a backstop against a
-// model that gets stuck re-calling the tool, not a budget it's expected to
-// use anywhere near.
-const maxMemoryChatToolTurns = 4
+// maxMemoryChatToolTurns bounds handleMemoryChat's tool-call loop. Raised
+// from an initial 4 after a live test showed a single instruction naming
+// two unrelated facts ("I prefer metric units and I drink coffee every
+// morning") getting merged into one memory instead of two separate write
+// calls — the fix is mostly prompts.yaml's memory_chat_system now
+// insisting on one call per distinct fact, but a compound instruction
+// naming three or four things genuinely needs that many tool-call rounds
+// before the final text reply, not just a stricter prompt with no room to
+// act on it. Each round can itself carry more than one tool call (a model
+// response's ToolCalls can have several entries — see the dispatch loop
+// below), so this is turns, not a hard cap on total memory writes.
+const maxMemoryChatToolTurns = 6
 
 // handleMemoryChat is the settings panel's "Tell it what to change or
 // remove" box — a single free-text instruction, resolved by giving a

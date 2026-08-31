@@ -8,25 +8,45 @@
 	// shouldn't require a full page reload to show up here.
 	void appState.settings.loadMemories();
 
-	let instruction = $state('');
+	// The generic add box up top — "what should it remember" in general,
+	// with no particular existing memory in mind.
+	let addText = $state('');
+	// The scoped box shown once a specific row is expanded — "adjust THIS
+	// one" rather than a fresh, untargeted instruction. Kept as its own
+	// field (not reusing addText) so expanding a different row while
+	// something's half-typed doesn't leak text between the two contexts.
+	let adjustText = $state('');
 	let expandedName = $state<string | null>(null);
 	let confirmingDeleteName = $state<string | null>(null);
 
 	function toggleExpanded(name: string) {
 		expandedName = expandedName === name ? null : name;
+		adjustText = '';
 	}
 
-	async function submitInstruction() {
-		const text = instruction.trim();
+	async function submitAdd() {
+		const text = addText.trim();
 		if (!text || appState.settings.memoryChatBusy) return;
-		instruction = '';
+		addText = '';
 		await appState.settings.sendMemoryInstruction(text);
 	}
 
-	function handleKeydown(e: KeyboardEvent) {
+	// Prefixing with the memory's own name is enough to disambiguate —
+	// handleMemoryChat's system prompt (see prompts.yaml's
+	// memory_chat_system) already gets the full current index every call,
+	// so the model can match "the 'user-timezone' memory" back to that
+	// exact row rather than guessing from the instruction text alone.
+	async function submitAdjust(name: string) {
+		const text = adjustText.trim();
+		if (!text || appState.settings.memoryChatBusy) return;
+		adjustText = '';
+		await appState.settings.sendMemoryInstruction(`Regarding the memory named "${name}": ${text}`);
+	}
+
+	function handleKeydown(e: KeyboardEvent, onSubmit: () => void) {
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
-			void submitInstruction();
+			onSubmit();
 		}
 	}
 
@@ -55,24 +75,30 @@
 </script>
 
 <section class="memory-instruction">
+	<h3 class="add-heading">
+		What would you like <span class="wordmark">Polaris</span> to remember about you?
+	</h3>
 	<div class="instruction-bar">
 		<input
 			type="text"
-			placeholder="Tell it what to change or remove"
-			bind:value={instruction}
-			onkeydown={handleKeydown}
+			placeholder="e.g. I prefer metric units, or I'm a backend engineer"
+			bind:value={addText}
+			onkeydown={(e) => handleKeydown(e, submitAdd)}
 			disabled={appState.settings.memoryChatBusy}
 		/>
 		<button
 			class="icon-btn send-btn"
-			onclick={submitInstruction}
-			disabled={!instruction.trim() || appState.settings.memoryChatBusy}
+			onclick={submitAdd}
+			disabled={!addText.trim() || appState.settings.memoryChatBusy}
 			title="Send"
 			aria-label="Send"
 		>
 			<Send size={16} class={appState.settings.memoryChatBusy ? 'spin' : ''} />
 		</button>
 	</div>
+	<p class="hint">
+		General, unprompted additions — for changing or forgetting a specific one, open it below.
+	</p>
 	{#if appState.settings.memoryChatMessage}
 		<p class="hint chat-confirmation">{appState.settings.memoryChatMessage}</p>
 	{/if}
@@ -122,6 +148,24 @@
 				{/if}
 				{#if expandedName === memory.name}
 					<p class="memory-content">{memory.content}</p>
+					<div class="instruction-bar adjust-bar">
+						<input
+							type="text"
+							placeholder="Tell it what to change about this memory"
+							bind:value={adjustText}
+							onkeydown={(e) => handleKeydown(e, () => submitAdjust(memory.name))}
+							disabled={appState.settings.memoryChatBusy}
+						/>
+						<button
+							class="icon-btn send-btn"
+							onclick={() => submitAdjust(memory.name)}
+							disabled={!adjustText.trim() || appState.settings.memoryChatBusy}
+							title="Send"
+							aria-label="Send"
+						>
+							<Send size={14} class={appState.settings.memoryChatBusy ? 'spin' : ''} />
+						</button>
+					</div>
 				{/if}
 			</div>
 		{/each}
@@ -140,6 +184,24 @@
 
 	.memory-instruction {
 		margin-bottom: var(--space-lg);
+	}
+
+	.add-heading {
+		margin: 0 0 var(--space-sm) 0;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--color-text);
+		line-height: 1.4;
+	}
+
+	/* Same treatment as ChatView.svelte's .welcome-heading .wordmark —
+	   Asimovian is the brand's single reserved display face, used only
+	   for the literal word "Polaris" wherever it appears in copy. */
+	.add-heading .wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		font-size: 0.95em;
+		letter-spacing: 0.01em;
 	}
 
 	.instruction-bar {
@@ -266,6 +328,15 @@
 		color: var(--color-text);
 		line-height: 1.5;
 		white-space: pre-wrap;
+	}
+
+	.adjust-bar {
+		margin-top: var(--space-sm);
+		background: var(--color-surface-3);
+	}
+
+	.adjust-bar input {
+		font-size: 12.5px;
 	}
 
 	.delete-btn {

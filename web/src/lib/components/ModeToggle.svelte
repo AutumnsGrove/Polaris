@@ -24,7 +24,7 @@
 		aria-selected={mode === 'assistant'}
 	>
 		<Telescope size={13} />
-		Polaris
+		<span class="wordmark">Polaris</span>
 	</button>
 	<button
 		type="button"
@@ -70,6 +70,17 @@
 
 	.mode-toggle button :global(svg) {
 		flex: none;
+	}
+
+	/* Same reserved-brand-face treatment as ChatView.svelte's
+	   .welcome-heading .wordmark and Sidebar.svelte's own switcher label —
+	   the literal word "Polaris" always renders in Asimovian, everywhere
+	   it appears as a name rather than incidental prose. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		font-size: 1.05em;
+		letter-spacing: 0.02em;
 	}
 
 	.mode-toggle button:hover:not(.active) {

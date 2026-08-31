@@ -298,7 +298,7 @@
 						{:else if appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'}
 							Restarting…
 						{:else}
-							Update Polaris
+							Update <span class="wordmark">Polaris</span>
 						{/if}
 					</button>
 					<!-- No pull, no rebuild — just kills and cleanly restarts the
@@ -321,7 +321,7 @@
 						{#if appState.settings.updateKind === 'restart' && (appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
 							Restarting…
 						{:else}
-							Restart Polaris
+							Restart <span class="wordmark">Polaris</span>
 						{/if}
 					</button>
 				</div>
@@ -512,6 +512,16 @@
 		max-height: 180px;
 		overflow-y: auto;
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	}
+
+	/* Same reserved-brand-face treatment used everywhere else "Polaris"
+	   appears as a name (ChatView's welcome heading, the sidebar wordmark,
+	   ModeToggle's switcher) — never left in the surrounding sans-serif. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		font-size: 1.05em;
+		letter-spacing: 0.02em;
 	}
 
 	:global(.spin) {
