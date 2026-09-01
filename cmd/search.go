@@ -155,6 +155,12 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		agentCtx.WriteMemory = db.CreateMemory
 		agentCtx.EditMemory = db.UpdateMemory
 		agentCtx.ForgetMemory = db.DeleteMemory
+		// Honors the settings panel's per-tool disable list here too — this
+		// is exactly the class of gap CLAUDE.md flags for this file's
+		// Brave/Parallel/Tavily wiring: a live-only setting that quietly
+		// only applied to the web UI/websocket path until someone actually
+		// ran `polaris search` and checked what it had access to.
+		agentCtx.DisabledTools = gateway.DisabledToolsFromStore(db)
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)

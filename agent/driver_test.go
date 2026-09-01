@@ -62,8 +62,8 @@ func newTestContext(mock *llmtest.MockClient, rec *recordingEmit, maxTurns int) 
 }
 
 func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
-	base := loadSystemPrompt(&tools.Context{}, false, "", false)
-	brief := loadSystemPrompt(&tools.Context{}, false, FocusModeBrief, false)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
+	brief := loadSystemPrompt(&tools.Context{}, false, FocusModeBrief, false, false)
 	if brief == base {
 		t.Error("loadSystemPrompt(false, FocusModeBrief, false) should differ from the no-focus-mode prompt")
 	}
@@ -73,8 +73,8 @@ func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
 }
 
 func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
-	base := loadSystemPrompt(&tools.Context{}, false, "", false)
-	unknown := loadSystemPrompt(&tools.Context{}, false, "not_a_real_mode", false)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
+	unknown := loadSystemPrompt(&tools.Context{}, false, "not_a_real_mode", false, false)
 	if base != unknown {
 		t.Errorf("an unrecognized focus mode should leave the prompt unchanged, got a difference")
 	}
@@ -802,13 +802,35 @@ func TestRun_DeepResearchRaisesMaxTurns(t *testing.T) {
 }
 
 func TestLoadSystemPrompt_AppliesDeepResearchInstruction(t *testing.T) {
-	base := loadSystemPrompt(&tools.Context{}, false, "", false)
-	deep := loadSystemPrompt(&tools.Context{}, false, "", true)
+	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
+	deep := loadSystemPrompt(&tools.Context{}, false, "", true, false)
 	if deep == base {
 		t.Error("loadSystemPrompt(false, \"\", true) should differ from the non-deep-research prompt")
 	}
 	if !strings.Contains(deep, "Deep Research mode is active") {
 		t.Errorf("prompt = %q, want it to contain the deep research instruction", deep)
+	}
+}
+
+func TestLoadSystemPrompt_AppliesNoResearchInstruction(t *testing.T) {
+	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
+	chat := loadSystemPrompt(&tools.Context{}, false, "", false, true)
+	if chat == base {
+		t.Error("loadSystemPrompt(false, \"\", false, true) should differ from the normal prompt")
+	}
+	if !strings.Contains(chat, "Chat mode is active") {
+		t.Errorf("prompt = %q, want it to contain the no-research instruction", chat)
+	}
+}
+
+func TestLoadSystemPrompt_NoResearchExcludesResearchToolsFromToolsList(t *testing.T) {
+	ctx := &tools.Context{NoResearch: true}
+	prompt := loadSystemPrompt(ctx, false, "", false, true)
+	if strings.Contains(prompt, "- web_search:") {
+		t.Errorf("prompt = %q, want web_search excluded from {tools} when NoResearch is true", prompt)
+	}
+	if !strings.Contains(prompt, "- think:") {
+		t.Errorf("prompt = %q, want non-research tools like think to remain listed", prompt)
 	}
 }
 

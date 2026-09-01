@@ -2,7 +2,7 @@
 	import { appState } from '$lib/state.svelte';
 	import type { FocusMode } from '$lib/types';
 	import { FOCUS_MODES } from '$lib/focusModes';
-	import { Plus, Image as ImageIcon, Cpu, Microscope, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal } from '@lucide/svelte';
+	import { Plus, Image as ImageIcon, Cpu, Microscope, Globe, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -17,10 +17,17 @@
 	let {
 		focusMode = $bindable<FocusMode>('off'),
 		deepResearch = $bindable(false),
+		research = $bindable(true),
 		onAttach
 	}: {
 		focusMode: FocusMode;
 		deepResearch: boolean;
+		// The composer's "Research" toggle — on by default, same shape as
+		// deepResearch but inverted: turning it OFF is what enables chat
+		// mode (see tools.Context.NoResearch), not the other way around,
+		// so a caller that never wires this prop up still gets normal
+		// research behavior rather than accidentally starting in chat mode.
+		research: boolean;
 		onAttach: (file: File) => void;
 	} = $props();
 
@@ -76,6 +83,10 @@
 		deepResearch = !deepResearch;
 	}
 
+	function toggleResearch() {
+		research = !research;
+	}
+
 	function handleFileChange(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
@@ -104,6 +115,9 @@
 	{/if}
 	{#if deepResearch}
 		<span class="trigger-badge deep">Deep research</span>
+	{/if}
+	{#if !research}
+		<span class="trigger-badge chat">Chat mode</span>
 	{/if}
 </button>
 
@@ -149,6 +163,18 @@
 									</span>
 									<label class="switch">
 										<input type="checkbox" checked={deepResearch} onchange={toggleDeepResearch} />
+										<span class="slider"></span>
+									</label>
+								</div>
+
+								<div class="row-btn row-static">
+									<Globe size={16} />
+									<span class="row-label">
+										Research
+										<span class="row-description">Search the web and other tools — turn off for a plain chat</span>
+									</span>
+									<label class="switch">
+										<input type="checkbox" checked={research} onchange={toggleResearch} />
 										<span class="slider"></span>
 									</label>
 								</div>
@@ -247,6 +273,14 @@
 	.trigger-badge.deep {
 		color: var(--color-accent);
 		background: var(--color-accent-soft);
+	}
+
+	/* Distinct from .deep — this is "something's turned OFF", not a boost,
+	   so it reads as a neutral/dimmer notice rather than the accent color
+	   used for an active enhancement. */
+	.trigger-badge.chat {
+		color: var(--color-text-dim);
+		background: var(--color-surface-3);
 	}
 
 	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —

@@ -1,5 +1,5 @@
 import { getManualLocation, setManualLocation as persistManualLocation } from './geolocation';
-import type { FocusMode } from './types';
+import type { FocusMode, ToggleableTool } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
@@ -69,6 +69,15 @@ export class SettingsState {
 	// settingVoiceInputMode for why 'toggle' is the default.
 	voiceInputMode = $state<'hold' | 'toggle'>('toggle');
 
+	// Tools section — see gateway/settings.go's toggleable_tools/
+	// disabled_tools and ToolSettings.svelte. toggleableTools is static
+	// catalog data (name + description), refreshed on every load() the
+	// same as everything else here; disabledTools is the actual per-user
+	// setting, a plain name list rather than a Set since it's small and
+	// only ever iterated/rebuilt wholesale, never looked up by key.
+	toggleableTools = $state<ToggleableTool[]>([]);
+	disabledTools = $state<string[]>([]);
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -135,6 +144,8 @@ export class SettingsState {
 		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
 		this.voiceInputMode = data.voice_input_mode === 'hold' ? 'hold' : 'toggle';
 		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
+		this.toggleableTools = data.toggleable_tools ?? [];
+		this.disabledTools = data.disabled_tools ?? [];
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -170,6 +181,16 @@ export class SettingsState {
 	async setVoiceInputMode(mode: 'hold' | 'toggle') {
 		this.voiceInputMode = mode;
 		await this.put({ voice_input_mode: mode });
+	}
+
+	// Flips one tool's enabled state and persists the whole updated list —
+	// handlePutSettings replaces disabled_tools wholesale rather than
+	// diffing a single add/remove, same "send the full value" shape as
+	// every other setting here.
+	async setToolEnabled(name: string, enabled: boolean) {
+		const next = enabled ? this.disabledTools.filter((t) => t !== name) : [...this.disabledTools, name];
+		this.disabledTools = next;
+		await this.put({ disabled_tools: next });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

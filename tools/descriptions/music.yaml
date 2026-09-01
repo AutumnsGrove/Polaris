@@ -1,5 +1,6 @@
 name: music
 requires: lastfm_api_key
+category: research
 description: >-
   find real song/album recommendations grounded in Last.fm's actual similarity data, not
   guesswork. Use mode "track" for "more songs like this one", "album_tracks" for song-level

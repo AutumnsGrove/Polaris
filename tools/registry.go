@@ -220,6 +220,26 @@ type Context struct {
 	// tools/web_read.go's use of this field for the actual gate.
 	QuickMode bool
 
+	// NoResearch, when true, is the composer's "Research" toggle switched
+	// off — chat mode. Bulk-excludes every tool tagged category: research
+	// (see catalog.go's offered()) and, on top of that, tells the model via
+	// an appended prompt fragment (agent.no_research_instruction) that it's
+	// in a plain conversational mode and can ask to turn research back on
+	// for one reply via ask_user_question's wants_web_search flag rather
+	// than silently trying to search anyway. Zero value (false) is normal
+	// behavior — every existing caller that never sets this field keeps
+	// full tool access, same safe-default shape as VoiceMode/DeepResearch/
+	// QuickMode above.
+	NoResearch bool
+
+	// DisabledTools is the settings panel's per-tool on/off list (see
+	// gateway.DisabledToolsFromStore) — a tool named here is excluded
+	// regardless of Requires or Category, checked first in offered(). Nil
+	// (the zero value) means nothing is disabled, so every existing caller
+	// that never sets this field is unaffected, same reasoning as
+	// NoResearch above. Keyed by tool name, matching catalogOrder.
+	DisabledTools map[string]bool
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/
@@ -262,6 +282,12 @@ type PendingQuestion struct {
 	Question      string   `json:"question"`
 	Options       []string `json:"options,omitempty"`
 	WantsLocation bool     `json:"wants_location,omitempty"`
+	// WantsWebSearch mirrors WantsLocation's shape for a different missing
+	// capability: set when the model wants to ask whether to turn research
+	// back on for chat mode (NoResearch above) — shows an "enable web
+	// search" action alongside the text input, same as WantsLocation's
+	// "share my location". See ask_user_question.go.
+	WantsWebSearch bool `json:"wants_web_search,omitempty"`
 }
 
 // SetPendingQuestion records the turn-ending question, if none has been

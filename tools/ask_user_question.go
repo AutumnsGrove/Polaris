@@ -44,6 +44,14 @@ var askUserQuestionDef = llm.ToolDef{
 						"is or wants something near — shows a \"share my location\" action alongside the text " +
 						"input. Leave false for every other kind of question.",
 				},
+				"wants_web_search": map[string]interface{}{
+					"type": "boolean",
+					"description": "Set true only when chat mode is active (see the system prompt) and " +
+						"you're specifically asking the user whether to turn research tools back on because " +
+						"the question genuinely needs current information you don't have — shows an " +
+						"\"enable web search\" action alongside the text input. Leave false for every other " +
+						"kind of question.",
+				},
 			},
 			"required": []string{"question"},
 		},
@@ -54,9 +62,10 @@ func init() { Register("ask_user_question", handleAskUserQuestion) }
 
 func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 	var args struct {
-		Question      string   `json:"question"`
-		Options       []string `json:"options"`
-		WantsLocation bool     `json:"wants_location"`
+		Question       string   `json:"question"`
+		Options        []string `json:"options"`
+		WantsLocation  bool     `json:"wants_location"`
+		WantsWebSearch bool     `json:"wants_web_search"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "ask_user_question", nil, "error: "+err.Error())
@@ -74,11 +83,13 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 		"tool": "ask_user_question",
 		"args": map[string]interface{}{
 			"question": args.Question, "options": args.Options, "wants_location": args.WantsLocation,
+			"wants_web_search": args.WantsWebSearch,
 		},
 	})
 
 	ctx.SetPendingQuestion(&PendingQuestion{
 		Question: args.Question, Options: args.Options, WantsLocation: args.WantsLocation,
+		WantsWebSearch: args.WantsWebSearch,
 	})
 
 	// Never seen by the model again — the turn ends right after this

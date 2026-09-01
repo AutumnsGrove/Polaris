@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"polaris/agent"
+	"polaris/store"
+	"polaris/tools"
 )
 
 const (
@@ -23,7 +25,41 @@ const (
 	// early) that it went mostly unused in favor of the iOS keyboard's
 	// own dictation button instead.
 	settingVoiceInputMode = "voice_input_mode"
+	// settingDisabledTools stores a JSON-encoded []string of tool names the
+	// user has individually turned off from the settings panel — see
+	// DisabledToolsFromStore and tools.ToggleableTools. Empty/unset means
+	// nothing is disabled, same as an empty array.
+	settingDisabledTools = "disabled_tools"
 )
+
+// DisabledToolsFromStore reads the disabled_tools setting and returns it as
+// the lookup set tools.Context.DisabledTools expects — shared by
+// handleTurn (the WebSocket and POST /api/ask paths, both funneled through
+// gateway/turn.go) and cmd/search.go's one-shot CLI path, so a tool
+// disabled from the settings panel is actually honored everywhere a real
+// tools.Context gets built from the operator's own settings, not just the
+// web UI. A nil db (shouldn't happen outside tests) or a missing/corrupt
+// setting both degrade to "nothing disabled" rather than an error — same
+// fail-open shape as every other settings read in this file.
+func DisabledToolsFromStore(db *store.Store) map[string]bool {
+	if db == nil {
+		return nil
+	}
+	raw, err := db.GetSetting(settingDisabledTools)
+	if err != nil || raw == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(raw), &names); err != nil {
+		log.Warn("parsing disabled_tools setting failed, treating as none disabled", "err", err)
+		return nil
+	}
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
+}
 
 // validVoiceInputModes gates handlePutSettings — see settingVoiceInputMode.
 var validVoiceInputModes = map[string]bool{"hold": true, "toggle": true}
@@ -58,21 +94,37 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		voiceInputMode = "toggle"
 	}
 
+	// disabledTools defaults to an empty (non-nil) slice rather than the
+	// zero value of a nil map read — writeJSON encodes a nil []string as
+	// `null`, and the frontend's checkbox list would rather see `[]` than
+	// have to special-case null on every load.
+	disabledTools := []string{}
+	for name := range DisabledToolsFromStore(s.db) {
+		disabledTools = append(disabledTools, name)
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"theme":                 theme,
 		"default_model":         s.effectiveDefaultModel(cfg),
 		"default_focus_mode":    all[settingDefaultFocusMode],
 		"voice_input_mode":      voiceInputMode,
 		"context_window_tokens": cfg.ContextWindowTokens,
+		"disabled_tools":        disabledTools,
+		// toggleable_tools is static catalog data (name + description), not
+		// a per-user setting — sent alongside so the settings panel can
+		// render checkboxes without hardcoding tool names/descriptions that
+		// only otherwise live in tools/descriptions/*.yaml.
+		"toggleable_tools": tools.ToggleableTools(),
 	})
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Theme            *string `json:"theme"`
-		DefaultModel     *string `json:"default_model"`
-		DefaultFocusMode *string `json:"default_focus_mode"`
-		VoiceInputMode   *string `json:"voice_input_mode"`
+		Theme            *string   `json:"theme"`
+		DefaultModel     *string   `json:"default_model"`
+		DefaultFocusMode *string   `json:"default_focus_mode"`
+		VoiceInputMode   *string   `json:"voice_input_mode"`
+		DisabledTools    *[]string `json:"disabled_tools"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -135,6 +187,30 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "voice input mode changed", map[string]interface{}{"voice_input_mode": *req.VoiceInputMode}, "")
+	}
+	if req.DisabledTools != nil {
+		valid := make(map[string]bool)
+		for _, t := range tools.ToggleableTools() {
+			valid[t.Name] = true
+		}
+		for _, name := range *req.DisabledTools {
+			if !valid[name] {
+				http.Error(w, "unknown or non-toggleable tool: "+name, http.StatusBadRequest)
+				return
+			}
+		}
+		encoded, err := json.Marshal(*req.DisabledTools)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.db.SetSetting(settingDisabledTools, string(encoded)); err != nil {
+			log.Warn("saving disabled_tools setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving disabled_tools setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "disabled tools changed", map[string]interface{}{"disabled_tools": *req.DisabledTools}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

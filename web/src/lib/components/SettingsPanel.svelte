@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain, Wrench } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import MemorySettings from './MemorySettings.svelte';
+	import ToolSettings from './ToolSettings.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -16,6 +17,7 @@
 	// settings view, which is the right default every time.
 	let showStats = $state(false);
 	let showMemory = $state(false);
+	let showTools = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
@@ -136,6 +138,16 @@
 			</div>
 
 			<MemorySettings />
+		{:else if showTools}
+			<div class="modal-panel-header">
+				<button class="icon-btn" onclick={() => (showTools = false)} title="Back to settings">
+					<ChevronLeft size={18} />
+				</button>
+				<h2>Tools</h2>
+				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
+			</div>
+
+			<ToolSettings />
 		{:else}
 			<div class="modal-panel-header">
 				<h2>Settings</h2>
@@ -258,6 +270,20 @@
 				</div>
 				<p class="hint">
 					View, edit by telling it what to change, or forget things it's saved across conversations.
+				</p>
+			</section>
+
+			<section>
+				<h3>Tools</h3>
+				<div class="row">
+					<span>Which tools it can use</span>
+					<button class="btn manage-btn" onclick={() => (showTools = true)}>
+						<Wrench size={14} /> Manage
+					</button>
+				</div>
+				<p class="hint">
+					Turn off individual tools, or use the composer's "+" menu to turn off research entirely
+					for a plain chat.
 				</p>
 			</section>
 

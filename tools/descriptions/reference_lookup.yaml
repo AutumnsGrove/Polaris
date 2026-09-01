@@ -1,4 +1,5 @@
 name: reference_lookup
+category: research
 description: >-
   query Wikipedia or arXiv directly for an encyclopedia summary or a paper's abstract. Prefer
   this over web_search when you specifically want an encyclopedic overview or an academic

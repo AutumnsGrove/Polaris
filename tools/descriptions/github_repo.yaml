@@ -1,4 +1,5 @@
 name: github_repo
+category: research
 description: >-
   look up a GitHub repository's stats (stars, forks, license, age, commit history, open issue/PR
   counts) and README directly via GitHub's API. Use this instead of web_search/web_read for

@@ -60,6 +60,14 @@ type ClientMessage struct {
 	// check-in leniency — see agent.Run's maxTurns/researchCheckInInterval
 	// handling.
 	DeepResearch bool `json:"deep_research,omitempty"`
+	// NoResearch is the composer's "Research" toggle switched off — chat
+	// mode for this turn. See tools.Context.NoResearch's doc comment for
+	// what it actually does (strip research-tagged tools, append the
+	// no_research_instruction prompt fragment). Independent of DeepResearch
+	// above; both default to false (research on, normal depth), the safe
+	// zero value for a caller (POST /api/ask, cmd/search.go) that never
+	// sets either.
+	NoResearch bool `json:"no_research,omitempty"`
 	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
 	// Answer via POST /api/ask, never by the WebSocket chat client.
 	QuickMode bool `json:"quick_mode,omitempty"`

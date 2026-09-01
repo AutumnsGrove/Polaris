@@ -2,7 +2,7 @@
 	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import { requestFreshLocation } from '$lib/geolocation';
-	import { Send, MapPin, Loader2, Check } from '@lucide/svelte';
+	import { Send, MapPin, Globe, Loader2, Check } from '@lucide/svelte';
 
 	// isLast: only the thread's current last turn gets working controls —
 	// any later message already implies this question is resolved
@@ -48,6 +48,19 @@
 			locatingInProgress = false;
 		}
 	}
+
+	// Chat mode (composer's Research toggle off) hid the research tools
+	// from this turn entirely, so the model can't just try web_search and
+	// fail — it asked first, via wants_web_search. Sending with no
+	// focusMode/deepResearch/noResearch override (same bypass-the-composer
+	// shape as shareLocation() above) means this one reply goes out with
+	// no_research omitted, which the backend treats as false — research
+	// enabled — regardless of whatever the composer's own toggle currently
+	// shows. That's deliberately scoped to just this one follow-up: it
+	// doesn't flip the composer's Research switch back on for later turns.
+	function enableWebSearch() {
+		answer('Yes, please search the web for this.');
+	}
 </script>
 
 {#if turn.pendingQuestion && isLast}
@@ -71,6 +84,13 @@
 					<MapPin size={14} />
 				{/if}
 				<span>Share my location</span>
+			</button>
+		{/if}
+
+		{#if turn.pendingQuestion.wants_web_search}
+			<button class="location-action" onclick={enableWebSearch} disabled={appState.busy}>
+				<Globe size={14} />
+				<span>Enable web search</span>
 			</button>
 		{/if}
 
