@@ -3,6 +3,17 @@
 	import { Mic, Loader2 } from '@lucide/svelte';
 	import { appState } from '$lib/state.svelte';
 
+	// Voice input only ever populates the composer's draft text (and, for
+	// the Whisper path, its running STT cost) — it never sends on its own.
+	// Auto-sending on stop meant a misheard word went out before you could
+	// see or fix it; routing through the same bindable draft the textarea
+	// uses gives voice the same "review before send" behavior typing
+	// already has.
+	let {
+		value = $bindable(''),
+		sttCostUsd = $bindable<number | undefined>(undefined)
+	}: { value: string; sttCostUsd?: number } = $props();
+
 	let recording = $state(false);
 	let transcribing = $state(false);
 	let toggleMode = $derived(appState.settings.voiceInputMode === 'toggle');
@@ -13,6 +24,65 @@
 	let startedAt = 0;
 	let recordedMimeType = 'audio/webm';
 
+	// Text already in the composer when this recording started — new
+	// transcript is appended after it rather than overwriting, so
+	// dictating doesn't clobber anything you'd already typed.
+	let baseText = '';
+
+	function appendText(base: string, addition: string): string {
+		if (!addition) return base;
+		const trimmedBase = base.trimEnd();
+		return trimmedBase ? `${trimmedBase} ${addition}` : addition;
+	}
+
+	// Minimal ambient typing for the non-standard, webkit-prefixed Web
+	// Speech API — it isn't in TS's DOM lib, and only the handful of
+	// members actually used below are declared.
+	interface SpeechRecognitionResultLike {
+		isFinal: boolean;
+		0: { transcript: string };
+	}
+	interface SpeechRecognitionEventLike extends Event {
+		results: ArrayLike<SpeechRecognitionResultLike>;
+	}
+	interface SpeechRecognitionLike extends EventTarget {
+		continuous: boolean;
+		interimResults: boolean;
+		start(): void;
+		stop(): void;
+		abort(): void;
+		onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+		onerror: ((e: Event & { error?: string }) => void) | null;
+		onend: (() => void) | null;
+	}
+
+	let recognition: SpeechRecognitionLike | null = null;
+	let usingLiveRecognition = false;
+	// Flips permanently once the Web Speech API has actually failed once
+	// this session — cheaper and more predictable than retrying a broken
+	// API on every tap, and it degrades to the proven upload path instead.
+	let speechRecognitionBroken = false;
+
+	// iPadOS 13+ reports "Macintosh" in the UA string (desktop-site
+	// spoofing) but is touch-capable, unlike a real Mac — maxTouchPoints
+	// tells them apart. Deliberately Apple-only: Chrome/Edge on
+	// desktop/Android also expose webkitSpeechRecognition, but backed by a
+	// server-side engine and with none of this being the point (Whisper
+	// already covers those platforms fine) — this path exists specifically
+	// because Apple's on-device dictation is the one genuinely good,
+	// streaming, zero-cost option, and it's iOS/iPadOS-only.
+	function isIOS(): boolean {
+		if (typeof navigator === 'undefined') return false;
+		const ua = navigator.userAgent;
+		return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+	}
+
+	function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+		if (typeof window === 'undefined') return null;
+		const w = window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+		return w.webkitSpeechRecognition ?? null;
+	}
+
 	// Computed lazily inside startRecording (browser-only), not at module
 	// scope — MediaRecorder doesn't exist in Node, so a top-level reference
 	// to it crashed SvelteKit's SSR render (`vite dev`/`vite preview`, and
@@ -21,6 +91,47 @@
 	// in practice.
 	function pickMimeType(): string {
 		return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+	}
+
+	// On iOS/iPadOS, stream live partial transcripts straight from Safari's
+	// on-device-backed Web Speech API into the composer as you talk — no
+	// server round-trip, no Whisper cost. onresult fires with the full
+	// results list every time (not just the newest chunk), so this
+	// recomputes the combined final+interim text from scratch each time
+	// rather than appending incrementally, which would double up text.
+	function startSpeechRecognition() {
+		const Ctor = getSpeechRecognitionCtor();
+		if (!Ctor) throw new Error('SpeechRecognition unavailable');
+
+		recognition = new Ctor();
+		recognition.continuous = true;
+		recognition.interimResults = true;
+		usingLiveRecognition = true;
+
+		recognition.onresult = (e) => {
+			let finalText = '';
+			let interimText = '';
+			for (let i = 0; i < e.results.length; i++) {
+				const result = e.results[i];
+				if (result.isFinal) finalText += result[0].transcript;
+				else interimText += result[0].transcript;
+			}
+			value = appendText(baseText, `${finalText}${interimText}`.trim());
+		};
+
+		recognition.onerror = (e) => {
+			console.error('speech recognition error', e.error);
+			speechRecognitionBroken = true;
+			recording = false;
+			usingLiveRecognition = false;
+		};
+
+		recognition.onend = () => {
+			recording = false;
+			usingLiveRecognition = false;
+		};
+
+		recognition.start();
 	}
 
 	// A fresh getUserMedia call per recording — NOT cached. Holding a
@@ -34,6 +145,21 @@
 		if (appState.busy || recording) return;
 		recording = true;
 		pendingStop = false;
+		baseText = value;
+
+		if (isIOS() && !speechRecognitionBroken && getSpeechRecognitionCtor()) {
+			try {
+				startSpeechRecognition();
+				if (pendingStop) stopRecording();
+				return;
+			} catch (err) {
+				// Falls through to the upload path below for *this* attempt
+				// too, not just future ones — no utterance has been lost yet
+				// since recognition never actually started.
+				console.error('speech recognition unavailable, falling back to upload', err);
+				speechRecognitionBroken = true;
+			}
+		}
 
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
@@ -72,6 +198,11 @@
 
 	function stopRecording() {
 		if (!recording) return;
+		if (usingLiveRecognition) {
+			recognition?.stop();
+			recording = false;
+			return;
+		}
 		if (!mediaRecorder || mediaRecorder.state !== 'recording') {
 			pendingStop = true;
 			return;
@@ -90,7 +221,10 @@
 			const res = await fetch(`/api/transcribe?format=webm`, { method: 'POST', body: blob });
 			if (res.ok) {
 				const data = await res.json();
-				if (data.text) appState.send(data.text, data.cost_usd);
+				if (data.text) {
+					value = appendText(baseText, data.text);
+					sttCostUsd = (sttCostUsd ?? 0) + (data.cost_usd ?? 0);
+				}
 			} else {
 				console.error('transcription failed', await res.text());
 			}
@@ -115,6 +249,7 @@
 
 	onDestroy(() => {
 		stream?.getTracks().forEach((t) => t.stop());
+		recognition?.abort();
 	});
 </script>
 

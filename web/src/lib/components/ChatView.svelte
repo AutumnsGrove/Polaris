@@ -13,6 +13,11 @@
 	import type { FocusMode } from '$lib/types';
 
 	let input = $state('');
+	// Set by VoiceButton when a recording is transcribed via the Whisper
+	// upload path (never for iOS's live Web Speech path, which is free) —
+	// carried here rather than sent immediately so it rides along with
+	// whatever text actually ends up submitted, same as attachedFile.
+	let voiceCostUsd = $state<number | undefined>(undefined);
 	let scrollEl: HTMLDivElement | undefined = $state();
 
 	// pinnedToBottom tracks whether the timeline should keep auto-scrolling
@@ -114,11 +119,13 @@
 	async function submit() {
 		const text = input;
 		const file = attachedFile;
+		const sttCostUsd = voiceCostUsd;
 		input = '';
 		attachedFile = null;
+		voiceCostUsd = undefined;
 
 		if (!file) {
-			appState.send(text, undefined, focusMode, deepResearch, undefined, !research);
+			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research);
 			return;
 		}
 
@@ -129,7 +136,7 @@
 		// error toast would be nicer, but silently dropping the whole
 		// message because the attachment failed is worse than answering
 		// without it.
-		appState.send(text, undefined, focusMode, deepResearch, uploaded ?? undefined, !research);
+		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded ?? undefined, !research);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -260,7 +267,7 @@
 		<div class="composer-toolbar">
 			<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
 			<div class="toolbar-spacer"></div>
-			<VoiceButton />
+			<VoiceButton bind:value={input} bind:sttCostUsd={voiceCostUsd} />
 			<button
 				type={appState.busyOnCurrentThread ? 'button' : 'submit'}
 				class="send-btn"
