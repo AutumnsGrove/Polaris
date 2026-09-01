@@ -80,11 +80,20 @@
 	}
 
 	function toggleDeepResearch() {
+		// Deep research implies research — can't dig further with the web/
+		// tools access it depends on switched off. The row is also disabled
+		// below while chat mode is on, but guard here too since this is the
+		// state that actually reaches the backend (tools.Context.NoResearch).
+		if (!research) return;
 		deepResearch = !deepResearch;
 	}
 
 	function toggleResearch() {
 		research = !research;
+		// Turning research off pulls deep research down with it — deep
+		// research with no research is a contradiction (see toggleDeepResearch),
+		// and leaving it "on" here would let both badges show at once.
+		if (!research) deepResearch = false;
 	}
 
 	function handleFileChange(e: Event) {
@@ -155,14 +164,23 @@
 									<ChevronRight size={14} class="row-chevron" />
 								</button>
 
-								<div class="row-btn row-static">
+								<div class="row-btn row-static" class:row-disabled={!research}>
 									<Microscope size={16} />
 									<span class="row-label">
 										Deep Research
-										<span class="row-description">Digs further before answering — costs more, takes longer</span>
+										<span class="row-description">
+											{research
+												? 'Digs further before answering — costs more, takes longer'
+												: 'Needs Research turned on'}
+										</span>
 									</span>
 									<label class="switch">
-										<input type="checkbox" checked={deepResearch} onchange={toggleDeepResearch} />
+										<input
+											type="checkbox"
+											checked={deepResearch}
+											disabled={!research}
+											onchange={toggleDeepResearch}
+										/>
 										<span class="slider"></span>
 									</label>
 								</div>
@@ -355,6 +373,16 @@
 
 	.row-btn.row-static:hover {
 		background: transparent;
+	}
+
+	/* Deep Research while chat mode (Research off) is on — same
+	   opacity/pointer-events dim as SettingsPanel's .section-disabled, since
+	   the checkbox's own disabled attribute (see markup above) already
+	   blocks keyboard/screen-reader interaction; this just makes it *look*
+	   locked too. */
+	.row-btn.row-disabled {
+		opacity: 0.45;
+		pointer-events: none;
 	}
 
 	.row-btn :global(svg:first-child) {
