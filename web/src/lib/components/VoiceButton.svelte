@@ -29,63 +29,10 @@
 	// dictating doesn't clobber anything you'd already typed.
 	let baseText = '';
 
-	// Finalized transcript pieces accumulated across this recording,
-	// including across the onend/restart chain described below. Reset
-	// only when a brand-new recording starts.
-	let accumulatedFinal = '';
-
 	function appendText(base: string, addition: string): string {
 		if (!addition) return base;
 		const trimmedBase = base.trimEnd();
 		return trimmedBase ? `${trimmedBase} ${addition}` : addition;
-	}
-
-	// Minimal ambient typing for the non-standard, webkit-prefixed Web
-	// Speech API — it isn't in TS's DOM lib, and only the handful of
-	// members actually used below are declared.
-	interface SpeechRecognitionResultLike {
-		isFinal: boolean;
-		0: { transcript: string };
-	}
-	interface SpeechRecognitionEventLike extends Event {
-		results: ArrayLike<SpeechRecognitionResultLike>;
-	}
-	interface SpeechRecognitionLike extends EventTarget {
-		continuous: boolean;
-		interimResults: boolean;
-		start(): void;
-		stop(): void;
-		abort(): void;
-		onresult: ((e: SpeechRecognitionEventLike) => void) | null;
-		onerror: ((e: Event & { error?: string }) => void) | null;
-		onend: (() => void) | null;
-	}
-
-	let recognition: SpeechRecognitionLike | null = null;
-	let usingLiveRecognition = false;
-	// Flips permanently once the Web Speech API has actually failed once
-	// this session — cheaper and more predictable than retrying a broken
-	// API on every tap, and it degrades to the proven upload path instead.
-	let speechRecognitionBroken = false;
-
-	// iPadOS 13+ reports "Macintosh" in the UA string (desktop-site
-	// spoofing) but is touch-capable, unlike a real Mac — maxTouchPoints
-	// tells them apart. Deliberately Apple-only: Chrome/Edge on
-	// desktop/Android also expose webkitSpeechRecognition, but backed by a
-	// server-side engine and with none of this being the point (Whisper
-	// already covers those platforms fine) — this path exists specifically
-	// because Apple's on-device dictation is the one genuinely good,
-	// streaming, zero-cost option, and it's iOS/iPadOS-only.
-	function isIOS(): boolean {
-		if (typeof navigator === 'undefined') return false;
-		const ua = navigator.userAgent;
-		return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
-	}
-
-	function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
-		if (typeof window === 'undefined') return null;
-		const w = window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike };
-		return w.webkitSpeechRecognition ?? null;
 	}
 
 	// Computed lazily inside startRecording (browser-only), not at module
@@ -96,77 +43,6 @@
 	// in practice.
 	function pickMimeType(): string {
 		return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-	}
-
-	// On iOS/iPadOS, stream live partial transcripts straight from Safari's
-	// on-device-backed Web Speech API into the composer as you talk — no
-	// server round-trip, no Whisper cost.
-	//
-	// Deliberately NOT continuous: true. iOS Safari has a long-standing,
-	// still-open WebKit bug where continuous mode either never fires a
-	// result at all, or drops the final result specifically when .stop()
-	// is called manually (vs. the engine timing out on its own) — which is
-	// exactly "recorded audio, then did nothing with it." The standard
-	// mobile-Safari workaround is to run short-lived recognition sessions
-	// and re-`start()` a fresh one from onend for as long as the user is
-	// still holding/toggled into recording, chaining them into what feels
-	// like one continuous session. accumulatedFinal carries the finalized
-	// text across that chain; each individual session's onresult only ever
-	// covers its own (short) results list.
-	function startSpeechRecognition() {
-		const Ctor = getSpeechRecognitionCtor();
-		if (!Ctor) throw new Error('SpeechRecognition unavailable');
-
-		accumulatedFinal = '';
-		usingLiveRecognition = true;
-		beginRecognitionSession(Ctor);
-	}
-
-	function beginRecognitionSession(Ctor: new () => SpeechRecognitionLike) {
-		recognition = new Ctor();
-		recognition.continuous = false;
-		recognition.interimResults = true;
-
-		recognition.onresult = (e) => {
-			let sessionFinal = '';
-			let interimText = '';
-			for (let i = 0; i < e.results.length; i++) {
-				const result = e.results[i];
-				if (result.isFinal) sessionFinal += result[0].transcript;
-				else interimText += result[0].transcript;
-			}
-			if (sessionFinal) accumulatedFinal = appendText(accumulatedFinal, sessionFinal.trim());
-			const combined = [accumulatedFinal, interimText].filter(Boolean).join(' ');
-			value = appendText(baseText, combined);
-		};
-
-		recognition.onerror = (e) => {
-			// 'no-speech' fires constantly in the restart chain below
-			// (each short session times out on silence between phrases)
-			// and 'aborted' fires when we call .stop()/.abort() ourselves
-			// — neither means anything actually broke, so onend's normal
-			// restart-or-finalize logic handles both without help here.
-			if (e.error === 'no-speech' || e.error === 'aborted') return;
-			console.error('speech recognition error', e.error);
-			speechRecognitionBroken = true;
-			usingLiveRecognition = false;
-		};
-
-		recognition.onend = () => {
-			if (recording && usingLiveRecognition && !speechRecognitionBroken) {
-				try {
-					beginRecognitionSession(Ctor);
-					return;
-				} catch (err) {
-					console.error('failed to restart speech recognition', err);
-					speechRecognitionBroken = true;
-				}
-			}
-			recording = false;
-			usingLiveRecognition = false;
-		};
-
-		recognition.start();
 	}
 
 	// A fresh getUserMedia call per recording — NOT cached. Holding a
@@ -181,20 +57,6 @@
 		recording = true;
 		pendingStop = false;
 		baseText = value;
-
-		if (isIOS() && !speechRecognitionBroken && getSpeechRecognitionCtor()) {
-			try {
-				startSpeechRecognition();
-				if (pendingStop) stopRecording();
-				return;
-			} catch (err) {
-				// Falls through to the upload path below for *this* attempt
-				// too, not just future ones — no utterance has been lost yet
-				// since recognition never actually started.
-				console.error('speech recognition unavailable, falling back to upload', err);
-				speechRecognitionBroken = true;
-			}
-		}
 
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
@@ -233,11 +95,6 @@
 
 	function stopRecording() {
 		if (!recording) return;
-		if (usingLiveRecognition) {
-			recognition?.stop();
-			recording = false;
-			return;
-		}
 		if (!mediaRecorder || mediaRecorder.state !== 'recording') {
 			pendingStop = true;
 			return;
@@ -284,7 +141,6 @@
 
 	onDestroy(() => {
 		stream?.getTracks().forEach((t) => t.stop());
-		recognition?.abort();
 	});
 </script>
 
