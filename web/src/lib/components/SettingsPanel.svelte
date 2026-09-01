@@ -263,20 +263,21 @@
 			<section>
 				<h3>Memory</h3>
 				<div class="row">
-					<span>What it remembers about you</span>
+					<span>What <span class="wordmark">Polaris</span> remembers about you</span>
 					<button class="btn manage-btn" onclick={() => (showMemory = true)}>
 						<Brain size={14} /> Manage
 					</button>
 				</div>
 				<p class="hint">
-					View, edit by telling it what to change, or forget things it's saved across conversations.
+					View, edit by telling <span class="wordmark">Polaris</span> what to change, or forget things
+					it's saved across conversations.
 				</p>
 			</section>
 
 			<section>
 				<h3>Tools</h3>
 				<div class="row">
-					<span>Which tools it can use</span>
+					<span>Which tools <span class="wordmark">Polaris</span> can use</span>
 					<button class="btn manage-btn" onclick={() => (showTools = true)}>
 						<Wrench size={14} /> Manage
 					</button>
