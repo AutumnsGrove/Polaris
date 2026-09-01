@@ -1,0 +1,19 @@
+name: calculator
+description: >-
+  evaluate an arithmetic expression exactly instead of computing it silently in free-text
+  generation. Use this for any derived number in a final answer — ratios, percentages, sums,
+  date-interval math — where an arithmetic mistake wouldn't otherwise be checkable.
+api_description: >-
+  Evaluate an arithmetic expression exactly and return the result. Use this whenever an answer
+  involves a computed number (a ratio, a percentage, a sum, a date/time delta) instead of doing
+  the arithmetic yourself in free text — LLMs are unreliable at mental math, and this tool
+  removes that failure class entirely. Supports + - * / ** % and the functions sqrt, pow, abs,
+  floor, ceil, round, trunc, sign, log, log2, log10, exp, sin, cos, tan, hypot, factorial, plus
+  the variadic min(...), max(...), sum(...), avg(...) (any number of arguments) and
+  days_between(date1, date2) for YYYY-MM-DD date-interval math, plus the constants pi and e. For
+  a calculation with several named intermediate values, chain them with let, e.g. "let a = 5; let
+  b = a * 2; a + b" — each let declares one name, separated by ;, and the trailing expression
+  after the last ; is the returned value. A let name can't reuse a function/constant name already
+  listed above (e.g. "let e = ..." or "let sum = ..." fails) — pick a different name. No free
+  variables outside a let declared in the same call, no string operations beyond days_between's
+  date arguments, no file or code access — arithmetic only.

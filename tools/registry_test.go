@@ -56,15 +56,15 @@ func TestDefs_ReturnsAllTwelveToolsWhenAllKeysConfigured(t *testing.T) {
 		names[d.Function.Name] = true
 	}
 	for _, want := range []string{
-		"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies",
 	} {
 		if !names[want] {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 12 {
-		t.Errorf("got %d tool defs, want exactly 12", len(defs))
+	if len(defs) != 13 {
+		t.Errorf("got %d tool defs, want exactly 13", len(defs))
 	}
 }
 
@@ -81,15 +81,15 @@ func TestDefs_ExcludesMusicAndMoviesWithoutKeys(t *testing.T) {
 		t.Error("Defs() included movies with no TMDBAPIKey configured")
 	}
 	for _, want := range []string{
-		"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "dictionary", "books",
 	} {
 		if !names[want] {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 10 {
-		t.Errorf("got %d tool defs, want exactly 10", len(defs))
+	if len(defs) != 11 {
+		t.Errorf("got %d tool defs, want exactly 11", len(defs))
 	}
 }
 
@@ -98,7 +98,7 @@ func TestDefs_OrderIsStable(t *testing.T) {
 	ctx.LastFMAPIKey = "test-key"
 	ctx.TMDBAPIKey = "test-key"
 	want := []string{
-		"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies",
 	}
 	for i := 0; i < 2; i++ {

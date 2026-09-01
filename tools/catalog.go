@@ -17,7 +17,7 @@ import (
 // requests/restarts (see config.go's OpenRouter provider-pinning comment
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
-	"think", "web_search", "web_read", "nearby_search", "youtube_transcript",
+	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
 	"ask_user_question", "memory",
 }
