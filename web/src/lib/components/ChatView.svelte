@@ -345,7 +345,11 @@
 	<div class="timeline-wrap">
 		<div class="timeline-scroll" bind:this={scrollEl} onscroll={handleTimelineScroll}>
 			{#each appState.turns as turn, i (i)}
-				<ChatTurnView {turn} index={i} />
+				<!-- noResearch: the composer's current toggle, so answering a
+				     pending question (AskUserQuestionCard) preserves chat mode
+				     instead of silently re-enabling research — see that
+				     component's answer()/enableWebSearch() split. -->
+				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
 			{#if lastTurnInterrupted}
 				<div class="interrupted" in:fly={{ y: 10, duration: 260, easing: quintOut }}>

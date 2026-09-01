@@ -13,7 +13,12 @@
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
-	let { turn, index }: { turn: ChatTurn; index: number } = $props();
+	// noResearch: the composer's current Research toggle (inverted) — passed
+	// through to AskUserQuestionCard so answering a pending question
+	// preserves chat mode instead of always re-enabling research for that
+	// reply. See ChatView.svelte's ChatTurnView invocation and
+	// AskUserQuestionCard's answer()/enableWebSearch() split.
+	let { turn, index, noResearch }: { turn: ChatTurn; index: number; noResearch: boolean } = $props();
 
 	// Editing/regenerating always replaces starting at the preceding user
 	// message's position (see gateway/turn.go's ForkThread call) — so an
@@ -194,6 +199,7 @@
 				     longer the live, interactive one. -->
 				<AskUserQuestionCard
 					{turn}
+					{noResearch}
 					isLast={index === appState.turns.length - 1}
 					answeredWith={appState.turns[index + 1]?.role === 'user' ? appState.turns[index + 1].content : undefined}
 				/>
