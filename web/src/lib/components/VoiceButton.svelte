@@ -29,6 +29,11 @@
 	// dictating doesn't clobber anything you'd already typed.
 	let baseText = '';
 
+	// Finalized transcript pieces accumulated across this recording,
+	// including across the onend/restart chain described below. Reset
+	// only when a brand-new recording starts.
+	let accumulatedFinal = '';
+
 	function appendText(base: string, addition: string): string {
 		if (!addition) return base;
 		const trimmedBase = base.trimEnd();
@@ -95,38 +100,68 @@
 
 	// On iOS/iPadOS, stream live partial transcripts straight from Safari's
 	// on-device-backed Web Speech API into the composer as you talk — no
-	// server round-trip, no Whisper cost. onresult fires with the full
-	// results list every time (not just the newest chunk), so this
-	// recomputes the combined final+interim text from scratch each time
-	// rather than appending incrementally, which would double up text.
+	// server round-trip, no Whisper cost.
+	//
+	// Deliberately NOT continuous: true. iOS Safari has a long-standing,
+	// still-open WebKit bug where continuous mode either never fires a
+	// result at all, or drops the final result specifically when .stop()
+	// is called manually (vs. the engine timing out on its own) — which is
+	// exactly "recorded audio, then did nothing with it." The standard
+	// mobile-Safari workaround is to run short-lived recognition sessions
+	// and re-`start()` a fresh one from onend for as long as the user is
+	// still holding/toggled into recording, chaining them into what feels
+	// like one continuous session. accumulatedFinal carries the finalized
+	// text across that chain; each individual session's onresult only ever
+	// covers its own (short) results list.
 	function startSpeechRecognition() {
 		const Ctor = getSpeechRecognitionCtor();
 		if (!Ctor) throw new Error('SpeechRecognition unavailable');
 
-		recognition = new Ctor();
-		recognition.continuous = true;
-		recognition.interimResults = true;
+		accumulatedFinal = '';
 		usingLiveRecognition = true;
+		beginRecognitionSession(Ctor);
+	}
+
+	function beginRecognitionSession(Ctor: new () => SpeechRecognitionLike) {
+		recognition = new Ctor();
+		recognition.continuous = false;
+		recognition.interimResults = true;
 
 		recognition.onresult = (e) => {
-			let finalText = '';
+			let sessionFinal = '';
 			let interimText = '';
 			for (let i = 0; i < e.results.length; i++) {
 				const result = e.results[i];
-				if (result.isFinal) finalText += result[0].transcript;
+				if (result.isFinal) sessionFinal += result[0].transcript;
 				else interimText += result[0].transcript;
 			}
-			value = appendText(baseText, `${finalText}${interimText}`.trim());
+			if (sessionFinal) accumulatedFinal = appendText(accumulatedFinal, sessionFinal.trim());
+			const combined = [accumulatedFinal, interimText].filter(Boolean).join(' ');
+			value = appendText(baseText, combined);
 		};
 
 		recognition.onerror = (e) => {
+			// 'no-speech' fires constantly in the restart chain below
+			// (each short session times out on silence between phrases)
+			// and 'aborted' fires when we call .stop()/.abort() ourselves
+			// — neither means anything actually broke, so onend's normal
+			// restart-or-finalize logic handles both without help here.
+			if (e.error === 'no-speech' || e.error === 'aborted') return;
 			console.error('speech recognition error', e.error);
 			speechRecognitionBroken = true;
-			recording = false;
 			usingLiveRecognition = false;
 		};
 
 		recognition.onend = () => {
+			if (recording && usingLiveRecognition && !speechRecognitionBroken) {
+				try {
+					beginRecognitionSession(Ctor);
+					return;
+				} catch (err) {
+					console.error('failed to restart speech recognition', err);
+					speechRecognitionBroken = true;
+				}
+			}
 			recording = false;
 			usingLiveRecognition = false;
 		};
