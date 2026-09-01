@@ -78,6 +78,14 @@ export class SettingsState {
 	toggleableTools = $state<ToggleableTool[]>([]);
 	disabledTools = $state<string[]>([]);
 
+	// Master on/off for the whole Memory feature — a dedicated setting
+	// (not part of disabledTools/toggleableTools above), since it's not
+	// just a tool the model can call: turning it off also stops the
+	// {memories} prompt section (see MemoryEnabledFromStore's doc comment
+	// in gateway/settings.go). Defaults true so an install that's never
+	// touched this setting behaves exactly as before it existed.
+	memoryEnabled = $state(true);
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -146,6 +154,7 @@ export class SettingsState {
 		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
 		this.toggleableTools = data.toggleable_tools ?? [];
 		this.disabledTools = data.disabled_tools ?? [];
+		this.memoryEnabled = data.memory_enabled ?? true;
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -191,6 +200,11 @@ export class SettingsState {
 		const next = enabled ? this.disabledTools.filter((t) => t !== name) : [...this.disabledTools, name];
 		this.disabledTools = next;
 		await this.put({ disabled_tools: next });
+	}
+
+	async setMemoryEnabled(enabled: boolean) {
+		this.memoryEnabled = enabled;
+		await this.put({ memory_enabled: enabled });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

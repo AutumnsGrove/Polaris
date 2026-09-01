@@ -150,11 +150,18 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		agentCtx.IncrementBraveUsage = func() error { _, err := db.IncrementAPIUsage("brave"); return err }
 		agentCtx.ParallelUsageThisMonth = func() (int, error) { return db.GetAPIUsage("parallel") }
 		agentCtx.IncrementParallelUsage = func() error { _, err := db.IncrementAPIUsage("parallel"); return err }
-		agentCtx.ListMemories = db.ListMemories
-		agentCtx.GetMemory = db.GetMemory
-		agentCtx.WriteMemory = db.CreateMemory
-		agentCtx.EditMemory = db.UpdateMemory
-		agentCtx.ForgetMemory = db.DeleteMemory
+		// Left nil (not wired) when the operator has turned memory off from
+		// the settings panel — see gateway.MemoryEnabledFromStore's doc
+		// comment for why nil closures, not a separate gate, are what
+		// actually removes both the memory tool and the {memories} prompt
+		// section.
+		if gateway.MemoryEnabledFromStore(db) {
+			agentCtx.ListMemories = db.ListMemories
+			agentCtx.GetMemory = db.GetMemory
+			agentCtx.WriteMemory = db.CreateMemory
+			agentCtx.EditMemory = db.UpdateMemory
+			agentCtx.ForgetMemory = db.DeleteMemory
+		}
 		// Honors the settings panel's per-tool disable list here too — this
 		// is exactly the class of gap CLAUDE.md flags for this file's
 		// Brave/Parallel/Tavily wiring: a live-only setting that quietly
