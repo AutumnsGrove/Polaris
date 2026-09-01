@@ -338,11 +338,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Parallel:               s.parallel,
 		ParallelUsageThisMonth: func() (int, error) { return s.db.GetAPIUsage("parallel") },
 		IncrementParallelUsage: func() error { _, err := s.db.IncrementAPIUsage("parallel"); return err },
-		ListMemories:           s.db.ListMemories,
-		GetMemory:              s.db.GetMemory,
-		WriteMemory:            s.db.CreateMemory,
-		EditMemory:             s.db.UpdateMemory,
-		ForgetMemory:           s.db.DeleteMemory,
 		Embed:                  s.embed,
 		GitHubToken:            cfg.GitHub.Token,
 		LastFMAPIKey:           cfg.LastFM.APIKey,
@@ -355,10 +350,23 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		VoiceMode:              msg.VoiceMode,
 		FocusMode:              msg.FocusMode,
 		DeepResearch:           msg.DeepResearch,
+		NoResearch:             msg.NoResearch,
 		QuickMode:              msg.QuickMode,
+		DisabledTools:          DisabledToolsFromStore(s.db),
 		LLM:                    client,
 		Emit:                   emit,
 		MaxTurns:               cfg.MaxAgentTurns,
+	}
+	// Left nil (not wired above) when the operator has turned memory off —
+	// see MemoryEnabledFromStore's doc comment for why leaving these nil
+	// is what actually makes the memory tool AND the {memories} prompt
+	// section disappear, not just a tool call that would fail if attempted.
+	if MemoryEnabledFromStore(s.db) {
+		agentCtx.ListMemories = s.db.ListMemories
+		agentCtx.GetMemory = s.db.GetMemory
+		agentCtx.WriteMemory = s.db.CreateMemory
+		agentCtx.EditMemory = s.db.UpdateMemory
+		agentCtx.ForgetMemory = s.db.DeleteMemory
 	}
 
 	// Timed around agent.Run specifically, not the whole handler — this is

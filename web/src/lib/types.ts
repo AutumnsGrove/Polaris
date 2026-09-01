@@ -30,6 +30,12 @@ export interface PendingQuestion {
 	question: string;
 	options?: string[];
 	wants_location?: boolean;
+	// Set when chat mode (Research off) is active and the model wants to
+	// ask whether to turn research back on for this — shows an "enable web
+	// search" action alongside the text input, same shape as
+	// wants_location's "share my location". See tools/registry.go's
+	// PendingQuestion.WantsWebSearch.
+	wants_web_search?: boolean;
 }
 
 export type ServerEvent =
@@ -110,6 +116,12 @@ export type ClientMessage =
 			// focusModeInstructions and Run's DeepResearch handling.
 			focus_mode?: FocusMode;
 			deep_research?: boolean;
+			// True when the composer's "Research" toggle is off (chat
+			// mode) for this turn — see tools.Context.NoResearch. Also set
+			// explicitly false by AskUserQuestionCard's "enable web
+			// search" action, overriding the composer's current toggle
+			// state for that one follow-up reply.
+			no_research?: boolean;
 			// Set when the composer's "+" sheet attached a file, already
 			// uploaded via POST /api/upload before this message is sent —
 			// see gateway/attachments.go's resolveAttachment.
@@ -140,6 +152,13 @@ export interface UploadedAttachment {
 	filename: string;
 	content_type: string;
 	size_bytes: number;
+}
+
+// Mirrors tools.ToolInfo (tools/catalog.go) — one individually toggleable
+// tool's identity for the settings panel's Tools section.
+export interface ToggleableTool {
+	name: string;
+	description: string;
 }
 
 export interface ModelOption {

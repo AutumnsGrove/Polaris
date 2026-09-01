@@ -1,4 +1,5 @@
 name: web_read
+category: research
 description: >-
   fetch a URL and extract its content (optionally filtered to just what's needed). Long results
   are cut off with a note telling you the offset (web pages) or page (PDFs) to pass back for the

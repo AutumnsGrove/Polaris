@@ -41,13 +41,17 @@
 		scrollEl?.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
 	}
 
-	// Composer-only state — focusMode/deepResearch ride along in every
-	// send() call already; attachedFile gets uploaded (see submit below)
-	// only at send time, not the instant it's picked, so backing out of a
-	// message with the file still attached never orphans an upload nobody
-	// ends up sending.
+	// Composer-only state — focusMode/deepResearch/research ride along in
+	// every send() call already; attachedFile gets uploaded (see submit
+	// below) only at send time, not the instant it's picked, so backing
+	// out of a message with the file still attached never orphans an
+	// upload nobody ends up sending. research starts true (on by default —
+	// see ComposerMenu's doc comment on the prop) and, like deepResearch,
+	// isn't backed by a settings-panel default or persisted per-thread; it
+	// just lives for as long as this composer does.
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
+	let research = $state(true);
 	let attachedFile = $state<File | null>(null);
 	let uploading = $state(false);
 
@@ -114,7 +118,7 @@
 		attachedFile = null;
 
 		if (!file) {
-			appState.send(text, undefined, focusMode, deepResearch);
+			appState.send(text, undefined, focusMode, deepResearch, undefined, !research);
 			return;
 		}
 
@@ -125,7 +129,7 @@
 		// error toast would be nicer, but silently dropping the whole
 		// message because the attachment failed is worse than answering
 		// without it.
-		appState.send(text, undefined, focusMode, deepResearch, uploaded ?? undefined);
+		appState.send(text, undefined, focusMode, deepResearch, uploaded ?? undefined, !research);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -254,7 +258,7 @@
 		{/if}
 
 		<div class="composer-toolbar">
-			<ComposerMenu bind:focusMode bind:deepResearch onAttach={handleAttach} />
+			<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
 			<div class="toolbar-spacer"></div>
 			<VoiceButton />
 			<button
@@ -341,7 +345,11 @@
 	<div class="timeline-wrap">
 		<div class="timeline-scroll" bind:this={scrollEl} onscroll={handleTimelineScroll}>
 			{#each appState.turns as turn, i (i)}
-				<ChatTurnView {turn} index={i} />
+				<!-- noResearch: the composer's current toggle, so answering a
+				     pending question (AskUserQuestionCard) preserves chat mode
+				     instead of silently re-enabling research — see that
+				     component's answer()/enableWebSearch() split. -->
+				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
 			{#if lastTurnInterrupted}
 				<div class="interrupted" in:fly={{ y: 10, duration: 260, easing: quintOut }}>

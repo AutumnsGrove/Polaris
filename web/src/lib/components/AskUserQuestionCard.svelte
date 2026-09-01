@@ -2,7 +2,7 @@
 	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import { requestFreshLocation } from '$lib/geolocation';
-	import { Send, MapPin, Loader2, Check } from '@lucide/svelte';
+	import { Send, MapPin, Globe, Loader2, Check } from '@lucide/svelte';
 
 	// isLast: only the thread's current last turn gets working controls —
 	// any later message already implies this question is resolved
@@ -12,9 +12,17 @@
 	// static, resolved view (which option was picked) instead of the
 	// question disappearing entirely once it's no longer live. undefined
 	// means either isLast (nothing to resolve with yet) or, on a genuinely
-	// interrupted thread, that no answer ever came.
-	let { turn, isLast, answeredWith }: { turn: ChatTurn; isLast: boolean; answeredWith?: string } =
-		$props();
+	// interrupted thread, that no answer ever came. noResearch is the
+	// composer's current Research toggle (inverted) — an ordinary answer
+	// (option pick, freeform text, shared location) should preserve
+	// whatever chat-mode state the user currently has, not silently flip
+	// research back on; only enableWebSearch() below is meant to override it.
+	let {
+		turn,
+		isLast,
+		answeredWith,
+		noResearch
+	}: { turn: ChatTurn; isLast: boolean; answeredWith?: string; noResearch: boolean } = $props();
 
 	// Exact match against the offered options — a freeform reply (typed
 	// instead of tapped, or a shared location) won't match any of them,
@@ -27,10 +35,13 @@
 	let freeform = $state('');
 	let locatingInProgress = $state(false);
 
-	function answer(text: string) {
+	// noResearchOverride lets enableWebSearch() below force research back on
+	// for just this one reply; every other caller falls through to the
+	// composer's current toggle state instead of always sending false.
+	function answer(text: string, noResearchOverride?: boolean) {
 		const trimmed = text.trim();
 		if (!trimmed || appState.busy) return;
-		appState.send(trimmed);
+		appState.send(trimmed, undefined, undefined, undefined, undefined, noResearchOverride ?? noResearch);
 		freeform = '';
 	}
 
@@ -47,6 +58,18 @@
 		} finally {
 			locatingInProgress = false;
 		}
+	}
+
+	// Chat mode (composer's Research toggle off) hid the research tools
+	// from this turn entirely, so the model can't just try web_search and
+	// fail — it asked first, via wants_web_search. Explicitly overriding
+	// noResearch to false here (unlike every other answer() call, which
+	// falls through to the composer's current toggle) sends this one reply
+	// with research enabled regardless of the composer's own toggle state.
+	// That's deliberately scoped to just this one follow-up: it doesn't
+	// flip the composer's Research switch back on for later turns.
+	function enableWebSearch() {
+		answer('Yes, please search the web for this.', false);
 	}
 </script>
 
@@ -71,6 +94,13 @@
 					<MapPin size={14} />
 				{/if}
 				<span>Share my location</span>
+			</button>
+		{/if}
+
+		{#if turn.pendingQuestion.wants_web_search}
+			<button class="location-action" onclick={enableWebSearch} disabled={appState.busy}>
+				<Globe size={14} />
+				<span>Enable web search</span>
 			</button>
 		{/if}
 

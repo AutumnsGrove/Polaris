@@ -141,6 +141,18 @@ pattern for new work here, not just the Docker-specific cases above.
   to `main`; `.github/workflows/go-ci.yml` — build/vet/test on Go changes;
   `.github/workflows/frontend-build-sync.yml` — fails a PR if `web/build/` drifts from `web/src/`
 - `install.sh` — `POLARIS_INSTALL_MODE=docker` is the Docker install path; default is bare-metal
+- `dev/fakeopenrouter/` — a scriptable stand-in for OpenRouter's streaming `/chat/completions` API,
+  for exercising a real running `polaris run` (gateway, agent loop, tool dispatch, the actual
+  SvelteKit frontend over a real WebSocket) against a canned model instead of a paid, non-deterministic
+  one — same idea as `llm/llmtest.MockClient` (which Go unit tests use directly), just as an HTTP
+  double instead of a Go interface double, since a live server process has no seam to inject a mock
+  client into (`gateway/turn.go` always constructs a real `llm.NewClient`). Point `config.yaml`'s
+  `openrouter.base_url` at it and queue scripted responses (plain answers or tool calls, including
+  multi-turn scenarios) via its `/_control/queue` HTTP API; `/_control/calls` returns every request
+  body it actually received, for asserting what the app really sent — e.g. that a disabled tool
+  didn't make it into that turn's offered tools list. Built for driving Playwright against the real
+  app from a Claude Code remote/cloud session with no real `OPENROUTER_API_KEY` on hand; see the
+  package doc comment in `dev/fakeopenrouter/main.go` for the full usage example.
 - `prompts.yaml` / `prompts/prompts.go` — every LLM prompt fragment except `prompt.md` itself,
   hot-reloaded with compiled-in defaults as a fallback
 - `search/searxng.go` — SearXNG's own engines (Brave, Google, DuckDuckGo, Startpage) do rate-limit

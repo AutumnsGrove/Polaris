@@ -1,4 +1,5 @@
 name: dictionary
+category: research
 description: >-
   look up a word's definition, part of speech, and (when available) an example sentence, straight
   from a dictionary source. Prefer this over web_search or answering from memory whenever the

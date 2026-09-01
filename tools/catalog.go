@@ -32,6 +32,13 @@ const catalogDescriptionsDir = "tools/descriptions"
 type catalogEntry struct {
 	Name           string `yaml:"name"`
 	Requires       string `yaml:"requires"`
+	// Category is empty for most tools, or "research" for the ones that
+	// reach out for external information (web search, page fetches, the
+	// recommendation lookups) — see offered() below. Distinct from
+	// Requires: Requires is capability-gating (can this tool even run right
+	// now), Category is a behavioral grouping used to bulk-exclude tools
+	// for chat mode, independent of whether the tool is otherwise usable.
+	Category       string `yaml:"category"`
 	Description    string `yaml:"description"`
 	APIDescription string `yaml:"api_description"`
 }
@@ -45,6 +52,23 @@ type catalogEntry struct {
 // offered", since the whole point of Requires is to keep an unusable tool
 // off the model's menu.
 func (e catalogEntry) offered(ctx *Context) bool {
+	if ctx.DisabledTools[e.Name] {
+		// User-preference gate, checked first and unconditionally — a tool
+		// disabled from the settings panel stays off regardless of what
+		// Requires or Category would otherwise decide. Reading a nil map
+		// is safe in Go (returns false), so this needs no nil check for
+		// every Context that never sets DisabledTools at all (most tests,
+		// the benchmark harness).
+		return false
+	}
+	if ctx.NoResearch && e.Category == "research" {
+		// Chat mode: bulk-exclude every tool tagged "research" instead of
+		// hardcoding a tool-name list here and in the prompt fragment that
+		// explains the situation (agent/driver.go's noResearch branch) —
+		// a future research tool just needs category: research in its own
+		// YAML file to be included in this, not a second list to remember.
+		return false
+	}
 	switch e.Requires {
 	case "":
 		return true
@@ -85,27 +109,27 @@ func (e catalogEntry) offered(ctx *Context) bool {
 var catalogDefaults = map[string]catalogEntry{
 	"think": {Name: "think", Description: "reason privately about strategy before acting.",
 		APIDescription: "Reason privately about what to do next before acting."},
-	"web_search": {Name: "web_search", Description: "search the web via a private SearXNG instance.",
+	"web_search": {Name: "web_search", Category: "research", Description: "search the web via a private SearXNG instance.",
 		APIDescription: "Search the web via SearXNG for current information, facts, or sources."},
-	"web_read": {Name: "web_read", Description: "fetch a URL and extract its content.",
+	"web_read": {Name: "web_read", Category: "research", Description: "fetch a URL and extract its content.",
 		APIDescription: "Fetch a URL and extract its clean text content."},
-	"nearby_search": {Name: "nearby_search", Description: "find real-world places near a location.",
+	"nearby_search": {Name: "nearby_search", Category: "research", Description: "find real-world places near a location.",
 		APIDescription: "Find real-world places near a location."},
-	"youtube_transcript": {Name: "youtube_transcript", Description: "fetch a YouTube video's transcript.",
+	"youtube_transcript": {Name: "youtube_transcript", Category: "research", Description: "fetch a YouTube video's transcript.",
 		APIDescription: "Fetch the transcript of a YouTube video."},
-	"weather": {Name: "weather", Description: "current conditions and a short forecast for a location.",
+	"weather": {Name: "weather", Category: "research", Description: "current conditions and a short forecast for a location.",
 		APIDescription: "Get current weather conditions and a short daily forecast for a location."},
-	"reference_lookup": {Name: "reference_lookup", Description: "query Wikipedia or arXiv directly.",
+	"reference_lookup": {Name: "reference_lookup", Category: "research", Description: "query Wikipedia or arXiv directly.",
 		APIDescription: "Look up a topic directly in a specific reference source."},
-	"github_repo": {Name: "github_repo", Description: "look up a GitHub repository's stats and README.",
+	"github_repo": {Name: "github_repo", Category: "research", Description: "look up a GitHub repository's stats and README.",
 		APIDescription: "Look up a GitHub repository directly via GitHub's API."},
-	"dictionary": {Name: "dictionary", Description: "look up a word's definition.",
+	"dictionary": {Name: "dictionary", Category: "research", Description: "look up a word's definition.",
 		APIDescription: "Look up a word's definition, part of speech, and an example sentence."},
-	"music": {Name: "music", Requires: "lastfm_api_key", Description: "find real song/album recommendations grounded in Last.fm's similarity data.",
+	"music": {Name: "music", Requires: "lastfm_api_key", Category: "research", Description: "find real song/album recommendations grounded in Last.fm's similarity data.",
 		APIDescription: "Find real music recommendations grounded in actual listening/similarity data (Last.fm)."},
-	"books": {Name: "books", Description: "find real book recommendations grounded in curated lists and shared subject data.",
+	"books": {Name: "books", Category: "research", Description: "find real book recommendations grounded in curated lists and shared subject data.",
 		APIDescription: "Find real book recommendations grounded in readers' curated lists and shared subject/genre data."},
-	"movies": {Name: "movies", Requires: "tmdb_api_key", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
+	"movies": {Name: "movies", Requires: "tmdb_api_key", Category: "research", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
 		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
@@ -179,6 +203,38 @@ func loadCatalog() map[string]catalogEntry {
 	}
 
 	return catalogCache
+}
+
+// nonToggleable are tools the settings panel never offers a per-tool
+// switch for — think and ask_user_question are reasoning/interaction
+// primitives the model needs regardless of research preferences, not user
+// preferences themselves, and memory already has its own dedicated
+// settings section (see gateway/memories.go) rather than a plain on/off
+// switch.
+var nonToggleable = map[string]bool{"think": true, "ask_user_question": true, "memory": true}
+
+// ToolInfo is one individually toggleable tool's identity, for the
+// settings panel — see ToggleableTools.
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ToggleableTools lists every tool a user can individually enable/disable
+// from the settings panel, in catalogOrder, with its current
+// human-readable description — gateway/settings.go's handleGetSettings
+// surfaces this so the frontend doesn't hardcode tool names/descriptions
+// that otherwise only live in tools/descriptions/*.yaml.
+func ToggleableTools() []ToolInfo {
+	catalog := loadCatalog()
+	out := make([]ToolInfo, 0, len(catalogOrder))
+	for _, name := range catalogOrder {
+		if nonToggleable[name] {
+			continue
+		}
+		out = append(out, ToolInfo{Name: name, Description: catalog[name].Description})
+	}
+	return out
 }
 
 // ToolsPrompt renders the {tools} placeholder's replacement text: one

@@ -1,5 +1,6 @@
 name: movies
 requires: tmdb_api_key
+category: research
 description: >-
   find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data
   ("people who watched this also watched"), not guesswork. Set media_type to "movie" or "tv"

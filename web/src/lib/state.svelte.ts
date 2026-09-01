@@ -757,10 +757,20 @@ export class AppState {
 	// (ComposerMenu.svelte) — only plumbed through the plain-text send
 	// path for now, not retry/editMessage below (same scope boundary
 	// sttCostUsd already draws) or VoiceButton's transcribed-memo send.
-	send(content: string, sttCostUsd?: number, focusMode?: FocusMode, deepResearch?: boolean, attachment?: UploadedAttachment) {
+	// noResearch mirrors deepResearch's shape but is also set explicitly by
+	// AskUserQuestionCard's "enable web search" action (passing false) to
+	// override the composer's current Research toggle for that one reply.
+	send(
+		content: string,
+		sttCostUsd?: number,
+		focusMode?: FocusMode,
+		deepResearch?: boolean,
+		attachment?: UploadedAttachment,
+		noResearch?: boolean
+	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
-		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch, attachment);
+		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch, attachment, noResearch);
 	}
 
 	// Re-runs an assistant turn using the same preceding user message —
@@ -791,7 +801,8 @@ export class AppState {
 		sttCostUsd?: number,
 		focusMode?: FocusMode,
 		deepResearch?: boolean,
-		attachment?: UploadedAttachment
+		attachment?: UploadedAttachment,
+		noResearch?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -839,6 +850,7 @@ export class AppState {
 			user_location: getUserLocation(),
 			focus_mode: focusMode && focusMode !== 'off' ? focusMode : undefined,
 			deep_research: deepResearch || undefined,
+			no_research: noResearch || undefined,
 			attachment_id: attachment?.id,
 			attachment_filename: attachment?.filename,
 			attachment_content_type: attachment?.content_type

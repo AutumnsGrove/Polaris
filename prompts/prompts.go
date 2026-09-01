@@ -35,6 +35,7 @@ type Set struct {
 	Agent struct {
 		FallbackSystemPrompt    string            `yaml:"fallback_system_prompt"`
 		VoiceModeInstruction    string            `yaml:"voice_mode_instruction"`
+		NoResearchInstruction   string            `yaml:"no_research_instruction"`
 		DeepResearchInstruction string            `yaml:"deep_research_instruction"`
 		FocusModes              map[string]string `yaml:"focus_modes"`
 		ResearchCheckIn         string            `yaml:"research_check_in"`
@@ -101,6 +102,14 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 	d.Agent.VoiceModeInstruction = "Voice mode is active: this answer will be read aloud, not just displayed. " +
 		"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
 		"bullet lists, or reciting citations inline — sources will still be shown in the UI regardless."
+
+	d.Agent.NoResearchInstruction = "Chat mode is active: web search and the other research tools are turned off " +
+		"for this conversation, and you don't have access to them right now — this was a deliberate choice, not " +
+		"an error, so don't apologize for it or explain that tools are unavailable. Just answer naturally from " +
+		"what you already know. If a question genuinely can't be answered without searching the web or fetching " +
+		"current information, use ask_user_question with wants_web_search set to true to ask whether to turn " +
+		"research back on for this — don't guess or invent specifics (numbers, dates, current events) you " +
+		"aren't confident about instead."
 
 	d.Agent.DeepResearchInstruction = "Deep Research mode is active: prioritize thoroughness over speed. " +
 		"Cross-check important claims against more than one independent source rather than stopping at the " +
@@ -289,6 +298,9 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.VoiceModeInstruction == "" {
 		s.Agent.VoiceModeInstruction = defaults.Agent.VoiceModeInstruction
+	}
+	if s.Agent.NoResearchInstruction == "" {
+		s.Agent.NoResearchInstruction = defaults.Agent.NoResearchInstruction
 	}
 	if s.Agent.DeepResearchInstruction == "" {
 		s.Agent.DeepResearchInstruction = defaults.Agent.DeepResearchInstruction

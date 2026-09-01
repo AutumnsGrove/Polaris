@@ -49,6 +49,20 @@ agent:
     conversational (1-3 sentences when possible), and avoid markdown formatting, bullet lists, or
     reciting citations inline — sources will still be shown in the UI regardless.
 
+  # Appended (after a blank line) when the composer's Research toggle is off
+  # (chat mode) — the research-tagged tools (see tools/catalog.go's
+  # Category field) are already excluded from {tools} by this point, so
+  # this fragment only needs to explain the situation and the escape hatch,
+  # not repeat what's now missing.
+  no_research_instruction: >-
+    Chat mode is active: web search and the other research tools are turned off for this
+    conversation, and you don't have access to them right now — this was a deliberate choice, not
+    an error, so don't apologize for it or explain that tools are unavailable. Just answer
+    naturally from what you already know. If a question genuinely can't be answered without
+    searching the web or fetching current information, use ask_user_question with
+    wants_web_search set to true to ask whether to turn research back on for this — don't guess or
+    invent specifics (numbers, dates, current events) you aren't confident about instead.
+
   # Appended (after a blank line) when the composer's Deep Research toggle is on.
   deep_research_instruction: >-
     Deep Research mode is active: prioritize thoroughness over speed. Cross-check important claims

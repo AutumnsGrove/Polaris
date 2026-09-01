@@ -1,4 +1,5 @@
 name: nearby_search
+category: research
 description: >-
   find real-world places (restaurants, pharmacies, etc.) near a location.
 api_description: >-

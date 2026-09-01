@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain } from '@lucide/svelte';
+	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain, Wrench } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import MemorySettings from './MemorySettings.svelte';
+	import ToolSettings from './ToolSettings.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -16,6 +17,7 @@
 	// settings view, which is the right default every time.
 	let showStats = $state(false);
 	let showMemory = $state(false);
+	let showTools = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
@@ -136,6 +138,16 @@
 			</div>
 
 			<MemorySettings />
+		{:else if showTools}
+			<div class="modal-panel-header">
+				<button class="icon-btn" onclick={() => (showTools = false)} title="Back to settings">
+					<ChevronLeft size={18} />
+				</button>
+				<h2>Tools</h2>
+				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
+			</div>
+
+			<ToolSettings />
 		{:else}
 			<div class="modal-panel-header">
 				<h2>Settings</h2>
@@ -251,13 +263,45 @@
 			<section>
 				<h3>Memory</h3>
 				<div class="row">
-					<span>What it remembers about you</span>
-					<button class="btn manage-btn" onclick={() => (showMemory = true)}>
-						<Brain size={14} /> Manage
+					<span>Enabled</span>
+					<label class="switch">
+						<input
+							type="checkbox"
+							checked={appState.settings.memoryEnabled}
+							onchange={(e) => appState.settings.setMemoryEnabled(e.currentTarget.checked)}
+						/>
+						<span class="slider"></span>
+					</label>
+				</div>
+				<div class:section-disabled={!appState.settings.memoryEnabled}>
+					<div class="row">
+						<span>What <span class="wordmark">Polaris</span> remembers about you</span>
+						<button
+							class="btn manage-btn"
+							onclick={() => appState.settings.memoryEnabled && (showMemory = true)}
+							disabled={!appState.settings.memoryEnabled}
+						>
+							<Brain size={14} /> Manage
+						</button>
+					</div>
+					<p class="hint">
+						View, edit by telling <span class="wordmark">Polaris</span> what to change, or forget things
+						it's saved across conversations.
+					</p>
+				</div>
+			</section>
+
+			<section>
+				<h3>Tools</h3>
+				<div class="row">
+					<span>Which tools <span class="wordmark">Polaris</span> can use</span>
+					<button class="btn manage-btn" onclick={() => (showTools = true)}>
+						<Wrench size={14} /> Manage
 					</button>
 				</div>
 				<p class="hint">
-					View, edit by telling it what to change, or forget things it's saved across conversations.
+					Turn off individual tools, or use the composer's "+" menu to turn off research entirely
+					for a plain chat.
 				</p>
 			</section>
 
@@ -381,6 +425,69 @@
 		gap: var(--space-md);
 		margin-bottom: var(--space-sm);
 		font-size: 14px;
+	}
+
+	/* Dims the rest of a section (everything below its own on/off row)
+	   when that section's feature is turned off — e.g. Memory's "What
+	   Polaris remembers"/hint once Enabled is switched off. pointer-events
+	   is the real block for anything without its own disabled attribute;
+	   the Manage button also gets disabled directly (see the markup above)
+	   for proper keyboard/screen-reader behavior, not just a dimmed look. */
+	.section-disabled {
+		opacity: 0.45;
+		pointer-events: none;
+	}
+
+	/* Same switch construction as ComposerMenu.svelte/ToolSettings.svelte —
+	   duplicated rather than shared since Svelte scopes component styles
+	   per-file, but it's the same visual vocabulary everywhere a boolean
+	   setting appears. */
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 36px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.slider {
+		position: absolute;
+		inset: 0;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.slider::before {
+		content: '';
+		position: absolute;
+		width: 14px;
+		height: 14px;
+		left: 2px;
+		top: 2px;
+		background: var(--color-text-dim);
+		border-radius: 50%;
+		transition:
+			transform 0.15s ease,
+			background 0.15s ease;
+	}
+
+	.switch input:checked + .slider {
+		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+		border-color: var(--color-accent);
+	}
+
+	.switch input:checked + .slider::before {
+		transform: translateX(16px);
+		background: var(--color-accent);
 	}
 
 	.hint {

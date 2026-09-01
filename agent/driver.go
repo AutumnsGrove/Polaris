@@ -168,7 +168,7 @@ const (
 // "same research, shorter replies", and that's exactly what this does:
 // Run's turn-budget/research-check-in logic never reads FocusMode, only
 // this function's output differs.
-func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deepResearch bool) string {
+func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deepResearch bool, noResearch bool) string {
 	p := prompts.Get()
 
 	data, err := os.ReadFile(promptPath)
@@ -194,6 +194,15 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	}
 	if deepResearch {
 		prompt += "\n\n" + p.Agent.DeepResearchInstruction
+	}
+	if noResearch {
+		// Deliberately independent of the deepResearch branch above — the
+		// two toggles live in different parts of the composer and nothing
+		// stops a client from sending both at once (deep research with no
+		// research tools makes no practical difference here, since the
+		// tools it would need are already stripped from {tools}, but there's
+		// no reason to make that combination an error either).
+		prompt += "\n\n" + p.Agent.NoResearchInstruction
 	}
 	return prompt
 }
@@ -294,7 +303,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	warmUpEmbedClient(ctx)
 
 	messages := make([]llm.ChatMessage, 0, len(history)+2)
-	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch)})
+	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch, ctx.NoResearch)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
 

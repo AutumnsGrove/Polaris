@@ -1,4 +1,5 @@
 name: youtube_transcript
+category: research
 description: >-
   fetch a YouTube video's transcript, given its URL or video ID. Use this instead of web_read for
   YouTube links — web_read can't see a video page's actual content.

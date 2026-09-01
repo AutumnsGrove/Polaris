@@ -3,6 +3,9 @@ config.yaml
 *.db-shm
 *.db-wal
 /polaris
+# `go build ./dev/...` (or plain `go build ./...` from repo root) writes a
+# same-named binary here for dev/fakeopenrouter, same as /polaris above.
+/fakeopenrouter
 logs/
 attachments/
 .update.lock

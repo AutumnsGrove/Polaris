@@ -1,4 +1,5 @@
 name: web_search
+category: research
 description: >-
   search the web via a private SearXNG instance.
 api_description: >-

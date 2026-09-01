@@ -1,4 +1,5 @@
 name: books
+category: research
 description: >-
   find real book recommendations grounded in readers' curated lists (Hardcover.app) and shared
   subject/genre data (Open Library), not guesswork. Use when the user names a book and wants more
