@@ -111,6 +111,7 @@ var validFocusModes = map[string]bool{
 	agent.FocusModeNews:            true,
 	agent.FocusModeFirstPrinciples: true,
 	agent.FocusModeSocratic:        true,
+	agent.FocusModeResearcher:      true,
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

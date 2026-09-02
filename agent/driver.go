@@ -156,6 +156,7 @@ const (
 	FocusModeNews            = "news"
 	FocusModeFirstPrinciples = "first_principles"
 	FocusModeSocratic        = "socratic"
+	FocusModeResearcher      = "researcher"
 )
 
 // loadSystemPrompt reads prompt.md fresh every call — edit the file,
@@ -317,7 +318,11 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	}
 	checkInInterval := researchCheckInInterval
 	staleThreshold := staleStreakThreshold
-	if ctx.DeepResearch {
+	// Researcher focus mode gets the same widened leash Deep Research
+	// grants (Tier 1 of docs/plans/deep-research-two-tier.md) — a sharper
+	// single-agent mode reached via the focus-mode picker instead of the
+	// dedicated toggle, without spawning anything.
+	if ctx.DeepResearch || ctx.FocusMode == FocusModeResearcher {
 		maxTurns *= deepResearchTurnMultiplier
 		checkInInterval *= deepResearchCheckInMultiplier
 		staleThreshold *= deepResearchCheckInMultiplier

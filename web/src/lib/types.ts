@@ -143,7 +143,14 @@ export type ClientMessage =
 
 // 'off' isn't a selectable mode in the sheet — it's just what focusMode
 // resets to when the active mode is tapped again to turn it off.
-export type FocusMode = 'off' | 'brief' | 'academic' | 'news' | 'first_principles' | 'socratic';
+export type FocusMode =
+	| 'off'
+	| 'brief'
+	| 'academic'
+	| 'news'
+	| 'first_principles'
+	| 'socratic'
+	| 'researcher';
 
 // The response from POST /api/upload (see gateway/attachments.go's
 // UploadResponse) — id is what rides along in the next ClientMessage.

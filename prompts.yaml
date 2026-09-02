@@ -95,6 +95,12 @@ agent:
       Focus mode: Socratic. Instead of only stating the answer, briefly walk through the reasoning
       step by step — as if guiding the user toward the conclusion rather than just handing it over.
       Stay concise; this is about the shape of the explanation, not padding it with extra questions.
+    researcher: >-
+      Focus mode: Researcher. Prioritize thoroughness and accuracy over speed for this question.
+      Cross-check important claims against more than one independent source rather than stopping
+      at the first plausible answer, follow up on primary sources when a search result is vague or
+      secondhand, and consider the question from more than one angle before concluding. Taking
+      longer and costing more than a normal answer is expected and fine here.
 
   # Sent as a nudge every researchCheckInInterval-th research tool call —
   # %d order: research tool calls made, then sources gathered.

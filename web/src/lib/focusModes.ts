@@ -1,4 +1,11 @@
-import { Zap, GraduationCap, Newspaper, Lightbulb, MessageCircleQuestion } from '@lucide/svelte';
+import {
+	Zap,
+	GraduationCap,
+	Newspaper,
+	Lightbulb,
+	MessageCircleQuestion,
+	Microscope
+} from '@lucide/svelte';
 import type { FocusMode } from './types';
 import type { Component } from 'svelte';
 
@@ -15,6 +22,12 @@ export interface FocusModeOption {
 // tapped again / when no default is set, not a selectable entry itself.
 export const FOCUS_MODES: FocusModeOption[] = [
 	{ id: 'brief', label: 'Brief', description: 'Same research, shorter replies', icon: Zap },
+	{
+		id: 'researcher',
+		label: 'Researcher',
+		description: 'Cross-check sources, dig deeper',
+		icon: Microscope
+	},
 	{ id: 'academic', label: 'Academic', description: 'Prefer academic sources', icon: GraduationCap },
 	{ id: 'news', label: 'News', description: 'Prefer news sources', icon: Newspaper },
 	{
