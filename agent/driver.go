@@ -345,7 +345,21 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 		})
 		if err != nil {
-			return nil, err
+			// Still return whatever the loop already spent, not just the
+			// error — a mid-turn failure (network reset, a truncated
+			// tool-call stream) after several real, billed calls previously
+			// discarded that cost entirely (`return nil, err`), which is
+			// how a benchmark/production turn that errored out could
+			// report $0.00 despite having made real, paid LLM calls first.
+			// Callers that only check err and ignore result on failure are
+			// unaffected either way.
+			return &Result{
+				Citations:     ctx.Citations,
+				Cards:         ctx.Cards,
+				CostUSD:       totalCost,
+				TurnCount:     turn + 1,
+				ResearchCalls: researchCalls,
+			}, err
 		}
 		sniff.flush()
 		totalCost += resp.CostUSD
@@ -493,7 +507,16 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		ctx.Emit("reasoning", map[string]interface{}{"content": chunk})
 	})
 	if err != nil {
-		return nil, err
+		// Same reasoning as the main loop's error return above — don't
+		// discard the cost the loop itself already accrued just because
+		// this final forced wrap-up call failed too.
+		return &Result{
+			Citations:     ctx.Citations,
+			Cards:         ctx.Cards,
+			CostUSD:       totalCost,
+			TurnCount:     maxTurns + 1,
+			ResearchCalls: researchCalls,
+		}, err
 	}
 	wrapSniff.flush()
 	totalCost += resp.CostUSD

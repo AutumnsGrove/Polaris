@@ -980,3 +980,77 @@ func TestRun_LLMErrorPropagates(t *testing.T) {
 		t.Errorf("err = %v, want it to wrap the underlying failure", err)
 	}
 }
+
+// TestRun_ErrorAfterPartialCostStillReportsCost covers a real gap found
+// live while benchmarking Deep Research: a turn that makes several real,
+// billed LLM calls before a later call fails (e.g. llm/client.go's
+// "truncated tool call arguments" on a long research turn) previously
+// discarded every dollar already spent — `return nil, err` threw away
+// totalCost along with everything else, so callers had no way to know
+// real money was spent on a turn that ultimately errored. Run must
+// return a non-nil Result carrying the accumulated cost alongside the
+// error, not just the error — existing callers that only check err and
+// ignore result on failure are unaffected either way.
+func TestRun_ErrorAfterPartialCostStillReportsCost(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					CostUSD: 0.01,
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"let me consider this"}`},
+					}},
+				},
+			},
+			{Err: errors.New("truncated tool call arguments")},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "hi")
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if result == nil {
+		t.Fatal("Run returned a nil Result alongside the error — the first call's $0.01 is now unrecoverable")
+	}
+	if result.CostUSD != 0.01 {
+		t.Errorf("result.CostUSD = %v, want 0.01 (the cost already accrued before the failing call)", result.CostUSD)
+	}
+}
+
+// TestRun_WrapUpErrorStillReportsCost covers the same gap at the other
+// error return site — the forced wrap-up call (after maxTurns is
+// exhausted) failing must not discard whatever the loop itself already
+// spent getting there.
+func TestRun_WrapUpErrorStillReportsCost(t *testing.T) {
+	responses := []llmtest.Response{}
+	for i := 0; i < 2; i++ {
+		responses = append(responses, llmtest.Response{
+			Resp: &llm.ChatResponse{
+				CostUSD: 0.02,
+				ToolCalls: []llm.ToolCall{{
+					ID: fmt.Sprintf("call-%d", i), Type: "function",
+					Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"still going"}`},
+				}},
+			},
+		})
+	}
+	responses = append(responses, llmtest.Response{Err: errors.New("wrap-up call failed")})
+	mock := &llmtest.MockClient{Responses: responses}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 2) // maxTurns=2, so the 3rd call is the forced wrap-up
+
+	result, err := Run(context.Background(), ctx, nil, "hi")
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if result == nil {
+		t.Fatal("Run returned a nil Result alongside the wrap-up error — the loop's $0.04 is now unrecoverable")
+	}
+	if result.CostUSD != 0.04 {
+		t.Errorf("result.CostUSD = %v, want 0.04 (both loop calls' cost, accrued before the wrap-up call failed)", result.CostUSD)
+	}
+}

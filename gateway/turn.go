@@ -408,7 +408,20 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// wouldn't have reached that point.
 	flushReasoning()
 	if err != nil {
-		s.db.LogEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID}, turnID)
+		// agent.Run still returns a non-nil result carrying whatever cost
+		// the turn accrued before the failing call — real, billed LLM
+		// calls happened even though the turn ultimately errored, so this
+		// records that spend in the event log instead of silently losing
+		// it (there's no assistant message row to attach it to here, since
+		// the turn never produced an answer). Not folded into per-thread
+		// cost stats — that's a separate design question about where a
+		// failed turn's spend should live in aggregate reporting, not
+		// solved by this log line.
+		var partialCost float64
+		if result != nil {
+			partialCost = result.CostUSD
+		}
+		s.db.LogEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID, "cost_usd": partialCost}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}

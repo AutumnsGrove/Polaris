@@ -283,9 +283,21 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 
 		result, err := agent.Run(context.Background(), agentCtx, nil, suite.BuildQuery(row.Problem))
 		if err != nil {
-			fmt.Printf("agent run failed: %v\n", err)
+			// agent.Run still returns a non-nil Result carrying whatever
+			// cost the turn already accrued before the failing call — real,
+			// billed LLM calls happened even though the turn ultimately
+			// errored, so this must count toward the run's total instead
+			// of silently reporting $0.00 for a question that actually
+			// cost money.
+			var partialCost float64
+			if result != nil {
+				partialCost = result.CostUSD
+			}
+			totalCost += partialCost
+			record.SubjectCostUSD = partialCost
+			fmt.Printf("agent run failed: %v (cost so far: $%.4f)\n", err, partialCost)
 			recordAndLog("error", err.Error())
-			_ = enc.Encode(benchmarkResult{DatasetRow: row.Index, Question: row.Problem, ReferenceAnswer: row.Answer, Error: err.Error()})
+			_ = enc.Encode(benchmarkResult{DatasetRow: row.Index, Question: row.Problem, ReferenceAnswer: row.Answer, SubjectCostUSD: partialCost, Error: err.Error()})
 			continue
 		}
 		totalCost += result.CostUSD
