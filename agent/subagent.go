@@ -32,15 +32,15 @@ type SubAgentTask struct {
 // reusing baseCtx directly, since every sub-agent in a fan-out wave runs
 // concurrently against the same baseCtx otherwise (see that function's
 // doc comment for why a plain `*baseCtx` copy isn't safe here).
-func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.ChatClient, task SubAgentTask) (SubAgentReport, error) {
+func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.ChatClient, task SubAgentTask) (tools.SubAgentReport, error) {
 	subCtx := newSubAgentContext(baseCtx, llmClient)
 	userMessage := fmt.Sprintf(prompts.Get().Agent.SubAgentTask, task.Objective, task.Guidance)
 
 	result, err := Run(reqCtx, subCtx, nil, userMessage)
 	if err != nil {
-		return SubAgentReport{}, err
+		return tools.SubAgentReport{}, err
 	}
-	return ParseSubAgentReport(task.Objective, result.Answer, subCtx.Citations), nil
+	return tools.ParseSubAgentReport(task.Objective, result.Answer, subCtx.Citations), nil
 }
 
 // newSubAgentContext builds a fresh *tools.Context for one sub-agent,

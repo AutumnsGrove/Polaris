@@ -1,10 +1,8 @@
-package agent
+package tools
 
 import (
 	"reflect"
 	"testing"
-
-	"polaris/tools"
 )
 
 func TestParseSubAgentReport_ValidJSON(t *testing.T) {
@@ -46,7 +44,7 @@ func TestParseSubAgentReport_BareJSONWithSurroundingProse(t *testing.T) {
 
 func TestParseSubAgentReport_MalformedJSONFallsBackToSingleFinding(t *testing.T) {
 	raw := "I looked into it but couldn't find a clean structured answer, here's my summary in prose."
-	citations := []tools.Citation{{Title: "A", URL: "https://example.com/x"}, {Title: "B", URL: "https://example.com/y"}}
+	citations := []Citation{{Title: "A", URL: "https://example.com/x"}, {Title: "B", URL: "https://example.com/y"}}
 
 	report := ParseSubAgentReport("my objective", raw, citations)
 

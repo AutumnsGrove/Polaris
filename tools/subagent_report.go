@@ -1,10 +1,8 @@
-package agent
+package tools
 
 import (
 	"encoding/json"
 	"strings"
-
-	"polaris/tools"
 )
 
 // SubAgentFinding is one claim with its supporting sources — the unit
@@ -46,7 +44,7 @@ type SubAgentReport struct {
 // whatever the JSON itself claims its objective was, since that field is
 // bookkeeping for the orchestrator, not something worth trusting model
 // output for.
-func ParseSubAgentReport(fallbackObjective, rawAnswer string, fallbackCitations []tools.Citation) SubAgentReport {
+func ParseSubAgentReport(fallbackObjective, rawAnswer string, fallbackCitations []Citation) SubAgentReport {
 	if block := extractJSONBlock(rawAnswer); block != "" {
 		var report SubAgentReport
 		if err := json.Unmarshal([]byte(block), &report); err == nil && len(report.Findings) > 0 {
