@@ -176,15 +176,18 @@ separate CitationAgent-style model call (Anthropic's approach) is explicitly def
 one combined synthesis-plus-grounding pass is the cheaper starting point; revisit only if citation
 quality turns out to need the extra call in practice.
 
-### Report rendering
+### Report rendering — descoped after live testing
 
-Tier 2's output is sectioned with per-section sources, not a longer version of a normal chat
-bubble — this needs a real data-model addition (e.g. `ReportSections []ReportSection{Heading,
-Content, Sources}` alongside the existing message content), touching `gateway/protocol.go`'s
-`ServerEvent`, the messages table schema, and a new frontend rendering component (collapsible
-sections, visible per-section source list). Scoped as implementation work, not decided further
-here — the shape above is confirmed, the exact schema/component split happens during
-implementation.
+Originally planned as a real data-model addition (`ReportSections []ReportSection{Heading,
+Content, Sources}`, touching `gateway/protocol.go`'s `ServerEvent`, the messages table schema, and
+a new collapsible-sections frontend component). Dropped after actually running Deep Research live
+(a 9-sub-agent NASA-missions comparison, `spawn_researchers` fired correctly) and seeing the
+orchestrator's plain final answer: markdown headers, a comparison table, bold labels, and inline
+citation links, rendered by the *existing* chat-bubble markdown pipeline with no special handling
+at all. It already read as clearly organized and well-sourced — the thing `ReportSections` existed
+to provide. Building the dedicated version on top of that would have meant a heuristic (fragile)
+URL-to-section source matcher for a UX gain that live evidence didn't support. If a future model or
+question shape produces worse plain-markdown output, revisit rather than build this preemptively.
 
 ## Explicitly out of scope for v1
 
