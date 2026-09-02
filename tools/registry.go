@@ -229,6 +229,15 @@ type Context struct {
 	// existing caller that never sets this field is unaffected.
 	SubAgentRole string
 
+	// ResearchBudget, when non-nil, is the session-wide search-call budget
+	// shared by every sub-agent in one Tier 2 Deep Research fan-out (see
+	// ResearchBudget's doc comment in research_budget.go) — one instance
+	// created per session and threaded into each sub-agent's Context so
+	// they share a single count instead of each tracking its own. Nil
+	// (the zero value) means no session-level budget applies, which is
+	// correct for every non-sub-agent caller.
+	ResearchBudget *ResearchBudget
+
 	// QuickMode, when true, tells web_read to skip its optional filter LLM
 	// pass entirely (always return raw extracted text, ignoring
 	// Instructions) — set for Atlas's Quick Answer, where a fast answer
