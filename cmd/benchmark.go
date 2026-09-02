@@ -22,14 +22,16 @@ import (
 )
 
 var (
-	benchmarkSuite    string
-	benchmarkDataset  string
-	benchmarkN        int
-	benchmarkSeed     int64
-	benchmarkModel    string
-	benchmarkDB       string
-	benchmarkOut      string
-	benchmarkTracking string
+	benchmarkSuite        string
+	benchmarkDataset      string
+	benchmarkN            int
+	benchmarkSeed         int64
+	benchmarkRow          int
+	benchmarkModel        string
+	benchmarkDB           string
+	benchmarkOut          string
+	benchmarkTracking     string
+	benchmarkDeepResearch bool
 )
 
 var benchmarkCmd = &cobra.Command{
@@ -59,6 +61,8 @@ func init() {
 	benchmarkCmd.Flags().StringVar(&benchmarkDataset, "dataset", "", "path to the suite's dataset CSV (required) — browsecomp: the encrypted browse_comp_test_set.csv; simpleqa: simple_qa_test_set.csv")
 	benchmarkCmd.Flags().IntVar(&benchmarkN, "n", 50, "number of questions to sample")
 	benchmarkCmd.Flags().Int64Var(&benchmarkSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run (default), pass an explicit value to reproduce a specific run's subset")
+	benchmarkCmd.Flags().IntVar(&benchmarkRow, "row", -1, "run only this one dataset row (0-based index, as printed in results/tracking output) instead of sampling --n questions — for spot-checking or reproducing a single question")
+	benchmarkCmd.Flags().BoolVar(&benchmarkDeepResearch, "deep-research", false, "run every question with Deep Research on (the spawn_researchers multi-agent fan-out) instead of the normal single-agent harness — goes straight to spawning sub-agents with no plan-confirmation step, since a benchmark run has no interactive user to confirm with")
 	benchmarkCmd.Flags().StringVarP(&benchmarkModel, "model", "m", "", "model id, used for BOTH the harness under test and the LLM grader (defaults to default_model)")
 	benchmarkCmd.Flags().StringVar(&benchmarkDB, "db", "polaris-benchmark.db", "path to the isolated benchmark database (never the production one)")
 	benchmarkCmd.Flags().StringVar(&benchmarkOut, "out", "benchmark-results.jsonl", "path to write per-question JSONL results")
@@ -110,6 +114,25 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
 
+	// workerClient is only built when --deep-research is on — a dedicated
+	// client from config.ResearchWorkerModel, same reasoning as
+	// gateway/turn.go's identical wiring: sub-agents get their own
+	// (cheaper) model rather than reusing the harness's own `client`.
+	var workerClient llm.ChatClient
+	if benchmarkDeepResearch {
+		workerModelCfg, ok := cfg.ResearchWorkerModel()
+		if !ok {
+			return fmt.Errorf("--deep-research requires at least one model in the registry (config.ResearchWorkerModel found none)")
+		}
+		wc := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
+			WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: &falseVal})
+		if rc := workerModelCfg.Reasoning; rc != nil && rc.Enabled {
+			trueVal := true
+			wc = wc.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+		}
+		workerClient = wc
+	}
+
 	if cfg.Brave.APIKey == "" {
 		return fmt.Errorf("brave.api_key is not set in %s — the benchmark pins search to Brave, so it's a hard requirement", configPath)
 	}
@@ -142,15 +165,30 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading dataset: %w", err)
 	}
-	seed := benchmarkSeed
-	if !cmd.Flags().Changed("seed") {
-		// Default to a fresh random sample every run — --seed is only for
-		// the rare case of wanting to reproduce one specific run's subset
-		// later. Printed below either way, so a run you want to repeat is
-		// always recoverable by passing this back in as --seed.
-		seed = time.Now().UnixNano()
+
+	// --row picks exactly one question and skips sampling entirely — for
+	// spot-checking a specific question (e.g. against --deep-research)
+	// rather than running a whole sample. Mutually exclusive with --n/
+	// --seed in effect: the seed is never even computed, since there's
+	// nothing to sample.
+	var sample []benchmark.Row
+	var seed int64
+	if cmd.Flags().Changed("row") {
+		if benchmarkRow < 0 || benchmarkRow >= len(rows) {
+			return fmt.Errorf("--row %d out of range (dataset has %d rows, valid 0-%d)", benchmarkRow, len(rows), len(rows)-1)
+		}
+		sample = []benchmark.Row{rows[benchmarkRow]}
+	} else {
+		seed = benchmarkSeed
+		if !cmd.Flags().Changed("seed") {
+			// Default to a fresh random sample every run — --seed is only for
+			// the rare case of wanting to reproduce one specific run's subset
+			// later. Printed below either way, so a run you want to repeat is
+			// always recoverable by passing this back in as --seed.
+			seed = time.Now().UnixNano()
+		}
+		sample = benchmark.Sample(rows, benchmarkN, seed)
 	}
-	sample := benchmark.Sample(rows, benchmarkN, seed)
 
 	// One table per invocation (see benchmark.TrackingDB's doc comment) —
 	// runAt is fixed once here and reused for every row's implicit
@@ -163,8 +201,13 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("starting tracking run: %w", err)
 	}
 
-	fmt.Printf("suite: %s\nmodel: %s\ndataset: %d questions, sampled %d (seed %d)\nbenchmark db: %s\ntracking table: %s\n\n",
-		suite.Name(), modelCfg.Name, len(rows), len(sample), seed, benchmarkDB, run.Table)
+	if cmd.Flags().Changed("row") {
+		fmt.Printf("suite: %s\nmodel: %s\ndataset: %d questions, running row %d only\ndeep research: %v\nbenchmark db: %s\ntracking table: %s\n\n",
+			suite.Name(), modelCfg.Name, len(rows), benchmarkRow, benchmarkDeepResearch, benchmarkDB, run.Table)
+	} else {
+		fmt.Printf("suite: %s\nmodel: %s\ndataset: %d questions, sampled %d (seed %d)\ndeep research: %v\nbenchmark db: %s\ntracking table: %s\n\n",
+			suite.Name(), modelCfg.Name, len(rows), len(sample), seed, benchmarkDeepResearch, benchmarkDB, run.Table)
+	}
 
 	outFile, err := os.Create(benchmarkOut)
 	if err != nil {
@@ -210,6 +253,17 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			},
 			BraveUsageThisMonth: func() (int, error) { return db.GetAPIUsage("brave") },
 			IncrementBraveUsage: func() error { _, err := db.IncrementAPIUsage("brave"); return err },
+			DeepResearch:        benchmarkDeepResearch,
+		}
+		if benchmarkDeepResearch {
+			// No plan-confirmation step here (the doc's "Confirm" flow needs
+			// a live user to reply to ask_user_question) — a benchmark run
+			// has none, so the orchestrator just calls spawn_researchers
+			// directly whenever it decides to, same as it would proceed
+			// automatically once a real user approved a plan.
+			agentCtx.SpawnResearchers = func(subCtx *tools.Context, tasks []tools.SubAgentTask) []tools.SubAgentReport {
+				return agent.SpawnResearchers(subCtx.Ctx, subCtx, workerClient, tasks)
+			}
 		}
 
 		// recordAndLog fills in whatever RunRecord fields are known so far
