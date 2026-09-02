@@ -38,6 +38,7 @@ type Set struct {
 		NoResearchInstruction   string            `yaml:"no_research_instruction"`
 		DeepResearchInstruction string            `yaml:"deep_research_instruction"`
 		FocusModes              map[string]string `yaml:"focus_modes"`
+		SubAgentTask            string            `yaml:"subagent_task"`
 		ResearchCheckIn         string            `yaml:"research_check_in"`
 		StaleStreakWarning      string            `yaml:"stale_streak_warning"`
 		EmptyAnswerRetry        string            `yaml:"empty_answer_retry"`
@@ -134,7 +135,21 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 			"through the reasoning step by step — as if guiding the user toward the conclusion rather than " +
 			"just handing it over. Stay concise; this is about the shape of the explanation, not padding " +
 			"it with extra questions.",
+		"researcher": "Focus mode: Researcher. Prioritize thoroughness and accuracy over speed for this " +
+			"question. Cross-check important claims against more than one independent source rather than " +
+			"stopping at the first plausible answer, follow up on primary sources when a search result is " +
+			"vague or secondhand, and consider the question from more than one angle before concluding. " +
+			"Taking longer and costing more than a normal answer is expected and fine here.",
 	}
+
+	d.Agent.SubAgentTask = "You are one research sub-agent in a larger Deep Research fan-out, not the " +
+		"assistant the user is talking to directly — your output goes back to an orchestrator, not to " +
+		"them. Your objective:\n\n%s\n\n%s\n\nWhen you're done, answer with ONLY a JSON object — no prose " +
+		"before or after, no markdown code fence — in exactly this shape:\n" +
+		`{"findings": [{"claim": "one specific factual claim", "sources": ["https://...", "..."]}]}` +
+		"\n\nEach finding should be one specific, well-scoped claim backed by the URLs that actually " +
+		"support it — not one giant claim covering everything you found, and not a source dump with no " +
+		"claims attached. If you found nothing useful, return {\"findings\": []}."
 
 	d.Agent.ResearchCheckIn = "Checkpoint: you've made %d research tool calls and gathered %d source(s) so far. " +
 		"If you already have enough to answer confidently, stop searching and state your " +
@@ -304,6 +319,9 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.DeepResearchInstruction == "" {
 		s.Agent.DeepResearchInstruction = defaults.Agent.DeepResearchInstruction
+	}
+	if s.Agent.SubAgentTask == "" {
+		s.Agent.SubAgentTask = defaults.Agent.SubAgentTask
 	}
 	if s.Agent.ResearchCheckIn == "" {
 		s.Agent.ResearchCheckIn = defaults.Agent.ResearchCheckIn
