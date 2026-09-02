@@ -31,9 +31,10 @@ const catalogDescriptionsDir = "tools/descriptions"
 // subAgentToolNames is the fixed tool set offered to a Tier 2 Deep
 // Research sub-agent (Context.SubAgentRole set) — see offered() below.
 var subAgentToolNames = map[string]bool{
-	"web_search": true,
-	"web_read":   true,
-	"think":      true,
+	"web_search":       true,
+	"web_read":         true,
+	"think":            true,
+	"reference_lookup": true, // Wikipedia/arXiv — no API key required, same research-only spirit as web_search/web_read
 }
 
 // catalogEntry is one tools/descriptions/*.yaml file, parsed.

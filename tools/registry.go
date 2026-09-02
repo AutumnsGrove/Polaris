@@ -218,7 +218,8 @@ type Context struct {
 	// Tier 2 Deep Research sub-agent (see
 	// docs/plans/deep-research-two-tier.md) rather than the orchestrator
 	// or an ordinary chat turn. catalogEntry.offered() (catalog.go) uses
-	// this to restrict the tool menu to web_search/web_read/think only,
+	// this to restrict the tool menu to web_search/web_read/think/
+	// reference_lookup only (see catalog.go's subAgentToolNames),
 	// regardless of what Requires/keys/Category gating would otherwise
 	// allow — narrower tool-selection accuracy past ~15-20 tools, fewer
 	// tokens per call compounding across N parallel agents, and a

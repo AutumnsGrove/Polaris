@@ -148,6 +148,7 @@ func TestCatalogEntry_Offered_SubAgentRole(t *testing.T) {
 		{"web_search offered under sub-agent role", catalogEntry{Name: "web_search"}, subAgent, true},
 		{"web_read offered under sub-agent role", catalogEntry{Name: "web_read"}, subAgent, true},
 		{"think offered under sub-agent role", catalogEntry{Name: "think"}, subAgent, true},
+		{"reference_lookup offered under sub-agent role", catalogEntry{Name: "reference_lookup"}, subAgent, true},
 		{"movies excluded under sub-agent role despite configured key", catalogEntry{Name: "movies", Requires: "tmdb_api_key"}, subAgent, false},
 		{"memory excluded under sub-agent role", catalogEntry{Name: "memory"}, subAgent, false},
 		{"movies offered normally with configured key (control)", catalogEntry{Name: "movies", Requires: "tmdb_api_key"}, normal, true},
