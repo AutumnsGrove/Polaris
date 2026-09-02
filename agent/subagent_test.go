@@ -22,6 +22,7 @@ func TestNewSubAgentContext_ScopesAndShares(t *testing.T) {
 		Ctx:            context.Background(),
 		ResearchBudget: budget,
 		DisabledTools:  map[string]bool{"movies": true},
+		PinnedProvider: "brave",
 	}
 	base.AddCitation(tools.Citation{Title: "parent", URL: "https://example.com/parent"})
 
@@ -45,6 +46,9 @@ func TestNewSubAgentContext_ScopesAndShares(t *testing.T) {
 	}
 	if !sub.DisabledTools["movies"] {
 		t.Error("DisabledTools was not carried over from base")
+	}
+	if sub.PinnedProvider != "brave" {
+		t.Errorf("PinnedProvider = %q, want %q — a sub-agent spawned under a pinned-provider harness (e.g. cmd/benchmark.go) must keep using the same provider, not silently fall through to a nil SearXNG client", sub.PinnedProvider, "brave")
 	}
 }
 
