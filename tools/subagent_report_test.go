@@ -83,3 +83,23 @@ func TestParseSubAgentReport_JSONOmittingObjectiveUsesPassedInFallback(t *testin
 		t.Errorf("Objective = %q, want the passed-in fallback since JSON omitted it", report.Objective)
 	}
 }
+
+// TestParseSubAgentReport_ValidJSONStillCarriesFullCitations covers a gap
+// found while wiring the spawn_researchers tool: even when the model's
+// JSON parses successfully, the sub-agent's own gathered citations (full
+// title+URL, from its actual web_search/web_read/reference_lookup calls)
+// must still travel back on the report — not just the bare URL strings
+// the model happened to echo in "sources" — so the orchestrator can merge
+// real, well-titled citations into the final answer instead of untitled
+// URLs. This is what actually backs Polaris's "sourcing is the product"
+// goal one level into the multi-agent case.
+func TestParseSubAgentReport_ValidJSONStillCarriesFullCitations(t *testing.T) {
+	raw := `{"findings":[{"claim":"X is true","sources":["https://example.com/a"]}]}`
+	citations := []Citation{{Title: "Real Page Title", URL: "https://example.com/a"}}
+
+	report := ParseSubAgentReport("objective", raw, citations)
+
+	if !reflect.DeepEqual(report.Citations, citations) {
+		t.Errorf("Citations = %+v, want %+v (the sub-agent's own gathered citations, not discarded on the successful-parse path)", report.Citations, citations)
+	}
+}

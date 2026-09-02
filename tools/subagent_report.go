@@ -42,6 +42,15 @@ type SubAgentReport struct {
 	// sub-agent a report came from.
 	Objective string            `json:"objective"`
 	Findings  []SubAgentFinding `json:"findings"`
+
+	// Citations is the sub-agent's own full gathered citation list (real
+	// titles, not just the bare URL strings a model might echo in a
+	// finding's Sources) — from its actual web_search/web_read/
+	// reference_lookup calls, unrelated to whether the model's JSON
+	// itself parsed. json:"-" since this is never part of the model's
+	// own output; ParseSubAgentReport fills it in from the caller-
+	// supplied citations regardless of which branch produced Findings.
+	Citations []Citation `json:"-"`
 }
 
 // ParseSubAgentReport turns a sub-agent's raw final-answer text into a
@@ -52,22 +61,27 @@ type SubAgentReport struct {
 // hard-fails: any answer that isn't parseable as a findings array with at
 // least one entry degrades to a single finding whose claim is the whole
 // raw answer, backed by whatever citations the sub-agent's own tool
-// calls actually gathered (fallbackCitations) — still real sources, just
-// not claim-by-claim attributed. fallbackObjective always wins over
-// whatever the JSON itself claims its objective was, since that field is
+// calls actually gathered (citations, formatted down to bare URLs for
+// the fallback finding's Sources) — still real sources, just not
+// claim-by-claim attributed. fallbackObjective always wins over whatever
+// the JSON itself claims its objective was, since that field is
 // bookkeeping for the orchestrator, not something worth trusting model
-// output for.
-func ParseSubAgentReport(fallbackObjective, rawAnswer string, fallbackCitations []Citation) SubAgentReport {
+// output for. citations — the sub-agent's full, real (title+URL) list —
+// is always attached to the returned report's Citations field regardless
+// of which branch produced Findings, so a successfully-parsed report
+// never loses them just because the model didn't echo them.
+func ParseSubAgentReport(fallbackObjective, rawAnswer string, citations []Citation) SubAgentReport {
 	if block := extractJSONBlock(rawAnswer); block != "" {
 		var report SubAgentReport
 		if err := json.Unmarshal([]byte(block), &report); err == nil && len(report.Findings) > 0 {
 			report.Objective = fallbackObjective
+			report.Citations = citations
 			return report
 		}
 	}
 
-	sources := make([]string, len(fallbackCitations))
-	for i, c := range fallbackCitations {
+	sources := make([]string, len(citations))
+	for i, c := range citations {
 		sources[i] = c.URL
 	}
 	return SubAgentReport{
@@ -75,6 +89,7 @@ func ParseSubAgentReport(fallbackObjective, rawAnswer string, fallbackCitations 
 		Findings: []SubAgentFinding{
 			{Claim: rawAnswer, Sources: sources},
 		},
+		Citations: citations,
 	}
 }
 
