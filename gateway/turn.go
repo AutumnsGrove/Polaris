@@ -368,6 +368,30 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.EditMemory = s.db.UpdateMemory
 		agentCtx.ForgetMemory = s.db.DeleteMemory
 	}
+	// Left nil (not wired above) unless this turn actually has Deep
+	// Research on — catalog.go's "deep_research" Requires case already
+	// checks ctx.DeepResearch too, so leaving this nil otherwise isn't
+	// load-bearing for correctness, just avoids building a worker LLM
+	// client (and its provider-routing chain) for the vast majority of
+	// turns that will never call it. workerModelCfg (config.
+	// ResearchWorkerModel — DeepSeek V4 Flash, see the plan doc's
+	// "Sub-agents" section) is deliberately its own client, not a reuse
+	// of the orchestrator's own `client` above — same reasoning as
+	// generateSuggestions/generateTitle building their own dedicated
+	// clients rather than sharing the thread's.
+	if msg.DeepResearch {
+		if workerModelCfg, ok := cfg.ResearchWorkerModel(); ok {
+			workerClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
+				WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+				WithSessionID(threadID)
+			if rc := workerModelCfg.Reasoning; rc != nil && rc.Enabled {
+				workerClient = workerClient.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
+			}
+			agentCtx.SpawnResearchers = func(subCtx *tools.Context, tasks []tools.SubAgentTask) []tools.SubAgentReport {
+				return agent.SpawnResearchers(subCtx.Ctx, subCtx, workerClient, tasks)
+			}
+		}
+	}
 
 	// Timed around agent.Run specifically, not the whole handler — this is
 	// "how long it took to get an answer", the number a user watching the
