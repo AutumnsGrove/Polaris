@@ -497,3 +497,115 @@ func TestHandleWebSearch_InvalidJSON(t *testing.T) {
 		t.Error("expected an error result for invalid JSON")
 	}
 }
+
+// TestHandleWebSearch_RecordsSearXNGCallAsNonFallback covers Tier 2's
+// session-level ResearchBudget wiring (docs/plans/deep-research-two-tier.md
+// "Budget (session-level)") — a successful SearXNG call counts toward the
+// total but not the fallback-specific counter, since SearXNG isn't the
+// paid tier.
+func TestHandleWebSearch_RecordsSearXNGCallAsNonFallback(t *testing.T) {
+	srv, _ := fakeSearXNG(t, []map[string]interface{}{
+		{"title": "Go 1.24 released", "url": "https://go.dev/blog/go1.24", "content": "New release", "score": 8.0},
+	})
+	budget := NewResearchBudget()
+	ctx := &Context{
+		Ctx:            context.Background(),
+		SearXNG:        search.NewSearXNGClient(srv.URL, nil),
+		Emit:           func(string, map[string]interface{}) {},
+		ResearchBudget: budget,
+	}
+
+	handleWebSearch(`{"query":"golang release"}`, ctx)
+
+	total, fallback := budget.Summary()
+	if total != 1 {
+		t.Errorf("budget total = %d, want 1", total)
+	}
+	if fallback != 0 {
+		t.Errorf("budget fallback = %d, want 0 — SearXNG is not the paid fallback tier", fallback)
+	}
+}
+
+// TestHandleWebSearch_RecordsFallbackCallAsFallback covers the other side
+// of the same wiring — a call that actually reaches Brave (because
+// SearXNG confirmed degraded) must be counted as fallback usage, since
+// that's the actually-expensive scenario the provider-aware soft
+// threshold exists for.
+func TestHandleWebSearch_RecordsFallbackCallAsFallback(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	braveSrv, _ := fakeBrave(t)
+
+	budget := NewResearchBudget()
+	ctx := &Context{
+		Ctx:                 context.Background(),
+		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementBraveUsage: func() error { return nil },
+		Emit:                func(string, map[string]interface{}) {},
+		ResearchBudget:      budget,
+	}
+
+	handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+
+	total, fallback := budget.Summary()
+	if total != 2 {
+		t.Errorf("budget total = %d, want 2 (the degraded SearXNG attempt + the Brave fallback)", total)
+	}
+	if fallback != 1 {
+		t.Errorf("budget fallback = %d, want 1", fallback)
+	}
+}
+
+// TestHandleWebSearch_RefusesAtHardCeilingWithoutCallingSearXNG covers the
+// circuit-breaker enforcement — once ResearchBudget.Allowed() is false,
+// handleWebSearch must refuse before making any real network call, not
+// just report an error after the fact.
+func TestHandleWebSearch_RefusesAtHardCeilingWithoutCallingSearXNG(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": r.URL.Query().Get("q"), "results": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+
+	budget := NewResearchBudget()
+	for i := 0; i < researchBudgetHardCeiling; i++ {
+		budget.RecordCall(false)
+	}
+	ctx := &Context{
+		Ctx:            context.Background(),
+		SearXNG:        search.NewSearXNGClient(srv.URL, nil),
+		Emit:           func(string, map[string]interface{}) {},
+		ResearchBudget: budget,
+	}
+
+	result := handleWebSearch(`{"query":"anything"}`, ctx)
+
+	if hits != 0 {
+		t.Errorf("SearXNG was hit %d times, want 0 — the hard ceiling should refuse before any network call", hits)
+	}
+	if !strings.Contains(strings.ToLower(result), "budget") {
+		t.Errorf("result = %q, want it to mention the exhausted budget", result)
+	}
+}
+
+// TestHandleWebSearch_NilBudgetIsUnaffected is the control case — every
+// pre-existing caller never sets ResearchBudget, and must keep working
+// exactly as before (no panic on the nil pointer, no refusal).
+func TestHandleWebSearch_NilBudgetIsUnaffected(t *testing.T) {
+	srv, _ := fakeSearXNG(t, []map[string]interface{}{
+		{"title": "Go 1.24 released", "url": "https://go.dev/blog/go1.24", "content": "New release", "score": 8.0},
+	})
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"golang release"}`, ctx)
+	if result == "" || strings.Contains(strings.ToLower(result), "budget") {
+		t.Errorf("result = %q, want a normal formatted result with nil ResearchBudget", result)
+	}
+}

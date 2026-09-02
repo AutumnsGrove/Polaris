@@ -94,6 +94,17 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		"args": callArgs,
 	})
 
+	if ctx.ResearchBudget != nil && !ctx.ResearchBudget.Allowed() {
+		// Tier 2 Deep Research circuit breaker (see ResearchBudget's doc
+		// comment) — refuse before making any network call at all, not
+		// just report an error after one. Not meant to fire in normal
+		// operation; the soft nudge is the real steering mechanism.
+		result := "error: this session's search budget has been exhausted (research budget circuit breaker) — stop searching and answer with what you have so far."
+		log.Warn("web_search: research budget hard ceiling reached, refusing", "query", args.Query)
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		return result
+	}
+
 	if ctx.PinnedProvider == "brave" {
 		return handlePinnedBraveSearch(ctx, args.Query)
 	}
@@ -110,6 +121,11 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "page", args.Page, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
+	}
+	if ctx.ResearchBudget != nil {
+		// Counted regardless of Degraded/zero-results — a real round trip
+		// to SearXNG happened either way. Not the paid tier, so fallback=false.
+		ctx.ResearchBudget.RecordCall(false)
 	}
 
 	if len(resp.Results) == 0 && resp.Degraded {
@@ -281,6 +297,9 @@ func braveFallback(ctx *Context, query, label string) (formatted string, ok bool
 			log.Warn("web_search: recording brave usage failed", "query", query, "err", incErr)
 		}
 	}
+	if ctx.ResearchBudget != nil {
+		ctx.ResearchBudget.RecordCall(true)
+	}
 	if len(resp.Results) == 0 {
 		log.Warn("web_search: brave fallback returned no results", "query", query)
 		return "", false
@@ -317,6 +336,9 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 			log.Warn("web_search: recording parallel usage failed", "query", query, "err", incErr)
 		}
 	}
+	if ctx.ResearchBudget != nil {
+		ctx.ResearchBudget.RecordCall(true)
+	}
 	if len(resp.Results) == 0 {
 		log.Warn("web_search: parallel fallback returned no results", "query", query)
 		return "", false
@@ -336,7 +358,14 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 // own error path back to the model.
 func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 	resp, err := ctx.Tavily.Search(ctx.Ctx, query, 5)
-	if err != nil || len(resp.Results) == 0 {
+	if err != nil {
+		log.Warn("web_search: tavily fallback failed", "query", query, "err", err)
+		return "", false
+	}
+	if ctx.ResearchBudget != nil {
+		ctx.ResearchBudget.RecordCall(true)
+	}
+	if len(resp.Results) == 0 {
 		log.Warn("web_search: tavily fallback failed", "query", query, "err", err)
 		return "", false
 	}
