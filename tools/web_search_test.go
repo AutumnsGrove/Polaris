@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"polaris/brave"
 	"polaris/parallel"
@@ -588,6 +592,72 @@ func TestHandleWebSearch_RefusesAtHardCeilingWithoutCallingSearXNG(t *testing.T)
 	}
 	if !strings.Contains(strings.ToLower(result), "budget") {
 		t.Errorf("result = %q, want it to mention the exhausted budget", result)
+	}
+}
+
+// TestHandleWebSearch_ConcurrentIdenticalQueriesShareOneCall covers Tier
+// 2's dedup requirement (docs/plans/deep-research-two-tier.md's "Budget
+// (session-level)" section) end to end through handleWebSearch itself,
+// not just the dedupedCall helper in isolation — two goroutines (standing
+// in for two sub-agents) issuing the identical query concurrently must
+// hit SearXNG once, and ResearchBudget must record one call, not two.
+func TestHandleWebSearch_ConcurrentIdenticalQueriesShareOneCall(t *testing.T) {
+	hits := 0
+	var mu sync.Mutex
+	started := make(chan struct{})
+	var startedOnce sync.Once
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		startedOnce.Do(func() { close(started) })
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": r.URL.Query().Get("q"),
+			"results": []map[string]interface{}{
+				{"title": "Go 1.24 released", "url": "https://go.dev/blog/go1.24", "content": "New release", "score": 8.0},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	budget := NewResearchBudget()
+	ctx := &Context{
+		Ctx:            context.Background(),
+		SearXNG:        search.NewSearXNGClient(srv.URL, nil),
+		Emit:           func(string, map[string]interface{}) {},
+		ResearchBudget: budget,
+		SearchDedup:    &singleflight.Group{},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		handleWebSearch(`{"query":"golang release"}`, ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		<-started
+		handleWebSearch(`{"query":"Golang   Release"}`, ctx) // near-identical phrasing, must still dedupe
+	}()
+
+	<-started
+	time.Sleep(20 * time.Millisecond) // let the second call reach the same singleflight key before releasing
+	close(release)
+	wg.Wait()
+
+	mu.Lock()
+	gotHits := hits
+	mu.Unlock()
+	if gotHits != 1 {
+		t.Errorf("SearXNG was hit %d times, want 1 (deduped)", gotHits)
+	}
+	total, _ := budget.Summary()
+	if total != 1 {
+		t.Errorf("budget total = %d, want 1 — the shared call must not be double-counted", total)
 	}
 }
 

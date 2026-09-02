@@ -8,6 +8,9 @@ import (
 
 	"polaris/brave"
 	"polaris/llm"
+	"polaris/parallel"
+	"polaris/search"
+	"polaris/tavily"
 )
 
 // parallelMonthlyCap is the hard ceiling on Parallel Search API calls per
@@ -116,16 +119,26 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		return result
 	}
 
-	resp, err := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category, args.Page)
+	dedupKey := searchDedupKey("searxng", args.Query, args.Category, args.Page, args.MaxResults)
+	resp, _, err := dedupedCall(ctx, dedupKey, func() (*search.SearchResponse, error) {
+		r, e := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category, args.Page)
+		if e == nil && ctx.ResearchBudget != nil {
+			// Recorded inside fn, not after dedupedCall returns:
+			// singleflight.Do's shared return value is true for EVERY
+			// caller once there's more than one (see its doc comment),
+			// not just the followers — fn itself is the only thing
+			// guaranteed to run exactly once per real network call.
+			// Counted regardless of Degraded/zero-results — a real round
+			// trip to SearXNG happened either way. Not the paid tier, so
+			// fallback=false.
+			ctx.ResearchBudget.RecordCall(false)
+		}
+		return r, e
+	})
 	if err != nil {
 		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "page", args.Page, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
 		return "error: " + err.Error()
-	}
-	if ctx.ResearchBudget != nil {
-		// Counted regardless of Degraded/zero-results — a real round trip
-		// to SearXNG happened either way. Not the paid tier, so fallback=false.
-		ctx.ResearchBudget.RecordCall(false)
 	}
 
 	if len(resp.Results) == 0 && resp.Degraded {
@@ -287,18 +300,26 @@ func handlePinnedBraveSearch(ctx *Context, query string) string {
 // line — callers pass a different one depending on why Brave fired
 // (degraded-SearXNG fallback vs. handlePinnedBraveSearch's pinned mode).
 func braveFallback(ctx *Context, query, label string) (formatted string, ok bool) {
-	resp, err := ctx.Brave.Search(ctx.Ctx, query, 0)
+	dedupKey := searchDedupKey("brave", query, "", 1, 5)
+	resp, _, err := dedupedCall(ctx, dedupKey, func() (*brave.SearchResponse, error) {
+		r, e := ctx.Brave.Search(ctx.Ctx, query, 0)
+		if e == nil {
+			// Recorded inside fn — see the searxng call site's comment
+			// above for why this must not live after dedupedCall returns.
+			if ctx.IncrementBraveUsage != nil {
+				if incErr := ctx.IncrementBraveUsage(); incErr != nil {
+					log.Warn("web_search: recording brave usage failed", "query", query, "err", incErr)
+				}
+			}
+			if ctx.ResearchBudget != nil {
+				ctx.ResearchBudget.RecordCall(true)
+			}
+		}
+		return r, e
+	})
 	if err != nil {
 		log.Warn("web_search: brave fallback failed", "query", query, "err", err)
 		return "", false
-	}
-	if ctx.IncrementBraveUsage != nil {
-		if incErr := ctx.IncrementBraveUsage(); incErr != nil {
-			log.Warn("web_search: recording brave usage failed", "query", query, "err", incErr)
-		}
-	}
-	if ctx.ResearchBudget != nil {
-		ctx.ResearchBudget.RecordCall(true)
 	}
 	if len(resp.Results) == 0 {
 		log.Warn("web_search: brave fallback returned no results", "query", query)
@@ -326,18 +347,24 @@ func braveFallback(ctx *Context, query, label string) (formatted string, ok bool
 // not anything useful came back. Returns ok=false on any failure so the
 // caller falls through to Tavily instead.
 func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
-	resp, err := ctx.Parallel.Search(ctx.Ctx, query, 5)
+	dedupKey := searchDedupKey("parallel", query, "", 1, 5)
+	resp, _, err := dedupedCall(ctx, dedupKey, func() (*parallel.SearchResponse, error) {
+		r, e := ctx.Parallel.Search(ctx.Ctx, query, 5)
+		if e == nil {
+			if ctx.IncrementParallelUsage != nil {
+				if incErr := ctx.IncrementParallelUsage(); incErr != nil {
+					log.Warn("web_search: recording parallel usage failed", "query", query, "err", incErr)
+				}
+			}
+			if ctx.ResearchBudget != nil {
+				ctx.ResearchBudget.RecordCall(true)
+			}
+		}
+		return r, e
+	})
 	if err != nil {
 		log.Warn("web_search: parallel fallback failed", "query", query, "err", err)
 		return "", false
-	}
-	if ctx.IncrementParallelUsage != nil {
-		if incErr := ctx.IncrementParallelUsage(); incErr != nil {
-			log.Warn("web_search: recording parallel usage failed", "query", query, "err", incErr)
-		}
-	}
-	if ctx.ResearchBudget != nil {
-		ctx.ResearchBudget.RecordCall(true)
 	}
 	if len(resp.Results) == 0 {
 		log.Warn("web_search: parallel fallback returned no results", "query", query)
@@ -357,13 +384,17 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 // message instead — this is a best-effort rescue, not something worth its
 // own error path back to the model.
 func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
-	resp, err := ctx.Tavily.Search(ctx.Ctx, query, 5)
+	dedupKey := searchDedupKey("tavily", query, "", 1, 5)
+	resp, _, err := dedupedCall(ctx, dedupKey, func() (*tavily.SearchResponse, error) {
+		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5)
+		if e == nil && ctx.ResearchBudget != nil {
+			ctx.ResearchBudget.RecordCall(true)
+		}
+		return r, e
+	})
 	if err != nil {
 		log.Warn("web_search: tavily fallback failed", "query", query, "err", err)
 		return "", false
-	}
-	if ctx.ResearchBudget != nil {
-		ctx.ResearchBudget.RecordCall(true)
 	}
 	if len(resp.Results) == 0 {
 		log.Warn("web_search: tavily fallback failed", "query", query, "err", err)

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"polaris/brave"
 	"polaris/embed"
 	"polaris/llm"
@@ -237,6 +239,17 @@ type Context struct {
 	// (the zero value) means no session-level budget applies, which is
 	// correct for every non-sub-agent caller.
 	ResearchBudget *ResearchBudget
+
+	// SearchDedup, when non-nil, is the session-wide singleflight.Group
+	// shared by every sub-agent in one Tier 2 Deep Research fan-out —
+	// dedupedCall (search_dedup.go) uses it so two sub-agent goroutines
+	// issuing the same or near-identical query concurrently trigger one
+	// real search call and share its result, instead of each paying for
+	// its own. One instance created per session, threaded into each
+	// sub-agent's Context, same lifecycle as ResearchBudget above. Nil
+	// (the zero value) means no dedup applies — correct for every
+	// non-sub-agent caller.
+	SearchDedup *singleflight.Group
 
 	// QuickMode, when true, tells web_read to skip its optional filter LLM
 	// pass entirely (always return raw extracted text, ignoring
