@@ -66,7 +66,7 @@ func TestRunSubAgent_ReturnsParsedReport(t *testing.T) {
 	}
 	base := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 
-	report, err := RunSubAgent(context.Background(), base, mock, SubAgentTask{
+	report, err := RunSubAgent(context.Background(), base, mock, tools.SubAgentTask{
 		Objective: "find out if X is true",
 		Guidance:  "check at least two sources",
 	})
@@ -90,7 +90,7 @@ func TestRunSubAgent_PropagatesRunError(t *testing.T) {
 	}
 	base := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 
-	_, err := RunSubAgent(context.Background(), base, mock, SubAgentTask{Objective: "anything"})
+	_, err := RunSubAgent(context.Background(), base, mock, tools.SubAgentTask{Objective: "anything"})
 	if err == nil {
 		t.Fatal("RunSubAgent returned nil error, want the underlying Run failure propagated")
 	}
@@ -114,7 +114,7 @@ func TestRunSubAgent_OnlyOffersSubAgentTools(t *testing.T) {
 		LastFMAPIKey: "configured",
 	}
 
-	_, err := RunSubAgent(context.Background(), base, mock, SubAgentTask{Objective: "anything"})
+	_, err := RunSubAgent(context.Background(), base, mock, tools.SubAgentTask{Objective: "anything"})
 	if err != nil {
 		t.Fatalf("RunSubAgent returned error: %v", err)
 	}

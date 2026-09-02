@@ -9,18 +9,6 @@ import (
 	"polaris/tools"
 )
 
-// SubAgentTask is one unit of work the orchestrator hands to
-// RunSubAgent — see docs/plans/deep-research-two-tier.md's "Sub-agents"
-// section's "Task spec" bullet (explicit objective, expected output
-// format, tool/source guidance, task boundaries). The output-format
-// instruction itself lives in prompts.yaml's agent.subagent_task
-// template, not here, so tuning how sub-agents are told to structure
-// their JSON answer doesn't require a rebuild.
-type SubAgentTask struct {
-	Objective string
-	Guidance  string
-}
-
 // RunSubAgent runs one Tier 2 Deep Research sub-agent to completion — a
 // normal agent.Run tool-use loop against a Context scoped down to
 // SubAgentRole (web_search/web_read/think/reference_lookup only — see
@@ -32,7 +20,13 @@ type SubAgentTask struct {
 // reusing baseCtx directly, since every sub-agent in a fan-out wave runs
 // concurrently against the same baseCtx otherwise (see that function's
 // doc comment for why a plain `*baseCtx` copy isn't safe here).
-func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.ChatClient, task SubAgentTask) (tools.SubAgentReport, error) {
+//
+// task's type (tools.SubAgentTask, not a local one) is defined in
+// package tools rather than here so tools.Context's SpawnResearchers
+// closure field (the spawn_researchers tool's bridge into this
+// function's caller) can reference it too — package tools can't import
+// agent, since agent already imports tools.
+func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.ChatClient, task tools.SubAgentTask) (tools.SubAgentReport, error) {
 	subCtx := newSubAgentContext(baseCtx, llmClient)
 	userMessage := fmt.Sprintf(prompts.Get().Agent.SubAgentTask, task.Objective, task.Guidance)
 

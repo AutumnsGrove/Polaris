@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// SubAgentTask is one unit of work the orchestrator hands to a Tier 2
+// Deep Research sub-agent (agent.RunSubAgent) — see
+// docs/plans/deep-research-two-tier.md's "Sub-agents" section's "Task
+// spec" bullet (explicit objective, expected output format, tool/source
+// guidance, task boundaries). The output-format instruction itself lives
+// in prompts.yaml's agent.subagent_task template, not here, so tuning
+// how sub-agents are told to structure their JSON answer doesn't require
+// a rebuild.
+type SubAgentTask struct {
+	Objective string
+	Guidance  string
+}
+
 // SubAgentFinding is one claim with its supporting sources — the unit
 // Tier 2 Deep Research sub-agents report back in, instead of free prose,
 // specifically to avoid the "aggregator invents a hallucinated middle
