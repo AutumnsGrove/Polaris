@@ -88,6 +88,13 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
+		// Tier 2 Deep Research sub-agent default (see
+		// docs/plans/deep-research-two-tier.md) — a roster survey found
+		// nothing that clearly beats this model on cost + speed +
+		// confirmed tool-calling reliability for the worker role (MiMo
+		// Pro is disqualified outright: no tools support on its default
+		// route). See config.ModelConfig.ResearchWorker.
+		ResearchWorker: true,
 	},
 	{
 		ID:          "luna",

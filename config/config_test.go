@@ -242,3 +242,48 @@ func TestMultimodalModel_NoneConfigured(t *testing.T) {
 		t.Error("MultimodalModel() ok = true, want false when no model is marked multimodal")
 	}
 }
+
+// TestResearchWorkerModel_ReturnsFirstMarkedEntry mirrors
+// TestMultimodalModel_ReturnsFirstMultimodalEntry above — same lookup
+// shape (config.ResearchWorkerModel / ModelConfig.ResearchWorker), reused
+// on purpose for Tier 2's sub-agent worker model (see
+// docs/plans/deep-research-two-tier.md's "Sub-agents" section).
+func TestResearchWorkerModel_ReturnsFirstMarkedEntry(t *testing.T) {
+	cfg := &Config{
+		Models: []ModelConfig{
+			{ID: "other", ResearchWorker: false},
+			{ID: "worker-a", ResearchWorker: true},
+			{ID: "worker-b", ResearchWorker: true},
+		},
+	}
+	got, ok := cfg.ResearchWorkerModel()
+	if !ok {
+		t.Fatal("ResearchWorkerModel() ok = false, want true")
+	}
+	if got.ID != "worker-a" {
+		t.Errorf("ResearchWorkerModel() = %+v, want the first marked entry (worker-a)", got)
+	}
+}
+
+// TestResearchWorkerModel_NoneConfiguredFallsBackToDefault covers the case
+// no model is explicitly marked research_worker: true — unlike
+// MultimodalModel (where "no vision model configured" is a real failure
+// the caller must surface), a sub-agent still needs *some* model to run
+// on, so this falls back to the registry's normal default rather than
+// returning ok=false.
+func TestResearchWorkerModel_NoneConfiguredFallsBackToDefault(t *testing.T) {
+	cfg := &Config{
+		DefaultModel: "b",
+		Models: []ModelConfig{
+			{ID: "a", ResearchWorker: false},
+			{ID: "b", ResearchWorker: false},
+		},
+	}
+	got, ok := cfg.ResearchWorkerModel()
+	if !ok {
+		t.Fatal("ResearchWorkerModel() ok = false, want true (falls back to default)")
+	}
+	if got.ID != "b" {
+		t.Errorf("ResearchWorkerModel() = %+v, want fallback to DefaultModel (b)", got)
+	}
+}

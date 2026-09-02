@@ -289,6 +289,16 @@ type ModelConfig struct {
 	// of this registry). See gateway's resolveAttachment and
 	// Config.MultimodalModel.
 	Multimodal bool `yaml:"multimodal"`
+
+	// ResearchWorker marks a model as the preferred choice for Tier 2
+	// Deep Research sub-agents (see docs/plans/deep-research-two-tier.md)
+	// — selected explicitly per session rather than inherited from the
+	// orchestrator's thread model, same pattern as Multimodal above. Set
+	// on the registry's DeepSeek V4 Flash entry: cheap, fast, and already
+	// the app's own default, so sub-agents don't pay for a heavier model
+	// than the orchestrator itself typically runs on. See
+	// Config.ResearchWorkerModel.
+	ResearchWorker bool `yaml:"research_worker"`
 }
 
 // ReasoningConfig mirrors OpenRouter's `reasoning` request field
@@ -502,6 +512,25 @@ func (c *Config) MultimodalModel() (model ModelConfig, ok bool) {
 		}
 	}
 	return ModelConfig{}, false
+}
+
+// ResearchWorkerModel returns the first model marked ResearchWorker (see
+// its doc comment), for running Tier 2 Deep Research sub-agents. Unlike
+// MultimodalModel, an unmarked registry isn't a caller-facing failure — a
+// sub-agent still needs some model to run on — so this falls back to
+// DefaultModelOrFirst instead of returning ok=false. ok is only false if
+// the registry itself is empty, mirroring ModelByID's own last-resort
+// behavior.
+func (c *Config) ResearchWorkerModel() (model ModelConfig, ok bool) {
+	for _, m := range c.Models {
+		if m.ResearchWorker {
+			return m, true
+		}
+	}
+	if len(c.Models) == 0 {
+		return ModelConfig{}, false
+	}
+	return c.ModelByID(c.DefaultModel), true
 }
 
 // R2Client builds an r2.Client from the R2 config section, or nil if R2
