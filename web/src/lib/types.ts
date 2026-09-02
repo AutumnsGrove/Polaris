@@ -36,6 +36,17 @@ export interface PendingQuestion {
 	// wants_location's "share my location". See tools/registry.go's
 	// PendingQuestion.WantsWebSearch.
 	wants_web_search?: boolean;
+	// Set only for a Tier 2 Deep Research plan-confirmation question — see
+	// tools/registry.go's PendingQuestion.Plan. The plan's content is also
+	// in `question` itself, so this is a rendering enhancement, not the
+	// only place the plan appears.
+	plan?: ResearchPlan;
+}
+
+// See tools/registry.go's ResearchPlan.
+export interface ResearchPlan {
+	sub_agent_objectives: string[];
+	estimated_search_calls?: number;
 }
 
 export type ServerEvent =

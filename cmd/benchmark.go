@@ -281,7 +281,20 @@ func runBenchmark(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		result, err := agent.Run(context.Background(), agentCtx, nil, suite.BuildQuery(row.Problem))
+		query := suite.BuildQuery(row.Problem)
+		if benchmarkDeepResearch {
+			// The orchestrator's own prompt guidance (prompts.yaml's
+			// deep_research_instruction) normally has it confirm a
+			// spawn_researchers plan via ask_user_question before running
+			// it — but that call ends the turn waiting for a reply this
+			// harness will never send. This is the documented escape
+			// hatch ("skip confirmation only if the user has already
+			// explicitly told you to proceed"), invoked here since a
+			// benchmark run has no interactive user to confirm with.
+			query += "\n\n(If you decide this needs spawn_researchers, proceed directly without asking " +
+				"for confirmation first — there's no interactive user here to confirm with.)"
+		}
+		result, err := agent.Run(context.Background(), agentCtx, nil, query)
 		if err != nil {
 			// agent.Run still returns a non-nil Result carrying whatever
 			// cost the turn already accrued before the failing call — real,

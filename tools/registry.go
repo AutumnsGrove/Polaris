@@ -340,6 +340,29 @@ type PendingQuestion struct {
 	// search" action alongside the text input, same as WantsLocation's
 	// "share my location". See ask_user_question.go.
 	WantsWebSearch bool `json:"wants_web_search,omitempty"`
+
+	// Plan, when set, is a Tier 2 Deep Research plan-confirmation question
+	// (docs/plans/deep-research-two-tier.md's "Confirm" step) — the
+	// orchestrator's proposed spawn_researchers fan-out, attached purely
+	// so the frontend can render a richer plan card instead of parsing it
+	// back out of Question's prose. The plan's content is also written
+	// into Question itself, so a client that doesn't render Plan
+	// specially still shows the full plan as normal text — this is an
+	// enhancement, not the source of truth.
+	Plan *ResearchPlan `json:"plan,omitempty"`
+}
+
+// ResearchPlan is PendingQuestion's structured Deep Research plan — see
+// its doc comment above.
+type ResearchPlan struct {
+	// SubAgentObjectives is one entry per sub-agent the orchestrator is
+	// proposing to spawn, matching what it intends to pass to
+	// spawn_researchers if confirmed.
+	SubAgentObjectives []string `json:"sub_agent_objectives"`
+	// EstimatedSearchCalls is an optional rough total-call estimate for
+	// the whole plan — 0 means the orchestrator didn't provide one, not a
+	// claim of "zero calls needed".
+	EstimatedSearchCalls int `json:"estimated_search_calls,omitempty"`
 }
 
 // SetPendingQuestion records the turn-ending question, if none has been

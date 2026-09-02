@@ -103,3 +103,75 @@ func TestWebSocket_AskUserQuestionEndsTurnAndPersists(t *testing.T) {
 		t.Fatalf("got an unexpected extra event after done: %+v", extra)
 	}
 }
+
+// TestWebSocket_AskUserQuestionPlanPersists is the same round trip as
+// above, but for Tier 2's plan-confirmation payload (tools.
+// PendingQuestion.Plan, docs/plans/deep-research-two-tier.md's "Confirm"
+// step) — confirms the structured plan survives the full path: tool call
+// -> done event -> DB persistence -> re-parsed back into the same shape.
+func TestWebSocket_AskUserQuestionPlanPersists(t *testing.T) {
+	srv := sseToolCallServer(t, []string{
+		`{"index":0,"id":"call_1","type":"function","function":{"name":"ask_user_question",` +
+			`"arguments":"{\"question\":\"Here's my plan — run it?\",\"options\":[\"Run it\",\"Cancel\"],` +
+			`\"plan\":{\"sub_agent_objectives\":[\"Research Austin\",\"Research Nashville\"],\"estimated_search_calls\":12}}"}}`,
+	})
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "compare these cities", "model": "test-model",
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+
+	var done map[string]interface{}
+	for _, e := range events {
+		if e["type"] == "done" {
+			done = e
+		}
+	}
+	if done == nil {
+		t.Fatalf("never saw a done event: %+v", events)
+	}
+
+	pq, ok := done["pending_question"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("done event's pending_question = %v, want an object", done["pending_question"])
+	}
+	plan, ok := pq["plan"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("pending_question.plan = %v, want an object", pq["plan"])
+	}
+	objectives, ok := plan["sub_agent_objectives"].([]interface{})
+	if !ok || len(objectives) != 2 {
+		t.Fatalf("plan.sub_agent_objectives = %v, want 2 entries", plan["sub_agent_objectives"])
+	}
+
+	threadID, _ := done["thread_id"].(string)
+	msgs, err := h.db.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	var pendingQuestionJSON string
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			pendingQuestionJSON = m.PendingQuestion
+		}
+	}
+	if pendingQuestionJSON == "" {
+		t.Fatal("persisted pending_question column is empty")
+	}
+	var stored tools.PendingQuestion
+	if err := json.Unmarshal([]byte(pendingQuestionJSON), &stored); err != nil {
+		t.Fatalf("unmarshaling persisted pending_question: %v", err)
+	}
+	if stored.Plan == nil {
+		t.Fatal("persisted pending_question.Plan is nil")
+	}
+	if stored.Plan.EstimatedSearchCalls != 12 {
+		t.Errorf("persisted Plan.EstimatedSearchCalls = %d, want 12", stored.Plan.EstimatedSearchCalls)
+	}
+}

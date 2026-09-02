@@ -2,7 +2,7 @@
 	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import { requestFreshLocation } from '$lib/geolocation';
-	import { Send, MapPin, Globe, Loader2, Check } from '@lucide/svelte';
+	import { Send, MapPin, Globe, Loader2, Check, Users } from '@lucide/svelte';
 
 	// isLast: only the thread's current last turn gets working controls —
 	// any later message already implies this question is resolved
@@ -75,6 +75,23 @@
 
 {#if turn.pendingQuestion && isLast}
 	<div class="question-card">
+		{#if turn.pendingQuestion.plan?.sub_agent_objectives.length}
+			<div class="plan">
+				<div class="plan-header">
+					<Users size={13} />
+					<span>Proposed research plan</span>
+				</div>
+				<ol class="plan-objectives">
+					{#each turn.pendingQuestion.plan.sub_agent_objectives as objective (objective)}
+						<li>{objective}</li>
+					{/each}
+				</ol>
+				{#if turn.pendingQuestion.plan.estimated_search_calls}
+					<p class="plan-estimate">~{turn.pendingQuestion.plan.estimated_search_calls} searches estimated</p>
+				{/if}
+			</div>
+		{/if}
+
 		{#if turn.pendingQuestion.options?.length}
 			<div class="options">
 				{#each turn.pendingQuestion.options as option, i (option)}
@@ -130,6 +147,23 @@
 	     answer picked out. No location/freeform controls; there's nothing
 	     left to do here. -->
 	<div class="question-card resolved">
+		{#if turn.pendingQuestion.plan?.sub_agent_objectives.length}
+			<div class="plan">
+				<div class="plan-header">
+					<Users size={13} />
+					<span>Proposed research plan</span>
+				</div>
+				<ol class="plan-objectives">
+					{#each turn.pendingQuestion.plan.sub_agent_objectives as objective (objective)}
+						<li>{objective}</li>
+					{/each}
+				</ol>
+				{#if turn.pendingQuestion.plan.estimated_search_calls}
+					<p class="plan-estimate">~{turn.pendingQuestion.plan.estimated_search_calls} searches estimated</p>
+				{/if}
+			</div>
+		{/if}
+
 		{#if turn.pendingQuestion.options?.length}
 			<div class="options">
 				{#each turn.pendingQuestion.options as option, i (option)}
@@ -172,6 +206,43 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
 		overflow: hidden;
+	}
+
+	.plan {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		padding: var(--space-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-surface);
+	}
+
+	.plan-header {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		color: var(--color-text-dim);
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+	}
+
+	.plan-objectives {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+		margin: 0;
+		padding-left: var(--space-lg);
+		color: var(--color-text);
+		font-size: 13.5px;
+	}
+
+	.plan-estimate {
+		margin: 0;
+		color: var(--color-text-dim);
+		font-size: 12px;
 	}
 
 	.option-row {

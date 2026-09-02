@@ -52,6 +52,24 @@ var askUserQuestionDef = llm.ToolDef{
 						"\"enable web search\" action alongside the text input. Leave false for every other " +
 						"kind of question.",
 				},
+				"plan": map[string]interface{}{
+					"type": "object",
+					"description": "Optional, Deep Research only: when this question is confirming a " +
+						"spawn_researchers plan, a structured form of the plan you're already describing in " +
+						"your own message — lets the UI render it as a real plan instead of a wall of text. " +
+						"Omit entirely for every other kind of question.",
+					"properties": map[string]interface{}{
+						"sub_agent_objectives": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]interface{}{"type": "string"},
+							"description": "One entry per sub-agent you're proposing to spawn — must match what you'll actually pass to spawn_researchers if confirmed.",
+						},
+						"estimated_search_calls": map[string]interface{}{
+							"type":        "integer",
+							"description": "Optional rough estimate of this plan's total search calls.",
+						},
+					},
+				},
 			},
 			"required": []string{"question"},
 		},
@@ -66,6 +84,10 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 		Options        []string `json:"options"`
 		WantsLocation  bool     `json:"wants_location"`
 		WantsWebSearch bool     `json:"wants_web_search"`
+		Plan           *struct {
+			SubAgentObjectives   []string `json:"sub_agent_objectives"`
+			EstimatedSearchCalls int      `json:"estimated_search_calls"`
+		} `json:"plan"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "ask_user_question", nil, "error: "+err.Error())
@@ -87,9 +109,16 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 		},
 	})
 
+	var plan *ResearchPlan
+	if args.Plan != nil && len(args.Plan.SubAgentObjectives) > 0 {
+		plan = &ResearchPlan{
+			SubAgentObjectives:   args.Plan.SubAgentObjectives,
+			EstimatedSearchCalls: args.Plan.EstimatedSearchCalls,
+		}
+	}
 	ctx.SetPendingQuestion(&PendingQuestion{
 		Question: args.Question, Options: args.Options, WantsLocation: args.WantsLocation,
-		WantsWebSearch: args.WantsWebSearch,
+		WantsWebSearch: args.WantsWebSearch, Plan: plan,
 	})
 
 	// Never seen by the model again — the turn ends right after this

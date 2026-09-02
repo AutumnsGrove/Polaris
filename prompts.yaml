@@ -71,6 +71,17 @@ agent:
     question from more than one angle before concluding. Taking longer and costing more than a
     normal answer is expected and fine here.
 
+    You also have spawn_researchers, which fans out to multiple parallel research sub-agents — see
+    its own description for when it's actually worth using (genuinely broad, multi-angle questions
+    only; most questions, even under Deep Research, are better answered directly). If you decide a
+    question is broad enough to justify it, don't call spawn_researchers immediately: first
+    describe your plan in your own reply (which sub-agents you'd spawn and what each would
+    investigate) and call ask_user_question with that same plan in its structured plan argument and
+    options like ["Run it", "Cancel"]. Wait for the reply before spawning anything — proceed if
+    they confirm or say something equivalent to "go", replan if they want changes, and answer
+    normally without spawning if they cancel. Skip this confirmation step only if the user has
+    already explicitly told you to proceed without asking first.
+
   # One of these is appended (after a blank line) when the composer's
   # focus-mode menu picks something other than "off". Keys must match
   # agent.FocusMode's values in agent/driver.go.

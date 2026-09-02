@@ -50,6 +50,53 @@ func TestHandleAskUserQuestion_WantsLocation(t *testing.T) {
 	}
 }
 
+// TestHandleAskUserQuestion_Plan covers Tier 2's plan-confirmation step
+// (docs/plans/deep-research-two-tier.md's "Confirm" flow) — an optional
+// structured plan attached to a PendingQuestion, purely so the frontend
+// can render something better than a wall of text (the plan's content is
+// also in the question's own prose, so a client that doesn't render it
+// specially still shows the full plan as normal text).
+func TestHandleAskUserQuestion_Plan(t *testing.T) {
+	ctx := newTestContext()
+	Dispatch("ask_user_question", `{"question":"Here's my plan — run it?","options":["Run it","Cancel"],`+
+		`"plan":{"sub_agent_objectives":["Research Austin","Research Nashville"],"estimated_search_calls":12}}`, ctx)
+
+	if ctx.PendingQuestion.Plan == nil {
+		t.Fatal("PendingQuestion.Plan is nil, want it set")
+	}
+	want := []string{"Research Austin", "Research Nashville"}
+	if len(ctx.PendingQuestion.Plan.SubAgentObjectives) != 2 ||
+		ctx.PendingQuestion.Plan.SubAgentObjectives[0] != want[0] ||
+		ctx.PendingQuestion.Plan.SubAgentObjectives[1] != want[1] {
+		t.Errorf("Plan.SubAgentObjectives = %v, want %v", ctx.PendingQuestion.Plan.SubAgentObjectives, want)
+	}
+	if ctx.PendingQuestion.Plan.EstimatedSearchCalls != 12 {
+		t.Errorf("Plan.EstimatedSearchCalls = %d, want 12", ctx.PendingQuestion.Plan.EstimatedSearchCalls)
+	}
+}
+
+// TestHandleAskUserQuestion_NoPlanLeavesFieldNil confirms the ordinary
+// (non-Deep-Research) case is unaffected — no plan argument at all means
+// no Plan on the resulting PendingQuestion, not an empty-but-non-nil one.
+func TestHandleAskUserQuestion_NoPlanLeavesFieldNil(t *testing.T) {
+	ctx := newTestContext()
+	Dispatch("ask_user_question", `{"question":"What's your budget?"}`, ctx)
+	if ctx.PendingQuestion.Plan != nil {
+		t.Errorf("Plan = %+v, want nil when no plan argument was sent", ctx.PendingQuestion.Plan)
+	}
+}
+
+// TestHandleAskUserQuestion_EmptyPlanObjectivesLeavesFieldNil covers a
+// model sending `"plan":{}` or an empty objectives array — treated the
+// same as no plan at all, not a Plan with a zero-length slice.
+func TestHandleAskUserQuestion_EmptyPlanObjectivesLeavesFieldNil(t *testing.T) {
+	ctx := newTestContext()
+	Dispatch("ask_user_question", `{"question":"q","plan":{"sub_agent_objectives":[]}}`, ctx)
+	if ctx.PendingQuestion.Plan != nil {
+		t.Errorf("Plan = %+v, want nil when sub_agent_objectives is empty", ctx.PendingQuestion.Plan)
+	}
+}
+
 func TestSetPendingQuestion_FirstWriteWins(t *testing.T) {
 	ctx := newTestContext()
 	ctx.SetPendingQuestion(&PendingQuestion{Question: "first"})

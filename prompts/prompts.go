@@ -116,7 +116,17 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"Cross-check important claims against more than one independent source rather than stopping at the " +
 		"first plausible answer, follow up on primary sources when a search result is vague or secondhand, " +
 		"and consider the question from more than one angle before concluding. Taking longer and costing " +
-		"more than a normal answer is expected and fine here."
+		"more than a normal answer is expected and fine here.\n\n" +
+		"You also have spawn_researchers, which fans out to multiple parallel research sub-agents — see " +
+		"its own description for when it's actually worth using (genuinely broad, multi-angle questions " +
+		"only; most questions, even under Deep Research, are better answered directly). If you decide a " +
+		"question is broad enough to justify it, don't call spawn_researchers immediately: first " +
+		"describe your plan in your own reply (which sub-agents you'd spawn and what each would " +
+		"investigate) and call ask_user_question with that same plan in its structured plan argument and " +
+		"options like [\"Run it\", \"Cancel\"]. Wait for the reply before spawning anything — proceed if " +
+		"they confirm or say something equivalent to \"go\", replan if they want changes, and answer " +
+		"normally without spawning if they cancel. Skip this confirmation step only if the user has " +
+		"already explicitly told you to proceed without asking first."
 
 	d.Agent.FocusModes = map[string]string{
 		"brief": "Focus mode: Brief. Keep your final answer short — a few sentences or a tight " +
