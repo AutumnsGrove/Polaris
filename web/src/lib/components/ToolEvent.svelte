@@ -3,7 +3,19 @@
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import type { TimelineItem } from '$lib/types';
-	import { Search, FileText, Brain, Archive, Loader2, ChevronRight, Cloud, BookOpen, Image, MessageCircleQuestion } from '@lucide/svelte';
+	import {
+		Search,
+		FileText,
+		Brain,
+		Archive,
+		Loader2,
+		ChevronRight,
+		Cloud,
+		BookOpen,
+		Image,
+		MessageCircleQuestion,
+		Users
+	} from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 	// Tool calls start collapsed (their result is secondary detail) but a
@@ -30,6 +42,10 @@
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
 		if (item.tool === 'weather') return `Weather: ${item.args?.location ?? ''}`;
 		if (item.tool === 'reference_lookup') return `Looking up: ${item.args?.query ?? ''}`;
+		if (item.tool === 'spawn_researchers') {
+			const count = item.args?.task_count;
+			return count ? `Spawned ${count} researcher${count === 1 ? '' : 's'}` : 'Spawning researchers…';
+		}
 		// Synthetic — not a real agent tool call. resolveAttachment
 		// (gateway/attachments.go) emits this pair itself, before agent.Run
 		// even starts, so an uploaded photo's vision-model description shows
@@ -125,6 +141,8 @@
 				<Brain size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'ask_user_question'}
 				<MessageCircleQuestion size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'spawn_researchers'}
+				<Users size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}

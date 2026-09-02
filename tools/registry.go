@@ -252,6 +252,18 @@ type Context struct {
 	// non-sub-agent caller.
 	SearchDedup *singleflight.Group
 
+	// SpawnResearchers, when non-nil, runs a Tier 2 Deep Research
+	// multi-agent fan-out — wired by gateway/turn.go to
+	// agent.SpawnResearchers, which owns the actual goroutine/semaphore/
+	// RunSubAgent orchestration. Lives here as a closure (not a direct
+	// import) because package tools can't import package agent — agent
+	// already imports tools, so that direction would be a cycle. Gated
+	// by catalog.go's offered() on ctx.DeepResearch as well as this being
+	// non-nil (see its "deep_research" Requires case), so the
+	// spawn_researchers tool never appears outside Deep Research mode
+	// even if a caller left this wired.
+	SpawnResearchers func(ctx *Context, tasks []SubAgentTask) []SubAgentReport
+
 	// QuickMode, when true, tells web_read to skip its optional filter LLM
 	// pass entirely (always return raw extracted text, ignoring
 	// Instructions) — set for Atlas's Quick Answer, where a fast answer
@@ -506,7 +518,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
-		"ask_user_question": askUserQuestionDef, "memory": memoryDef,
+		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
 	}
 }
 

@@ -39,6 +39,8 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.AttachmentData = []byte("pdf bytes")
 	ctx.RequestLocation = func() (string, bool) { return "", false }
 	ctx.WriteMemory = func(name, memType, description, content string) error { return nil }
+	ctx.DeepResearch = true
+	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	prompt := ToolsPrompt(ctx)
 
 	lastIdx := -1
@@ -118,6 +120,47 @@ func TestCatalogEntry_Offered(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if got := c.entry.offered(c.ctx); got != c.want {
+				t.Errorf("offered() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestCatalogEntry_Offered_DeepResearch covers spawn_researchers' gating —
+// its Requires: "deep_research" case (catalog.go's offered()) checks both
+// ctx.DeepResearch AND ctx.SpawnResearchers being wired, not just one:
+// Deep Research alone shouldn't offer the tool if nothing ever wired the
+// closure (e.g. a config path that forgot to), and a wired closure alone
+// shouldn't offer it outside Deep Research mode (e.g. Tier 1's Researcher
+// focus mode, which must stay single-agent).
+func TestCatalogEntry_Offered_DeepResearch(t *testing.T) {
+	spawner := func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
+
+	cases := []struct {
+		name string
+		ctx  *Context
+		want bool
+	}{
+		{
+			"offered when DeepResearch is on and SpawnResearchers is wired",
+			&Context{DeepResearch: true, SpawnResearchers: spawner},
+			true,
+		},
+		{
+			"excluded when SpawnResearchers is nil even under Deep Research",
+			&Context{DeepResearch: true, SpawnResearchers: nil},
+			false,
+		},
+		{
+			"excluded when Deep Research is off even if SpawnResearchers is wired",
+			&Context{DeepResearch: false, SpawnResearchers: spawner},
+			false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			entry := catalogEntry{Name: "spawn_researchers", Requires: "deep_research"}
+			if got := entry.offered(c.ctx); got != c.want {
 				t.Errorf("offered() = %v, want %v", got, c.want)
 			}
 		})

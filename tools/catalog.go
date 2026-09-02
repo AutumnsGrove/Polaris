@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
-	"ask_user_question", "memory",
+	"ask_user_question", "memory", "spawn_researchers",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -112,6 +112,14 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// see registry.go's doc comment on these fields), so any one of them
 		// being non-nil already implies the rest are too.
 		return ctx.WriteMemory != nil
+	case "deep_research":
+		// Both conditions checked, not just one: DeepResearch alone
+		// doesn't imply the closure was ever wired (a config/call path
+		// that forgot to), and the closure being wired alone doesn't mean
+		// this turn is actually in Deep Research mode (e.g. Tier 1's
+		// Researcher focus mode, which must stay single-agent — see
+		// docs/plans/deep-research-two-tier.md).
+		return ctx.DeepResearch && ctx.SpawnResearchers != nil
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -157,6 +165,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"memory": {Name: "memory", Requires: "memory_store",
 		Description:    "write, edit, view, or forget durable memories about the user or ongoing work.",
 		APIDescription: "Write, edit, view, or forget durable memories about the user or ongoing work, carried across threads."},
+	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
+		Description:    "fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.",
+		APIDescription: "Fan out to multiple independent research sub-agents running in parallel, each investigating one focused angle, then report back their findings for you to synthesize."},
 }
 
 var (

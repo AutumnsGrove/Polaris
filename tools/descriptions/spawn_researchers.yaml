@@ -1,0 +1,18 @@
+name: spawn_researchers
+requires: deep_research
+category: research
+description: >-
+  fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.
+api_description: >-
+  Fan out to multiple independent research sub-agents running in parallel, each investigating one
+  focused, non-overlapping angle of a broader question, then report back their findings (as
+  claims backed by sources) for you to synthesize into a final answer. Only available with Deep
+  Research mode on — do not use for a single-threaded question a normal web_search/web_read pass
+  can answer; spawning sub-agents for that is wasteful, not thorough. Reserve this for questions
+  that genuinely split into independent research threads, e.g. comparing several cities, several
+  companies, or several time periods against the same criteria. Size the fan-out to the actual
+  complexity: around 2-4 sub-agents for a comparison, 5-10 for something genuinely broad — more
+  than that rarely earns its cost. Give each sub-agent a specific, non-overlapping objective (and
+  optional guidance on which sources or angle to focus on, or boundaries to stay within) — vague
+  or overlapping objectives waste the parallel work. Each sub-agent only has web_search, web_read,
+  reference_lookup, and think; it cannot itself spawn further sub-agents.
