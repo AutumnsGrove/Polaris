@@ -123,3 +123,40 @@ func TestCatalogEntry_Offered(t *testing.T) {
 		})
 	}
 }
+
+// TestCatalogEntry_Offered_SubAgentRole covers Tier 2 of
+// docs/plans/deep-research-two-tier.md's tool-scoping requirement: a
+// sub-agent Context (SubAgentRole set) is restricted to web_search,
+// web_read, and think regardless of what Requires/keys/Category gating
+// would otherwise allow — a control tool like memory or an
+// otherwise-fully-configured recommendation tool like movies must still be
+// excluded.
+func TestCatalogEntry_Offered_SubAgentRole(t *testing.T) {
+	subAgent := newTestContext()
+	subAgent.SubAgentRole = "researcher"
+	subAgent.TMDBAPIKey = "x" // configured, but must still be excluded below
+
+	normal := newTestContext()
+	normal.TMDBAPIKey = "x"
+
+	cases := []struct {
+		name  string
+		entry catalogEntry
+		ctx   *Context
+		want  bool
+	}{
+		{"web_search offered under sub-agent role", catalogEntry{Name: "web_search"}, subAgent, true},
+		{"web_read offered under sub-agent role", catalogEntry{Name: "web_read"}, subAgent, true},
+		{"think offered under sub-agent role", catalogEntry{Name: "think"}, subAgent, true},
+		{"movies excluded under sub-agent role despite configured key", catalogEntry{Name: "movies", Requires: "tmdb_api_key"}, subAgent, false},
+		{"memory excluded under sub-agent role", catalogEntry{Name: "memory"}, subAgent, false},
+		{"movies offered normally with configured key (control)", catalogEntry{Name: "movies", Requires: "tmdb_api_key"}, normal, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.entry.offered(c.ctx); got != c.want {
+				t.Errorf("offered() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

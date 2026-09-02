@@ -28,6 +28,14 @@ var catalogOrder = []string{
 // comment on Get).
 const catalogDescriptionsDir = "tools/descriptions"
 
+// subAgentToolNames is the fixed tool set offered to a Tier 2 Deep
+// Research sub-agent (Context.SubAgentRole set) — see offered() below.
+var subAgentToolNames = map[string]bool{
+	"web_search": true,
+	"web_read":   true,
+	"think":      true,
+}
+
 // catalogEntry is one tools/descriptions/*.yaml file, parsed.
 type catalogEntry struct {
 	Name           string `yaml:"name"`
@@ -67,6 +75,15 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// explains the situation (agent/driver.go's noResearch branch) —
 		// a future research tool just needs category: research in its own
 		// YAML file to be included in this, not a second list to remember.
+		return false
+	}
+	if ctx.SubAgentRole != "" && !subAgentToolNames[e.Name] {
+		// Tier 2 Deep Research sub-agent: restrict the menu to the fixed
+		// research-only set regardless of what Requires/keys/Category
+		// gating below would otherwise allow — see SubAgentRole's doc
+		// comment in registry.go for why. Checked by name rather than
+		// Category so a sub-agent doesn't also lose think (Category ""),
+		// which it still needs for its own reasoning.
 		return false
 	}
 	switch e.Requires {

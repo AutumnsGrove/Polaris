@@ -212,6 +212,23 @@ type Context struct {
 	// check-in leniency — see agent.Run.
 	DeepResearch bool
 
+	// SubAgentRole, when non-empty, marks this Context as belonging to a
+	// Tier 2 Deep Research sub-agent (see
+	// docs/plans/deep-research-two-tier.md) rather than the orchestrator
+	// or an ordinary chat turn. catalogEntry.offered() (catalog.go) uses
+	// this to restrict the tool menu to web_search/web_read/think only,
+	// regardless of what Requires/keys/Category gating would otherwise
+	// allow — narrower tool-selection accuracy past ~15-20 tools, fewer
+	// tokens per call compounding across N parallel agents, and a
+	// sub-agent ingesting untrusted fetched web content (a
+	// prompt-injection surface) shouldn't simultaneously hold
+	// write-capable tools. The value itself (e.g. "researcher") is
+	// currently unused beyond "is this a sub-agent" — reserved for future
+	// per-role tool sets rather than a single fixed one for every
+	// sub-agent. Empty (the zero value) means normal behavior, so every
+	// existing caller that never sets this field is unaffected.
+	SubAgentRole string
+
 	// QuickMode, when true, tells web_read to skip its optional filter LLM
 	// pass entirely (always return raw extracted text, ignoring
 	// Instructions) — set for Atlas's Quick Answer, where a fast answer
