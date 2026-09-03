@@ -43,6 +43,20 @@
 		void pulsarState.loadUnreadCounts();
 	});
 
+	// appState.newThread() deliberately only touches history via
+	// replaceState, not goto() — see its doc comment — since /t/[id] and /
+	// both render the same ChatView and a real navigation there would
+	// pointlessly remount it. But /pulsar and /pulsar/[id] render an
+	// entirely different route component, which a raw replaceState can't
+	// swap out (SvelteKit's router only reacts to its own goto()/link
+	// navigations) — so "New thread" from inside Pulsar needs a real
+	// navigation first, or the click silently does nothing visible.
+	function startNewThread() {
+		const onPulsar = page.url.pathname.startsWith('/pulsar');
+		appState.newThread();
+		if (onPulsar) void goto('/');
+	}
+
 	function openSearch(query: string) {
 		// &from=history tells +page.svelte's $effect this is a revisit, not
 		// a fresh search — see its comment on why that must not bump this
@@ -164,7 +178,7 @@
 			New search
 		</button>
 	{:else}
-		<button class="btn btn-accent new-thread" onclick={() => appState.newThread()}>
+		<button class="btn btn-accent new-thread" onclick={startNewThread}>
 			<Plus size={16} />
 			New thread
 		</button>
