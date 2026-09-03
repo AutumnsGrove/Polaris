@@ -192,6 +192,12 @@ export interface Thread {
 	cost_usd: number;
 	context_tokens: number;
 	favorite: boolean;
+	// focus_mode/deep_research are this thread's sticky turn config,
+	// alongside model above — read back into the composer on open (see
+	// ChatView.svelte's thread-open effect), written through on every
+	// change (see AppState.send and AppState.updateThreadConfig).
+	focus_mode: FocusMode;
+	deep_research: boolean;
 	created_at: string;
 	updated_at: string;
 }

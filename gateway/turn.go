@@ -150,6 +150,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	// Write through this turn's config as the thread's new sticky default
+	// — always threadID (the root), same target SetThreadTitle uses, so
+	// reopening the thread later (handleGetThread reads by root id) shows
+	// what this turn actually ran with regardless of whether an edit/retry
+	// forked storageThreadID above. Best-effort: a failure here shouldn't
+	// abort an otherwise-working turn, same reasoning as TouchUpdatedAt.
+	if err := s.db.SetThreadConfig(threadID, modelCfg.ID, msg.FocusMode, msg.DeepResearch); err != nil {
+		log.Warn("failed to persist thread turn config", "thread", threadID, "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "persisting thread turn config failed", map[string]interface{}{"err": err.Error()}, turnID)
+	}
+
 	history, err := s.loadHistory(storageThreadID, 0)
 	if err != nil {
 		s.db.LogEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)

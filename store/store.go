@@ -78,7 +78,27 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- ''). Empty means the root's own messages are what's shown; otherwise
 	-- it's the id of whichever variant (a thread ForkThread created) is
 	-- currently the effective content — see EffectiveThreadID.
-	active_variant_id TEXT NOT NULL DEFAULT ''
+	active_variant_id TEXT NOT NULL DEFAULT '',
+	-- focus_mode/deep_research, alongside model above, are a thread's
+	-- sticky turn config — read back into the composer on open, written
+	-- through on every change, instead of resetting to composer-local
+	-- defaults on every reload/thread switch. model was already a
+	-- persisted column before this triple existed, but only as a
+	-- historical "what this thread last answered with" record nothing
+	-- read back; it's repurposed here rather than duplicated. See
+	-- docs/plans/pulsar-routines.md's "Prerequisite" section.
+	focus_mode TEXT NOT NULL DEFAULT '',
+	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- pulsar_routine_id: set on a thread created by a Pulsar routine firing
+	-- (source = 'pulsar') — lets a routine's pulse history be a plain
+	-- WHERE query instead of inferring it from title text. Empty for every
+	-- other thread.
+	pulsar_routine_id INTEGER,
+	-- seen: whether a pulsar-sourced thread's pulse has actually been
+	-- opened yet — flipped by the same open path continued_in_assistant
+	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
+	-- for any non-pulsar thread.
+	seen INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -371,6 +391,15 @@ var migrations = []string{
 	// that already ran CREATE TABLE IF NOT EXISTS memories (above) without
 	// it needs this added explicitly, same as every other column here.
 	`ALTER TABLE memories ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
+	// Pulsar's turn-config-persistence prerequisite — see the schema
+	// comment above focus_mode. An existing thread gets focus off/research
+	// off by default (the same values a fresh composer already starts
+	// with), not whatever that thread's last turn actually used, since
+	// nothing recorded that until now.
+	`ALTER TABLE threads ADD COLUMN focus_mode TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE threads ADD COLUMN deep_research INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
+	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -472,9 +501,13 @@ type Thread struct {
 	Source string `json:"source"`
 	// Favorite drives the sidebar's pinned Favorites section — see the
 	// schema comment in Open.
-	Favorite  bool      `json:"favorite"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Favorite bool `json:"favorite"`
+	// FocusMode/DeepResearch are this thread's sticky turn config,
+	// alongside Model above — see the schema comment on focus_mode.
+	FocusMode    string `json:"focus_mode"`
+	DeepResearch bool   `json:"deep_research"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -517,6 +550,21 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 		id, title, model, source,
 	)
 	return err
+}
+
+// SetThreadConfig writes through a thread's sticky turn config (model,
+// focus mode, deep research) — called on every turn (see handleTurn) so
+// reopening a thread later restores exactly what it was last configured
+// with, and from handleUpdateThread when the composer's selectors are
+// changed directly without sending a message. Deliberately does not touch
+// updated_at, matching SetThreadFavorite's reasoning: applying a sticky
+// config isn't "activity" on the thread and shouldn't reorder it in the
+// sidebar.
+func (s *Store) SetThreadConfig(id, model, focusMode string, deepResearch bool) error {
+	return execOne(s.db.Exec(
+		`UPDATE threads SET model = ?, focus_mode = ?, deep_research = ? WHERE id = ?`,
+		model, focusMode, deepResearch, id,
+	))
 }
 
 // execOne runs a write that's expected to touch exactly one existing row
@@ -771,9 +819,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -788,9 +836,9 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +861,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, created_at, updated_at
 		 FROM threads
 		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
@@ -827,7 +875,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)

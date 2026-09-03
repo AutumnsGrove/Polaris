@@ -115,6 +115,15 @@ export class AppState {
 	threadSearchLoading = $state(false);
 	models = $state<ModelOption[]>([]);
 	selectedModel = $state<string>('');
+	// threadFocusMode/threadDeepResearch are the just-opened thread's sticky
+	// turn config, set by openThread() below — ChatView.svelte's
+	// currentThreadId effect applies these to its own composer-local
+	// focusMode/deepResearch state, since ChatView (not AppState) still owns
+	// the actual live composer state. selectedModel above needs no such
+	// relay: openThread() writes it directly, since the model selector
+	// already reads straight from AppState with no local copy in between.
+	threadFocusMode = $state<FocusMode>('off');
+	threadDeepResearch = $state(false);
 	currentThreadId = $state<string | null>(null);
 	connected = $state(false);
 	busy = $state(false);
@@ -565,6 +574,14 @@ export class AppState {
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		this.variants = data.variants ?? {};
+		// Sticky turn config — see threadFocusMode's doc comment above.
+		// data.model falls back to the current selection rather than ''
+		// since every thread row has always had a real model value; this
+		// guard only matters for a response shape this code doesn't
+		// actually expect.
+		if (data.model) this.selectedModel = data.model;
+		this.threadFocusMode = (data.focus_mode || 'off') as FocusMode;
+		this.threadDeepResearch = data.deep_research ?? false;
 		const messages = data.messages ?? [];
 
 		// Group persisted events by turn_id so each assistant message's
@@ -720,6 +737,21 @@ export class AppState {
 		if (!resp.ok) return false;
 		await this.loadThreads();
 		return true;
+	}
+
+	// Writes through a selector change (model/focus mode/deep research) as
+	// the current thread's new sticky config, the moment it's changed from
+	// ComposerMenu's "+" sheet rather than waiting for the next send() —
+	// see store.SetThreadConfig's doc comment. No-ops for a not-yet-created
+	// thread (currentThreadId still null): handleTurn's own write-through
+	// covers that case once the first message actually creates it.
+	async persistThreadConfig(model: string, focusMode: FocusMode, deepResearch: boolean) {
+		if (!this.currentThreadId) return;
+		await fetch(`/api/threads/${this.currentThreadId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ model, focus_mode: focusMode, deep_research: deepResearch })
+		});
 	}
 
 	// Toggling favorite doesn't touch updated_at server-side (see

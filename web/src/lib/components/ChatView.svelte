@@ -51,8 +51,9 @@
 	// below) only at send time, not the instant it's picked, so backing
 	// out of a message with the file still attached never orphans an
 	// upload nobody ends up sending. research starts true (on by default —
-	// see ComposerMenu's doc comment on the prop) and, like deepResearch,
-	// isn't backed by a settings-panel default or persisted per-thread; it
+	// see ComposerMenu's doc comment on the prop) and, unlike focusMode/
+	// deepResearch below, isn't part of a thread's persisted sticky config
+	// (see docs/plans/pulsar-routines.md's "Prerequisite" section) — it
 	// just lives for as long as this composer does.
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
@@ -73,6 +74,33 @@
 			focusMode = appState.settings.defaultFocusMode;
 			focusModeInitialized = true;
 		}
+	});
+
+	// Applies a thread's own sticky config (appState.threadFocusMode/
+	// threadDeepResearch, populated by openThread()) every time a
+	// *different* thread is opened — the composer's local focusMode/
+	// deepResearch otherwise only ever reflected whatever the last-used
+	// thread happened to leave them at, never what this specific thread
+	// was last configured with. Keyed on currentThreadId (not just the two
+	// config values) so this only fires on an actual thread switch, not on
+	// every persistThreadConfig() round trip the same thread's own
+	// selectors trigger. Skips null (newThread() territory — the settings-
+	// default effect above already owns that case) so starting a new
+	// thread doesn't get its focus mode clobbered back to whatever the
+	// previously open thread had.
+	// Always tracks currentThreadId, including back down to null (not just
+	// the ids actually applied below) — otherwise leaving a thread via
+	// newThread() and later reopening the exact same thread wouldn't
+	// reapply its config, since id would already equal the last id this
+	// effect saw.
+	let lastConfigThreadId: string | null = null;
+	$effect(() => {
+		const id = appState.currentThreadId;
+		if (id !== null && id !== lastConfigThreadId) {
+			focusMode = appState.threadFocusMode;
+			deepResearch = appState.threadDeepResearch;
+		}
+		lastConfigThreadId = id;
 	});
 
 	function handleAttach(file: File) {
