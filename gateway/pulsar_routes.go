@@ -214,7 +214,21 @@ func (s *Server) handleListPulsarPulses(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, pulses)
+
+	// InProgress per pulse — see server.go's markTurnInFlight doc comment
+	// for why the frontend can't derive this from the pulse's own
+	// messages alone. Computed here, not folded into store.PulsarPulseSummary,
+	// since it's in-memory server state, not anything a DB query could
+	// answer.
+	type pulseWithStatus struct {
+		store.PulsarPulseSummary
+		InProgress bool `json:"in_progress"`
+	}
+	out := make([]pulseWithStatus, len(pulses))
+	for i, p := range pulses {
+		out[i] = pulseWithStatus{PulsarPulseSummary: p, InProgress: s.IsTurnInFlight(p.ThreadID)}
+	}
+	writeJSON(w, out)
 }
 
 // handlePulsarUnreadCounts backs the amber dot/count indicator — see the

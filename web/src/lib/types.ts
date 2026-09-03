@@ -225,13 +225,17 @@ export interface PulsarRoutine {
 	archived_at: string | null;
 }
 
-// PulsarPulse mirrors store.PulsarPulseSummary — one row of a routine's
-// pulse history.
+// PulsarPulse mirrors gateway/pulsar_routes.go's handleListPulsarPulses
+// response — store.PulsarPulseSummary's fields plus in_progress, computed
+// server-side from Server.IsTurnInFlight (in-memory state, not a DB
+// column) since a pulse has no live WebSocket connection for the
+// frontend to otherwise tell "still running" apart from "crashed".
 export interface PulsarPulse {
 	thread_id: string;
 	title: string;
 	seen: boolean;
 	created_at: string;
+	in_progress: boolean;
 }
 
 // VariantGroup describes the alternatives available at one message

@@ -903,6 +903,13 @@ func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 // permanently cluttered this list whether or not anyone ever actually
 // followed up on it in the Assistant. See continued_in_assistant's schema
 // comment for how it flips to 1.
+//
+// source = 'pulsar' is excluded unconditionally, with no equivalent
+// "graduates into visibility" escape hatch — a pulse is only ever meant
+// to be browsed via /pulsar's own routine detail view (see
+// docs/plans/pulsar-routines.md's "UI structure"), never the ordinary
+// chat sidebar. Confirmed live: without this, every pulse showed up in
+// Recents indistinguishable from a normal chat thread.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
@@ -910,7 +917,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -1010,6 +1017,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		 WHERE messages_fts MATCH ?
 		   AND root.disabled = 0
 		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
+		   AND root.source != 'pulsar'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,

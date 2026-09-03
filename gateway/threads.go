@@ -150,9 +150,10 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, struct {
 		*store.Thread
-		Messages []store.Message      `json:"messages"`
-		Variants map[int]VariantGroup `json:"variants,omitempty"`
-	}{thread, messages, variants})
+		Messages       []store.Message      `json:"messages"`
+		Variants       map[int]VariantGroup `json:"variants,omitempty"`
+		TurnInProgress bool                 `json:"turn_in_progress"`
+	}{thread, messages, variants, s.IsTurnInFlight(id)})
 }
 
 // buildVariantsMap collects every position rootID has been edited/

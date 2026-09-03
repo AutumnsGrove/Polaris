@@ -7,19 +7,41 @@
 	import { appState } from '$lib/state.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import PulsarRoutineForm from '$lib/components/PulsarRoutineForm.svelte';
-	import { PanelLeft, ChevronLeft, Pencil } from '@lucide/svelte';
+	import { PanelLeft, ChevronLeft, Pencil, Loader2 } from '@lucide/svelte';
 
 	let routineId = $derived(Number(page.params.id));
 	let routine = $derived(pulsarState.routineById(routineId));
 
-	onMount(async () => {
+	// Polls while any pulse in this routine's history is still running —
+	// same "no live push for a scheduler-fired turn" gap
+	// appState.threadTurnInProgress exists for on the thread-view side
+	// (see its doc comment), just scoped to a whole list here instead of
+	// one thread.
+	//
+	// onMount's callback here is deliberately synchronous (the loading
+	// itself is kicked off as a detached async call inside it) — an
+	// async onMount callback's return value is a Promise, which Svelte
+	// does NOT treat as a teardown function, only a plain function
+	// return is; returning the cleanup from an async callback would be
+	// silently ignored and leak this interval forever.
+	onMount(() => {
 		// Both lists, not just one — the routine being viewed could be
 		// either active or archived (its detail/pulse-history view is
 		// identical either way, per the plan doc's "Routine lifecycle": an
 		// archived routine is still one tap away). Also covers landing here
 		// directly (a reload, a shared link) with nothing preloaded yet.
-		await Promise.all([pulsarState.loadRoutines(), pulsarState.loadArchivedRoutines()]);
-		void pulsarState.loadPulses(routineId);
+		void (async () => {
+			await Promise.all([pulsarState.loadRoutines(), pulsarState.loadArchivedRoutines()]);
+			await pulsarState.loadPulses(routineId);
+		})();
+
+		const pollTimer = setInterval(() => {
+			if (pulsarState.currentPulses.some((p) => p.in_progress)) {
+				void pulsarState.loadPulses(routineId);
+			}
+		}, 4000);
+
+		return () => clearInterval(pollTimer);
 	});
 
 	let showForm = $state(false);
@@ -76,6 +98,12 @@
 				>
 					<span class="pulse-dot" aria-hidden="true"></span>
 					<div class="pulse-title">{pulse.title || 'Untitled'}</div>
+					{#if pulse.in_progress}
+						<span class="pulse-status">
+							<Loader2 size={13} class="spin" />
+							In progress
+						</span>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -183,5 +211,24 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.pulse-status {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		flex-shrink: 0;
+		font-size: 11.5px;
+		color: var(--color-accent);
+	}
+
+	:global(.pulse-status .spin) {
+		animation: pulse-status-spin 0.8s linear infinite;
+	}
+
+	@keyframes pulse-status-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>

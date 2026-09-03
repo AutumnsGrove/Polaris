@@ -185,7 +185,13 @@
 	// selector has moved into the composer's "+" sheet — falls back to
 	// nothing for a brand-new thread whose title hasn't loaded yet (or
 	// hasn't been generated server-side).
-	let currentThread = $derived(appState.threads.find((t) => t.id === appState.currentThreadId));
+	//
+	// appState.currentThread, not a lookup in appState.threads (the
+	// sidebar list) — that list excludes pulsar-sourced threads entirely
+	// (see store.ListThreads' doc comment), so a pulse's own title/
+	// favorite/pulsar_routine_id would all resolve to undefined here if
+	// this still searched it.
+	let currentThread = $derived(appState.currentThread);
 	let currentThreadTitle = $derived(currentThread?.title ?? '');
 
 	// A pulse's thread view gets a "back to routine" affordance instead of
@@ -209,10 +215,21 @@
 	// looks identical to a message vanishing into the void — this is the
 	// signal to offer a real way out instead of the composer just quietly
 	// sitting there idle.
+	//
+	// !appState.threadTurnInProgress rules out one more real case this
+	// heuristic used to get wrong: a Pulsar pulse (docs/plans/pulsar-routines.md)
+	// runs with no live WebSocket connection at all, so
+	// busyOnCurrentThread — which only reflects a turn *this* client
+	// itself started — is always false for one, even while it's
+	// genuinely still running server-side. Without this check, opening
+	// an in-progress pulse showed a false "didn't finish, retry?" banner
+	// — actively dangerous, not just wrong, since Retry would fork/resend
+	// while the original turn might still be writing to the same thread.
 	let lastTurnInterrupted = $derived(
 		appState.turns.length > 0 &&
 			appState.turns[appState.turns.length - 1].role === 'user' &&
-			!appState.busyOnCurrentThread
+			!appState.busyOnCurrentThread &&
+			!appState.threadTurnInProgress
 	);
 
 	function retryInterrupted() {
@@ -419,7 +436,18 @@
 				     component's answer()/enableWebSearch() split. -->
 				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
-			{#if lastTurnInterrupted}
+			{#if appState.threadTurnInProgress}
+				<!-- A pulse (or any other turn with no live client attached)
+				     genuinely still running server-side — see
+				     threadTurnInProgress's doc comment. No retry action here:
+				     unlike lastTurnInterrupted below, there's nothing to
+				     retry, just a wait for the poll in openThread() to pick
+				     up the finished answer. -->
+				<div class="in-progress" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
+					<Loader2 size={15} class="spin" />
+					<span>Still running…</span>
+				</div>
+			{:else if lastTurnInterrupted}
 				<div class="interrupted" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 					<div class="interrupted-message">
 						<TriangleAlert size={15} />
@@ -725,6 +753,24 @@
 	}
 
 	.interrupted-message :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-accent);
+	}
+
+	.in-progress {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		max-width: 680px;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-sm);
+		padding: var(--space-lg) var(--space-lg);
+		font-size: 13.5px;
+		color: var(--color-text-dim);
+	}
+
+	.in-progress :global(svg) {
 		flex-shrink: 0;
 		color: var(--color-accent);
 	}

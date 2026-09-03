@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./gUmcp-RA.js";import"./xihTtKlq.js";import{a as n}from"./B8jiWXgV.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s=[[`rect`,{width:`18`,height:`18`,x:`3`,y:`3`,rx:`2`}],[`path`,{d:`M9 3v18`}]];n(i,t({name:`panel-left`},()=>o,{get iconNode(){return s}}))}export{i as t};

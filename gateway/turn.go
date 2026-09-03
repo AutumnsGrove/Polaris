@@ -31,6 +31,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		threadID = uuid.NewString()
 	}
 
+	// Covers this entire function, every early return included — see
+	// markTurnInFlight's doc comment for what this is actually for
+	// (letting handleGetThread tell a pulse that's still genuinely
+	// running apart from one that crashed, since a pulse has no live
+	// WebSocket connection for the frontend's usual heuristic to key
+	// off). Marked here, right after threadID is finalized, rather than
+	// down in ws.go/ask.go's callers, so this also covers handleTurn's
+	// own synchronous callers (handleAsk) without each needing its own
+	// copy of this bookkeeping.
+	s.markTurnInFlight(threadID)
+	defer s.clearTurnInFlight(threadID)
+
 	// turnID ties together the user message, the assistant message it
 	// produces, and every event (thinking/tool call/tool result) logged
 	// while this turn runs — the join key loadHistory's sibling on the
