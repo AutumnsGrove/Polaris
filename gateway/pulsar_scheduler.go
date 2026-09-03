@@ -33,6 +33,14 @@ const pulsarSchedulerInterval = time.Minute
 // nothing special has to detect "we missed one" separately.
 func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 	runOnce := func() {
+		// Piggybacks the wizard's own session cleanup onto this same
+		// once-a-minute tick — see sweepExpiredWizardSessions' doc comment
+		// for why that needs a periodic sweep at all, not just its lazy
+		// on-access check. Unconditional, not gated on any routine being
+		// due: an abandoned wizard session has nothing to do with whether
+		// any pulse fires this tick.
+		s.sweepExpiredWizardSessions()
+
 		routines, err := s.db.ListActivePulsarRoutines()
 		if err != nil {
 			log.Warn("listing active pulsar routines failed", "err", err)

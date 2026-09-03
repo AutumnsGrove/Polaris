@@ -24,10 +24,15 @@ import (
 	"polaris/tools"
 )
 
-// wizardSessionTTL is how long an idle wizard session stays valid — lazy
-// eviction only (checked on next access, no background sweep goroutine),
-// deliberately simple given single-operator scale and how little memory a
-// few chat messages actually holds.
+// wizardSessionTTL is how long an idle wizard session stays valid.
+// Eviction is two-layered: handleWizardTurn checks this on next access (so
+// a stale session a user comes back to fails fast with a clear "start
+// over" message), and sweepExpiredWizardSessions additionally piggybacks
+// on the Pulsar scheduler's own once-a-minute tick to catch a session
+// that's simply abandoned — opened, never sent a second message, no
+// "next access" ever comes to trigger the lazy path. Without the sweep,
+// that session sits in the map forever: a real, if slow, memory leak on
+// a box that stays up for weeks/months, not just a missed convenience.
 const wizardSessionTTL = 30 * time.Minute
 
 type wizardSession struct {
@@ -127,6 +132,22 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 	s.wizardMu.Unlock()
 
 	writeJSON(w, wizardResponse{SessionID: req.SessionID, Question: result.question, Final: result.final, Answer: result.answer})
+}
+
+// sweepExpiredWizardSessions removes every wizard session past
+// wizardSessionTTL — see that constant's doc comment for why this exists
+// alongside handleWizardTurn's own lazy check. Called once per Pulsar
+// scheduler tick (pulsar_scheduler.go's RunPulsarScheduler), not its own
+// goroutine/ticker — piggybacking keeps this to a few lines instead of a
+// second timer for what's a very cheap, infrequent cleanup.
+func (s *Server) sweepExpiredWizardSessions() {
+	s.wizardMu.Lock()
+	defer s.wizardMu.Unlock()
+	for id, sess := range s.wizardSessions {
+		if time.Since(sess.createdAt) > wizardSessionTTL {
+			delete(s.wizardSessions, id)
+		}
+	}
 }
 
 type wizardTurnResult struct {
