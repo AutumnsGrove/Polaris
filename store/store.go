@@ -347,6 +347,48 @@ CREATE TABLE IF NOT EXISTS memories (
 	-- a disabled row instead of failing on it).
 	disabled INTEGER NOT NULL DEFAULT 0
 );
+
+-- pulsar_routines backs Pulsar (see docs/plans/pulsar-routines.md): a saved
+-- prompt that fires on a schedule instead of when typed, each firing (a
+-- "pulse") a real thread — source = 'pulsar', pulsar_routine_id set (see
+-- threads' schema comment above) — run through the exact same turn
+-- pipeline as any other message.
+CREATE TABLE IF NOT EXISTS pulsar_routines (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	prompt TEXT NOT NULL,
+	-- model/focus_mode/deep_research: the same sticky turn-config triple
+	-- threads carry (see threads' schema comment) — a routine stores its
+	-- own copy rather than referencing a thread's, since a routine exists
+	-- independent of any pulse it's produced yet.
+	model TEXT NOT NULL,
+	focus_mode TEXT NOT NULL DEFAULT '',
+	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- schedule_type: 'daily' | 'weekly' | 'monthly'. schedule_params holds
+	-- whatever schedule_type needs beyond time_of_day — empty for daily,
+	-- a weekday name (e.g. "monday") for weekly, a 1-31 day-of-month
+	-- string for monthly. Kept as one flexible string column rather than
+	-- separate weekday/day-of-month columns since exactly one of them is
+	-- ever meaningful for a given schedule_type, and the v1 schedule model
+	-- (see the plan doc) is deliberately just these three shapes.
+	schedule_type TEXT NOT NULL,
+	schedule_params TEXT NOT NULL DEFAULT '',
+	-- time_of_day: "HH:MM", 24-hour, server-local — no timezone handling,
+	-- per the plan doc's single-operator framing.
+	time_of_day TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- last_run_at: NULL means never fired yet. Checked by the scheduler on
+	-- every tick (including right after process start, for catch-up —
+	-- see the plan doc's "Catch-up on restart") against schedule_type/
+	-- schedule_params/time_of_day to decide whether a pulse is due.
+	last_run_at DATETIME,
+	-- archived_at: NULL means active. Delete is always soft in v1 — see
+	-- the plan doc's "Routine lifecycle" — archiving sets this instead of
+	-- removing the row, so the routine and every pulse it ever produced
+	-- stay intact and readable, just excluded from the scheduler and the
+	-- active-routines list.
+	archived_at DATETIME
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -504,8 +546,8 @@ type Thread struct {
 	Favorite bool `json:"favorite"`
 	// FocusMode/DeepResearch are this thread's sticky turn config,
 	// alongside Model above — see the schema comment on focus_mode.
-	FocusMode    string `json:"focus_mode"`
-	DeepResearch bool   `json:"deep_research"`
+	FocusMode    string    `json:"focus_mode"`
+	DeepResearch bool      `json:"deep_research"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -888,9 +930,9 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 // wants to see where each hit actually landed (a thread can match more
 // than once), not just which threads contain a match somewhere.
 type MessageSearchResult struct {
-	ThreadID    string    `json:"thread_id"`
-	ThreadTitle string    `json:"thread_title"`
-	Role        string    `json:"role"`
+	ThreadID    string `json:"thread_id"`
+	ThreadTitle string `json:"thread_title"`
+	Role        string `json:"role"`
 	// Snippet wraps each matched term in \x02...\x03 (ASCII STX/ETX,
 	// never legitimate message content) instead of literal HTML — the
 	// frontend splits on these markers and renders highlights as real
@@ -941,7 +983,7 @@ func buildFTSQuery(query string) string {
 // defaults from ForkThread and never independently updated (DeleteThread
 // only ever flips the root's own row), so root's values are the ones
 // that are actually authoritative. ThreadID/ThreadTitle are root's too:
-// a forked thread's title is always '' (ForkThread never sets one) and
+// a forked thread's title is always ” (ForkThread never sets one) and
 // its own id isn't independently addressable by GetThread — only a root
 // id is, which is what clicking a result needs to open.
 func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, error) {
