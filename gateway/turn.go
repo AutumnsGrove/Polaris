@@ -350,11 +350,22 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// routine with no memory of its own last pulse just re-describes
 	// whatever's still true from before, forever.
 	if msg.PulsarPreviousReport != "" {
+		// Not an absolute "never mention this again" — a flat ban risks
+		// permanently dropping something still unfolding (an ongoing beta
+		// event, an open incident) the moment it's been mentioned once,
+		// which is worse than the staleness problem this exists to fix.
+		// The distinction asked for is "restate" vs. "update": a settled
+		// fact from last time shouldn't be redescribed, but something
+		// still in motion deserves a short status line even with nothing
+		// new to add, rather than vanishing from every future report.
 		turnMessage += "\n\n---\nFor reference, here is what you reported the last time this routine ran " +
 			"(" + msg.PulsarPreviousReportAt + "):\n\n" + msg.PulsarPreviousReport +
-			"\n\nDo not repeat anything from that report. Only include something in your new answer if it's " +
-			"genuinely new or has meaningfully changed since then. If nothing has changed, say so briefly " +
-			"instead of restating the old report."
+			"\n\nDon't redescribe anything from that report as if it were new — a settled fact you already " +
+			"covered doesn't need restating. But if something from that report is still ongoing or " +
+			"developing, it's fine to give it a brief one-line status update (even just \"still ongoing, " +
+			"no major updates\") rather than dropping it entirely. Focus most of your answer on what's " +
+			"genuinely new or has meaningfully changed since then. If truly nothing has changed at all, say " +
+			"so briefly instead of restating the old report in full."
 	}
 
 	// The browser's last-known cached fix (see protocol.go's UserLocation
