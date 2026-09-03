@@ -186,6 +186,21 @@ func parseDayOfMonth(s string) (int, bool) {
 // handleAsk's non-streaming call (gateway/ask.go) which also collects the
 // answer text for its HTTP response.
 func (s *Server) firePulse(r store.PulsarRoutine) {
+	// Same shutdown-draining registration handleAsk/handleWS use before
+	// calling handleTurn — without it, a pulse firing during a restart's
+	// drain window is invisible to WaitForActiveTurns and can be killed
+	// mid-write exactly like an ungated live turn could. Checked before
+	// SetPulsarRoutineLastRun below, not after: stamping last_run_at for a
+	// pulse that never actually ran would silently defeat the plan doc's
+	// "catch-up on restart" guarantee for this exact routine — the next
+	// tick (right after the drain finishes) would see a fresh last_run_at
+	// and conclude nothing was missed.
+	if !s.TryStartTurn() {
+		log.Warn("skipping pulsar pulse — server is restarting", "routine", r.ID)
+		return
+	}
+	defer s.FinishTurn()
+
 	// Recorded before firing, not after — see
 	// store.SetPulsarRoutineLastRun's doc comment: a crash mid-turn must
 	// not leave this stale and cause the very next tick to immediately
@@ -194,16 +209,6 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 		log.Warn("recording pulsar routine last run failed, skipping this pulse", "routine", r.ID, "err", err)
 		return
 	}
-
-	// Same shutdown-draining registration handleAsk/handleWS use before
-	// calling handleTurn — without it, a pulse firing during a restart's
-	// drain window is invisible to WaitForActiveTurns and can be killed
-	// mid-write exactly like an ungated live turn could.
-	if !s.TryStartTurn() {
-		log.Warn("skipping pulsar pulse — server is restarting", "routine", r.ID)
-		return
-	}
-	defer s.FinishTurn()
 
 	msg := ClientMessage{
 		Type:              "message",

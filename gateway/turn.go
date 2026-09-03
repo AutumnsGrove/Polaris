@@ -134,9 +134,25 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			return
 		}
 		if msg.PulsarRoutineID != 0 {
+			// A hard failure here, not a log-and-continue: an unlinked
+			// pulse thread isn't invisible (it still shows up in the
+			// normal sidebar list, since pulsar-sourced threads aren't
+			// filtered like Atlas's are), but it's permanently excluded
+			// from ListPulsarPulses/UnreadPulseCounts — both filter on
+			// pulsar_routine_id — with no repair path once this turn
+			// finishes. Aborting before spending an LLM turn on a thread
+			// that can't function as a pulse from /pulsar's perspective
+			// costs nothing extra either way: firePulse already stamps
+			// last_run_at before calling in here (deliberately, so a
+			// crash mid-turn can't trigger a same-minute re-fire — see
+			// its doc comment), so this routine simply produces no pulse
+			// for this scheduled slot and tries again at the next one —
+			// the same outcome a turn failure further downstream would
+			// already have.
 			if err := s.db.SetThreadPulsarRoutine(threadID, msg.PulsarRoutineID); err != nil {
-				log.Warn("linking pulse thread to its routine failed", "thread", threadID, "routine", msg.PulsarRoutineID, "err", err)
-				s.db.LogEvent(threadID, "warn", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
+				s.db.LogEvent(threadID, "error", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", Message: err.Error()})
+				return
 			}
 		}
 	} else if isFirstMessageEdit {
