@@ -161,7 +161,8 @@ export type FocusMode =
 	| 'news'
 	| 'first_principles'
 	| 'socratic'
-	| 'researcher';
+	| 'researcher'
+	| 'safari';
 
 // The response from POST /api/upload (see gateway/attachments.go's
 // UploadResponse) — id is what rides along in the next ClientMessage.

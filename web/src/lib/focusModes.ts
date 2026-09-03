@@ -4,7 +4,8 @@ import {
 	Newspaper,
 	Lightbulb,
 	MessageCircleQuestion,
-	Microscope
+	Microscope,
+	Binoculars
 } from '@lucide/svelte';
 import type { FocusMode } from './types';
 import type { Component } from 'svelte';
@@ -41,5 +42,11 @@ export const FOCUS_MODES: FocusModeOption[] = [
 		label: 'Socratic',
 		description: 'Explore through guided questions',
 		icon: MessageCircleQuestion
+	},
+	{
+		id: 'safari',
+		label: 'Safari',
+		description: 'Immersive, interactive exploration',
+		icon: Binoculars
 	}
 ];
