@@ -546,10 +546,15 @@ type Thread struct {
 	Favorite bool `json:"favorite"`
 	// FocusMode/DeepResearch are this thread's sticky turn config,
 	// alongside Model above — see the schema comment on focus_mode.
-	FocusMode    string    `json:"focus_mode"`
-	DeepResearch bool      `json:"deep_research"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	FocusMode    string `json:"focus_mode"`
+	DeepResearch bool   `json:"deep_research"`
+	// PulsarRoutineID is set only on a pulse (source = "pulsar") — nil for
+	// every other thread. The frontend uses this to show a "back to
+	// routine" affordance on a pulse's thread view instead of the normal
+	// sidebar-toggle-only header, per the plan doc's "Pulse detail" UI.
+	PulsarRoutineID *int64    `json:"pulsar_routine_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -861,9 +866,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
