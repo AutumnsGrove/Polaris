@@ -26,6 +26,14 @@ with citations.
   Block/Lower/Raise/Pin rankings), or end a query with `?` for a fast, sourced answer instead of
   full results. Same fallback chain as `web_search` above, plus its own Brave-specific virtual
   pagination (one real 20-result Brave fetch covers two 10-result Atlas pages)
+- **Pulsar** (`/pulsar`, the sidebar's Orbit icon) — recurring routines: a saved prompt that fires
+  daily/weekly/monthly and runs through the exact same turn pipeline as a normal message, tagged as
+  its own kind of thread. Each firing ("pulse") knows what it reported last time and is told not to
+  repeat settled facts, only what's new or changed since then — so a weekly "Guild Wars 3 news"
+  routine doesn't just restate the same still-true update every run. A "Help me write this" wizard
+  (an ephemeral, non-persisted chat — nothing about it is saved beyond the prompt you accept) turns
+  a vague idea into a tuned prompt via a short back-and-forth interview. Missed a scheduled fire
+  because the box was off? It catches up the moment Polaris is back, not silently until next time
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
