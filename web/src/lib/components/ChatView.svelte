@@ -1,9 +1,23 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown, TriangleAlert, RotateCcw, MessageCirclePlus } from '@lucide/svelte';
+	import {
+		Send,
+		Square,
+		PanelLeft,
+		Paperclip,
+		X,
+		Loader2,
+		ArrowDown,
+		TriangleAlert,
+		RotateCcw,
+		MessageCirclePlus,
+		ChevronLeft
+	} from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
@@ -51,8 +65,9 @@
 	// below) only at send time, not the instant it's picked, so backing
 	// out of a message with the file still attached never orphans an
 	// upload nobody ends up sending. research starts true (on by default —
-	// see ComposerMenu's doc comment on the prop) and, like deepResearch,
-	// isn't backed by a settings-panel default or persisted per-thread; it
+	// see ComposerMenu's doc comment on the prop) and, unlike focusMode/
+	// deepResearch below, isn't part of a thread's persisted sticky config
+	// (see docs/plans/pulsar-routines.md's "Prerequisite" section) — it
 	// just lives for as long as this composer does.
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
@@ -73,6 +88,33 @@
 			focusMode = appState.settings.defaultFocusMode;
 			focusModeInitialized = true;
 		}
+	});
+
+	// Applies a thread's own sticky config (appState.threadFocusMode/
+	// threadDeepResearch, populated by openThread()) every time a
+	// *different* thread is opened — the composer's local focusMode/
+	// deepResearch otherwise only ever reflected whatever the last-used
+	// thread happened to leave them at, never what this specific thread
+	// was last configured with. Keyed on currentThreadId (not just the two
+	// config values) so this only fires on an actual thread switch, not on
+	// every persistThreadConfig() round trip the same thread's own
+	// selectors trigger. Skips null (newThread() territory — the settings-
+	// default effect above already owns that case) so starting a new
+	// thread doesn't get its focus mode clobbered back to whatever the
+	// previously open thread had.
+	// Always tracks currentThreadId, including back down to null (not just
+	// the ids actually applied below) — otherwise leaving a thread via
+	// newThread() and later reopening the exact same thread wouldn't
+	// reapply its config, since id would already equal the last id this
+	// effect saw.
+	let lastConfigThreadId: string | null = null;
+	$effect(() => {
+		const id = appState.currentThreadId;
+		if (id !== null && id !== lastConfigThreadId) {
+			focusMode = appState.threadFocusMode;
+			deepResearch = appState.threadDeepResearch;
+		}
+		lastConfigThreadId = id;
 	});
 
 	function handleAttach(file: File) {
@@ -143,8 +185,25 @@
 	// selector has moved into the composer's "+" sheet — falls back to
 	// nothing for a brand-new thread whose title hasn't loaded yet (or
 	// hasn't been generated server-side).
-	let currentThread = $derived(appState.threads.find((t) => t.id === appState.currentThreadId));
+	//
+	// appState.currentThread, not a lookup in appState.threads (the
+	// sidebar list) — that list excludes pulsar-sourced threads entirely
+	// (see store.ListThreads' doc comment), so a pulse's own title/
+	// favorite/pulsar_routine_id would all resolve to undefined here if
+	// this still searched it.
+	let currentThread = $derived(appState.currentThread);
 	let currentThreadTitle = $derived(currentThread?.title ?? '');
+
+	// A pulse's thread view gets a "back to routine" affordance instead of
+	// the plain sidebar-toggle-only header, per docs/plans/pulsar-routines.md's
+	// "Pulse detail" UI — routing there always via /pulsar/[id]'s own link,
+	// which tags the URL with ?pulsar=<routineId> (see that route's
+	// openPulse). Gated on the thread's own pulsar_routine_id too, not just
+	// the query param, so this can't be spoofed into showing on an
+	// unrelated thread by hand-editing the URL.
+	let pulsarBackRoutineId = $derived(
+		currentThread?.pulsar_routine_id != null ? page.url.searchParams.get('pulsar') : null
+	);
 
 	// A turn ending in a lone user message with nothing after it is never
 	// a valid "finished" state — dispatch() always pushes the user turn
@@ -156,10 +215,21 @@
 	// looks identical to a message vanishing into the void — this is the
 	// signal to offer a real way out instead of the composer just quietly
 	// sitting there idle.
+	//
+	// !appState.threadTurnInProgress rules out one more real case this
+	// heuristic used to get wrong: a Pulsar pulse (docs/plans/pulsar-routines.md)
+	// runs with no live WebSocket connection at all, so
+	// busyOnCurrentThread — which only reflects a turn *this* client
+	// itself started — is always false for one, even while it's
+	// genuinely still running server-side. Without this check, opening
+	// an in-progress pulse showed a false "didn't finish, retry?" banner
+	// — actively dangerous, not just wrong, since Retry would fork/resend
+	// while the original turn might still be writing to the same thread.
 	let lastTurnInterrupted = $derived(
 		appState.turns.length > 0 &&
 			appState.turns[appState.turns.length - 1].role === 'user' &&
-			!appState.busyOnCurrentThread
+			!appState.busyOnCurrentThread &&
+			!appState.threadTurnInProgress
 	);
 
 	function retryInterrupted() {
@@ -302,7 +372,15 @@
 
 <header class="header">
 	<div class="header-left">
-		{#if !appState.sidebarOpen}
+		{#if pulsarBackRoutineId}
+			<button
+				class="icon-btn"
+				onclick={() => goto(`/pulsar/${pulsarBackRoutineId}`)}
+				title="Back to routine"
+			>
+				<ChevronLeft size={18} />
+			</button>
+		{:else if !appState.sidebarOpen}
 			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
 				<PanelLeft size={18} />
 			</button>
@@ -358,7 +436,18 @@
 				     component's answer()/enableWebSearch() split. -->
 				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
-			{#if lastTurnInterrupted}
+			{#if appState.threadTurnInProgress}
+				<!-- A pulse (or any other turn with no live client attached)
+				     genuinely still running server-side — see
+				     threadTurnInProgress's doc comment. No retry action here:
+				     unlike lastTurnInterrupted below, there's nothing to
+				     retry, just a wait for the poll in openThread() to pick
+				     up the finished answer. -->
+				<div class="in-progress" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
+					<Loader2 size={15} class="spin" />
+					<span>Still running…</span>
+				</div>
+			{:else if lastTurnInterrupted}
 				<div class="interrupted" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 					<div class="interrupted-message">
 						<TriangleAlert size={15} />
@@ -664,6 +753,24 @@
 	}
 
 	.interrupted-message :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-accent);
+	}
+
+	.in-progress {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		max-width: 680px;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-sm);
+		padding: var(--space-lg) var(--space-lg);
+		font-size: 13.5px;
+		color: var(--color-text-dim);
+	}
+
+	.in-progress :global(svg) {
 		flex-shrink: 0;
 		color: var(--color-accent);
 	}

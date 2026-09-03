@@ -17,6 +17,7 @@ import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
 import { getUserLocation, requestFreshLocation } from './geolocation';
+import { pulsarState } from './pulsar.svelte';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -115,6 +116,37 @@ export class AppState {
 	threadSearchLoading = $state(false);
 	models = $state<ModelOption[]>([]);
 	selectedModel = $state<string>('');
+	// threadFocusMode/threadDeepResearch are the just-opened thread's sticky
+	// turn config, set by openThread() below — ChatView.svelte's
+	// currentThreadId effect applies these to its own composer-local
+	// focusMode/deepResearch state, since ChatView (not AppState) still owns
+	// the actual live composer state. selectedModel above needs no such
+	// relay: openThread() writes it directly, since the model selector
+	// already reads straight from AppState with no local copy in between.
+	threadFocusMode = $state<FocusMode>('off');
+	threadDeepResearch = $state(false);
+	// Whether the just-opened thread's turn is genuinely still running
+	// server-side — set by openThread() below from GetThread's
+	// turn_in_progress (see gateway's IsTurnInFlight). Exists specifically
+	// for Pulsar: a pulse has no live WebSocket connection, so
+	// busyOnCurrentThread (which only reflects turns *this* client
+	// started) can't tell "still running" apart from "crashed" the way it
+	// can for an ordinary chat turn. ChatView.svelte's lastTurnInterrupted
+	// checks this before falling back to its old "didn't finish" guess.
+	threadTurnInProgress = $state(false);
+	// The currently-open thread's own row (title/favorite/pulsar_routine_id/
+	// etc.), set directly from openThread()'s GetThread fetch rather than
+	// looked up in `threads` below — that list excludes pulsar-sourced
+	// threads entirely (see store.ListThreads' doc comment: a pulse is
+	// only ever meant to be browsed via /pulsar, not the ordinary
+	// sidebar), so ChatView.svelte's header title/back-button/favorite
+	// toggle would all silently break on a pulse's own thread view if
+	// they depended on finding it in that list. Also just more correct
+	// in general even for a normal thread: this is always exactly what
+	// GetThread returned for whatever's actually on screen, not a
+	// separately-fetched list entry that could be a beat stale right
+	// after a rename/favorite.
+	currentThread = $state<Thread | null>(null);
 	currentThreadId = $state<string | null>(null);
 	connected = $state(false);
 	busy = $state(false);
@@ -561,10 +593,24 @@ export class AppState {
 			busy: this.busy
 		});
 		this.currentThreadId = id;
+		this.currentThread = data as Thread;
 		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		this.variants = data.variants ?? {};
+		// Sticky turn config — see threadFocusMode's doc comment above.
+		// data.model falls back to the current selection rather than ''
+		// since every thread row has always had a real model value; this
+		// guard only matters for a response shape this code doesn't
+		// actually expect.
+		if (data.model) this.selectedModel = data.model;
+		this.threadFocusMode = (data.focus_mode || 'off') as FocusMode;
+		this.threadDeepResearch = data.deep_research ?? false;
+		this.threadTurnInProgress = data.turn_in_progress ?? false;
+		// The server just flipped this pulse's seen flag (handleGetThread's
+		// MarkPulseSeen) — refresh the sidebar/routine-row amber counts so
+		// they don't sit stale until something else happens to reload them.
+		if (data.source === 'pulsar') void pulsarState.loadUnreadCounts();
 		const messages = data.messages ?? [];
 
 		// Group persisted events by turn_id so each assistant message's
@@ -597,6 +643,33 @@ export class AppState {
 		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
 		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 		this.closeSidebarIfMobile();
+
+		// A pulse still running has no live WebSocket pushing its own
+		// "done" — polling re-fetch is the only way this view ever learns
+		// the turn actually finished, short of the user manually
+		// reloading (see threadTurnInProgress's doc comment).
+		this.pollWhileInProgress(id);
+	}
+
+	// pollTimer's id, if a poll is currently scheduled — cleared and
+	// re-armed by pollWhileInProgress, so navigating away or a completed
+	// turn never leaves a stray timer re-fetching a thread nobody's
+	// looking at anymore.
+	private pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+	private pollWhileInProgress(id: string) {
+		if (this.pollTimer !== null) {
+			clearTimeout(this.pollTimer);
+			this.pollTimer = null;
+		}
+		if (!this.threadTurnInProgress) return;
+		this.pollTimer = setTimeout(() => {
+			// Stale by the time this fires (navigated to a different
+			// thread, or away entirely) — openThread(id) would silently
+			// clobber whatever's actually on screen now.
+			if (this.currentThreadId !== id) return;
+			void this.openThread(id);
+		}, 4000);
 	}
 
 	// Browses to a different reply at some earlier edit/regenerate point —
@@ -654,6 +727,7 @@ export class AppState {
 
 		debugBeacon('currentThreadId set (newThread)', { from: this.currentThreadId, busy: this.busy });
 		this.currentThreadId = null;
+		this.currentThread = null;
 		this.turns = [];
 		this.totalCost = 0;
 		this.contextTokens = 0;
@@ -707,6 +781,7 @@ export class AppState {
 			body: JSON.stringify({ title: trimmed })
 		});
 		await this.loadThreads();
+		await this.refreshCurrentThreadIfMatches(id);
 	}
 
 	// Re-titles using the whole thread (every message so far), not just
@@ -719,7 +794,41 @@ export class AppState {
 		const resp = await fetch(`/api/threads/${id}/regenerate-title`, { method: 'POST' });
 		if (!resp.ok) return false;
 		await this.loadThreads();
+		await this.refreshCurrentThreadIfMatches(id);
 		return true;
+	}
+
+	// Re-fetches just id's own thread row into currentThread when it's the
+	// one currently open — loadThreads() alone doesn't cover this for a
+	// pulsar-sourced thread, since ListThreads excludes those entirely
+	// (see its doc comment), so ChatView.svelte's header would otherwise
+	// keep showing the pre-rename title/favorite state for a pulse
+	// indefinitely. Cheap and harmless to call for a normal thread too —
+	// GetThread is a single-row lookup, not a full page reload.
+	private async refreshCurrentThreadIfMatches(id: string) {
+		if (this.currentThreadId !== id) return;
+		const res = await fetch(`/api/threads/${id}`);
+		if (!res.ok || this.currentThreadId !== id) return; // stale — navigated away mid-request
+		this.currentThread = (await res.json()) as Thread;
+	}
+
+	// Writes through a selector change (model/focus mode/deep research) as
+	// the current thread's new sticky config, the moment it's changed from
+	// ComposerMenu's "+" sheet rather than waiting for the next send() —
+	// see store.SetThreadConfig's doc comment. No-ops for a not-yet-created
+	// thread (currentThreadId still null): handleTurn's own write-through
+	// covers that case once the first message actually creates it.
+	async persistThreadConfig(model: string, focusMode: FocusMode, deepResearch: boolean) {
+		if (!this.currentThreadId) return;
+		await fetch(`/api/threads/${this.currentThreadId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			// 'off' -> '' matches send()'s own wire-format normalization
+			// below (ClientMessage.focus_mode) — "no focus mode" is always
+			// empty string server-side (see agent.loadSystemPrompt's map
+			// lookup), 'off' is only the frontend's own sentinel for it.
+			body: JSON.stringify({ model, focus_mode: focusMode === 'off' ? '' : focusMode, deep_research: deepResearch })
+		});
 	}
 
 	// Toggling favorite doesn't touch updated_at server-side (see
@@ -733,6 +842,7 @@ export class AppState {
 			body: JSON.stringify({ favorite })
 		});
 		await this.loadThreads();
+		await this.refreshCurrentThreadIfMatches(id);
 	}
 
 	// Cancels the in-flight turn. The backend aborts its LLM/tool calls

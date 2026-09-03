@@ -118,6 +118,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	srv := gateway.New(cfg, configPath, db, staticFS, version)
 
+	// Runs for the life of the process, checking every active routine
+	// once a minute — see RunPulsarScheduler's doc comment. Same
+	// close-on-every-exit-path shutdown as backupDone above.
+	pulsarDone := make(chan struct{})
+	defer close(pulsarDone)
+	go srv.RunPulsarScheduler(pulsarDone)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

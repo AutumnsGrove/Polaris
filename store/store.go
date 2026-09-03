@@ -78,7 +78,27 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- ''). Empty means the root's own messages are what's shown; otherwise
 	-- it's the id of whichever variant (a thread ForkThread created) is
 	-- currently the effective content — see EffectiveThreadID.
-	active_variant_id TEXT NOT NULL DEFAULT ''
+	active_variant_id TEXT NOT NULL DEFAULT '',
+	-- focus_mode/deep_research, alongside model above, are a thread's
+	-- sticky turn config — read back into the composer on open, written
+	-- through on every change, instead of resetting to composer-local
+	-- defaults on every reload/thread switch. model was already a
+	-- persisted column before this triple existed, but only as a
+	-- historical "what this thread last answered with" record nothing
+	-- read back; it's repurposed here rather than duplicated. See
+	-- docs/plans/pulsar-routines.md's "Prerequisite" section.
+	focus_mode TEXT NOT NULL DEFAULT '',
+	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- pulsar_routine_id: set on a thread created by a Pulsar routine firing
+	-- (source = 'pulsar') — lets a routine's pulse history be a plain
+	-- WHERE query instead of inferring it from title text. Empty for every
+	-- other thread.
+	pulsar_routine_id INTEGER,
+	-- seen: whether a pulsar-sourced thread's pulse has actually been
+	-- opened yet — flipped by the same open path continued_in_assistant
+	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
+	-- for any non-pulsar thread.
+	seen INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -327,6 +347,48 @@ CREATE TABLE IF NOT EXISTS memories (
 	-- a disabled row instead of failing on it).
 	disabled INTEGER NOT NULL DEFAULT 0
 );
+
+-- pulsar_routines backs Pulsar (see docs/plans/pulsar-routines.md): a saved
+-- prompt that fires on a schedule instead of when typed, each firing (a
+-- "pulse") a real thread — source = 'pulsar', pulsar_routine_id set (see
+-- threads' schema comment above) — run through the exact same turn
+-- pipeline as any other message.
+CREATE TABLE IF NOT EXISTS pulsar_routines (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	prompt TEXT NOT NULL,
+	-- model/focus_mode/deep_research: the same sticky turn-config triple
+	-- threads carry (see threads' schema comment) — a routine stores its
+	-- own copy rather than referencing a thread's, since a routine exists
+	-- independent of any pulse it's produced yet.
+	model TEXT NOT NULL,
+	focus_mode TEXT NOT NULL DEFAULT '',
+	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- schedule_type: 'daily' | 'weekly' | 'monthly'. schedule_params holds
+	-- whatever schedule_type needs beyond time_of_day — empty for daily,
+	-- a weekday name (e.g. "monday") for weekly, a 1-31 day-of-month
+	-- string for monthly. Kept as one flexible string column rather than
+	-- separate weekday/day-of-month columns since exactly one of them is
+	-- ever meaningful for a given schedule_type, and the v1 schedule model
+	-- (see the plan doc) is deliberately just these three shapes.
+	schedule_type TEXT NOT NULL,
+	schedule_params TEXT NOT NULL DEFAULT '',
+	-- time_of_day: "HH:MM", 24-hour, server-local — no timezone handling,
+	-- per the plan doc's single-operator framing.
+	time_of_day TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- last_run_at: NULL means never fired yet. Checked by the scheduler on
+	-- every tick (including right after process start, for catch-up —
+	-- see the plan doc's "Catch-up on restart") against schedule_type/
+	-- schedule_params/time_of_day to decide whether a pulse is due.
+	last_run_at DATETIME,
+	-- archived_at: NULL means active. Delete is always soft in v1 — see
+	-- the plan doc's "Routine lifecycle" — archiving sets this instead of
+	-- removing the row, so the routine and every pulse it ever produced
+	-- stay intact and readable, just excluded from the scheduler and the
+	-- active-routines list.
+	archived_at DATETIME
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -371,6 +433,15 @@ var migrations = []string{
 	// that already ran CREATE TABLE IF NOT EXISTS memories (above) without
 	// it needs this added explicitly, same as every other column here.
 	`ALTER TABLE memories ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`,
+	// Pulsar's turn-config-persistence prerequisite — see the schema
+	// comment above focus_mode. An existing thread gets focus off/research
+	// off by default (the same values a fresh composer already starts
+	// with), not whatever that thread's last turn actually used, since
+	// nothing recorded that until now.
+	`ALTER TABLE threads ADD COLUMN focus_mode TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE threads ADD COLUMN deep_research INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
+	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -472,9 +543,18 @@ type Thread struct {
 	Source string `json:"source"`
 	// Favorite drives the sidebar's pinned Favorites section — see the
 	// schema comment in Open.
-	Favorite  bool      `json:"favorite"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Favorite bool `json:"favorite"`
+	// FocusMode/DeepResearch are this thread's sticky turn config,
+	// alongside Model above — see the schema comment on focus_mode.
+	FocusMode    string `json:"focus_mode"`
+	DeepResearch bool   `json:"deep_research"`
+	// PulsarRoutineID is set only on a pulse (source = "pulsar") — nil for
+	// every other thread. The frontend uses this to show a "back to
+	// routine" affordance on a pulse's thread view instead of the normal
+	// sidebar-toggle-only header, per the plan doc's "Pulse detail" UI.
+	PulsarRoutineID *int64    `json:"pulsar_routine_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -517,6 +597,21 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 		id, title, model, source,
 	)
 	return err
+}
+
+// SetThreadConfig writes through a thread's sticky turn config (model,
+// focus mode, deep research) — called on every turn (see handleTurn) so
+// reopening a thread later restores exactly what it was last configured
+// with, and from handleUpdateThread when the composer's selectors are
+// changed directly without sending a message. Deliberately does not touch
+// updated_at, matching SetThreadFavorite's reasoning: applying a sticky
+// config isn't "activity" on the thread and shouldn't reorder it in the
+// sidebar.
+func (s *Store) SetThreadConfig(id, model, focusMode string, deepResearch bool) error {
+	return execOne(s.db.Exec(
+		`UPDATE threads SET model = ?, focus_mode = ?, deep_research = ? WHERE id = ?`,
+		model, focusMode, deepResearch, id,
+	))
 }
 
 // execOne runs a write that's expected to touch exactly one existing row
@@ -771,9 +866,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -788,9 +883,9 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -808,14 +903,21 @@ func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 // permanently cluttered this list whether or not anyone ever actually
 // followed up on it in the Assistant. See continued_in_assistant's schema
 // comment for how it flips to 1.
+//
+// source = 'pulsar' is excluded unconditionally, with no equivalent
+// "graduates into visibility" escape hatch — a pulse is only ever meant
+// to be browsed via /pulsar's own routine detail view (see
+// docs/plans/pulsar-routines.md's "UI structure"), never the ordinary
+// chat sidebar. Confirmed live: without this, every pulse showed up in
+// Recents indistinguishable from a normal chat thread.
 func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -827,7 +929,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
@@ -840,9 +942,9 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 // wants to see where each hit actually landed (a thread can match more
 // than once), not just which threads contain a match somewhere.
 type MessageSearchResult struct {
-	ThreadID    string    `json:"thread_id"`
-	ThreadTitle string    `json:"thread_title"`
-	Role        string    `json:"role"`
+	ThreadID    string `json:"thread_id"`
+	ThreadTitle string `json:"thread_title"`
+	Role        string `json:"role"`
 	// Snippet wraps each matched term in \x02...\x03 (ASCII STX/ETX,
 	// never legitimate message content) instead of literal HTML — the
 	// frontend splits on these markers and renders highlights as real
@@ -893,7 +995,7 @@ func buildFTSQuery(query string) string {
 // defaults from ForkThread and never independently updated (DeleteThread
 // only ever flips the root's own row), so root's values are the ones
 // that are actually authoritative. ThreadID/ThreadTitle are root's too:
-// a forked thread's title is always '' (ForkThread never sets one) and
+// a forked thread's title is always ” (ForkThread never sets one) and
 // its own id isn't independently addressable by GetThread — only a root
 // id is, which is what clicking a result needs to open.
 func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, error) {
@@ -915,6 +1017,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		 WHERE messages_fts MATCH ?
 		   AND root.disabled = 0
 		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
+		   AND root.source != 'pulsar'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,

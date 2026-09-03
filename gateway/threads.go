@@ -97,6 +97,16 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Same "flip on first real open" shape as MarkThreadContinued above —
+	// this is the entire mechanism behind Pulsar's amber unread indicator
+	// (see the plan doc's "seen" schema comment on threads). Best-effort
+	// for the same reason.
+	if thread.Source == "pulsar" {
+		if err := s.db.MarkPulseSeen(id); err != nil {
+			log.Warn("marking pulse seen failed", "thread", id, "err", err)
+		}
+	}
+
 	effectiveID, err := s.db.EffectiveThreadID(id)
 	if err != nil {
 		log.Warn("resolving active variant failed", "thread", id, "err", err)
@@ -140,9 +150,10 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, struct {
 		*store.Thread
-		Messages []store.Message      `json:"messages"`
-		Variants map[int]VariantGroup `json:"variants,omitempty"`
-	}{thread, messages, variants})
+		Messages       []store.Message      `json:"messages"`
+		Variants       map[int]VariantGroup `json:"variants,omitempty"`
+		TurnInProgress bool                 `json:"turn_in_progress"`
+	}{thread, messages, variants, s.IsTurnInFlight(id)})
 }
 
 // buildVariantsMap collects every position rootID has been edited/
@@ -246,6 +257,17 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title    *string `json:"title"`
 		Favorite *bool   `json:"favorite"`
+		// Model/FocusMode/DeepResearch update the thread's sticky turn
+		// config directly — used when the composer's selectors are
+		// changed without also sending a message (handleTurn writes
+		// through the same config on every turn instead). Any of the
+		// three being set triggers one combined SetThreadConfig call,
+		// since that's a single UPDATE covering all three columns —
+		// whichever of the three wasn't sent here is filled in from the
+		// thread's current row rather than overwritten with a zero value.
+		Model        *string `json:"model"`
+		FocusMode    *string `json:"focus_mode"`
+		DeepResearch *bool   `json:"deep_research"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -282,6 +304,37 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent(id, "info", "thread", "thread favorite changed", map[string]interface{}{"favorite": *req.Favorite}, "")
+	}
+
+	if req.Model != nil || req.FocusMode != nil || req.DeepResearch != nil {
+		current, err := s.db.GetThreadRaw(id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		model, focusMode, deepResearch := current.Model, current.FocusMode, current.DeepResearch
+		if req.Model != nil {
+			model = *req.Model
+		}
+		if req.FocusMode != nil {
+			focusMode = *req.FocusMode
+		}
+		if req.DeepResearch != nil {
+			deepResearch = *req.DeepResearch
+		}
+		if err := s.db.SetThreadConfig(id, model, focusMode, deepResearch); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "thread not found", http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		s.db.LogEvent(id, "info", "thread", "thread turn config changed", map[string]interface{}{"model": model, "focus_mode": focusMode, "deep_research": deepResearch}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

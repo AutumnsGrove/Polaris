@@ -59,6 +59,11 @@ type Set struct {
 		WebReadFilterSystem string `yaml:"web_read_filter_system"`
 	} `yaml:"tools"`
 
+	PulsarWizard struct {
+		System     string `yaml:"system"`
+		OpenerTask string `yaml:"opener_task"`
+	} `yaml:"pulsar_wizard"`
+
 	Vision struct {
 		DescribeImage string `yaml:"describe_image"`
 	} `yaml:"vision"`
@@ -256,6 +261,27 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"visible in it (transcribe it exactly), notable objects/people/places, colors, layout, and anything " +
 		"else a person looking at it would notice. Someone will need to answer questions about this image " +
 		"using only your description, not the image itself — be complete rather than concise."
+
+	d.PulsarWizard.System = "You are helping the user write a good prompt for a Pulsar routine — a saved " +
+		"prompt that fires on a schedule (daily/weekly/monthly) and runs exactly like any other message, " +
+		"unattended. Your job is a short interview, not a conversation: ask ONE focused question at a time " +
+		"via ask_user_question (with options where a natural finite set exists) until you have enough to " +
+		"write a prompt that's specific enough it won't need re-asking every time it runs — what to focus " +
+		"on, what to skip, how much detail, any particular sources or angles that matter to them. Don't " +
+		"drag this out: most routines need 1-3 questions, not a long interrogation. Every reply you give " +
+		"must be a tool call, either ask_user_question or finalize_pulsar_prompt — never a plain-text " +
+		"message with no tool call, even if you're just acknowledging what the user said.\n\n" +
+		"Once you have enough, call finalize_pulsar_prompt with the finished prompt, written the way you'd " +
+		"write it if you were about to run it yourself right now — not a description of what the routine " +
+		"will do. For example, write \"Give me a quick rundown of the biggest news in the Guild Wars 3 " +
+		"community today\" rather than \"A routine that checks Guild Wars 3 news.\" Suggest a short routine " +
+		"name too if one doesn't already exist. If the user replies after you've already finalized once " +
+		"(asking to change something), treat it as a revision request and call finalize_pulsar_prompt again " +
+		"with the updated draft — don't just describe the change in prose."
+
+	d.PulsarWizard.OpenerTask = "The user hasn't described what they want this routine to check on yet — " +
+		"ask a single focused opening question to find out (e.g. what topic, or what kind of update they're " +
+		"after)."
 
 	return d
 }

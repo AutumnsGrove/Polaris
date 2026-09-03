@@ -93,6 +93,22 @@ type Server struct {
 	sendsMu    sync.Mutex
 	turnSends  map[int64]func(ServerEvent)
 	nextSendID int64
+
+	// inFlightMu/inFlightThreads track which threads (by client-facing
+	// root id, same as ClientMessage.ThreadID/ServerEvent.ThreadID) have
+	// a turn actually running right now — see markTurnInFlight's doc
+	// comment for why this exists alongside activeTurns/turnSends above
+	// rather than being derivable from either of them.
+	inFlightMu      sync.Mutex
+	inFlightThreads map[string]int
+
+	// wizardMu/wizardSessions hold every in-progress "help me write the
+	// prompt" wizard interview's conversation history (see
+	// pulsar_wizard.go) — pure in-memory state, never persisted, matching
+	// that feature's "ephemeral" design point literally. Same
+	// map+single-mutex shape as inFlightThreads above.
+	wizardMu       sync.Mutex
+	wizardSessions map[string]*wizardSession
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -109,21 +125,23 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 	}
 
 	s := &Server{
-		cfg:        cfg,
-		cfgPath:    cfgPath,
-		version:    version,
-		db:         db,
-		searxng:    search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
-		blocklist:  blocklist,
-		foursquare: places.NewFoursquareClient(cfg.Foursquare.APIKey),
-		tavily:     tavily.NewClient(cfg.Tavily.APIKey),
-		brave:      brave.NewClient(cfg.Brave.APIKey),
-		parallel:   parallel.NewClient(cfg.Parallel.APIKey),
-		embed:      embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
-		stt:        voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
-		tts:        voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
-		mux:        http.NewServeMux(),
-		turnSends:  make(map[int64]func(ServerEvent)),
+		cfg:             cfg,
+		cfgPath:         cfgPath,
+		version:         version,
+		db:              db,
+		searxng:         search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
+		blocklist:       blocklist,
+		foursquare:      places.NewFoursquareClient(cfg.Foursquare.APIKey),
+		tavily:          tavily.NewClient(cfg.Tavily.APIKey),
+		brave:           brave.NewClient(cfg.Brave.APIKey),
+		parallel:        parallel.NewClient(cfg.Parallel.APIKey),
+		embed:           embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
+		stt:             voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
+		tts:             voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
+		mux:             http.NewServeMux(),
+		turnSends:       make(map[int64]func(ServerEvent)),
+		inFlightThreads: make(map[string]int),
+		wizardSessions:  make(map[string]*wizardSession),
 	}
 	s.routes(staticFS)
 	return s
@@ -231,6 +249,53 @@ func (s *Server) unregisterTurnSend(id int64) {
 	delete(s.turnSends, id)
 }
 
+// markTurnInFlight/clearTurnInFlight/IsTurnInFlight exist for one specific
+// gap none of activeTurns/turnSends/registerTurnSend above can fill: a
+// pulse (Pulsar routine firing — see pulsar_scheduler.go's firePulse) runs
+// handleTurn with no live WebSocket or HTTP client ever attached to it, so
+// the frontend's existing "did this turn finish" heuristic — a bare user
+// message with no reply, and this client's own appState.busyOnCurrentThread
+// false (see ChatView.svelte's lastTurnInterrupted) — can't tell a pulse
+// that's still genuinely running from one that crashed or got killed
+// mid-turn. Both look identical from a fetched thread's messages alone.
+// handleGetThread exposes IsTurnInFlight's answer so the frontend can show
+// "in progress" instead of a false "didn't finish, retry?" — the latter is
+// actively dangerous here, not just misleading: retrying would fork/resend
+// while the original scheduler-fired turn might still be writing to the
+// same thread.
+//
+// A ref count, not a bool: two turns are never expected to run
+// concurrently against the same client-facing thread id in practice, but a
+// bool here would let a second (even if unexpected) turn's completion
+// clear the flag out from under the first one still running. Keyed by
+// threadID (the client-facing root — see ClientMessage.ThreadID/
+// ServerEvent.ThreadID), the same id handleGetThread's own id param
+// addresses, not storageThreadID (which differs from it on an edit/retry
+// fork — see handleTurn's doc comment).
+func (s *Server) markTurnInFlight(threadID string) {
+	s.inFlightMu.Lock()
+	defer s.inFlightMu.Unlock()
+	s.inFlightThreads[threadID]++
+}
+
+func (s *Server) clearTurnInFlight(threadID string) {
+	s.inFlightMu.Lock()
+	defer s.inFlightMu.Unlock()
+	if s.inFlightThreads[threadID] <= 1 {
+		delete(s.inFlightThreads, threadID)
+	} else {
+		s.inFlightThreads[threadID]--
+	}
+}
+
+// IsTurnInFlight reports whether threadID has a turn actively running
+// right now, per markTurnInFlight's doc comment.
+func (s *Server) IsTurnInFlight(threadID string) bool {
+	s.inFlightMu.Lock()
+	defer s.inFlightMu.Unlock()
+	return s.inFlightThreads[threadID] > 0
+}
+
 // AbortActiveTurns tells every turn still registered (i.e. still running
 // after WaitForActiveTurns' deadline expired) that it's being cut off,
 // before cmd/run.go actually exits the process. Without this, a turn that
@@ -299,6 +364,15 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PATCH /api/memories/{name}", s.handleUpdateMemory)
 	s.mux.HandleFunc("DELETE /api/memories/{name}", s.handleDeleteMemory)
 	s.mux.HandleFunc("POST /api/memories/chat", s.handleMemoryChat)
+	s.mux.HandleFunc("GET /api/pulsar/routines", s.handleListPulsarRoutines)
+	s.mux.HandleFunc("POST /api/pulsar/routines", s.handleCreatePulsarRoutine)
+	s.mux.HandleFunc("PATCH /api/pulsar/routines/{id}", s.handleUpdatePulsarRoutine)
+	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/archive", s.handleArchivePulsarRoutine)
+	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/unarchive", s.handleUnarchivePulsarRoutine)
+	s.mux.HandleFunc("GET /api/pulsar/routines/{id}/pulses", s.handleListPulsarPulses)
+	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
+	s.mux.HandleFunc("POST /api/pulsar/wizard/start", s.handleWizardStart)
+	s.mux.HandleFunc("POST /api/pulsar/wizard/turn", s.handleWizardTurn)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

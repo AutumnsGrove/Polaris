@@ -71,11 +71,13 @@
 		// Tapping the already-active mode turns it back off — a toggle,
 		// same shape as AudioPlayer's readAloud-the-active-turn pattern.
 		focusMode = focusMode === id ? 'off' : id;
+		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch);
 		close();
 	}
 
 	function selectModel(id: string) {
 		appState.selectedModel = id;
+		void appState.persistThreadConfig(id, focusMode, deepResearch);
 		close();
 	}
 
@@ -86,6 +88,7 @@
 		// state that actually reaches the backend (tools.Context.NoResearch).
 		if (!research) return;
 		deepResearch = !deepResearch;
+		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch);
 	}
 
 	function toggleResearch() {

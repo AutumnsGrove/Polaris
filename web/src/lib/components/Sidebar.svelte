@@ -4,7 +4,9 @@
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
 	import { searchState } from '$lib/search.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X } from '@lucide/svelte';
+	import { pulsarState } from '$lib/pulsar.svelte';
+	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -34,7 +36,26 @@
 	// itself refreshes this again after every completed search.
 	onMount(() => {
 		void searchState.loadHistory();
+		// Loaded regardless of mode/route (not just when /pulsar is open)
+		// so the sidebar's own Orbit-icon badge is accurate the moment the
+		// app loads — same "don't wait for the relevant page to visit it
+		// first" reasoning as loadThreads() in +layout.svelte.
+		void pulsarState.loadUnreadCounts();
 	});
+
+	// appState.newThread() deliberately only touches history via
+	// replaceState, not goto() — see its doc comment — since /t/[id] and /
+	// both render the same ChatView and a real navigation there would
+	// pointlessly remount it. But /pulsar and /pulsar/[id] render an
+	// entirely different route component, which a raw replaceState can't
+	// swap out (SvelteKit's router only reacts to its own goto()/link
+	// navigations) — so "New thread" from inside Pulsar needs a real
+	// navigation first, or the click silently does nothing visible.
+	function startNewThread() {
+		const onPulsar = page.url.pathname.startsWith('/pulsar');
+		appState.newThread();
+		if (onPulsar) void goto('/');
+	}
 
 	function openSearch(query: string) {
 		// &from=history tells +page.svelte's $effect this is a revisit, not
@@ -157,9 +178,18 @@
 			New search
 		</button>
 	{:else}
-		<button class="btn btn-accent new-thread" onclick={() => appState.newThread()}>
+		<button class="btn btn-accent new-thread" onclick={startNewThread}>
 			<Plus size={16} />
 			New thread
+		</button>
+		<button
+			class="pulsar-entry"
+			class:active={page.url.pathname.startsWith('/pulsar')}
+			onclick={() => goto('/pulsar')}
+		>
+			<Orbit size={16} />
+			<span class="pulsar-label">Pulsar</span>
+			<PulsarUnreadBadge count={pulsarState.totalUnread} />
 		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
@@ -311,6 +341,48 @@
 	.new-thread {
 		margin: var(--space-md);
 		white-space: nowrap;
+	}
+
+	/* A single entry point, not a scrolling row list — closer to how the
+	   Settings gear below opens a dedicated panel than to this same
+	   sidebar's own thread-list rows, per docs/plans/pulsar-routines.md's
+	   "UI structure". */
+	.pulsar-entry {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin: 0 var(--space-md) var(--space-md);
+		padding: var(--space-sm) var(--space-md);
+		border: none;
+		background: transparent;
+		border-radius: var(--radius-md);
+		font: inherit;
+		font-size: 13px;
+		color: var(--color-text-dim);
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			color 0.15s var(--ease-out-expo);
+	}
+
+	.pulsar-entry:hover {
+		background: var(--color-surface-2);
+		color: var(--color-text);
+	}
+
+	.pulsar-entry.active {
+		background: var(--color-accent-soft);
+		color: var(--color-text);
+		font-weight: 600;
+	}
+
+	.pulsar-entry :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-accent);
+	}
+
+	.pulsar-label {
+		flex: 1;
+		text-align: left;
 	}
 
 	.thread-search {

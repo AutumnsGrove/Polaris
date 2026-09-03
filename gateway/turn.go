@@ -31,6 +31,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		threadID = uuid.NewString()
 	}
 
+	// Covers this entire function, every early return included — see
+	// markTurnInFlight's doc comment for what this is actually for
+	// (letting handleGetThread tell a pulse that's still genuinely
+	// running apart from one that crashed, since a pulse has no live
+	// WebSocket connection for the frontend's usual heuristic to key
+	// off). Marked here, right after threadID is finalized, rather than
+	// down in ws.go/ask.go's callers, so this also covers handleTurn's
+	// own synchronous callers (handleAsk) without each needing its own
+	// copy of this bookkeeping.
+	s.markTurnInFlight(threadID)
+	defer s.clearTurnInFlight(threadID)
+
 	// turnID ties together the user message, the assistant message it
 	// produces, and every event (thinking/tool call/tool result) logged
 	// while this turn runs — the join key loadHistory's sibling on the
@@ -133,6 +145,28 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
+		if msg.PulsarRoutineID != 0 {
+			// A hard failure here, not a log-and-continue: an unlinked
+			// pulse thread isn't invisible (it still shows up in the
+			// normal sidebar list, since pulsar-sourced threads aren't
+			// filtered like Atlas's are), but it's permanently excluded
+			// from ListPulsarPulses/UnreadPulseCounts — both filter on
+			// pulsar_routine_id — with no repair path once this turn
+			// finishes. Aborting before spending an LLM turn on a thread
+			// that can't function as a pulse from /pulsar's perspective
+			// costs nothing extra either way: firePulse already stamps
+			// last_run_at before calling in here (deliberately, so a
+			// crash mid-turn can't trigger a same-minute re-fire — see
+			// its doc comment), so this routine simply produces no pulse
+			// for this scheduled slot and tries again at the next one —
+			// the same outcome a turn failure further downstream would
+			// already have.
+			if err := s.db.SetThreadPulsarRoutine(threadID, msg.PulsarRoutineID); err != nil {
+				s.db.LogEvent(threadID, "error", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", Message: err.Error()})
+				return
+			}
+		}
 	} else if isFirstMessageEdit {
 		// Same truncated-placeholder treatment as a brand-new thread above
 		// — the old title (placeholder or generated) described the
@@ -148,6 +182,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			log.Warn("failed to reset placeholder title for first-message edit", "err", err)
 			s.db.LogEvent(threadID, "warn", "title", "resetting placeholder title for first-message edit failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
+	}
+
+	// Write through this turn's config as the thread's new sticky default
+	// — always threadID (the root), same target SetThreadTitle uses, so
+	// reopening the thread later (handleGetThread reads by root id) shows
+	// what this turn actually ran with regardless of whether an edit/retry
+	// forked storageThreadID above. Best-effort: a failure here shouldn't
+	// abort an otherwise-working turn, same reasoning as TouchUpdatedAt.
+	if err := s.db.SetThreadConfig(threadID, modelCfg.ID, msg.FocusMode, msg.DeepResearch); err != nil {
+		log.Warn("failed to persist thread turn config", "thread", threadID, "err", err)
+		s.db.LogEvent(threadID, "warn", "turn", "persisting thread turn config failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
 	history, err := s.loadHistory(storageThreadID, 0)
@@ -293,6 +338,34 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// immediately regardless of whether extraction succeeded.
 	if msg.AttachmentID != "" {
 		removeAttachmentFile(cfg, msg.AttachmentID)
+	}
+
+	// Folded into turnMessage (what the model sees), not msg.Content (what
+	// gets persisted/shown as this pulse's own question) — same "augment
+	// the model-facing text, leave the visible transcript alone" split
+	// resolveAttachment's own doc comment describes. Lets a recurring
+	// routine actually know what it already told the user instead of
+	// restating the same still-true report every single run — the
+	// concrete case that motivated this: a weekly "Guild Wars 3 news"
+	// routine with no memory of its own last pulse just re-describes
+	// whatever's still true from before, forever.
+	if msg.PulsarPreviousReport != "" {
+		// Not an absolute "never mention this again" — a flat ban risks
+		// permanently dropping something still unfolding (an ongoing beta
+		// event, an open incident) the moment it's been mentioned once,
+		// which is worse than the staleness problem this exists to fix.
+		// The distinction asked for is "restate" vs. "update": a settled
+		// fact from last time shouldn't be redescribed, but something
+		// still in motion deserves a short status line even with nothing
+		// new to add, rather than vanishing from every future report.
+		turnMessage += "\n\n---\nFor reference, here is what you reported the last time this routine ran " +
+			"(" + msg.PulsarPreviousReportAt + "):\n\n" + msg.PulsarPreviousReport +
+			"\n\nDon't redescribe anything from that report as if it were new — a settled fact you already " +
+			"covered doesn't need restating. But if something from that report is still ongoing or " +
+			"developing, it's fine to give it a brief one-line status update (even just \"still ongoing, " +
+			"no major updates\") rather than dropping it entirely. Focus most of your answer on what's " +
+			"genuinely new or has meaningfully changed since then. If truly nothing has changed at all, say " +
+			"so briefly instead of restating the old report in full."
 	}
 
 	// The browser's last-known cached fix (see protocol.go's UserLocation
@@ -454,7 +527,26 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// an empty answer, where the placeholder is already the more
 	// sensible title anyway.
 	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" {
-		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
+		if msg.PulsarRoutineID != 0 {
+			// Deterministic, not an LLM call — see the plan doc's "Pulse
+			// execution model": every pulse from the same routine starts
+			// from a near-identical prompt, so the normal LLM-generated
+			// title (which reads the opening question) would produce a
+			// wall of near-duplicate titles down a routine's pulse
+			// history. Routine name + the run's own date is exactly
+			// enough to differentiate them (the plan doc's own example:
+			// "Daily news — Sept 4") without generateTitle's failure
+			// modes (an empty completion leaving the placeholder
+			// forever) or its cost.
+			title := msg.PulsarRoutineName + " — " + time.Now().Format("Jan 2")
+			if len(title) > maxThreadTitleLen {
+				title = title[:maxThreadTitleLen]
+			}
+			if err := s.db.SetThreadTitle(threadID, title); err != nil {
+				log.Warn("failed to persist pulse title", "thread", threadID, "err", err)
+				s.db.LogEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {

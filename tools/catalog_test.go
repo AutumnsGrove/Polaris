@@ -41,6 +41,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.WriteMemory = func(name, memType, description, content string) error { return nil }
 	ctx.DeepResearch = true
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
+	ctx.PulsarWizard = true
 	prompt := ToolsPrompt(ctx)
 
 	lastIdx := -1

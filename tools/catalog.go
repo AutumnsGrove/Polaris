@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
-	"ask_user_question", "memory", "spawn_researchers",
+	"ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -39,8 +39,8 @@ var subAgentToolNames = map[string]bool{
 
 // catalogEntry is one tools/descriptions/*.yaml file, parsed.
 type catalogEntry struct {
-	Name           string `yaml:"name"`
-	Requires       string `yaml:"requires"`
+	Name     string `yaml:"name"`
+	Requires string `yaml:"requires"`
 	// Category is empty for most tools, or "research" for the ones that
 	// reach out for external information (web search, page fetches, the
 	// recommendation lookups) — see offered() below. Distinct from
@@ -120,6 +120,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// Researcher focus mode, which must stay single-agent — see
 		// docs/plans/deep-research-two-tier.md).
 		return ctx.DeepResearch && ctx.SpawnResearchers != nil
+	case "pulsar_wizard":
+		// The ephemeral "help me write the prompt" interview only — see
+		// registry.go's PulsarWizard doc comment. Never offered on a
+		// normal chat/pulse turn, regardless of NoResearch/DisabledTools.
+		return ctx.PulsarWizard
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -168,6 +173,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
 		Description:    "fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.",
 		APIDescription: "Fan out to multiple independent research sub-agents running in parallel, each investigating one focused angle, then report back their findings for you to synthesize."},
+	"finalize_pulsar_prompt": {Name: "finalize_pulsar_prompt", Requires: "pulsar_wizard",
+		Description:    "end the interview and hand back the drafted Pulsar routine prompt.",
+		APIDescription: "End the interview and hand back the drafted, ready-to-schedule Pulsar routine prompt — this ends the turn."},
 }
 
 var (
@@ -240,7 +248,7 @@ func loadCatalog() map[string]catalogEntry {
 // preferences themselves, and memory already has its own dedicated
 // settings section (see gateway/memories.go) rather than a plain on/off
 // switch.
-var nonToggleable = map[string]bool{"think": true, "ask_user_question": true, "memory": true}
+var nonToggleable = map[string]bool{"think": true, "ask_user_question": true, "memory": true, "finalize_pulsar_prompt": true}
 
 // ToolInfo is one individually toggleable tool's identity, for the
 // settings panel — see ToggleableTools.

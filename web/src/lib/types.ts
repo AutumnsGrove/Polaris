@@ -192,8 +192,69 @@ export interface Thread {
 	cost_usd: number;
 	context_tokens: number;
 	favorite: boolean;
+	// focus_mode/deep_research are this thread's sticky turn config,
+	// alongside model above — read back into the composer on open (see
+	// ChatView.svelte's thread-open effect), written through on every
+	// change (see AppState.persistThreadConfig).
+	focus_mode: FocusMode;
+	deep_research: boolean;
+	// pulsar_routine_id is set only on a pulse (source "pulsar") —
+	// undefined for every other thread. Drives ChatView.svelte's "back to
+	// routine" header affordance on a pulse's thread view.
+	pulsar_routine_id?: number;
 	created_at: string;
 	updated_at: string;
+}
+
+// PulsarRoutine mirrors store.PulsarRoutine's JSON shape — see
+// gateway/pulsar_routes.go. last_run_at/archived_at are null (not just
+// absent) rather than undefined, since the Go side always includes the
+// key with an explicit null for an unset *time.Time.
+export interface PulsarRoutine {
+	id: number;
+	name: string;
+	prompt: string;
+	model: string;
+	focus_mode: FocusMode;
+	deep_research: boolean;
+	schedule_type: 'daily' | 'weekly' | 'monthly';
+	schedule_params: string;
+	time_of_day: string;
+	created_at: string;
+	last_run_at: string | null;
+	archived_at: string | null;
+}
+
+// PulsarPulse mirrors gateway/pulsar_routes.go's handleListPulsarPulses
+// response — store.PulsarPulseSummary's fields plus in_progress, computed
+// server-side from Server.IsTurnInFlight (in-memory state, not a DB
+// column) since a pulse has no live WebSocket connection for the
+// frontend to otherwise tell "still running" apart from "crashed".
+export interface PulsarPulse {
+	thread_id: string;
+	title: string;
+	seen: boolean;
+	created_at: string;
+	in_progress: boolean;
+}
+
+// WizardFinal mirrors tools.WizardFinal — the drafted prompt
+// finalize_pulsar_prompt handed back, ending a wizard turn the same way
+// PendingQuestion ends an ordinary one. See gateway/pulsar_wizard.go.
+export interface WizardFinal {
+	prompt: string;
+	name?: string;
+}
+
+// WizardResponse mirrors gateway/pulsar_wizard.go's wizardResponse —
+// exactly one of question/final/answer is set per turn. answer is the
+// fallback for a plain-prose reply with no tool call (see its Go doc
+// comment for why that's handled rather than dropped).
+export interface WizardResponse {
+	session_id: string;
+	question?: PendingQuestion;
+	final?: WizardFinal;
+	answer?: string;
 }
 
 // VariantGroup describes the alternatives available at one message
