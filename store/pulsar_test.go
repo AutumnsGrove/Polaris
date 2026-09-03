@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 	s := openTestStore(t)
@@ -181,4 +184,87 @@ func TestPulsarPulses_ListAndUnreadCounts(t *testing.T) {
 	if counts[routineID] != 1 {
 		t.Errorf("UnreadPulseCounts[%d] after marking one seen = %d, want 1: %+v", routineID, counts[routineID], counts)
 	}
+}
+
+func TestLatestPulseReport(t *testing.T) {
+	s := openTestStore(t)
+
+	routineID, err := s.CreatePulsarRoutine("GW3 weekly", "Guild Wars 3 news", "deepseek", "", false, "weekly", "monday", "09:00")
+	if err != nil {
+		t.Fatalf("CreatePulsarRoutine: %v", err)
+	}
+
+	if _, _, ok := mustLatestPulseReport(t, s, routineID); ok {
+		t.Fatalf("LatestPulseReport on a routine with no pulses should return ok=false")
+	}
+
+	// Oldest pulse, backdated so ordering is unambiguous regardless of how
+	// fast the test runs — CreateThread's created_at defaults to
+	// CURRENT_TIMESTAMP, which two inserts in the same test could tie on
+	// at second resolution.
+	if err := s.CreateThread("pulse-old", "GW3 weekly — Aug 26", "deepseek", "pulsar"); err != nil {
+		t.Fatalf("CreateThread(pulse-old): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE threads SET pulsar_routine_id = ?, created_at = '2026-08-26 09:00:00' WHERE id = ?`, routineID, "pulse-old"); err != nil {
+		t.Fatalf("backdating pulse-old: %v", err)
+	}
+	if _, err := s.AddMessage("pulse-old", "assistant", "Beta weekend announced for late August.", "[]", "[]", 0, "t1"); err != nil {
+		t.Fatalf("AddMessage(pulse-old): %v", err)
+	}
+
+	report, at, ok, err := s.LatestPulseReport(routineID)
+	if err != nil {
+		t.Fatalf("LatestPulseReport: %v", err)
+	}
+	if !ok || report != "Beta weekend announced for late August." || !strings.HasPrefix(at, "2026-08-26") {
+		t.Errorf("LatestPulseReport = (%q, %q, %v), want the single existing pulse's report", report, at, ok)
+	}
+
+	// A newer pulse that never produced an answer (e.g. it errored out
+	// mid-turn) shouldn't shadow the last one that actually did.
+	if err := s.CreateThread("pulse-failed", "GW3 weekly — Sept 2", "deepseek", "pulsar"); err != nil {
+		t.Fatalf("CreateThread(pulse-failed): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE threads SET pulsar_routine_id = ?, created_at = '2026-09-02 09:00:00' WHERE id = ?`, routineID, "pulse-failed"); err != nil {
+		t.Fatalf("backdating pulse-failed: %v", err)
+	}
+	if _, err := s.AddMessage("pulse-failed", "user", "Guild Wars 3 news", "[]", "[]", 0, "t2"); err != nil {
+		t.Fatalf("AddMessage(pulse-failed user): %v", err)
+	}
+
+	report, _, ok, err = s.LatestPulseReport(routineID)
+	if err != nil {
+		t.Fatalf("LatestPulseReport after a failed newer pulse: %v", err)
+	}
+	if !ok || report != "Beta weekend announced for late August." {
+		t.Errorf("LatestPulseReport should still return the older completed pulse, got (%q, %v)", report, ok)
+	}
+
+	// The newest pulse that actually completed wins.
+	if err := s.CreateThread("pulse-new", "GW3 weekly — Sept 9", "deepseek", "pulsar"); err != nil {
+		t.Fatalf("CreateThread(pulse-new): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE threads SET pulsar_routine_id = ?, created_at = '2026-09-09 09:00:00' WHERE id = ?`, routineID, "pulse-new"); err != nil {
+		t.Fatalf("backdating pulse-new: %v", err)
+	}
+	if _, err := s.AddMessage("pulse-new", "assistant", "No major changes since the beta weekend.", "[]", "[]", 0, "t3"); err != nil {
+		t.Fatalf("AddMessage(pulse-new): %v", err)
+	}
+
+	report, at, ok, err = s.LatestPulseReport(routineID)
+	if err != nil {
+		t.Fatalf("LatestPulseReport after a newer completed pulse: %v", err)
+	}
+	if !ok || report != "No major changes since the beta weekend." || !strings.HasPrefix(at, "2026-09-09") {
+		t.Errorf("LatestPulseReport = (%q, %q, %v), want the newest completed pulse's report", report, at, ok)
+	}
+}
+
+func mustLatestPulseReport(t *testing.T, s *Store, routineID int64) (report string, at string, ok bool) {
+	t.Helper()
+	report, at, ok, err := s.LatestPulseReport(routineID)
+	if err != nil {
+		t.Fatalf("LatestPulseReport: %v", err)
+	}
+	return report, at, ok
 }

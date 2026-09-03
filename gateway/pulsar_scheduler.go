@@ -220,6 +220,16 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 		PulsarRoutineID:   r.ID,
 		PulsarRoutineName: r.Name,
 	}
+	// Best-effort: a lookup failure shouldn't block the pulse itself from
+	// firing, just fall back to no prior-report context this one time —
+	// same reasoning as handleTurn's other best-effort DB reads (e.g.
+	// SetThreadConfig).
+	if report, at, ok, err := s.db.LatestPulseReport(r.ID); err != nil {
+		log.Warn("loading previous pulse report failed, continuing without it", "routine", r.ID, "err", err)
+	} else if ok {
+		msg.PulsarPreviousReport = report
+		msg.PulsarPreviousReportAt = at
+	}
 
 	var turnErr string
 	s.handleTurn(context.Background(), msg, func(evt ServerEvent) {

@@ -207,6 +207,40 @@ func (s *Store) ListPulsarPulses(routineID int64) ([]PulsarPulseSummary, error) 
 	return pulses, rows.Err()
 }
 
+// LatestPulseReport returns the most recent completed pulse's final
+// assistant answer for a routine, plus when that pulse ran — the raw
+// material firePulse folds into the next pulse's prompt so a recurring
+// routine can say "already covered, skip" instead of restating the same
+// news every run (a real staleness problem: a weekly digest with no
+// memory of its own last report just re-describes whatever's still true
+// from before). ok is false if the routine has never produced a pulse
+// with an actual answer yet (brand new, or every prior pulse failed
+// before completing).
+//
+// One query, not "find the latest pulse thread, then GetMessages(it)":
+// ordering by (thread created_at, message id) DESC and taking the single
+// newest row naturally skips a pulse thread that errored out with no
+// assistant message at all and falls through to the last one that
+// actually completed, without a separate failure branch to write.
+func (s *Store) LatestPulseReport(routineID int64) (report string, reportedAt string, ok bool, err error) {
+	err = s.db.QueryRow(
+		`SELECT m.content, t.created_at
+		 FROM threads t
+		 JOIN messages m ON m.thread_id = t.id
+		 WHERE t.pulsar_routine_id = ? AND t.disabled = 0 AND t.fork_root_id = '' AND m.role = 'assistant'
+		 ORDER BY t.created_at DESC, m.id DESC
+		 LIMIT 1`,
+		routineID,
+	).Scan(&report, &reportedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("latest pulse report: %w", err)
+	}
+	return report, reportedAt, true, nil
+}
+
 // SetThreadPulsarRoutine links a freshly created thread to the routine
 // whose scheduled firing produced it — called right after CreateThread in
 // handleTurn's isNewThread branch, not folded into CreateThread's own

@@ -340,6 +340,23 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		removeAttachmentFile(cfg, msg.AttachmentID)
 	}
 
+	// Folded into turnMessage (what the model sees), not msg.Content (what
+	// gets persisted/shown as this pulse's own question) — same "augment
+	// the model-facing text, leave the visible transcript alone" split
+	// resolveAttachment's own doc comment describes. Lets a recurring
+	// routine actually know what it already told the user instead of
+	// restating the same still-true report every single run — the
+	// concrete case that motivated this: a weekly "Guild Wars 3 news"
+	// routine with no memory of its own last pulse just re-describes
+	// whatever's still true from before, forever.
+	if msg.PulsarPreviousReport != "" {
+		turnMessage += "\n\n---\nFor reference, here is what you reported the last time this routine ran " +
+			"(" + msg.PulsarPreviousReportAt + "):\n\n" + msg.PulsarPreviousReport +
+			"\n\nDo not repeat anything from that report. Only include something in your new answer if it's " +
+			"genuinely new or has meaningfully changed since then. If nothing has changed, say so briefly " +
+			"instead of restating the old report."
+	}
+
 	// The browser's last-known cached fix (see protocol.go's UserLocation
 	// doc comment) takes precedence over the static config.yaml default as
 	// the bottom rung of the fallback chain — resolveLiveLocation below,
