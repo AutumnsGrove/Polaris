@@ -195,11 +195,43 @@ export interface Thread {
 	// focus_mode/deep_research are this thread's sticky turn config,
 	// alongside model above — read back into the composer on open (see
 	// ChatView.svelte's thread-open effect), written through on every
-	// change (see AppState.send and AppState.updateThreadConfig).
+	// change (see AppState.persistThreadConfig).
 	focus_mode: FocusMode;
 	deep_research: boolean;
+	// pulsar_routine_id is set only on a pulse (source "pulsar") —
+	// undefined for every other thread. Drives ChatView.svelte's "back to
+	// routine" header affordance on a pulse's thread view.
+	pulsar_routine_id?: number;
 	created_at: string;
 	updated_at: string;
+}
+
+// PulsarRoutine mirrors store.PulsarRoutine's JSON shape — see
+// gateway/pulsar_routes.go. last_run_at/archived_at are null (not just
+// absent) rather than undefined, since the Go side always includes the
+// key with an explicit null for an unset *time.Time.
+export interface PulsarRoutine {
+	id: number;
+	name: string;
+	prompt: string;
+	model: string;
+	focus_mode: FocusMode;
+	deep_research: boolean;
+	schedule_type: 'daily' | 'weekly' | 'monthly';
+	schedule_params: string;
+	time_of_day: string;
+	created_at: string;
+	last_run_at: string | null;
+	archived_at: string | null;
+}
+
+// PulsarPulse mirrors store.PulsarPulseSummary — one row of a routine's
+// pulse history.
+export interface PulsarPulse {
+	thread_id: string;
+	title: string;
+	seen: boolean;
+	created_at: string;
 }
 
 // VariantGroup describes the alternatives available at one message

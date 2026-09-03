@@ -17,6 +17,7 @@ import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
 import { getUserLocation, requestFreshLocation } from './geolocation';
+import { pulsarState } from './pulsar.svelte';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -582,6 +583,10 @@ export class AppState {
 		if (data.model) this.selectedModel = data.model;
 		this.threadFocusMode = (data.focus_mode || 'off') as FocusMode;
 		this.threadDeepResearch = data.deep_research ?? false;
+		// The server just flipped this pulse's seen flag (handleGetThread's
+		// MarkPulseSeen) — refresh the sidebar/routine-row amber counts so
+		// they don't sit stale until something else happens to reload them.
+		if (data.source === 'pulsar') void pulsarState.loadUnreadCounts();
 		const messages = data.messages ?? [];
 
 		// Group persisted events by turn_id so each assistant message's
@@ -750,7 +755,11 @@ export class AppState {
 		await fetch(`/api/threads/${this.currentThreadId}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ model, focus_mode: focusMode, deep_research: deepResearch })
+			// 'off' -> '' matches send()'s own wire-format normalization
+			// below (ClientMessage.focus_mode) — "no focus mode" is always
+			// empty string server-side (see agent.loadSystemPrompt's map
+			// lookup), 'off' is only the frontend's own sentinel for it.
+			body: JSON.stringify({ model, focus_mode: focusMode === 'off' ? '' : focusMode, deep_research: deepResearch })
 		});
 	}
 

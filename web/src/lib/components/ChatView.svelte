@@ -1,9 +1,23 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
-	import { Send, Square, PanelLeft, Paperclip, X, Loader2, ArrowDown, TriangleAlert, RotateCcw, MessageCirclePlus } from '@lucide/svelte';
+	import {
+		Send,
+		Square,
+		PanelLeft,
+		Paperclip,
+		X,
+		Loader2,
+		ArrowDown,
+		TriangleAlert,
+		RotateCcw,
+		MessageCirclePlus,
+		ChevronLeft
+	} from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
@@ -174,6 +188,17 @@
 	let currentThread = $derived(appState.threads.find((t) => t.id === appState.currentThreadId));
 	let currentThreadTitle = $derived(currentThread?.title ?? '');
 
+	// A pulse's thread view gets a "back to routine" affordance instead of
+	// the plain sidebar-toggle-only header, per docs/plans/pulsar-routines.md's
+	// "Pulse detail" UI — routing there always via /pulsar/[id]'s own link,
+	// which tags the URL with ?pulsar=<routineId> (see that route's
+	// openPulse). Gated on the thread's own pulsar_routine_id too, not just
+	// the query param, so this can't be spoofed into showing on an
+	// unrelated thread by hand-editing the URL.
+	let pulsarBackRoutineId = $derived(
+		currentThread?.pulsar_routine_id != null ? page.url.searchParams.get('pulsar') : null
+	);
+
 	// A turn ending in a lone user message with nothing after it is never
 	// a valid "finished" state — dispatch() always pushes the user turn
 	// and its streaming assistant placeholder together, so the only way
@@ -330,7 +355,15 @@
 
 <header class="header">
 	<div class="header-left">
-		{#if !appState.sidebarOpen}
+		{#if pulsarBackRoutineId}
+			<button
+				class="icon-btn"
+				onclick={() => goto(`/pulsar/${pulsarBackRoutineId}`)}
+				title="Back to routine"
+			>
+				<ChevronLeft size={18} />
+			</button>
+		{:else if !appState.sidebarOpen}
 			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
 				<PanelLeft size={18} />
 			</button>

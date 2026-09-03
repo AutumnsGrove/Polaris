@@ -908,7 +908,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads
 		 WHERE disabled = 0 AND fork_root_id = '' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
@@ -922,7 +922,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
