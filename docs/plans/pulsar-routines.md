@@ -35,15 +35,20 @@ Confirmed by reading the actual code, not assumed:
 
 Net effect today: leave a thread with Luna selected, Researcher focus on, Deep Research on;
 come back; none of it followed you. Fixing this is its own small, generally useful piece of
-work — independent of Pulsar, but Pulsar depends on it — and the two should ship as one slice:
+work — independent of Pulsar, but Pulsar depends on it — and the two should ship as one slice.
 
-- A small persisted shape, `{model, focus_mode, deep_research}`, becomes a thread's "sticky"
-  config: the composer restores from it on reopen instead of falling back to global state.
-- **The same shape is Pulsar's own routine config** — not a parallel concept. A Pulsar routine
-  stores exactly this triple, plus its prompt and schedule. This is also where per-routine model
-  selection (e.g. running one routine on Luna while the thread default stays DeepSeek V4 Flash)
-  falls out for free rather than needing separate design — it's just filling in the same three
-  fields a routine already carries.
+**Resolved: `threads.model` is repurposed, not shadowed.** It stops being a historical
+"what this thread last answered with" record and becomes what the thread is configured as —
+sticky by default, written through on every change, read back into the composer selector on
+open. Nothing needs a parallel column for model. `focus_mode` and `deep_research` get equivalent
+new columns on `threads` following the same sticky pattern (no precedent to repurpose, since
+neither persists anywhere today).
+
+- **The same three-field shape is Pulsar's own routine config** — not a parallel concept. A
+  Pulsar routine stores exactly this triple, plus its prompt and schedule. This is also where
+  per-routine model selection (e.g. running one routine on Luna while the thread default stays
+  DeepSeek V4 Flash) falls out for free rather than needing separate design — it's just filling
+  in the same three fields a routine already carries.
 
 ## Pulse execution model
 
@@ -59,9 +64,39 @@ A pulse is a real thread, not a second-class record needing its own viewer or ci
   stored turn config, run it through the normal `agent.Run` turn pipeline — same cost tracking,
   same citations, same everything. No new rendering path, matching how Atlas's Quick Answer
   reuses the existing agent pipeline instead of a separate synthesis path.
+- **Title**: not the ordinary auto-title mechanism. Every pulse from the same routine starts
+  from a near-identical prompt, so the existing first-message-derived title would produce a wall
+  of near-duplicate titles in a routine's pulse history. Pulsar pulses get their own title-
+  generation prompt, explicitly given the routine name and the run's date so titles actually
+  differentiate down a list (e.g. "Daily news — Sept 4").
+- **Failure handling**: reuses the existing incomplete-turn/retry treatment already in
+  `ChatTurnView.svelte` (README's "Retry & edit" — an interrupted or errored turn already gets a
+  retry affordance today) rather than inventing a Pulsar-specific error state. A failed pulse is
+  just a thread that stopped mid-turn; opening it shows the same retry button any other
+  incomplete turn would.
 - Scheduling itself: a background goroutine in the Polaris process, same shape as `backup.go`'s
   daily snapshot job — no external cron, works identically bare-metal and Docker, zero extra
-  host setup.
+  host setup. **Catch-up on restart**: on process start (and thereafter on its normal tick), the
+  scheduler checks each active routine's `last_run_at` against its schedule — if a scheduled
+  fire time was missed (box was mid-update, mid-reboot, whatever), it fires immediately rather
+  than waiting for the next scheduled slot. A daily 7am routine that the box slept through still
+  shows up the moment Polaris is back, not silently a day later.
+
+## Routine lifecycle
+
+- **Edit**: opening a routine gets an edit button (top right) that reopens the same
+  creation-screen form, pre-filled with its current name/prompt/model/focus/deep-research/
+  schedule — one form doing double duty as both create and edit, not two separate UIs.
+- **Delete is always soft.** No hard-delete path in v1. Deleting a routine from its edit screen
+  moves it to an archived state rather than removing the row — its `pulsar_routines` record and
+  every pulse (thread) it ever produced stay intact and readable, just out of the active list.
+- **Archive lives at the bottom of `/pulsar`**, below the active routines list — a routine you
+  archived is still one tap away, and its pulse history opens exactly like an active routine's
+  would. Whether archived routines ever get purged for real is an open question for later, not
+  designed here; archive is the durable v1 state.
+- **Pause** (active but not currently firing, without archiving) isn't separately specified here
+  — worth deciding during implementation whether it's a real third state or whether "archive,
+  then unarchive when you want it back" already covers the same need.
 
 ## Schedule model (v1)
 
@@ -87,9 +122,10 @@ or two routines exist (which routine did this even come from?). Instead:
   Settings gear opens a dedicated panel than to Atlas's sidebar-list-plus-content pattern.
   Positioned above the favorites/recents thread list. Carries the global amber indicator (below).
 - **`/pulsar`** (routines list): a "New Pulsar" button in the top corner, same primary-action
-  convention as "New thread"/"New search". Below it, every configured routine as a row (e.g.
+  convention as "New thread"/"New search". Below it, every active routine as a row (e.g.
   "Daily news", "Guild Wars 3 weekly", "openclaw repo daily"), each carrying its own amber
-  indicator scoped to that routine's unread pulses.
+  indicator scoped to that routine's unread pulses. Archived routines (see "Routine lifecycle")
+  live in their own section at the bottom of this same screen, not hidden away in Settings.
 - **Routine detail** (tap a routine): its pulse history — a thread-row-style list, unread pulses
   marked with the amber dot, read ones visually dimmed.
 - **Pulse detail** (tap a pulse): the existing thread-detail view, unchanged, with a back button
@@ -108,13 +144,19 @@ One small component, reused at two scopes rather than two separate indicator con
 
 - Turn-config persistence infra (threads become sticky; also fixes the existing chat-thread gap,
   independent value beyond Pulsar).
-- Routine CRUD: name, prompt, model, focus mode, deep research, schedule (daily/weekly/monthly +
-  time-of-day).
-- Scheduler goroutine; pulse execution as a normal thread run tagged `source: "pulsar"` +
-  `pulsar_routine_id`.
-- `/pulsar` route: routines list → pulse history → pulse detail, per "UI structure" above.
+- Routine create/edit (one shared form) + soft-delete-to-archive, per "Routine lifecycle".
+- Scheduler goroutine with restart catch-up; pulse execution as a normal thread run tagged
+  `source: "pulsar"` + `pulsar_routine_id`, with its own date-aware title-generation prompt.
+- Pulse failure reuses the existing incomplete-turn/retry UI — no new error state.
+- `/pulsar` route: active routines → archived routines → pulse history → pulse detail, per "UI
+  structure" above.
 - Amber dot/count unread indicators, global and per-routine.
 - `Orbit` icon in the sidebar.
+- **No CLI surface.** Unlike most new Polaris features, Pulsar is inherently background/
+  scheduled rather than something to trigger by hand over SSH — a conscious "not v1" rather than
+  an oversight against CLAUDE.md's usual bare-metal/Docker-parity checklist. Testing a pulse
+  firing during development means inserting a due routine row directly or driving it through the
+  existing WebSocket test harness, not a `polaris pulsar` command.
 
 ## Explicitly out of scope for v1
 
@@ -145,13 +187,17 @@ One small component, reused at two scopes rather than two separate indicator con
 
 ## Next steps
 
-1. Design and land the turn-config persistence schema/plumbing (thread-sticky model/focus/deep-
-   research), independent of Pulsar's own tables.
+1. Design and land the turn-config persistence schema/plumbing — `threads.model` repurposed as
+   the sticky field, new `focus_mode`/`deep_research` columns alongside it — independent of
+   Pulsar's own tables.
 2. `pulsar_routines` table (name, prompt, model, focus_mode, deep_research, schedule_type,
-   schedule_params, time_of_day, created_at, last_run_at) + `pulsar_routine_id`/`seen` columns
-   on `threads`.
-3. Scheduler goroutine, mirroring `backup.go`'s daily-job shape.
-4. Pulse firing: seed + run through the existing turn pipeline, tagged appropriately.
-5. `/pulsar` route tree (routines list, pulse history, pulse detail reusing existing thread view)
-   + sidebar `Orbit` entry point.
-6. Amber dot/count component, wired to both scopes.
+   schedule_params, time_of_day, created_at, last_run_at, archived_at) + `pulsar_routine_id`/
+   `seen` columns on `threads`.
+3. Scheduler goroutine, mirroring `backup.go`'s daily-job shape, plus the restart catch-up check
+   against `last_run_at`.
+4. Pulse firing: seed + run through the existing turn pipeline, tagged appropriately, with its
+   own date-aware title-generation prompt; failures fall through to the existing retry UI.
+5. Routine create/edit form (shared for both) with a soft-delete/archive action.
+6. `/pulsar` route tree (active routines, archived routines, pulse history, pulse detail reusing
+   existing thread view) + sidebar `Orbit` entry point.
+7. Amber dot/count component, wired to both scopes.
