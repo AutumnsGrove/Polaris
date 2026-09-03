@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrPulsarRoutineNotFound is returned by GetPulsarRoutine/
@@ -16,22 +17,28 @@ import (
 var ErrPulsarRoutineNotFound = errors.New("pulsar routine not found")
 
 // PulsarRoutine is one saved routine, as returned by every read method
-// below. LastRunAt/ArchivedAt use sql.NullTime rather than time.Time since
-// both are genuinely absent for a brand-new/still-active routine — nil
-// means "never" (LastRunAt) or "active" (ArchivedAt).
+// below. LastRunAt/ArchivedAt are *time.Time (nil, not sql.NullTime) —
+// both are genuinely absent for a brand-new/still-active routine, and a
+// bare pointer marshals to clean JSON null instead of sql.NullTime's raw
+// {Time, Valid} struct, which the frontend would otherwise have to
+// special-case.
 type PulsarRoutine struct {
-	ID             int64        `json:"id"`
-	Name           string       `json:"name"`
-	Prompt         string       `json:"prompt"`
-	Model          string       `json:"model"`
-	FocusMode      string       `json:"focus_mode"`
-	DeepResearch   bool         `json:"deep_research"`
-	ScheduleType   string       `json:"schedule_type"`
-	ScheduleParams string       `json:"schedule_params"`
-	TimeOfDay      string       `json:"time_of_day"`
-	CreatedAt      string       `json:"created_at"`
-	LastRunAt      sql.NullTime `json:"last_run_at"`
-	ArchivedAt     sql.NullTime `json:"archived_at"`
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Prompt         string `json:"prompt"`
+	Model          string `json:"model"`
+	FocusMode      string `json:"focus_mode"`
+	DeepResearch   bool   `json:"deep_research"`
+	ScheduleType   string `json:"schedule_type"`
+	ScheduleParams string `json:"schedule_params"`
+	TimeOfDay      string `json:"time_of_day"`
+	// CreatedAt doubles as the due-time baseline for a routine that has
+	// never fired yet (LastRunAt nil) — see gateway's isRoutineDue, which
+	// needs real time.Time arithmetic on it, unlike
+	// PulsarPulseSummary.CreatedAt below (display-only, plain string).
+	CreatedAt  time.Time  `json:"created_at"`
+	LastRunAt  *time.Time `json:"last_run_at"`
+	ArchivedAt *time.Time `json:"archived_at"`
 }
 
 // CreatePulsarRoutine inserts a new active routine, returning its id.
@@ -198,6 +205,19 @@ func (s *Store) ListPulsarPulses(routineID int64) ([]PulsarPulseSummary, error) 
 		pulses = append(pulses, p)
 	}
 	return pulses, rows.Err()
+}
+
+// SetThreadPulsarRoutine links a freshly created thread to the routine
+// whose scheduled firing produced it — called right after CreateThread in
+// handleTurn's isNewThread branch, not folded into CreateThread's own
+// signature, since every other CreateThread caller (a plain new chat
+// thread) has no routine to link.
+func (s *Store) SetThreadPulsarRoutine(threadID string, routineID int64) error {
+	_, err := s.db.Exec(`UPDATE threads SET pulsar_routine_id = ? WHERE id = ?`, routineID, threadID)
+	if err != nil {
+		return fmt.Errorf("set thread pulsar routine: %w", err)
+	}
+	return nil
 }
 
 // MarkPulseSeen flips a pulsar-sourced thread's unread flag off — called

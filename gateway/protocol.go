@@ -83,6 +83,14 @@ type ClientMessage struct {
 	AttachmentID          string `json:"attachment_id,omitempty"`
 	AttachmentFilename    string `json:"attachment_filename,omitempty"`
 	AttachmentContentType string `json:"attachment_content_type,omitempty"`
+	// PulsarRoutineID/PulsarRoutineName are set only by the scheduler
+	// firing a pulse (see pulsar_scheduler.go's firePulse) — never by any
+	// JSON-decoded request. A non-zero PulsarRoutineID makes handleTurn
+	// link the new thread to its routine (threads.pulsar_routine_id) and
+	// use a date-aware title instead of the normal LLM-generated one, per
+	// docs/plans/pulsar-routines.md's "Pulse execution model".
+	PulsarRoutineID   int64  `json:"-"`
+	PulsarRoutineName string `json:"-"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

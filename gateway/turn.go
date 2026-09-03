@@ -133,6 +133,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
+		if msg.PulsarRoutineID != 0 {
+			if err := s.db.SetThreadPulsarRoutine(threadID, msg.PulsarRoutineID); err != nil {
+				log.Warn("linking pulse thread to its routine failed", "thread", threadID, "routine", msg.PulsarRoutineID, "err", err)
+				s.db.LogEvent(threadID, "warn", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		}
 	} else if isFirstMessageEdit {
 		// Same truncated-placeholder treatment as a brand-new thread above
 		// — the old title (placeholder or generated) described the
@@ -465,7 +471,26 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// an empty answer, where the placeholder is already the more
 	// sensible title anyway.
 	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" {
-		if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
+		if msg.PulsarRoutineID != 0 {
+			// Deterministic, not an LLM call — see the plan doc's "Pulse
+			// execution model": every pulse from the same routine starts
+			// from a near-identical prompt, so the normal LLM-generated
+			// title (which reads the opening question) would produce a
+			// wall of near-duplicate titles down a routine's pulse
+			// history. Routine name + the run's own date is exactly
+			// enough to differentiate them (the plan doc's own example:
+			// "Daily news — Sept 4") without generateTitle's failure
+			// modes (an empty completion leaving the placeholder
+			// forever) or its cost.
+			title := msg.PulsarRoutineName + " — " + time.Now().Format("Jan 2")
+			if len(title) > maxThreadTitleLen {
+				title = title[:maxThreadTitleLen]
+			}
+			if err := s.db.SetThreadTitle(threadID, title); err != nil {
+				log.Warn("failed to persist pulse title", "thread", threadID, "err", err)
+				s.db.LogEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {

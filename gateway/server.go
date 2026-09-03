@@ -299,6 +299,13 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PATCH /api/memories/{name}", s.handleUpdateMemory)
 	s.mux.HandleFunc("DELETE /api/memories/{name}", s.handleDeleteMemory)
 	s.mux.HandleFunc("POST /api/memories/chat", s.handleMemoryChat)
+	s.mux.HandleFunc("GET /api/pulsar/routines", s.handleListPulsarRoutines)
+	s.mux.HandleFunc("POST /api/pulsar/routines", s.handleCreatePulsarRoutine)
+	s.mux.HandleFunc("PATCH /api/pulsar/routines/{id}", s.handleUpdatePulsarRoutine)
+	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/archive", s.handleArchivePulsarRoutine)
+	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/unarchive", s.handleUnarchivePulsarRoutine)
+	s.mux.HandleFunc("GET /api/pulsar/routines/{id}/pulses", s.handleListPulsarPulses)
+	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

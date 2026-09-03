@@ -97,6 +97,16 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Same "flip on first real open" shape as MarkThreadContinued above —
+	// this is the entire mechanism behind Pulsar's amber unread indicator
+	// (see the plan doc's "seen" schema comment on threads). Best-effort
+	// for the same reason.
+	if thread.Source == "pulsar" {
+		if err := s.db.MarkPulseSeen(id); err != nil {
+			log.Warn("marking pulse seen failed", "thread", id, "err", err)
+		}
+	}
+
 	effectiveID, err := s.db.EffectiveThreadID(id)
 	if err != nil {
 		log.Warn("resolving active variant failed", "thread", id, "err", err)

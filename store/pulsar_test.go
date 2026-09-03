@@ -17,10 +17,10 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 	if r.Name != "Daily news" || r.ScheduleType != "daily" || r.TimeOfDay != "07:00" || r.DeepResearch {
 		t.Errorf("GetPulsarRoutine returned %+v, want the values just written", r)
 	}
-	if r.LastRunAt.Valid {
+	if r.LastRunAt != nil {
 		t.Errorf("LastRunAt should be unset for a brand-new routine, got %+v", r.LastRunAt)
 	}
-	if r.ArchivedAt.Valid {
+	if r.ArchivedAt != nil {
 		t.Errorf("ArchivedAt should be unset for a new routine, got %+v", r.ArchivedAt)
 	}
 
@@ -79,7 +79,7 @@ func TestPulsarRoutine_ArchiveUnarchive(t *testing.T) {
 	if len(archived) != 1 || archived[0].ID != id {
 		t.Fatalf("got archived %+v, want exactly the routine just archived", archived)
 	}
-	if !archived[0].ArchivedAt.Valid {
+	if archived[0].ArchivedAt == nil {
 		t.Errorf("archived routine's ArchivedAt should be set, got %+v", archived[0].ArchivedAt)
 	}
 
@@ -120,7 +120,7 @@ func TestPulsarRoutine_LastRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPulsarRoutine: %v", err)
 	}
-	if !r.LastRunAt.Valid {
+	if r.LastRunAt == nil {
 		t.Fatalf("LastRunAt should be set after SetPulsarRoutineLastRun, got %+v", r.LastRunAt)
 	}
 
