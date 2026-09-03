@@ -49,7 +49,19 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		now := time.Now()
 		for _, r := range routines {
 			if isRoutineDue(r, now) {
-				s.firePulse(r)
+				// Concurrent, not sequential — firePulse already calls
+				// handleTurn, the exact same entry point many simultaneous
+				// live WebSocket turns already run through concurrently, so
+				// nothing about it assumes single-flight execution. Firing
+				// sequentially instead would mean two routines due at the
+				// same time_of_day (a plausible default, e.g. two routines
+				// both left at "daily 7am") serialize behind each other —
+				// a slow one (real web_search calls, 30-60s) delays every
+				// other routine due that tick, and blocks this whole
+				// runOnce pass from returning, which in turn delays the
+				// NEXT tick's due-check for every routine, not just the
+				// slow one's.
+				go s.firePulseRecovered(r)
 			}
 		}
 	}
@@ -184,6 +196,21 @@ func parseDayOfMonth(s string) (int, bool) {
 		return 0, false
 	}
 	return day, true
+}
+
+// firePulseRecovered wraps firePulse with a panic recovery, same
+// reasoning as turn.go's detached follow-up-suggestions goroutine: this
+// now runs in its own goroutine (see runOnce above), outside any call
+// stack net/http recovers, so an unrecovered panic in one routine's pulse
+// would otherwise take down the whole process instead of just failing
+// that one pulse.
+func (s *Server) firePulseRecovered(r store.PulsarRoutine) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Error("panic firing pulsar pulse", "routine", r.ID, "name", r.Name, "panic", rec)
+		}
+	}()
+	s.firePulse(r)
 }
 
 // firePulse runs one routine's scheduled turn — seeding a brand-new
