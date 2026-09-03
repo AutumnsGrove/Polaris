@@ -238,6 +238,25 @@ export interface PulsarPulse {
 	in_progress: boolean;
 }
 
+// WizardFinal mirrors tools.WizardFinal — the drafted prompt
+// finalize_pulsar_prompt handed back, ending a wizard turn the same way
+// PendingQuestion ends an ordinary one. See gateway/pulsar_wizard.go.
+export interface WizardFinal {
+	prompt: string;
+	name?: string;
+}
+
+// WizardResponse mirrors gateway/pulsar_wizard.go's wizardResponse —
+// exactly one of question/final/answer is set per turn. answer is the
+// fallback for a plain-prose reply with no tool call (see its Go doc
+// comment for why that's handled rather than dropped).
+export interface WizardResponse {
+	session_id: string;
+	question?: PendingQuestion;
+	final?: WizardFinal;
+	answer?: string;
+}
+
 // VariantGroup describes the alternatives available at one message
 // position — every reply an edit/regenerate at that spot has ever
 // produced (oldest first) plus which one is currently shown. Keyed by

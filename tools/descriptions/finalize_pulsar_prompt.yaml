@@ -1,0 +1,18 @@
+name: finalize_pulsar_prompt
+requires: pulsar_wizard
+description: >-
+  end the interview and hand back the drafted Pulsar routine prompt.
+api_description: >-
+  End the interview and hand back the drafted, ready-to-schedule Pulsar routine prompt. Call this
+  once you have enough to write a genuinely good recurring prompt — one specific enough that it
+  won't need to be re-asked every time it runs, and clear about what to focus on or skip. Don't
+  call this after just one exchange unless the user's very first message already gave you
+  everything you need.
+
+  Write `prompt` the way you'd write it if you were about to run it yourself right now, not a
+  description of what the routine will do — e.g. "Give me a quick rundown of the biggest news in
+  the Guild Wars 3 community today" rather than "A routine that checks Guild Wars 3 news".
+
+  Calling this tool ENDS the turn, same as ask_user_question. The user may still send another
+  message afterward to keep refining — if they do, treat it as a request to revise the prompt and
+  call this again with the updated draft.

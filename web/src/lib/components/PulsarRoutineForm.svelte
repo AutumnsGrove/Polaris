@@ -3,8 +3,9 @@
 	import { pulsarState, type PulsarRoutineInput } from '$lib/pulsar.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode, PulsarRoutine } from '$lib/types';
-	import { X } from '@lucide/svelte';
+	import { X, Sparkles } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
+	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
 
 	// One form doing double duty as both create and edit, per
 	// docs/plans/pulsar-routines.md's "Routine lifecycle" — routine is
@@ -55,6 +56,16 @@
 	let saving = $state(false);
 	let error = $state('');
 	let confirmingDelete = $state(false);
+	let showWizard = $state(false);
+
+	// onAccept never overwrites a name the user already typed — only fills
+	// it in if the field is still blank, same "don't clobber what's
+	// already there" reasoning as openThread's focus_mode normalization
+	// elsewhere in this codebase.
+	function acceptWizardPrompt(draftPrompt: string, nameSuggestion?: string) {
+		prompt = draftPrompt;
+		if (nameSuggestion && !name.trim()) name = nameSuggestion;
+	}
 
 	let scheduleParams = $derived(
 		scheduleType === 'weekly' ? weeklyParam : scheduleType === 'monthly' ? monthlyParam : ''
@@ -127,7 +138,13 @@
 			</div>
 
 			<div class="field">
-				<label for="pulsar-prompt">Prompt</label>
+				<div class="field-label-row">
+					<label for="pulsar-prompt">Prompt</label>
+					<button type="button" class="wizard-btn" onclick={() => (showWizard = true)}>
+						<Sparkles size={12} />
+						Help me write this
+					</button>
+				</div>
 				<textarea
 					id="pulsar-prompt"
 					bind:value={prompt}
@@ -226,6 +243,10 @@
 	</div>
 </div>
 
+{#if showWizard}
+	<PulsarPromptWizard seed={prompt} onClose={() => (showWizard = false)} onAccept={acceptWizardPrompt} />
+{/if}
+
 <style>
 	h3 {
 		margin: var(--space-lg) 0 var(--space-md);
@@ -245,6 +266,34 @@
 		margin-bottom: var(--space-xs);
 		font-size: 12px;
 		color: var(--color-text-dim);
+	}
+
+	.field-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.field-label-row label {
+		margin-bottom: 0;
+	}
+
+	.wizard-btn {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-xs);
+		padding: 2px var(--space-sm);
+		border: none;
+		background: transparent;
+		border-radius: var(--radius-full);
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--color-accent);
+	}
+
+	.wizard-btn:hover {
+		background: var(--color-accent-soft);
 	}
 
 	.field input,

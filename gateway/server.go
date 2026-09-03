@@ -101,6 +101,14 @@ type Server struct {
 	// rather than being derivable from either of them.
 	inFlightMu      sync.Mutex
 	inFlightThreads map[string]int
+
+	// wizardMu/wizardSessions hold every in-progress "help me write the
+	// prompt" wizard interview's conversation history (see
+	// pulsar_wizard.go) — pure in-memory state, never persisted, matching
+	// that feature's "ephemeral" design point literally. Same
+	// map+single-mutex shape as inFlightThreads above.
+	wizardMu       sync.Mutex
+	wizardSessions map[string]*wizardSession
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -133,6 +141,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		mux:             http.NewServeMux(),
 		turnSends:       make(map[int64]func(ServerEvent)),
 		inFlightThreads: make(map[string]int),
+		wizardSessions:  make(map[string]*wizardSession),
 	}
 	s.routes(staticFS)
 	return s
@@ -362,6 +371,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/unarchive", s.handleUnarchivePulsarRoutine)
 	s.mux.HandleFunc("GET /api/pulsar/routines/{id}/pulses", s.handleListPulsarPulses)
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
+	s.mux.HandleFunc("POST /api/pulsar/wizard/start", s.handleWizardStart)
+	s.mux.HandleFunc("POST /api/pulsar/wizard/turn", s.handleWizardTurn)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

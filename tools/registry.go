@@ -284,6 +284,16 @@ type Context struct {
 	// QuickMode above.
 	NoResearch bool
 
+	// PulsarWizard, when true, marks this turn as the ephemeral "help me
+	// write the prompt" interview (see gateway/pulsar_wizard.go) rather
+	// than a normal chat/pulse turn — the only thing it gates is
+	// finalize_pulsar_prompt's offering (catalog.go's "pulsar_wizard"
+	// Requires case), so that tool can never appear outside this one
+	// context even if a caller left NoResearch/DisabledTools unset. Zero
+	// value (false) is normal behavior, same safe-default shape as
+	// NoResearch/QuickMode above.
+	PulsarWizard bool
+
 	// DisabledTools is the settings panel's per-tool on/off list (see
 	// gateway.DisabledToolsFromStore) — a tool named here is excluded
 	// regardless of Requires or Category, checked first in offered(). Nil
@@ -322,6 +332,39 @@ type Context struct {
 	// need their own mutexes.
 	pendingQuestionMu sync.Mutex
 	PendingQuestion   *PendingQuestion
+
+	// WizardFinal, once set, tells agent.Run to end the turn the same way
+	// PendingQuestion does — see finalize_pulsar_prompt.go and
+	// PulsarWizard above. Only ever populated on a PulsarWizard turn,
+	// since finalize_pulsar_prompt is never offered otherwise.
+	// wizardFinalMu guards it for the same concurrent-dispatch reason
+	// PendingQuestion's mutex exists.
+	wizardFinalMu sync.Mutex
+	WizardFinal   *WizardFinal
+}
+
+// WizardFinal is the tuned prompt the model drafted once it decided the
+// Pulsar prompt wizard interview had enough to go on — see
+// finalize_pulsar_prompt.go. Unlike PendingQuestion this is never
+// persisted anywhere: the whole wizard session is ephemeral, held only in
+// gateway/pulsar_wizard.go's in-memory session map.
+type WizardFinal struct {
+	Prompt string `json:"prompt"`
+	// Name is an optional suggested routine name — left blank if the
+	// model didn't propose one, in which case the frontend leaves
+	// whatever the user already typed (if anything) alone.
+	Name string `json:"name,omitempty"`
+}
+
+// SetWizardFinal records the turn-ending drafted prompt, if none has been
+// recorded yet this turn — same first-write-wins reasoning as
+// SetPendingQuestion.
+func (c *Context) SetWizardFinal(f *WizardFinal) {
+	c.wizardFinalMu.Lock()
+	defer c.wizardFinalMu.Unlock()
+	if c.WizardFinal == nil {
+		c.WizardFinal = f
+	}
 }
 
 // PendingQuestion is a clarifying question the model asked instead of
@@ -542,6 +585,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
+		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 	}
 }
 

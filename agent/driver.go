@@ -172,6 +172,17 @@ const (
 func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deepResearch bool, noResearch bool) string {
 	p := prompts.Get()
 
+	if ctx.PulsarWizard {
+		// A completely different task from "Polaris the research
+		// assistant" — a narrow prompt-writing interview with its own
+		// 2-3 tool menu, not the operator's prompt.md persona. Returned
+		// as-is, skipping applyToolsPlaceholder/applyMemoriesPlaceholder/
+		// the mode-instruction appends below entirely: none of those are
+		// relevant here, and {tools}/{memories} aren't referenced in
+		// PulsarWizard.System's own text.
+		return p.PulsarWizard.System
+	}
+
 	data, err := os.ReadFile(promptPath)
 	prompt := p.Agent.FallbackSystemPrompt
 	if err == nil {
@@ -273,6 +284,12 @@ type Result struct {
 	// message and skip anything that assumes the turn produced a normal
 	// finished answer (follow-up suggestions, most notably).
 	PendingQuestion *tools.PendingQuestion
+	// WizardFinal is non-nil when the turn ended early because
+	// finalize_pulsar_prompt was called — only possible on a PulsarWizard
+	// turn (see tools.Context.PulsarWizard). Answer holds the drafted
+	// prompt text the same way PendingQuestion's Answer holds the question
+	// text, so it reads naturally if ever displayed as a plain reply.
+	WizardFinal *tools.WizardFinal
 	// TurnCount is how many iterations of the main loop below actually
 	// ran before this Result was produced (1 for a plain first-turn
 	// answer, more for each tool-call round-trip) — including the forced
@@ -438,6 +455,25 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		results := dispatchToolCallsConcurrently(calls, ctx)
 		for _, r := range results {
 			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
+		}
+
+		// finalize_pulsar_prompt was called — end the turn the same way
+		// PendingQuestion does below, checked first: it means "actually
+		// done", which takes precedence over a hypothetical
+		// ask_user_question call landing in the same batch (shouldn't
+		// happen in practice, but keeps the precedence sane if it ever did).
+		if ctx.WizardFinal != nil {
+			ctx.Emit("token", map[string]interface{}{"content": ctx.WizardFinal.Prompt})
+			return &Result{
+				Answer:        ctx.WizardFinal.Prompt,
+				Citations:     ctx.Citations,
+				Cards:         ctx.Cards,
+				CostUSD:       totalCost,
+				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
+				TurnCount:     turn + 1,
+				ResearchCalls: researchCalls,
+				WizardFinal:   ctx.WizardFinal,
+			}, nil
 		}
 
 		// ask_user_question was called — end the turn now instead of
