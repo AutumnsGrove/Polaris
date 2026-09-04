@@ -3,6 +3,7 @@
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
+	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
@@ -207,6 +208,10 @@
 
 			{#if turn.cards?.length}
 				<RecommendationsCarousel cards={turn.cards} />
+			{/if}
+
+			{#if turn.chart}
+				<ChartCard chart={turn.chart} />
 			{/if}
 
 			{#if turn.citations?.length}

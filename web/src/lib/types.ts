@@ -22,6 +22,40 @@ export interface Card {
 	url: string;
 }
 
+// A structured chart — see tools/registry.go's ChartSpec doc comment.
+// At most one per turn, unlike Card above.
+export interface ChartSpec {
+	kind: 'line' | 'bar' | 'timeline' | 'meter';
+	title: string;
+	x_label?: string;
+	y_label?: string;
+	series?: ChartSeries[]; // line, bar
+	events?: ChartEvent[]; // timeline
+	value?: ChartValue; // meter
+}
+
+export interface ChartSeries {
+	label: string;
+	points: ChartPoint[];
+}
+
+export interface ChartPoint {
+	x: string | number;
+	y: number;
+}
+
+export interface ChartEvent {
+	date: string;
+	label: string;
+}
+
+export interface ChartValue {
+	current: number;
+	min: number;
+	max: number;
+	label: string;
+}
+
 // A clarifying question the model asked instead of answering, ending its
 // turn — see tools/registry.go's PendingQuestion doc comment. Answering
 // it is just sending the next ordinary chat message, not a dedicated
@@ -64,6 +98,7 @@ export type ServerEvent =
 			provider?: string;
 			citations?: Citation[];
 			cards?: Card[];
+			chart?: ChartSpec;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
 	// What the model said before deciding to call a tool (or before an
@@ -77,6 +112,7 @@ export type ServerEvent =
 			cost_usd: number;
 			citations?: Citation[];
 			cards?: Card[];
+			chart?: ChartSpec;
 			user_message_id?: number;
 			context_tokens?: number;
 			// How long agent.Run took to produce this answer, in
@@ -277,6 +313,9 @@ export interface StoredMessage {
 	citations: string; // JSON-encoded Citation[]
 	suggestions: string; // JSON-encoded string[], assistant messages only
 	cards: string; // JSON-encoded Card[], assistant messages only — see store.Store.SetMessageCards
+	// JSON-encoded ChartSpec, assistant messages only — see
+	// store.Store.SetMessageChart. '' on every other message.
+	chart?: string;
 	cost_usd: number;
 	// Shared by the user/assistant message pair from one turn, and by
 	// every StoredEvent logged while that turn ran — the join key
@@ -335,6 +374,7 @@ export interface ChatTurn {
 	timeline?: TimelineItem[];
 	citations?: Citation[];
 	cards?: Card[];
+	chart?: ChartSpec;
 	// A clarifying question this turn ended with instead of a normal
 	// finished answer — see PendingQuestion above. Rendered as an
 	// interactive card only when this is the thread's current last turn

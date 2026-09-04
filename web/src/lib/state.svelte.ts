@@ -5,6 +5,7 @@ import type {
 	ServerEvent,
 	Citation,
 	Card,
+	ChartSpec,
 	PendingQuestion,
 	StoredEvent,
 	TimelineItem,
@@ -533,6 +534,7 @@ export class AppState {
 			content: m.content,
 			citations: safeParseJSON<Citation>(m.citations),
 			cards: safeParseJSON<Card>(m.cards),
+			chart: m.chart ? (safeParseObject(m.chart) as unknown as ChartSpec) : undefined,
 			pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
@@ -1122,6 +1124,7 @@ export class AppState {
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.cards = e.cards;
+				turn.chart = e.chart;
 				turn.pendingQuestion = e.pending_question;
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
