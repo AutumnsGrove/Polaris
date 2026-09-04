@@ -67,9 +67,16 @@ var visualizeDef = llm.ToolDef{
 				"y_label":  map[string]interface{}{"type": "string"},
 				"series": map[string]interface{}{
 					"type": "array",
-					// [{ "label": string, "points": [{ "x": string|number, "y": number, "label"?: string }] }]
-					// used by line/bar/timeline — a timeline is a "line" whose x is a date and
-					// whose per-point "label" carries the event text instead of a numeric y.
+					// [{ "label": string, "points": [{ "x": string|number, "y": number }] }]
+					// used by line/bar only. bar accepts exactly one series in v1 — see
+					// "v1 kind set" below.
+				},
+				"events": map[string]interface{}{
+					"type": "array",
+					// [{ "date": string, "label": string }] — "timeline" only. Not a
+					// series/points chart at all (no axis, nothing plotted), so it gets
+					// its own field rather than being wedged into series/points — see
+					// "v1 kind set" below for why that was the wrong shape at first.
 				},
 				"value": map[string]interface{}{
 					// { "current": number, "min": number, "max": number, "label": string } — "meter" only
@@ -84,17 +91,29 @@ var visualizeDef = llm.ToolDef{
 `kind` is a closed enum, not open text — the frontend renderer switches on it, so an
 unrecognized value has to fail tool validation, not fail silently at render time.
 
+**Caps, enforced in the handler before `ctx.SetChart`/`AddCard` is ever called, not just at
+render time:** `line`/`bar` series cap at 50 points each (a deliberately round starting number —
+worth stress-testing against real turns before deciding whether 100 is a better ceiling; unlikely
+to need to go higher than that), and `bar` additionally caps at 12 bars total across its one
+series, tighter than the point cap because each bar needs real horizontal room in a fixed-width
+card in a way a plotted line point doesn't. `timeline` caps at 20 events for the same
+horizontal-room reason. A chart that exceeds any cap is a tool error, not a silent truncation —
+`error: too many points (N) — visualize supports at most 50 per series. Reduce the count and
+call again with fewer numbers.` — so the model can actually correct itself (aggregate, pick the
+most important N) instead of a chart quietly rendering with data missing and no explanation.
+
 ### `ChartSpec` — the type both tiers produce
 
 ```go
 // tools/registry.go, alongside Card (registry.go:509)
 type ChartSpec struct {
-	Kind    string        `json:"kind"` // "line" | "bar" | "timeline" | "meter"
-	Title   string        `json:"title"`
-	XLabel  string        `json:"x_label,omitempty"`
-	YLabel  string        `json:"y_label,omitempty"`
-	Series  []ChartSeries `json:"series,omitempty"`
-	Value   *ChartValue   `json:"value,omitempty"` // meter only
+	Kind   string        `json:"kind"` // "line" | "bar" | "timeline" | "meter"
+	Title  string        `json:"title"`
+	XLabel string        `json:"x_label,omitempty"`
+	YLabel string        `json:"y_label,omitempty"`
+	Series []ChartSeries `json:"series,omitempty"` // line, bar
+	Events []ChartEvent  `json:"events,omitempty"` // timeline
+	Value  *ChartValue   `json:"value,omitempty"`  // meter
 }
 
 type ChartSeries struct {
@@ -103,9 +122,19 @@ type ChartSeries struct {
 }
 
 type ChartPoint struct {
-	X     interface{} `json:"x"` // string (date/category) or number
-	Y     float64     `json:"y"`
-	Label string      `json:"label,omitempty"` // timeline event text
+	X interface{} `json:"x"` // string (date/category) or number
+	Y float64     `json:"y"`
+}
+
+// ChartEvent is "timeline"'s own shape — deliberately not a ChartPoint.
+// A timeline (see card 04 of the concept renders: a vertical list of
+// dated entries, no axis, nothing plotted) has no numeric value to put
+// in Y; the first draft of this doc had timeline sharing ChartPoint's
+// shape with a mandatory-but-meaningless Y, which was wrong the moment
+// it was checked against what actually got approved.
+type ChartEvent struct {
+	Date  string `json:"date"`
+	Label string `json:"label"`
 }
 
 type ChartValue struct {
@@ -148,9 +177,12 @@ plumbing changes.
 `ChartCard.svelte` (new, same tier as `RecommendationsCarousel.svelte`), switching on `kind`
 internally, drawn as inline SVG — no charting library, matching the hand-rolled-over-SDK instinct
 already established elsewhere in this codebase (the R2 client, the calculator's own evaluator).
-`line`/`bar`/`timeline` share the same `series[].points[]` iteration in the component; `meter` is
-the one branch that reads `value` instead. Respects `prefers-reduced-motion` for free by not
-animating unless asked to.
+`line`/`bar` share the same `series[].points[]` iteration in the component; `timeline` reads
+`events` instead (a list, not a plot — see the `ChartEvent` note above); `meter` reads `value`.
+Respects `prefers-reduced-motion` for free by not animating unless asked to. `meter`'s fill color
+reuses the exact ≥90%-of-max "hot" threshold `ThreadMenu.svelte` already applies to its
+context-usage readout (`.info-row.hot`, switching to `--color-danger`) rather than inventing a
+second warning threshold — "getting close to a cap" should look the same everywhere in the app.
 
 ### Weather wiring (Tier 1's only v1 source)
 
@@ -169,6 +201,11 @@ inside the one tool that's supposed to stay simple. Also explicitly not in v1: a
 green "Action items" box than to a plotted chart). Real candidate for v2, flagged specifically
 because Kagi News is the stated reference for Pulsar Daily, but it's a different kind of
 rendering problem (formatted content, not point data) and doesn't belong in `visualize`'s schema.
+
+`bar` is single-series only in v1 — the schema doesn't stop the model from passing more than one,
+but the handler rejects it. Grouped/stacked bars are real rendering complexity `ChartCard.svelte`
+doesn't need yet and nothing in the six concept renders showed one; a real v1.5/v2 candidate once
+a use case for comparing two series side by side actually shows up, not before.
 
 ### Follow-up suggestions
 
@@ -211,6 +248,11 @@ already uses. One shared budget across both tools' Brave usage, checked before e
 call the same way `web_search` already checks it before every Brave web call. If it later turns
 out the two really are billed separately, splitting the counter is a strictly safe loosening to
 make later; assuming separation now and being wrong would not be.
+
+`image_search` doesn't set Brave's `safesearch` param at all in v1 — takes Brave's own default
+rather than deciding a stance on it now. If that default turns out to be wrong for something in
+practice, the fix is hardcoding `safesearch=off`, not adding a settings-panel toggle for a
+one-person tool to fiddle with.
 
 ### Tool shape and response
 
@@ -264,10 +306,12 @@ type Card struct {
 }
 ```
 
-`image_search` sets `Kind: "image"` on every card it adds; the frontend groups a message's `Cards`
-by `Kind` and renders each run through the matching component (`RecommendationsCarousel` for
-`"media"`/empty, a new `ImageGallery.svelte` grid for `"image"`) — additive, non-breaking, and the
-four existing recommendation tools need zero changes.
+`image_search` sets `Kind: "image"` on every card it adds. If a turn ever produces both kinds (a
+recommendation call and an image search in the same turn), the frontend partitions `Cards` into
+two groups by `Kind` rather than trying to preserve call-order interleaving, and renders each
+group through its matching component — one `RecommendationsCarousel` block, one `ImageGallery`
+block, whichever are actually present. Additive, non-breaking, and the four existing
+recommendation tools need zero changes.
 
 ### No vision model involved, on purpose
 
@@ -279,12 +323,44 @@ claude.ai behavior this was modeled on. `config.MultimodalModel` (MiMo Pro) is t
 the roster that could actually look at candidate thumbnails and choose the best ones instead of
 trusting raw ranking; that's real, explicitly deferred v2 work (see below), not a v1 gap.
 
+## Availability by mode
+
+Both tools are offered in the normal case — real chat threads and Pulsar pulses, which run
+through the identical turn pipeline (`docs/plans/pulsar-routines.md`: "same cost tracking, same
+citations, same everything"). Two narrower contexts cut that down, using two different existing
+mechanisms rather than one new one:
+
+- **Chat mode (`ctx.NoResearch`) — `visualize` stays, `image_search` doesn't.** `catalog.go`'s
+  `offered()` (catalog.go:73) already bulk-excludes every tool tagged `category: research` — the
+  same mechanism `web_search`/`weather`/the four recommendation tools already use, no per-tool
+  exclusion list to maintain. `image_search` gets `category: research` in its own YAML (it reaches
+  out to SearXNG/Brave — the textbook case that category exists for) and is excluded from chat
+  mode for free. `visualize` gets no category at all: given data already in the conversation, it
+  doesn't fetch anything, so there's no reason chat mode should lose it — "chart the numbers I
+  just gave you" doesn't need research to be re-enabled.
+- **The Pulsar wizard — neither.** The wizard already explicitly disables non-research tools that
+  don't fit its ephemeral prompt-writing interview: `gateway/pulsar_wizard.go`'s `disabled` map
+  (pulsar_wizard.go:184-190) turns off `calculator`/`memory`/`read_attachment` by name, with a
+  comment explaining exactly why `NoResearch` alone isn't enough (`NoResearch already excludes
+  every "research"-category tool... but NoResearch alone would still leave calculator/memory/
+  read_attachment on the menu, which a prompt-writing interview has no use for`). `visualize` is
+  the same case — not research-tagged, not useful mid-interview — so it joins that same map:
+  `disabled["visualize"] = true`. `image_search` needs nothing added there; being
+  `category: research`, `NoResearch` (which the wizard already sets, pulsar_wizard.go:193)
+  excludes it the same way it does in plain chat mode.
+
+Net: one new line in an existing map (`gateway/pulsar_wizard.go`), one YAML field
+(`image_search.yaml`'s `category: research`), and no change at all to `catalog.go`'s gating logic
+itself — both tools slot into mechanisms that already exist for exactly this purpose.
+
 ## Explicitly out of scope for v1
 
 (Revisit later, not forgotten — matches this repo's existing scoping convention.)
 
 - **`compare` chart kind** (structured multi-item table/cards, the Kagi News "Perspectives"/"Action
   items" pattern) — different rendering problem than plotted data; real v2 candidate.
+- **Multi-series `bar` (grouped/stacked bars)** — v1 is single-series only, enforced in the
+  handler; a real v1.5/v2 candidate once a concrete comparison use case needs it.
 - **`pie` / `scatter` / `heatmap` kinds** — no current use case; add only if something built
   actually needs one.
 - **Vision-curated image selection** — hand candidate thumbnails to `config.MultimodalModel` and
@@ -304,24 +380,35 @@ trusting raw ranking; that's real, explicitly deferred v2 work (see below), not 
 
 ## Next steps
 
-1. `tools.ChartSpec`/`ChartSeries`/`ChartPoint`/`ChartValue` types + `Context.Chart`/`SetChart`
-   (`tools/registry.go`, alongside `Card`/`AddCard`).
+1. `tools.ChartSpec`/`ChartSeries`/`ChartPoint`/`ChartEvent`/`ChartValue` types +
+   `Context.Chart`/`SetChart` (`tools/registry.go`, alongside `Card`/`AddCard`).
 2. `ServerEvent.Chart` (`gateway/protocol.go`) + the one new case in `turn.go`'s payload switch
    (turn.go:290-307) + `store.SetMessageChart` (mirroring `SetMessageCards`, store.go:1280) +
    `messages.chart` column.
-3. `tools/visualize.go` — tool def + handler, `kind` validation against the closed v1 enum.
+3. `tools/visualize.go` — tool def + handler: `kind` validation against the closed v1 enum, the
+   50-point-per-series / 12-bar / 20-event caps (rejected with a clear tool error, not truncated),
+   and the single-series check for `bar`. No `category` set (stays available in chat mode).
 4. Weather auto-chart: `handleWeather` calls `ctx.SetChart(...)` from `forecast.Daily` when more
    than one day was requested.
-5. `ChartCard.svelte` — one component, switches on `kind`, inline SVG, real `--color-*` tokens.
+5. `ChartCard.svelte` — one component, switches on `kind` (`line`/`bar` read `series`, `timeline`
+   reads `events`, `meter` reads `value`), inline SVG, real `--color-*` tokens, meter reuses
+   `ThreadMenu.svelte`'s existing ≥90% `.info-row.hot` treatment for its warning state.
 6. Suggestion-generation prompt: add the "visualize this" candidate for chartable answers.
 7. `tools.Card.Kind` field (default-preserving) + `tools/image_search.go` (SearXNG images →
-   Brave images, unified `brave` usage cap, no Parallel/Tavily) + `brave/` package gets a sibling
-   image-search method alongside its existing `Search`.
-8. `ImageGallery.svelte` — grid treatment for `Kind: "image"` cards; frontend groups a message's
-   `Cards` by `Kind` before choosing which component renders each run.
-9. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
-   resource files, no new CLI command, no new settings-panel server-mutating action. Worth
-   re-checking once `image_search`'s Brave wiring lands, in case a new API key needs adding to
-   `.env.example`/`compose/polaris/config.yaml.example`'s existing Brave key handling (it likely
-   doesn't — same key, per "Cap" above — but confirm once Brave's dashboard behavior is actually
-   observed with a real key, not just docs).
+   Brave images, unified `brave` usage cap, no `safesearch` param set, no Parallel/Tavily) +
+   `image_search.yaml`'s `category: research` + `brave/` package gets a sibling image-search
+   method alongside its existing `Search`.
+8. `ImageGallery.svelte` — grid treatment for `Kind: "image"` cards; frontend partitions a
+   message's `Cards` into two groups by `Kind` (not preserving call-order interleaving) and
+   renders one `RecommendationsCarousel` block and one `ImageGallery` block, whichever are
+   present.
+9. `gateway/pulsar_wizard.go`'s existing `disabled` map (pulsar_wizard.go:184-190) gets one more
+   line: `disabled["visualize"] = true`, with its neighboring comment updated to name it alongside
+   calculator/memory/read_attachment. `image_search` needs no change there — `category: research`
+   plus the wizard's existing `NoResearch: true` already excludes it.
+10. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
+    resource files, no new CLI command, no new settings-panel server-mutating action. Worth
+    re-checking once `image_search`'s Brave wiring lands, in case a new API key needs adding to
+    `.env.example`/`compose/polaris/config.yaml.example`'s existing Brave key handling (it likely
+    doesn't — same key, per "Cap" above — but confirm once Brave's dashboard behavior is actually
+    observed with a real key, not just docs).
