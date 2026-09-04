@@ -526,6 +526,11 @@ type Card struct {
 	// every existing caller (music/movies/books never set this field).
 	// image_search is the only "image" caller — see its doc comment.
 	Kind string `json:"kind,omitempty"` // "" (media, default) | "image"
+	// FullImageURL is a higher-resolution image than ImageURL's deliberately
+	// small thumbnail — set only by image_search (Kind "image"), for a
+	// lightbox/full-screen preview to use instead of upscaling the
+	// thumbnail. Empty falls back to ImageURL on the frontend.
+	FullImageURL string `json:"full_image_url,omitempty"`
 }
 
 // AddCard appends a card unless its URL is already present, same

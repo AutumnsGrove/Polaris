@@ -7,4 +7,8 @@ api_description: >-
   Get current weather conditions and a short daily forecast for a location. Returns temperature,
   conditions, precipitation chance, and wind. Pass include_hourly for an hour-by-hour breakdown
   of the next 24 hours instead of (or alongside) the daily summary — use that for questions like
-  'what time will it rain today' or 'will it be warmer this afternoon'.
+  'what time will it rain today' or 'will it be warmer this afternoon'. IMPORTANT: a multi-day
+  forecast (more than one day requested) automatically gets a high/low chart attached to your
+  reply — don't ALSO format the daily forecast as a markdown table, since the chart already shows
+  every day's numbers legibly. Keep your reply to a short prose summary (the overall trend,
+  precipitation days, anything notable) instead of restating each day's figures.

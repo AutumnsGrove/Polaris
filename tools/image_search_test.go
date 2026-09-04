@@ -34,10 +34,11 @@ func fakeBraveImages(t *testing.T) (srv *httptest.Server, hits *int) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"results": []map[string]interface{}{
 				{
-					"title":     "From Brave Images",
-					"url":       "https://example.com/brave-photo-page",
-					"source":    "example.com",
-					"thumbnail": map[string]interface{}{"src": "https://example.com/brave-thumb.jpg"},
+					"title":      "From Brave Images",
+					"url":        "https://example.com/brave-photo-page",
+					"source":     "example.com",
+					"thumbnail":  map[string]interface{}{"src": "https://example.com/brave-thumb.jpg"},
+					"properties": map[string]interface{}{"url": "https://example.com/brave-full-res.jpg"},
 				},
 			},
 		})
@@ -48,7 +49,8 @@ func fakeBraveImages(t *testing.T) (srv *httptest.Server, hits *int) {
 
 func TestHandleImageSearch_FormatsResultsAsImageCards(t *testing.T) {
 	srv := fakeSearXNGImages(t, []map[string]interface{}{
-		{"title": "A curtain-bang shag", "url": "https://example.com/photo-page", "thumbnail": "https://example.com/thumb.jpg", "content": ""},
+		{"title": "A curtain-bang shag", "url": "https://example.com/photo-page", "thumbnail": "https://example.com/thumb.jpg",
+			"img_src": "https://example.com/full-res.jpg", "content": ""},
 	})
 	ctx := &Context{
 		Ctx:     context.Background(),
@@ -71,6 +73,9 @@ func TestHandleImageSearch_FormatsResultsAsImageCards(t *testing.T) {
 	if card.Title != "A curtain-bang shag" || card.ImageURL != "https://example.com/thumb.jpg" ||
 		card.URL != "https://example.com/photo-page" || card.Subtitle != "example.com" {
 		t.Errorf("card = %+v, want the SearXNG result mapped through", card)
+	}
+	if card.FullImageURL != "https://example.com/full-res.jpg" {
+		t.Errorf("FullImageURL = %q, want SearXNG's img_src", card.FullImageURL)
 	}
 }
 
@@ -145,6 +150,9 @@ func TestHandleImageSearch_DegradedFallsBackToBrave(t *testing.T) {
 	}
 	if len(ctx.Cards) != 1 || ctx.Cards[0].URL != "https://example.com/brave-photo-page" {
 		t.Errorf("Cards = %+v, want the Brave fallback result added", ctx.Cards)
+	}
+	if ctx.Cards[0].FullImageURL != "https://example.com/brave-full-res.jpg" {
+		t.Errorf("FullImageURL = %q, want Brave's properties.url", ctx.Cards[0].FullImageURL)
 	}
 }
 

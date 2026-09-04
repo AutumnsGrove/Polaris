@@ -29,10 +29,13 @@ type SearchResult struct {
 	// Score is a Reciprocal Rank Fusion value, not a 0-1 relevance
 	// score — see rrfScore. It's meaningful only for relative ordering
 	// between results in the same response, not as an absolute number.
-	Score     float64  `json:"score"`
-	Thumbnail string   `json:"thumbnail,omitempty"`
-	Engine    string   `json:"engine,omitempty"`
-	Engines   []string `json:"engines,omitempty"`
+	Score     float64 `json:"score"`
+	Thumbnail string  `json:"thumbnail,omitempty"`
+	// FullImageURL is the images category's full-resolution image (see
+	// searxngResult.ImgSrc) — empty for general/news results.
+	FullImageURL string   `json:"full_image_url,omitempty"`
+	Engine       string   `json:"engine,omitempty"`
+	Engines      []string `json:"engines,omitempty"`
 	// RankState and Pinned reflect this result's domain-ranking state (see
 	// DomainRankings) — surfaced so the ranking popover can show a result's
 	// current state without a second lookup. RankState is "default" when
@@ -191,12 +194,26 @@ type searxngResponse struct {
 }
 
 type searxngResult struct {
-	Title     string   `json:"title"`
-	URL       string   `json:"url"`
-	Content   string   `json:"content"`
-	Thumbnail string   `json:"thumbnail"`
-	Engine    string   `json:"engine"`
-	Engines   []string `json:"engines"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+	// Thumbnail is populated for general/news results. The "images"
+	// category leaves this empty and puts the real thumbnail URL in
+	// ThumbnailSrc instead (confirmed live against a real SearXNG
+	// instance — image_search's SearXNG results all silently had no
+	// image until this was found) — SearchResult.Thumbnail below prefers
+	// Thumbnail, falling back to ThumbnailSrc, so both shapes resolve to
+	// the one field every caller (web_search's citations, Atlas,
+	// image_search) already reads.
+	Thumbnail    string `json:"thumbnail"`
+	ThumbnailSrc string `json:"thumbnail_src"`
+	// ImgSrc is the images category's full-resolution image URL —
+	// distinct from Thumbnail/ThumbnailSrc, which are both deliberately
+	// small previews. Empty on general/news results (there's no "full
+	// size" concept for a page thumbnail).
+	ImgSrc  string   `json:"img_src"`
+	Engine  string   `json:"engine"`
+	Engines []string `json:"engines"`
 	// Positions is each contributing engine's own 1-indexed rank for this
 	// result — SearXNG already merges near-duplicate results across engines
 	// before returning them, so a result two engines both ranked highly
@@ -315,16 +332,21 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 			score *= lowerMultiplier
 		}
 
+		thumbnail := r.Thumbnail
+		if thumbnail == "" {
+			thumbnail = r.ThumbnailSrc
+		}
 		results = append(results, SearchResult{
-			Title:     r.Title,
-			URL:       r.URL,
-			Content:   r.Content,
-			Score:     score,
-			Thumbnail: r.Thumbnail,
-			Engine:    r.Engine,
-			Engines:   r.Engines,
-			RankState: string(state),
-			Pinned:    state == RankPin,
+			Title:        r.Title,
+			URL:          r.URL,
+			Content:      r.Content,
+			Score:        score,
+			Thumbnail:    thumbnail,
+			FullImageURL: r.ImgSrc,
+			Engine:       r.Engine,
+			Engines:      r.Engines,
+			RankState:    string(state),
+			Pinned:       state == RankPin,
 		})
 	}
 

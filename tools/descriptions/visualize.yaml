@@ -8,4 +8,9 @@ api_description: >-
   table. Only call this for data you built yourself from other sources — structured tools that
   already return time-series data attach a chart automatically. line/bar cap at 50 points per
   series; bar is single-series only and caps at 12 bars total; timeline caps at 20 events. At most
-  one chart per turn.
+  one chart per turn. IMPORTANT: once you're going to call this, do not ALSO write the same data
+  as a markdown table or bullet list in your reply — the chart already shows every number legibly,
+  and repeating it in prose makes the answer read as a wall of redundant data instead of an
+  interpretation of it. If you can tell from the question that you'll be visualizing the result
+  before you've gathered it, skip building the table/list representation entirely and go straight
+  to a short prose summary (the standout figures, the trend, a comparison) plus the chart.

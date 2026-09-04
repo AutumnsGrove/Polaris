@@ -117,7 +117,9 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 		if r.Thumbnail == "" {
 			continue
 		}
-		ctx.AddCard(Card{Title: r.Title, Subtitle: hostnameOf(r.URL), ImageURL: r.Thumbnail, URL: r.URL, Kind: "image"})
+		ctx.AddCard(Card{
+			Title: r.Title, Subtitle: hostnameOf(r.URL), ImageURL: r.Thumbnail, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
+		})
 	}
 	return finishImageSearch(ctx, "SearXNG", args.Query)
 }
@@ -156,7 +158,9 @@ func braveImageFallback(ctx *Context, query string, count int) (result string, o
 		if source == "" {
 			source = hostnameOf(r.URL)
 		}
-		ctx.AddCard(Card{Title: r.Title, Subtitle: source, ImageURL: r.ImageSrc, URL: r.URL, Kind: "image"})
+		ctx.AddCard(Card{
+			Title: r.Title, Subtitle: source, ImageURL: r.ImageSrc, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
+		})
 	}
 	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query), true
 }

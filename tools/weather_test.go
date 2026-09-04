@@ -133,8 +133,8 @@ func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
 	if ctx.Chart == nil {
 		t.Fatal("Chart is nil, want a Tier-1 auto-attached chart for a multi-day forecast")
 	}
-	if ctx.Chart.Kind != "line" {
-		t.Errorf("Chart.Kind = %q, want line", ctx.Chart.Kind)
+	if ctx.Chart.Kind != "range" {
+		t.Errorf("Chart.Kind = %q, want range", ctx.Chart.Kind)
 	}
 	if len(ctx.Chart.Series) != 2 {
 		t.Fatalf("Chart.Series = %+v, want High and Low series", ctx.Chart.Series)

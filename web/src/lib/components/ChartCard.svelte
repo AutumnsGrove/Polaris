@@ -7,13 +7,21 @@
 	// preserveAspectRatio — no charting library, matching the hand-rolled
 	// instinct already established elsewhere in this codebase (the R2
 	// client, the calculator's own evaluator). Values are unitless
-	// viewBox coordinates, not pixels.
+	// viewBox coordinates, not pixels. Only line/bar are SVG-plotted at
+	// all — range/timeline/meter are plain HTML/CSS (see below).
 	const VB_W = 300;
 	const VB_H = 150;
 	const PAD_LEFT = 34;
 	const PAD_RIGHT = 10;
 	const PAD_TOP = 10;
 	const PAD_BOTTOM = 24;
+
+	// A bar chart with more than this many bars rotates its x-axis labels
+	// instead of leaving them flat — live-tested against a 12-bar chart
+	// (visualize's own cap) and flat labels for that many categories just
+	// ran into each other ("CaliforniaTexasFloridaNewYork...", completely
+	// unreadable). 6 is comfortably below where that starts happening.
+	const BAR_CROWD_THRESHOLD = 6;
 
 	const seriesColors = ['var(--color-accent)', 'var(--color-accent-2)'];
 
@@ -26,6 +34,41 @@
 	let yMin = $derived(chart.kind === 'bar' ? Math.min(0, ...allYValues) : Math.min(...allYValues));
 	let yMax = $derived(Math.max(...allYValues, yMin + 1));
 
+	let barCount = $derived(chart.series?.[0]?.points.length ?? 0);
+	let barCrowded = $derived(chart.kind === 'bar' && barCount > BAR_CROWD_THRESHOLD);
+
+	// Longest category label among a crowded bar chart's bars — drives
+	// bottomPad below. Not measured against the real rendered font (SVG
+	// has no cheap client-side text-measurement without a canvas trick);
+	// a per-character estimate is enough to size padding correctly, it
+	// doesn't need to be exact.
+	let longestLabelChars = $derived(
+		barCrowded ? Math.max(0, ...(chart.series?.[0]?.points.map((p) => String(p.x).length) ?? [])) : 0
+	);
+
+	// bar draws a number directly above each mark (there's no hover/
+	// tooltip in a static SVG, so on-chart labels are the only way to
+	// read an exact value) — that needs headroom above the tallest bar
+	// the plain line chart's axis-label-only layout didn't. topPad is a
+	// flat constant since bar values are always short numbers.
+	//
+	// bottomPad for a crowded bar chart is NOT a flat constant, and that
+	// was a real bug live-tested and found: a longer category label
+	// rotated -40° (see barCrowded's transform below) swings its leading
+	// character further down as well as sideways, and a flat pad sized
+	// for a typical single-word label ("Texas") let a longer two-word one
+	// ("Pennsylvania", "North Carolina") swing far enough down to cross
+	// the SVG's own bottom edge — silently clipped by the SVG's default
+	// overflow:hidden, the exact same failure mode as xLabelAnchor's
+	// left/right edge case, just on the vertical axis instead. The
+	// constants below come from the actual rotation math: at -40°, a
+	// label's leading character ends up sin(40°)≈0.643 of its own
+	// (estimated ~4.5 viewBox-units-per-character) width below the
+	// label's own anchor point — so the pad has to grow with the longest
+	// label's length, not just its rotation.
+	let topPad = $derived(chart.kind === 'bar' ? PAD_TOP + 14 : PAD_TOP);
+	let bottomPad = $derived(barCrowded ? Math.max(PAD_BOTTOM, 12 + longestLabelChars * 3) : PAD_BOTTOM);
+
 	function scaleX(index: number, count: number): number {
 		if (count <= 1) return PAD_LEFT + (VB_W - PAD_LEFT - PAD_RIGHT) / 2;
 		return PAD_LEFT + (index / (count - 1)) * (VB_W - PAD_LEFT - PAD_RIGHT);
@@ -33,11 +76,87 @@
 
 	function scaleY(value: number): number {
 		const range = yMax - yMin || 1;
-		return VB_H - PAD_BOTTOM - ((value - yMin) / range) * (VB_H - PAD_TOP - PAD_BOTTOM);
+		return VB_H - bottomPad - ((value - yMin) / range) * (VB_H - topPad - bottomPad);
 	}
 
 	function linePath(points: { x: string | number; y: number }[]): string {
 		return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i, points.length)} ${scaleY(p.y)}`).join(' ');
+	}
+
+	// x-axis category labels are text-anchor="middle" by default, which
+	// lets the first and last label's text overflow past the viewBox's
+	// left/right edge — SVG's default overflow:hidden on the outer <svg>
+	// then silently clips it (this is exactly how "Phoenix" rendered as
+	// "Phoeni" in practice). Anchoring the two edge labels to start/end
+	// instead keeps every label's text within bounds. Moot once a chart
+	// is crowded enough to rotate (see barCrowded) — rotated labels are
+	// always anchor="end" regardless of position.
+	function xLabelAnchor(index: number, count: number): 'start' | 'middle' | 'end' {
+		if (count <= 1) return 'middle';
+		if (index === 0) return 'start';
+		if (index === count - 1) return 'end';
+		return 'middle';
+	}
+
+	// Compact display for a bar's on-chart value label ("8.5M" not
+	// "8546038") — a raw large number would be wider than most bars.
+	function formatCompact(n: number): string {
+		const abs = Math.abs(n);
+		const trim = (v: number) => (Math.round(v * 10) / 10).toString();
+		if (abs >= 1e9) return trim(n / 1e9) + 'B';
+		if (abs >= 1e6) return trim(n / 1e6) + 'M';
+		if (abs >= 1e3) return trim(n / 1e3) + 'K';
+		return trim(n);
+	}
+
+	// range's day labels — chart.x is an ISO date ("2026-09-04") for
+	// range's one real source (weather.go's setWeatherChart); formatted
+	// short ("Sep 4") since the full date is redundant with the
+	// top-to-bottom row ordering. Falls back to the raw string for
+	// anything that doesn't parse as a date rather than showing "Invalid
+	// Date" — range is Tier-1-only today, but this keeps a future non-
+	// weather Tier-1 source from rendering garbage if its dates aren't
+	// ISO-formatted.
+	function formatShortDate(x: string | number): string {
+		const s = String(x);
+		const d = new Date(s.includes('T') ? s : s + 'T00:00:00');
+		if (isNaN(d.getTime())) return s;
+		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+
+	// range — Tier-1-only (see registry.go's ChartSpec doc comment), never
+	// offered to the model via visualize's kind enum, set exclusively by
+	// weather.go's setWeatherChart. Contract: series[0] is High, series[1]
+	// is Low, same point count/order.
+	//
+	// Deliberately not a coordinate-plotted SVG chart — that was tried
+	// first (both a two-line chart, then an SVG range-bar-per-day chart)
+	// and neither read well: no hover/tooltip in a static SVG made a
+	// shared numeric axis useless, and stuffing high AND low onto one
+	// axis was the real problem, not the mark shape. This instead mirrors
+	// a real weather app's daily list: one row per day, a horizontal
+	// gradient bar positioned on a shared min/max scale across every row,
+	// with the low/high numbers sitting directly at the bar's own ends —
+	// nothing to read off an axis at all.
+	let rangeRows = $derived(
+		chart.kind === 'range' && chart.series?.[0]
+			? chart.series[0].points.map((highPoint, i) => ({
+					date: formatShortDate(highPoint.x),
+					high: highPoint.y,
+					low: chart.series?.[1]?.points[i]?.y ?? highPoint.y
+				}))
+			: []
+	);
+	let rangeMin = $derived(rangeRows.length ? Math.min(...rangeRows.map((r) => r.low)) : 0);
+	let rangeMax = $derived(rangeRows.length ? Math.max(...rangeRows.map((r) => r.high)) : 1);
+	function rangeBarStyle(row: { high: number; low: number }): string {
+		const span = rangeMax - rangeMin || 1;
+		const startPct = ((row.low - rangeMin) / span) * 100;
+		// Floors the visible width at 3% — a day whose high and low are
+		// very close (or a single-day forecast, hypothetically) would
+		// otherwise render an invisible sliver instead of a readable bar.
+		const widthPct = Math.max(((row.high - row.low) / span) * 100, 3);
+		return `left: ${startPct}%; width: ${widthPct}%`;
 	}
 
 	// meter's fill switches to the danger color at the same >=90%-of-max
@@ -57,27 +176,35 @@
 		<svg viewBox="0 0 {VB_W} {VB_H}" class="chart-svg" role="img" aria-label={chart.title}>
 			<line
 				x1={PAD_LEFT}
-				y1={VB_H - PAD_BOTTOM}
+				y1={VB_H - bottomPad}
 				x2={VB_W - PAD_RIGHT}
-				y2={VB_H - PAD_BOTTOM}
+				y2={VB_H - bottomPad}
 				class="axis-line"
 			/>
-			<text x={PAD_LEFT - 4} y={scaleY(yMax) + 3} class="axis-label" text-anchor="end">{yMax.toFixed(0)}</text>
-			<text x={PAD_LEFT - 4} y={scaleY(yMin) + 3} class="axis-label" text-anchor="end">{yMin.toFixed(0)}</text>
+			{#if chart.kind === 'line'}
+				<text x={PAD_LEFT - 4} y={scaleY(yMax) + 3} class="axis-label" text-anchor="end">{yMax.toFixed(0)}</text>
+				<text x={PAD_LEFT - 4} y={scaleY(yMin) + 3} class="axis-label" text-anchor="end">{yMin.toFixed(0)}</text>
+			{/if}
 
 			{#if chart.kind === 'bar'}
 				{#each chart.series?.[0]?.points ?? [] as point, i (i)}
-					{@const barWidth = (VB_W - PAD_LEFT - PAD_RIGHT) / (chart.series![0].points.length * 1.5)}
-					{@const cx = scaleX(i, chart.series![0].points.length)}
+					{@const barWidth = (VB_W - PAD_LEFT - PAD_RIGHT) / (barCount * 1.5)}
+					{@const cx = scaleX(i, barCount)}
+					{@const labelY = VB_H - bottomPad + 10}
 					<rect
 						x={cx - barWidth / 2}
 						y={scaleY(point.y)}
 						width={barWidth}
-						height={VB_H - PAD_BOTTOM - scaleY(point.y)}
+						height={VB_H - bottomPad - scaleY(point.y)}
 						rx="2"
 						class="bar"
 					/>
-					<text x={cx} y={VB_H - PAD_BOTTOM + 10} class="axis-label" text-anchor="middle">{point.x}</text>
+					<text x={cx} y={scaleY(point.y) - 4} class="bar-value" text-anchor="middle">{formatCompact(point.y)}</text>
+					{#if barCrowded}
+						<text x={cx} y={labelY} class="axis-label" text-anchor="end" transform="rotate(-40 {cx} {labelY})">{point.x}</text>
+					{:else}
+						<text x={cx} y={labelY} class="axis-label" text-anchor={xLabelAnchor(i, barCount)}>{point.x}</text>
+					{/if}
 				{/each}
 			{:else}
 				{#each chart.series ?? [] as series, si (series.label)}
@@ -105,6 +232,19 @@
 				{#if chart.x_label}<span class="legend-axis">{chart.x_label}</span>{/if}
 			</div>
 		{/if}
+	{:else if chart.kind === 'range'}
+		<div class="range-list">
+			{#each rangeRows as row, i (i)}
+				<div class="range-row">
+					<span class="range-date">{row.date}</span>
+					<span class="range-low">{Math.round(row.low)}°</span>
+					<div class="range-track">
+						<div class="range-fill" style={rangeBarStyle(row)}></div>
+					</div>
+					<span class="range-high">{Math.round(row.high)}°</span>
+				</div>
+			{/each}
+		</div>
 	{:else if chart.kind === 'timeline'}
 		<ol class="timeline">
 			{#each chart.events ?? [] as event, i (i)}
@@ -172,6 +312,12 @@
 		fill: var(--color-accent);
 	}
 
+	.bar-value {
+		fill: var(--color-text);
+		font-size: 8px;
+		font-weight: 600;
+	}
+
 	.chart-legend {
 		display: flex;
 		flex-wrap: wrap;
@@ -196,6 +342,51 @@
 
 	.legend-axis {
 		margin-left: auto;
+	}
+
+	.range-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+	}
+
+	.range-row {
+		display: grid;
+		grid-template-columns: 44px 24px 1fr 28px;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	.range-date {
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.range-low {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		text-align: right;
+	}
+
+	.range-high {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.range-track {
+		position: relative;
+		height: 6px;
+		border-radius: var(--radius-full);
+		background: var(--color-surface-3);
+	}
+
+	.range-fill {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		border-radius: var(--radius-full);
+		background: linear-gradient(90deg, var(--color-accent-2), var(--color-accent));
 	}
 
 	.timeline {

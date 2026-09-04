@@ -22,6 +22,11 @@ type ImageSearchResult struct {
 	// with ImageSrc separately holding the thumbnail to actually display.
 	URL      string
 	ImageSrc string
+	// FullImageURL is Brave's own "properties.url" — the full-resolution
+	// image, distinct from ImageSrc/Thumbnail.Src which is deliberately a
+	// small preview. Always populated when Brave provides it, independent
+	// of whether ImageSrc had to fall back to this same field below.
+	FullImageURL string
 	// Source is the result's display domain (Brave's own "source" field) —
 	// falls back to a parsed hostname from URL when Brave omits it, same
 	// defensive shape as tools/image_search.go's domain fallback for
@@ -100,7 +105,9 @@ func (c *Client) SearchImages(ctx context.Context, query string, count int) (*Im
 				source = parsed.Hostname()
 			}
 		}
-		results = append(results, ImageSearchResult{Title: r.Title, URL: r.URL, ImageSrc: imageSrc, Source: source})
+		results = append(results, ImageSearchResult{
+			Title: r.Title, URL: r.URL, ImageSrc: imageSrc, FullImageURL: r.Properties.URL, Source: source,
+		})
 	}
 
 	return &ImageSearchResponse{Query: query, Results: results}, nil

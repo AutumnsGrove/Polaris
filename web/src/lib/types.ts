@@ -24,12 +24,23 @@ export interface Card {
 	// "media" (RecommendationsCarousel, today's behavior). image_search is
 	// the only "image" producer — see ImageGallery.svelte.
 	kind?: 'image';
+	// A higher-resolution image than image_url's deliberately small
+	// thumbnail, for ImageGallery's lightbox to use instead of upscaling
+	// the thumbnail — set only by image_search. Falls back to image_url
+	// when absent.
+	full_image_url?: string;
 }
 
 // A structured chart — see tools/registry.go's ChartSpec doc comment.
 // At most one per turn, unlike Card above.
 export interface ChartSpec {
-	kind: 'line' | 'bar' | 'timeline' | 'meter';
+	// "range" is Tier-1-only — never offered to the model via visualize's
+	// kind enum (see tools/visualize.go), set exclusively by weather.go's
+	// setWeatherChart for a daily high/low forecast. See ChartCard.svelte
+	// for why a plain two-line chart was replaced with this for weather
+	// specifically: no hover/tooltip in a static SVG made the compressed
+	// axis hard to read at a glance.
+	kind: 'line' | 'bar' | 'timeline' | 'meter' | 'range';
 	title: string;
 	x_label?: string;
 	y_label?: string;

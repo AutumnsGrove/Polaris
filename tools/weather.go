@@ -113,7 +113,18 @@ func handleWeather(argsJSON string, ctx *Context) string {
 // docs/plans/visualize-and-image-search.md) — a deterministic chart
 // attached from data formatWeather already has in scope, no extra fetch
 // and no model round-trip. Only fires for a multi-day forecast; a
-// single-day/current-only call has nothing worth plotting as a line.
+// single-day/current-only call has nothing worth plotting.
+//
+// Kind is "range", not "line" — live-tested against a real multi-day
+// forecast and a plain two-line High/Low chart genuinely didn't work for
+// this: no hover/tooltip in a static SVG made the compressed axis hard to
+// read at a glance, and the values were only inferrable, not readable.
+// "range" is a Tier-1-only kind: never in visualize's own kind enum (see
+// visualize.go), so it needs no schema/model-facing change — ChartCard.
+// svelte just renders whatever Kind string arrives, and only this
+// function ever sets "range". Series[0] must be High, Series[1] Low, same
+// order/count — that positional contract lives here and in ChartCard.
+// svelte's "range" case, not enforced by the type system.
 func setWeatherChart(ctx *Context, displayName string, f *openMeteoResponse) {
 	if len(f.Daily.Time) <= 1 {
 		return
@@ -125,7 +136,7 @@ func setWeatherChart(ctx *Context, displayName string, f *openMeteoResponse) {
 		lows[i] = ChartPoint{X: day, Y: f.Daily.TempMin[i]}
 	}
 	ctx.SetChart(ChartSpec{
-		Kind:   "line",
+		Kind:   "range",
 		Title:  fmt.Sprintf("Forecast for %s", displayName),
 		XLabel: "Date",
 		YLabel: "°F",
