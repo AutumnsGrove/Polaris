@@ -521,6 +521,11 @@ type Card struct {
 	Subtitle string `json:"subtitle,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 	URL      string `json:"url"`
+	// Kind selects which frontend treatment renders this card. Empty/
+	// omitted means "media" — today's carousel behavior, unchanged for
+	// every existing caller (music/movies/books never set this field).
+	// image_search is the only "image" caller — see its doc comment.
+	Kind string `json:"kind,omitempty"` // "" (media, default) | "image"
 }
 
 // AddCard appends a card unless its URL is already present, same
@@ -649,7 +654,8 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
-		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef, "read_attachment": readAttachmentDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
+		"image_search": imageSearchDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 	}

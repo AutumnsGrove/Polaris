@@ -53,7 +53,12 @@ const MonthlyCap = 1000
 type Client struct {
 	apiKey  string
 	baseURL string
-	http    *http.Client
+	// imagesBaseURL is Brave's separate Image Search endpoint — see
+	// images.go's doc comment on why this is a second field rather than a
+	// package-level const: NewClientForTest needs to point both endpoints
+	// at the same fake server.
+	imagesBaseURL string
+	http          *http.Client
 }
 
 // NewClient returns nil if apiKey is empty — callers check for nil to
@@ -64,17 +69,20 @@ func NewClient(apiKey string) *Client {
 		return nil
 	}
 	return &Client{
-		apiKey:  apiKey,
-		baseURL: "https://api.search.brave.com/res/v1/web/search",
-		http:    &http.Client{Timeout: 15 * time.Second},
+		apiKey:        apiKey,
+		baseURL:       "https://api.search.brave.com/res/v1/web/search",
+		imagesBaseURL: "https://api.search.brave.com/res/v1/images/search",
+		http:          &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
 // NewClientForTest builds a Client against a custom baseURL — exported
 // solely so other packages' tests can point it at an httptest server
-// instead of the real API. Not used outside tests.
+// instead of the real API. Not used outside tests. imagesBaseURL is
+// baseURL+"/images", a distinct sub-path so one fake server can mux
+// Search and SearchImages requests apart by path.
 func NewClientForTest(apiKey, baseURL string) *Client {
-	return &Client{apiKey: apiKey, baseURL: baseURL, http: &http.Client{Timeout: 5 * time.Second}}
+	return &Client{apiKey: apiKey, baseURL: baseURL, imagesBaseURL: baseURL + "/images", http: &http.Client{Timeout: 5 * time.Second}}
 }
 
 type SearchResult struct {

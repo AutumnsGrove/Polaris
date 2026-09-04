@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "visualize",
-	"read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -164,6 +164,8 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"visualize": {Name: "visualize", Description: "render structured data you've already synthesized as a chart instead of prose.",
 		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
+	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
+		APIDescription: "Find real photos for a query and attach them as a gallery."},
 	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
 		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",

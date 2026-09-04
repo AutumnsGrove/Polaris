@@ -1,0 +1,9 @@
+name: image_search
+category: research
+description: >-
+  find real photos for a query — thumbnail, source page, title, source domain. Use this when a
+  photo would help more than a text description (a hairstyle, an object, a place, a visual style).
+api_description: >-
+  Find real photos for a query and attach them as a gallery. Returns a thumbnail, source page,
+  title, and source domain per image — a deterministic pass-through of search-engine ranking, not
+  a curated selection. Use for anything a photo answers better than a text description.
