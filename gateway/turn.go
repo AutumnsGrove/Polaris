@@ -788,7 +788,17 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider}, turnID)
+		data := map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider}
+		// chart_kind is only meaningful for visualize's own tool_result —
+		// store.Store.GetStats reads it back to report which kinds the
+		// model actually reaches for (see ChartKindCounts's doc comment).
+		// Weather's own Tier-1 auto-chart also sets evt.Chart on its
+		// tool_result, deliberately excluded here since that kind is
+		// never a model decision.
+		if evt.Tool == "visualize" && evt.Chart != nil {
+			data["chart_kind"] = evt.Chart.Kind
+		}
+		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", data, turnID)
 	case "agent_nudge":
 		// Durable record of a research-steering signal firing (see
 		// agent.emitNudge) — evt.Args carries kind/call_count/

@@ -80,3 +80,35 @@ func TestGetStats_SearchProviderCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestGetStats_ChartKindCounts(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	s.LogEvent("t1", "info", "tool.visualize", "tool call finished", map[string]interface{}{"result": "...", "chart_kind": "line"}, "turn-1")
+	s.LogEvent("t1", "info", "tool.visualize", "tool call finished", map[string]interface{}{"result": "...", "chart_kind": "meter"}, "turn-2")
+	s.LogEvent("t1", "info", "tool.visualize", "tool call finished", map[string]interface{}{"result": "...", "chart_kind": "meter"}, "turn-3")
+	// A rejected call (cap exceeded, bad kind) never reaches ctx.SetChart,
+	// so its tool_result carries no chart_kind at all — must not show up
+	// as some empty-string bucket.
+	s.LogEvent("t1", "warn", "tool.visualize", "tool call finished", map[string]interface{}{"result": "error: too many points"}, "turn-4")
+	// weather's own Tier-1 auto-chart is deliberately excluded — its kind
+	// is never a model decision (see ChartKindCounts's doc comment).
+	s.LogEvent("t1", "info", "tool.weather", "tool call finished", map[string]interface{}{"result": "...", "chart_kind": "line"}, "turn-5")
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats returned error: %v", err)
+	}
+	want := map[string]int{"line": 1, "meter": 2}
+	if len(stats.ChartKindCounts) != len(want) {
+		t.Fatalf("ChartKindCounts = %+v, want %+v", stats.ChartKindCounts, want)
+	}
+	for kind, count := range want {
+		if stats.ChartKindCounts[kind] != count {
+			t.Errorf("ChartKindCounts[%q] = %d, want %d", kind, stats.ChartKindCounts[kind], count)
+		}
+	}
+}

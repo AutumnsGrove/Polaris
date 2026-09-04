@@ -29,6 +29,10 @@ export interface UsageStats {
 	// see store.Stats.SearchProviderCounts' doc comment for why this
 	// isn't the same thing as a billing/usage-cap count.
 	search_provider_counts: Record<string, number>;
+	// How many times the model called visualize with each chart kind —
+	// see store.Stats.ChartKindCounts' doc comment for why weather's own
+	// auto-attached chart isn't counted here.
+	chart_kind_counts: Record<string, number>;
 	check_in_count: number;
 	stale_streak_count: number;
 	max_turns_wrapup_count: number;

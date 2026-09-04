@@ -61,6 +61,11 @@
 			? Object.entries(appState.settings.usage.search_provider_counts).sort((a, b) => b[1] - a[1])
 			: []
 	);
+	let chartKindCounts = $derived(
+		appState.settings.usage
+			? Object.entries(appState.settings.usage.chart_kind_counts).sort((a, b) => b[1] - a[1])
+			: []
+	);
 </script>
 
 <div class="modal-backdrop" role="presentation">
@@ -104,6 +109,12 @@
 									.map(([provider, count]) => `${providerLabels[provider] ?? provider}: ${count}`)
 									.join(', ')}</span
 							>
+						</div>
+					{/if}
+					{#if chartKindCounts.length > 0}
+						<div class="row">
+							<span>visualize chart kinds</span>
+							<span>{chartKindCounts.map(([kind, count]) => `${kind}: ${count}`).join(', ')}</span>
 						</div>
 					{/if}
 					<div class="row">

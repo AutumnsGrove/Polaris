@@ -143,6 +143,26 @@ func printStats(s *store.Stats) {
 		}
 	}
 
+	fmt.Printf("\nvisualize chart kinds (%s):\n", period)
+	if len(s.ChartKindCounts) == 0 {
+		fmt.Println("  none")
+	} else {
+		total := 0
+		for _, c := range s.ChartKindCounts {
+			total += c
+		}
+		kinds := make([]string, 0, len(s.ChartKindCounts))
+		for k := range s.ChartKindCounts {
+			kinds = append(kinds, k)
+		}
+		sort.Strings(kinds)
+		for _, k := range kinds {
+			count := s.ChartKindCounts[k]
+			pct := float64(count) / float64(total) * 100
+			fmt.Printf("  %-10s %5d charts    %5.1f%%\n", k, count, pct)
+		}
+	}
+
 	fmt.Printf("\nresearch loop steering (%s):\n", period)
 	fmt.Printf("  check-in nudges:      %d\n", s.CheckInCount)
 	fmt.Printf("  stale-streak warnings: %d\n", s.StaleStreakCount)

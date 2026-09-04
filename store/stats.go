@@ -57,6 +57,17 @@ type Stats struct {
 	// model), so it answers "how often does each fallback actually save
 	// the day" rather than "how much have I spent".
 	SearchProviderCounts map[string]int `json:"search_provider_counts"`
+
+	// ChartKindCounts is how many times the model called visualize with
+	// each kind ("line"/"bar"/"timeline"/"meter") — the evidence for
+	// whether the tool's v1 kind set (see tools/visualize.go) actually
+	// matches what the model reaches for in practice. Scoped to visualize
+	// specifically, not weather's Tier-1 auto-attached chart: that one's
+	// kind is always "line" and never a model decision, so counting it
+	// here would answer a different question ("how often is weather
+	// asked for multiple days") than "which chart kinds does the model
+	// choose".
+	ChartKindCounts map[string]int `json:"chart_kind_counts"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -69,6 +80,7 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		ToolCallCounts:       map[string]int{},
 		ToolErrorCounts:      map[string]int{},
 		SearchProviderCounts: map[string]int{},
+		ChartKindCounts:      map[string]int{},
 	}
 
 	var since string
@@ -190,6 +202,42 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		return nil, err
 	}
 	providerRows.Close()
+
+	// chart_kind lives inside the JSON data blob, same reasoning as
+	// provider above — only visualize's own finished-call events ever
+	// carry it, and only on success (a rejected/capped call never reaches
+	// ctx.SetChart, so its tool_result has no chart at all — see
+	// tools/visualize.go's handleVisualize).
+	chartKindQuery := `SELECT data FROM events WHERE source = 'tool.visualize' AND message = 'tool call finished'`
+	chartKindArgs := []interface{}{}
+	if since != "" {
+		chartKindQuery += ` AND created_at >= ?`
+		chartKindArgs = append(chartKindArgs, since)
+	}
+	chartKindRows, err := s.db.Query(chartKindQuery, chartKindArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for chartKindRows.Next() {
+		var dataJSON string
+		if err := chartKindRows.Scan(&dataJSON); err != nil {
+			chartKindRows.Close()
+			return nil, err
+		}
+		var d struct {
+			ChartKind string `json:"chart_kind"`
+		}
+		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil {
+			continue
+		}
+		if d.ChartKind != "" {
+			stats.ChartKindCounts[d.ChartKind]++
+		}
+	}
+	if err := chartKindRows.Err(); err != nil {
+		return nil, err
+	}
+	chartKindRows.Close()
 
 	// Nudge kind lives inside the JSON data blob, not a column — cheap
 	// enough to unmarshal per-row at this data volume rather than reach
