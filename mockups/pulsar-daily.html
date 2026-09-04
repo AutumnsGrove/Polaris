@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pulsar Daily — mockup v2</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/asimovian@5/latin-400.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-accent-2-strong: oklch(68% 0.09 235);
+	--color-danger: oklch(65% 0.19 25);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	font-size: 15px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+.masthead {
+	position: relative;
+	padding: var(--space-2xl) var(--space-xl) var(--space-xl);
+	background:
+		radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.5), transparent),
+		radial-gradient(1px 1px at 65% 15%, rgba(255,255,255,.35), transparent),
+		radial-gradient(1.5px 1.5px at 85% 55%, rgba(255,255,255,.4), transparent),
+		radial-gradient(1px 1px at 45% 70%, rgba(255,255,255,.3), transparent),
+		linear-gradient(180deg, var(--color-surface), var(--color-bg));
+	border-bottom: 1px solid var(--color-border);
+	text-align: center;
+}
+.masthead .wordmark {
+	font-family: 'Asimovian', sans-serif;
+	font-size: 2rem;
+	letter-spacing: 0.08em;
+	color: var(--color-accent);
+	margin: 0;
+}
+.masthead .kicker {
+	color: var(--color-text-dim);
+	font-size: 0.8rem;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	margin: var(--space-xs) 0 0;
+}
+.masthead .dateline {
+	margin-top: var(--space-md);
+	font-size: 0.95rem;
+	color: var(--color-text-dim);
+	display: flex;
+	justify-content: center;
+	gap: var(--space-lg);
+	flex-wrap: wrap;
+}
+.masthead .dateline span::before { content: "·"; margin-right: var(--space-lg); color: var(--color-border-strong); }
+.masthead .dateline span:first-child::before { content: none; margin-right: 0; }
+.edition-nav { display: flex; justify-content: center; gap: var(--space-sm); margin-top: var(--space-lg); }
+.edition-nav button {
+	font: inherit; font-size: 0.8rem;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	color: var(--color-text-dim);
+	padding: var(--space-xs) var(--space-md);
+	border-radius: var(--radius-full);
+	cursor: pointer;
+}
+.edition-nav button.active { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent); }
+
+main { max-width: 1180px; margin: 0 auto; padding: var(--space-2xl) var(--space-xl) var(--space-3xl); }
+
+/* True masonry via CSS multi-column layout, not a fixed-row-span grid.
+   Each .card sizes to its own content and just flows into whichever
+   column has room next — this is what makes real, variable-length daily
+   content (some day's digest is one line, another day it's five) safe:
+   nothing can ever clip, because nothing pins a card to a fixed height.
+   break-inside: avoid keeps a card from being sliced across two columns,
+   which is the one thing the column technique needs help with. */
+.board {
+	column-count: 3;
+	column-gap: var(--space-lg);
+}
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-sm), var(--shadow-glass-edge);
+	padding: var(--space-lg);
+	margin-bottom: var(--space-lg);
+	break-inside: avoid;
+	display: inline-block;
+	width: 100%;
+	position: relative;
+	cursor: pointer;
+	transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card:hover, .card:focus-visible {
+	transform: translateY(-2px);
+	border-color: var(--color-border-strong);
+	box-shadow: var(--shadow-md), var(--shadow-glass-edge);
+}
+.card:hover .expand-hint, .card:focus-visible .expand-hint { opacity: 1; }
+
+/* Every card is a tap target — expanding into a real Polaris thread with
+   a synthesized "go deeper" prompt, per the on-demand-depth model. Shown
+   faint-but-present at rest (not hover-only) since touch devices have no
+   hover state at all — a mobile reader needs to see this affordance
+   exists without first discovering it by accident. */
+.expand-hint {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-top: var(--space-md);
+	font-size: 0.72rem;
+	color: var(--color-accent-2);
+	opacity: 0.55;
+	transition: opacity 0.15s ease;
+}
+.top-story .expand-hint {
+	opacity: 1;
+	margin-top: var(--space-lg);
+	font-size: 0.82rem;
+	font-weight: 500;
+	color: var(--color-bg);
+	background: var(--color-accent);
+	width: fit-content;
+	padding: var(--space-sm) var(--space-lg);
+	border-radius: var(--radius-full);
+}
+.top-story:hover .expand-hint { opacity: 0.9; }
+
+.card .card-head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.card .card-icon {
+	width: 28px; height: 28px;
+	display: grid; place-items: center;
+	border-radius: var(--radius-md);
+	background: var(--color-surface-2);
+	font-size: 1rem;
+	flex-shrink: 0;
+}
+.card .card-title { font-weight: 600; font-size: 0.95rem; letter-spacing: 0.01em; }
+.card .card-meta { margin-left: auto; font-size: 0.7rem; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.card .card-body { color: var(--color-text-dim); font-size: 0.88rem; }
+.card .card-body p { margin: 0 0 var(--space-sm); }
+.card .card-body p:last-child { margin-bottom: 0; }
+.card .card-body strong { color: var(--color-text); font-weight: 500; }
+
+/* Top Story — the LLM-elected "biggest news of the day" slot. No border
+   glow, no accent frame; per feedback, "special" means MORE SUBSTANCE,
+   not a highlight box. It just gets more room, more paragraphs, and an
+   image, the way a real front page gives its lead story column inches
+   instead of a sticker. */
+.card.top-story {
+	padding: var(--space-xl);
+}
+.top-story .kicker-label {
+	font-size: 0.68rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--color-accent);
+	margin-bottom: var(--space-xs);
+	display: block;
+}
+.top-story .headline {
+	font-size: 1.3rem;
+	font-weight: 600;
+	color: var(--color-text);
+	line-height: 1.3;
+	margin: 0 0 var(--space-md);
+}
+.top-story img {
+	width: 100%;
+	border-radius: var(--radius-md);
+	margin-bottom: var(--space-md);
+	display: block;
+}
+.top-story .pull-quote {
+	margin: var(--space-md) 0;
+	padding-left: var(--space-md);
+	border-left: 2px solid var(--color-accent);
+	font-style: italic;
+	color: var(--color-text);
+}
+.top-story .card-body { font-size: 0.92rem; }
+
+.word-of-day .headword { font-size: 1.6rem; font-weight: 600; color: var(--color-text); }
+.word-of-day .pos { font-style: italic; color: var(--color-text-dim); font-size: 0.8rem; margin-left: var(--space-sm); }
+.word-of-day .definition { margin-top: var(--space-sm); }
+.word-of-day .example { margin-top: var(--space-md); padding-left: var(--space-md); border-left: 2px solid var(--color-border-strong); color: var(--color-text-dim); font-size: 0.82rem; }
+
+.weather-row { display: flex; justify-content: space-between; gap: var(--space-sm); margin-top: var(--space-md); }
+.weather-day { flex: 1; text-align: center; font-size: 0.72rem; color: var(--color-text-dim); }
+.weather-day .icon { font-size: 1.3rem; display: block; margin-bottom: 2px; }
+.weather-day .hi { color: var(--color-text); font-weight: 500; }
+
+.headlines ul, .trending ul { list-style: none; margin: 0; padding: 0; }
+.headlines li, .trending li { padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); }
+.headlines li:last-child, .trending li:last-child { border-bottom: none; }
+.headlines .src { font-size: 0.7rem; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.trending li { display: flex; align-items: baseline; gap: var(--space-sm); }
+.trending .rank { color: var(--color-accent); font-weight: 600; font-size: 0.8rem; width: 1.2em; flex-shrink: 0; }
+
+.sports-row { display: flex; justify-content: space-between; align-items: center; padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; }
+.sports-row:last-child { border-bottom: none; }
+.sports-row .score { font-weight: 600; color: var(--color-text); }
+
+.picture-of-day img { width: 100%; border-radius: var(--radius-md); display: block; margin-bottom: var(--space-sm); }
+.picture-of-day .caption { font-size: 0.78rem; color: var(--color-text-dim); }
+
+.local-list li { padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; }
+.local-list li:last-child { border-bottom: none; }
+.local-list .tag {
+	font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+	color: var(--color-accent-2); margin-right: var(--space-sm);
+}
+
+/* Stand-in for a real timeline ChartCard (tools/visualize.go's "timeline"
+   kind) — demonstrates a block leading with a chart instead of prose, per
+   the "show not tell, hook interest before they expand" idea. A real
+   build would render the actual ChartCard.svelte component here. */
+.chart-stub { margin: var(--space-md) 0; }
+.chart-stub .track {
+	position: relative;
+	height: 4px;
+	background: var(--color-surface-2);
+	border-radius: var(--radius-full);
+	margin: var(--space-lg) 0;
+}
+.chart-stub .track .fill {
+	position: absolute; top: 0; left: 0; height: 100%;
+	background: var(--color-accent);
+	border-radius: var(--radius-full);
+}
+.chart-stub .point {
+	position: absolute; top: 50%; transform: translate(-50%, -50%);
+	width: 10px; height: 10px; border-radius: 50%;
+	background: var(--color-accent); border: 2px solid var(--color-surface);
+}
+.chart-stub .point.future { background: var(--color-surface-3); }
+.chart-stub .labels { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--color-text-dim); }
+.chart-stub .labels span { max-width: 33%; text-align: center; }
+
+.unchanged-note {
+	margin-top: var(--space-2xl);
+	text-align: center;
+	font-size: 0.78rem;
+	color: var(--color-text-dim);
+	display: flex; align-items: center; justify-content: center; gap: var(--space-sm);
+}
+.unchanged-note::before, .unchanged-note::after { content: ""; height: 1px; background: var(--color-border); flex: 1; max-width: 120px; }
+
+/* Sidebar nav sliver — a demo of where "The Daily" entry would sit,
+   copied 1:1 from Sidebar.svelte's real .pulsar-entry rules (same
+   padding/radius/hover/active states) so this reads as "the real nav,"
+   not a mockup guess at it. Fixed overlay, not part of the page's own
+   layout — this file mocks the /daily destination, not the app shell. */
+.sidebar-demo {
+	position: fixed;
+	top: var(--space-xl);
+	left: var(--space-xl);
+	width: 220px;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-lg), var(--shadow-glass-edge);
+	padding: var(--space-md);
+	z-index: 10;
+}
+.sidebar-demo .demo-caption {
+	font-size: 0.65rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--color-text-dim);
+	padding: 0 var(--space-md) var(--space-sm);
+}
+.pulsar-entry, .daily-entry {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	width: 100%;
+	margin: 0 0 4px;
+	padding: var(--space-sm) var(--space-md);
+	border: none;
+	background: transparent;
+	border-radius: var(--radius-md);
+	font: inherit;
+	font-size: 13px;
+	color: var(--color-text-dim);
+	cursor: pointer;
+	text-align: left;
+}
+.pulsar-entry:hover, .daily-entry:hover { background: var(--color-surface-2); color: var(--color-text); }
+.pulsar-entry svg, .daily-entry svg { flex-shrink: 0; color: var(--color-accent); }
+.pulsar-entry span, .daily-entry span { flex: 1; }
+.daily-entry.active { background: var(--color-accent-soft); color: var(--color-text); font-weight: 600; }
+.daily-dot {
+	width: 6px; height: 6px; border-radius: 50%;
+	background: var(--color-accent);
+	flex-shrink: 0;
+}
+
+.viewport-note {
+	position: fixed; bottom: var(--space-lg); right: var(--space-lg);
+	background: var(--color-surface-3);
+	border: 1px solid var(--color-border-strong);
+	padding: var(--space-xs) var(--space-md);
+	border-radius: var(--radius-full);
+	font-size: 0.72rem; color: var(--color-text-dim);
+	box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 900px) {
+	.board { column-count: 2; }
+}
+@media (max-width: 620px) {
+	.masthead { padding: var(--space-xl) var(--space-lg) var(--space-lg); }
+	.masthead .wordmark { font-size: 1.5rem; }
+	main { padding: var(--space-xl) var(--space-md) var(--space-2xl); }
+	.board { column-count: 1; }
+	.viewport-note { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar-demo">
+	<p class="demo-caption">Sidebar nav (demo)</p>
+	<button class="pulsar-entry">
+		<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85" /><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152" /><circle cx="12" cy="12" r="3" /><circle cx="19" cy="5" r="2" /><circle cx="5" cy="19" r="2" /></svg>
+		<span>Pulsar</span>
+	</button>
+	<button class="daily-entry active">
+		<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8" /><path d="m4.93 10.93 1.41 1.41" /><path d="M2 18h2" /><path d="M20 18h2" /><path d="m19.07 10.93-1.41 1.41" /><path d="M22 22H2" /><path d="m8 6 4-4 4 4" /><path d="M16 18a4 4 0 0 0-8 0" /></svg>
+		<span>The Daily</span>
+		<span class="daily-dot" title="New edition"></span>
+	</button>
+</div>
+
+<div class="masthead">
+	<p class="kicker">Pulsar</p>
+	<h1 class="wordmark">THE DAILY</h1>
+	<div class="dateline">
+		<span>Friday, September 4, 2026</span>
+		<span>Portland, OR</span>
+		<span>Edition #142</span>
+	</div>
+	<div class="edition-nav">
+		<button>← Yesterday</button>
+		<button class="active">Today</button>
+		<button disabled>Tomorrow →</button>
+	</div>
+</div>
+
+<main>
+<div class="board">
+
+	<!-- TOP STORY — a ranking pass looked across every generated block's
+	     one-line gist and elected this one as today's biggest, then ran a
+	     second, deeper elaboration pass on just this block for more
+	     paragraphs + a pulled quote, rather than reusing whichever block
+	     happened to generate the most text. -->
+	<div class="card top-story">
+		<span class="kicker-label">Top Story</span>
+		<h2 class="headline">Guild Wars 3's fourth playable species confirmed — and it's tied to Orr's fall</h2>
+		<img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&q=60" alt="" />
+		<div class="card-body">
+			<p>ArenaNet's dev blog answered the question fans have been chewing on since June's
+			announcement trailer: the fourth playable species — teased only as "connected deeply to
+			Orr's past" — has been fully revealed, alongside humans, asura, and the newly-playable
+			kodan.</p>
+			<div class="pull-quote">"This is the biggest lore drop we've done since the announcement
+			itself," the studio said in today's post.</div>
+			<p>Beta signups open next Tuesday. The last three days had only soundtrack details and
+			gamescom preview recaps — nothing at this level of concreteness — which is exactly why
+			today's post cleared the bar for the front page instead of just another line in the
+			ongoing-story digest below.</p>
+		</div>
+		<div class="expand-hint">Continue in chat →</div>
+	</div>
+
+	<div class="card word-of-day">
+		<div class="card-head">
+			<div class="card-icon">📖</div>
+			<div class="card-title">Word of the Day</div>
+		</div>
+		<div class="card-body">
+			<div><span class="headword">apricity</span><span class="pos">n.</span></div>
+			<p class="definition">The warmth of the sun in winter.</p>
+			<p class="example">"They found a patch of apricity on the porch steps and stayed there
+			past noon."</p>
+			<div class="expand-hint">Etymology &amp; more examples →</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-head">
+			<div class="card-icon">⛅</div>
+			<div class="card-title">Weather</div>
+			<div class="card-meta">Portland, OR</div>
+		</div>
+		<div class="card-body">
+			<p>Clear and mild through the weekend — a light system moves in Monday night.</p>
+			<div class="weather-row">
+				<div class="weather-day"><span class="icon">☀️</span>Fri<br><span class="hi">74°</span> 54°</div>
+				<div class="weather-day"><span class="icon">🌤️</span>Sat<br><span class="hi">76°</span> 55°</div>
+				<div class="weather-day"><span class="icon">☀️</span>Sun<br><span class="hi">78°</span> 56°</div>
+				<div class="weather-day"><span class="icon">🌧️</span>Mon<br><span class="hi">68°</span> 52°</div>
+				<div class="weather-day"><span class="icon">🌦️</span>Tue<br><span class="hi">65°</span> 50°</div>
+			</div>
+			<div class="expand-hint">Ask about this forecast →</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-head">
+			<div class="card-icon">📜</div>
+			<div class="card-title">On This Day</div>
+			<div class="card-meta">1998</div>
+		</div>
+		<div class="card-body">
+			<p>Google is founded in a Menlo Park garage by Larry Page and Sergey Brin — the
+			company's first server rack was built from Lego.</p>
+			<div class="expand-hint">More history like this →</div>
+		</div>
+	</div>
+
+	<div class="card headlines">
+		<div class="card-head">
+			<div class="card-icon">🌐</div>
+			<div class="card-title">Top Headlines</div>
+			<div class="card-meta">4 sources</div>
+		</div>
+		<div class="card-body">
+			<ul>
+				<li>Google escapes ad-tech breakup — third straight antitrust loss for US regulators
+					<div class="src">Reuters</div></li>
+				<li>OpenAI ships GPT-6 "Astra," its first model past the internal "Critical" cyber threshold
+					<div class="src">CNBC</div></li>
+				<li>Uber + Wayve launch London's first robotaxi service
+					<div class="src">Reuters</div></li>
+				<li>US backs OpenAI in NYT copyright suit
+					<div class="src">Reuters</div></li>
+			</ul>
+			<div class="expand-hint">Dig into any of these →</div>
+		</div>
+	</div>
+
+	<div class="card local-list">
+		<div class="card-head">
+			<div class="card-icon">📍</div>
+			<div class="card-title">Local</div>
+			<div class="card-meta">Portland, OR</div>
+		</div>
+		<div class="card-body">
+			<ul>
+				<li><span class="tag">Transit</span>TriMet proposes fare changes for 2027, public comment open through Oct</li>
+				<li><span class="tag">Weather</span>Air quality advisory lifted after Wednesday's smoke</li>
+				<li><span class="tag">City</span>New protected bike lane opens on SE Division</li>
+			</ul>
+			<div class="expand-hint">What else is happening nearby? →</div>
+		</div>
+	</div>
+
+	<div class="card trending">
+		<div class="card-head">
+			<div class="card-icon">🔥</div>
+			<div class="card-title">Trending Now</div>
+		</div>
+		<div class="card-body">
+			<ul>
+				<li><span class="rank">1</span> GPT-6 "Astra" launch reactions</li>
+				<li><span class="rank">2</span> Guild Wars 3 species reveal</li>
+				<li><span class="rank">3</span> London robotaxi rollout</li>
+				<li><span class="rank">4</span> JWST exoplanet disk paper</li>
+			</ul>
+			<div class="expand-hint">Why is this trending? →</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-head">
+			<div class="card-icon">🔬</div>
+			<div class="card-title">Tech &amp; Science</div>
+			<div class="card-meta">Digest</div>
+		</div>
+		<div class="card-body">
+			<p>A new hyperscale datacenter campus was approved for eastern Oregon today — the model
+			reached for a chart here since the buildout is staged, not a single event.</p>
+			<div class="chart-stub">
+				<div class="track"><div class="fill" style="width: 30%;"></div></div>
+				<div class="point" style="left: 6%;"></div>
+				<div class="point" style="left: 30%;"></div>
+				<div class="point future" style="left: 62%;"></div>
+				<div class="point future" style="left: 90%;"></div>
+				<div class="labels">
+					<span>Permits filed (Jun)</span>
+					<span>Groundbreaking (this week)</span>
+					<span>Phase 1 online (2027)</span>
+				</div>
+			</div>
+			<div class="expand-hint">Expand on this →</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-head">
+			<div class="card-icon">🏀</div>
+			<div class="card-title">Sports</div>
+		</div>
+		<div class="card-body">
+			<div class="sports-row"><span>Blazers @ Warriors</span><span class="score">104–98 F</span></div>
+			<div class="sports-row"><span>Timbers vs. Sounders</span><span class="score">2–2 F</span></div>
+			<div class="sports-row"><span>US Open, Men's QF</span><span class="score">Alcaraz wins in 4</span></div>
+			<div class="expand-hint">Full recap →</div>
+		</div>
+	</div>
+
+	<div class="card picture-of-day">
+		<div class="card-head">
+			<div class="card-icon">🖼️</div>
+			<div class="card-title">Picture of the Day</div>
+		</div>
+		<img src="https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=700&q=60" alt="" />
+		<div class="caption">The Beehive Cluster (M44), captured from La Palma — roughly 600 light-years away and visible to the naked eye on a clear night.</div>
+		<div class="expand-hint">Tell me more about this →</div>
+	</div>
+
+	<div class="card">
+		<div class="card-head">
+			<div class="card-icon">💬</div>
+			<div class="card-title">Quote</div>
+		</div>
+		<div class="card-body">
+			<p style="font-style: italic; color: var(--color-text);">"The best way to predict the
+			future is to invent it."</p>
+			<p class="definition">— Alan Kay</p>
+			<div class="expand-hint">Who was Alan Kay? →</div>
+		</div>
+	</div>
+
+</div>
+
+<p class="unchanged-note">2 blocks had nothing new today — silently skipped</p>
+
+</main>
+
+<div class="viewport-note">resize the window to preview mobile ↙</div>
+
+</body>
+</html>
