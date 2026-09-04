@@ -142,6 +142,35 @@ func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
 	if len(ctx.Chart.Series[0].Points) != 3 || ctx.Chart.Series[0].Points[2].Y != 80 {
 		t.Errorf("Chart.Series[0].Points = %+v, want 3 points ending at 80", ctx.Chart.Series[0].Points)
 	}
+	wantIcons := []string{"partly-cloudy", "clear", "clear"}
+	if len(ctx.Chart.Icons) != len(wantIcons) {
+		t.Fatalf("Chart.Icons = %+v, want %+v", ctx.Chart.Icons, wantIcons)
+	}
+	for i, want := range wantIcons {
+		if ctx.Chart.Icons[i] != want {
+			t.Errorf("Chart.Icons[%d] = %q, want %q (from weather_code %v)", i, ctx.Chart.Icons[i], want, []int{2, 1, 0}[i])
+		}
+	}
+}
+
+func TestWeatherCodeIcon(t *testing.T) {
+	tests := []struct {
+		code int
+		want string
+	}{
+		{0, "clear"}, {1, "clear"}, {2, "partly-cloudy"}, {3, "cloudy"},
+		{45, "fog"}, {48, "fog"},
+		{51, "drizzle"}, {55, "drizzle"}, {56, "drizzle"}, {57, "drizzle"},
+		{61, "rain"}, {65, "rain"}, {66, "rain"}, {67, "rain"}, {80, "rain"}, {82, "rain"},
+		{71, "snow"}, {77, "snow"}, {85, "snow"}, {86, "snow"},
+		{95, "thunderstorm"}, {96, "thunderstorm"}, {99, "thunderstorm"},
+		{-1, "cloudy"}, {1000, "cloudy"},
+	}
+	for _, tt := range tests {
+		if got := weatherCodeIcon(tt.code); got != tt.want {
+			t.Errorf("weatherCodeIcon(%d) = %q, want %q", tt.code, got, tt.want)
+		}
+	}
 }
 
 func TestHandleWeather_SingleDayForecastSetsNoChart(t *testing.T) {

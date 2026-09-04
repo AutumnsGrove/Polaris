@@ -1,7 +1,26 @@
 <script lang="ts">
 	import type { ChartSpec } from '$lib/types';
+	import { Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudSnow, CloudLightning } from '@lucide/svelte';
 
 	let { chart }: { chart: ChartSpec } = $props();
+
+	// range's fixed icon vocabulary (see registry.go's weatherCodeIcon) —
+	// "cloudy" is also the fallback for any key this map doesn't
+	// recognize, so a future WMO code this hasn't been taught about yet
+	// degrades to a plausible-looking icon instead of rendering nothing.
+	const weatherIcons: Record<string, typeof Sun> = {
+		clear: Sun,
+		'partly-cloudy': CloudSun,
+		cloudy: Cloud,
+		fog: CloudFog,
+		drizzle: CloudDrizzle,
+		rain: CloudRain,
+		snow: CloudSnow,
+		thunderstorm: CloudLightning
+	};
+	function iconFor(key: string) {
+		return weatherIcons[key] ?? Cloud;
+	}
 
 	// A fixed viewBox with hand-picked padding, scaled by the SVG's own
 	// preserveAspectRatio — no charting library, matching the hand-rolled
@@ -143,7 +162,8 @@
 			? chart.series[0].points.map((highPoint, i) => ({
 					date: formatShortDate(highPoint.x),
 					high: highPoint.y,
-					low: chart.series?.[1]?.points[i]?.y ?? highPoint.y
+					low: chart.series?.[1]?.points[i]?.y ?? highPoint.y,
+					icon: chart.icons?.[i]
 				}))
 			: []
 	);
@@ -237,6 +257,10 @@
 			{#each rangeRows as row, i (i)}
 				<div class="range-row">
 					<span class="range-date">{row.date}</span>
+					{#if row.icon}
+						{@const Icon = iconFor(row.icon)}
+						<Icon size={16} class="range-icon" />
+					{/if}
 					<span class="range-low">{Math.round(row.low)}°</span>
 					<div class="range-track">
 						<div class="range-fill" style={rangeBarStyle(row)}></div>
@@ -352,13 +376,17 @@
 
 	.range-row {
 		display: grid;
-		grid-template-columns: 44px 24px 1fr 28px;
+		grid-template-columns: 40px 16px 24px 1fr 28px;
 		align-items: center;
 		gap: var(--space-sm);
 	}
 
 	.range-date {
 		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.range-row :global(.range-icon) {
 		color: var(--color-text-dim);
 	}
 

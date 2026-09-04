@@ -44,9 +44,14 @@ export interface ChartSpec {
 	title: string;
 	x_label?: string;
 	y_label?: string;
-	series?: ChartSeries[]; // line, bar
+	series?: ChartSeries[]; // line, bar, range
 	events?: ChartEvent[]; // timeline
 	value?: ChartValue; // meter
+	// "range"'s own field — one icon key per row, same order/count as
+	// series[0]'s points. A fixed, small vocabulary set by weather.go's
+	// weatherCodeIcon (see registry.go's Icons doc comment) — ChartCard.
+	// svelte's iconFor maps each key to a Lucide icon component.
+	icons?: string[]; // range
 }
 
 export interface ChartSeries {

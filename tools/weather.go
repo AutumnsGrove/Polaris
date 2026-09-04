@@ -131,9 +131,11 @@ func setWeatherChart(ctx *Context, displayName string, f *openMeteoResponse) {
 	}
 	highs := make([]ChartPoint, len(f.Daily.Time))
 	lows := make([]ChartPoint, len(f.Daily.Time))
+	icons := make([]string, len(f.Daily.Time))
 	for i, day := range f.Daily.Time {
 		highs[i] = ChartPoint{X: day, Y: f.Daily.TempMax[i]}
 		lows[i] = ChartPoint{X: day, Y: f.Daily.TempMin[i]}
+		icons[i] = weatherCodeIcon(f.Daily.WeatherCode[i])
 	}
 	ctx.SetChart(ChartSpec{
 		Kind:   "range",
@@ -144,6 +146,7 @@ func setWeatherChart(ctx *Context, displayName string, f *openMeteoResponse) {
 			{Label: "High", Points: highs},
 			{Label: "Low", Points: lows},
 		},
+		Icons: icons,
 	})
 }
 
@@ -301,5 +304,35 @@ func weatherCodeDescription(code int) string {
 		return "thunderstorm with hail"
 	default:
 		return "unknown conditions"
+	}
+}
+
+// weatherCodeIcon maps the same WMO codes weatherCodeDescription reads to
+// a small, fixed vocabulary of icon keys — ChartCard.svelte's iconFor
+// maps each one to a Lucide icon component. A closed vocabulary
+// (deliberately not "return the raw code and let the frontend figure it
+// out"): keeping the code -> category mapping in one place (here) means
+// the frontend only ever needs a lookup table, never its own copy of
+// Open-Meteo's WMO code ranges.
+func weatherCodeIcon(code int) string {
+	switch {
+	case code == 0 || code == 1:
+		return "clear"
+	case code == 2:
+		return "partly-cloudy"
+	case code == 3:
+		return "cloudy"
+	case code == 45 || code == 48:
+		return "fog"
+	case code >= 51 && code <= 57:
+		return "drizzle"
+	case (code >= 61 && code <= 67) || (code >= 80 && code <= 82):
+		return "rain"
+	case (code >= 71 && code <= 77) || code == 85 || code == 86:
+		return "snow"
+	case code == 95 || code == 96 || code == 99:
+		return "thunderstorm"
+	default:
+		return "cloudy"
 	}
 }

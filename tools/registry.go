@@ -562,13 +562,21 @@ func (c *Context) CardsSnapshot() []Card {
 // or built by the model itself via the visualize tool (Tier 2). See
 // docs/plans/visualize-and-image-search.md.
 type ChartSpec struct {
-	Kind   string        `json:"kind"` // "line" | "bar" | "timeline" | "meter"
+	Kind   string        `json:"kind"` // "line" | "bar" | "timeline" | "meter" | "range"
 	Title  string        `json:"title"`
 	XLabel string        `json:"x_label,omitempty"`
 	YLabel string        `json:"y_label,omitempty"`
-	Series []ChartSeries `json:"series,omitempty"` // line, bar
+	Series []ChartSeries `json:"series,omitempty"` // line, bar, range
 	Events []ChartEvent  `json:"events,omitempty"` // timeline
 	Value  *ChartValue   `json:"value,omitempty"`  // meter
+	// Icons is "range"'s own field — one icon key per row, same order/
+	// count as Series[0]'s points. Only ever set by weather.go's
+	// setWeatherChart, from Open-Meteo's WMO weather code (see
+	// weatherCodeIcon) — a fixed, small vocabulary the frontend maps to a
+	// Lucide icon component (see ChartCard.svelte's iconFor). Not a
+	// generic field the model can populate via visualize; "range" itself
+	// is already Tier-1-only, never in visualize's kind enum.
+	Icons []string `json:"icons,omitempty"` // range
 }
 
 type ChartSeries struct {
