@@ -3,6 +3,7 @@
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
+	import ImageGallery from './ImageGallery.svelte';
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
@@ -36,6 +37,14 @@
 		if (next < 0 || next >= variantGroup.ids.length) return;
 		void appState.swapVariant(variantGroup.ids[next]);
 	}
+
+	// Cards partition by Kind rather than preserving call-order
+	// interleaving — a turn that produced both a recommendation call and
+	// an image_search call renders one RecommendationsCarousel block and
+	// one ImageGallery block, whichever are actually present. See
+	// registry.go's Card.Kind doc comment.
+	let mediaCards = $derived((turn.cards ?? []).filter((c) => c.kind !== 'image'));
+	let imageCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'image'));
 
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
@@ -206,8 +215,12 @@
 				/>
 			{/if}
 
-			{#if turn.cards?.length}
-				<RecommendationsCarousel cards={turn.cards} />
+			{#if mediaCards.length}
+				<RecommendationsCarousel cards={mediaCards} />
+			{/if}
+
+			{#if imageCards.length}
+				<ImageGallery cards={imageCards} />
 			{/if}
 
 			{#if turn.chart}

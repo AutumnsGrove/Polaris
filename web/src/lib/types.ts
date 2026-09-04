@@ -20,6 +20,10 @@ export interface Card {
 	subtitle?: string;
 	image_url?: string;
 	url: string;
+	// Selects which frontend treatment renders this card — omitted means
+	// "media" (RecommendationsCarousel, today's behavior). image_search is
+	// the only "image" producer — see ImageGallery.svelte.
+	kind?: 'image';
 }
 
 // A structured chart — see tools/registry.go's ChartSpec doc comment.
