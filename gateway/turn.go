@@ -305,6 +305,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["cards"].([]tools.Card); ok {
 			evt.Cards = v
 		}
+		if v, ok := payload["chart"].(*tools.ChartSpec); ok {
+			evt.Chart = v
+		}
 		if eventType == "reasoning" {
 			reasoningBuf.WriteString(evt.Content)
 		} else {
@@ -627,6 +630,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	if result.Chart != nil {
+		if chartJSON, err := json.Marshal(result.Chart); err != nil {
+			log.Warn("failed to marshal chart, message persisted without it", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling chart failed", map[string]interface{}{"err": err.Error()}, turnID)
+		} else if err := s.db.SetMessageChart(assistantMsgID, string(chartJSON)); err != nil {
+			log.Warn("failed to record chart", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "recording chart failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+	}
+
 	if result.PendingQuestion != nil {
 		if pendingJSON, err := json.Marshal(result.PendingQuestion); err != nil {
 			log.Warn("failed to marshal pending question, message persisted without it", "err", err)
@@ -681,6 +694,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		UserMessageID:   userMsgID,
 		Citations:       result.Citations,
 		Cards:           result.Cards,
+		Chart:           result.Chart,
 		CostUSD:         totalCost,
 		ContextTokens:   contextTokens,
 		DurationMs:      durationMs,

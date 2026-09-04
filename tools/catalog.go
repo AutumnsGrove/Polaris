@@ -18,8 +18,8 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "read_attachment",
-	"ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
+	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "visualize",
+	"read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -162,6 +162,8 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real book recommendations grounded in readers' curated lists and shared subject/genre data."},
 	"movies": {Name: "movies", Requires: "tmdb_api_key", Category: "research", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
+	"visualize": {Name: "visualize", Description: "render structured data you've already synthesized as a chart instead of prose.",
+		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
 	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
 		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",

@@ -1,0 +1,11 @@
+name: visualize
+description: >-
+  render structured data you've already synthesized (from search results, calculations, a
+  research thread) as a chart instead of prose or a table. Rare on purpose — most tools that
+  already return structured data (e.g. weather) attach a chart automatically, no call needed.
+api_description: >-
+  Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a
+  table. Only call this for data you built yourself from other sources — structured tools that
+  already return time-series data attach a chart automatically. line/bar cap at 50 points per
+  series; bar is single-series only and caps at 12 bars total; timeline caps at 20 events. At most
+  one chart per turn.

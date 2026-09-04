@@ -322,6 +322,16 @@ type Context struct {
 	cardsMu sync.Mutex
 	Cards   []Card
 
+	// Chart holds this turn's chart, if any tool produced one (see
+	// ChartSpec). Unlike Citations/Cards this is last-write-wins, not an
+	// accumulator — a turn produces at most one chart, so a second
+	// SetChart call (e.g. Tier-1 weather auto-chart plus a Tier-2
+	// visualize call in the same turn) simply overwrites the first rather
+	// than needing dedup logic. chartMu guards it for the same
+	// concurrent-dispatch reason Citations/Cards need their own mutexes.
+	chartMu sync.Mutex
+	Chart   *ChartSpec
+
 	// PendingQuestion, once set, tells agent.Run to end the turn right
 	// after this batch of tool calls instead of looping back to the
 	// model — see ask_user_question.go. Unlike Citations/Cards this is
@@ -536,6 +546,62 @@ func (c *Context) CardsSnapshot() []Card {
 	return out
 }
 
+// ChartSpec is a structured chart a tool wants rendered instead of (or
+// alongside) its prose answer — either attached deterministically by a
+// tool whose own response is already a time series (Tier 1, e.g. weather),
+// or built by the model itself via the visualize tool (Tier 2). See
+// docs/plans/visualize-and-image-search.md.
+type ChartSpec struct {
+	Kind   string        `json:"kind"` // "line" | "bar" | "timeline" | "meter"
+	Title  string        `json:"title"`
+	XLabel string        `json:"x_label,omitempty"`
+	YLabel string        `json:"y_label,omitempty"`
+	Series []ChartSeries `json:"series,omitempty"` // line, bar
+	Events []ChartEvent  `json:"events,omitempty"` // timeline
+	Value  *ChartValue   `json:"value,omitempty"`  // meter
+}
+
+type ChartSeries struct {
+	Label  string       `json:"label"`
+	Points []ChartPoint `json:"points"`
+}
+
+type ChartPoint struct {
+	X interface{} `json:"x"` // string (date/category) or number
+	Y float64     `json:"y"`
+}
+
+// ChartEvent is "timeline"'s own shape — deliberately not a ChartPoint. A
+// timeline has no numeric value to put in Y; wedging it into ChartPoint
+// with a mandatory-but-meaningless Y was the first draft's mistake.
+type ChartEvent struct {
+	Date  string `json:"date"`
+	Label string `json:"label"`
+}
+
+type ChartValue struct {
+	Current float64 `json:"current"`
+	Min     float64 `json:"min"`
+	Max     float64 `json:"max"`
+	Label   string  `json:"label"`
+}
+
+// SetChart replaces this turn's chart. Last-write-wins, not append — see
+// the Chart field's doc comment above for why. Safe to call concurrently.
+func (c *Context) SetChart(spec ChartSpec) {
+	c.chartMu.Lock()
+	defer c.chartMu.Unlock()
+	c.Chart = &spec
+}
+
+// ChartSnapshot returns this turn's chart, if any — same concurrent-read
+// rationale as CitationsSnapshot/CardsSnapshot.
+func (c *Context) ChartSnapshot() *ChartSpec {
+	c.chartMu.Lock()
+	defer c.chartMu.Unlock()
+	return c.Chart
+}
+
 type HandlerFunc func(argsJSON string, ctx *Context) string
 
 var registry = map[string]HandlerFunc{}
@@ -583,7 +649,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
-		"music": musicDef, "books": booksDef, "movies": moviesDef, "read_attachment": readAttachmentDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 	}

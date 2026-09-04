@@ -108,6 +108,67 @@ func TestHandleWeather_OmitsHourlyByDefault(t *testing.T) {
 	}
 }
 
+func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"current": {"temperature_2m": 68, "apparent_temperature": 66, "relative_humidity_2m": 50, "precipitation": 0, "weather_code": 1, "wind_speed_10m": 5},
+			"daily": {"time": ["2026-08-03", "2026-08-04", "2026-08-05"], "weather_code": [2, 1, 0],
+				"temperature_2m_max": [72, 75, 80], "temperature_2m_min": [58, 60, 62],
+				"precipitation_probability_max": [10, 5, 0]}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	original := openMeteoBaseURL
+	openMeteoBaseURL = srv.URL
+	t.Cleanup(func() { openMeteoBaseURL = original })
+
+	ctx := &Context{
+		Ctx:             context.Background(),
+		DefaultLocation: "47.6062, -122.3321",
+		Emit:            func(string, map[string]interface{}) {},
+	}
+	handleWeather(`{"forecast_days": 3}`, ctx)
+
+	if ctx.Chart == nil {
+		t.Fatal("Chart is nil, want a Tier-1 auto-attached chart for a multi-day forecast")
+	}
+	if ctx.Chart.Kind != "line" {
+		t.Errorf("Chart.Kind = %q, want line", ctx.Chart.Kind)
+	}
+	if len(ctx.Chart.Series) != 2 {
+		t.Fatalf("Chart.Series = %+v, want High and Low series", ctx.Chart.Series)
+	}
+	if len(ctx.Chart.Series[0].Points) != 3 || ctx.Chart.Series[0].Points[2].Y != 80 {
+		t.Errorf("Chart.Series[0].Points = %+v, want 3 points ending at 80", ctx.Chart.Series[0].Points)
+	}
+}
+
+func TestHandleWeather_SingleDayForecastSetsNoChart(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"current": {"temperature_2m": 68, "apparent_temperature": 66, "relative_humidity_2m": 50, "precipitation": 0, "weather_code": 1, "wind_speed_10m": 5},
+			"daily": {"time": ["2026-08-03"], "weather_code": [2], "temperature_2m_max": [72], "temperature_2m_min": [58], "precipitation_probability_max": [10]}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	original := openMeteoBaseURL
+	openMeteoBaseURL = srv.URL
+	t.Cleanup(func() { openMeteoBaseURL = original })
+
+	ctx := &Context{
+		Ctx:             context.Background(),
+		DefaultLocation: "47.6062, -122.3321",
+		Emit:            func(string, map[string]interface{}) {},
+	}
+	handleWeather(`{"forecast_days": 1}`, ctx)
+
+	if ctx.Chart != nil {
+		t.Errorf("Chart = %+v, want nil — a single day has nothing worth plotting", ctx.Chart)
+	}
+}
+
 func TestWeatherCodeDescription(t *testing.T) {
 	cases := map[int]string{
 		0:  "clear sky",

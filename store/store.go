@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- '[]' for user messages and for any assistant message no tool call
 	-- populated cards for.
 	cards TEXT NOT NULL DEFAULT '[]',
+	-- chart: JSON-encoded tools.ChartSpec, set via SetMessageChart once the
+	-- assistant message's ID exists, same post-hoc-UPDATE shape as cards
+	-- above. Unlike cards this is a single object, not an array — a turn
+	-- produces at most one chart. '' for user messages and for any
+	-- assistant message no tool call produced a chart for.
+	chart TEXT NOT NULL DEFAULT '',
 	-- pending_question: JSON-encoded tools.PendingQuestion, set only on an
 	-- assistant message that ended its turn by calling ask_user_question
 	-- instead of finishing normally — see SetMessagePendingQuestion.
@@ -442,6 +448,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN deep_research INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -580,6 +587,9 @@ type Message struct {
 	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
 	Cards string `json:"cards"`
+	// Chart is JSON-encoded *tools.ChartSpec — see SetMessageChart. ""
+	// (omitted) for every message no tool call produced a chart for.
+	Chart string `json:"chart,omitempty"`
 	// PendingQuestion is JSON-encoded *tools.PendingQuestion, set only on
 	// an assistant message that ended its turn via ask_user_question —
 	// see SetMessagePendingQuestion. "" for every other message.
@@ -745,8 +755,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, pending_question, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, pending_question, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, chart, pending_question, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, chart, pending_question, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1242,7 +1252,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, cards, pending_question, created_at
+			attachment_filename, attachment_content_type, cards, chart, pending_question, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -1255,7 +1265,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.PendingQuestion, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
@@ -1279,6 +1289,14 @@ func (s *Store) SetMessageDuration(messageID int64, durationMs int64) error {
 // citations) are only known once agent.Run has already returned.
 func (s *Store) SetMessageCards(messageID int64, cardsJSON string) error {
 	_, err := s.db.Exec(`UPDATE messages SET cards = ? WHERE id = ?`, cardsJSON, messageID)
+	return err
+}
+
+// SetMessageChart records a turn's chart (see tools.ChartSpec) after the
+// assistant message was already persisted — same post-hoc-UPDATE shape as
+// SetMessageCards above.
+func (s *Store) SetMessageChart(messageID int64, chartJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET chart = ? WHERE id = ?`, chartJSON, messageID)
 	return err
 }
 

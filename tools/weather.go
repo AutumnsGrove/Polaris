@@ -98,13 +98,42 @@ func handleWeather(argsJSON string, ctx *Context) string {
 
 	summary := formatWeather(geo.DisplayName, forecast)
 	ctx.AddCitation(Citation{Title: "Open-Meteo forecast", URL: "https://open-meteo.com/"})
+	setWeatherChart(ctx, geo.DisplayName, forecast)
 	log.Info("weather", "location", geo.DisplayName, "forecast_days", args.ForecastDays, "include_hourly", args.IncludeHourly)
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "weather",
 		"result":    summary,
 		"citations": ctx.CitationsSnapshot(),
+		"chart":     ctx.ChartSnapshot(),
 	})
 	return summary
+}
+
+// setWeatherChart is Tier 1's only v1 source (see
+// docs/plans/visualize-and-image-search.md) — a deterministic chart
+// attached from data formatWeather already has in scope, no extra fetch
+// and no model round-trip. Only fires for a multi-day forecast; a
+// single-day/current-only call has nothing worth plotting as a line.
+func setWeatherChart(ctx *Context, displayName string, f *openMeteoResponse) {
+	if len(f.Daily.Time) <= 1 {
+		return
+	}
+	highs := make([]ChartPoint, len(f.Daily.Time))
+	lows := make([]ChartPoint, len(f.Daily.Time))
+	for i, day := range f.Daily.Time {
+		highs[i] = ChartPoint{X: day, Y: f.Daily.TempMax[i]}
+		lows[i] = ChartPoint{X: day, Y: f.Daily.TempMin[i]}
+	}
+	ctx.SetChart(ChartSpec{
+		Kind:   "line",
+		Title:  fmt.Sprintf("Forecast for %s", displayName),
+		XLabel: "Date",
+		YLabel: "°F",
+		Series: []ChartSeries{
+			{Label: "High", Points: highs},
+			{Label: "Low", Points: lows},
+		},
+	})
 }
 
 // openMeteoResponse is the subset of Open-Meteo's forecast response this

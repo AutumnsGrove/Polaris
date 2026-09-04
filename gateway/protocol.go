@@ -177,6 +177,11 @@ type ServerEvent struct {
 	// "attached to the final answer" shape as Citations, just rendered as
 	// its own visual block instead of a text source list.
 	Cards []tools.Card `json:"cards,omitempty"`
+	// Chart is a tool_result/done event's structured chart, if this turn
+	// produced one (see tools.ChartSpec) — either attached deterministically
+	// by a Tier-1 tool (weather) or built by the model via the visualize
+	// tool. At most one per turn, unlike Cards.
+	Chart *tools.ChartSpec `json:"chart,omitempty"`
 	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
 	// legitimate value for both (a stopped turn that never reached an LLM
 	// call costs exactly $0), and omitempty would drop the field from the

@@ -272,7 +272,10 @@ type Result struct {
 	Answer    string
 	Citations []tools.Citation
 	Cards     []tools.Card
-	CostUSD   float64
+	// Chart is this turn's chart, if any tool produced one — see
+	// tools.Context.Chart. At most one per turn, unlike Cards.
+	Chart   *tools.ChartSpec
+	CostUSD float64
 	// ContextTokens is the prompt+completion token count of the LAST LLM
 	// call this turn made — the best available estimate of how much
 	// context this thread now occupies, since it reflects every message,
@@ -374,6 +377,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			return &Result{
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
+				Chart:         ctx.Chart,
 				CostUSD:       totalCost,
 				TurnCount:     turn + 1,
 				ResearchCalls: researchCalls,
@@ -430,6 +434,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				Answer:        resp.Content,
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
+				Chart:         ctx.Chart,
 				CostUSD:       totalCost,
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:     turn + 1,
@@ -469,6 +474,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				Answer:        ctx.WizardFinal.Prompt,
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
+				Chart:         ctx.Chart,
 				CostUSD:       totalCost,
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:     turn + 1,
@@ -496,6 +502,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				Answer:          ctx.PendingQuestion.Question,
 				Citations:       ctx.Citations,
 				Cards:           ctx.Cards,
+				Chart:           ctx.Chart,
 				CostUSD:         totalCost,
 				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:       turn + 1,
@@ -550,6 +557,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		return &Result{
 			Citations:     ctx.Citations,
 			Cards:         ctx.Cards,
+			Chart:         ctx.Chart,
 			CostUSD:       totalCost,
 			TurnCount:     maxTurns + 1,
 			ResearchCalls: researchCalls,
@@ -589,6 +597,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		Answer:        answerText,
 		Citations:     ctx.Citations,
 		Cards:         ctx.Cards,
+		Chart:         ctx.Chart,
 		CostUSD:       totalCost,
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 		TurnCount:     maxTurns + 1, // every loop iteration ran, plus this forced wrap-up call
