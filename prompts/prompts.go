@@ -235,7 +235,12 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 	d.Turn.SuggestionsTask = "Suggest exactly 3 short, natural follow-up questions based on the " +
 		"exchange above. One per line, no numbering, no quotes, no preamble — just the 3 questions. " +
 		"Each line must be a real question and end with a question mark. Do not continue or add to " +
-		"the previous answer.\n\nExample output:\nWhat is the population of Paris?\nHow does it " +
+		"the previous answer.\n\nIf the answer above contains genuinely chartable structure — a time " +
+		"series, a numeric comparison across several items, a sequence of dated events — that isn't " +
+		"already shown as a chart, make one of the 3 suggestions exactly \"Visualize this as a " +
+		"chart?\" (still ends in a question mark like every other suggestion, even though it reads as " +
+		"a request). Only one of the 3 may be this — never more than one, and never at all if nothing " +
+		"above is actually chartable.\n\nExample output:\nWhat is the population of Paris?\nHow does it " +
 		"compare to other European capitals?\nWhat other cities have served as France's capital?"
 
 	d.Turn.TitleSystem = "Write a short thread title describing what the user's message below is " +
