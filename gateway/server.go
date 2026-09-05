@@ -373,6 +373,11 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
 	s.mux.HandleFunc("POST /api/pulsar/wizard/start", s.handleWizardStart)
 	s.mux.HandleFunc("POST /api/pulsar/wizard/turn", s.handleWizardTurn)
+	s.mux.HandleFunc("GET /api/pulsar/daily/config", s.handleGetDailyConfig)
+	s.mux.HandleFunc("PUT /api/pulsar/daily/config", s.handleUpdateDailyConfig)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}", s.handleGetDailyEdition)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/previous", s.handleGetPreviousDailyEdition)
+	s.mux.HandleFunc("POST /api/pulsar/daily/expand", s.handleExpandDailyBlock)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {
