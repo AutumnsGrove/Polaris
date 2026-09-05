@@ -6,7 +6,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"polaris/places"
 )
+
+// startFakeNominatimReverse points places' reverse-geocode endpoint at a
+// stub server so the tests below — which all resolve through a raw
+// coordinate DefaultLocation and so now trigger a reverse-geocode lookup
+// for display purposes — don't make a real, rate-limited network call to
+// Nominatim just to fill in a place name.
+func startFakeNominatimReverse(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"display_name":"Seattle, King County, Washington, USA","address":{"city":"Seattle","state":"Washington"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(places.SetNominatimBaseURLForTesting(srv.URL))
+}
 
 func TestHandleWeather_NoLocationAndNoDefault(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
@@ -28,10 +45,11 @@ func TestHandleWeather_UsesDefaultLocationAndFormatsForecast(t *testing.T) {
 	original := openMeteoBaseURL
 	openMeteoBaseURL = srv.URL
 	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
 
 	ctx := &Context{
 		Ctx:             context.Background(),
-		DefaultLocation: "47.6062, -122.3321", // coordinate pair skips the Nominatim network call
+		DefaultLocation: "47.6062, -122.3321", // coordinate pair skips Geocode's Nominatim call, but reverse-geocodes for display
 		Emit:            func(string, map[string]interface{}) {},
 	}
 	result := handleWeather(`{}`, ctx)
@@ -40,6 +58,67 @@ func TestHandleWeather_UsesDefaultLocationAndFormatsForecast(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://open-meteo.com/" {
 		t.Errorf("Citations = %+v, want the Open-Meteo attribution added", ctx.Citations)
+	}
+}
+
+func TestHandleWeather_ReverseGeocodesRawCoordinatesForDisplay(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"current": {"temperature_2m": 68, "apparent_temperature": 66, "relative_humidity_2m": 50, "precipitation": 0, "weather_code": 1, "wind_speed_10m": 5},
+			"daily": {"time": ["2026-08-03", "2026-08-04"], "weather_code": [2, 1], "temperature_2m_max": [72, 75], "temperature_2m_min": [58, 60], "precipitation_probability_max": [10, 5]}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	original := openMeteoBaseURL
+	openMeteoBaseURL = srv.URL
+	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
+
+	ctx := &Context{
+		Ctx:             context.Background(),
+		DefaultLocation: "47.6062, -122.3321",
+		Emit:            func(string, map[string]interface{}) {},
+	}
+	result := handleWeather(`{}`, ctx)
+	if !strings.Contains(result, "Weather for Seattle, Washington:") {
+		t.Errorf("result = %q, want the reverse-geocoded place name in place of raw coordinates", result)
+	}
+	if strings.Contains(result, "47.6062") {
+		t.Errorf("result = %q, want raw coordinates replaced by the resolved place name", result)
+	}
+	if ctx.Chart == nil || ctx.Chart.Title != "Forecast for Seattle, Washington" {
+		t.Errorf("Chart.Title = %+v, want the reverse-geocoded place name", ctx.Chart)
+	}
+}
+
+func TestHandleWeather_ReverseGeocodeFailureFallsBackToCoordinates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"current": {"temperature_2m": 68, "apparent_temperature": 66, "relative_humidity_2m": 50, "precipitation": 0, "weather_code": 1, "wind_speed_10m": 5},
+			"daily": {"time": ["2026-08-03"], "weather_code": [2], "temperature_2m_max": [72], "temperature_2m_min": [58], "precipitation_probability_max": [10]}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+	original := openMeteoBaseURL
+	openMeteoBaseURL = srv.URL
+	t.Cleanup(func() { openMeteoBaseURL = original })
+	// Nothing listens here — proves a reverse-geocode failure doesn't
+	// break the weather call, it just keeps showing the coordinates.
+	t.Cleanup(places.SetNominatimBaseURLForTesting("http://127.0.0.1:1"))
+
+	ctx := &Context{
+		Ctx:             context.Background(),
+		DefaultLocation: "47.6062, -122.3321",
+		Emit:            func(string, map[string]interface{}) {},
+	}
+	result := handleWeather(`{}`, ctx)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("result = %q, want a formatted forecast despite the reverse-geocode failure", result)
+	}
+	if !strings.Contains(result, "Weather for 47.6062, -122.3321:") {
+		t.Errorf("result = %q, want the raw coordinates kept as a fallback", result)
 	}
 }
 
@@ -58,6 +137,7 @@ func TestHandleWeather_IncludeHourlyAddsHourlyBlock(t *testing.T) {
 	original := openMeteoBaseURL
 	openMeteoBaseURL = srv.URL
 	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
 
 	ctx := &Context{
 		Ctx:             context.Background(),
@@ -93,6 +173,7 @@ func TestHandleWeather_OmitsHourlyByDefault(t *testing.T) {
 	original := openMeteoBaseURL
 	openMeteoBaseURL = srv.URL
 	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
 
 	ctx := &Context{
 		Ctx:             context.Background(),
@@ -122,6 +203,7 @@ func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
 	original := openMeteoBaseURL
 	openMeteoBaseURL = srv.URL
 	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
 
 	ctx := &Context{
 		Ctx:             context.Background(),
@@ -185,6 +267,7 @@ func TestHandleWeather_SingleDayForecastSetsNoChart(t *testing.T) {
 	original := openMeteoBaseURL
 	openMeteoBaseURL = srv.URL
 	t.Cleanup(func() { openMeteoBaseURL = original })
+	startFakeNominatimReverse(t)
 
 	ctx := &Context{
 		Ctx:             context.Background(),
