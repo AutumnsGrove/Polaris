@@ -205,7 +205,7 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 	task = strings.ReplaceAll(task, "{{teams}}", sportsTeams)
 	task = appendCustomInstruction(task, customInstruction)
 
-	agentCtx := s.newDailyToolContext(writerClient, cfg, location)
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		return "", 0, err
@@ -224,7 +224,7 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 		"story has genuinely chart-worthy quantitative data, or image_search if a relevant image would "+
 		"help. Don't just restate the quick version — add to it.", title, quickContent)
 
-	agentCtx := s.newDailyToolContext(writerClient, cfg, location)
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		return "", 0, err
@@ -240,8 +240,17 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 // SearXNG/Brave/Parallel/Tavily + usage-cap wiring web_search needs (see
 // CLAUDE.md's "Web search fallback chain" — a new call site that skips
 // any of these degrades silently instead of erroring).
-func (s *Server) newDailyToolContext(client llm.ChatClient, cfg *config.Config, location string) *tools.Context {
+func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClient, cfg *config.Config, location string) *tools.Context {
 	return &tools.Context{
+		// Ctx is normally set by agent.Run itself (see its doc comment on
+		// Context.Ctx) — but Weather and Picture of the Day's image_search
+		// call tools.Dispatch directly, bypassing agent.Run entirely, so
+		// nothing else ever sets this. Without it, their outbound HTTP
+		// calls got a nil context.Context and failed with "net/http: nil
+		// Context" — a real bug only caught by an actual live generation
+		// run, not by any unit test (every existing test mocks the LLM
+		// client, never reaches the real HTTP call this broke).
+		Ctx:                    reqCtx,
 		SearXNG:                s.searxng,
 		Blocklist:              s.blocklist,
 		Tavily:                 s.tavily,
@@ -499,6 +508,21 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		return
 	}
 
+	// Recorded before generating, not after — same reasoning as
+	// firePulse's identical ordering (see SetPulsarRoutineLastRun's doc
+	// comment): a real, observed race without this. Stage A-D can take
+	// several minutes (a handful of web_search-backed agent.Run calls),
+	// comfortably longer than the scheduler's once-a-minute tick — every
+	// tick that lands before Stage D finishes re-evaluates isDailyDue
+	// against a still-nil last_generated_at and fires a second concurrent
+	// pipeline for the same day. Setting this first closes that window,
+	// at the cost of the same accepted tradeoff pulses already make: a
+	// crash mid-generation loses that day's run rather than retrying it.
+	if err := s.db.SetDailyLastGenerated(time.Now().UTC().Format("2006-01-02 15:04:05")); err != nil {
+		log.Warn("pulsar daily: recording last_generated_at failed, skipping this run", "err", err)
+		return
+	}
+
 	today := time.Now().Format("2006-01-02")
 	location := cfg.DefaultLocation
 
@@ -622,9 +646,6 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		log.Warn("pulsar daily: persisting edition failed", "err", err)
 		return
 	}
-	if err := s.db.SetDailyLastGenerated(time.Now().UTC().Format("2006-01-02 15:04:05")); err != nil {
-		log.Warn("pulsar daily: recording last_generated_at failed", "err", err)
-	}
 	log.Info("pulsar daily: edition generated", "date", today, "blocks", len(edition), "top_story", topStoryKey != "")
 }
 
@@ -651,10 +672,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 	switch spec.Kind {
 	case dailyBlockDirect:
 		if spec.Key == "picture_of_day" {
-			ctx := s.newDailyToolContext(writerClient, cfg, location)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 			content, imageURL, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
-			ctx := s.newDailyToolContext(writerClient, cfg, location)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 			content = tools.Dispatch(spec.Key, "{}", ctx)
 			if strings.HasPrefix(content, "error:") {
 				err = fmt.Errorf("%s", content)
