@@ -95,6 +95,35 @@ func TestCatalog_AllFilesLoadAndNamesMatch(t *testing.T) {
 	}
 }
 
+// TestCatalogDefaults_HasEntryForEveryToolInOrder guards the fallback path
+// TestCatalog_AllFilesLoadAndNamesMatch deliberately bypasses (that test
+// chdirs to the repo root so every real tools/descriptions/*.yaml loads,
+// never exercising catalogDefaults at all). Any environment where a
+// description file is genuinely missing — every `go test` run in this
+// package included, since catalogDescriptionsDir is relative to the
+// process's CWD and never resolves during a normal test — falls back to
+// catalogDefaults[name], and a name absent from that map silently
+// resolves to a zero-value catalogEntry: Name "" fails to match
+// ctx.DisabledTools/its own Category, so offered()'s very first check
+// ("if ctx.DisabledTools[e.Name]") never matches and the tool becomes
+// permanently un-disableable with a blank description — exactly what
+// happened to "calculator" until this test was added.
+func TestCatalogDefaults_HasEntryForEveryToolInOrder(t *testing.T) {
+	for _, name := range catalogOrder {
+		entry, ok := catalogDefaults[name]
+		if !ok {
+			t.Errorf("catalogDefaults has no fallback entry for %q — it will silently resolve to a zero-value "+
+				"catalogEntry (Name \"\") whenever its YAML file can't be loaded, defeating DisabledTools/Category "+
+				"gating for that tool entirely", name)
+			continue
+		}
+		if entry.Name != name {
+			t.Errorf("catalogDefaults[%q].Name = %q, want %q — offered()'s gating keys off Name, so a mismatched "+
+				"fallback Name silently breaks it", name, entry.Name, name)
+		}
+	}
+}
+
 func TestCatalogEntry_Offered(t *testing.T) {
 	withKeys := newTestContext()
 	withKeys.LastFMAPIKey = "x"

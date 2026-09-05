@@ -199,6 +199,18 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 		LLM:           client,
 		Emit:          func(string, map[string]interface{}) {}, // no live client to stream to
 		MaxTurns:      cfg.MaxAgentTurns,
+		// RequestLocation is never actually called here — no location-
+		// needing tool (weather/nearby_search) is ever offered under
+		// NoResearch above — but catalog.go's "interactive_chat" gate on
+		// ask_user_question keys off this being non-nil, not off anything
+		// it returns, as its own doc comment says: "is there a live client
+		// on the other end of this turn". The wizard's whole interview
+		// loop (and its system prompt, which mandates every reply be
+		// either ask_user_question or finalize_pulsar_prompt) depends on
+		// ask_user_question actually being on the menu — leaving this nil
+		// silently excluded it, degrading every interview to a plain-text
+		// reply instead of the intended one-question-at-a-time flow.
+		RequestLocation: func() (string, bool) { return "", false },
 	}
 
 	// agent.Run builds its own system message internally (loadSystemPrompt,
