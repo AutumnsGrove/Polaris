@@ -295,6 +295,37 @@ export interface PulsarPulse {
 	in_progress: boolean;
 }
 
+// PulsarDailyConfig mirrors store.PulsarDailyConfig's JSON shape — the
+// Daily singleton's settings row (see gateway/pulsar_daily_routes.go).
+export interface PulsarDailyConfig {
+	enabled_blocks: string[];
+	sports_teams: string;
+	architect_model: string;
+	writer_model: string;
+	time_of_day: string;
+	created_at: string;
+	last_generated_at: string | null;
+}
+
+// PulsarDailyBlock mirrors store.PulsarDailyBlock — one rendered card in
+// an edition. image_url is only ever set for picture_of_day.
+export interface PulsarDailyBlock {
+	key: string;
+	title: string;
+	content: string;
+	gist: string;
+	is_top_story: boolean;
+	image_url?: string;
+}
+
+// PulsarDailyEdition mirrors store.PulsarDailyEdition — one calendar
+// date's assembled Daily page.
+export interface PulsarDailyEdition {
+	date: string;
+	blocks: PulsarDailyBlock[];
+	created_at: string;
+}
+
 // WizardFinal mirrors tools.WizardFinal — the drafted prompt
 // finalize_pulsar_prompt handed back, ending a wizard turn the same way
 // PendingQuestion ends an ordinary one. See gateway/pulsar_wizard.go.
