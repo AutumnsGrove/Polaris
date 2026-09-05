@@ -340,3 +340,23 @@ pulsar_wizard:
   opener_task: >-
     The user hasn't described what they want this routine to check on yet — ask a single focused
     opening question to find out (e.g. what topic, or what kind of update they're after).
+
+# Pulsar Daily's expand-to-chat follow-up templates — see
+# docs/plans/pulsar-daily.md's "Expand-to-chat prompt templates". expand_prefix is shared by
+# every block kind (formatted with the block's title and content, in that order); exactly one of
+# the three *_followup templates is appended per block kind's family.
+pulsar_daily:
+  expand_prefix: >-
+    The user tapped an expand affordance on a Pulsar Daily block titled "%s" with this
+    content: %s. This wasn't typed by them — it's a request to go deeper on exactly this.
+    Don't re-greet or re-summarize what the block already said; begin from where it left off.
+  research_followup: >-
+    Do fresh research and expand on this — don't just restate what's already shown. Use
+    visualize if you find genuinely chart-worthy quantitative data, or image_search if a
+    relevant image would help. Cite sources the way you normally would.
+  curiosity_followup: >-
+    Go deeper on this for its own sake — etymology, context, related trivia, why it's
+    interesting — rather than searching for "updates." Lean on what you already know first.
+  media_followup: >-
+    Tell me more about what's shown in this image — its subject, significance, and context.
+    Use image_search if more images would help illustrate the answer.

@@ -64,6 +64,13 @@ type Set struct {
 		OpenerTask string `yaml:"opener_task"`
 	} `yaml:"pulsar_wizard"`
 
+	PulsarDaily struct {
+		ExpandPrefix      string `yaml:"expand_prefix"`
+		ResearchFollowup  string `yaml:"research_followup"`
+		CuriosityFollowup string `yaml:"curiosity_followup"`
+		MediaFollowup     string `yaml:"media_followup"`
+	} `yaml:"pulsar_daily"`
+
 	Vision struct {
 		DescribeImage string `yaml:"describe_image"`
 	} `yaml:"vision"`
@@ -327,6 +334,21 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"ask a single focused opening question to find out (e.g. what topic, or what kind of update they're " +
 		"after)."
 
+	d.PulsarDaily.ExpandPrefix = "The user tapped an expand affordance on a Pulsar Daily block titled \"%s\" " +
+		"with this content: %s. This wasn't typed by them — it's a request to go deeper on exactly this. " +
+		"Don't re-greet or re-summarize what the block already said; begin from where it left off."
+
+	d.PulsarDaily.ResearchFollowup = "Do fresh research and expand on this — don't just restate what's " +
+		"already shown. Use visualize if you find genuinely chart-worthy quantitative data, or image_search " +
+		"if a relevant image would help. Cite sources the way you normally would."
+
+	d.PulsarDaily.CuriosityFollowup = "Go deeper on this for its own sake — etymology, context, related " +
+		"trivia, why it's interesting — rather than searching for \"updates.\" Lean on what you already know " +
+		"first."
+
+	d.PulsarDaily.MediaFollowup = "Tell me more about what's shown in this image — its subject, significance, " +
+		"and context. Use image_search if more images would help illustrate the answer."
+
 	return d
 }
 
@@ -447,6 +469,18 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Vision.DescribeImage == "" {
 		s.Vision.DescribeImage = defaults.Vision.DescribeImage
+	}
+	if s.PulsarDaily.ExpandPrefix == "" {
+		s.PulsarDaily.ExpandPrefix = defaults.PulsarDaily.ExpandPrefix
+	}
+	if s.PulsarDaily.ResearchFollowup == "" {
+		s.PulsarDaily.ResearchFollowup = defaults.PulsarDaily.ResearchFollowup
+	}
+	if s.PulsarDaily.CuriosityFollowup == "" {
+		s.PulsarDaily.CuriosityFollowup = defaults.PulsarDaily.CuriosityFollowup
+	}
+	if s.PulsarDaily.MediaFollowup == "" {
+		s.PulsarDaily.MediaFollowup = defaults.PulsarDaily.MediaFollowup
 	}
 	return &s
 }
