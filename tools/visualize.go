@@ -162,6 +162,9 @@ func handleVisualize(argsJSON string, ctx *Context) string {
 		totalBars := 0
 		spec.Series = make([]ChartSeries, len(args.Series))
 		for i, s := range args.Series {
+			if len(s.Points) == 0 {
+				return fail(fmt.Sprintf("series %q has no points — every series needs at least one.", s.Label))
+			}
 			if len(s.Points) > visualizeMaxPointsPerSeries {
 				return fail(fmt.Sprintf("too many points (%d) — visualize supports at most %d per series. "+
 					"Reduce the count and call again with fewer numbers.", len(s.Points), visualizeMaxPointsPerSeries))

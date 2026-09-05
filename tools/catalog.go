@@ -140,6 +140,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 var catalogDefaults = map[string]catalogEntry{
 	"think": {Name: "think", Description: "reason privately about strategy before acting.",
 		APIDescription: "Reason privately about what to do next before acting."},
+	"calculator": {Name: "calculator", Description: "evaluate an arithmetic expression exactly instead of computing it silently in free-text generation.",
+		APIDescription: "Evaluate an arithmetic expression exactly and return the result. Use this whenever an answer " +
+			"involves a computed number (a ratio, a percentage, a sum, a date/time delta) instead of doing the " +
+			"arithmetic yourself in free text — LLMs are unreliable at mental math, and this tool removes that " +
+			"failure class entirely."},
 	"web_search": {Name: "web_search", Category: "research", Description: "search the web via a private SearXNG instance.",
 		APIDescription: "Search the web via SearXNG for current information, facts, or sources."},
 	"web_read": {Name: "web_read", Category: "research", Description: "fetch a URL and extract its content.",
