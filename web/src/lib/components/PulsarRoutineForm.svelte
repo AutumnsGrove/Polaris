@@ -6,6 +6,7 @@
 	import { X, Sparkles } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
+	import { untrack } from 'svelte';
 
 	// One form doing double duty as both create and edit, per
 	// docs/plans/pulsar-routines.md's "Routine lifecycle" — routine is
@@ -34,24 +35,31 @@
 		{ value: 'saturday', label: 'Saturday' }
 	];
 
-	let name = $state(routine?.name ?? '');
-	let prompt = $state(routine?.prompt ?? '');
-	let model = $state(routine?.model ?? appState.selectedModel);
+	// Every field below seeds its editable local $state from the routine
+	// prop exactly once — untrack() says so explicitly, since routine is
+	// itself reactive ($props()) and Svelte 5 otherwise warns that a bare
+	// `$state(routine?.x ?? ...)` "only captures the initial value" (true,
+	// and intentional here: this form is remounted fresh per open, not
+	// kept alive across a routine swap — see EditTextModal.svelte's
+	// identical pattern/comment for the general case).
+	let name = $state(untrack(() => routine?.name ?? ''));
+	let prompt = $state(untrack(() => routine?.prompt ?? ''));
+	let model = $state(untrack(() => routine?.model ?? appState.selectedModel));
 	// `|| 'off'`, not `?? 'off'` — a stored routine's focus_mode is '' for
 	// "no focus mode" (see the normalization in submit() below), which
 	// needs to map back to the select's 'off' option, same as
 	// state.svelte.ts's openThread does for threads.
-	let focusMode = $state<FocusMode>((routine?.focus_mode as FocusMode) || 'off');
-	let deepResearch = $state(routine?.deep_research ?? false);
-	let scheduleType = $state<'daily' | 'weekly' | 'monthly'>(routine?.schedule_type ?? 'daily');
+	let focusMode = $state<FocusMode>(untrack(() => (routine?.focus_mode as FocusMode) || 'off'));
+	let deepResearch = $state(untrack(() => routine?.deep_research ?? false));
+	let scheduleType = $state<'daily' | 'weekly' | 'monthly'>(untrack(() => routine?.schedule_type ?? 'daily'));
 	// Separate default per schedule type so switching the dropdown back
 	// and forth doesn't leave a monthly day-of-month string sitting in a
 	// weekly routine's schedule_params (or vice versa) — each type keeps
 	// its own last-edited value, submitted as scheduleParams below only
 	// for whichever type is actually selected.
-	let weeklyParam = $state(routine?.schedule_type === 'weekly' ? routine.schedule_params : 'monday');
-	let monthlyParam = $state(routine?.schedule_type === 'monthly' ? routine.schedule_params : '1');
-	let timeOfDay = $state(routine?.time_of_day ?? '07:00');
+	let weeklyParam = $state(untrack(() => (routine?.schedule_type === 'weekly' ? routine.schedule_params : 'monday')));
+	let monthlyParam = $state(untrack(() => (routine?.schedule_type === 'monthly' ? routine.schedule_params : '1')));
+	let timeOfDay = $state(untrack(() => routine?.time_of_day ?? '07:00'));
 
 	let saving = $state(false);
 	let error = $state('');
