@@ -32,8 +32,11 @@ export class PulsarWizardState {
 	// start() seeds the interview with whatever's currently typed into the
 	// routine form's prompt field, if anything — an empty seed opens with
 	// the backend's generic opener question instead (see
-	// prompts.PulsarWizard.OpenerTask).
-	async start(seed: string) {
+	// prompts.PulsarWizard.OpenerTask). dailyBlockTitle, when set, scopes
+	// the whole interview to writing a short steering instruction for one
+	// Pulsar Daily block instead of a routine prompt — see
+	// gateway/pulsar_wizard.go's wizardStartRequest.DailyBlockTitle.
+	async start(seed: string, dailyBlockTitle?: string) {
 		this.open = true;
 		this.sessionId = null;
 		this.transcript = [];
@@ -44,7 +47,7 @@ export class PulsarWizardState {
 			const res = await fetch('/api/pulsar/wizard/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ seed })
+				body: JSON.stringify({ seed, daily_block_title: dailyBlockTitle ?? '' })
 			});
 			if (!res.ok) {
 				this.error = (await res.text()) || 'Something went wrong starting the wizard.';

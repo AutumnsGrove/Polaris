@@ -7,12 +7,23 @@
 
 	// seed: whatever's currently typed into the routine form's prompt
 	// field, if anything — passed straight through to
-	// pulsarWizardState.start(). onAccept fires per "Use this prompt"
-	// click, independent of whether it's the latest draft in the
-	// transcript (see pulsarWizard.svelte.ts's applyResponse) — see
-	// accept() below for why this also closes the wizard.
-	let { seed, onClose, onAccept }: { seed: string; onClose: () => void; onAccept: (prompt: string, name?: string) => void } =
-		$props();
+	// pulsarWizardState.start(). onAccept fires per "Use this" click,
+	// independent of whether it's the latest draft in the transcript (see
+	// pulsarWizard.svelte.ts's applyResponse) — see accept() below for
+	// why this also closes the wizard. dailyBlockTitle, when set, scopes
+	// the interview to one Pulsar Daily block's steering instruction
+	// instead of a whole routine prompt (see pulsarWizardState.start).
+	let {
+		seed,
+		dailyBlockTitle,
+		onClose,
+		onAccept
+	}: {
+		seed: string;
+		dailyBlockTitle?: string;
+		onClose: () => void;
+		onAccept: (prompt: string, name?: string) => void;
+	} = $props();
 
 	let freeform = $state('');
 
@@ -47,7 +58,7 @@
 		// /pulsar/[id]/+page.svelte's identical note on why: an async
 		// onMount callback's returned Promise isn't treated as a teardown
 		// function by Svelte).
-		void pulsarWizardState.start(seed);
+		void pulsarWizardState.start(seed, dailyBlockTitle);
 	});
 
 	function submitFreeform() {
@@ -80,7 +91,7 @@
 
 <div class="modal-backdrop" role="presentation">
 	<button class="modal-backdrop-close" onclick={close} aria-label="Close"></button>
-	<div class="modal-panel wizard-panel" role="dialog" aria-modal="true" aria-label="Help me write this prompt">
+	<div class="modal-panel wizard-panel" role="dialog" aria-modal="true" aria-label="Help me write this">
 		<div class="sheet-handle" use:swipeToDismiss={close} aria-hidden="true"></div>
 		<div class="modal-panel-header">
 			<h2>Help me write this</h2>
@@ -114,7 +125,7 @@
 						<pre class="draft-prompt">{entry.final.prompt}</pre>
 						<button class="btn btn-accent use-btn" onclick={() => accept(entry.final.prompt, entry.final.name)}>
 							<Check size={14} />
-							Use this prompt
+							Use this
 						</button>
 					</div>
 				{/if}

@@ -1,8 +1,16 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState, type PulsarDailyConfigInput } from '$lib/pulsarDaily.svelte';
-	import { X } from '@lucide/svelte';
+	import { X, Sparkles } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
+	import { autoResize } from '$lib/actions/autoResize';
+	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
+
+	// customFieldMaxHeight: roughly 5 lines at this field's font-size/line-
+	// height — some of these instructions can get long (a multi-city
+	// Local override, a detailed Sports team list), and a single-line
+	// input would force that to scroll sideways instead of wrapping.
+	const customFieldMaxHeight = 110;
 
 	let { onClose }: { onClose: () => void } = $props();
 
@@ -49,6 +57,16 @@
 
 	let saving = $state(false);
 	let error = $state('');
+
+	// wizardBlock: which block's "help me write this" interview is
+	// currently open, if any — same one-at-a-time modal-over-modal shape
+	// PulsarRoutineForm.svelte's own wizard button uses.
+	let wizardBlock = $state<{ key: string; label: string } | null>(null);
+
+	function acceptWizardInstruction(text: string) {
+		customInstructions[wizardBlock!.key] = text;
+		wizardBlock = null;
+	}
 
 	function toggleBlock(key: string) {
 		const next = new Set(enabledBlocks);
@@ -114,25 +132,47 @@
 					</label>
 					{#if opt.key === 'sports' && enabledBlocks.has('sports')}
 						<div class="field block-subfield">
-							<label for="daily-sports-teams">Which teams/leagues?</label>
-							<input
+							<div class="field-label-row">
+								<label for="daily-sports-teams">Which teams/leagues?</label>
+								<button
+									type="button"
+									class="wizard-btn"
+									onclick={() => (wizardBlock = { key: opt.key, label: opt.label })}
+								>
+									<Sparkles size={12} />
+									Help me write this
+								</button>
+							</div>
+							<textarea
 								id="daily-sports-teams"
-								type="text"
+								rows="1"
 								bind:value={sportsTeams}
 								placeholder="Warriors, 49ers, Premier League"
 								required
-							/>
+								use:autoResize={{ value: sportsTeams, maxHeight: customFieldMaxHeight }}
+							></textarea>
 						</div>
 					{:else if opt.placeholder && enabledBlocks.has(opt.key)}
 						<div class="field block-subfield">
-							<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
-							<input
+							<div class="field-label-row">
+								<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
+								<button
+									type="button"
+									class="wizard-btn"
+									onclick={() => (wizardBlock = { key: opt.key, label: opt.label })}
+								>
+									<Sparkles size={12} />
+									Help me write this
+								</button>
+							</div>
+							<textarea
 								id="daily-custom-{opt.key}"
-								type="text"
+								rows="1"
 								value={customInstructions[opt.key] ?? ''}
 								oninput={(e) => (customInstructions[opt.key] = e.currentTarget.value)}
 								placeholder={opt.placeholder}
-							/>
+								use:autoResize={{ value: customInstructions[opt.key] ?? '', maxHeight: customFieldMaxHeight }}
+							></textarea>
 						</div>
 					{/if}
 				{/each}
@@ -178,6 +218,15 @@
 	</div>
 </div>
 
+{#if wizardBlock}
+	<PulsarPromptWizard
+		seed={customInstructions[wizardBlock.key] ?? ''}
+		dailyBlockTitle={wizardBlock.label}
+		onClose={() => (wizardBlock = null)}
+		onAccept={acceptWizardInstruction}
+	/>
+{/if}
+
 <style>
 	h3 {
 		margin: var(--space-lg) 0 var(--space-md);
@@ -213,7 +262,39 @@
 		color: var(--color-text-dim);
 	}
 
-	.field input {
+	.field-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.field-label-row label {
+		margin-bottom: 0;
+	}
+
+	/* Same wizard-launch button as PulsarRoutineForm.svelte's prompt
+	   field — duplicated, not shared, since Svelte scopes component
+	   styles per-file (see that component's own doc comment on this
+	   convention elsewhere). */
+	.wizard-btn {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-xs);
+		padding: 2px var(--space-sm);
+		border: none;
+		background: transparent;
+		border-radius: var(--radius-full);
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--color-accent);
+	}
+
+	.wizard-btn:hover {
+		background: var(--color-accent-soft);
+	}
+
+	.field textarea {
 		width: 100%;
 		border: none;
 		background: var(--color-surface-2);
@@ -223,6 +304,7 @@
 		font: inherit;
 		font-size: 13px;
 		color: var(--color-text);
+		resize: none;
 	}
 
 	.row {

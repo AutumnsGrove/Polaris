@@ -340,3 +340,52 @@ func TestRunWizardTurn_DisablesNonInterviewTools(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt covers
+// tools.Context.PulsarDailyBlockTitle end to end: a start request naming
+// a block should get the Daily-scoped wizard system prompt (with the
+// block's title interpolated in), not the ordinary routine-prompt one —
+// and the session should remember that scoping for the next turn without
+// needing the title resent.
+func TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n")
+		fmt.Fprint(w, "data: [DONE]\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+
+	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"daily_block_title": "Local"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(capturedBody, `Local`) {
+		t.Errorf("request body doesn't mention the block title %q: %s", "Local", capturedBody)
+	}
+	if strings.Contains(capturedBody, "help the user write a good prompt for a Pulsar routine") {
+		t.Error("request body used the routine wizard's system prompt instead of the Daily-scoped one")
+	}
+
+	sessionID, _ := decoded["session_id"].(string)
+	h.srvObj.wizardMu.Lock()
+	session, exists := h.srvObj.wizardSessions[sessionID]
+	title := ""
+	if exists {
+		title = session.dailyBlockTitle
+	}
+	h.srvObj.wizardMu.Unlock()
+	if !exists {
+		t.Fatal("session was not stored server-side")
+	}
+	if title != "Local" {
+		t.Errorf("session.dailyBlockTitle = %q, want %q — a follow-up turn needs this remembered", title, "Local")
+	}
+}
