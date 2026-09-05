@@ -23,6 +23,7 @@ type PulsarDailyConfig struct {
 	ArchitectModel  string     `json:"architect_model"`
 	WriterModel     string     `json:"writer_model"`
 	TimeOfDay       string     `json:"time_of_day"`
+	CreatedAt       time.Time  `json:"created_at"`
 	LastGeneratedAt *time.Time `json:"last_generated_at"`
 }
 
@@ -37,9 +38,9 @@ func (s *Store) GetDailyConfig() (*PulsarDailyConfig, error) {
 	var c PulsarDailyConfig
 	var enabledBlocksJSON string
 	err := s.db.QueryRow(
-		`SELECT enabled_blocks, sports_teams, architect_model, writer_model, time_of_day, last_generated_at
+		`SELECT enabled_blocks, sports_teams, architect_model, writer_model, time_of_day, created_at, last_generated_at
 		 FROM pulsar_daily_config WHERE id = 1`,
-	).Scan(&enabledBlocksJSON, &c.SportsTeams, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.LastGeneratedAt)
+	).Scan(&enabledBlocksJSON, &c.SportsTeams, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.CreatedAt, &c.LastGeneratedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get daily config: %w", err)
 	}

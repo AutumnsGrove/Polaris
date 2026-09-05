@@ -403,6 +403,12 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 -- many independent schedules.
 CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
+	-- created_at: the due-time baseline for a Daily that has never
+	-- generated yet (last_generated_at nil) — same reasoning as
+	-- pulsar_routines.created_at's doc comment: without it, configuring
+	-- Daily at 2pm with time_of_day 07:00 would treat today's already-
+	-- passed 7am slot as missed and generate immediately on save.
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	-- enabled_blocks: JSON array of block keys the user has toggled on —
 	-- excludes "top_story", which isn't independently generated content,
 	-- it's Stage B's elevation of whichever watch block wins the ranking
