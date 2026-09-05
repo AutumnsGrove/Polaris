@@ -178,7 +178,7 @@ func TestHandleGetDailyEdition_NotFound(t *testing.T) {
 func TestHandleGetDailyEdition_LatestAndByDate(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
-	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}); err != nil {
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}, 0); err != nil {
 		t.Fatalf("seeding edition: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestHandleGetDailyEdition_LatestAndByDate(t *testing.T) {
 func TestHandleGetPreviousDailyEdition(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
-	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}); err != nil {
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}, 0); err != nil {
 		t.Fatalf("seeding edition: %v", err)
 	}
 
@@ -252,7 +252,7 @@ func TestHandleExpandDailyBlock_ReturnsSeededContent(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{
 		{Key: "weather", Title: "Weather", Content: "Sunny, 72F"},
-	}); err != nil {
+	}, 0); err != nil {
 		t.Fatalf("seeding edition: %v", err)
 	}
 
@@ -293,7 +293,7 @@ func TestHandleExpandDailyBlock_PictureOfDayIncludesRealAttachment(t *testing.T)
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{
 		{Key: "picture_of_day", Title: "Picture of the Day", Content: "A nebula", ImageURL: imgSrv.URL + "/image.png"},
-	}); err != nil {
+	}, 0); err != nil {
 		t.Fatalf("seeding edition: %v", err)
 	}
 
@@ -329,7 +329,7 @@ func TestHandleExpandDailyBlock_PictureOfDayIncludesRealAttachment(t *testing.T)
 
 func TestHandleExpandDailyBlock_UnknownBlockKeyReturns404(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
-	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}); err != nil {
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}, 0); err != nil {
 		t.Fatalf("seeding edition: %v", err)
 	}
 

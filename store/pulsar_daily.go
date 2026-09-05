@@ -119,25 +119,28 @@ type PulsarDailyBlock struct {
 
 // PulsarDailyEdition is one calendar date's assembled Daily page.
 type PulsarDailyEdition struct {
-	Date      string             `json:"date"`
-	Blocks    []PulsarDailyBlock `json:"blocks"`
-	CreatedAt time.Time          `json:"created_at"`
+	Date   string             `json:"date"`
+	Blocks []PulsarDailyBlock `json:"blocks"`
+	// CostUSD is the total LLM spend across every stage that produced
+	// this edition — see the schema comment on this column.
+	CostUSD   float64   `json:"cost_usd"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UpsertDailyEdition writes today's Stage D result — overwrites rather
 // than duplicates on a second run for the same date (e.g. a manual
 // re-trigger), since edition_date is the natural key, not an
 // auto-incrementing history of attempts.
-func (s *Store) UpsertDailyEdition(date string, blocks []PulsarDailyBlock) error {
+func (s *Store) UpsertDailyEdition(date string, blocks []PulsarDailyBlock, costUSD float64) error {
 	blocksJSON, err := json.Marshal(blocks)
 	if err != nil {
 		return fmt.Errorf("upsert daily edition: encode blocks: %w", err)
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO pulsar_daily_editions (edition_date, blocks)
-		 VALUES (?, ?)
-		 ON CONFLICT(edition_date) DO UPDATE SET blocks = excluded.blocks`,
-		date, string(blocksJSON),
+		`INSERT INTO pulsar_daily_editions (edition_date, blocks, cost_usd)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(edition_date) DO UPDATE SET blocks = excluded.blocks, cost_usd = excluded.cost_usd`,
+		date, string(blocksJSON), costUSD,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert daily edition: %w", err)
@@ -152,8 +155,8 @@ func (s *Store) GetDailyEdition(date string) (*PulsarDailyEdition, error) {
 	var e PulsarDailyEdition
 	var blocksJSON string
 	err := s.db.QueryRow(
-		`SELECT edition_date, blocks, created_at FROM pulsar_daily_editions WHERE edition_date = ?`, date,
-	).Scan(&e.Date, &blocksJSON, &e.CreatedAt)
+		`SELECT edition_date, blocks, cost_usd, created_at FROM pulsar_daily_editions WHERE edition_date = ?`, date,
+	).Scan(&e.Date, &blocksJSON, &e.CostUSD, &e.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrDailyEditionNotFound
 	}
@@ -175,9 +178,9 @@ func (s *Store) LatestDailyEdition(beforeDate string) (*PulsarDailyEdition, erro
 	var e PulsarDailyEdition
 	var blocksJSON string
 	err := s.db.QueryRow(
-		`SELECT edition_date, blocks, created_at FROM pulsar_daily_editions
+		`SELECT edition_date, blocks, cost_usd, created_at FROM pulsar_daily_editions
 		 WHERE edition_date < ? ORDER BY edition_date DESC LIMIT 1`, beforeDate,
-	).Scan(&e.Date, &blocksJSON, &e.CreatedAt)
+	).Scan(&e.Date, &blocksJSON, &e.CostUSD, &e.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrDailyEditionNotFound
 	}

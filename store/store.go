@@ -461,6 +461,11 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_editions (
 	-- because an edition is always read/written whole (the full masonry
 	-- page, or the full diff-judge comparison), never queried per-block.
 	blocks TEXT NOT NULL,
+	-- cost_usd: total LLM spend across every stage that produced this
+	-- edition (every block's generation call, every Watch block's
+	-- diff-judge call, Stage B's ranking call, Stage C's elaboration) —
+	-- shown in the frontend so real generation cost isn't invisible.
+	cost_usd REAL NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `
@@ -518,6 +523,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
+	`ALTER TABLE pulsar_daily_editions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {

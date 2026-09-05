@@ -336,6 +336,9 @@ export interface PulsarDailyBlock {
 export interface PulsarDailyEdition {
 	date: string;
 	blocks: PulsarDailyBlock[];
+	// Total LLM spend across every stage that produced this edition — see
+	// store.PulsarDailyEdition.CostUSD.
+	cost_usd: number;
 	created_at: string;
 }
 

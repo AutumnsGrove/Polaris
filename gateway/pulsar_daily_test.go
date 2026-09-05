@@ -26,7 +26,7 @@ func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
 		{Resp: toolCallResponse("record_verdict", `{"verdict":"notable","gist":"A big new development"}`)},
 	}}
 
-	v, err := dailyDiffJudge(context.Background(), mock, "Tech & Science", "yesterday's content", "today's content")
+	v, _, err := dailyDiffJudge(context.Background(), mock, "Tech & Science", "yesterday's content", "today's content")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestDailyDiffJudge_PlainProseFallsBackToNormal(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "This seems like a normal update."}},
 	}}
 
-	v, err := dailyDiffJudge(context.Background(), mock, "Headlines", "yesterday", "today")
+	v, _, err := dailyDiffJudge(context.Background(), mock, "Headlines", "yesterday", "today")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestDailyDiffJudge_UnrecognizedVerdictFallsBackToNormal(t *testing.T) {
 		{Resp: toolCallResponse("record_verdict", `{"verdict":"huge","gist":"whatever"}`)},
 	}}
 
-	v, err := dailyDiffJudge(context.Background(), mock, "Local", "yesterday", "today")
+	v, _, err := dailyDiffJudge(context.Background(), mock, "Local", "yesterday", "today")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
 		{Key: "headlines", Title: "Top Headlines", Gist: "A quiet news day"},
 		{Key: "tech_science", Title: "Tech & Science", Gist: "A major datacenter buildout announced"},
 	}
-	key, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, _, err := dailyElectTopStory(context.Background(), mock, candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestDailyElectTopStory_UnknownKeyFallsBackToFirstCandidate(t *testing.T) {
 		{Key: "headlines", Title: "Top Headlines", Gist: "gist a"},
 		{Key: "trending", Title: "Trending Now", Gist: "gist b"},
 	}
-	key, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, _, err := dailyElectTopStory(context.Background(), mock, candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}

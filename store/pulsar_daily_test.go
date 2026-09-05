@@ -63,7 +63,7 @@ func TestDailyEdition_UpsertGetLatest(t *testing.T) {
 		{Key: "weather", Title: "Weather", Content: "Sunny, 72F", Gist: "Sunny"},
 		{Key: "top_story", Title: "AI datacenter buildout", Content: "...", Gist: "Buildout continues", IsTopStory: true},
 	}
-	if err := s.UpsertDailyEdition("2026-09-03", yesterday); err != nil {
+	if err := s.UpsertDailyEdition("2026-09-03", yesterday, 0.0123); err != nil {
 		t.Fatalf("UpsertDailyEdition (2026-09-03): %v", err)
 	}
 
@@ -73,6 +73,9 @@ func TestDailyEdition_UpsertGetLatest(t *testing.T) {
 	}
 	if len(got.Blocks) != 2 || got.Blocks[1].Key != "top_story" || !got.Blocks[1].IsTopStory {
 		t.Errorf("GetDailyEdition = %+v, want the blocks just written", got.Blocks)
+	}
+	if got.CostUSD != 0.0123 {
+		t.Errorf("CostUSD = %v, want 0.0123", got.CostUSD)
 	}
 
 	// A missed day: nothing generated for 2026-09-04, so 2026-09-05's
@@ -88,7 +91,7 @@ func TestDailyEdition_UpsertGetLatest(t *testing.T) {
 
 	// Re-running Stage D for the same date overwrites, it doesn't duplicate.
 	updated := []PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Rain, 60F", Gist: "Rain"}}
-	if err := s.UpsertDailyEdition("2026-09-03", updated); err != nil {
+	if err := s.UpsertDailyEdition("2026-09-03", updated, 0.045); err != nil {
 		t.Fatalf("UpsertDailyEdition (overwrite): %v", err)
 	}
 	got, err = s.GetDailyEdition("2026-09-03")
@@ -97,5 +100,8 @@ func TestDailyEdition_UpsertGetLatest(t *testing.T) {
 	}
 	if len(got.Blocks) != 1 || got.Blocks[0].Content != "Rain, 60F" {
 		t.Errorf("GetDailyEdition after overwrite = %+v, want the single updated block", got.Blocks)
+	}
+	if got.CostUSD != 0.045 {
+		t.Errorf("CostUSD after overwrite = %v, want 0.045 (the overwritten value, not the original)", got.CostUSD)
 	}
 }

@@ -5,7 +5,7 @@
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
-	import { PanelLeft, Settings } from '@lucide/svelte';
+	import { PanelLeft, Settings, Coins } from '@lucide/svelte';
 	import type { PulsarDailyBlock } from '$lib/types';
 	import PulsarDailyConfigModal from '$lib/components/PulsarDailyConfigModal.svelte';
 
@@ -144,9 +144,17 @@
 		{/if}
 		<h1 class="page-title">The Daily</h1>
 	</div>
-	<button class="icon-btn" onclick={() => (showConfig = true)} title="Configure The Daily">
-		<Settings size={18} />
-	</button>
+	<div class="header-right">
+		{#if pulsarDailyState.edition && pulsarDailyState.edition.cost_usd > 0}
+			<span class="cost-indicator" title="Total LLM cost to generate this edition">
+				<Coins size={14} />
+				${pulsarDailyState.edition.cost_usd.toFixed(4)}
+			</span>
+		{/if}
+		<button class="icon-btn" onclick={() => (showConfig = true)} title="Configure The Daily">
+			<Settings size={18} />
+		</button>
+	</div>
 </header>
 
 <div class="content">
@@ -230,6 +238,18 @@
 		align-items: center;
 		gap: var(--space-md);
 		min-width: 0;
+	}
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+	.cost-indicator {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		font-size: 12.5px;
+		color: var(--color-text-dim);
 	}
 	.page-title {
 		margin: 0;

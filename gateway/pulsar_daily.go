@@ -175,10 +175,10 @@ func appendCustomInstruction(task, custom string) string {
 // block that leans on the model's own knowledge — no tools, no research,
 // same "cheap and shallow every day" framing the plan doc's expand-to-
 // chat section uses to justify the opposite (deep) behavior on tap.
-func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string) (string, error) {
+func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string) (string, float64, error) {
 	task, ok := dailyPickTasks[key]
 	if !ok {
-		return "", fmt.Errorf("no pick task defined for block %q", key)
+		return "", 0, fmt.Errorf("no pick task defined for block %q", key)
 	}
 	task = appendCustomInstruction(task, customInstruction)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
@@ -187,9 +187,9 @@ func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, 
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	return strings.TrimSpace(resp.Content), nil
+	return strings.TrimSpace(resp.Content), resp.CostUSD, nil
 }
 
 // generateDailyResearchBlock runs one Watch/Sports block through a
@@ -279,7 +279,7 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 // card for its URL — image_search's own return string is a summary
 // sentence, not the image data itself (see tools/image_search.go's
 // finishImageSearch), so the actual URL only exists on the Card it adds.
-func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, err error) {
+func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, cost float64, err error) {
 	task := "Give me a search query for an interesting, visually striking photo to feature as today's " +
 		"\"Picture of the Day\" — nature, space, art, architecture, wildlife, or similar. Vary it day to " +
 		"day rather than defaulting to the same subject."
@@ -289,17 +289,17 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	query := strings.Trim(strings.TrimSpace(resp.Content), "\"")
 	if query == "" {
-		return "", "", fmt.Errorf("picture_of_day: model returned an empty search query")
+		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: model returned an empty search query")
 	}
 
 	argsJSON, _ := json.Marshal(map[string]string{"query": query})
 	result := tools.Dispatch("image_search", string(argsJSON), ctx)
 	if strings.HasPrefix(result, "error:") || strings.HasPrefix(result, "image search is degraded") {
-		return "", "", fmt.Errorf("picture_of_day: %s", result)
+		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: %s", result)
 	}
 
 	for _, c := range ctx.CardsSnapshot() {
@@ -308,10 +308,10 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 			if title == "" {
 				title = query
 			}
-			return title, c.ImageURL, nil
+			return title, c.ImageURL, resp.CostUSD, nil
 		}
 	}
-	return "", "", fmt.Errorf("picture_of_day: image_search returned no image card")
+	return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: image_search returned no image card")
 }
 
 // dailyVerdictToolDef forces Stage A's diff-judge to answer via a
@@ -353,7 +353,7 @@ type dailyVerdict struct {
 // block content (not summarized — see the plan doc's Stage A reasoning
 // on why a lossy summary would weaken a pairwise wording comparison) and
 // returns a structured verdict.
-func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yesterday, today string) (dailyVerdict, error) {
+func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yesterday, today string) (dailyVerdict, float64, error) {
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: fmt.Sprintf("You are comparing yesterday's and today's content for one "+
 			"block of a personal daily digest page, titled %q. Decide whether today's content represents a "+
@@ -363,9 +363,10 @@ func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yester
 	}
 	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{dailyVerdictToolDef}, func(string) {}, nil)
 	if err != nil {
-		return dailyVerdict{}, err
+		return dailyVerdict{}, 0, err
 	}
-	return parseDailyVerdict(resp)
+	verdict, err := parseDailyVerdict(resp)
+	return verdict, resp.CostUSD, err
 }
 
 // parseDailyVerdict falls back to "normal" (never drops a block outright)
@@ -404,7 +405,7 @@ type dailyRankCandidate struct {
 // Only ever called with at least one candidate (see runDailyPipeline);
 // falls back to the first candidate if the model names a key outside the
 // given list, rather than electing nothing.
-func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidates []dailyRankCandidate) (string, error) {
+func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidates []dailyRankCandidate) (string, float64, error) {
 	var b strings.Builder
 	for _, c := range candidates {
 		fmt.Fprintf(&b, "- %s (%s): %s\n", c.Key, c.Title, c.Gist)
@@ -435,23 +436,23 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 	}
 	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{toolDef}, func(string) {}, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if len(resp.ToolCalls) == 0 {
-		return candidates[0].Key, nil
+		return candidates[0].Key, resp.CostUSD, nil
 	}
 	var args struct {
 		WinnerKey string `json:"winner_key"`
 	}
 	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
-		return candidates[0].Key, nil
+		return candidates[0].Key, resp.CostUSD, nil
 	}
 	for _, c := range candidates {
 		if c.Key == args.WinnerKey {
-			return args.WinnerKey, nil
+			return args.WinnerKey, resp.CostUSD, nil
 		}
 	}
-	return candidates[0].Key, nil
+	return candidates[0].Key, resp.CostUSD, nil
 }
 
 // isDailyDue mirrors isRoutineDue but for the Daily singleton, which only
@@ -562,6 +563,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		gist     string
 		verdict  string // "" for a non-Watch block: always renders, no verdict.
 		imageURL string
+		costUSD  float64
 	}
 	results := make([]*stageAResult, len(dailyBlockRegistry))
 	var wg sync.WaitGroup
@@ -579,11 +581,23 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			}()
 			r := s.generateOneDailyBlock(reqCtx, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
-				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL}
+				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD}
 			}
 		}(i, spec)
 	}
 	wg.Wait()
+
+	// totalCost accumulates every LLM call across every stage — Stage A's
+	// block generation and diff-judge calls (already summed into each
+	// stageAResult.costUSD), Stage B's ranking call, and Stage C's
+	// elaboration — into what the frontend shows as this edition's real
+	// cost. See store.PulsarDailyEdition.CostUSD.
+	var totalCost float64
+	for _, r := range results {
+		if r != nil {
+			totalCost += r.costUSD
+		}
+	}
 
 	// Stage B — elect a Top Story from whichever Watch blocks came back
 	// "notable". No fallback if none did (see the plan doc's "Resolved:
@@ -597,7 +611,8 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 	}
 	topStoryKey := ""
 	if len(candidates) > 0 {
-		key, err := dailyElectTopStory(reqCtx, architectClient, candidates)
+		key, rankCost, err := dailyElectTopStory(reqCtx, architectClient, candidates)
+		totalCost += rankCost
 		if err != nil {
 			log.Warn("pulsar daily: stage B ranking failed, no top story today", "err", err)
 		} else {
@@ -613,7 +628,8 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			continue // dropped — either a genuinely quiet Watch block, or a hard generation failure (see generateOneDailyBlock).
 		}
 		if r.spec.Key == topStoryKey {
-			elaborated, _, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, r.spec.Title, r.content, location)
+			elaborated, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, r.spec.Title, r.content, location)
+			totalCost += elabCost
 			content := r.content
 			if err != nil {
 				log.Warn("pulsar daily: stage C elaboration failed, using the quick version", "block", r.spec.Key, "err", err)
@@ -642,11 +658,11 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		}}
 	}
 
-	if err := s.db.UpsertDailyEdition(today, edition); err != nil {
+	if err := s.db.UpsertDailyEdition(today, edition, totalCost); err != nil {
 		log.Warn("pulsar daily: persisting edition failed", "err", err)
 		return
 	}
-	log.Info("pulsar daily: edition generated", "date", today, "blocks", len(edition), "top_story", topStoryKey != "")
+	log.Info("pulsar daily: edition generated", "date", today, "blocks", len(edition), "top_story", topStoryKey != "", "cost_usd", totalCost)
 }
 
 type dailyGeneratedBlock struct {
@@ -654,6 +670,12 @@ type dailyGeneratedBlock struct {
 	gist     string
 	verdict  string
 	imageURL string
+	// costUSD accumulates every LLM call this block's generation made —
+	// its own content-generation call plus (for a Watch block) the
+	// diff-judge call — so runDailyPipeline can sum a real total for the
+	// whole edition. Direct tool dispatches (Weather) and image_search
+	// itself cost nothing here; only the LLM calls do.
+	costUSD float64
 }
 
 // generateOneDailyBlock produces one block's content and, for a Watch
@@ -666,6 +688,7 @@ type dailyGeneratedBlock struct {
 func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
 	var content string
 	var imageURL string
+	var cost float64
 	var err error
 	custom := customInstructions[spec.Key]
 
@@ -673,7 +696,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 	case dailyBlockDirect:
 		if spec.Key == "picture_of_day" {
 			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
-			content, imageURL, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
+			content, imageURL, cost, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
 			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 			content = tools.Dispatch(spec.Key, "{}", ctx)
@@ -682,9 +705,9 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 			}
 		}
 	case dailyBlockPick:
-		content, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom)
+		content, cost, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom)
 	case dailyBlockResearch:
-		content, _, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams, custom)
+		content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams, custom)
 	}
 
 	if err != nil {
@@ -696,7 +719,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 	}
 
 	if !spec.Watch {
-		return &dailyGeneratedBlock{content: content, imageURL: imageURL}
+		return &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost}
 	}
 
 	yesterdayBlock, ok := yesterdayByKey[spec.Key]
@@ -704,13 +727,13 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 		// No prior content to diff against — treat as notable rather
 		// than skipping the diff-judge call silently, per the plan
 		// doc's "First-ever day" note.
-		return &dailyGeneratedBlock{content: content, gist: content, verdict: "notable"}
+		return &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost}
 	}
 
-	verdict, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
+	verdict, verdictCost, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
 	if err != nil {
 		log.Warn("pulsar daily: diff-judge failed, treating block as normal", "block", spec.Key, "err", err)
-		return &dailyGeneratedBlock{content: content, gist: content, verdict: "normal"}
+		return &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost}
 	}
-	return &dailyGeneratedBlock{content: content, gist: verdict.Gist, verdict: verdict.Verdict}
+	return &dailyGeneratedBlock{content: content, gist: verdict.Gist, verdict: verdict.Verdict, costUSD: cost + verdictCost}
 }
