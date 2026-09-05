@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"polaris/store"
@@ -237,6 +241,89 @@ func TestHandleExpandDailyBlock_UnknownDateReturns404(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for a date with no edition", resp.StatusCode)
+	}
+}
+
+// TestHandleExpandDailyBlock_ReturnsSeededContent covers the happy path
+// for a plain text block — no turn is run anymore (see
+// handleExpandDailyBlock's doc comment on why), just the seeded message
+// text handed back for the frontend to send itself.
+func TestHandleExpandDailyBlock_ReturnsSeededContent(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{
+		{Key: "weather", Title: "Weather", Content: "Sunny, 72F"},
+	}); err != nil {
+		t.Fatalf("seeding edition: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"date": "2026-09-03", "block_key": "weather"})
+	resp, err := http.Post(h.url("/api/pulsar/daily/expand"), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST expand: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var decoded map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	content, _ := decoded["content"].(string)
+	if !strings.Contains(content, "Weather") || !strings.Contains(content, "Sunny, 72F") {
+		t.Errorf("content = %q, want the block's title and content folded in", content)
+	}
+	if decoded["attachment_id"] != nil {
+		t.Errorf("attachment_id = %v, want unset for a non-image block", decoded["attachment_id"])
+	}
+}
+
+// TestHandleExpandDailyBlock_PictureOfDayIncludesRealAttachment covers
+// the bug this rework fixed: Picture of the Day's expand-to-chat must
+// hand back a real attachment (so the model actually sees the image),
+// not just the caption text.
+func TestHandleExpandDailyBlock_PictureOfDayIncludesRealAttachment(t *testing.T) {
+	fakeImageBytes := []byte("\x89PNG\r\n\x1a\nfake-png-bytes")
+	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(fakeImageBytes)
+	}))
+	defer imgSrv.Close()
+
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{
+		{Key: "picture_of_day", Title: "Picture of the Day", Content: "A nebula", ImageURL: imgSrv.URL + "/image.png"},
+	}); err != nil {
+		t.Fatalf("seeding edition: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"date": "2026-09-03", "block_key": "picture_of_day"})
+	resp, err := http.Post(h.url("/api/pulsar/daily/expand"), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST expand: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var decoded map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	attachmentID, _ := decoded["attachment_id"].(string)
+	if attachmentID == "" {
+		t.Fatal("attachment_id is empty, want a real downloaded attachment for an image block")
+	}
+	if decoded["attachment_content_type"] != "image/png" {
+		t.Errorf("attachment_content_type = %v, want image/png", decoded["attachment_content_type"])
+	}
+
+	saved, err := os.ReadFile(filepath.Join(h.srvObj.liveConfig().Attachments.Dir, attachmentID))
+	if err != nil {
+		t.Fatalf("reading saved attachment file: %v", err)
+	}
+	if string(saved) != string(fakeImageBytes) {
+		t.Error("saved attachment file doesn't match the fetched image bytes")
 	}
 }
 

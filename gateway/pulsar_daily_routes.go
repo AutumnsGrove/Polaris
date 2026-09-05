@@ -174,15 +174,31 @@ type pulsarDailyExpandRequest struct {
 	BlockKey string `json:"block_key"`
 }
 
+// pulsarDailyExpandResponse hands back the seeded message text (and, for
+// Picture of the Day, a real attachment) instead of running a turn itself
+// — see handleExpandDailyBlock's doc comment for why. AttachmentID is
+// exactly what POST /api/upload would have returned for the same image,
+// so the frontend sends it over the WebSocket the same way any other
+// image attachment already flows (ClientMessage.AttachmentID/
+// AttachmentFilename/AttachmentContentType).
 type pulsarDailyExpandResponse struct {
-	ThreadID string `json:"thread_id"`
+	Content               string `json:"content"`
+	AttachmentID          string `json:"attachment_id,omitempty"`
+	AttachmentFilename    string `json:"attachment_filename,omitempty"`
+	AttachmentContentType string `json:"attachment_content_type,omitempty"`
 }
 
-// handleExpandDailyBlock is a card's tap-to-expand affordance — seeds a
-// real Polaris thread through the exact same handleTurn entry point
-// firePulse already uses (see the plan doc's "no new rendering path"),
-// synchronously, same shape handleAsk uses to get a thread id back
-// before responding. Block content is looked up server-side from the
+// handleExpandDailyBlock is a card's tap-to-expand affordance. It used to
+// run the whole turn itself (through handleTurn) and only respond once
+// the model finished answering — which meant the frontend couldn't
+// navigate to the new thread until every tool call had already fired,
+// with no way to watch it happen live. Now it just resolves what the
+// seeded message should say (and, for an image block, downloads the
+// actual image as a real attachment) and hands that back immediately;
+// the frontend sends it as a normal new-thread message over its own
+// WebSocket connection, the same path any live chat message already
+// takes — so navigation and streaming behave exactly like a message the
+// user typed themselves. Block content is looked up server-side from the
 // stored edition, not trusted from the request body, since a client
 // could otherwise seed an arbitrary "content" string into the model's
 // framing prefix.
@@ -231,39 +247,21 @@ func (s *Server) handleExpandDailyBlock(w http.ResponseWriter, r *http.Request) 
 	}
 	seeded := fmt.Sprintf(p.PulsarDaily.ExpandPrefix, block.Title, block.Content) + " " + followup
 
-	if !s.TryStartTurn() {
-		http.Error(w, "the server is restarting — please retry in a few seconds", http.StatusServiceUnavailable)
-		return
-	}
-	defer s.FinishTurn()
-
-	cfg := s.liveConfig()
-	msg := ClientMessage{
-		Type:    "message",
-		Content: seeded,
-		Model:   s.effectiveDefaultModel(cfg),
-		// source deliberately left as the "web" default, not "pulsar" —
-		// unlike an unattended pulse, this thread was actively requested
-		// by the user tapping a card, so it belongs in the normal
-		// Assistant sidebar (ListThreads excludes source = 'pulsar'
-		// unconditionally — see store.go's schema comment), not hidden
-		// away in a routine's own pulse history.
-	}
-
-	var final ServerEvent
-	var turnErr string
-	s.handleTurn(r.Context(), msg, func(evt ServerEvent) {
-		switch evt.Type {
-		case "done":
-			final = evt
-		case "error":
-			turnErr = evt.Message
+	resp := pulsarDailyExpandResponse{Content: seeded}
+	if block.ImageURL != "" {
+		// The model can't "tell me more about this image" without
+		// actually seeing it — block.Content is only ever a caption. A
+		// real, previously-shipped bug: without this, the seeded turn
+		// had no image attached at all, and the model correctly (if
+		// confusingly) replied that it had nothing to look at.
+		att, err := s.saveRemoteImageAttachment(r.Context(), block.ImageURL)
+		if err != nil {
+			log.Warn("expand daily block: fetching image attachment failed, continuing without it", "url", block.ImageURL, "err", err)
+		} else {
+			resp.AttachmentID = att.ID
+			resp.AttachmentFilename = att.Filename
+			resp.AttachmentContentType = att.ContentType
 		}
-	}, nil)
-
-	if turnErr != "" {
-		http.Error(w, turnErr, http.StatusInternalServerError)
-		return
 	}
-	writeJSON(w, pulsarDailyExpandResponse{ThreadID: final.ThreadID})
+	writeJSON(w, resp)
 }

@@ -37,9 +37,31 @@ type ClientMessage struct {
 	SttCostUSD float64 `json:"stt_cost_usd,omitempty"`
 	// Source tags a brand-new thread's origin (see store.Thread.Source) —
 	// empty means "web", the normal chat UI. Only read on thread creation;
-	// ignored on every later turn in the same thread. The WebSocket client
-	// never sets this; it's populated by handleAsk for API-originated threads.
+	// ignored on every later turn in the same thread. Populated by
+	// handleAsk for API-originated threads; the WebSocket client otherwise
+	// never sets this, with one deliberate exception — Pulsar Daily's
+	// expand-to-chat sends "pulsar-daily" here so those threads are
+	// distinguishable from ordinary typed messages (still shown in the
+	// normal Assistant sidebar, unlike source = "pulsar" pulses — see
+	// store.go's ListThreads filter).
 	Source string `json:"source,omitempty"`
+	// TitleSeed, when set on a brand-new thread, is what generateTitle
+	// summarizes instead of msg.Content — still a real LLM-generated
+	// title, just fed cleaner input. Pulsar Daily's expand-to-chat sets
+	// this to the tapped block's own title/content, because its seeded
+	// Content is a synthetic instruction wrapper ("The user tapped an
+	// expand affordance on a block titled X with this content: Y. Tell
+	// me more about what's shown in this image...") — generateTitle,
+	// given only that, was observed live hallucinating a title that reads
+	// like an answer to the wrapper's embedded instruction rather than an
+	// actual title (e.g. "I need to see the actual image to describe it"
+	// for a Picture of the Day expansion) — text matching nothing in the
+	// real conversation. TitleSeed sidesteps this by giving the title
+	// model the underlying subject directly, without the "tell me more"/
+	// "the user tapped" framing that caused the confusion. Also used as
+	// the initial truncated placeholder (before generation completes),
+	// for the same reason.
+	TitleSeed string `json:"title_seed,omitempty"`
 	// UserLocation is "lat, lon" from the browser's Geolocation API. On a
 	// "message" frame it's whatever fix the browser had cached client-side
 	// last (see web/src/lib/geolocation.ts) — a fallback of last resort,

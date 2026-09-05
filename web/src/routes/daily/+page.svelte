@@ -76,12 +76,45 @@
 		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
 	}
 
+	// expand used to POST to the server and wait for the *entire* turn
+	// (every tool call included) to finish before navigating anywhere —
+	// there was nothing to watch, and no way to follow along. Now the
+	// server only resolves what the seeded message should say; sending it
+	// happens over the browser's own live WebSocket connection, exactly
+	// the path a typed message already takes, so navigation is immediate
+	// and the answer streams in live.
 	async function expand(block: PulsarDailyBlock) {
 		if (expandingKey) return;
 		expandingKey = block.key;
 		try {
-			const threadId = await pulsarDailyState.expandBlock(viewedDate, block.key);
-			if (threadId) await goto(`/t/${threadId}`);
+			const resolved = await pulsarDailyState.resolveExpand(viewedDate, block.key);
+			if (!resolved) return;
+			// titleSeed: the block's own title + content, not the seeded
+			// wrapper message — see gateway/protocol.go's
+			// ClientMessage.TitleSeed doc comment for why generating a
+			// title straight from the wrapper text broke (a real,
+			// observed bug: the title model answered the wrapper's
+			// embedded "tell me more" instruction instead of titling it).
+			const titleSeed = `${block.title}: ${block.content}`.slice(0, 300);
+			appState.newThread();
+			await goto('/');
+			appState.send(
+				resolved.content,
+				undefined,
+				undefined,
+				undefined,
+				resolved.attachment_id
+					? {
+							id: resolved.attachment_id,
+							filename: resolved.attachment_filename ?? '',
+							content_type: resolved.attachment_content_type ?? '',
+							size_bytes: 0
+						}
+					: undefined,
+				undefined,
+				'pulsar-daily',
+				titleSeed
+			);
 		} finally {
 			expandingKey = '';
 		}

@@ -195,6 +195,14 @@ export type ClientMessage =
 			attachment_id?: string;
 			attachment_filename?: string;
 			attachment_content_type?: string;
+			// Only meaningful for a brand-new thread (thread_id omitted) —
+			// see gateway/protocol.go's ClientMessage.Source. Omitted means
+			// the server's own "web" default; only Pulsar Daily's
+			// expand-to-chat sets this ("pulsar-daily").
+			source?: string;
+			// See gateway/protocol.go's ClientMessage.TitleSeed — cleaner
+			// input for title generation than a synthetic seeded message.
+			title_seed?: string;
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs

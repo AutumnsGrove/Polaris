@@ -80,19 +80,31 @@ export class PulsarDailyState {
 		this.hasNewEdition = lastSeenDate === null || latest.date > lastSeenDate;
 	}
 
-	// expandBlock seeds a real thread from one card's content — see
-	// gateway/pulsar_daily_routes.go's handleExpandDailyBlock. Returns the
-	// new thread id to navigate to, or null on failure.
-	async expandBlock(date: string, blockKey: string): Promise<string | null> {
+	// resolveExpand looks up what a card's expand-to-chat message should
+	// say — see gateway/pulsar_daily_routes.go's handleExpandDailyBlock.
+	// Doesn't run the turn itself (that used to block the frontend from
+	// navigating until the whole answer finished); the caller sends the
+	// result over the live WebSocket instead, the same path any typed
+	// message already takes, so navigation and streaming happen exactly
+	// like a message the user sent themselves.
+	async resolveExpand(date: string, blockKey: string): Promise<DailyExpandResolution | null> {
 		const res = await fetch('/api/pulsar/daily/expand', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ date, block_key: blockKey })
 		});
 		if (!res.ok) return null;
-		const { thread_id } = (await res.json()) as { thread_id: string };
-		return thread_id;
+		return (await res.json()) as DailyExpandResolution;
 	}
+}
+
+// DailyExpandResolution mirrors gateway/pulsar_daily_routes.go's
+// pulsarDailyExpandResponse.
+export interface DailyExpandResolution {
+	content: string;
+	attachment_id?: string;
+	attachment_filename?: string;
+	attachment_content_type?: string;
 }
 
 export const pulsarDailyState = new PulsarDailyState();
