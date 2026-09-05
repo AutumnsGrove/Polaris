@@ -395,6 +395,58 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 	-- active-routines list.
 	archived_at DATETIME
 );
+
+-- pulsar_daily_config is the Daily feature's singleton settings row (see
+-- docs/plans/pulsar-daily.md) — unlike pulsar_routines, Polaris is
+-- single-operator and there's only ever one Daily, so this is one row
+-- (id fixed to 1) rather than a routines-style table built for arbitrarily
+-- many independent schedules.
+CREATE TABLE IF NOT EXISTS pulsar_daily_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	-- enabled_blocks: JSON array of block keys the user has toggled on —
+	-- excludes "top_story", which isn't independently generated content,
+	-- it's Stage B's elevation of whichever watch block wins the ranking
+	-- pass (see the plan doc's "Top Story: LLM-elected, not a fixed slot").
+	enabled_blocks TEXT NOT NULL DEFAULT '["word_of_day","weather","on_this_day","headlines","trending","tech_science","sports","picture_of_day","quote","local"]',
+	-- sports_teams: free-text team/league preference — the one block-level
+	-- setting that earns its keep for v1 (see "Per-block settings UI");
+	-- meaningless unless "sports" appears in enabled_blocks.
+	sports_teams TEXT NOT NULL DEFAULT '',
+	-- architect_model/writer_model: registry IDs (models/models.go), not
+	-- raw OpenRouter model strings — same convention pulsar_routines.model
+	-- uses. See the plan doc's "Model tiering" for why these are split:
+	-- architect judges (Stage A diff-verdicts, Stage B ranking), writer
+	-- generates prose (Stage A block content, Stage C elaboration).
+	architect_model TEXT NOT NULL DEFAULT 'deepseek-pro',
+	writer_model TEXT NOT NULL DEFAULT 'deepseek',
+	-- time_of_day: "HH:MM", 24-hour, server-local — same convention and
+	-- same single-operator reasoning as pulsar_routines.time_of_day.
+	time_of_day TEXT NOT NULL DEFAULT '07:00',
+	-- last_generated_at: NULL means never generated yet. Checked against
+	-- time_of_day by the scheduler tick, same isRoutineDue-style due-check
+	-- pulsar_routines' last_run_at drives.
+	last_generated_at DATETIME
+);
+
+-- pulsar_daily_editions holds one assembled edition per calendar date — what
+-- tomorrow's Stage A diff-judge compares fresh content against, and what
+-- makes the "← Yesterday" button real history instead of a dead one (see
+-- the plan doc's Stage D). Edition retention (keep forever vs. prune) is a
+-- deliberately open question, same as backup.go's snapshot retention for a
+-- different table — not resolved here.
+CREATE TABLE IF NOT EXISTS pulsar_daily_editions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- edition_date: "YYYY-MM-DD", server-local, one row per date — a
+	-- second Stage D run for the same date (e.g. a manual re-trigger)
+	-- overwrites rather than duplicating (see store/pulsar_daily.go).
+	edition_date TEXT NOT NULL UNIQUE,
+	-- blocks: JSON array of rendered block objects (key, title, content,
+	-- gist, is_top_story, ...) — one JSON blob rather than a child table
+	-- because an edition is always read/written whole (the full masonry
+	-- page, or the full diff-judge comparison), never queried per-block.
+	blocks TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
