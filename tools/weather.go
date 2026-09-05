@@ -88,6 +88,19 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		return result
 	}
 
+	// A GPS fix (the common case on a phone) resolves to raw coordinates,
+	// not a name — reverse-geocode in the background so the visible
+	// forecast (summary line and chart title) reads "Atlanta, Georgia"
+	// rather than "33.8732, -84.5040". Best-effort: on failure just keep
+	// showing the coordinates, same as before this existed.
+	if geo.FromRawCoordinates {
+		if name, rgErr := places.ReverseGeocode(ctx.Ctx, geo.Latitude, geo.Longitude); rgErr == nil && name != "" {
+			geo.DisplayName = name
+		} else if rgErr != nil {
+			log.Warn("weather: reverse geocode failed, showing raw coordinates", "lat", geo.Latitude, "lon", geo.Longitude, "err", rgErr)
+		}
+	}
+
 	forecast, err := fetchWeather(ctx.Ctx, geo.Latitude, geo.Longitude, args.ForecastDays, args.IncludeHourly)
 	if err != nil {
 		result := "error: " + err.Error()
