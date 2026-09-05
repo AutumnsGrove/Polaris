@@ -8,16 +8,36 @@
 // Single free-form `expression` string, not decomposed into operand/op
 // params — see the design discussion in thread "Go Agent Calculator
 // Libraries" (2026-08-31). A restricted evaluator (expr-lang/expr) with a
-// minimal function allowlist is the entire safety model: there's no
-// validation step separate from execution that a bug could skip, because
-// the evaluator's environment contains nothing but the handful of
-// registered math functions/constants below. An expression referencing
-// anything else (a variable, a builtin like `open`) fails to *compile* —
-// it never reaches evaluation at all. Confirmed locally against both
-// expr-lang/expr and govaluate before picking expr-lang: both reject
-// unknown identifiers at parse time, but expr-lang is the actively
-// maintained one and its two-phase Compile/Run split maps directly onto
-// "validate before running."
+// minimal function allowlist is the entire safety model: an expression
+// referencing an identifier that isn't in calculatorEnv fails to
+// *compile* — it never reaches evaluation at all. Confirmed locally
+// against both expr-lang/expr and govaluate before picking expr-lang:
+// both reject unknown identifiers at parse time, but expr-lang is the
+// actively maintained one and its two-phase Compile/Run split maps
+// directly onto "validate before running."
+//
+// That allowlist isn't automatic, though — expr-lang ships its own
+// standard library (len, upper/lower/split/replace/concat, now/date/
+// duration/timezone, toBase64/fromBase64, get/keys/values, type/int/
+// float/string, ~50 names total) available in *every* expression
+// regardless of the custom Env passed to Compile, unless explicitly
+// disabled. Left alone, this quietly defeats "arithmetic only": a real,
+// live-tested example found while stress-testing this file is
+// `float(now().Unix())`, which compiled and ran fine without the
+// DisableAllBuiltins() call below, reading the server's wall clock
+// through a tool documented to the model as pure arithmetic — not a
+// severe leak on its own (the system prompt already tells the model
+// today's date), but exactly the kind of scope creep this file claims
+// doesn't exist. expr.DisableAllBuiltins() closes that whole registry.
+// It does *not* reach expr-lang's separate "predicate" builtins (filter/
+// map/reduce/all/any/none/one/find*/groupBy/sortBy/count) — its parser
+// resolves those against a second, hardcoded table that never consults
+// the Disabled config at all, confirmed by reading expr-lang's own
+// parser.go — so calculatorEnv additionally maps each of those 14 names
+// to an inert placeholder purely to make expr's own override check trip
+// for them instead (see calculatorBlockedPredicate's doc comment). See
+// TestHandleCalculator_ClosedSandbox for the regression coverage that
+// would catch either gap reopening on a future expr-lang bump.
 package tools
 
 import (
@@ -72,11 +92,30 @@ func init() { Register("calculator", handleCalculator) }
 // short enough to keep the parser's work bounded.
 const maxCalculatorExpressionLen = 500
 
+// calculatorBlockedPredicate is a deliberately non-callable placeholder.
+// expr-lang's "predicate" builtins — filter/map/reduce/all/any/none/one/
+// find/findIndex/findLast/findLastIndex/groupBy/sortBy/count — are
+// resolved by its parser against a second, hardcoded table that's
+// checked *before* the ordinary builtin registry and never consults
+// expr.DisableAllBuiltins()/DisableBuiltin() at all (confirmed by reading
+// expr-lang's parser.go: that table's lookup is gated only on
+// !isOverridden, a config method that returns true for any name merely
+// *present* in Env, regardless of its value or type). Putting a plain,
+// uncallable float64 under each of those 14 names below is what actually
+// blocks them: the parser sees the name is overridden, skips the
+// predicate table entirely, and falls through to an ordinary call
+// against calculatorEnv[name] — which fails to compile, since a float64
+// isn't callable, exactly like any other undefined-function call would.
+const calculatorBlockedPredicate = 0.0
+
 // calculatorEnv is the entire allowlist: expr-lang's compiler resolves
 // identifiers only against this map, so anything not listed here (a
 // variable, a builtin function, a method call) fails to compile rather
 // than silently doing something else. Keep this list math-only —
-// see the package doc comment on why that boundary matters.
+// see the package doc comment on why that boundary matters, and why this
+// alone isn't sufficient (evalCalculatorExpression's DisableAllBuiltins()
+// call and the blocked-predicate entries just below are both required
+// too).
 var calculatorEnv = map[string]interface{}{
 	"sqrt":  math.Sqrt,
 	"pow":   math.Pow,
@@ -96,6 +135,19 @@ var calculatorEnv = map[string]interface{}{
 	"hypot": math.Hypot,
 	"pi":    math.Pi,
 	"e":     math.E,
+
+	// See calculatorBlockedPredicate's doc comment — these 14 names are
+	// not real functions, they exist purely to defeat expr-lang's
+	// separate predicate-builtin parsing path. "sum" needs no entry here
+	// despite also being one of expr-lang's predicate names (predicate-
+	// style `sum(array, predicate)`): it's already legitimately bound
+	// below to our own variadic calculatorSum, which overrides it via the
+	// exact same isOverridden mechanism.
+	"all": calculatorBlockedPredicate, "none": calculatorBlockedPredicate, "any": calculatorBlockedPredicate,
+	"one": calculatorBlockedPredicate, "filter": calculatorBlockedPredicate, "map": calculatorBlockedPredicate,
+	"count": calculatorBlockedPredicate, "find": calculatorBlockedPredicate, "findIndex": calculatorBlockedPredicate,
+	"findLast": calculatorBlockedPredicate, "findLastIndex": calculatorBlockedPredicate,
+	"groupBy": calculatorBlockedPredicate, "sortBy": calculatorBlockedPredicate, "reduce": calculatorBlockedPredicate,
 
 	// min/max/sum/avg are variadic, not fixed at two arguments — an
 	// earlier version wired these straight to math.Min/math.Max, which
@@ -238,7 +290,13 @@ func handleCalculator(argsJSON string, ctx *Context) string {
 }
 
 func evalCalculatorExpression(expression string) (string, error) {
-	program, err := expr.Compile(expression, expr.Env(calculatorEnv), expr.AsFloat64())
+	// DisableAllBuiltins closes off expr-lang's own standard library (len,
+	// upper/lower, now/date/duration, toBase64, get/keys/values, type/
+	// int/float/string, ...) — see the package doc comment for why that's
+	// necessary at all and for the separate predicate-builtin gap it
+	// doesn't cover (handled instead by calculatorEnv's blocked-predicate
+	// entries above).
+	program, err := expr.Compile(expression, expr.Env(calculatorEnv), expr.AsFloat64(), expr.DisableAllBuiltins())
 	if err != nil {
 		return "", fmt.Errorf("invalid expression: %w", err)
 	}
