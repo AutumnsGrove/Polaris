@@ -414,10 +414,20 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- it's Stage B's elevation of whichever watch block wins the ranking
 	-- pass (see the plan doc's "Top Story: LLM-elected, not a fixed slot").
 	enabled_blocks TEXT NOT NULL DEFAULT '["word_of_day","weather","on_this_day","headlines","trending","tech_science","sports","picture_of_day","quote","local"]',
-	-- sports_teams: free-text team/league preference — the one block-level
-	-- setting that earns its keep for v1 (see "Per-block settings UI");
-	-- meaningless unless "sports" appears in enabled_blocks.
+	-- sports_teams: free-text team/league preference — required once
+	-- "sports" is enabled, since no sane default exists for it (see
+	-- "Per-block settings UI").
 	sports_teams TEXT NOT NULL DEFAULT '',
+	-- custom_instructions: JSON object mapping a block key to an
+	-- optional free-text steering instruction — e.g. "focus on AI and
+	-- climate policy" for headlines, or "space and wildlife photography"
+	-- for picture_of_day. Added after real usage showed the original v1
+	-- design ("no per-block setting earns its keep besides Sports") was
+	-- wrong: a generic "give me the news" prompt with no way to say what
+	-- you actually want to see isn't useful even though sane defaults
+	-- exist. Unlike sports_teams, every entry here is optional — an
+	-- absent/empty key just means "use the plain default framing".
+	custom_instructions TEXT NOT NULL DEFAULT '{}',
 	-- architect_model/writer_model: registry IDs (models/models.go), not
 	-- raw OpenRouter model strings — same convention pulsar_routines.model
 	-- uses. See the plan doc's "Model tiering" for why these are split:
@@ -507,6 +517,7 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
 }
 
 func Open(path string) (*Store, error) {

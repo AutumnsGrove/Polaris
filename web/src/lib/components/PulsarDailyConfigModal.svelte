@@ -10,22 +10,39 @@
 	// top_story deliberately excluded, same reasoning as the registry's
 	// own doc comment: it's Stage B's elevation of whichever watch block
 	// wins the ranking pass, not independently toggleable content.
+	//
+	// customizable/placeholder: every block except Weather (no "topic" to
+	// steer — see the plan doc's location-only resolution for it) gets an
+	// optional free-text field, added after real usage showed the
+	// original v1 design — "sane defaults work, no per-block setting
+	// earns its keep besides Sports" — was wrong. A generic "give me the
+	// news" prompt with no way to say what you actually want to see isn't
+	// useful even with a good default; Sports keeps its own required
+	// field below since it has no sane default at all, not just a
+	// generic one.
 	const blockOptions = [
-		{ key: 'word_of_day', label: 'Word of the Day' },
-		{ key: 'weather', label: 'Weather' },
-		{ key: 'on_this_day', label: 'On This Day' },
-		{ key: 'quote', label: 'Quote of the Day' },
-		{ key: 'picture_of_day', label: 'Picture of the Day' },
-		{ key: 'headlines', label: 'Top Headlines' },
-		{ key: 'trending', label: 'Trending Now' },
-		{ key: 'tech_science', label: 'Tech & Science' },
-		{ key: 'local', label: 'Local' },
-		{ key: 'sports', label: 'Sports' }
+		{ key: 'word_of_day', label: 'Word of the Day', placeholder: 'e.g. favor scientific or literary words' },
+		{ key: 'weather', label: 'Weather', placeholder: null },
+		{ key: 'on_this_day', label: 'On This Day', placeholder: 'e.g. favor space/technology history' },
+		{ key: 'quote', label: 'Quote of the Day', placeholder: 'e.g. favor quotes about creativity' },
+		{ key: 'picture_of_day', label: 'Picture of the Day', placeholder: 'e.g. always space or wildlife photography' },
+		{ key: 'headlines', label: 'Top Headlines', placeholder: 'e.g. focus on AI, geopolitics, or your interests' },
+		{ key: 'trending', label: 'Trending Now', placeholder: 'e.g. focus on gaming and your hobbies' },
+		{ key: 'tech_science', label: 'Tech & Science', placeholder: 'e.g. focus on AI, robotics, biotech' },
+		{
+			key: 'local',
+			label: 'Local',
+			placeholder: 'e.g. Beaverton, OR and also Portland, OR (a nearby major city)'
+		},
+		{ key: 'sports', label: 'Sports', placeholder: null }
 	];
 
 	const cfg = pulsarDailyState.config;
 	let enabledBlocks = $state(new Set(cfg?.enabled_blocks ?? blockOptions.map((b) => b.key)));
 	let sportsTeams = $state(cfg?.sports_teams ?? '');
+	// customInstructions: keyed by block key, one entry per customizable
+	// block above — pre-filled from any values already saved.
+	let customInstructions = $state<Record<string, string>>({ ...(cfg?.custom_instructions ?? {}) });
 	let architectModel = $state(cfg?.architect_model ?? 'deepseek-pro');
 	let writerModel = $state(cfg?.writer_model ?? 'deepseek');
 	let timeOfDay = $state(cfg?.time_of_day ?? '07:00');
@@ -46,9 +63,19 @@
 		saving = true;
 		error = '';
 
+		// Trimmed-empty entries are dropped rather than sent as "" — keeps
+		// the persisted map free of noise from a field someone typed into
+		// and then cleared.
+		const trimmedInstructions: Record<string, string> = {};
+		for (const [key, value] of Object.entries(customInstructions)) {
+			const trimmed = value.trim();
+			if (trimmed) trimmedInstructions[key] = trimmed;
+		}
+
 		const input: PulsarDailyConfigInput = {
 			enabled_blocks: [...enabledBlocks],
 			sports_teams: sportsTeams.trim(),
+			custom_instructions: trimmedInstructions,
 			architect_model: architectModel,
 			writer_model: writerModel,
 			time_of_day: timeOfDay
@@ -86,7 +113,7 @@
 						<span>{opt.label}</span>
 					</label>
 					{#if opt.key === 'sports' && enabledBlocks.has('sports')}
-						<div class="field sports-field">
+						<div class="field block-subfield">
 							<label for="daily-sports-teams">Which teams/leagues?</label>
 							<input
 								id="daily-sports-teams"
@@ -94,6 +121,17 @@
 								bind:value={sportsTeams}
 								placeholder="Warriors, 49ers, Premier League"
 								required
+							/>
+						</div>
+					{:else if opt.placeholder && enabledBlocks.has(opt.key)}
+						<div class="field block-subfield">
+							<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
+							<input
+								id="daily-custom-{opt.key}"
+								type="text"
+								value={customInstructions[opt.key] ?? ''}
+								oninput={(e) => (customInstructions[opt.key] = e.currentTarget.value)}
+								placeholder={opt.placeholder}
 							/>
 						</div>
 					{/if}
@@ -164,7 +202,7 @@
 		padding: var(--space-xs) 0;
 	}
 
-	.sports-field {
+	.block-subfield {
 		margin: 0 0 var(--space-sm) var(--space-xl);
 	}
 

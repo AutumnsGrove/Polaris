@@ -100,6 +100,49 @@ func TestHandleUpdateDailyConfig_RejectsUnknownBlock(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateDailyConfig_CustomInstructionsRoundTrip(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":      []string{"headlines", "local"},
+		"custom_instructions": map[string]string{"headlines": "focus on AI", "local": "Beaverton, OR and also Portland, OR"},
+		"architect_model":     "deepseek-pro",
+		"writer_model":        "deepseek",
+		"time_of_day":         "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var cfg store.PulsarDailyConfig
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if cfg.CustomInstructions["headlines"] != "focus on AI" {
+		t.Errorf("CustomInstructions[headlines] = %q, want %q", cfg.CustomInstructions["headlines"], "focus on AI")
+	}
+	if cfg.CustomInstructions["local"] != "Beaverton, OR and also Portland, OR" {
+		t.Errorf("CustomInstructions[local] = %q, want the suburb+nearby-city value just written", cfg.CustomInstructions["local"])
+	}
+}
+
+func TestHandleUpdateDailyConfig_RejectsUnknownCustomInstructionBlock(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":      []string{"headlines"},
+		"custom_instructions": map[string]string{"nonexistent_block": "whatever"},
+		"architect_model":     "deepseek-pro",
+		"writer_model":        "deepseek",
+		"time_of_day":         "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a custom_instructions key not in the block registry", resp.StatusCode)
+	}
+}
+
 func TestHandleUpdateDailyConfig_RejectsBadTimeOfDay(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

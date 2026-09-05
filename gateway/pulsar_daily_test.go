@@ -175,6 +175,23 @@ func TestDailyBlockRegistry_TopStoryNotIndependentlyToggleable(t *testing.T) {
 	}
 }
 
+func TestAppendCustomInstruction(t *testing.T) {
+	base := "Give me a short rundown of today's headlines."
+
+	if got := appendCustomInstruction(base, ""); got != base {
+		t.Errorf("appendCustomInstruction with blank instruction changed the task: %q", got)
+	}
+	if got := appendCustomInstruction(base, "   "); got != base {
+		t.Errorf("appendCustomInstruction with whitespace-only instruction changed the task: %q", got)
+	}
+
+	got := appendCustomInstruction(base, "focus on AI and climate policy")
+	want := base + " The reader specifically wants: focus on AI and climate policy."
+	if got != want {
+		t.Errorf("appendCustomInstruction() = %q, want %q", got, want)
+	}
+}
+
 func TestDailyBlockRegistry_FreshPickBlocksAreNotWatch(t *testing.T) {
 	freshPicks := []string{"word_of_day", "weather", "on_this_day", "quote", "picture_of_day"}
 	for _, key := range freshPicks {

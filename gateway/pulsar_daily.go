@@ -155,15 +155,32 @@ func dailyClient(cfg *config.Config, modelID string) llm.ChatClient {
 		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
 }
 
+// appendCustomInstruction folds a user-supplied steering instruction
+// (store.PulsarDailyConfig.CustomInstructions) into a block's base task
+// text — added after real usage showed the original v1 assumption
+// ("sane defaults work, no per-block setting earns its keep besides
+// Sports") was wrong: a generic "give me the news" task with no way to
+// say what you actually care about isn't useful even with good defaults.
+// A blank instruction is a no-op, so every existing block keeps behaving
+// exactly as before until someone actually fills one in.
+func appendCustomInstruction(task, custom string) string {
+	custom = strings.TrimSpace(custom)
+	if custom == "" {
+		return task
+	}
+	return task + " The reader specifically wants: " + custom + "."
+}
+
 // generateDailyPickBlock is a plain one-shot LLM call for a fresh-pick
 // block that leans on the model's own knowledge — no tools, no research,
 // same "cheap and shallow every day" framing the plan doc's expand-to-
 // chat section uses to justify the opposite (deep) behavior on tap.
-func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key string) (string, error) {
+func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string) (string, error) {
 	task, ok := dailyPickTasks[key]
 	if !ok {
 		return "", fmt.Errorf("no pick task defined for block %q", key)
 	}
+	task = appendCustomInstruction(task, customInstruction)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: "You are writing one short card for a personal daily digest page. Be " +
 			"concise, concrete, and skimmable — 2-4 sentences, no headers, no restating the task."},
@@ -179,13 +196,14 @@ func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key s
 // narrow-toolset agent.Run — no thread, no streaming, no history, mirror
 // of runWizardTurn's shape. location/sportsTeams fill the task template's
 // placeholders; unused by every key except local/sports respectively.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, key, location, sportsTeams string) (string, float64, error) {
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, key, location, sportsTeams, customInstruction string) (string, float64, error) {
 	task, ok := dailyResearchTasks[key]
 	if !ok {
 		return "", 0, fmt.Errorf("no research task defined for block %q", key)
 	}
 	task = strings.ReplaceAll(task, "{{location}}", location)
 	task = strings.ReplaceAll(task, "{{teams}}", sportsTeams)
+	task = appendCustomInstruction(task, customInstruction)
 
 	agentCtx := s.newDailyToolContext(writerClient, cfg, location)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
@@ -252,12 +270,14 @@ func (s *Server) newDailyToolContext(client llm.ChatClient, cfg *config.Config, 
 // card for its URL — image_search's own return string is a summary
 // sentence, not the image data itself (see tools/image_search.go's
 // finishImageSearch), so the actual URL only exists on the Card it adds.
-func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context) (content, imageURL string, err error) {
+func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, err error) {
+	task := "Give me a search query for an interesting, visually striking photo to feature as today's " +
+		"\"Picture of the Day\" — nature, space, art, architecture, wildlife, or similar. Vary it day to " +
+		"day rather than defaulting to the same subject."
+	task = appendCustomInstruction(task, customInstruction)
 	resp, err := writerClient.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: "Reply with ONLY a short (3-6 word) image search query, nothing else."},
-		{Role: "user", Content: "Give me a search query for an interesting, visually striking photo to " +
-			"feature as today's \"Picture of the Day\" — nature, space, art, architecture, wildlife, or " +
-			"similar. Vary it day to day rather than defaulting to the same subject."},
+		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
 		return "", "", err
@@ -533,7 +553,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 					log.Error("panic generating pulsar daily block", "block", spec.Key, "panic", rec)
 				}
 			}()
-			r := s.generateOneDailyBlock(reqCtx, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, yesterdayByKey, hasYesterday)
+			r := s.generateOneDailyBlock(reqCtx, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
 				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL}
 			}
@@ -622,16 +642,17 @@ type dailyGeneratedBlock struct {
 // verdict (see the plan doc: "unchanged verdicts and hard generation
 // failures both drop out here — same bucket, since both mean 'nothing
 // to show'").
-func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
+func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
 	var content string
 	var imageURL string
 	var err error
+	custom := customInstructions[spec.Key]
 
 	switch spec.Kind {
 	case dailyBlockDirect:
 		if spec.Key == "picture_of_day" {
 			ctx := s.newDailyToolContext(writerClient, cfg, location)
-			content, imageURL, err = generateDailyPictureBlock(reqCtx, writerClient, ctx)
+			content, imageURL, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
 			ctx := s.newDailyToolContext(writerClient, cfg, location)
 			content = tools.Dispatch(spec.Key, "{}", ctx)
@@ -640,9 +661,9 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 			}
 		}
 	case dailyBlockPick:
-		content, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key)
+		content, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom)
 	case dailyBlockResearch:
-		content, _, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams)
+		content, _, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams, custom)
 	}
 
 	if err != nil {

@@ -5,6 +5,7 @@ import type { PulsarDailyConfig, PulsarDailyEdition } from './types';
 export interface PulsarDailyConfigInput {
 	enabled_blocks: string[];
 	sports_teams: string;
+	custom_instructions: Record<string, string>;
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;

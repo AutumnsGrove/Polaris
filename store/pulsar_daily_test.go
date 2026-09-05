@@ -18,8 +18,12 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	if c.LastGeneratedAt != nil {
 		t.Errorf("LastGeneratedAt should be unset before any generation, got %+v", c.LastGeneratedAt)
 	}
+	if len(c.CustomInstructions) != 0 {
+		t.Errorf("CustomInstructions should default to empty, got %+v", c.CustomInstructions)
+	}
 
-	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", "deepseek-pro", "deepseek", "06:30"); err != nil {
+	customInstructions := map[string]string{"headlines": "Focus on AI and climate policy"}
+	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", customInstructions, "deepseek-pro", "deepseek", "06:30"); err != nil {
 		t.Fatalf("UpdateDailyConfig: %v", err)
 	}
 	c, err = s.GetDailyConfig()
@@ -28,6 +32,9 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	}
 	if len(c.EnabledBlocks) != 2 || c.SportsTeams != "Warriors, 49ers" || c.TimeOfDay != "06:30" {
 		t.Errorf("GetDailyConfig after update = %+v, want the values just written", c)
+	}
+	if c.CustomInstructions["headlines"] != "Focus on AI and climate policy" {
+		t.Errorf("CustomInstructions = %+v, want the value just written", c.CustomInstructions)
 	}
 
 	if err := s.SetDailyLastGenerated("2026-09-05 07:00:00"); err != nil {

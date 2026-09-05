@@ -18,13 +18,18 @@ var ErrDailyEditionNotFound = errors.New("pulsar daily edition not found")
 
 // PulsarDailyConfig is the Daily feature's singleton settings row.
 type PulsarDailyConfig struct {
-	EnabledBlocks   []string   `json:"enabled_blocks"`
-	SportsTeams     string     `json:"sports_teams"`
-	ArchitectModel  string     `json:"architect_model"`
-	WriterModel     string     `json:"writer_model"`
-	TimeOfDay       string     `json:"time_of_day"`
-	CreatedAt       time.Time  `json:"created_at"`
-	LastGeneratedAt *time.Time `json:"last_generated_at"`
+	EnabledBlocks []string `json:"enabled_blocks"`
+	SportsTeams   string   `json:"sports_teams"`
+	// CustomInstructions maps a block key to an optional free-text
+	// steering instruction — see the schema comment on this column for
+	// why it exists. Absent keys/empty values mean "use the plain
+	// default framing" for that block.
+	CustomInstructions map[string]string `json:"custom_instructions"`
+	ArchitectModel     string            `json:"architect_model"`
+	WriterModel        string            `json:"writer_model"`
+	TimeOfDay          string            `json:"time_of_day"`
+	CreatedAt          time.Time         `json:"created_at"`
+	LastGeneratedAt    *time.Time        `json:"last_generated_at"`
 }
 
 // GetDailyConfig returns the singleton config row, inserting the
@@ -36,37 +41,48 @@ func (s *Store) GetDailyConfig() (*PulsarDailyConfig, error) {
 		return nil, fmt.Errorf("get daily config: %w", err)
 	}
 	var c PulsarDailyConfig
-	var enabledBlocksJSON string
+	var enabledBlocksJSON, customInstructionsJSON string
 	err := s.db.QueryRow(
-		`SELECT enabled_blocks, sports_teams, architect_model, writer_model, time_of_day, created_at, last_generated_at
+		`SELECT enabled_blocks, sports_teams, custom_instructions, architect_model, writer_model, time_of_day, created_at, last_generated_at
 		 FROM pulsar_daily_config WHERE id = 1`,
-	).Scan(&enabledBlocksJSON, &c.SportsTeams, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.CreatedAt, &c.LastGeneratedAt)
+	).Scan(&enabledBlocksJSON, &c.SportsTeams, &customInstructionsJSON, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.CreatedAt, &c.LastGeneratedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get daily config: %w", err)
 	}
 	if err := json.Unmarshal([]byte(enabledBlocksJSON), &c.EnabledBlocks); err != nil {
 		return nil, fmt.Errorf("get daily config: decode enabled_blocks: %w", err)
 	}
+	if err := json.Unmarshal([]byte(customInstructionsJSON), &c.CustomInstructions); err != nil {
+		return nil, fmt.Errorf("get daily config: decode custom_instructions: %w", err)
+	}
 	return &c, nil
 }
 
 // UpdateDailyConfig overwrites the singleton config's editable fields —
 // does not touch last_generated_at, which only the scheduler writes.
-func (s *Store) UpdateDailyConfig(enabledBlocks []string, sportsTeams, architectModel, writerModel, timeOfDay string) error {
+func (s *Store) UpdateDailyConfig(enabledBlocks []string, sportsTeams string, customInstructions map[string]string, architectModel, writerModel, timeOfDay string) error {
 	enabledBlocksJSON, err := json.Marshal(enabledBlocks)
 	if err != nil {
 		return fmt.Errorf("update daily config: encode enabled_blocks: %w", err)
 	}
+	if customInstructions == nil {
+		customInstructions = map[string]string{}
+	}
+	customInstructionsJSON, err := json.Marshal(customInstructions)
+	if err != nil {
+		return fmt.Errorf("update daily config: encode custom_instructions: %w", err)
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO pulsar_daily_config (id, enabled_blocks, sports_teams, architect_model, writer_model, time_of_day)
-		 VALUES (1, ?, ?, ?, ?, ?)
+		`INSERT INTO pulsar_daily_config (id, enabled_blocks, sports_teams, custom_instructions, architect_model, writer_model, time_of_day)
+		 VALUES (1, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			enabled_blocks = excluded.enabled_blocks,
 			sports_teams = excluded.sports_teams,
+			custom_instructions = excluded.custom_instructions,
 			architect_model = excluded.architect_model,
 			writer_model = excluded.writer_model,
 			time_of_day = excluded.time_of_day`,
-		string(enabledBlocksJSON), sportsTeams, architectModel, writerModel, timeOfDay,
+		string(enabledBlocksJSON), sportsTeams, string(customInstructionsJSON), architectModel, writerModel, timeOfDay,
 	)
 	if err != nil {
 		return fmt.Errorf("update daily config: %w", err)

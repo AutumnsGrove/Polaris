@@ -300,6 +300,11 @@ export interface PulsarPulse {
 export interface PulsarDailyConfig {
 	enabled_blocks: string[];
 	sports_teams: string;
+	// custom_instructions: optional free-text steering per block key
+	// (e.g. "focus on AI and climate policy" for headlines, or "Beaverton,
+	// OR and also Portland, OR" for local) — see store.PulsarDailyConfig's
+	// doc comment for why this exists.
+	custom_instructions: Record<string, string>;
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;
