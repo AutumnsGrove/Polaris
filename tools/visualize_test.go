@@ -66,6 +66,19 @@ func TestHandleVisualize_Bar_RejectsOverBarCap(t *testing.T) {
 	}
 }
 
+func TestHandleVisualize_Line_RejectsEmptySeries(t *testing.T) {
+	ctx := newTestContext()
+	args := `{"kind":"line","title":"Empty","series":[{"label":"A","points":[]}]}`
+	result := handleVisualize(args, ctx)
+
+	if !strings.Contains(result, "has no points") {
+		t.Errorf("result = %q, want a no-points error", result)
+	}
+	if ctx.Chart != nil {
+		t.Errorf("Chart = %+v, want nil after rejection", ctx.Chart)
+	}
+}
+
 func TestHandleVisualize_Line_RejectsOverPointCap(t *testing.T) {
 	ctx := newTestContext()
 	var points []string
