@@ -666,7 +666,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 	return map[string]llm.ToolDef{
 		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
-		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "dictionary": dictionaryDef,
+		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
 		"image_search": imageSearchDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,

@@ -18,7 +18,7 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "dictionary", "music", "books", "movies", "visualize",
+	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
 	"image_search", "read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
 }
 
@@ -159,6 +159,8 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Look up a topic directly in a specific reference source."},
 	"github_repo": {Name: "github_repo", Category: "research", Description: "look up a GitHub repository's stats and README.",
 		APIDescription: "Look up a GitHub repository directly via GitHub's API."},
+	"github_activity": {Name: "github_activity", Category: "research", Description: "explore a GitHub repo's recent activity: releases, a specific PR, issues, or commits.",
+		APIDescription: "Explore a GitHub repository's activity: recent releases, a specific pull request's detail, recent issue activity, or commits since a date."},
 	"dictionary": {Name: "dictionary", Category: "research", Description: "look up a word's definition.",
 		APIDescription: "Look up a word's definition, part of speech, and an example sentence."},
 	"music": {Name: "music", Requires: "lastfm_api_key", Category: "research", Description: "find real song/album recommendations grounded in Last.fm's similarity data.",

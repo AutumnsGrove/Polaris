@@ -1,0 +1,16 @@
+name: github_activity
+category: research
+description: >-
+  explore a GitHub repository's recent activity — releases (with notes), a specific pull
+  request's detail, recent issue activity, or commits since a date — via GitHub's API. Use this
+  instead of web_search/web_read when the question is about what actually happened in a repo
+  recently, not its current stats (use github_repo for stats). Pick a kind: "releases" for what
+  shipped, "pr" for what changed in a specific numbered PR, "issues" for recent issue discussion,
+  "commits" for raw commit activity since a date.
+api_description: >-
+  Explore a GitHub repository's activity directly via GitHub's API: recent published releases
+  and their notes (kind=releases), a specific pull request's detail including diff stats and
+  description (kind=pr, requires pr_number), recent issue activity excluding pull requests
+  (kind=issues), or commits since a given date (kind=commits, requires since). Prefer this over
+  web_search/web_read for "what happened recently" questions about a specific repo, and prefer
+  github_repo instead for star counts, forks, or other current-snapshot stats.

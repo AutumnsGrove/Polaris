@@ -43,8 +43,8 @@ const researchCheckInInterval = 5
 // diminishing returns), not "think" (private reasoning, not research).
 func isResearchTool(name string) bool {
 	return name == "web_search" || name == "web_read" || name == "nearby_search" || name == "youtube_transcript" ||
-		name == "weather" || name == "reference_lookup" || name == "github_repo" || name == "dictionary" ||
-		name == "music"
+		name == "weather" || name == "reference_lookup" || name == "github_repo" || name == "github_activity" ||
+		name == "dictionary" || name == "music"
 }
 
 // researchCheckInMessage nudges the model to consider answering instead

@@ -335,7 +335,10 @@ func githubHTTPGet(ctx context.Context, rawURL, token string) ([]byte, http.Head
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil, fmt.Errorf("repository not found (or private, and no token configured that can see it)")
+		// Generic wording rather than "repository not found" — this helper
+		// is shared by github_activity.go's PR/issue/commit lookups too, so
+		// a 404 here doesn't always mean the repo itself is missing.
+		return nil, nil, fmt.Errorf("not found (or private, and no token configured that can see it)")
 	}
 	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0" {
 		return nil, nil, fmt.Errorf("github api rate limit exceeded — unauthenticated requests are capped at " +
