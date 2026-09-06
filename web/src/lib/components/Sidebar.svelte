@@ -48,6 +48,13 @@
 		void pulsarDailyState.checkForNewEdition(localStorage.getItem('polaris-daily-last-seen'));
 	});
 
+	// True on the two routes that render the chat view (the homepage and
+	// any /t/<id> thread route) — shared by startNewThread and
+	// openThreadFromRow below, since both only need AppState's
+	// replaceState-style URL sync when there's actually a ChatView mounted
+	// to react to it.
+	const onChatRoute = $derived(page.url.pathname === '/' || page.url.pathname.startsWith('/t/'));
+
 	// appState.newThread() deliberately only touches history via
 	// replaceState, not goto() — see its doc comment — since /t/[id] and /
 	// both render the same ChatView and a real navigation there would
@@ -61,9 +68,26 @@
 	// same bug /pulsar was fixed for — a new non-chat route added later
 	// doesn't need its own case here.
 	function startNewThread() {
-		const onChatRoute = page.url.pathname === '/' || page.url.pathname.startsWith('/t/');
 		appState.newThread();
 		if (!onChatRoute) void goto('/');
+	}
+
+	// Thread rows render on every non-Atlas route (/pulsar, /pulsar/[id],
+	// /daily, ...), not just the chat view — but opening one there used to
+	// go through AppState.openThread alone, which is exactly the trap
+	// startNewThread's doc comment above describes from the other
+	// direction: openThread only syncs the address bar (raw replaceState,
+	// invisible to SvelteKit's router), so on /pulsar or /daily the click
+	// left the view frozen on the routine list while the URL bar wrongly
+	// read /t/<id> — the only apparent exits were browser back or New
+	// thread. Real navigation to /t/<id> mounts that route, whose effect
+	// performs the actual open, so the two cases share one path.
+	function openThreadFromRow(id: string) {
+		if (onChatRoute) {
+			appState.openThread(id);
+		} else {
+			void goto(`/t/${id}`);
+		}
 	}
 
 	function openSearch(query: string) {
@@ -75,7 +99,7 @@
 
 	function openMatch(result: MessageSearchResult) {
 		appState.clearThreadSearch();
-		appState.openThread(result.thread_id);
+		openThreadFromRow(result.thread_id);
 	}
 
 	// Splits a snippet on the \x02/\x03 markers store.SearchMessages wraps
@@ -98,8 +122,8 @@
 	<div
 		class="thread-item"
 		class:active={appState.currentThreadId === thread.id}
-		onclick={() => appState.openThread(thread.id)}
-		onkeydown={(e) => e.key === 'Enter' && appState.openThread(thread.id)}
+		onclick={() => openThreadFromRow(thread.id)}
+		onkeydown={(e) => e.key === 'Enter' && openThreadFromRow(thread.id)}
 		role="button"
 		tabindex="0"
 		in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
