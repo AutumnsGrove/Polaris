@@ -7,6 +7,7 @@
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
+	import { renderMermaidIn } from '$lib/mermaid';
 	import DOMPurify from 'dompurify';
 	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
@@ -65,6 +66,33 @@
 	let renderedHtml = $derived(
 		renderInlineCitations(DOMPurify.sanitize(marked.parse(turn.content || '') as string), turn.citations ?? [])
 	);
+
+	// Runs after renderedHtml (re)paints proseEl's DOM. Gated on
+	// !turn.streaming: while a reply is still streaming, a ```mermaid fence
+	// is briefly unclosed, and marked renders an unclosed fence as a full
+	// code block the instant it opens — parsing that half-diagram live
+	// would flash a render-failure note that vanishes once the fence
+	// actually closes. Retry/regenerate and variant switching all replace
+	// turn.content wholesale, so this just re-runs on the fresh DOM with no
+	// manual cleanup of the old pass's output needed.
+	//
+	// Also re-tracks appState.settings.theme, not just renderedHtml — a
+	// real bug found live: SettingsState.load() sets data-theme
+	// asynchronously after mount (it's an /api/settings fetch), while a
+	// loaded thread's content is already there on first render. Without
+	// this dependency, a turn's mermaid blocks render once against
+	// whatever data-theme happened to be set at that first paint (theme
+	// defaults to 'dark' until the fetch resolves) and never get a second
+	// chance — a light-theme user reopening an old thread saw dark-themed
+	// diagrams stuck in their light UI permanently. Reading the theme here
+	// makes the effect re-fire (and mermaid.ts re-render) once the real
+	// preference lands, and again on any later in-session theme toggle.
+	let proseEl = $state<HTMLElement>();
+	$effect(() => {
+		void renderedHtml;
+		void appState.settings.theme;
+		if (proseEl && !turn.streaming) void renderMermaidIn(proseEl);
+	});
 
 	let editing = $state(false);
 	let editValue = $state('');
@@ -194,7 +222,7 @@
 			{/if}
 
 			{#if turn.content}
-				<div class="prose">{@html renderedHtml}</div>
+				<div class="prose" bind:this={proseEl}>{@html renderedHtml}</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
 			{/if}
@@ -802,6 +830,73 @@
 		background: var(--color-surface-2);
 		font-weight: 600;
 		white-space: nowrap;
+	}
+
+	/* mermaid's own rendered <svg> is inserted into a plain wrapper div by
+	   mermaid.ts, not a <pre> — max-width keeps a wide flowchart from
+	   blowing past the bubble edge instead of forcing horizontal scroll on
+	   the whole prose column, and overflow-x lets it scroll internally if
+	   it still can't fit. position: relative anchors the toolbar below. */
+	.prose :global(.mermaid-diagram) {
+		position: relative;
+		margin: 0 0 var(--space-md) 0;
+		overflow-x: auto;
+	}
+
+	.prose :global(.mermaid-render svg) {
+		max-width: 100%;
+		height: auto;
+	}
+
+	/* Hidden until hover/focus, same "reveal on intent" language as
+	   .edit-trigger above — a diagram is meant to be looked at, not
+	   cluttered with chrome by default. :focus-within (not just :hover)
+	   keeps the buttons reachable by keyboard: tabbing to one shouldn't
+	   require a mouse hovering the diagram at the same time. */
+	.prose :global(.mermaid-toolbar) {
+		position: absolute;
+		top: var(--space-sm);
+		right: var(--space-sm);
+		display: flex;
+		gap: var(--space-xs);
+		opacity: 0;
+		transition: opacity 0.15s var(--ease-out-expo);
+	}
+
+	.prose :global(.mermaid-diagram:hover .mermaid-toolbar),
+	.prose :global(.mermaid-diagram:focus-within .mermaid-toolbar) {
+		opacity: 1;
+	}
+
+	/* icon-btn (app.css) assumes a plain surface behind it and stays
+	   transparent until hover — sitting on top of a diagram's arbitrary
+	   colors needs its own backdrop to stay legible at all times the
+	   toolbar is visible, not just on hover. */
+	.prose :global(.mermaid-btn) {
+		background: var(--color-surface-2);
+		box-shadow: var(--shadow-xs);
+	}
+
+	.prose :global(.mermaid-btn[aria-pressed='true']) {
+		color: var(--color-accent-2);
+	}
+
+	/* The raw-source view mermaid.ts toggles in — a plain <pre> inside
+	   .prose already picks up the generic `.prose :global(pre)` styling
+	   above (background, mono font, well shadow); only the diagram
+	   wrapper's own bottom margin is needed here, not a second one. */
+	.prose :global(.mermaid-source-view) {
+		margin: 0;
+	}
+
+	/* Left in place on the original code-block <pre> when mermaid.render()
+	   throws — a syntax error degrades to exactly today's plain-code-block
+	   behavior, plus this note explaining why it isn't a diagram. */
+	.prose :global(.mermaid-error-note) {
+		margin-top: var(--space-sm);
+		font-size: 11.5px;
+		font-style: italic;
+		color: var(--color-text-dim);
 	}
 
 	.prose :global(a) {

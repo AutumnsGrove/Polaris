@@ -10,6 +10,23 @@ import hljs from './highlightjs';
 marked.use({
 	renderer: {
 		code({ text, lang }) {
+			if (lang && lang.toLowerCase() === 'mermaid') {
+				// Escape ourselves — hljs.highlight() normally does this for
+				// every other fence below, but the mermaid branch skips that
+				// call entirely (the source needs to survive as plain text,
+				// not be tokenized), so it's on us not to hand raw model
+				// output straight into innerHTML. DOMPurify runs after this
+				// in ChatTurnView regardless, but this fence never contains
+				// real HTML on purpose, so it's escaped rather than sanitized.
+				const escaped = text
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;');
+				// data-mermaid is the discovery marker mermaid.ts's DOM pass
+				// queries for — a plain fence has no such marker and is left
+				// exactly as-is by that pass.
+				return `<pre class="mermaid-source" data-mermaid><code class="language-mermaid">${escaped}</code></pre>`;
+			}
 			// Deliberately NOT hljs.highlightAuto() for an unlabeled fence —
 			// tried it first, and tested against real short snippets (the
 			// common case in chat-length code blocks) it's actively wrong

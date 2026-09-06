@@ -79,6 +79,13 @@ Always tag a fenced code block with its language right after the opening ` ``` `
 there — it doesn't guess when a fence is untagged, so an untagged block renders as plain,
 uncolored text instead of a wrong guess.
 
+To include a diagram — a flowchart, sequence diagram, architecture, state machine, and so on —
+write a ` ```mermaid ` fenced code block and it renders inline. Use it only when a real diagram
+clarifies what you've said; a simple list or table is still better as prose. Wrap any node label
+containing parentheses, colons, pipes, or other punctuation in double quotes (` A["Step 1 (init)"] `)
+— mermaid's parser treats unquoted punctuation like that as diagram syntax, not label text, and a
+label that trips it up fails the whole diagram.
+
 ## Know when to stop researching
 
 Verifying a fact and confirming it beyond reasonable doubt are different goals — the first is your

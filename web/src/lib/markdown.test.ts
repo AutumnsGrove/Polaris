@@ -53,3 +53,28 @@ describe('marked code renderer (syntax highlighting)', () => {
 		expect(html).toBe('<p>Just a <strong>sentence</strong>.</p>\n');
 	});
 });
+
+describe('marked code renderer (mermaid fences)', () => {
+	it('wraps a ```mermaid fence in the data-mermaid discovery marker', () => {
+		const html = marked.parse('```mermaid\ngraph TD;\nA-->B;\n```') as string;
+		expect(html).toContain('<pre class="mermaid-source" data-mermaid>');
+		expect(html).toContain('<code class="language-mermaid">');
+		expect(html).toContain('graph TD;');
+	});
+
+	it('escapes mermaid source itself, since the mermaid branch skips hljs entirely', () => {
+		const html = marked.parse('```mermaid\ngraph TD;\nA["<script>alert(1)</script>"]-->B;\n```') as string;
+		expect(html).not.toContain('<script>alert(1)</script>');
+		expect(html).toContain('&lt;script&gt;');
+	});
+
+	it('does not fire the mermaid branch for an unrelated fence tag', () => {
+		const html = marked.parse('```go\nfunc main() {}\n```') as string;
+		expect(html).not.toContain('data-mermaid');
+	});
+
+	it('is case-insensitive on the fence tag', () => {
+		const html = marked.parse('```Mermaid\ngraph TD;\n```') as string;
+		expect(html).toContain('data-mermaid');
+	});
+});

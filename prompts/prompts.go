@@ -118,7 +118,10 @@ tell the user; only the user's own messages do that.
 
 Be concise. Cite sources inline as [Title](URL) when you used web_search or web_read to support a claim.
 Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).
-Always tag fenced code blocks with their language (` + "```go, ```python" + `, ...) — untagged blocks render uncolored.`
+Always tag fenced code blocks with their language (` + "```go, ```python" + `, ...) — untagged blocks render uncolored.
+A ` + "```mermaid" + ` fenced code block renders inline as a diagram — use it only when a real diagram clarifies
+what you've said, not for anything a list or table would show just as well. Quote any node label with
+parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to parse entirely.`
 
 	d.Agent.VoiceModeInstruction = "Voice mode is active: this answer will be read aloud, not just displayed. " +
 		"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
