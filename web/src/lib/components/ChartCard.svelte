@@ -35,13 +35,6 @@
 	const PAD_TOP = 10;
 	const PAD_BOTTOM = 24;
 
-	// A bar chart with more than this many bars rotates its x-axis labels
-	// instead of leaving them flat — live-tested against a 12-bar chart
-	// (visualize's own cap) and flat labels for that many categories just
-	// ran into each other ("CaliforniaTexasFloridaNewYork...", completely
-	// unreadable). 6 is comfortably below where that starts happening.
-	const BAR_CROWD_THRESHOLD = 6;
-
 	const seriesColors = ['var(--color-accent)', 'var(--color-accent-2)'];
 
 	// line/bar assume every series shares the same point count and x
@@ -54,15 +47,20 @@
 	let yMax = $derived(Math.max(...allYValues, yMin + 1));
 
 	let barCount = $derived(chart.series?.[0]?.points.length ?? 0);
-	let barCrowded = $derived(chart.kind === 'bar' && barCount > BAR_CROWD_THRESHOLD);
 
-	// Longest category label among a crowded bar chart's bars — drives
-	// bottomPad below. Not measured against the real rendered font (SVG
-	// has no cheap client-side text-measurement without a canvas trick);
-	// a per-character estimate is enough to size padding correctly, it
-	// doesn't need to be exact.
+	// Longest category label among a bar chart's bars — drives
+	// bottomPad/leftPad below. Not measured against the real rendered
+	// font (SVG has no cheap client-side text-measurement without a
+	// canvas trick); a per-character estimate is enough to size padding
+	// correctly, it doesn't need to be exact.
+	//
+	// Computed for every bar chart, no longer just crowded ones — that
+	// gate was the bug: it assumed only bar COUNT causes overflow, but a
+	// live thread found the same unreadable blob in the opposite
+	// direction (few bars, huge category titles running into each other
+	// flat), and long labels are exactly when rotation is needed most.
 	let longestLabelChars = $derived(
-		barCrowded ? Math.max(0, ...(chart.series?.[0]?.points.map((p) => String(p.x).length) ?? [])) : 0
+		chart.kind === 'bar' ? Math.max(0, ...(chart.series?.[0]?.points.map((p) => String(p.x).length) ?? [])) : 0
 	);
 
 	// bar draws a number directly above each mark (there's no hover/
@@ -71,26 +69,33 @@
 	// the plain line chart's axis-label-only layout didn't. topPad is a
 	// flat constant since bar values are always short numbers.
 	//
-	// bottomPad for a crowded bar chart is NOT a flat constant, and that
-	// was a real bug live-tested and found: a longer category label
-	// rotated -40° (see barCrowded's transform below) swings its leading
-	// character further down as well as sideways, and a flat pad sized
-	// for a typical single-word label ("Texas") let a longer two-word one
-	// ("Pennsylvania", "North Carolina") swing far enough down to cross
-	// the SVG's own bottom edge — silently clipped by the SVG's default
-	// overflow:hidden, the exact same failure mode as xLabelAnchor's
-	// left/right edge case, just on the vertical axis instead. The
-	// constants below come from the actual rotation math: at -40°, a
-	// label's leading character ends up sin(40°)≈0.643 of its own
-	// (estimated ~4.5 viewBox-units-per-character) width below the
-	// label's own anchor point — so the pad has to grow with the longest
-	// label's length, not just its rotation.
+	// bottomPad and leftPad for a bar chart are NOT flat constants, and
+	// that was a real bug live-tested and found: a longer category label
+	// rotated -40° (see the bar label's transform below) swings its
+	// leading character further down as well as sideways, and a flat pad
+	// sized for a typical single-word label ("Texas") let a longer
+	// two-word one ("Pennsylvania", "North Carolina") swing far enough
+	// down to cross the SVG's own bottom edge — silently clipped by the
+	// SVG's default overflow:hidden. The constants below come from the
+	// actual rotation math: at -40°, a label's leading character ends up
+	// sin(40°)≈0.643 of its own (estimated ~4.5
+	// viewBox-units-per-character) width below the label's own anchor
+	// point, and cos(40°)≈0.766 of it to the LEFT — so the pad has to
+	// grow with the longest label's length, not just its rotation.
+	//
+	// Headroom on every axis: the first bar's rotated label is the only
+	// one that can leave the viewBox on the left (the rest swing into
+	// the empty inter-bar space), and every label's leading character can
+	// leave it on the bottom — a flat PAD_LEFT sized for the old >6-bar
+	// crowd (short labels by construction) would silently re-introduce
+	// the clip for a long-titled chart.
 	let topPad = $derived(chart.kind === 'bar' ? PAD_TOP + 14 : PAD_TOP);
-	let bottomPad = $derived(barCrowded ? Math.max(PAD_BOTTOM, 12 + longestLabelChars * 3) : PAD_BOTTOM);
+	let bottomPad = $derived(chart.kind === 'bar' ? Math.max(PAD_BOTTOM, 12 + longestLabelChars * 3) : PAD_BOTTOM);
+	let leftPad = $derived(chart.kind === 'bar' ? Math.max(PAD_LEFT, Math.ceil(longestLabelChars * 3.5)) : PAD_LEFT);
 
 	function scaleX(index: number, count: number): number {
-		if (count <= 1) return PAD_LEFT + (VB_W - PAD_LEFT - PAD_RIGHT) / 2;
-		return PAD_LEFT + (index / (count - 1)) * (VB_W - PAD_LEFT - PAD_RIGHT);
+		if (count <= 1) return leftPad + (VB_W - leftPad - PAD_RIGHT) / 2;
+		return leftPad + (index / (count - 1)) * (VB_W - leftPad - PAD_RIGHT);
 	}
 
 	function scaleY(value: number): number {
@@ -100,21 +105,6 @@
 
 	function linePath(points: { x: string | number; y: number }[]): string {
 		return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i, points.length)} ${scaleY(p.y)}`).join(' ');
-	}
-
-	// x-axis category labels are text-anchor="middle" by default, which
-	// lets the first and last label's text overflow past the viewBox's
-	// left/right edge — SVG's default overflow:hidden on the outer <svg>
-	// then silently clips it (this is exactly how "Phoenix" rendered as
-	// "Phoeni" in practice). Anchoring the two edge labels to start/end
-	// instead keeps every label's text within bounds. Moot once a chart
-	// is crowded enough to rotate (see barCrowded) — rotated labels are
-	// always anchor="end" regardless of position.
-	function xLabelAnchor(index: number, count: number): 'start' | 'middle' | 'end' {
-		if (count <= 1) return 'middle';
-		if (index === 0) return 'start';
-		if (index === count - 1) return 'end';
-		return 'middle';
 	}
 
 	// Compact display for a bar's on-chart value label ("8.5M" not
@@ -201,7 +191,7 @@
 	{#if chart.kind === 'line' || chart.kind === 'bar'}
 		<svg viewBox="0 0 {VB_W} {VB_H}" class="chart-svg" role="img" aria-label={chart.title}>
 			<line
-				x1={PAD_LEFT}
+				x1={leftPad}
 				y1={VB_H - bottomPad}
 				x2={VB_W - PAD_RIGHT}
 				y2={VB_H - bottomPad}
@@ -214,7 +204,7 @@
 
 			{#if chart.kind === 'bar'}
 				{#each chart.series?.[0]?.points ?? [] as point, i (i)}
-					{@const barWidth = (VB_W - PAD_LEFT - PAD_RIGHT) / (barCount * 1.5)}
+					{@const barWidth = (VB_W - leftPad - PAD_RIGHT) / (barCount * 1.5)}
 					{@const cx = scaleX(i, barCount)}
 					{@const labelY = VB_H - bottomPad + 10}
 					<rect
@@ -226,11 +216,7 @@
 						class="bar"
 					/>
 					<text x={cx} y={scaleY(point.y) - 4} class="bar-value" text-anchor="middle">{formatCompact(point.y)}</text>
-					{#if barCrowded}
-						<text x={cx} y={labelY} class="axis-label" text-anchor="end" transform="rotate(-40 {cx} {labelY})">{point.x}</text>
-					{:else}
-						<text x={cx} y={labelY} class="axis-label" text-anchor={xLabelAnchor(i, barCount)}>{point.x}</text>
-					{/if}
+					<text x={cx} y={labelY} class="axis-label" text-anchor="end" transform="rotate(-40 {cx} {labelY})">{point.x}</text>
 				{/each}
 			{:else}
 				{#each chart.series ?? [] as series, si (series.label)}

@@ -46,28 +46,51 @@ describe('ChartCard — line/bar', () => {
 		expect(circle?.getAttribute('cy')).not.toBe('NaN');
 	});
 
-	// BAR_CROWD_THRESHOLD is 6 — live-tested against visualize's own 12-bar
-	// cap per the component's own comment ("CaliforniaTexasFloridaNewYork"
-	// running together unreadable at 0 rotation). Below the threshold,
-	// labels stay flat; at/above it, they rotate -40deg instead.
-	it('does not rotate bar labels when at or under the crowd threshold', () => {
-		const points = Array.from({ length: 6 }, (_, i) => ({ x: `Cat${i}`, y: i + 1 }));
-		const chart: ChartSpec = { kind: 'bar', title: 'Not crowded', series: [{ label: 'A', points }] };
-		const { container } = render(ChartCard, { chart });
-		const rotated = Array.from(container.querySelectorAll('text')).some((el) =>
-			(el.getAttribute('transform') ?? '').includes('rotate')
-		);
-		expect(rotated).toBe(false);
-	});
-
-	it('rotates bar labels once over the crowd threshold', () => {
-		const points = Array.from({ length: 7 }, (_, i) => ({ x: `Category${i}`, y: i + 1 }));
-		const chart: ChartSpec = { kind: 'bar', title: 'Crowded', series: [{ label: 'A', points }] };
+	// Rotation is no longer gated on bar count. The old BAR_CROWD_THRESHOLD
+	// logic (rotate once a chart gets crowded, stay flat below) was
+	// live-tested against the crowding direction — "CaliforniaTexasFlorida
+	// NewYork" running together at 0 rotation — but a thread on the potato
+	// found the mirror-image hole: a chart with FEW bars whose category
+	// titles were long overflowed just as badly flat, text running into
+	// the next bar's label and out past the SVG's bottom edge. Long labels
+	// need rotation at any count, so bar labels now always rotate -40°.
+	it('rotates bar labels at every bar count, even a small one', () => {
+		const points = Array.from({ length: 3 }, (_, i) => ({ x: `Cat${i}`, y: i + 1 }));
+		const chart: ChartSpec = { kind: 'bar', title: 'Small', series: [{ label: 'A', points }] };
 		const { container } = render(ChartCard, { chart });
 		const rotated = Array.from(container.querySelectorAll('text')).some((el) =>
 			(el.getAttribute('transform') ?? '').includes('rotate(-40')
 		);
 		expect(rotated).toBe(true);
+	});
+
+	it('rotates bar labels for long category titles too', () => {
+		const points = Array.from({ length: 3 }, (_, i) => ({ x: `A very long category title ${i}`, y: i + 1 }));
+		const chart: ChartSpec = { kind: 'bar', title: 'Few bars, long labels', series: [{ label: 'A', points }] };
+		const { container } = render(ChartCard, { chart });
+		const rotated = Array.from(container.querySelectorAll('text')).some((el) =>
+			(el.getAttribute('transform') ?? '').includes('rotate(-40')
+		);
+		expect(rotated).toBe(true);
+	});
+
+	// A rotated label's far end swings cos(40°)≈0.77 of its width LEFT of
+	// its anchor — for a long-titled few-bar chart the first bar's label
+	// would cross negative viewBox x and get silently clipped by the SVG's
+	// default overflow:hidden (the same failure as the bottom-edge case,
+	// just on the horizontal axis). leftPad must grow with the longest
+	// label, which pushes the first bar right of the flat PAD_LEFT=34.
+	it('grows the left pad with the longest label so the first rotated label stays in the viewBox', () => {
+		const points = [{ x: 'A really long point title', y: 10 }];
+		const chart: ChartSpec = { kind: 'bar', title: 'Long first label', series: [{ label: 'A', points }] };
+		const { container } = render(ChartCard, { chart });
+		const firstBar = container.querySelector('.bar') as SVGElement;
+		const x = parseFloat(firstBar.getAttribute('x') ?? '0');
+		const rotated = Array.from(container.querySelectorAll('text')).some((el) =>
+			(el.getAttribute('transform') ?? '').includes('rotate(-40')
+		);
+		expect(rotated).toBe(true);
+		expect(x).toBeGreaterThan(34);
 	});
 
 	it('shows the legend for multiple series but not for one with no axis labels', () => {
@@ -102,7 +125,7 @@ describe('ChartCard — range (weather, Tier 1 only)', () => {
 			icons: ['clear']
 		};
 		const { getByText } = render(ChartCard, { chart });
-		expect(getByText('Sep 4')).toBeTruthy();
+		expect(getByText('Fri Sep 4')).toBeTruthy();
 		expect(getByText('75°')).toBeTruthy();
 		expect(getByText('58°')).toBeTruthy();
 	});
