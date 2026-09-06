@@ -28,8 +28,15 @@
 	// client, the calculator's own evaluator). Values are unitless
 	// viewBox coordinates, not pixels. Only line/bar are SVG-plotted at
 	// all — range/timeline/meter are plain HTML/CSS (see below).
+	//
+	// Deliberately 3:2, not 2:1 — the rotated bar-label band below the
+	// axis is an ABSOLUTE viewBox height (it grows with the longest
+	// label, see longestLabelChars), so on a short 2:1 box a
+	// long-titled chart's label band ate close to a third of the whole
+	// card and squeezed the plot into a sliver. The extra height gives
+	// that band room without it dominating the box.
 	const VB_W = 300;
-	const VB_H = 150;
+	const VB_H = 200;
 	const PAD_LEFT = 34;
 	const PAD_RIGHT = 10;
 	const PAD_TOP = 10;
@@ -59,8 +66,16 @@
 	// live thread found the same unreadable blob in the opposite
 	// direction (few bars, huge category titles running into each other
 	// flat), and long labels are exactly when rotation is needed most.
+	//
+	// Clamped at 38 so the padding it drives can't push the plot area to
+	// zero height (see the rotation math on bottomPad below): beyond ~38
+	// chars there's no way to show the full label AND a readable chart in
+	// one card, so the chart wins — the label's tail clips the same way
+	// any over-long label always had to, instead of the bars collapsing.
 	let longestLabelChars = $derived(
-		chart.kind === 'bar' ? Math.max(0, ...(chart.series?.[0]?.points.map((p) => String(p.x).length) ?? [])) : 0
+		chart.kind === 'bar'
+			? Math.min(38, Math.max(0, ...(chart.series?.[0]?.points.map((p) => String(p.x).length) ?? [])))
+			: 0
 	);
 
 	// bar draws a number directly above each mark (there's no hover/

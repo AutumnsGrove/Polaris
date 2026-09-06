@@ -93,6 +93,21 @@ describe('ChartCard — line/bar', () => {
 		expect(x).toBeGreaterThan(34);
 	});
 
+	// longestLabelChars is clamped at 38 so the label-driven padding can
+	// never push the plot area out of the viewBox: beyond that length the
+	// full label and a readable chart can't coexist in one card, and the
+	// chart wins (the label tail clips). Guards the case that first
+	// prompted always-rotation — huge titles — from trading an overrun
+	// label for collapsed bars.
+	it('keeps a positive bar height even for a pathological label length', () => {
+		const points = [{ x: 'A'.repeat(60), y: 10 }];
+		const chart: ChartSpec = { kind: 'bar', title: 'Absurd label', series: [{ label: 'A', points }] };
+		const { container } = render(ChartCard, { chart });
+		const bar = container.querySelector('.bar') as SVGElement;
+		const height = parseFloat(bar.getAttribute('height') ?? '0');
+		expect(height).toBeGreaterThan(0);
+	});
+
 	it('shows the legend for multiple series but not for one with no axis labels', () => {
 		const single: ChartSpec = { kind: 'line', title: 'One series', series: [{ label: 'A', points: [{ x: '1', y: 1 }] }] };
 		const oneRender = render(ChartCard, { chart: single });
