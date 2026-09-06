@@ -70,18 +70,41 @@ var Registry = []config.ModelConfig{
 		},
 	},
 	{
-		// Pinned to Baidu (fp8, ~68% below OpenRouter's list rate for this
-		// model) with DeepInfra (fp8) as fallback, per the same 2026-08-29
-		// survey: official pricing here is $0.22/$0.66 per M tokens
-		// off-peak (doubling on the same weekday peak hours as Pro above),
-		// while Baidu serves the same fp8 precision at $0.045/$0.09 with
-		// 99.95% uptime. The fp4 options at this price point (OpenInference,
-		// Relace) offer no actual savings over Baidu's fp8 — no reason to
-		// take the precision hit.
+		// Five-deep fallback chain: Baidu -> DeepInfra -> StreamLake ->
+		// BaseTen -> Novita, all fp8 (no fp4, per this file's existing
+		// precision policy). Baidu/DeepInfra were the original pair, but a
+		// live incident on 2026-09-06 showed OpenRouter can exhaust both
+		// entries of a two-provider Provider list in a single request —
+		// Baidu and DeepInfra returned 429 tpm_rate_limit_exceeded
+		// simultaneously mid-conversation (a shared/pooled provider tier
+		// saturating under other OpenRouter users' traffic, not this
+		// account hitting its own cap), surfacing OpenRouter's raw error
+		// JSON straight into the chat transcript (see llm.APIError). Three
+		// more rungs were added the same day from a live GET /api/v1/
+		// models/deepseek/deepseek-v4-flash-0731/endpoints query, in
+		// priority order:
+		//   - StreamLake: cheapest input_cache_read of any fp8 provider,
+		//     $0.0028/M vs. Baidu's $0.028/M and DeepInfra's $0.015/M —
+		//     matters because prompt caching, not fresh prompt tokens, is
+		//     where this app's actual DeepSeek spend concentrates. Already
+		//     a known-good fp8 provider here, as deepseek-pro's own
+		//     fallback below.
+		//   - BaseTen: the only other fp8 option with full tool_choice
+		//     support (none/auto/required/function all true — several
+		//     others in the survey only support "auto"), moderate pricing,
+		//     99.84% 1-day uptime.
+		//   - Novita: best observed reliability in the survey (99.99%
+		//     1-day, 100% 5-minute uptime) — added purely as a last-resort
+		//     rung ("just in case"), despite pricier prompt/completion
+		//     rates, since this deep in the chain availability matters more
+		//     than shaving cost further.
+		// The official "deepseek" endpoint remains excluded: its list price
+		// is now higher than every one of these third-party routes even
+		// off-peak.
 		ID:          "deepseek",
 		Name:        "DeepSeek V4 Flash",
 		Model:       "deepseek/deepseek-v4-flash-0731",
-		Provider:    []string{"baidu/fp8", "deepinfra/fp8"},
+		Provider:    []string{"baidu/fp8", "deepinfra/fp8", "streamlake/fp8", "baseten/fp8", "novita/fp8"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{

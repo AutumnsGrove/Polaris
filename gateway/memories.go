@@ -156,7 +156,9 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// AllowFallbacks(true) — escape valve for every pinned provider
+		// being down at once; see turn.go's main client construction.
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	messages := []llm.ChatMessage{

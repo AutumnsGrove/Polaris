@@ -305,6 +305,102 @@ func TestChatCompletion_NonOKStatus(t *testing.T) {
 	}
 }
 
+// TestChatCompletion_429RetriesThenSucceeds verifies doRequest's retry loop
+// actually recovers from a transient 429 instead of failing on the first
+// one — the real-world case this guards is OpenRouter's own retry across a
+// pinned Provider list still handing back 429 for a shared/pooled tier
+// that clears a moment later (see models/models.go's deepseek entry).
+func TestChatCompletion_429RetriesThenSucceeds(t *testing.T) {
+	origDelay := retry429BaseDelay
+	retry429BaseDelay = time.Millisecond
+	defer func() { retry429BaseDelay = origDelay }()
+
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":{"message":"rate limited","code":429}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{"content":"recovered"}}]}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+	resp, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil)
+	if err != nil {
+		t.Fatalf("expected the retry to eventually succeed, got error: %v", err)
+	}
+	if resp.Content != "recovered" {
+		t.Errorf("Content = %q, want %q", resp.Content, "recovered")
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3 (two 429s then a success)", attempts)
+	}
+}
+
+// TestChatCompletion_429ExhaustedReturnsFriendlyError verifies that once
+// every retry is used up on a 429 that never clears, the caller gets a
+// plain-language message instead of OpenRouter's raw nested error JSON
+// (provider attempt list, doc links, user_id, ...) — the exact blob that
+// otherwise lands verbatim in the chat transcript via gateway/turn.go's
+// error ServerEvent.
+func TestChatCompletion_429ExhaustedReturnsFriendlyError(t *testing.T) {
+	origDelay := retry429BaseDelay
+	retry429BaseDelay = time.Millisecond
+	defer func() { retry429BaseDelay = origDelay }()
+
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"deepseek/deepseek-v4-flash-0731 is temporarily rate-limited upstream."}}}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+	_, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil)
+	if err == nil {
+		t.Fatal("expected an error once every 429 retry is exhausted")
+	}
+	if strings.Contains(err.Error(), "metadata") || strings.Contains(err.Error(), "raw") {
+		t.Errorf("err = %v, want a plain-language message, not OpenRouter's raw JSON body", err)
+	}
+	if attempts != max429Retries+1 {
+		t.Errorf("attempts = %d, want %d (the initial attempt plus every retry)", attempts, max429Retries+1)
+	}
+}
+
+// TestChatCompletion_429ErrorListsAttemptedProviders verifies the friendly
+// 429 message names which specific provider(s) OpenRouter actually tried,
+// parsed out of its error body — the real incident this guards used a body
+// shaped just like this fixture (Baidu as the current failure, DeepInfra in
+// previous_errors, both listed again in openrouter_metadata.attempts).
+func TestChatCompletion_429ErrorListsAttemptedProviders(t *testing.T) {
+	origDelay := retry429BaseDelay
+	retry429BaseDelay = time.Millisecond
+	defer func() { retry429BaseDelay = origDelay }()
+
+	body := `{"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"rate-limited upstream","provider_name":"Baidu","previous_errors":[{"code":429,"message":"Provider returned error","provider_name":"DeepInfra"}]},"openrouter_metadata":{"attempts":[{"provider":"Baidu","status":429},{"provider":"DeepInfra","status":429}]}}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test/model", 0.4, 1000)
+	_, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil)
+	if err == nil {
+		t.Fatal("expected an error once every 429 retry is exhausted")
+	}
+	if !strings.Contains(err.Error(), "Baidu") || !strings.Contains(err.Error(), "DeepInfra") {
+		t.Errorf("err = %v, want it to name both attempted providers", err)
+	}
+}
+
 func TestChatCompletion_MalformedSSELineIsSkippedNotFatal(t *testing.T) {
 	srv := sseServer(t, []string{
 		`data: not valid json at all`,

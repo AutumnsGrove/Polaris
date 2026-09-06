@@ -159,8 +159,10 @@ var dailyResearchTasks = map[string]string{
 // generateSuggestions' doc comment for the opposite case).
 func dailyClient(cfg *config.Config, modelID string) llm.ChatClient {
 	modelCfg := cfg.ModelByID(modelID)
+	// AllowFallbacks(true) — escape valve for every pinned provider being
+	// down at once; see gateway/turn.go's main client construction.
 	return llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)})
 }
 
 // appendCustomInstruction folds a user-supplied steering instruction

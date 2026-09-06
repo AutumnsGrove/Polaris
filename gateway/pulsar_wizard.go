@@ -182,8 +182,10 @@ type wizardTurnResult struct {
 func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage, dailyBlockTitle string) (*wizardTurnResult, error) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
+	// AllowFallbacks(true) — escape valve for every pinned provider being
+	// down at once; see gateway/turn.go's main client construction.
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)})
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)})
 	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}

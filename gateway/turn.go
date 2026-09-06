@@ -119,7 +119,21 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	modelCfg := cfg.ModelByID(requestedModel)
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// AllowFallbacks(true), not false: OpenRouter still prefers
+		// modelCfg.Provider's curated order while any entry in it is
+		// healthy (see llm.Client.provider's doc comment on why caching
+		// stays stable in practice) — this only matters as an escape
+		// valve for the case every pinned provider is down at once. Real
+		// incident, 2026-09-06: deepseek's then-2-entry list (Baidu,
+		// DeepInfra) both returned 429 together, and the user hit the
+		// *same* dead end again on the very next turn — evidence the
+		// saturation wasn't a one-provider fluke but affected the whole
+		// pinned set, which a longer curated list (see models/models.go)
+		// narrows but can never fully rule out. With AllowFallbacks
+		// false, OpenRouter has no permission to reach any of that
+		// model's ~29 other endpoints no matter how exhausted our list
+		// is, so it 429s instead of ever finding a working one.
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 		// WithSessionID is a no-op for provider stickiness here: every
 		// model in the registry sets Provider above, and OpenRouter
 		// ignores session_id sticky routing whenever provider.order is
@@ -465,7 +479,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	if msg.DeepResearch {
 		if workerModelCfg, ok := cfg.ResearchWorkerModel(); ok {
 			workerClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
-				WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+				// AllowFallbacks(true) — see the main client's construction
+			// above for why: an escape valve for every pinned provider
+			// being down at once, not a relaxation of the normal curated
+			// preference order.
+			WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 				WithSessionID(threadID)
 			if rc := workerModelCfg.Reasoning; rc != nil && rc.Enabled {
 				workerClient = workerClient.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
@@ -865,7 +883,10 @@ func (s *Server) generateSuggestions(cfg *config.Config, modelCfg config.ModelCo
 	// error to catch. See generateTitle's doc comment for the concrete
 	// case this exact failure mode caused.
 	sugClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 500).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// AllowFallbacks(true) — see the main turn client's construction
+		// above for why: an escape valve for every pinned provider being
+		// down at once, not a relaxation of the normal curated order.
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 		// Explicitly off, not just omitted — see ReasoningParams.Enabled's
 		// doc comment. Leaving the reasoning field off entirely still lets
 		// a reasoning-native model reason internally by default, spending
@@ -987,7 +1008,10 @@ const maxTitleLen = 60
 // through anyway.
 func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// AllowFallbacks(true) — see the main turn client's construction
+		// above for why: an escape valve for every pinned provider being
+		// down at once, not a relaxation of the normal curated order.
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 		// Explicitly off, not just omitted — see ReasoningParams.Enabled's
 		// doc comment. Raising this call's budget from 60 to 300 tokens
 		// (see below) helped but didn't fully fix the silent-empty-title
@@ -1049,7 +1073,10 @@ func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig
 	}
 
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(false)}).
+		// AllowFallbacks(true) — see the main turn client's construction
+		// above for why: an escape valve for every pinned provider being
+		// down at once, not a relaxation of the normal curated order.
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	p := prompts.Get()

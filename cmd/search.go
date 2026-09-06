@@ -61,9 +61,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	modelCfg := cfg.ModelByID(searchModel)
-	falseVal := false
+	// AllowFallbacks(true): an escape valve for every provider in
+	// modelCfg.Provider being down at once — see gateway/turn.go's main
+	// client construction for the live incident (2026-09-06) that
+	// motivated this across every LLM client in the app, this CLI path
+	// included.
+	trueVal := true
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &falseVal})
+		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &trueVal})
 	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
 		trueVal := true
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})

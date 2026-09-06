@@ -315,6 +315,108 @@ func (s *reasoningLeakSniffer) flush() {
 	s.resolve()
 }
 
+// APIError wraps a non-200 response from the LLM API. Its Error() message
+// is user-facing — gateway/turn.go's "turn failed" path sends err.Error()
+// straight into the chat transcript as the assistant's reply (see its
+// send(ServerEvent{Type: "error", ...}) call), so a raw provider body
+// lands verbatim in front of the user with no translation layer above
+// this. A 429 gets a plain-language explanation instead of OpenRouter's
+// full nested JSON (per-provider attempt list, doc links, user_id, ...) —
+// observed live 2026-09-06 dumping straight into an active conversation.
+// Other status codes keep the raw body: they're rare enough in practice
+// (bad API key, malformed request) that the debugging detail is worth
+// more than the politeness, and unlike 429 "just try again" doesn't apply.
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	if e.StatusCode == http.StatusTooManyRequests {
+		msg := "The AI provider is temporarily overloaded and rate-limited this request, even after retrying. This usually clears within a minute or two — try sending your message again shortly."
+		if providers := attemptedProviders(e.Body); len(providers) > 0 {
+			msg += fmt.Sprintf(" (providers tried: %s)", strings.Join(providers, ", "))
+		}
+		return msg
+	}
+	return fmt.Sprintf("LLM API returned %d: %s", e.StatusCode, e.Body)
+}
+
+// openrouterErrorBody is a best-effort partial decode of OpenRouter's error
+// shape — only the fields attemptedProviders actually reads. Not a stable
+// documented contract, so every field is optional and a parse failure is
+// silent (see attemptedProviders' doc comment).
+type openrouterErrorBody struct {
+	Error struct {
+		Metadata struct {
+			ProviderName   string `json:"provider_name"`
+			PreviousErrors []struct {
+				ProviderName string `json:"provider_name"`
+			} `json:"previous_errors"`
+		} `json:"metadata"`
+		OpenRouterMetadata struct {
+			Attempts []struct {
+				Provider string `json:"provider"`
+			} `json:"attempts"`
+		} `json:"openrouter_metadata"`
+	} `json:"error"`
+}
+
+// attemptedProviders extracts which of models.go's pinned providers
+// OpenRouter actually tried from a 429 error body, so the friendly message
+// above can say e.g. "providers tried: Baidu, DeepInfra" instead of a bare
+// "rate limited" with no indication of which specific provider(s) in a
+// possibly 5-entry Provider list are the ones actually down right now —
+// useful for deciding whether it's worth widening the list further (see
+// models/models.go's deepseek entry) or just bad luck. openrouter_metadata.
+// attempts is the most complete source (every provider tried this request,
+// in order) when present; error.metadata's provider_name/previous_errors is
+// the fallback for whatever shape omits it. Best-effort only: OpenRouter's
+// error JSON isn't a stable contract, so a parse failure or missing field
+// just yields an empty/partial list, never a hard error — this is cosmetic
+// information, not load-bearing.
+func attemptedProviders(body string) []string {
+	var parsed openrouterErrorBody
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var providers []string
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		providers = append(providers, name)
+	}
+	for _, a := range parsed.Error.OpenRouterMetadata.Attempts {
+		add(a.Provider)
+	}
+	add(parsed.Error.Metadata.ProviderName)
+	for _, pe := range parsed.Error.Metadata.PreviousErrors {
+		add(pe.ProviderName)
+	}
+	return providers
+}
+
+// max429Retries is how many extra attempts a 429 gets beyond the first
+// (so 3 total). retry429BaseDelay is doubled each attempt (2s, 4s) — a
+// var, not a const, so tests can shrink it instead of a real test run
+// eating several seconds of sleep. Only 429 is retried here: a shared/
+// pooled provider tier (e.g. deepseek's Baidu pin in models/models.go,
+// priced far below OpenRouter's list rate) can saturate under other
+// OpenRouter users' traffic for a few seconds and then clear on its own —
+// a 401/400/5xx instead comes from this account's own request or config
+// and won't fix itself by waiting. Observed live 2026-09-06: both entries
+// in a two-provider Provider list returned 429 tpm_rate_limit_exceeded on
+// the same request, i.e. OpenRouter had already exhausted the whole
+// fallback chain before the error ever reached us — retrying here is
+// what actually gives a saturated pool time to drain.
+var (
+	max429Retries     = 2
+	retry429BaseDelay = 2 * time.Second
+)
+
 // requestTimeout bounds a single OpenRouter call. Deliberately NOT set as
 // an http.Client.Timeout — that applies to the entire round trip
 // including streaming the response body, so a client-level timeout would
@@ -433,33 +535,56 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 	ctx, cancel := context.WithTimeout(reqCtx, requestTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/Polaris")
-	req.Header.Set("X-Title", "Polaris")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("X-OpenRouter-Metadata", "enabled")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			// Cancelled (the "stop" button) or timed out before the request
-			// even got a response — same "not a real failure" treatment a
-			// cancellation gets when it lands mid-stream instead (see
-			// ctx.Err() a few lines below, past the scanner loop). Without
-			// this, a stop landing in the gap between one LLM call
-			// finishing tool dispatch and the next one starting — a real,
-			// easily-hit window, not a rare edge case — surfaced as a raw
-			// "context canceled" error instead of the graceful early finish
-			// every caller (see agent.Run's doc comment) is told a
-			// cancellation always produces, no matter where it lands.
-			return &ChatResponse{}, nil
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
 		}
-		return nil, fmt.Errorf("calling LLM API (stream): %w", err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("HTTP-Referer", "https://github.com/AutumnsGrove/Polaris")
+		req.Header.Set("X-Title", "Polaris")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("X-OpenRouter-Metadata", "enabled")
+
+		var doErr error
+		resp, doErr = c.httpClient.Do(req)
+		if doErr != nil {
+			if ctx.Err() != nil {
+				// Cancelled (the "stop" button) or timed out before the
+				// request even got a response — same "not a real failure"
+				// treatment a cancellation gets when it lands mid-stream
+				// instead (see ctx.Err() a few lines below, past the scanner
+				// loop). Without this, a stop landing in the gap between one
+				// LLM call finishing tool dispatch and the next one starting
+				// — a real, easily-hit window, not a rare edge case —
+				// surfaced as a raw "context canceled" error instead of the
+				// graceful early finish every caller (see agent.Run's doc
+				// comment) is told a cancellation always produces, no matter
+				// where it lands.
+				return &ChatResponse{}, nil
+			}
+			return nil, fmt.Errorf("calling LLM API (stream): %w", doErr)
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		apiErr := &APIError{StatusCode: resp.StatusCode, Body: string(body)}
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= max429Retries {
+			return nil, apiErr
+		}
+		delay := retry429BaseDelay * time.Duration(1<<attempt)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, apiErr
+		}
 	}
 	bodyClosed := false
 	bodyClose := func() {
@@ -469,11 +594,6 @@ func (c *Client) doRequest(reqCtx context.Context, messages []ChatMessage, tools
 		}
 	}
 	defer bodyClose()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("LLM API returned %d: %s", resp.StatusCode, string(body))
-	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
