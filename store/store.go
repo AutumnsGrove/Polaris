@@ -395,6 +395,145 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 	-- active-routines list.
 	archived_at DATETIME
 );
+
+-- pulsar_daily_config is the Daily feature's singleton settings row (see
+-- docs/plans/pulsar-daily.md) — unlike pulsar_routines, Polaris is
+-- single-operator and there's only ever one Daily, so this is one row
+-- (id fixed to 1) rather than a routines-style table built for arbitrarily
+-- many independent schedules.
+CREATE TABLE IF NOT EXISTS pulsar_daily_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	-- created_at: the due-time baseline for a Daily that has never
+	-- generated yet (last_generated_at nil) — same reasoning as
+	-- pulsar_routines.created_at's doc comment: without it, configuring
+	-- Daily at 2pm with time_of_day 07:00 would treat today's already-
+	-- passed 7am slot as missed and generate immediately on save.
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- enabled_blocks: JSON array of block keys the user has toggled on —
+	-- excludes "top_story", which isn't independently generated content,
+	-- it's Stage B's elevation of whichever watch block wins the ranking
+	-- pass (see the plan doc's "Top Story: LLM-elected, not a fixed slot").
+	enabled_blocks TEXT NOT NULL DEFAULT '["word_of_day","weather","on_this_day","headlines","trending","sports","picture_of_day","quote","local"]',
+	-- sports_teams: free-text team/league preference — required once
+	-- "sports" is enabled, since no sane default exists for it (see
+	-- "Per-block settings UI").
+	sports_teams TEXT NOT NULL DEFAULT '',
+	-- custom_instructions: JSON object mapping a block key to an
+	-- optional free-text steering instruction — e.g. "focus on AI and
+	-- climate policy" for headlines, or "space and wildlife photography"
+	-- for picture_of_day. Added after real usage showed the original v1
+	-- design ("no per-block setting earns its keep besides Sports") was
+	-- wrong: a generic "give me the news" prompt with no way to say what
+	-- you actually want to see isn't useful even though sane defaults
+	-- exist. Unlike sports_teams, every entry here is optional — an
+	-- absent/empty key just means "use the plain default framing".
+	custom_instructions TEXT NOT NULL DEFAULT '{}',
+	-- custom_blocks: JSON array of user-authored "general purpose" blocks
+	-- with no fixed registry entry at all — {key, title, instructions}.
+	-- Unlike enabled_blocks/custom_instructions above (which only ever
+	-- reference the fixed dailyBlockRegistry), presence in this list *is*
+	-- enabled — there's no separate on/off toggle for a block the user
+	-- typed themselves. Added after a real session asked for exactly
+	-- this: a way to add something outside dailyBlockRegistry's fixed set
+	-- without a code change. key is generated once client-side at
+	-- creation and never changes even if title is edited later, so
+	-- renaming a block doesn't look like a brand new one to yesterday's
+	-- diff-judge lookup or pulsar_daily_trace.
+	custom_blocks TEXT NOT NULL DEFAULT '[]',
+	-- weather_location: overrides config.yaml's app-wide default_location
+	-- for the Weather block only — empty means "use default_location",
+	-- same fallback every other location-aware tool already has. Weather
+	-- is a direct tools.Dispatch call with no LLM-authored task text, so
+	-- it's the one block custom_instructions' "append a steering sentence"
+	-- mechanism can't help at all — it needed its own typed field.
+	weather_location TEXT NOT NULL DEFAULT '',
+	-- architect_model/writer_model: registry IDs (models/models.go), not
+	-- raw OpenRouter model strings — same convention pulsar_routines.model
+	-- uses. See the plan doc's "Model tiering" for why these are split:
+	-- architect judges (Stage A diff-verdicts, Stage B ranking), writer
+	-- generates prose (Stage A block content, Stage C elaboration).
+	architect_model TEXT NOT NULL DEFAULT 'deepseek-pro',
+	writer_model TEXT NOT NULL DEFAULT 'deepseek',
+	-- time_of_day: "HH:MM", 24-hour, server-local — same convention and
+	-- same single-operator reasoning as pulsar_routines.time_of_day.
+	time_of_day TEXT NOT NULL DEFAULT '07:00',
+	-- last_generated_at: NULL means never generated yet. Checked against
+	-- time_of_day by the scheduler tick, same isRoutineDue-style due-check
+	-- pulsar_routines' last_run_at drives.
+	last_generated_at DATETIME
+);
+
+-- pulsar_daily_editions holds one assembled edition per calendar date — what
+-- tomorrow's Stage A diff-judge compares fresh content against, and what
+-- makes the "← Yesterday" button real history instead of a dead one (see
+-- the plan doc's Stage D). Edition retention (keep forever vs. prune) is a
+-- deliberately open question, same as backup.go's snapshot retention for a
+-- different table — not resolved here.
+CREATE TABLE IF NOT EXISTS pulsar_daily_editions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	-- edition_date: "YYYY-MM-DD", server-local, one row per date — a
+	-- second Stage D run for the same date (e.g. a manual re-trigger)
+	-- overwrites rather than duplicating (see store/pulsar_daily.go).
+	edition_date TEXT NOT NULL UNIQUE,
+	-- blocks: JSON array of rendered block objects (key, title, content,
+	-- gist, is_top_story, ...) — one JSON blob rather than a child table
+	-- because an edition is always read/written whole (the full masonry
+	-- page, or the full diff-judge comparison), never queried per-block.
+	blocks TEXT NOT NULL,
+	-- cost_usd: total LLM spend across every stage that produced this
+	-- edition (every block's generation call, every Watch block's
+	-- diff-judge call, Stage B's ranking call, Stage C's elaboration) —
+	-- shown in the frontend so real generation cost isn't invisible.
+	cost_usd REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- pulsar_daily_trace records what every stage actually produced for every
+-- enabled block, every day — not just whatever survived into
+-- pulsar_daily_editions. Added after a real session where a "the edition
+-- looks empty" question turned out to be unanswerable: an "unchanged"
+-- Watch-block verdict or a hard generation failure both silently dropped
+-- that block's content with nothing but an ephemeral log.Warn line, and
+-- the diff-judge/top-story-election tool schemas didn't even ask the
+-- model to explain *why* a verdict or winner was chosen, only what it
+-- was. One row per block per date (not one row per stage) since a block's
+-- full lifecycle is always read together when auditing "what happened to
+-- X today" — never queried per-stage in isolation.
+CREATE TABLE IF NOT EXISTS pulsar_daily_trace (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	edition_date TEXT NOT NULL,
+	block_key TEXT NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
+	-- stage_a_content: the full text Stage A generated, recorded
+	-- regardless of whether it survived into the edition — exactly the
+	-- data that was previously discarded outright for a dropped block.
+	stage_a_content TEXT NOT NULL DEFAULT '',
+	-- verdict/gist/diff_reasoning: only set for a Watch block that had a
+	-- prior day's edition to diff against (see generateOneDailyBlock's
+	-- "First-ever day" branch) — '' otherwise. diff_reasoning is a new
+	-- field the model is now asked for alongside verdict/gist (see
+	-- dailyVerdictToolDef) — previously the model was never asked to
+	-- justify a verdict at all.
+	verdict TEXT NOT NULL DEFAULT '',
+	gist TEXT NOT NULL DEFAULT '',
+	diff_reasoning TEXT NOT NULL DEFAULT '',
+	-- included/is_top_story/top_story_reasoning/stage_c_content are set
+	-- later, by Stage D, once it's known which blocks actually made the
+	-- final edition and which one (if any) got elected and elaborated —
+	-- see UpdateDailyBlockTraceOutcome.
+	included INTEGER NOT NULL DEFAULT 0,
+	is_top_story INTEGER NOT NULL DEFAULT 0,
+	top_story_reasoning TEXT NOT NULL DEFAULT '',
+	stage_c_content TEXT NOT NULL DEFAULT '',
+	-- error: set instead of stage_a_content when generation failed
+	-- outright — the exact detail that used to exist only in a transient
+	-- log line, gone the moment the dev log rotated or the process
+	-- restarted.
+	error TEXT NOT NULL DEFAULT '',
+	cost_usd REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(edition_date, block_key)
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
@@ -449,6 +588,10 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
+	`ALTER TABLE pulsar_daily_editions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_blocks TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN weather_location TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {

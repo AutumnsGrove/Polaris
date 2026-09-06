@@ -294,6 +294,14 @@ type Context struct {
 	// NoResearch/QuickMode above.
 	PulsarWizard bool
 
+	// PulsarDailyBlockTitle, when non-empty on a PulsarWizard turn, scopes
+	// the interview to writing a short steering instruction for one
+	// Pulsar Daily block (e.g. "Local") instead of a whole routine
+	// prompt — see agent/driver.go's loadSystemPrompt, which picks
+	// prompts.PulsarDaily.WizardSystem instead of prompts.PulsarWizard.System
+	// when this is set. Empty means the ordinary routine-prompt wizard.
+	PulsarDailyBlockTitle string
+
 	// DisabledTools is the settings panel's per-tool on/off list (see
 	// gateway.DisabledToolsFromStore) — a tool named here is excluded
 	// regardless of Requires or Category, checked first in offered(). Nil

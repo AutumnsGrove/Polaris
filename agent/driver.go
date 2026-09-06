@@ -175,12 +175,18 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 
 	if ctx.PulsarWizard {
 		// A completely different task from "Polaris the research
-		// assistant" — a narrow prompt-writing interview with its own
-		// 2-3 tool menu, not the operator's prompt.md persona. Returned
-		// as-is, skipping applyToolsPlaceholder/applyMemoriesPlaceholder/
-		// the mode-instruction appends below entirely: none of those are
+		// assistant" — a narrow writing interview with its own 2-3 tool
+		// menu, not the operator's prompt.md persona. Returned as-is,
+		// skipping applyToolsPlaceholder/applyMemoriesPlaceholder/the
+		// mode-instruction appends below entirely: none of those are
 		// relevant here, and {tools}/{memories} aren't referenced in
-		// PulsarWizard.System's own text.
+		// either wizard system prompt's own text.
+		if ctx.PulsarDailyBlockTitle != "" {
+			// Scoped to one Daily block's short steering instruction
+			// instead of a whole routine prompt — see
+			// tools.Context.PulsarDailyBlockTitle's doc comment.
+			return fmt.Sprintf(p.PulsarDaily.WizardSystem, ctx.PulsarDailyBlockTitle)
+		}
 		return p.PulsarWizard.System
 	}
 

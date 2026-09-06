@@ -248,6 +248,19 @@ func fetchWeather(ctx context.Context, lat, lon float64, forecastDays int, inclu
 	return &out, nil
 }
 
+// TrimWeatherForecastSection strips formatWeather's "Forecast:" bulleted
+// list, keeping just the "Now: ..." current-conditions line — for Pulsar
+// Daily's Weather block, which renders setWeatherChart's range chart
+// instead of that same forecast as a second, redundant copy in prose. Chat
+// turns keep the full text (no chart-vs-prose overlap there, since the
+// model's own reply is what a user reads, not this raw string).
+func TrimWeatherForecastSection(content string) string {
+	if i := strings.Index(content, "\n\nForecast:"); i >= 0 {
+		return content[:i]
+	}
+	return content
+}
+
 func formatWeather(displayName string, f *openMeteoResponse) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Weather for %s:\n\n", displayName)

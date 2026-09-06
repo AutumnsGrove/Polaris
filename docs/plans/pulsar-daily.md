@@ -98,7 +98,6 @@ what they don't want. Confirmed so far:
 - On This Day
 - Top Headlines
 - Trending Now
-- Tech & Science digest
 - Sports (default-on for the general template; explicitly a "some users won't want this" block —
   first concrete proof the per-user block config matters)
 - Picture of the Day (`image_search` tool + the just-shipped gallery/lightbox)
@@ -227,28 +226,50 @@ Considered and shelved, specifically to avoid shipping this bloated on day one:
   steering mechanism as user-facing copy, which is a structural mismatch, not a scope call — this
   one doesn't get revisited unless the memory system itself changes shape.
 
+## Tech & Science removed post-v1
+
+Shipped in v1 as a fixed registry entry, then removed: it was the only Watch block with a
+domain baked into its default task text, which made the "default template" feel tailored to one
+person's interests rather than genuinely general-purpose. Once the general-purpose custom-block
+feature existed (see "v2+ candidates" — actually shipped ahead of schedule, below), a fixed
+topic-specific slot was redundant: anyone wanting a tech beat (or any other vertical — business,
+a hobby, a specific team) adds a custom block with their own instructions instead of relying on a
+code-level special case. Schema-level default `enabled_blocks` and the frontend's block list were
+updated to drop it; an existing per-user DB row that still lists `"tech_science"` in its
+`enabled_blocks` JSON just silently generates nothing for that key now (no matching
+`dailyBlockSpec` in the registry to run) — no migration needed, but worth knowing if a pre-removal
+install's edition looks one block lighter than before.
+
 ## Per-block settings UI
 
-Resolved by checking each block's actual need rather than assuming all ~10 need configuration:
+Originally resolved by checking each block's actual need rather than assuming all ~10 need
+configuration — and originally concluded "no per-block setting earns its keep besides Sports."
+**Reversed after real usage**, on the very first stress-test of a live edition: a generic "give me
+the news" task with no way to say what you actually want to see isn't useful even when the
+default is well-written. The gap wasn't hypothetical the way the original reasoning assumed.
 
-- **Location (Weather + Local)** — no new UI needed at all. Both already fall back to the existing
-  global `DefaultLocation` (`config.yaml`), the same value `weather`/`nearby_search` use
-  everywhere else in Polaris — adding a Daily-specific override now would duplicate a setting for
-  a need nobody's actually hit. A per-block override is a cheap, isolated v2 addition later if it
-  ever matters (e.g. wanting Local news for home but Weather for a travel destination), using the
-  same conditional-reveal pattern below — not a reason to build it preemptively.
-- **Sports — the one real exception.** "Sports" with no team/league preference is meaningless (no
-  sane default exists — unlike location, there's no existing global setting anywhere in Polaris
-  this could fall back to), so this is a genuine required field, not a nice-to-have.
-- **Every other block** (Headlines, Trending, Tech & Science, On This Day, Quote, Word of the Day,
-  Picture of the Day, Top Story) — no per-block setting earns its keep for v1; sane defaults work.
+- **Every block except Weather** now gets an optional free-text "What do you want to see?" field
+  (`store.PulsarDailyConfig.CustomInstructions`, keyed by block key) — folded into that block's
+  task text verbatim (`gateway/pulsar_daily.go`'s `appendCustomInstruction`) rather than through
+  the wizard's interview flow floated as a "likely" direction earlier in this doc; free text turned
+  out to be enough on its own, and the wizard's one-question-at-a-time interview is overkill for
+  "type what you want" the way it isn't for a routine's whole prompt.
+- **Location (Weather + Local) — partially reversed.** Weather still has no override and still
+  falls back to the global `DefaultLocation` — a live weather report for a location that isn't
+  where you actually are has no real use case. Local *does* now take a free-text override for
+  exactly the case flagged as a hypothetical in the original reasoning turning out to be real
+  immediately: living in a suburb outside a major city means wanting news for both, not just the
+  one `DefaultLocation` resolves to. The same `custom_instructions` mechanism covers this — no
+  separate location-specific field needed, since "Beaverton, OR and also Portland, OR" as a plain
+  string is already a perfectly good instruction.
+- **Sports** keeps its own required field (`SportsTeams`) rather than folding into
+  `CustomInstructions` — it has no sane default at all (unlike every other block, where the
+  instruction is optional seasoning on top of a default that already works), so treating it as a
+  case of the generic optional mechanism would lose the required-field validation it actually needs.
 
-**Control shape**: reuses `PulsarRoutineForm.svelte`'s existing conditional-reveal pattern
-(`scheduleType`'s select conditionally showing `weeklyParam`/`monthlyParam`, lines ~188-207) rather
-than a new mechanism — a block-toggle list where enabling Sports specifically reveals one inline
-text field ("Which teams/leagues?"), same interaction shape the form already has, applied to
-exactly one block instead of a schedule type. No generic "per-block settings schema" needed for
-what's really just one block needing one field.
+**Control shape**: still reuses `PulsarRoutineForm.svelte`'s existing conditional-reveal pattern —
+each block's optional field only reveals once that block is toggled on, exactly like Sports'
+already did.
 
 ## Open questions
 

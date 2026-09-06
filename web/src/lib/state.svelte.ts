@@ -878,11 +878,24 @@ export class AppState {
 		focusMode?: FocusMode,
 		deepResearch?: boolean,
 		attachment?: UploadedAttachment,
-		noResearch?: boolean
+		noResearch?: boolean,
+		source?: string,
+		titleSeed?: string
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
-		this.dispatch(trimmed, undefined, undefined, sttCostUsd, focusMode, deepResearch, attachment, noResearch);
+		this.dispatch(
+			trimmed,
+			undefined,
+			undefined,
+			sttCostUsd,
+			focusMode,
+			deepResearch,
+			attachment,
+			noResearch,
+			source,
+			titleSeed
+		);
 	}
 
 	// Re-runs an assistant turn using the same preceding user message —
@@ -914,7 +927,16 @@ export class AppState {
 		focusMode?: FocusMode,
 		deepResearch?: boolean,
 		attachment?: UploadedAttachment,
-		noResearch?: boolean
+		noResearch?: boolean,
+		// source: only meaningful for a brand-new thread (see
+		// gateway/protocol.go's ClientMessage.Source) — undefined means
+		// the server's own "web" default, same as every caller before
+		// this param existed. Only Pulsar Daily's expand-to-chat passes
+		// "pulsar-daily" here (see routes/daily/+page.svelte's expand()).
+		source?: string,
+		// titleSeed: see gateway/protocol.go's ClientMessage.TitleSeed —
+		// only Pulsar Daily's expand-to-chat sets this.
+		titleSeed?: string
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -965,7 +987,9 @@ export class AppState {
 			no_research: noResearch || undefined,
 			attachment_id: attachment?.id,
 			attachment_filename: attachment?.filename,
-			attachment_content_type: attachment?.content_type
+			attachment_content_type: attachment?.content_type,
+			source,
+			title_seed: titleSeed
 		});
 	}
 

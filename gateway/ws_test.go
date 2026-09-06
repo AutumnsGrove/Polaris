@@ -804,6 +804,78 @@ func TestWebSocket_ContinuingAfterBrowsingToOldVariant_ForksTheNewerOne(t *testi
 	}
 }
 
+// TestWebSocket_TitleSeedOverridesGenerateTitleInput covers a real bug:
+// Pulsar Daily's expand-to-chat seeds Content with a synthetic
+// instruction wrapper ("The user tapped an expand affordance..."), and
+// generateTitle, given only that, was observed live hallucinating a
+// title that answers the wrapper's embedded instruction instead of
+// titling it. TitleSeed lets a caller hand generateTitle cleaner input
+// instead — this confirms the title-generation call actually receives
+// TitleSeed's text, not Content's.
+func TestWebSocket_TitleSeedOverridesGenerateTitleInput(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+
+		chunk, err := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "an answer"}}},
+		})
+		if err != nil {
+			t.Fatalf("marshaling fake SSE chunk: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	wrapperContent := `The user tapped an expand affordance on a Pulsar Daily block titled "Picture of the Day" ` +
+		`with this content: A nebula. Tell me more about what's shown in this image.`
+	titleSeed := "Picture of the Day: A nebula"
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": wrapperContent, "model": "test-model",
+		"source": "pulsar-daily", "title_seed": titleSeed,
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Found by content, not position — suggestions run detached (see
+	// turn.go's own comment on that goroutine) and can race past "done"
+	// or land before/after title generation depending on timing, so
+	// request order isn't a reliable signal here.
+	var titleRequest string
+	for _, body := range requestBodies {
+		if strings.Contains(body, "Write a short thread title") {
+			titleRequest = body
+			break
+		}
+	}
+	if titleRequest == "" {
+		t.Fatalf("no title-generation request found among %d captured: %v", len(requestBodies), requestBodies)
+	}
+	if strings.Contains(titleRequest, "tapped an expand affordance") {
+		t.Errorf("title-generation request still contains the synthetic wrapper text, want TitleSeed to have replaced it: %s", titleRequest)
+	}
+	if !strings.Contains(titleRequest, titleSeed) {
+		t.Errorf("title-generation request doesn't contain the TitleSeed text %q: %s", titleSeed, titleRequest)
+	}
+}
+
 func TestWebSocket_UnknownModelFallsBackToDefault(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "an answer")
 	h := newTestHarness(t, srv.URL)

@@ -41,6 +41,17 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		// any pulse fires this tick.
 		s.sweepExpiredWizardSessions()
 
+		// Piggybacks on the same once-a-minute tick as every routine's
+		// due-check below — Pulsar Daily has exactly one schedule
+		// (singleton, daily-only, see docs/plans/pulsar-daily.md's
+		// "Storage is deliberately not routine-shaped"), so it doesn't
+		// need a second ticker of its own.
+		if cfgRow, err := s.db.GetDailyConfig(); err != nil {
+			log.Warn("loading pulsar daily config failed", "err", err)
+		} else if isDailyDue(cfgRow, time.Now()) {
+			go s.runDailyPipelineRecovered()
+		}
+
 		routines, err := s.db.ListActivePulsarRoutines()
 		if err != nil {
 			log.Warn("listing active pulsar routines failed", "err", err)

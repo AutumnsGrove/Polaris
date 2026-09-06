@@ -38,14 +38,23 @@ const wizardSessionTTL = 30 * time.Minute
 type wizardSession struct {
 	history   []llm.ChatMessage
 	createdAt time.Time
+	// dailyBlockTitle: set for a Pulsar Daily block-instruction interview
+	// (see wizardStartRequest.DailyBlockTitle) and carried across every
+	// turn in this session, since only the start request actually
+	// includes it — a follow-up turn otherwise has no way to know this
+	// interview is scoped to one block instead of a whole routine.
+	dailyBlockTitle string
 }
 
 // wizardStartRequest's Seed is whatever the routine form's prompt field
 // already had typed into it when the wizard was opened, if anything — an
 // empty Seed means the interview opens with prompts.PulsarWizard.OpenerTask
-// instead of the user's own draft.
+// instead of the user's own draft. DailyBlockTitle, when non-empty, scopes
+// the whole interview to writing a short steering instruction for one
+// Pulsar Daily block instead — see tools.Context.PulsarDailyBlockTitle.
 type wizardStartRequest struct {
-	Seed string `json:"seed"`
+	Seed            string `json:"seed"`
+	DailyBlockTitle string `json:"daily_block_title"`
 }
 
 type wizardTurnRequest struct {
@@ -77,12 +86,17 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := uuid.NewString()
+	dailyBlockTitle := strings.TrimSpace(req.DailyBlockTitle)
 	turnMessage := strings.TrimSpace(req.Seed)
 	if turnMessage == "" {
-		turnMessage = prompts.Get().PulsarWizard.OpenerTask
+		if dailyBlockTitle != "" {
+			turnMessage = prompts.Get().PulsarDaily.WizardOpenerTask
+		} else {
+			turnMessage = prompts.Get().PulsarWizard.OpenerTask
+		}
 	}
 
-	result, err := s.runWizardTurn(r.Context(), nil, turnMessage)
+	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, dailyBlockTitle)
 	if err != nil {
 		log.Warn("pulsar wizard start failed", "err", err)
 		http.Error(w, "the wizard hit an error starting up — try again", http.StatusInternalServerError)
@@ -90,7 +104,7 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.wizardMu.Lock()
-	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now()}
+	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), dailyBlockTitle: dailyBlockTitle}
 	s.wizardMu.Unlock()
 
 	writeJSON(w, wizardResponse{SessionID: sessionID, Question: result.question, Final: result.final, Answer: result.answer})
@@ -120,7 +134,7 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.runWizardTurn(r.Context(), session.history, message)
+	result, err := s.runWizardTurn(r.Context(), session.history, message, session.dailyBlockTitle)
 	if err != nil {
 		log.Warn("pulsar wizard turn failed", "session", req.SessionID, "err", err)
 		http.Error(w, "the wizard hit an error — try again", http.StatusInternalServerError)
@@ -165,7 +179,7 @@ type wizardTurnResult struct {
 // generateTitle/generateSuggestions shape), just with no thread, no DB
 // writes, and no streaming: the answer comes back directly in the HTTP
 // response, not over the WebSocket.
-func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage string) (*wizardTurnResult, error) {
+func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage, dailyBlockTitle string) (*wizardTurnResult, error) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
 	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
@@ -193,12 +207,13 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	disabled["visualize"] = true
 
 	agentCtx := &tools.Context{
-		NoResearch:    true,
-		PulsarWizard:  true,
-		DisabledTools: disabled,
-		LLM:           client,
-		Emit:          func(string, map[string]interface{}) {}, // no live client to stream to
-		MaxTurns:      cfg.MaxAgentTurns,
+		NoResearch:            true,
+		PulsarWizard:          true,
+		PulsarDailyBlockTitle: dailyBlockTitle,
+		DisabledTools:         disabled,
+		LLM:                   client,
+		Emit:                  func(string, map[string]interface{}) {}, // no live client to stream to
+		MaxTurns:              cfg.MaxAgentTurns,
 		// RequestLocation is never actually called here — no location-
 		// needing tool (weather/nearby_search) is ever offered under
 		// NoResearch above — but catalog.go's "interactive_chat" gate on

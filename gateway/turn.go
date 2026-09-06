@@ -132,7 +132,14 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 
 	if isNewThread {
+		// TitleSeed, not msg.Content, when set — see its doc comment: a
+		// synthetic wrapper message (Pulsar Daily's expand-to-chat) makes
+		// a confusing placeholder too, not just a confusing generateTitle
+		// input.
 		title := msg.Content
+		if msg.TitleSeed != "" {
+			title = msg.TitleSeed
+		}
 		if len(title) > 80 {
 			title = title[:80] + "…"
 		}
@@ -549,7 +556,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				log.Warn("failed to persist pulse title", "thread", threadID, "err", err)
 				s.db.LogEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
-		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, msg.Content); err != nil {
+		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, firstNonEmpty(msg.TitleSeed, msg.Content)); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {

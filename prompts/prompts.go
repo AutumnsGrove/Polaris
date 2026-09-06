@@ -64,6 +64,21 @@ type Set struct {
 		OpenerTask string `yaml:"opener_task"`
 	} `yaml:"pulsar_wizard"`
 
+	PulsarDaily struct {
+		ExpandPrefix      string `yaml:"expand_prefix"`
+		ResearchFollowup  string `yaml:"research_followup"`
+		CuriosityFollowup string `yaml:"curiosity_followup"`
+		MediaFollowup     string `yaml:"media_followup"`
+		// WizardSystem is PulsarWizard.System's counterpart for the "help
+		// me write this" interview scoped to one Daily block's steering
+		// instruction instead of a whole routine prompt — see
+		// tools.Context.PulsarDailyBlockTitle. Has one %s verb for the
+		// block's title (e.g. "Local"), filled in by agent/driver.go's
+		// loadSystemPrompt.
+		WizardSystem     string `yaml:"wizard_system"`
+		WizardOpenerTask string `yaml:"wizard_opener_task"`
+	} `yaml:"pulsar_daily"`
+
 	Vision struct {
 		DescribeImage string `yaml:"describe_image"`
 	} `yaml:"vision"`
@@ -327,6 +342,39 @@ Always tag fenced code blocks with their language (` + "```go, ```python" + `, .
 		"ask a single focused opening question to find out (e.g. what topic, or what kind of update they're " +
 		"after)."
 
+	d.PulsarDaily.ExpandPrefix = "The user tapped an expand affordance on a Pulsar Daily block titled \"%s\" " +
+		"with this content: %s. This wasn't typed by them — it's a request to go deeper on exactly this. " +
+		"Don't re-greet or re-summarize what the block already said; begin from where it left off."
+
+	d.PulsarDaily.ResearchFollowup = "Do fresh research and expand on this — don't just restate what's " +
+		"already shown. Use visualize if you find genuinely chart-worthy quantitative data, or image_search " +
+		"if a relevant image would help. Cite sources the way you normally would."
+
+	d.PulsarDaily.CuriosityFollowup = "Go deeper on this for its own sake — etymology, context, related " +
+		"trivia, why it's interesting — rather than searching for \"updates.\" Lean on what you already know " +
+		"first."
+
+	d.PulsarDaily.MediaFollowup = "Tell me more about what's shown in this image — its subject, significance, " +
+		"and context. Use image_search if more images would help illustrate the answer."
+
+	d.PulsarDaily.WizardSystem = "You are helping the user write a short steering instruction for one block " +
+		"of their Pulsar Daily digest, titled %q. This is NOT a whole routine prompt — it's one or two " +
+		"sentences telling that specific block what to focus on (e.g. \"focus on AI and climate policy\" for " +
+		"a headlines block, or \"Beaverton, OR and also Portland, OR\" for a local-news block). Your job is a " +
+		"short interview, not a conversation: ask ONE focused question at a time via ask_user_question (with " +
+		"options where a natural finite set exists) until you know what they actually want to see. Most " +
+		"blocks need 1-2 questions, not a long interrogation. Every reply you give must be a tool call, " +
+		"either ask_user_question or finalize_pulsar_prompt — never a plain-text message with no tool call.\n\n" +
+		"Once you have enough, call finalize_pulsar_prompt with the finished instruction in its `prompt` " +
+		"field, written as a short directive the block's own generation prompt can just append (e.g. \"focus " +
+		"on AI and climate policy\", not \"A block that covers AI and climate policy\"). Leave `name` empty — " +
+		"it isn't meaningful here. If the user replies after you've already finalized once (asking to change " +
+		"something), treat it as a revision request and call finalize_pulsar_prompt again with the updated " +
+		"draft."
+
+	d.PulsarDaily.WizardOpenerTask = "The user hasn't said what they want this block to focus on yet — ask a " +
+		"single focused opening question to find out."
+
 	return d
 }
 
@@ -447,6 +495,24 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Vision.DescribeImage == "" {
 		s.Vision.DescribeImage = defaults.Vision.DescribeImage
+	}
+	if s.PulsarDaily.ExpandPrefix == "" {
+		s.PulsarDaily.ExpandPrefix = defaults.PulsarDaily.ExpandPrefix
+	}
+	if s.PulsarDaily.ResearchFollowup == "" {
+		s.PulsarDaily.ResearchFollowup = defaults.PulsarDaily.ResearchFollowup
+	}
+	if s.PulsarDaily.CuriosityFollowup == "" {
+		s.PulsarDaily.CuriosityFollowup = defaults.PulsarDaily.CuriosityFollowup
+	}
+	if s.PulsarDaily.MediaFollowup == "" {
+		s.PulsarDaily.MediaFollowup = defaults.PulsarDaily.MediaFollowup
+	}
+	if s.PulsarDaily.WizardSystem == "" {
+		s.PulsarDaily.WizardSystem = defaults.PulsarDaily.WizardSystem
+	}
+	if s.PulsarDaily.WizardOpenerTask == "" {
+		s.PulsarDaily.WizardOpenerTask = defaults.PulsarDaily.WizardOpenerTask
 	}
 	return &s
 }

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"polaris/brave"
 	"polaris/config"
@@ -109,6 +110,16 @@ type Server struct {
 	// map+single-mutex shape as inFlightThreads above.
 	wizardMu       sync.Mutex
 	wizardSessions map[string]*wizardSession
+
+	// dailyGenerationRunning guards the manual "Generate now" trigger
+	// (handleGenerateDailyNow) against a second click firing an
+	// overlapping run — the scheduler's own once-a-minute tick can't
+	// double-fire (isDailyDue goes false the instant last_generated_at is
+	// set, which happens before Stage A even starts — see
+	// runDailyPipeline), but nothing stopped two rapid manual clicks from
+	// starting two full pipelines at once, each paying for its own
+	// research-heavy LLM calls for no benefit.
+	dailyGenerationRunning atomic.Bool
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -373,6 +384,14 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
 	s.mux.HandleFunc("POST /api/pulsar/wizard/start", s.handleWizardStart)
 	s.mux.HandleFunc("POST /api/pulsar/wizard/turn", s.handleWizardTurn)
+	s.mux.HandleFunc("GET /api/pulsar/daily/config", s.handleGetDailyConfig)
+	s.mux.HandleFunc("PUT /api/pulsar/daily/config", s.handleUpdateDailyConfig)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}", s.handleGetDailyEdition)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/previous", s.handleGetPreviousDailyEdition)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/next", s.handleGetNextDailyEdition)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/trace", s.handleGetDailyTrace)
+	s.mux.HandleFunc("POST /api/pulsar/daily/generate", s.handleGenerateDailyNow)
+	s.mux.HandleFunc("POST /api/pulsar/daily/expand", s.handleExpandDailyBlock)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	if staticFS != nil {

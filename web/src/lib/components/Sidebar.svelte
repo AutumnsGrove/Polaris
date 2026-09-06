@@ -5,8 +5,9 @@
 	import { appState } from '$lib/state.svelte';
 	import { searchState } from '$lib/search.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
+	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -41,6 +42,10 @@
 		// app loads — same "don't wait for the relevant page to visit it
 		// first" reasoning as loadThreads() in +layout.svelte.
 		void pulsarState.loadUnreadCounts();
+		// Same "don't wait for /daily to be visited first" reasoning as
+		// pulsarState.loadUnreadCounts() above — the sidebar's own dot
+		// indicator needs to be accurate the moment the app loads.
+		void pulsarDailyState.checkForNewEdition(localStorage.getItem('polaris-daily-last-seen'));
 	});
 
 	// appState.newThread() deliberately only touches history via
@@ -190,6 +195,17 @@
 			<Orbit size={16} />
 			<span class="pulsar-label">Pulsar</span>
 			<PulsarUnreadBadge count={pulsarState.totalUnread} />
+		</button>
+		<button
+			class="pulsar-entry daily-entry"
+			class:active={page.url.pathname.startsWith('/daily')}
+			onclick={() => goto('/daily')}
+		>
+			<Sunrise size={16} />
+			<span class="pulsar-label">The Daily</span>
+			{#if pulsarDailyState.hasNewEdition}
+				<span class="daily-dot" title="New edition"></span>
+			{/if}
 		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
@@ -389,6 +405,17 @@
 		font-family: var(--font-wordmark);
 		font-size: 1.05em;
 		letter-spacing: 0.02em;
+	}
+
+	/* Plain dot, not a numeric badge like PulsarUnreadBadge — The Daily is
+	   a singleton (one edition, once a day), so there's only ever "a new
+	   edition exists" or not, never a count to display. */
+	.daily-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-accent);
+		flex-shrink: 0;
 	}
 
 	.thread-search {

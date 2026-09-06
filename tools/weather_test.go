@@ -235,6 +235,23 @@ func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
 	}
 }
 
+func TestTrimWeatherForecastSection(t *testing.T) {
+	full := "Weather for Seattle, WA:\n\nNow: 68°F (feels like 66°F), mainly clear, 50% humidity, wind 5 mph\n\nForecast:\n- 2026-08-03: partly cloudy, high 72°F / low 58°F, 10% chance of precipitation\n"
+	got := TrimWeatherForecastSection(full)
+	want := "Weather for Seattle, WA:\n\nNow: 68°F (feels like 66°F), mainly clear, 50% humidity, wind 5 mph"
+	if got != want {
+		t.Errorf("TrimWeatherForecastSection = %q, want %q", got, want)
+	}
+
+	// No "Forecast:" section (e.g. a single-day-only call) — passed
+	// through unchanged rather than truncated on a substring that isn't
+	// there.
+	noForecast := "Weather for Seattle, WA:\n\nNow: 68°F (feels like 66°F), mainly clear, 50% humidity, wind 5 mph\n"
+	if got := TrimWeatherForecastSection(noForecast); got != noForecast {
+		t.Errorf("TrimWeatherForecastSection(no forecast section) = %q, want unchanged", got)
+	}
+}
+
 func TestWeatherCodeIcon(t *testing.T) {
 	tests := []struct {
 		code int

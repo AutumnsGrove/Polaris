@@ -168,6 +168,90 @@ func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHea
 	return UploadResponse{ID: id, Filename: header.Filename, ContentType: contentType, SizeBytes: written}, nil
 }
 
+// fetchImageURLBytes is a var (not a plain function call) so tests can
+// stub the network fetch — same pattern as search.nominatimBaseURL and
+// web_read.go's waybackAvailabilityAPI.
+var fetchImageURLBytes = func(reqCtx context.Context, url string) (data []byte, contentType string, err error) {
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("fetching image: status %d", resp.StatusCode)
+	}
+	data, err = io.ReadAll(io.LimitReader(resp.Body, maxUploadBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) > maxUploadBytes {
+		return nil, "", fmt.Errorf("image too large (max 100MB)")
+	}
+	contentType = resp.Header.Get("Content-Type")
+	if idx := strings.Index(contentType, ";"); idx >= 0 {
+		contentType = contentType[:idx]
+	}
+	return data, strings.TrimSpace(contentType), nil
+}
+
+// saveRemoteImageAttachment downloads imageURL and saves it to
+// config.Attachments.Dir exactly like a normal upload (saveUploadedFile)
+// — same directory, same generated-UUID naming, same content-type gate —
+// so it flows through the ordinary AttachmentID/resolveAttachment/vision
+// pipeline indistinguishably from a file the user picked themselves. Built
+// for Pulsar Daily's Picture of the Day expand-to-chat: the block's image
+// lives at a remote URL (an image_search result), not a local upload, but
+// the seeded turn needs the model to actually see it, not just read a
+// caption — see gateway/pulsar_daily_routes.go's handleExpandDailyBlock.
+func (s *Server) saveRemoteImageAttachment(reqCtx context.Context, imageURL string) (UploadResponse, error) {
+	cfg := s.liveConfig()
+
+	data, contentType, err := fetchImageURLBytes(reqCtx, imageURL)
+	if err != nil {
+		return UploadResponse{}, fmt.Errorf("fetching image: %w", err)
+	}
+	if !strings.HasPrefix(contentType, "image/") {
+		return UploadResponse{}, fmt.Errorf("fetched content isn't an image (got %q)", contentType)
+	}
+
+	if err := os.MkdirAll(cfg.Attachments.Dir, 0o755); err != nil {
+		return UploadResponse{}, fmt.Errorf("creating attachments dir: %w", err)
+	}
+	id := uuid.NewString()
+	destPath := filepath.Join(cfg.Attachments.Dir, id)
+	if err := os.WriteFile(destPath, data, 0o644); err != nil {
+		return UploadResponse{}, fmt.Errorf("writing attachment file: %w", err)
+	}
+
+	filename := "picture-of-the-day" + extensionForContentType(contentType)
+	log.Info("pulsar daily: saved remote image as attachment", "id", id, "content_type", contentType, "size_bytes", len(data))
+	return UploadResponse{ID: id, Filename: filename, ContentType: contentType, SizeBytes: int64(len(data))}, nil
+}
+
+// extensionForContentType is a small, deliberately incomplete map — just
+// enough for the image types image_search actually returns — not a
+// general MIME-to-extension resolver. Falls back to no extension at all
+// rather than guessing wrong; the extension is cosmetic (display filename
+// only), never used to pick a decoder.
+func extensionForContentType(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	default:
+		return ""
+	}
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {

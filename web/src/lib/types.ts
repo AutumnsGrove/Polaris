@@ -195,6 +195,14 @@ export type ClientMessage =
 			attachment_id?: string;
 			attachment_filename?: string;
 			attachment_content_type?: string;
+			// Only meaningful for a brand-new thread (thread_id omitted) —
+			// see gateway/protocol.go's ClientMessage.Source. Omitted means
+			// the server's own "web" default; only Pulsar Daily's
+			// expand-to-chat sets this ("pulsar-daily").
+			source?: string;
+			// See gateway/protocol.go's ClientMessage.TitleSeed — cleaner
+			// input for title generation than a synthetic seeded message.
+			title_seed?: string;
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs
@@ -293,6 +301,63 @@ export interface PulsarPulse {
 	seen: boolean;
 	created_at: string;
 	in_progress: boolean;
+}
+
+// PulsarDailyConfig mirrors store.PulsarDailyConfig's JSON shape — the
+// Daily singleton's settings row (see gateway/pulsar_daily_routes.go).
+export interface PulsarDailyConfig {
+	enabled_blocks: string[];
+	sports_teams: string;
+	// custom_instructions: optional free-text steering per block key
+	// (e.g. "focus on AI and climate policy" for headlines, or "Beaverton,
+	// OR and also Portland, OR" for local) — see store.PulsarDailyConfig's
+	// doc comment for why this exists.
+	custom_instructions: Record<string, string>;
+	// custom_blocks: user-authored "general purpose" blocks with no fixed
+	// registry entry — see store.PulsarDailyConfig.CustomBlocks' doc
+	// comment. Presence in this list is what makes one enabled; there's
+	// no separate on/off toggle the way fixed blocks have via
+	// enabled_blocks.
+	custom_blocks: PulsarDailyCustomBlock[];
+	// weather_location: overrides config.yaml's app-wide default_location
+	// for the Weather block only — empty means "use default_location".
+	weather_location: string;
+	architect_model: string;
+	writer_model: string;
+	time_of_day: string;
+	created_at: string;
+	last_generated_at: string | null;
+}
+
+// PulsarDailyCustomBlock mirrors store.PulsarDailyCustomBlock.
+export interface PulsarDailyCustomBlock {
+	key: string;
+	title: string;
+	instructions: string;
+}
+
+// PulsarDailyBlock mirrors store.PulsarDailyBlock — one rendered card in
+// an edition. image_url is only ever set for picture_of_day; chart is only
+// ever set for weather (see gateway/pulsar_daily.go's generateOneDailyBlock).
+export interface PulsarDailyBlock {
+	key: string;
+	title: string;
+	content: string;
+	gist: string;
+	is_top_story: boolean;
+	image_url?: string;
+	chart?: ChartSpec;
+}
+
+// PulsarDailyEdition mirrors store.PulsarDailyEdition — one calendar
+// date's assembled Daily page.
+export interface PulsarDailyEdition {
+	date: string;
+	blocks: PulsarDailyBlock[];
+	// Total LLM spend across every stage that produced this edition — see
+	// store.PulsarDailyEdition.CostUSD.
+	cost_usd: number;
+	created_at: string;
 }
 
 // WizardFinal mirrors tools.WizardFinal — the drafted prompt
