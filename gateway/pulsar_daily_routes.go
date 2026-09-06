@@ -29,12 +29,13 @@ func (s *Server) handleGetDailyConfig(w http.ResponseWriter, r *http.Request) {
 // pulsarDailyConfigRequest is the setup modal's request shape — full
 // overwrite, not partial, matching pulsarRoutineRequest's convention.
 type pulsarDailyConfigRequest struct {
-	EnabledBlocks      []string          `json:"enabled_blocks"`
-	SportsTeams        string            `json:"sports_teams"`
-	CustomInstructions map[string]string `json:"custom_instructions"`
-	ArchitectModel     string            `json:"architect_model"`
-	WriterModel        string            `json:"writer_model"`
-	TimeOfDay          string            `json:"time_of_day"`
+	EnabledBlocks      []string                       `json:"enabled_blocks"`
+	SportsTeams        string                         `json:"sports_teams"`
+	CustomInstructions map[string]string              `json:"custom_instructions"`
+	CustomBlocks       []store.PulsarDailyCustomBlock `json:"custom_blocks"`
+	ArchitectModel     string                         `json:"architect_model"`
+	WriterModel        string                         `json:"writer_model"`
+	TimeOfDay          string                         `json:"time_of_day"`
 }
 
 // validateDailyConfig checks a config request is something the pipeline
@@ -72,6 +73,19 @@ func validateDailyConfig(req pulsarDailyConfigRequest) error {
 			return fmt.Errorf("unknown block %q in custom_instructions", key)
 		}
 	}
+	seenCustomKeys := map[string]bool{}
+	for _, cb := range req.CustomBlocks {
+		if strings.TrimSpace(cb.Key) == "" || strings.TrimSpace(cb.Title) == "" || strings.TrimSpace(cb.Instructions) == "" {
+			return errors.New("every custom block needs a key, title, and instructions")
+		}
+		if _, ok := dailyBlockSpecByKey(cb.Key); ok {
+			return fmt.Errorf("custom block key %q collides with a built-in block", cb.Key)
+		}
+		if seenCustomKeys[cb.Key] {
+			return fmt.Errorf("duplicate custom block key %q", cb.Key)
+		}
+		seenCustomKeys[cb.Key] = true
+	}
 	return nil
 }
 
@@ -86,7 +100,7 @@ func (s *Server) handleUpdateDailyConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.ArchitectModel, req.WriterModel, req.TimeOfDay); err != nil {
+	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.CustomBlocks, req.ArchitectModel, req.WriterModel, req.TimeOfDay); err != nil {
 		log.Warn("updating pulsar daily config failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

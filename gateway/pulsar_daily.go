@@ -36,6 +36,12 @@ const (
 	// restricted-toolset agent run" shape pulsar_wizard.go's interview
 	// loop uses — Headlines, Trending, Tech & Science, Local, Sports.
 	dailyBlockResearch
+	// dailyBlockCustom is a user-authored "general purpose" block with no
+	// fixed registry entry — same execution path as dailyBlockResearch
+	// (the full research toolset), just with the entire task taken
+	// verbatim from dailyBlockSpec.CustomTask instead of a fixed template
+	// keyed by spec.Key, since there's no fixed key to look one up by.
+	dailyBlockCustom
 )
 
 type dailyBlockSpec struct {
@@ -49,6 +55,12 @@ type dailyBlockSpec struct {
 	// skips the diff-judge call entirely (paying for a comparison whose
 	// answer is always "new" has zero decision value).
 	Watch bool
+	// CustomTask is dailyBlockCustom's entire task text, verbatim — the
+	// user's own free-text instructions ARE the task, unlike a fixed
+	// registry block's dailyResearchTasks/dailyPickTasks lookup plus an
+	// optional appended custom_instructions steer. Empty/unused for every
+	// other Kind.
+	CustomTask string
 }
 
 // dailyBlockRegistry is the v1 block set — see the plan doc's "Default
@@ -192,19 +204,28 @@ func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, 
 	return strings.TrimSpace(resp.Content), resp.CostUSD, nil
 }
 
-// generateDailyResearchBlock runs one Watch/Sports block through a
-// narrow-toolset agent.Run — no thread, no streaming, no history, mirror
-// of runWizardTurn's shape. location/sportsTeams fill the task template's
-// placeholders; unused by every key except local/sports respectively.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, key, location, sportsTeams, customInstruction string) (string, float64, error) {
+// dailyResearchTaskFor builds a fixed registry block's task text — the
+// template lookup, {{location}}/{{teams}} substitution, and optional
+// custom-instruction append that used to live inside
+// generateDailyResearchBlock itself, split out so that function can also
+// run a dailyBlockCustom block, whose task has none of that (the user's
+// own text already IS the whole task).
+func dailyResearchTaskFor(key, location, sportsTeams, customInstruction string) (string, error) {
 	task, ok := dailyResearchTasks[key]
 	if !ok {
-		return "", 0, fmt.Errorf("no research task defined for block %q", key)
+		return "", fmt.Errorf("no research task defined for block %q", key)
 	}
 	task = strings.ReplaceAll(task, "{{location}}", location)
 	task = strings.ReplaceAll(task, "{{teams}}", sportsTeams)
-	task = appendCustomInstruction(task, customInstruction)
+	return appendCustomInstruction(task, customInstruction), nil
+}
 
+// generateDailyResearchBlock runs one block through a narrow-toolset
+// agent.Run — no thread, no streaming, no history, mirror of
+// runWizardTurn's shape. task is the fully-built prompt text; see
+// dailyResearchTaskFor for the fixed-registry case and dailyBlockSpec.
+// CustomTask for the user-authored case.
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string) (string, float64, error) {
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
@@ -549,6 +570,21 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		enabled[k] = true
 	}
 
+	// blockSpecs is dailyBlockRegistry plus one dailyBlockCustom spec per
+	// user-authored block — see store.PulsarDailyConfig.CustomBlocks' doc
+	// comment for why a custom block has no separate enabled_blocks entry
+	// (existing in the list already means "run it"). Always Watch: true —
+	// a "general purpose" block behaves like the closest fixed analogue
+	// (Headlines/Trending/Tech & Science/Local), diffable and eligible
+	// for Top Story, not a fixed daily pick.
+	blockSpecs := make([]dailyBlockSpec, 0, len(dailyBlockRegistry)+len(cfgRow.CustomBlocks))
+	blockSpecs = append(blockSpecs, dailyBlockRegistry...)
+	for _, cb := range cfgRow.CustomBlocks {
+		blockSpecs = append(blockSpecs, dailyBlockSpec{
+			Key: cb.Key, Title: cb.Title, Kind: dailyBlockCustom, Watch: true, CustomTask: cb.Instructions,
+		})
+	}
+
 	// First-ever day (or a gap since the last real edition — see
 	// LatestDailyEdition's doc comment) has no "yesterday" to diff
 	// against: every Watch block's verdict defaults to "notable" rather
@@ -580,10 +616,13 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		costUSD  float64
 		chart    *tools.ChartSpec
 	}
-	results := make([]*stageAResult, len(dailyBlockRegistry))
+	results := make([]*stageAResult, len(blockSpecs))
 	var wg sync.WaitGroup
-	for i, spec := range dailyBlockRegistry {
-		if !enabled[spec.Key] {
+	for i, spec := range blockSpecs {
+		// A custom block's presence in the list already means "enabled" —
+		// only a fixed registry block is gated on the enabled_blocks
+		// checkbox list.
+		if spec.Kind != dailyBlockCustom && !enabled[spec.Key] {
 			continue
 		}
 		wg.Add(1)
@@ -751,7 +790,13 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	case dailyBlockPick:
 		content, cost, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom)
 	case dailyBlockResearch:
-		content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams, custom)
+		var task string
+		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)
+		if err == nil {
+			content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location)
+		}
+	case dailyBlockCustom:
+		content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask, location)
 	}
 
 	// traceErr carries a hard-failure's error text into the trace row

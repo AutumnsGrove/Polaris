@@ -21,9 +21,15 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	if len(c.CustomInstructions) != 0 {
 		t.Errorf("CustomInstructions should default to empty, got %+v", c.CustomInstructions)
 	}
+	if len(c.CustomBlocks) != 0 {
+		t.Errorf("CustomBlocks should default to empty, got %+v", c.CustomBlocks)
+	}
 
 	customInstructions := map[string]string{"headlines": "Focus on AI and climate policy"}
-	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", customInstructions, "deepseek-pro", "deepseek", "06:30"); err != nil {
+	customBlocks := []PulsarDailyCustomBlock{
+		{Key: "custom_abc123", Title: "Stock Watchlist", Instructions: "Check NVDA and AAPL closing prices"},
+	}
+	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", customInstructions, customBlocks, "deepseek-pro", "deepseek", "06:30"); err != nil {
 		t.Fatalf("UpdateDailyConfig: %v", err)
 	}
 	c, err = s.GetDailyConfig()
@@ -35,6 +41,9 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	}
 	if c.CustomInstructions["headlines"] != "Focus on AI and climate policy" {
 		t.Errorf("CustomInstructions = %+v, want the value just written", c.CustomInstructions)
+	}
+	if len(c.CustomBlocks) != 1 || c.CustomBlocks[0].Key != "custom_abc123" || c.CustomBlocks[0].Title != "Stock Watchlist" {
+		t.Errorf("CustomBlocks = %+v, want the one block just written", c.CustomBlocks)
 	}
 
 	if err := s.SetDailyLastGenerated("2026-09-05 07:00:00"); err != nil {

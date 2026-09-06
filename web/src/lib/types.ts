@@ -313,11 +313,24 @@ export interface PulsarDailyConfig {
 	// OR and also Portland, OR" for local) — see store.PulsarDailyConfig's
 	// doc comment for why this exists.
 	custom_instructions: Record<string, string>;
+	// custom_blocks: user-authored "general purpose" blocks with no fixed
+	// registry entry — see store.PulsarDailyConfig.CustomBlocks' doc
+	// comment. Presence in this list is what makes one enabled; there's
+	// no separate on/off toggle the way fixed blocks have via
+	// enabled_blocks.
+	custom_blocks: PulsarDailyCustomBlock[];
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;
 	created_at: string;
 	last_generated_at: string | null;
+}
+
+// PulsarDailyCustomBlock mirrors store.PulsarDailyCustomBlock.
+export interface PulsarDailyCustomBlock {
+	key: string;
+	title: string;
+	instructions: string;
 }
 
 // PulsarDailyBlock mirrors store.PulsarDailyBlock — one rendered card in

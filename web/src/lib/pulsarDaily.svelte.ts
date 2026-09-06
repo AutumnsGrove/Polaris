@@ -1,4 +1,4 @@
-import type { PulsarDailyConfig, PulsarDailyEdition } from './types';
+import type { PulsarDailyConfig, PulsarDailyCustomBlock, PulsarDailyEdition } from './types';
 
 // PulsarDailyConfigInput is the setup modal's request shape — full
 // overwrite, matching PulsarRoutineInput's convention in pulsar.svelte.ts.
@@ -6,6 +6,7 @@ export interface PulsarDailyConfigInput {
 	enabled_blocks: string[];
 	sports_teams: string;
 	custom_instructions: Record<string, string>;
+	custom_blocks: PulsarDailyCustomBlock[];
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;

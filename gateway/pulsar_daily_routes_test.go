@@ -147,6 +147,87 @@ func TestHandleUpdateDailyConfig_RejectsUnknownCustomInstructionBlock(t *testing
 	}
 }
 
+func TestHandleUpdateDailyConfig_CustomBlocksRoundTrip(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks": []string{"headlines"},
+		"custom_blocks": []map[string]string{
+			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": "Check NVDA and AAPL closing prices"},
+		},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var cfg store.PulsarDailyConfig
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(cfg.CustomBlocks) != 1 || cfg.CustomBlocks[0].Key != "custom_stocks" || cfg.CustomBlocks[0].Title != "Stock Watchlist" {
+		t.Errorf("CustomBlocks = %+v, want the one block just written", cfg.CustomBlocks)
+	}
+}
+
+func TestHandleUpdateDailyConfig_RejectsCustomBlockCollidingWithBuiltIn(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks": []string{"headlines"},
+		"custom_blocks": []map[string]string{
+			{"key": "weather", "title": "My Weather", "instructions": "whatever"},
+		},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a custom block key colliding with a built-in block", resp.StatusCode)
+	}
+}
+
+func TestHandleUpdateDailyConfig_RejectsIncompleteCustomBlock(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks": []string{"headlines"},
+		"custom_blocks": []map[string]string{
+			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": ""},
+		},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a custom block missing instructions", resp.StatusCode)
+	}
+}
+
+func TestHandleUpdateDailyConfig_RejectsDuplicateCustomBlockKeys(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks": []string{"headlines"},
+		"custom_blocks": []map[string]string{
+			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": "Check NVDA"},
+			{"key": "custom_stocks", "title": "Duplicate", "instructions": "Check AAPL"},
+		},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for two custom blocks sharing a key", resp.StatusCode)
+	}
+}
+
 func TestHandleUpdateDailyConfig_RejectsBadTimeOfDay(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

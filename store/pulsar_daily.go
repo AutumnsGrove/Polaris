@@ -25,11 +25,28 @@ type PulsarDailyConfig struct {
 	// why it exists. Absent keys/empty values mean "use the plain
 	// default framing" for that block.
 	CustomInstructions map[string]string `json:"custom_instructions"`
-	ArchitectModel     string            `json:"architect_model"`
-	WriterModel        string            `json:"writer_model"`
-	TimeOfDay          string            `json:"time_of_day"`
-	CreatedAt          time.Time         `json:"created_at"`
-	LastGeneratedAt    *time.Time        `json:"last_generated_at"`
+	// CustomBlocks are user-authored blocks with no fixed registry entry
+	// at all — see the schema comment on this column. Unlike the fixed
+	// registry, presence in this list *is* "enabled"; there's no separate
+	// on/off toggle to manage for a block the user typed themselves.
+	CustomBlocks    []PulsarDailyCustomBlock `json:"custom_blocks"`
+	ArchitectModel  string                   `json:"architect_model"`
+	WriterModel     string                   `json:"writer_model"`
+	TimeOfDay       string                   `json:"time_of_day"`
+	CreatedAt       time.Time                `json:"created_at"`
+	LastGeneratedAt *time.Time               `json:"last_generated_at"`
+}
+
+// PulsarDailyCustomBlock is one user-defined "general purpose" block —
+// Key is generated once (client-side, at creation) and never changes even
+// if Title is edited later, since it's what ties a day's generated
+// content back to the block across edits (yesterday's diff-judge lookup,
+// pulsar_daily_trace rows) — a renamed block should still be recognized
+// as "the same block" for those purposes, not treated as brand new.
+type PulsarDailyCustomBlock struct {
+	Key          string `json:"key"`
+	Title        string `json:"title"`
+	Instructions string `json:"instructions"`
 }
 
 // GetDailyConfig returns the singleton config row, inserting the
@@ -41,11 +58,11 @@ func (s *Store) GetDailyConfig() (*PulsarDailyConfig, error) {
 		return nil, fmt.Errorf("get daily config: %w", err)
 	}
 	var c PulsarDailyConfig
-	var enabledBlocksJSON, customInstructionsJSON string
+	var enabledBlocksJSON, customInstructionsJSON, customBlocksJSON string
 	err := s.db.QueryRow(
-		`SELECT enabled_blocks, sports_teams, custom_instructions, architect_model, writer_model, time_of_day, created_at, last_generated_at
+		`SELECT enabled_blocks, sports_teams, custom_instructions, custom_blocks, architect_model, writer_model, time_of_day, created_at, last_generated_at
 		 FROM pulsar_daily_config WHERE id = 1`,
-	).Scan(&enabledBlocksJSON, &c.SportsTeams, &customInstructionsJSON, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.CreatedAt, &c.LastGeneratedAt)
+	).Scan(&enabledBlocksJSON, &c.SportsTeams, &customInstructionsJSON, &customBlocksJSON, &c.ArchitectModel, &c.WriterModel, &c.TimeOfDay, &c.CreatedAt, &c.LastGeneratedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get daily config: %w", err)
 	}
@@ -55,12 +72,15 @@ func (s *Store) GetDailyConfig() (*PulsarDailyConfig, error) {
 	if err := json.Unmarshal([]byte(customInstructionsJSON), &c.CustomInstructions); err != nil {
 		return nil, fmt.Errorf("get daily config: decode custom_instructions: %w", err)
 	}
+	if err := json.Unmarshal([]byte(customBlocksJSON), &c.CustomBlocks); err != nil {
+		return nil, fmt.Errorf("get daily config: decode custom_blocks: %w", err)
+	}
 	return &c, nil
 }
 
 // UpdateDailyConfig overwrites the singleton config's editable fields —
 // does not touch last_generated_at, which only the scheduler writes.
-func (s *Store) UpdateDailyConfig(enabledBlocks []string, sportsTeams string, customInstructions map[string]string, architectModel, writerModel, timeOfDay string) error {
+func (s *Store) UpdateDailyConfig(enabledBlocks []string, sportsTeams string, customInstructions map[string]string, customBlocks []PulsarDailyCustomBlock, architectModel, writerModel, timeOfDay string) error {
 	enabledBlocksJSON, err := json.Marshal(enabledBlocks)
 	if err != nil {
 		return fmt.Errorf("update daily config: encode enabled_blocks: %w", err)
@@ -72,17 +92,25 @@ func (s *Store) UpdateDailyConfig(enabledBlocks []string, sportsTeams string, cu
 	if err != nil {
 		return fmt.Errorf("update daily config: encode custom_instructions: %w", err)
 	}
+	if customBlocks == nil {
+		customBlocks = []PulsarDailyCustomBlock{}
+	}
+	customBlocksJSON, err := json.Marshal(customBlocks)
+	if err != nil {
+		return fmt.Errorf("update daily config: encode custom_blocks: %w", err)
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO pulsar_daily_config (id, enabled_blocks, sports_teams, custom_instructions, architect_model, writer_model, time_of_day)
-		 VALUES (1, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO pulsar_daily_config (id, enabled_blocks, sports_teams, custom_instructions, custom_blocks, architect_model, writer_model, time_of_day)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			enabled_blocks = excluded.enabled_blocks,
 			sports_teams = excluded.sports_teams,
 			custom_instructions = excluded.custom_instructions,
+			custom_blocks = excluded.custom_blocks,
 			architect_model = excluded.architect_model,
 			writer_model = excluded.writer_model,
 			time_of_day = excluded.time_of_day`,
-		string(enabledBlocksJSON), sportsTeams, string(customInstructionsJSON), architectModel, writerModel, timeOfDay,
+		string(enabledBlocksJSON), sportsTeams, string(customInstructionsJSON), string(customBlocksJSON), architectModel, writerModel, timeOfDay,
 	)
 	if err != nil {
 		return fmt.Errorf("update daily config: %w", err)

@@ -428,6 +428,18 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- exist. Unlike sports_teams, every entry here is optional — an
 	-- absent/empty key just means "use the plain default framing".
 	custom_instructions TEXT NOT NULL DEFAULT '{}',
+	-- custom_blocks: JSON array of user-authored "general purpose" blocks
+	-- with no fixed registry entry at all — {key, title, instructions}.
+	-- Unlike enabled_blocks/custom_instructions above (which only ever
+	-- reference the fixed dailyBlockRegistry), presence in this list *is*
+	-- enabled — there's no separate on/off toggle for a block the user
+	-- typed themselves. Added after a real session asked for exactly
+	-- this: a way to add something outside dailyBlockRegistry's fixed set
+	-- without a code change. key is generated once client-side at
+	-- creation and never changes even if title is edited later, so
+	-- renaming a block doesn't look like a brand new one to yesterday's
+	-- diff-judge lookup or pulsar_daily_trace.
+	custom_blocks TEXT NOT NULL DEFAULT '[]',
 	-- architect_model/writer_model: registry IDs (models/models.go), not
 	-- raw OpenRouter model strings — same convention pulsar_routines.model
 	-- uses. See the plan doc's "Model tiering" for why these are split:
@@ -571,6 +583,7 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
 	`ALTER TABLE pulsar_daily_editions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_blocks TEXT NOT NULL DEFAULT '[]'`,
 }
 
 func Open(path string) (*Store, error) {

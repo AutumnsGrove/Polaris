@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState, type PulsarDailyConfigInput } from '$lib/pulsarDaily.svelte';
-	import { X, Sparkles } from '@lucide/svelte';
+	import { X, Sparkles, Plus, Trash2 } from '@lucide/svelte';
+	import type { PulsarDailyCustomBlock } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
 	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
@@ -51,6 +52,27 @@
 	// customInstructions: keyed by block key, one entry per customizable
 	// block above — pre-filled from any values already saved.
 	let customInstructions = $state<Record<string, string>>({ ...(cfg?.custom_instructions ?? {}) });
+	// customBlocks: user-authored "general purpose" blocks — see
+	// store.PulsarDailyConfig.CustomBlocks' doc comment. A fresh copy of
+	// each object (not the same references as cfg.custom_blocks) so
+	// editing here doesn't mutate pulsarDailyState.config until Save.
+	let customBlocks = $state<PulsarDailyCustomBlock[]>((cfg?.custom_blocks ?? []).map((b) => ({ ...b })));
+
+	function addCustomBlock() {
+		customBlocks.push({
+			// crypto.randomUUID() (not a slug of the title) so renaming a
+			// block later doesn't change its identity — see the store
+			// type's doc comment on why the key has to stay stable.
+			key: `custom_${crypto.randomUUID().slice(0, 8)}`,
+			title: '',
+			instructions: ''
+		});
+	}
+
+	function removeCustomBlock(key: string) {
+		customBlocks = customBlocks.filter((b) => b.key !== key);
+	}
+
 	let architectModel = $state(cfg?.architect_model ?? 'deepseek-pro');
 	let writerModel = $state(cfg?.writer_model ?? 'deepseek');
 	let timeOfDay = $state(cfg?.time_of_day ?? '07:00');
@@ -105,10 +127,19 @@
 			if (trimmed) trimmedInstructions[key] = trimmed;
 		}
 
+		// A half-filled row (title typed, instructions not, or vice versa)
+		// is silently dropped rather than rejected with a validation error
+		// — less surprising than blocking Save over a block someone hasn't
+		// finished writing yet or decided against.
+		const validCustomBlocks = customBlocks
+			.map((b) => ({ key: b.key, title: b.title.trim(), instructions: b.instructions.trim() }))
+			.filter((b) => b.title && b.instructions);
+
 		const input: PulsarDailyConfigInput = {
 			enabled_blocks: [...enabledBlocks],
 			sports_teams: sportsTeams.trim(),
 			custom_instructions: trimmedInstructions,
+			custom_blocks: validCustomBlocks,
 			architect_model: architectModel,
 			writer_model: writerModel,
 			time_of_day: timeOfDay
@@ -192,6 +223,52 @@
 					{/if}
 				{/each}
 			</div>
+
+			<div class="section-header-row">
+				<h3>Custom blocks</h3>
+				<button type="button" class="wizard-btn" onclick={addCustomBlock}>
+					<Plus size={12} />
+					New general purpose block
+				</button>
+			</div>
+			{#if customBlocks.length === 0}
+				<p class="hint">
+					Anything outside the built-in set — a stock watchlist, a specific hobby, a running project
+					you want tracked. Runs with the same research tools as Headlines or Local.
+				</p>
+			{:else}
+				<div class="block-list">
+					{#each customBlocks as block (block.key)}
+						<div class="field block-subfield custom-block-row">
+							<div class="field-label-row">
+								<input
+									type="text"
+									class="custom-block-title"
+									value={block.title}
+									oninput={(e) => (block.title = e.currentTarget.value)}
+									placeholder="Title, e.g. Stock Watchlist"
+								/>
+								<button
+									type="button"
+									class="icon-btn"
+									onclick={() => removeCustomBlock(block.key)}
+									title="Remove"
+									aria-label="Remove {block.title || 'this custom block'}"
+								>
+									<Trash2 size={14} />
+								</button>
+							</div>
+							<textarea
+								rows="1"
+								value={block.instructions}
+								oninput={(e) => (block.instructions = e.currentTarget.value)}
+								placeholder="What should this check every day? e.g. Look up today's closing prices for NVDA and AAPL and report them."
+								use:autoResize={{ value: block.instructions, maxHeight: customFieldMaxHeight }}
+							></textarea>
+						</div>
+					{/each}
+				</div>
+			{/if}
 
 			<h3>Models</h3>
 			<div class="row">
@@ -277,6 +354,39 @@
 
 	.block-subfield {
 		margin: 0 0 var(--space-sm) var(--space-xl);
+	}
+
+	.section-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+	}
+	.section-header-row h3 {
+		margin: var(--space-lg) 0 var(--space-md);
+	}
+
+	/* Not indented under a checkbox like a fixed block's own subfield —
+	   there's no checkbox here, the block's existence in the list already
+	   means it's enabled (see store.PulsarDailyConfig.CustomBlocks' doc
+	   comment). */
+	.custom-block-row {
+		margin: 0 0 var(--space-sm) 0;
+	}
+
+	.custom-block-title {
+		flex: 1;
+		border: none;
+		background: transparent;
+		font: inherit;
+		font-size: 13.5px;
+		font-weight: 600;
+		color: var(--color-text);
+		padding: var(--space-xs) 0;
+	}
+	.custom-block-title::placeholder {
+		font-weight: 400;
+		color: var(--color-text-dim);
 	}
 
 	.field label {

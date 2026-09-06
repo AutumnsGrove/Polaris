@@ -180,6 +180,77 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 	}
 }
 
+// TestRunDailyPipeline_CustomBlock exercises a user-authored "general
+// purpose" block (store.PulsarDailyConfig.CustomBlocks) end to end —
+// same dailyBlockResearch execution path as a fixed registry block
+// (agent.Run against the research toolset), just with no fixed key to
+// look a task template up by: the entire task comes verbatim from the
+// block's own Instructions field. First-ever day, so it defaults to
+// "notable" and is the only Watch candidate — guaranteed to be elected
+// Top Story.
+func TestRunDailyPipeline_CustomBlock(t *testing.T) {
+	bodies := []string{
+		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."), // Stage A: quote (pick)
+		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (pick)
+		plainSSEBody("Otiose — serving no practical purpose. From Latin otium, \"leisure\"."),               // Stage A: word_of_day (pick)
+		plainSSEBody("NVDA closed at $142.50, up 2%. AAPL closed at $228.10, roughly flat on the day."),     // Stage A: custom block (research)
+		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"custom_stocks\",\"reasoning\":\"Only notable candidate today\"}"}}`), // Stage B
+		plainSSEBody("Deeper dive on today's close: NVDA and AAPL both traded within their recent range."),  // Stage C
+	}
+	srv := sequencedSSEServer(t, bodies)
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":  []string{"quote", "on_this_day", "word_of_day"},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+		"custom_blocks": []map[string]string{
+			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": "Check today's closing prices for NVDA and AAPL and report them."},
+		},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT daily config status = %d, want 200", resp.StatusCode)
+	}
+
+	h.srvObj.runDailyPipeline(context.Background())
+
+	today := time.Now().Format("2006-01-02")
+	edition, err := h.db.GetDailyEdition(today)
+	if err != nil {
+		t.Fatalf("GetDailyEdition: %v", err)
+	}
+	if len(edition.Blocks) != 4 {
+		t.Fatalf("got %d blocks, want 4 (quote, on_this_day, word_of_day, custom_stocks)", len(edition.Blocks))
+	}
+	if !edition.Blocks[0].IsTopStory || edition.Blocks[0].Key != "custom_stocks" {
+		t.Errorf("edition.Blocks[0] = %+v, want custom_stocks elected Top Story (the only Watch candidate)", edition.Blocks[0])
+	}
+	if edition.Blocks[0].Title != "Stock Watchlist" {
+		t.Errorf("edition.Blocks[0].Title = %q, want the user-authored title carried through", edition.Blocks[0].Title)
+	}
+
+	trace, err := h.db.GetDailyTrace(today)
+	if err != nil {
+		t.Fatalf("GetDailyTrace: %v", err)
+	}
+	found := false
+	for _, tr := range trace {
+		if tr.BlockKey == "custom_stocks" {
+			found = true
+			if tr.StageAContent == "" {
+				t.Error("custom block trace.StageAContent is empty, want the generated content recorded")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("GetDailyTrace = %+v, want a row for the custom block", trace)
+	}
+}
+
 // TestHandleGenerateDailyNow drives the manual "Generate now" trigger
 // through the real HTTP handler, not runDailyPipeline directly — the
 // previous only way to force a real run for testing was the time_of_day
