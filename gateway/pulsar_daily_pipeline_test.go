@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"polaris/store"
 )
 
 // TestRunDailyPipeline_FullFirstDayRun exercises Stage A through D in one
@@ -32,7 +34,7 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (pick)
 		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),          // Stage A: headlines (research)
 		plainSSEBody("A new open-weight model release was the big tech story today."),                      // Stage A: tech_science (research)
-		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"tech_science\"}"}}`), // Stage B
+		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"tech_science\",\"reasoning\":\"The open-weight release is a bigger development than a quiet headlines day\"}"}}`), // Stage B
 		plainSSEBody("Deeper dive: the open-weight release includes benchmarks showing strong reasoning gains, plus a pulled quote from the release notes."), // Stage C
 	}
 	srv := sequencedSSEServer(t, bodies)
@@ -92,6 +94,38 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	if cfgRow.LastGeneratedAt == nil {
 		t.Error("LastGeneratedAt not recorded after a real pipeline run")
 	}
+
+	// The trace table is what makes "why did this happen" answerable
+	// after the fact — see pulsar_daily_trace's schema comment. Every
+	// enabled block should have a row, the elected Top Story's should
+	// carry Stage B's reasoning and Stage C's elaborated content, and a
+	// plain included block should be marked included without being
+	// mistaken for the Top Story.
+	trace, err := h.db.GetDailyTrace(today)
+	if err != nil {
+		t.Fatalf("GetDailyTrace: %v", err)
+	}
+	if len(trace) != 4 {
+		t.Fatalf("GetDailyTrace = %d rows, want 4 (one per enabled block)", len(trace))
+	}
+	traceByKey := map[string]store.PulsarDailyBlockTrace{}
+	for _, tr := range trace {
+		traceByKey[tr.BlockKey] = tr
+	}
+	topStoryTrace, ok := traceByKey["tech_science"]
+	if !ok || !topStoryTrace.IsTopStory || !topStoryTrace.Included {
+		t.Errorf("tech_science trace = %+v, want IsTopStory and Included both true", topStoryTrace)
+	}
+	if topStoryTrace.StageCContent == "" || topStoryTrace.StageCContent == topStoryTrace.StageAContent {
+		t.Errorf("tech_science trace.StageCContent = %q, want the Stage C elaborated version recorded, not empty or identical to Stage A", topStoryTrace.StageCContent)
+	}
+	if topStoryTrace.TopStoryReasoning == "" {
+		t.Error("tech_science trace.TopStoryReasoning is empty, want Stage B's stated reasoning recorded")
+	}
+	quoteTrace, ok := traceByKey["quote"]
+	if !ok || quoteTrace.IsTopStory || !quoteTrace.Included {
+		t.Errorf("quote trace = %+v, want Included true and IsTopStory false", quoteTrace)
+	}
 }
 
 // TestRunDailyPipeline_BelowFloorShowsDegradedNotice covers Stage D's
@@ -122,6 +156,26 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 	}
 	if len(edition.Blocks) != 1 || edition.Blocks[0].Key != "notice" {
 		t.Errorf("edition.Blocks = %+v, want the single degraded-notice block below dailyMinBlockCount", edition.Blocks)
+	}
+
+	// Every block that failed should still leave a real trace row with
+	// its actual error recorded — this is exactly the case that used to
+	// be unanswerable after the fact (a degraded edition with no way to
+	// know which blocks tried and failed vs. were never enabled at all).
+	trace, err := h.db.GetDailyTrace(today)
+	if err != nil {
+		t.Fatalf("GetDailyTrace: %v", err)
+	}
+	if len(trace) != 2 {
+		t.Fatalf("GetDailyTrace = %d rows, want 2 (one per enabled block, even though both failed)", len(trace))
+	}
+	for _, tr := range trace {
+		if tr.Error == "" {
+			t.Errorf("trace for %q has no Error recorded, want the connection-refused failure captured", tr.BlockKey)
+		}
+		if tr.Included {
+			t.Errorf("trace for %q has Included=true, want false — it never made the degraded edition", tr.BlockKey)
+		}
 	}
 }
 

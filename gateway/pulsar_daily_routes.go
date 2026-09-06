@@ -171,6 +171,25 @@ func (s *Server) handleGetNextDailyEdition(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, edition)
 }
 
+// handleGetDailyTrace exposes every block's full recorded stage-by-stage
+// output for one date — see pulsar_daily_trace's schema comment for why
+// this exists (an edition alone only shows what survived; a real session
+// asking "why did today's edition look thin" had no way to answer that
+// beyond an ephemeral log line, since dropped/failed blocks' content and
+// the model's own verdict/ranking reasoning were never recorded anywhere).
+// Unlike editions, an empty result isn't a 404 — no trace yet for a valid
+// date (nothing's run there) is a normal, expected state, not an error.
+func (s *Server) handleGetDailyTrace(w http.ResponseWriter, r *http.Request) {
+	date := r.PathValue("date")
+	trace, err := s.db.GetDailyTrace(date)
+	if err != nil {
+		log.Warn("getting pulsar daily trace failed", "date", date, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, trace)
+}
+
 // dailyFollowupFamily picks which of the plan doc's three expand-to-chat
 // prompt families applies to a block — see "Expand-to-chat prompt
 // templates" for why these three (not one bespoke template per block)

@@ -264,6 +264,52 @@ func TestHandleGetNextDailyEdition(t *testing.T) {
 	}
 }
 
+func TestHandleGetDailyTrace(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	if err := h.db.UpsertDailyBlockTrace(store.PulsarDailyBlockTrace{
+		EditionDate:   "2026-09-06",
+		BlockKey:      "weather",
+		Title:         "Weather",
+		StageAContent: "Now: 68F, clear",
+		CostUSD:       0,
+	}); err != nil {
+		t.Fatalf("seeding trace: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/pulsar/daily/editions/2026-09-06/trace"))
+	if err != nil {
+		t.Fatalf("GET trace: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var trace []store.PulsarDailyBlockTrace
+	if err := json.NewDecoder(resp.Body).Decode(&trace); err != nil {
+		t.Fatalf("decoding trace response: %v", err)
+	}
+	if len(trace) != 1 || trace[0].BlockKey != "weather" || trace[0].StageAContent != "Now: 68F, clear" {
+		t.Errorf("trace = %+v, want the one seeded row", trace)
+	}
+
+	// A date with no trace yet is a normal empty result, not a 404 — see
+	// handleGetDailyTrace's doc comment.
+	resp2, err := http.Get(h.url("/api/pulsar/daily/editions/2020-01-01/trace"))
+	if err != nil {
+		t.Fatalf("GET trace for untouched date: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (empty result, not a 404) for a date nothing has run for", resp2.StatusCode)
+	}
+	var empty []store.PulsarDailyBlockTrace
+	json.NewDecoder(resp2.Body).Decode(&empty)
+	if len(empty) != 0 {
+		t.Errorf("trace for untouched date = %+v, want empty", empty)
+	}
+}
+
 func TestHandleExpandDailyBlock_UnknownDateReturns404(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

@@ -224,3 +224,109 @@ func (s *Store) NextDailyEdition(afterDate string) (*PulsarDailyEdition, error) 
 	}
 	return &e, nil
 }
+
+// PulsarDailyBlockTrace is one block's full recorded lifecycle for one
+// edition date — see the schema comment on pulsar_daily_trace for why
+// this exists (nothing about a stage's output or reasoning survived
+// before this, only whatever made it into the final edition).
+type PulsarDailyBlockTrace struct {
+	EditionDate       string    `json:"edition_date"`
+	BlockKey          string    `json:"block_key"`
+	Title             string    `json:"title"`
+	StageAContent     string    `json:"stage_a_content"`
+	Verdict           string    `json:"verdict"`
+	Gist              string    `json:"gist"`
+	DiffReasoning     string    `json:"diff_reasoning"`
+	Included          bool      `json:"included"`
+	IsTopStory        bool      `json:"is_top_story"`
+	TopStoryReasoning string    `json:"top_story_reasoning"`
+	StageCContent     string    `json:"stage_c_content"`
+	Error             string    `json:"error"`
+	CostUSD           float64   `json:"cost_usd"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// UpsertDailyBlockTrace records Stage A's (and, for a Watch block, the
+// diff-judge's) output for one block — called once per enabled block per
+// run, regardless of outcome, so a dropped ("unchanged") or hard-failed
+// block still leaves a real record instead of vanishing with only a
+// transient log line. Overwrites on a same-day rerun, same
+// edition_date-is-the-natural-key reasoning as UpsertDailyEdition.
+func (s *Store) UpsertDailyBlockTrace(t PulsarDailyBlockTrace) error {
+	_, err := s.db.Exec(
+		`INSERT INTO pulsar_daily_trace
+		 (edition_date, block_key, title, stage_a_content, verdict, gist, diff_reasoning, error, cost_usd)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(edition_date, block_key) DO UPDATE SET
+		   title = excluded.title,
+		   stage_a_content = excluded.stage_a_content,
+		   verdict = excluded.verdict,
+		   gist = excluded.gist,
+		   diff_reasoning = excluded.diff_reasoning,
+		   error = excluded.error,
+		   cost_usd = excluded.cost_usd,
+		   -- A same-day rerun's fresh Stage A pass invalidates whatever
+		   -- Stage D previously decided about this block — reset rather
+		   -- than leave a stale included/top-story outcome from the prior
+		   -- run sitting next to this run's new content until Stage D
+		   -- gets around to deciding again.
+		   included = 0,
+		   is_top_story = 0,
+		   top_story_reasoning = '',
+		   stage_c_content = ''`,
+		t.EditionDate, t.BlockKey, t.Title, t.StageAContent, t.Verdict, t.Gist, t.DiffReasoning, t.Error, t.CostUSD,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert daily block trace: %w", err)
+	}
+	return nil
+}
+
+// UpdateDailyBlockTraceOutcome fills in what Stage D alone knows: whether
+// a block actually made the final edition, whether it was elected Top
+// Story, why (Stage B's reasoning), and the elaborated content if so.
+// Called after UpsertDailyBlockTrace has already created the row for this
+// block this run.
+func (s *Store) UpdateDailyBlockTraceOutcome(editionDate, blockKey string, included, isTopStory bool, topStoryReasoning, stageCContent string, elabCost float64) error {
+	_, err := s.db.Exec(
+		`UPDATE pulsar_daily_trace SET
+		   included = ?, is_top_story = ?, top_story_reasoning = ?, stage_c_content = ?, cost_usd = cost_usd + ?
+		 WHERE edition_date = ? AND block_key = ?`,
+		included, isTopStory, topStoryReasoning, stageCContent, elabCost, editionDate, blockKey,
+	)
+	if err != nil {
+		return fmt.Errorf("update daily block trace outcome: %w", err)
+	}
+	return nil
+}
+
+// GetDailyTrace returns every block's recorded trace for one edition
+// date, ordered by block_key for a stable, readable listing — the
+// after-the-fact answer to "what did each stage actually think" that
+// GetDailyEdition alone can't give (it only has whatever survived).
+func (s *Store) GetDailyTrace(editionDate string) ([]PulsarDailyBlockTrace, error) {
+	rows, err := s.db.Query(
+		`SELECT edition_date, block_key, title, stage_a_content, verdict, gist, diff_reasoning,
+		        included, is_top_story, top_story_reasoning, stage_c_content, error, cost_usd, created_at
+		 FROM pulsar_daily_trace WHERE edition_date = ? ORDER BY block_key`, editionDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get daily trace: %w", err)
+	}
+	defer rows.Close()
+
+	out := []PulsarDailyBlockTrace{}
+	for rows.Next() {
+		var t PulsarDailyBlockTrace
+		if err := rows.Scan(&t.EditionDate, &t.BlockKey, &t.Title, &t.StageAContent, &t.Verdict, &t.Gist,
+			&t.DiffReasoning, &t.Included, &t.IsTopStory, &t.TopStoryReasoning, &t.StageCContent, &t.Error,
+			&t.CostUSD, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("get daily trace: scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get daily trace: %w", err)
+	}
+	return out, nil
+}

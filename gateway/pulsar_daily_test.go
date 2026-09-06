@@ -23,7 +23,7 @@ func toolCallResponse(name, argsJSON string) *llm.ChatResponse {
 
 func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("record_verdict", `{"verdict":"notable","gist":"A big new development"}`)},
+		{Resp: toolCallResponse("record_verdict", `{"verdict":"notable","gist":"A big new development","reasoning":"A new fact appeared that wasn't in yesterday's version"}`)},
 	}}
 
 	v, _, err := dailyDiffJudge(context.Background(), mock, "Tech & Science", "yesterday's content", "today's content")
@@ -32,6 +32,9 @@ func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
 	}
 	if v.Verdict != "notable" || v.Gist != "A big new development" {
 		t.Errorf("dailyDiffJudge = %+v, want the parsed tool-call arguments", v)
+	}
+	if v.Reasoning == "" {
+		t.Error("dailyDiffJudge reasoning = \"\", want the model's stated reasoning captured for the trace")
 	}
 }
 
@@ -69,19 +72,22 @@ func TestDailyDiffJudge_UnrecognizedVerdictFallsBackToNormal(t *testing.T) {
 
 func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"tech_science"}`)},
+		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"tech_science","reasoning":"Bigger and more consequential than a quiet news day"}`)},
 	}}
 
 	candidates := []dailyRankCandidate{
 		{Key: "headlines", Title: "Top Headlines", Gist: "A quiet news day"},
 		{Key: "tech_science", Title: "Tech & Science", Gist: "A major datacenter buildout announced"},
 	}
-	key, _, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, reasoning, _, err := dailyElectTopStory(context.Background(), mock, candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}
 	if key != "tech_science" {
 		t.Errorf("dailyElectTopStory = %q, want %q", key, "tech_science")
+	}
+	if reasoning == "" {
+		t.Error("dailyElectTopStory reasoning = \"\", want the model's stated reasoning captured for the trace")
 	}
 }
 
@@ -99,7 +105,7 @@ func TestDailyElectTopStory_UnknownKeyFallsBackToFirstCandidate(t *testing.T) {
 		{Key: "headlines", Title: "Top Headlines", Gist: "gist a"},
 		{Key: "trending", Title: "Trending Now", Gist: "gist b"},
 	}
-	key, _, err := dailyElectTopStory(context.Background(), mock, candidates)
+	key, _, _, err := dailyElectTopStory(context.Background(), mock, candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}

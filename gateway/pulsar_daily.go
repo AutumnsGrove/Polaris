@@ -338,15 +338,22 @@ var dailyVerdictToolDef = llm.ToolDef{
 					"description": "One short sentence summarizing today's content — used only to compare " +
 						"this block against others when electing a Top Story, never shown verbatim.",
 				},
+				"reasoning": map[string]interface{}{
+					"type": "string",
+					"description": "One short sentence explaining *why* you picked this verdict — e.g. what " +
+						"specifically changed, or what specifically didn't. Recorded for later review, never " +
+						"shown to the end user.",
+				},
 			},
-			"required": []string{"verdict", "gist"},
+			"required": []string{"verdict", "gist", "reasoning"},
 		},
 	},
 }
 
 type dailyVerdict struct {
-	Verdict string
-	Gist    string
+	Verdict   string
+	Gist      string
+	Reasoning string
 }
 
 // dailyDiffJudge hands the architect model yesterday's and today's full
@@ -380,8 +387,9 @@ func parseDailyVerdict(resp *llm.ChatResponse) (dailyVerdict, error) {
 		return dailyVerdict{Verdict: "normal", Gist: strings.TrimSpace(resp.Content)}, nil
 	}
 	var args struct {
-		Verdict string `json:"verdict"`
-		Gist    string `json:"gist"`
+		Verdict   string `json:"verdict"`
+		Gist      string `json:"gist"`
+		Reasoning string `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
 		return dailyVerdict{}, err
@@ -389,7 +397,7 @@ func parseDailyVerdict(resp *llm.ChatResponse) (dailyVerdict, error) {
 	if args.Verdict != "unchanged" && args.Verdict != "notable" && args.Verdict != "normal" {
 		args.Verdict = "normal"
 	}
-	return dailyVerdict{Verdict: args.Verdict, Gist: strings.TrimSpace(args.Gist)}, nil
+	return dailyVerdict{Verdict: args.Verdict, Gist: strings.TrimSpace(args.Gist), Reasoning: strings.TrimSpace(args.Reasoning)}, nil
 }
 
 type dailyRankCandidate struct {
@@ -405,7 +413,7 @@ type dailyRankCandidate struct {
 // Only ever called with at least one candidate (see runDailyPipeline);
 // falls back to the first candidate if the model names a key outside the
 // given list, rather than electing nothing.
-func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidates []dailyRankCandidate) (string, float64, error) {
+func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidates []dailyRankCandidate) (string, string, float64, error) {
 	var b strings.Builder
 	for _, c := range candidates {
 		fmt.Fprintf(&b, "- %s (%s): %s\n", c.Key, c.Title, c.Gist)
@@ -422,8 +430,13 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 						"description": "The key of whichever candidate is today's single biggest/most " +
 							"significant story — must be exactly one of the keys listed.",
 					},
+					"reasoning": map[string]interface{}{
+						"type": "string",
+						"description": "One short sentence explaining why this candidate beat the others. " +
+							"Recorded for later review, never shown to the end user.",
+					},
 				},
-				"required": []string{"winner_key"},
+				"required": []string{"winner_key", "reasoning"},
 			},
 		},
 	}
@@ -436,23 +449,24 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 	}
 	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{toolDef}, func(string) {}, nil)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 	if len(resp.ToolCalls) == 0 {
-		return candidates[0].Key, resp.CostUSD, nil
+		return candidates[0].Key, "", resp.CostUSD, nil
 	}
 	var args struct {
 		WinnerKey string `json:"winner_key"`
+		Reasoning string `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
-		return candidates[0].Key, resp.CostUSD, nil
+		return candidates[0].Key, "", resp.CostUSD, nil
 	}
 	for _, c := range candidates {
 		if c.Key == args.WinnerKey {
-			return args.WinnerKey, resp.CostUSD, nil
+			return args.WinnerKey, strings.TrimSpace(args.Reasoning), resp.CostUSD, nil
 		}
 	}
-	return candidates[0].Key, resp.CostUSD, nil
+	return candidates[0].Key, "", resp.CostUSD, nil
 }
 
 // isDailyDue mirrors isRoutineDue but for the Daily singleton, which only
@@ -580,7 +594,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 					log.Error("panic generating pulsar daily block", "block", spec.Key, "panic", rec)
 				}
 			}()
-			r := s.generateOneDailyBlock(reqCtx, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
+			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
 				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart}
 			}
@@ -611,13 +625,15 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		}
 	}
 	topStoryKey := ""
+	topStoryReasoning := ""
 	if len(candidates) > 0 {
-		key, rankCost, err := dailyElectTopStory(reqCtx, architectClient, candidates)
+		key, reasoning, rankCost, err := dailyElectTopStory(reqCtx, architectClient, candidates)
 		totalCost += rankCost
 		if err != nil {
 			log.Warn("pulsar daily: stage B ranking failed, no top story today", "err", err)
 		} else {
 			topStoryKey = key
+			topStoryReasoning = reasoning
 		}
 	}
 
@@ -638,6 +654,9 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 				content = elaborated
 			}
 			topStory = &store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: content, Gist: r.gist, IsTopStory: true}
+			if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, true, topStoryReasoning, content, elabCost); err != nil {
+				log.Warn("pulsar daily: recording top story trace outcome failed", "block", r.spec.Key, "err", err)
+			}
 			continue
 		}
 		var chartJSON json.RawMessage
@@ -649,6 +668,9 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			}
 		}
 		blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL, Chart: chartJSON})
+		if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, false, "", "", 0); err != nil {
+			log.Warn("pulsar daily: recording block trace outcome failed", "block", r.spec.Key, "err", err)
+		}
 	}
 
 	// Stage D — assemble (Top Story first, if any) and persist.
@@ -679,6 +701,9 @@ type dailyGeneratedBlock struct {
 	gist     string
 	verdict  string
 	imageURL string
+	// diffReasoning is the diff-judge's own explanation for its verdict —
+	// recorded to pulsar_daily_trace, never shown to the end user.
+	diffReasoning string
 	// chart carries weather's structured forecast (setWeatherChart) through
 	// to the frontend so the Daily card can render the same rich strip a
 	// normal chat turn's weather tool gets, instead of the plain-prose
@@ -699,7 +724,7 @@ type dailyGeneratedBlock struct {
 // verdict (see the plan doc: "unchanged verdicts and hard generation
 // failures both drop out here — same bucket, since both mean 'nothing
 // to show'").
-func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
+func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
 	var content string
 	var imageURL string
 	var cost float64
@@ -729,16 +754,46 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 		content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.Key, location, sportsTeams, custom)
 	}
 
+	// traceErr carries a hard-failure's error text into the trace row
+	// below even when this function returns nil — previously that detail
+	// only ever existed in the log.Warn line a few lines down, gone the
+	// moment the log rotated. writeTrace is called from every return
+	// point in this function so a dropped/failed block still leaves a
+	// real, queryable record (see pulsar_daily_trace's schema comment).
+	writeTrace := func(g *dailyGeneratedBlock, traceErr string) {
+		t := store.PulsarDailyBlockTrace{
+			EditionDate:   today,
+			BlockKey:      spec.Key,
+			Title:         spec.Title,
+			StageAContent: content,
+			Error:         traceErr,
+			CostUSD:       cost,
+		}
+		if g != nil {
+			t.Verdict = g.verdict
+			t.Gist = g.gist
+			t.DiffReasoning = g.diffReasoning
+			t.CostUSD = g.costUSD
+		}
+		if err := s.db.UpsertDailyBlockTrace(t); err != nil {
+			log.Warn("pulsar daily: recording block trace failed", "block", spec.Key, "err", err)
+		}
+	}
+
 	if err != nil {
 		log.Warn("pulsar daily: block generation failed", "block", spec.Key, "err", err)
+		writeTrace(nil, err.Error())
 		return nil
 	}
 	if spec.Key == "sports" && strings.TrimSpace(content) == dailySportsNoGamesMarker {
-		return nil // legitimate empty state, not a failure — see spec's Watch doc comment.
+		writeTrace(nil, "") // legitimate empty state, not a failure — see spec's Watch doc comment.
+		return nil
 	}
 
 	if !spec.Watch {
-		return &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost, chart: chart}
+		g := &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost, chart: chart}
+		writeTrace(g, "")
+		return g
 	}
 
 	yesterdayBlock, ok := yesterdayByKey[spec.Key]
@@ -746,13 +801,25 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 		// No prior content to diff against — treat as notable rather
 		// than skipping the diff-judge call silently, per the plan
 		// doc's "First-ever day" note.
-		return &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost}
+		writeTrace(g, "")
+		return g
 	}
 
 	verdict, verdictCost, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
 	if err != nil {
 		log.Warn("pulsar daily: diff-judge failed, treating block as normal", "block", spec.Key, "err", err)
-		return &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost}
+		writeTrace(g, "")
+		return g
 	}
-	return &dailyGeneratedBlock{content: content, gist: verdict.Gist, verdict: verdict.Verdict, costUSD: cost + verdictCost}
+	g := &dailyGeneratedBlock{
+		content:       content,
+		gist:          verdict.Gist,
+		verdict:       verdict.Verdict,
+		diffReasoning: verdict.Reasoning,
+		costUSD:       cost + verdictCost,
+	}
+	writeTrace(g, "")
+	return g
 }

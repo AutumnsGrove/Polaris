@@ -468,6 +468,53 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_editions (
 	cost_usd REAL NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- pulsar_daily_trace records what every stage actually produced for every
+-- enabled block, every day — not just whatever survived into
+-- pulsar_daily_editions. Added after a real session where a "the edition
+-- looks empty" question turned out to be unanswerable: an "unchanged"
+-- Watch-block verdict or a hard generation failure both silently dropped
+-- that block's content with nothing but an ephemeral log.Warn line, and
+-- the diff-judge/top-story-election tool schemas didn't even ask the
+-- model to explain *why* a verdict or winner was chosen, only what it
+-- was. One row per block per date (not one row per stage) since a block's
+-- full lifecycle is always read together when auditing "what happened to
+-- X today" — never queried per-stage in isolation.
+CREATE TABLE IF NOT EXISTS pulsar_daily_trace (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	edition_date TEXT NOT NULL,
+	block_key TEXT NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
+	-- stage_a_content: the full text Stage A generated, recorded
+	-- regardless of whether it survived into the edition — exactly the
+	-- data that was previously discarded outright for a dropped block.
+	stage_a_content TEXT NOT NULL DEFAULT '',
+	-- verdict/gist/diff_reasoning: only set for a Watch block that had a
+	-- prior day's edition to diff against (see generateOneDailyBlock's
+	-- "First-ever day" branch) — '' otherwise. diff_reasoning is a new
+	-- field the model is now asked for alongside verdict/gist (see
+	-- dailyVerdictToolDef) — previously the model was never asked to
+	-- justify a verdict at all.
+	verdict TEXT NOT NULL DEFAULT '',
+	gist TEXT NOT NULL DEFAULT '',
+	diff_reasoning TEXT NOT NULL DEFAULT '',
+	-- included/is_top_story/top_story_reasoning/stage_c_content are set
+	-- later, by Stage D, once it's known which blocks actually made the
+	-- final edition and which one (if any) got elected and elaborated —
+	-- see UpdateDailyBlockTraceOutcome.
+	included INTEGER NOT NULL DEFAULT 0,
+	is_top_story INTEGER NOT NULL DEFAULT 0,
+	top_story_reasoning TEXT NOT NULL DEFAULT '',
+	stage_c_content TEXT NOT NULL DEFAULT '',
+	-- error: set instead of stage_a_content when generation failed
+	-- outright — the exact detail that used to exist only in a transient
+	-- log line, gone the moment the dev log rotated or the process
+	-- restarted.
+	error TEXT NOT NULL DEFAULT '',
+	cost_usd REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(edition_date, block_key)
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
