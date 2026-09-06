@@ -5,30 +5,46 @@
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
-	import { PanelLeft, Settings, Coins } from '@lucide/svelte';
+	import {
+		PanelLeft,
+		Settings,
+		Coins,
+		BookOpen,
+		CloudSun,
+		ScrollText,
+		Globe,
+		MapPin,
+		Flame,
+		Microscope,
+		Trophy,
+		Image as ImageIcon,
+		Quote,
+		AlertTriangle,
+		Newspaper
+	} from '@lucide/svelte';
 	import type { PulsarDailyBlock } from '$lib/types';
 	import PulsarDailyConfigModal from '$lib/components/PulsarDailyConfigModal.svelte';
 
-	// blockIcons: a plain emoji per block key, matching the mockup's visual
-	// language — no per-kind structured layout (weather 5-day strip,
-	// ranked trending list, ...) like the mockup mocked up, since every
-	// block's real content is prose written by an LLM call, not
-	// structured data the frontend could lay out specially. Top Story
+	// blockIcons: a Lucide icon component per block key, matching the
+	// mockup's visual language — no per-kind structured layout (weather
+	// 5-day strip, ranked trending list, ...) like the mockup mocked up,
+	// since every block's real content is prose written by an LLM call,
+	// not structured data the frontend could lay out specially. Top Story
 	// gets its own layout instead of an icon (see the mockup's
 	// .top-story treatment: "special means more substance, not a
 	// highlight box").
-	const blockIcons: Record<string, string> = {
-		word_of_day: '📖',
-		weather: '⛅',
-		on_this_day: '📜',
-		headlines: '🌐',
-		local: '📍',
-		trending: '🔥',
-		tech_science: '🔬',
-		sports: '🏀',
-		picture_of_day: '🖼️',
-		quote: '💬',
-		notice: '⚠️'
+	const blockIcons: Record<string, typeof BookOpen> = {
+		word_of_day: BookOpen,
+		weather: CloudSun,
+		on_this_day: ScrollText,
+		headlines: Globe,
+		local: MapPin,
+		trending: Flame,
+		tech_science: Microscope,
+		sports: Trophy,
+		picture_of_day: ImageIcon,
+		quote: Quote,
+		notice: AlertTriangle
 	};
 
 	// today's viewed date — not necessarily today's actual calendar date,
@@ -180,6 +196,7 @@
 	{:else if pulsarDailyState.edition}
 		<div class="board">
 			{#each pulsarDailyState.edition.blocks as block (block.key)}
+				{@const Icon = blockIcons[block.key] ?? Newspaper}
 				<button
 					class="card"
 					class:top-story={block.is_top_story}
@@ -196,7 +213,9 @@
 						<div class="card-body">{@html renderContent(block.content)}</div>
 					{:else}
 						<div class="card-head">
-							<div class="card-icon">{blockIcons[block.key] ?? '📰'}</div>
+							<div class="card-icon">
+								<Icon size={15} />
+							</div>
 							<div class="card-title">{block.title}</div>
 						</div>
 						{#if block.key === 'picture_of_day' && block.image_url}
@@ -387,7 +406,7 @@
 		place-items: center;
 		border-radius: var(--radius-md);
 		background: var(--color-surface-2);
-		font-size: 1rem;
+		color: var(--color-accent-2);
 		flex-shrink: 0;
 	}
 	.card-title {
@@ -404,6 +423,28 @@
 	}
 	.card-body :global(p:last-child) {
 		margin-bottom: 0;
+	}
+	/* LLM-elaborated content (the Top Story especially) sometimes includes
+	   markdown headings. Left unstyled they inherit raw UA h1-h6 sizes
+	   (up to 2em, bold), which balloons that one card far past its
+	   siblings. Scoped down and set in the serif face so a heading still
+	   reads as a heading — just via family/weight, not sheer size. */
+	.card-body :global(h1),
+	.card-body :global(h2),
+	.card-body :global(h3),
+	.card-body :global(h4) {
+		font-family: var(--font-serif);
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text);
+		line-height: 1.3;
+		margin: var(--space-md) 0 var(--space-xs);
+	}
+	.card-body :global(h1:first-child),
+	.card-body :global(h2:first-child),
+	.card-body :global(h3:first-child),
+	.card-body :global(h4:first-child) {
+		margin-top: 0;
 	}
 	.card img {
 		width: 100%;
