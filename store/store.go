@@ -89,6 +89,14 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- docs/plans/pulsar-routines.md's "Prerequisite" section.
 	focus_mode TEXT NOT NULL DEFAULT '',
 	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- no_research: the composer's "Research" toggle switched off (chat
+	-- mode) — the fourth sticky field, added after the original three
+	-- (model/focus_mode/deep_research) shipped with Pulsar's prerequisite
+	-- work. It was left composer-local at the time (see gateway/protocol.
+	-- go's ClientMessage.NoResearch doc comment), which meant leaving a
+	-- thread in chat mode and reopening it silently dropped back to
+	-- research-on — a real, reported gap, not an intentional exclusion.
+	no_research INTEGER NOT NULL DEFAULT 0,
 	-- pulsar_routine_id: set on a thread created by a Pulsar routine firing
 	-- (source = 'pulsar') — lets a routine's pulse history be a plain
 	-- WHERE query instead of inferring it from title text. Empty for every
@@ -586,6 +594,11 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN focus_mode TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN deep_research INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
+	// The fourth sticky field, added later than the three above — see the
+	// schema comment on no_research. An existing thread defaults to
+	// research-on (0), the same value a fresh composer already starts
+	// with.
+	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
@@ -694,10 +707,12 @@ type Thread struct {
 	// Favorite drives the sidebar's pinned Favorites section — see the
 	// schema comment in Open.
 	Favorite bool `json:"favorite"`
-	// FocusMode/DeepResearch are this thread's sticky turn config,
-	// alongside Model above — see the schema comment on focus_mode.
+	// FocusMode/DeepResearch/NoResearch are this thread's sticky turn
+	// config, alongside Model above — see the schema comment on
+	// focus_mode/no_research.
 	FocusMode    string `json:"focus_mode"`
 	DeepResearch bool   `json:"deep_research"`
+	NoResearch   bool   `json:"no_research"`
 	// PulsarRoutineID is set only on a pulse (source = "pulsar") — nil for
 	// every other thread. The frontend uses this to show a "back to
 	// routine" affordance on a pulse's thread view instead of the normal
@@ -753,17 +768,17 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 }
 
 // SetThreadConfig writes through a thread's sticky turn config (model,
-// focus mode, deep research) — called on every turn (see handleTurn) so
-// reopening a thread later restores exactly what it was last configured
-// with, and from handleUpdateThread when the composer's selectors are
-// changed directly without sending a message. Deliberately does not touch
-// updated_at, matching SetThreadFavorite's reasoning: applying a sticky
-// config isn't "activity" on the thread and shouldn't reorder it in the
-// sidebar.
-func (s *Store) SetThreadConfig(id, model, focusMode string, deepResearch bool) error {
+// focus mode, deep research, no-research/chat-mode) — called on every turn
+// (see handleTurn) so reopening a thread later restores exactly what it was
+// last configured with, and from handleUpdateThread when the composer's
+// selectors are changed directly without sending a message. Deliberately
+// does not touch updated_at, matching SetThreadFavorite's reasoning:
+// applying a sticky config isn't "activity" on the thread and shouldn't
+// reorder it in the sidebar.
+func (s *Store) SetThreadConfig(id, model, focusMode string, deepResearch, noResearch bool) error {
 	return execOne(s.db.Exec(
-		`UPDATE threads SET model = ?, focus_mode = ?, deep_research = ? WHERE id = ?`,
-		model, focusMode, deepResearch, id,
+		`UPDATE threads SET model = ?, focus_mode = ?, deep_research = ?, no_research = ? WHERE id = ?`,
+		model, focusMode, deepResearch, noResearch, id,
 	))
 }
 
@@ -1019,9 +1034,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1036,9 +1051,9 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

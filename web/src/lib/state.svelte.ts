@@ -117,15 +117,17 @@ export class AppState {
 	threadSearchLoading = $state(false);
 	models = $state<ModelOption[]>([]);
 	selectedModel = $state<string>('');
-	// threadFocusMode/threadDeepResearch are the just-opened thread's sticky
-	// turn config, set by openThread() below — ChatView.svelte's
-	// currentThreadId effect applies these to its own composer-local
-	// focusMode/deepResearch state, since ChatView (not AppState) still owns
-	// the actual live composer state. selectedModel above needs no such
-	// relay: openThread() writes it directly, since the model selector
-	// already reads straight from AppState with no local copy in between.
+	// threadFocusMode/threadDeepResearch/threadNoResearch are the
+	// just-opened thread's sticky turn config, set by openThread() below —
+	// ChatView.svelte's currentThreadId effect applies these to its own
+	// composer-local focusMode/deepResearch/research state, since ChatView
+	// (not AppState) still owns the actual live composer state.
+	// selectedModel above needs no such relay: openThread() writes it
+	// directly, since the model selector already reads straight from
+	// AppState with no local copy in between.
 	threadFocusMode = $state<FocusMode>('off');
 	threadDeepResearch = $state(false);
+	threadNoResearch = $state(false);
 	// Whether the just-opened thread's turn is genuinely still running
 	// server-side — set by openThread() below from GetThread's
 	// turn_in_progress (see gateway's IsTurnInFlight). Exists specifically
@@ -608,6 +610,7 @@ export class AppState {
 		if (data.model) this.selectedModel = data.model;
 		this.threadFocusMode = (data.focus_mode || 'off') as FocusMode;
 		this.threadDeepResearch = data.deep_research ?? false;
+		this.threadNoResearch = data.no_research ?? false;
 		this.threadTurnInProgress = data.turn_in_progress ?? false;
 		// The server just flipped this pulse's seen flag (handleGetThread's
 		// MarkPulseSeen) — refresh the sidebar/routine-row amber counts so
@@ -814,13 +817,14 @@ export class AppState {
 		this.currentThread = (await res.json()) as Thread;
 	}
 
-	// Writes through a selector change (model/focus mode/deep research) as
-	// the current thread's new sticky config, the moment it's changed from
-	// ComposerMenu's "+" sheet rather than waiting for the next send() —
-	// see store.SetThreadConfig's doc comment. No-ops for a not-yet-created
-	// thread (currentThreadId still null): handleTurn's own write-through
-	// covers that case once the first message actually creates it.
-	async persistThreadConfig(model: string, focusMode: FocusMode, deepResearch: boolean) {
+	// Writes through a selector change (model/focus mode/deep research/
+	// research toggle) as the current thread's new sticky config, the
+	// moment it's changed from ComposerMenu's "+" sheet rather than
+	// waiting for the next send() — see store.SetThreadConfig's doc
+	// comment. No-ops for a not-yet-created thread (currentThreadId still
+	// null): handleTurn's own write-through covers that case once the
+	// first message actually creates it.
+	async persistThreadConfig(model: string, focusMode: FocusMode, deepResearch: boolean, noResearch: boolean) {
 		if (!this.currentThreadId) return;
 		await fetch(`/api/threads/${this.currentThreadId}`, {
 			method: 'PATCH',
@@ -829,7 +833,12 @@ export class AppState {
 			// below (ClientMessage.focus_mode) — "no focus mode" is always
 			// empty string server-side (see agent.loadSystemPrompt's map
 			// lookup), 'off' is only the frontend's own sentinel for it.
-			body: JSON.stringify({ model, focus_mode: focusMode === 'off' ? '' : focusMode, deep_research: deepResearch })
+			body: JSON.stringify({
+				model,
+				focus_mode: focusMode === 'off' ? '' : focusMode,
+				deep_research: deepResearch,
+				no_research: noResearch
+			})
 		});
 	}
 

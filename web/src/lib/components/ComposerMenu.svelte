@@ -71,13 +71,13 @@
 		// Tapping the already-active mode turns it back off — a toggle,
 		// same shape as AudioPlayer's readAloud-the-active-turn pattern.
 		focusMode = focusMode === id ? 'off' : id;
-		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch);
+		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch, !research);
 		close();
 	}
 
 	function selectModel(id: string) {
 		appState.selectedModel = id;
-		void appState.persistThreadConfig(id, focusMode, deepResearch);
+		void appState.persistThreadConfig(id, focusMode, deepResearch, !research);
 		close();
 	}
 
@@ -88,7 +88,7 @@
 		// state that actually reaches the backend (tools.Context.NoResearch).
 		if (!research) return;
 		deepResearch = !deepResearch;
-		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch);
+		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch, !research);
 	}
 
 	function toggleResearch() {
@@ -97,6 +97,11 @@
 		// research with no research is a contradiction (see toggleDeepResearch),
 		// and leaving it "on" here would let both badges show at once.
 		if (!research) deepResearch = false;
+		// Chat mode (research off) used to be composer-local only — leaving
+		// a thread in chat mode and reopening it silently reset back to
+		// research-on, since nothing here ever wrote it through. Persisted
+		// the same way focus mode/deep research already are.
+		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch, !research);
 	}
 
 	function handleFileChange(e: Event) {

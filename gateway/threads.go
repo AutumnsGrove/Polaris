@@ -268,6 +268,7 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 		Model        *string `json:"model"`
 		FocusMode    *string `json:"focus_mode"`
 		DeepResearch *bool   `json:"deep_research"`
+		NoResearch   *bool   `json:"no_research"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -306,7 +307,7 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 		s.db.LogEvent(id, "info", "thread", "thread favorite changed", map[string]interface{}{"favorite": *req.Favorite}, "")
 	}
 
-	if req.Model != nil || req.FocusMode != nil || req.DeepResearch != nil {
+	if req.Model != nil || req.FocusMode != nil || req.DeepResearch != nil || req.NoResearch != nil {
 		current, err := s.db.GetThreadRaw(id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -316,7 +317,7 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		model, focusMode, deepResearch := current.Model, current.FocusMode, current.DeepResearch
+		model, focusMode, deepResearch, noResearch := current.Model, current.FocusMode, current.DeepResearch, current.NoResearch
 		if req.Model != nil {
 			model = *req.Model
 		}
@@ -326,7 +327,10 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 		if req.DeepResearch != nil {
 			deepResearch = *req.DeepResearch
 		}
-		if err := s.db.SetThreadConfig(id, model, focusMode, deepResearch); err != nil {
+		if req.NoResearch != nil {
+			noResearch = *req.NoResearch
+		}
+		if err := s.db.SetThreadConfig(id, model, focusMode, deepResearch, noResearch); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				http.Error(w, "thread not found", http.StatusNotFound)
 			} else {
@@ -334,7 +338,7 @@ func (s *Server) handleUpdateThread(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		s.db.LogEvent(id, "info", "thread", "thread turn config changed", map[string]interface{}{"model": model, "focus_mode": focusMode, "deep_research": deepResearch}, "")
+		s.db.LogEvent(id, "info", "thread", "thread turn config changed", map[string]interface{}{"model": model, "focus_mode": focusMode, "deep_research": deepResearch, "no_research": noResearch}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

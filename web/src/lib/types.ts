@@ -257,12 +257,13 @@ export interface Thread {
 	cost_usd: number;
 	context_tokens: number;
 	favorite: boolean;
-	// focus_mode/deep_research are this thread's sticky turn config,
-	// alongside model above — read back into the composer on open (see
-	// ChatView.svelte's thread-open effect), written through on every
+	// focus_mode/deep_research/no_research are this thread's sticky turn
+	// config, alongside model above — read back into the composer on open
+	// (see ChatView.svelte's thread-open effect), written through on every
 	// change (see AppState.persistThreadConfig).
 	focus_mode: FocusMode;
 	deep_research: boolean;
+	no_research: boolean;
 	// pulsar_routine_id is set only on a pulse (source "pulsar") —
 	// undefined for every other thread. Drives ChatView.svelte's "back to
 	// routine" header affordance on a pulse's thread view.
