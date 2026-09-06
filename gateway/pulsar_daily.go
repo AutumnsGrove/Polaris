@@ -794,7 +794,16 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 			content, imageURL, cost, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
 			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation))
-			content = tools.Dispatch(spec.Key, "{}", ctx)
+			// Weather asks for a full week, not handleWeather's normal
+			// 3-day chat default — a Daily edition is read once a day, not
+			// mid-conversation, so the wider range chart is worth more here
+			// than it would be as a chat reply. 7 is also Open-Meteo's own
+			// forecast_days cap (see weather.go's ForecastDays validation).
+			dispatchArgs := "{}"
+			if spec.Key == "weather" {
+				dispatchArgs = `{"forecast_days":7}`
+			}
+			content = tools.Dispatch(spec.Key, dispatchArgs, ctx)
 			if strings.HasPrefix(content, "error:") {
 				err = fmt.Errorf("%s", content)
 			}
