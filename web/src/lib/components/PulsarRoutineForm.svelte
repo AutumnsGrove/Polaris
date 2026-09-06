@@ -127,7 +127,7 @@
 	<div class="modal-panel" role="dialog" aria-modal="true" aria-label={routine ? 'Edit routine' : 'New routine'}>
 		<div class="sheet-handle" use:swipeToDismiss={onClose} aria-hidden="true"></div>
 		<div class="modal-panel-header">
-			<h2>{routine ? 'Edit routine' : 'New Pulsar'}</h2>
+			<h2>{#if routine}Edit routine{:else}New <span class="wordmark">Pulsar</span>{/if}</h2>
 			<button class="icon-btn" onclick={onClose} title="Close"><X size={18} /></button>
 		</div>
 
@@ -248,6 +248,18 @@
 {/if}
 
 <style>
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — the
+	   literal word "Pulsar" in this modal's "New Pulsar" heading, same
+	   treatment "Polaris" gets everywhere else it appears as a name. The
+	   shared .modal-panel-header h2 rule (app.css) is 700 weight serif;
+	   Asimovian only ships 400, so the wordmark span drops the weight
+	   rather than faking a bold that doesn't exist. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.01em;
+	}
+
 	h3 {
 		margin: var(--space-lg) 0 var(--space-md);
 		font-size: 11px;

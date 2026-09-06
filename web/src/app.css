@@ -127,9 +127,10 @@
 	   data stay on the sans stack per the "no display fonts in labels"
 	   rule. System serif stack avoids an extra webfont fetch. */
 	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-	/* Reserved exclusively for the literal word "Polaris" wherever it
-	   appears as the brand mark — the sidebar wordmark and the "Polaris" in
-	   the welcome greeting — never other headings or body copy. */
+	/* Reserved exclusively for the literal brand names — "Polaris", "Atlas",
+	   "Pulsar" — wherever one appears as a name rather than incidental
+	   prose: the sidebar wordmark, the welcome greeting, the Pulsar nav
+	   entry and page headers. Never other headings or body copy. */
 	--font-wordmark: 'Asimovian', var(--font-serif);
 	/* Code blocks/inline code across the app (ChatTurnView's answer prose,
 	   ToolEvent's commentary) — system monospace stack, no webfont fetch,
