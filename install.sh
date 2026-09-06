@@ -196,6 +196,67 @@ if [ "$INSTALL_MODE" = "bare-metal" ]; then
 	info "Built ./polaris"
 fi
 
+# ---- 3b. put the CLI on PATH ---------------------------------------------
+#
+# Symlinks the binary into /usr/local/bin so `polaris` resolves from
+# anywhere — including non-interactive SSH sessions (`ssh host 'polaris
+# update'`). That exact gap was found live on the potato: its login shell
+# had ~/.local/bin on PATH (via .profile) but the non-interactive SSH PATH
+# didn't, so `polaris update` failed with "command not found" over SSH
+# while working fine in a login shell. /usr/local/bin is on the default
+# PATH of both macOS and Linux for interactive AND non-interactive
+# sessions — no shell-startup-file edits needed (and those wouldn't apply
+# to non-interactive shells anyway). The symlink target is the absolute
+# $INSTALL_DIR/polaris; because the binary is rebuilt in place
+# (`go build -o polaris .` never moves the file), the link stays valid
+# across rebuilds and can harmlessly be re-pointed if INSTALL_DIR ever
+# changes between runs.
+#
+# Docker mode doesn't build a host CLI binary (see step 3), so there's
+# nothing to link unless one was built by hand — the step then just says
+# so, and re-adding the binary later (followed by a harmless re-run) will
+# pick the link up.
+if [ -f "$INSTALL_DIR/polaris" ]; then
+	step "Putting polaris on your PATH"
+
+	LINK_TARGET="/usr/local/bin/polaris"
+	if [ -L "$LINK_TARGET" ] && [ "$(readlink "$LINK_TARGET")" = "$INSTALL_DIR/polaris" ]; then
+		info "$LINK_TARGET already points at $INSTALL_DIR/polaris — leaving it alone."
+	elif [ -e "$LINK_TARGET" ]; then
+		# A real file or a symlink aimed elsewhere — never clobber something
+		# that isn't ours; report it and move on.
+		warn "$LINK_TARGET already exists and isn't a link to $INSTALL_DIR/polaris —"
+		warn "leaving it alone. Move it aside and re-run this script if you want"
+		warn "'polaris' on your PATH."
+	else
+		if ln -s "$INSTALL_DIR/polaris" "$LINK_TARGET" 2>/dev/null; then
+			info "Linked $INSTALL_DIR/polaris to $LINK_TARGET — 'polaris' is now on your PATH."
+		else
+			# /usr/local/bin is root-owned on both macOS and Linux: try a
+			# bare ln first in case it's user-writable, then sudo. Failing
+			# both is non-fatal — PATH is a convenience, not a hard
+			# requirement, and every later "run it yourself" message already
+			# says how to run an unlinked binary. (macOS dev machines in
+			# particular often have no passwordless sudo, and under
+			# `curl … | bash` a sudo password prompt reads from the pipe's
+			# tty, which may not exist — a failed sudo must not abort the
+			# install.)
+			if sudo ln -s "$INSTALL_DIR/polaris" "$LINK_TARGET" 2>/dev/null; then
+				info "Linked $INSTALL_DIR/polaris to $LINK_TARGET — 'polaris' is now on your PATH."
+			else
+				warn "Couldn't write $LINK_TARGET (needs root). 'polaris' won't be on PATH;"
+				warn "run it as $INSTALL_DIR/polaris, or link it yourself:"
+				warn "  sudo ln -s $INSTALL_DIR/polaris $LINK_TARGET"
+			fi
+		fi
+	fi
+elif [ "$INSTALL_MODE" = "docker" ]; then
+	info "No host CLI binary at $INSTALL_DIR/polaris in Docker mode — nothing to link."
+	info "If you want 'polaris update' over SSH, build it by hand:"
+	info "  cd $INSTALL_DIR && go build -o polaris ."
+	info "Then re-run this installer (safe: it just links the binary then)."
+fi
+
 # ---- 4. Docker ------------------------------------------------------------
 #
 # Needed in both modes: bare-metal uses it for the standalone SearXNG
@@ -599,7 +660,12 @@ if [ "$INSTALL_MODE" = "bare-metal" ]; then
 	info "Next steps:"
 	info "  1. In config.yaml, set openrouter.api_key to your real key"
 	info "     (get one at https://openrouter.ai/keys)"
-	info "  2. cd $INSTALL_DIR && ./polaris run"
+	if [ -L /usr/local/bin/polaris ]; then
+		info "  2. polaris run"
+	else
+		info "  2. $INSTALL_DIR/polaris run   (or 'polaris run' once the PATH"
+		info "     link above is made)"
+	fi
 	info "  3. Open http://localhost:8899"
 else
 	info "Polaris's Docker install is set up in $INSTALL_DIR."
