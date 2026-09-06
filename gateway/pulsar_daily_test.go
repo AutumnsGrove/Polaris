@@ -26,7 +26,7 @@ func TestDailyDiffJudge_ParsesStructuredVerdict(t *testing.T) {
 		{Resp: toolCallResponse("record_verdict", `{"verdict":"notable","gist":"A big new development","reasoning":"A new fact appeared that wasn't in yesterday's version"}`)},
 	}}
 
-	v, _, err := dailyDiffJudge(context.Background(), mock, "Tech & Science", "yesterday's content", "today's content")
+	v, _, err := dailyDiffJudge(context.Background(), mock, "Trending Now", "yesterday's content", "today's content")
 	if err != nil {
 		t.Fatalf("dailyDiffJudge: %v", err)
 	}
@@ -93,19 +93,19 @@ func TestDailyBlockLocation(t *testing.T) {
 
 func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"tech_science","reasoning":"Bigger and more consequential than a quiet news day"}`)},
+		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"trending","reasoning":"Bigger and more consequential than a quiet news day"}`)},
 	}}
 
 	candidates := []dailyRankCandidate{
 		{Key: "headlines", Title: "Top Headlines", Gist: "A quiet news day"},
-		{Key: "tech_science", Title: "Tech & Science", Gist: "A major datacenter buildout announced"},
+		{Key: "trending", Title: "Trending Now", Gist: "A major datacenter buildout announced"},
 	}
 	key, reasoning, _, err := dailyElectTopStory(context.Background(), mock, candidates)
 	if err != nil {
 		t.Fatalf("dailyElectTopStory: %v", err)
 	}
-	if key != "tech_science" {
-		t.Errorf("dailyElectTopStory = %q, want %q", key, "tech_science")
+	if key != "trending" {
+		t.Errorf("dailyElectTopStory = %q, want %q", key, "trending")
 	}
 	if reasoning == "" {
 		t.Error("dailyElectTopStory reasoning = \"\", want the model's stated reasoning captured for the trace")

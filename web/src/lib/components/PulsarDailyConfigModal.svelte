@@ -37,7 +37,6 @@
 		{ key: 'picture_of_day', label: 'Picture of the Day', placeholder: 'e.g. always space or wildlife photography' },
 		{ key: 'headlines', label: 'Top Headlines', placeholder: 'e.g. focus on AI, geopolitics, or your interests' },
 		{ key: 'trending', label: 'Trending Now', placeholder: 'e.g. focus on gaming and your hobbies' },
-		{ key: 'tech_science', label: 'Tech & Science', placeholder: 'e.g. focus on AI, robotics, biotech' },
 		{
 			key: 'local',
 			label: 'Local',

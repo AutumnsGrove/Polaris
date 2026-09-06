@@ -413,7 +413,7 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- excludes "top_story", which isn't independently generated content,
 	-- it's Stage B's elevation of whichever watch block wins the ranking
 	-- pass (see the plan doc's "Top Story: LLM-elected, not a fixed slot").
-	enabled_blocks TEXT NOT NULL DEFAULT '["word_of_day","weather","on_this_day","headlines","trending","tech_science","sports","picture_of_day","quote","local"]',
+	enabled_blocks TEXT NOT NULL DEFAULT '["word_of_day","weather","on_this_day","headlines","trending","sports","picture_of_day","quote","local"]',
 	-- sports_teams: free-text team/league preference — required once
 	-- "sports" is enabled, since no sane default exists for it (see
 	-- "Per-block settings UI").

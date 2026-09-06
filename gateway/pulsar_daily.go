@@ -34,7 +34,7 @@ const (
 	dailyBlockPick
 	// dailyBlockResearch is a narrow-toolset agent.Run, same "small
 	// restricted-toolset agent run" shape pulsar_wizard.go's interview
-	// loop uses — Headlines, Trending, Tech & Science, Local, Sports.
+	// loop uses — Headlines, Trending, Local, Sports.
 	dailyBlockResearch
 	// dailyBlockCustom is a user-authored "general purpose" block with no
 	// fixed registry entry — same execution path as dailyBlockResearch
@@ -76,7 +76,6 @@ var dailyBlockRegistry = []dailyBlockSpec{
 	{Key: "picture_of_day", Title: "Picture of the Day", Kind: dailyBlockDirect, Watch: false},
 	{Key: "headlines", Title: "Top Headlines", Kind: dailyBlockResearch, Watch: true},
 	{Key: "trending", Title: "Trending Now", Kind: dailyBlockResearch, Watch: true},
-	{Key: "tech_science", Title: "Tech & Science", Kind: dailyBlockResearch, Watch: true},
 	{Key: "local", Title: "Local", Kind: dailyBlockResearch, Watch: true},
 	// Sports sits between Watch and fresh-pick — see the plan doc's
 	// "Empty-day floor": real daily data, but "no games today" is a
@@ -144,9 +143,6 @@ var dailyResearchTasks = map[string]string{
 		"the most significant stories, written for someone who wants the gist, not a full briefing.",
 	"trending": "What's genuinely trending or being talked about today (news, culture, internet, or " +
 		"otherwise)? 2-4 sentences, skimmable.",
-	"tech_science": "Give me a short digest of today's most interesting tech and science news — 2-4 " +
-		"sentences. If there's genuinely chart-worthy quantitative data (a multi-step timeline, a " +
-		"comparison of numbers), consider using visualize — but only if the data earns it, not by default.",
 	"local": "Give me a short local news/events digest for {{location}} — 2-4 sentences on anything notable " +
 		"happening there today.",
 	"sports": "Give me a short update on today's notable sports scores/results for these teams/leagues: " +
@@ -575,8 +571,13 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 	// comment for why a custom block has no separate enabled_blocks entry
 	// (existing in the list already means "run it"). Always Watch: true —
 	// a "general purpose" block behaves like the closest fixed analogue
-	// (Headlines/Trending/Tech & Science/Local), diffable and eligible
-	// for Top Story, not a fixed daily pick.
+	// (Headlines/Trending/Local), diffable and eligible for Top Story,
+	// not a fixed daily pick. This is also the mechanism for anyone
+	// wanting a topic-specific vertical (tech, business, a hobby, ...) —
+	// a fixed "Tech & Science" registry entry existed here in v1 but was
+	// removed as too narrow/one-user-specific once custom blocks made it
+	// redundant: add a custom block with the topic in its instructions
+	// instead of a code-level special case.
 	blockSpecs := make([]dailyBlockSpec, 0, len(dailyBlockRegistry)+len(cfgRow.CustomBlocks))
 	blockSpecs = append(blockSpecs, dailyBlockRegistry...)
 	for _, cb := range cfgRow.CustomBlocks {

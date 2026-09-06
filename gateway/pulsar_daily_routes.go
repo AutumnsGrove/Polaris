@@ -241,7 +241,7 @@ func dailyFollowupFamily(key string) string {
 		return "media"
 	case "word_of_day", "on_this_day", "quote":
 		return "curiosity"
-	default: // headlines, trending, tech_science, local, weather, sports
+	default: // headlines, trending, local, weather, sports
 		return "research"
 	}
 }

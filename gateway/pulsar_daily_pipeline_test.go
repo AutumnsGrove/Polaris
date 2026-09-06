@@ -19,7 +19,7 @@ import (
 //
 // Blocks are deliberately picked to dodge agent.Run's tool-calling loop
 // (no SearXNG/Brave double needed): "quote" and "on_this_day" are plain
-// no-tools pick calls, "headlines" and "tech_science" are
+// no-tools pick calls, "headlines" and "trending" are
 // dailyBlockResearch but a model that replies in plain prose with no
 // tool call makes agent.Run terminate after one round anyway, same as a
 // real "the model didn't need a tool" turn. Four blocks, not fewer —
@@ -34,8 +34,8 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."), // Stage A: quote (pick)
 		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (pick)
 		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),          // Stage A: headlines (research)
-		plainSSEBody("A new open-weight model release was the big tech story today."),                      // Stage A: tech_science (research)
-		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"tech_science\",\"reasoning\":\"The open-weight release is a bigger development than a quiet headlines day\"}"}}`), // Stage B
+		plainSSEBody("A new open-weight model release was the big story trending today."),                  // Stage A: trending (research)
+		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"trending\",\"reasoning\":\"The open-weight release is a bigger development than a quiet headlines day\"}"}}`), // Stage B
 		plainSSEBody("Deeper dive: the open-weight release includes benchmarks showing strong reasoning gains, plus a pulled quote from the release notes."), // Stage C
 	}
 	srv := sequencedSSEServer(t, bodies)
@@ -44,7 +44,7 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	h := newTestHarness(t, srv.URL)
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
-		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "tech_science"},
+		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
 		"architect_model": "deepseek-pro",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
@@ -63,12 +63,12 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	}
 
 	if len(edition.Blocks) != 4 {
-		t.Fatalf("got %d blocks, want 4 (quote, on_this_day, headlines, tech_science all survive on a first-ever day)", len(edition.Blocks))
+		t.Fatalf("got %d blocks, want 4 (quote, on_this_day, headlines, trending all survive on a first-ever day)", len(edition.Blocks))
 	}
-	if !edition.Blocks[0].IsTopStory || edition.Blocks[0].Key != "tech_science" {
-		t.Errorf("edition.Blocks[0] = %+v, want tech_science elected as Top Story and sorted first", edition.Blocks[0])
+	if !edition.Blocks[0].IsTopStory || edition.Blocks[0].Key != "trending" {
+		t.Errorf("edition.Blocks[0] = %+v, want trending elected as Top Story and sorted first", edition.Blocks[0])
 	}
-	if edition.Blocks[0].Content == "" || edition.Blocks[0].Content == "A new open-weight model release was the big tech story today." {
+	if edition.Blocks[0].Content == "" || edition.Blocks[0].Content == "A new open-weight model release was the big story trending today." {
 		t.Errorf("top story content = %q, want the Stage C elaborated version, not the Stage A quick version", edition.Blocks[0].Content)
 	}
 	found := map[string]bool{}
@@ -113,15 +113,15 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	for _, tr := range trace {
 		traceByKey[tr.BlockKey] = tr
 	}
-	topStoryTrace, ok := traceByKey["tech_science"]
+	topStoryTrace, ok := traceByKey["trending"]
 	if !ok || !topStoryTrace.IsTopStory || !topStoryTrace.Included {
-		t.Errorf("tech_science trace = %+v, want IsTopStory and Included both true", topStoryTrace)
+		t.Errorf("trending trace = %+v, want IsTopStory and Included both true", topStoryTrace)
 	}
 	if topStoryTrace.StageCContent == "" || topStoryTrace.StageCContent == topStoryTrace.StageAContent {
-		t.Errorf("tech_science trace.StageCContent = %q, want the Stage C elaborated version recorded, not empty or identical to Stage A", topStoryTrace.StageCContent)
+		t.Errorf("trending trace.StageCContent = %q, want the Stage C elaborated version recorded, not empty or identical to Stage A", topStoryTrace.StageCContent)
 	}
 	if topStoryTrace.TopStoryReasoning == "" {
-		t.Error("tech_science trace.TopStoryReasoning is empty, want Stage B's stated reasoning recorded")
+		t.Error("trending trace.TopStoryReasoning is empty, want Stage B's stated reasoning recorded")
 	}
 	quoteTrace, ok := traceByKey["quote"]
 	if !ok || quoteTrace.IsTopStory || !quoteTrace.Included {
@@ -265,8 +265,8 @@ func TestHandleGenerateDailyNow(t *testing.T) {
 		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."),
 		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),
 		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),
-		plainSSEBody("A new open-weight model release was the big tech story today."),
-		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"tech_science\",\"reasoning\":\"Bigger than a quiet headlines day\"}"}}`),
+		plainSSEBody("A new open-weight model release was the big story trending today."),
+		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"trending\",\"reasoning\":\"Bigger than a quiet headlines day\"}"}}`),
 		plainSSEBody("Deeper dive on the open-weight release."),
 	}
 	srv := sequencedSSEServer(t, bodies)
@@ -274,7 +274,7 @@ func TestHandleGenerateDailyNow(t *testing.T) {
 
 	h := newTestHarness(t, srv.URL)
 	resp := putDailyConfig(t, h, map[string]interface{}{
-		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "tech_science"},
+		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
 		"architect_model": "deepseek-pro",
 		"writer_model":    "deepseek",
 		"time_of_day":     "23:59", // far in the future — only the manual trigger should fire this run

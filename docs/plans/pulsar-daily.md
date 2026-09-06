@@ -98,7 +98,6 @@ what they don't want. Confirmed so far:
 - On This Day
 - Top Headlines
 - Trending Now
-- Tech & Science digest
 - Sports (default-on for the general template; explicitly a "some users won't want this" block —
   first concrete proof the per-user block config matters)
 - Picture of the Day (`image_search` tool + the just-shipped gallery/lightbox)
@@ -226,6 +225,20 @@ Considered and shelved, specifically to avoid shipping this bloated on day one:
   Surfacing "here's something from your memory" as a Daily block would repurpose an internal
   steering mechanism as user-facing copy, which is a structural mismatch, not a scope call — this
   one doesn't get revisited unless the memory system itself changes shape.
+
+## Tech & Science removed post-v1
+
+Shipped in v1 as a fixed registry entry, then removed: it was the only Watch block with a
+domain baked into its default task text, which made the "default template" feel tailored to one
+person's interests rather than genuinely general-purpose. Once the general-purpose custom-block
+feature existed (see "v2+ candidates" — actually shipped ahead of schedule, below), a fixed
+topic-specific slot was redundant: anyone wanting a tech beat (or any other vertical — business,
+a hobby, a specific team) adds a custom block with their own instructions instead of relying on a
+code-level special case. Schema-level default `enabled_blocks` and the frontend's block list were
+updated to drop it; an existing per-user DB row that still lists `"tech_science"` in its
+`enabled_blocks` JSON just silently generates nothing for that key now (no matching
+`dailyBlockSpec` in the registry to run) — no migration needed, but worth knowing if a pre-removal
+install's edition looks one block lighter than before.
 
 ## Per-block settings UI
 

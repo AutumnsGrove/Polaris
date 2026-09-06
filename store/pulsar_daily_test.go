@@ -9,8 +9,8 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDailyConfig: %v", err)
 	}
-	if len(c.EnabledBlocks) != 10 {
-		t.Fatalf("default enabled_blocks has %d entries, want 10: %+v", len(c.EnabledBlocks), c.EnabledBlocks)
+	if len(c.EnabledBlocks) != 9 {
+		t.Fatalf("default enabled_blocks has %d entries, want 9: %+v", len(c.EnabledBlocks), c.EnabledBlocks)
 	}
 	if c.ArchitectModel != "deepseek-pro" || c.WriterModel != "deepseek" || c.TimeOfDay != "07:00" {
 		t.Errorf("GetDailyConfig defaults = %+v, want the column defaults", c)
