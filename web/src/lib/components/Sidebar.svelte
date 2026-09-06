@@ -51,15 +51,19 @@
 	// appState.newThread() deliberately only touches history via
 	// replaceState, not goto() — see its doc comment — since /t/[id] and /
 	// both render the same ChatView and a real navigation there would
-	// pointlessly remount it. But /pulsar and /pulsar/[id] render an
-	// entirely different route component, which a raw replaceState can't
-	// swap out (SvelteKit's router only reacts to its own goto()/link
-	// navigations) — so "New thread" from inside Pulsar needs a real
-	// navigation first, or the click silently does nothing visible.
+	// pointlessly remount it. Any other route (/pulsar, /pulsar/[id],
+	// /daily, ...) renders an entirely different route component, which a
+	// raw replaceState can't swap out (SvelteKit's router only reacts to
+	// its own goto()/link navigations) — so "New thread" from anywhere
+	// else needs a real navigation first, or the click silently does
+	// nothing visible. Checked as "is this the chat view" rather than
+	// "is this /pulsar", which is what originally left /daily with the
+	// same bug /pulsar was fixed for — a new non-chat route added later
+	// doesn't need its own case here.
 	function startNewThread() {
-		const onPulsar = page.url.pathname.startsWith('/pulsar');
+		const onChatRoute = page.url.pathname === '/' || page.url.pathname.startsWith('/t/');
 		appState.newThread();
-		if (onPulsar) void goto('/');
+		if (!onChatRoute) void goto('/');
 	}
 
 	function openSearch(query: string) {
