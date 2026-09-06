@@ -383,6 +383,12 @@
 	.pulsar-label {
 		flex: 1;
 		text-align: left;
+		/* Same reserved brand-face treatment as the .wordmark rule above —
+		   kept as its own rule rather than reusing that class since it's
+		   sized for the sidebar's 18px brand row, not this 13px nav entry. */
+		font-family: var(--font-wordmark);
+		font-size: 1.05em;
+		letter-spacing: 0.02em;
 	}
 
 	.thread-search {

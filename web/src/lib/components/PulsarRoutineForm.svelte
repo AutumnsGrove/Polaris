@@ -127,7 +127,7 @@
 	<div class="modal-panel" role="dialog" aria-modal="true" aria-label={routine ? 'Edit routine' : 'New routine'}>
 		<div class="sheet-handle" use:swipeToDismiss={onClose} aria-hidden="true"></div>
 		<div class="modal-panel-header">
-			<h2>{routine ? 'Edit routine' : 'New Pulsar'}</h2>
+			<h2>{#if routine}Edit routine{:else}New <span class="wordmark">Pulsar</span>{/if}</h2>
 			<button class="icon-btn" onclick={onClose} title="Close"><X size={18} /></button>
 		</div>
 
@@ -248,6 +248,18 @@
 {/if}
 
 <style>
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — the
+	   literal word "Pulsar" in this modal's "New Pulsar" heading, same
+	   treatment "Polaris" gets everywhere else it appears as a name. The
+	   shared .modal-panel-header h2 rule (app.css) is 700 weight serif;
+	   Asimovian only ships 400, so the wordmark span drops the weight
+	   rather than faking a bold that doesn't exist. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.01em;
+	}
+
 	h3 {
 		margin: var(--space-lg) 0 var(--space-md);
 		font-size: 11px;
@@ -305,7 +317,14 @@
 		box-shadow: var(--shadow-well);
 		padding: var(--space-sm) var(--space-md);
 		font: inherit;
-		font-size: 13px;
+		/* 16px, not smaller — anything under 16px makes iOS Safari zoom the
+		   whole page on focus, same reasoning as the main composer and
+		   PulsarPromptWizard's freeform textarea. This form's Name/Prompt
+		   fields were missed when that convention was set elsewhere, which
+		   is exactly what made the mobile "New Pulsar" sheet unusable: focus
+		   the prompt textarea and the whole page zooms in, with no way to
+		   scroll back out inside the fixed-position bottom sheet. */
+		font-size: 16px;
 		color: var(--color-text);
 		resize: vertical;
 	}
@@ -326,13 +345,17 @@
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
 		padding: var(--space-sm) var(--space-md);
-		font-size: 13px;
+		/* Same 16px floor as .field above — a <select>/time input focuses
+		   just like a text input and triggers the same iOS Safari zoom. */
+		font-size: 16px;
 		color: var(--color-text);
 	}
 
 	.day-input {
 		width: 64px;
 		text-align: center;
+		/* Same 16px floor as .field/.row above. */
+		font-size: 16px;
 	}
 
 	.hint {

@@ -68,7 +68,13 @@
 		<button class="icon-btn" onclick={() => goto('/pulsar')} title="Back to Pulsar">
 			<ChevronLeft size={18} />
 		</button>
-		<h1 class="page-title">{routine?.name ?? 'Pulsar'}</h1>
+		<h1 class="page-title">
+			{#if routine}
+				{routine.name}
+			{:else}
+				<span class="wordmark">Pulsar</span>
+			{/if}
+		</h1>
 	</div>
 	{#if routine}
 		<button class="icon-btn" onclick={() => (showForm = true)} title="Edit routine">
@@ -145,6 +151,15 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — only
+	   the "Pulsar" fallback (no routine loaded/found yet) is the brand
+	   name; an actual routine's own name stays on .page-title's serif. */
+	.page-title .wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 
 	.content {
