@@ -55,11 +55,11 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<h1 class="page-title">Pulsar</h1>
+		<h1 class="page-title"><span class="wordmark">Pulsar</span></h1>
 	</div>
 	<button class="btn btn-accent" onclick={() => (showForm = true)}>
 		<Plus size={16} />
-		New Pulsar
+		New <span class="wordmark">Pulsar</span>
 	</button>
 </header>
 
@@ -142,9 +142,16 @@
 
 	.page-title {
 		margin: 0;
-		font-family: var(--font-serif);
 		font-size: 20px;
-		font-weight: 700;
+	}
+
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — this
+	   page's title and "New Pulsar" button both render the literal word
+	   "Pulsar" as a name, same as "Polaris" gets elsewhere in the app. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 
 	.content {
