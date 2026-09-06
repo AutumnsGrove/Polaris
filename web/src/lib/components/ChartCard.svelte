@@ -130,17 +130,23 @@
 
 	// range's day labels — chart.x is an ISO date ("2026-09-04") for
 	// range's one real source (weather.go's setWeatherChart); formatted
-	// short ("Sep 4") since the full date is redundant with the
-	// top-to-bottom row ordering. Falls back to the raw string for
-	// anything that doesn't parse as a date rather than showing "Invalid
-	// Date" — range is Tier-1-only today, but this keeps a future non-
-	// weather Tier-1 source from rendering garbage if its dates aren't
+	// short ("Sun, Sep 4") since the full date is redundant with the
+	// top-to-bottom row ordering, but the weekday on its own isn't —
+	// across a 7-day forecast, "day 5 of 7" isn't obviously "next
+	// Thursday" without it. Falls back to the raw string for anything
+	// that doesn't parse as a date rather than showing "Invalid Date" —
+	// range is Tier-1-only today, but this keeps a future non-weather
+	// Tier-1 source from rendering garbage if its dates aren't
 	// ISO-formatted.
 	function formatShortDate(x: string | number): string {
 		const s = String(x);
 		const d = new Date(s.includes('T') ? s : s + 'T00:00:00');
 		if (isNaN(d.getTime())) return s;
-		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		// "Sun Sep 6", not "Sun, Sep 6" — the comma just eats into the
+		// .range-date column's already-tight fixed width for no real
+		// gain, since the weekday/month/day grouping is clear without it.
+		const parts = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+		return parts.replace(',', '');
 	}
 
 	// range — Tier-1-only (see registry.go's ChartSpec doc comment), never
@@ -376,7 +382,9 @@
 
 	.range-row {
 		display: grid;
-		grid-template-columns: 40px 16px 24px 1fr 28px;
+		/* First column widened from 40px — that fit "Sep 6" but not the
+		   weekday prefix ("Sun Sep 6") added alongside it. */
+		grid-template-columns: 58px 16px 24px 1fr 28px;
 		align-items: center;
 		gap: var(--space-sm);
 	}
@@ -384,6 +392,7 @@
 	.range-date {
 		font-size: 12px;
 		color: var(--color-text-dim);
+		white-space: nowrap;
 	}
 
 	.range-row :global(.range-icon) {
