@@ -594,17 +594,24 @@ var migrations = []string{
 	`ALTER TABLE threads ADD COLUMN focus_mode TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE threads ADD COLUMN deep_research INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN pulsar_routine_id INTEGER`,
-	// The fourth sticky field, added later than the three above — see the
-	// schema comment on no_research. An existing thread defaults to
-	// research-on (0), the same value a fresh composer already starts
-	// with.
-	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN chart TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
 	`ALTER TABLE pulsar_daily_editions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_blocks TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN weather_location TEXT NOT NULL DEFAULT ''`,
+	// The fourth sticky field, added later than the model/focus_mode/
+	// deep_research trio — see the schema comment on no_research. An
+	// existing thread defaults to research-on (0), the same value a fresh
+	// composer already starts with. Appended at the end, not inserted
+	// alongside the other three above — applyMigrations tracks progress by
+	// positional index (PRAGMA user_version), not migration content, so
+	// inserting mid-list shifts every later index and leaves entries
+	// silently unapplied on a database that already ran past that point.
+	// Confirmed live: this was originally inserted mid-list and the
+	// potato's existing DB skipped it entirely, surfacing as "no such
+	// column: no_research" the moment a thread was reopened.
+	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
