@@ -57,6 +57,14 @@
 	// each object (not the same references as cfg.custom_blocks) so
 	// editing here doesn't mutate pulsarDailyState.config until Save.
 	let customBlocks = $state<PulsarDailyCustomBlock[]>((cfg?.custom_blocks ?? []).map((b) => ({ ...b })));
+	// weatherLocation overrides config.yaml's app-wide default_location
+	// for Weather only — blank means "use default_location", same
+	// fallback every other location-aware tool already has. Weather is
+	// the one block that couldn't use customInstructions' "append a
+	// steering sentence" mechanism at all (it has no LLM-authored task
+	// text to append to — it's a direct tool dispatch), so it gets its
+	// own dedicated field instead.
+	let weatherLocation = $state(cfg?.weather_location ?? '');
 
 	function addCustomBlock() {
 		customBlocks.push({
@@ -140,6 +148,7 @@
 			sports_teams: sportsTeams.trim(),
 			custom_instructions: trimmedInstructions,
 			custom_blocks: validCustomBlocks,
+			weather_location: weatherLocation.trim(),
 			architect_model: architectModel,
 			writer_model: writerModel,
 			time_of_day: timeOfDay
@@ -176,7 +185,17 @@
 						/>
 						<span>{opt.label}</span>
 					</label>
-					{#if opt.key === 'sports' && enabledBlocks.has('sports')}
+					{#if opt.key === 'weather' && enabledBlocks.has('weather')}
+						<div class="field block-subfield">
+							<label for="daily-weather-location">Location (optional)</label>
+							<input
+								id="daily-weather-location"
+								type="text"
+								bind:value={weatherLocation}
+								placeholder="e.g. Seattle, WA — leave blank to use the server's default location"
+							/>
+						</div>
+					{:else if opt.key === 'sports' && enabledBlocks.has('sports')}
 						<div class="field block-subfield">
 							<div class="field-label-row">
 								<label for="daily-sports-teams">Which teams/leagues?</label>
@@ -428,7 +447,8 @@
 		background: var(--color-accent-soft);
 	}
 
-	.field textarea {
+	.field textarea,
+	.field input[type='text'] {
 		width: 100%;
 		border: none;
 		background: var(--color-surface-2);

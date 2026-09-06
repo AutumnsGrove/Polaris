@@ -7,6 +7,7 @@ export interface PulsarDailyConfigInput {
 	sports_teams: string;
 	custom_instructions: Record<string, string>;
 	custom_blocks: PulsarDailyCustomBlock[];
+	weather_location: string;
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;

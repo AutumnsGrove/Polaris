@@ -440,6 +440,13 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- renaming a block doesn't look like a brand new one to yesterday's
 	-- diff-judge lookup or pulsar_daily_trace.
 	custom_blocks TEXT NOT NULL DEFAULT '[]',
+	-- weather_location: overrides config.yaml's app-wide default_location
+	-- for the Weather block only — empty means "use default_location",
+	-- same fallback every other location-aware tool already has. Weather
+	-- is a direct tools.Dispatch call with no LLM-authored task text, so
+	-- it's the one block custom_instructions' "append a steering sentence"
+	-- mechanism can't help at all — it needed its own typed field.
+	weather_location TEXT NOT NULL DEFAULT '',
 	-- architect_model/writer_model: registry IDs (models/models.go), not
 	-- raw OpenRouter model strings — same convention pulsar_routines.model
 	-- uses. See the plan doc's "Model tiering" for why these are split:
@@ -584,6 +591,7 @@ var migrations = []string{
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '{}'`,
 	`ALTER TABLE pulsar_daily_editions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
 	`ALTER TABLE pulsar_daily_config ADD COLUMN custom_blocks TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE pulsar_daily_config ADD COLUMN weather_location TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {

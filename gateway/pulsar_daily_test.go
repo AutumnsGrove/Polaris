@@ -70,6 +70,27 @@ func TestDailyDiffJudge_UnrecognizedVerdictFallsBackToNormal(t *testing.T) {
 	}
 }
 
+func TestDailyBlockLocation(t *testing.T) {
+	tests := []struct {
+		name            string
+		blockKey        string
+		location        string
+		weatherLocation string
+		want            string
+	}{
+		{"weather with no override falls back to shared location", "weather", "Beaverton, OR", "", "Beaverton, OR"},
+		{"weather with an override uses it instead", "weather", "Beaverton, OR", "Seattle, WA", "Seattle, WA"},
+		{"a non-weather block ignores weatherLocation entirely", "picture_of_day", "Beaverton, OR", "Seattle, WA", "Beaverton, OR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dailyBlockLocation(tt.blockKey, tt.location, tt.weatherLocation); got != tt.want {
+				t.Errorf("dailyBlockLocation(%q, %q, %q) = %q, want %q", tt.blockKey, tt.location, tt.weatherLocation, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDailyElectTopStory_ReturnsWinnerKey(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
 		{Resp: toolCallResponse("elect_top_story", `{"winner_key":"tech_science","reasoning":"Bigger and more consequential than a quiet news day"}`)},

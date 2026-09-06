@@ -633,7 +633,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 					log.Error("panic generating pulsar daily block", "block", spec.Key, "panic", rec)
 				}
 			}()
-			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
+			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, spec, location, cfgRow.WeatherLocation, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
 				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart}
 			}
@@ -756,6 +756,21 @@ type dailyGeneratedBlock struct {
 	costUSD float64
 }
 
+// dailyBlockLocation picks which location a dailyBlockDirect block's tool
+// context gets — every block except Weather uses the shared location
+// (config.yaml's default_location); Weather alone can override it via
+// store.PulsarDailyConfig.WeatherLocation, since it's the one block with
+// no LLM-authored task text for CustomInstructions' "append a steering
+// sentence" mechanism to attach to. Empty weatherLocation means "no
+// override configured", not "explicitly use empty" — same fallback shape
+// tools.Context.ResolveLocation already uses everywhere else.
+func dailyBlockLocation(blockKey, location, weatherLocation string) string {
+	if blockKey == "weather" && weatherLocation != "" {
+		return weatherLocation
+	}
+	return location
+}
+
 // generateOneDailyBlock produces one block's content and, for a Watch
 // block, its diff-judge verdict — the single unit of work each Stage A
 // goroutine runs. Returns nil on a hard generation failure, which
@@ -763,7 +778,7 @@ type dailyGeneratedBlock struct {
 // verdict (see the plan doc: "unchanged verdicts and hard generation
 // failures both drop out here — same bucket, since both mean 'nothing
 // to show'").
-func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
+func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg *config.Config, writerClient, architectClient llm.ChatClient, spec dailyBlockSpec, location, weatherLocation, sportsTeams string, customInstructions map[string]string, yesterdayByKey map[string]store.PulsarDailyBlock, hasYesterday bool) *dailyGeneratedBlock {
 	var content string
 	var imageURL string
 	var cost float64
@@ -777,7 +792,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
 			content, imageURL, cost, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
-			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation))
 			content = tools.Dispatch(spec.Key, "{}", ctx)
 			if strings.HasPrefix(content, "error:") {
 				err = fmt.Errorf("%s", content)

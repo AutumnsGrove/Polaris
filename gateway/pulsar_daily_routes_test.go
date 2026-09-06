@@ -147,6 +147,30 @@ func TestHandleUpdateDailyConfig_RejectsUnknownCustomInstructionBlock(t *testing
 	}
 }
 
+func TestHandleUpdateDailyConfig_WeatherLocationRoundTrip(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":   []string{"weather"},
+		"weather_location": "Seattle, WA",
+		"architect_model":  "deepseek-pro",
+		"writer_model":     "deepseek",
+		"time_of_day":      "07:00",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var cfg store.PulsarDailyConfig
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if cfg.WeatherLocation != "Seattle, WA" {
+		t.Errorf("WeatherLocation = %q, want the value just written", cfg.WeatherLocation)
+	}
+}
+
 func TestHandleUpdateDailyConfig_CustomBlocksRoundTrip(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

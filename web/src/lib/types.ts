@@ -319,6 +319,9 @@ export interface PulsarDailyConfig {
 	// no separate on/off toggle the way fixed blocks have via
 	// enabled_blocks.
 	custom_blocks: PulsarDailyCustomBlock[];
+	// weather_location: overrides config.yaml's app-wide default_location
+	// for the Weather block only — empty means "use default_location".
+	weather_location: string;
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;

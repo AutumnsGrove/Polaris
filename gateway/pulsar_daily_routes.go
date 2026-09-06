@@ -33,6 +33,7 @@ type pulsarDailyConfigRequest struct {
 	SportsTeams        string                         `json:"sports_teams"`
 	CustomInstructions map[string]string              `json:"custom_instructions"`
 	CustomBlocks       []store.PulsarDailyCustomBlock `json:"custom_blocks"`
+	WeatherLocation    string                         `json:"weather_location"`
 	ArchitectModel     string                         `json:"architect_model"`
 	WriterModel        string                         `json:"writer_model"`
 	TimeOfDay          string                         `json:"time_of_day"`
@@ -100,7 +101,7 @@ func (s *Server) handleUpdateDailyConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.CustomBlocks, req.ArchitectModel, req.WriterModel, req.TimeOfDay); err != nil {
+	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.CustomBlocks, req.WeatherLocation, req.ArchitectModel, req.WriterModel, req.TimeOfDay); err != nil {
 		log.Warn("updating pulsar daily config failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
