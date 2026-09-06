@@ -321,7 +321,8 @@ export interface PulsarDailyConfig {
 }
 
 // PulsarDailyBlock mirrors store.PulsarDailyBlock — one rendered card in
-// an edition. image_url is only ever set for picture_of_day.
+// an edition. image_url is only ever set for picture_of_day; chart is only
+// ever set for weather (see gateway/pulsar_daily.go's generateOneDailyBlock).
 export interface PulsarDailyBlock {
 	key: string;
 	title: string;
@@ -329,6 +330,7 @@ export interface PulsarDailyBlock {
 	gist: string;
 	is_top_story: boolean;
 	image_url?: string;
+	chart?: ChartSpec;
 }
 
 // PulsarDailyEdition mirrors store.PulsarDailyEdition — one calendar

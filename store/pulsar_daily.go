@@ -115,6 +115,13 @@ type PulsarDailyBlock struct {
 	Gist       string `json:"gist"`
 	IsTopStory bool   `json:"is_top_story"`
 	ImageURL   string `json:"image_url,omitempty"`
+	// Chart is raw tools.ChartSpec JSON, not a typed field — store can't
+	// import the tools package (tools already imports store, for
+	// tools/memory.go's use of it), so the gateway marshals whatever
+	// tools.Context.ChartSnapshot() returned before this struct is built.
+	// The frontend decodes it as the same ChartSpec shape ChartCard.svelte
+	// already renders for chat turns.
+	Chart json.RawMessage `json:"chart,omitempty"`
 }
 
 // PulsarDailyEdition is one calendar date's assembled Daily page.
@@ -189,6 +196,31 @@ func (s *Store) LatestDailyEdition(beforeDate string) (*PulsarDailyEdition, erro
 	}
 	if err := json.Unmarshal([]byte(blocksJSON), &e.Blocks); err != nil {
 		return nil, fmt.Errorf("latest daily edition: decode blocks: %w", err)
+	}
+	return &e, nil
+}
+
+// NextDailyEdition returns the oldest edition strictly after the given
+// date — the mirror image of LatestDailyEdition's "strictly before",
+// backing the frontend's "forward" nav once a user has stepped back more
+// than one day (previously ← Previous had no inverse, so browsing back
+// two days and wanting to return to the first of them had no query to
+// use short of re-fetching "latest").
+func (s *Store) NextDailyEdition(afterDate string) (*PulsarDailyEdition, error) {
+	var e PulsarDailyEdition
+	var blocksJSON string
+	err := s.db.QueryRow(
+		`SELECT edition_date, blocks, cost_usd, created_at FROM pulsar_daily_editions
+		 WHERE edition_date > ? ORDER BY edition_date ASC LIMIT 1`, afterDate,
+	).Scan(&e.Date, &blocksJSON, &e.CostUSD, &e.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrDailyEditionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("next daily edition: %w", err)
+	}
+	if err := json.Unmarshal([]byte(blocksJSON), &e.Blocks); err != nil {
+		return nil, fmt.Errorf("next daily edition: decode blocks: %w", err)
 	}
 	return &e, nil
 }

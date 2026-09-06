@@ -377,6 +377,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PUT /api/pulsar/daily/config", s.handleUpdateDailyConfig)
 	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}", s.handleGetDailyEdition)
 	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/previous", s.handleGetPreviousDailyEdition)
+	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}/next", s.handleGetNextDailyEdition)
 	s.mux.HandleFunc("POST /api/pulsar/daily/expand", s.handleExpandDailyBlock)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 

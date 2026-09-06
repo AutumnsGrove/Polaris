@@ -49,15 +49,17 @@ export class PulsarDailyState {
 	}
 
 	// loadEdition fetches "latest", a specific "YYYY-MM-DD", or the
-	// edition strictly before one (for the "← Yesterday" nav — via
-	// LatestDailyEdition's semantics, which correctly skips a missed day
-	// rather than 404ing on it).
-	async loadEdition(date: string, mode: 'exact' | 'before' = 'exact') {
+	// edition strictly before/after one (for the "← Previous"/"Next →"
+	// nav — via LatestDailyEdition/NextDailyEdition's semantics, which
+	// correctly skip a missed day rather than 404ing on it).
+	async loadEdition(date: string, mode: 'exact' | 'before' | 'after' = 'exact') {
 		this.editionState = 'loading';
 		const path =
 			mode === 'before'
 				? `/api/pulsar/daily/editions/${date}/previous`
-				: `/api/pulsar/daily/editions/${date}`;
+				: mode === 'after'
+					? `/api/pulsar/daily/editions/${date}/next`
+					: `/api/pulsar/daily/editions/${date}`;
 		const res = await fetch(path);
 		if (res.status === 404) {
 			this.edition = null;

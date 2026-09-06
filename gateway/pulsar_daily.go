@@ -564,6 +564,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		verdict  string // "" for a non-Watch block: always renders, no verdict.
 		imageURL string
 		costUSD  float64
+		chart    *tools.ChartSpec
 	}
 	results := make([]*stageAResult, len(dailyBlockRegistry))
 	var wg sync.WaitGroup
@@ -581,7 +582,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			}()
 			r := s.generateOneDailyBlock(reqCtx, cfg, writerClient, architectClient, spec, location, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
-				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD}
+				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart}
 			}
 		}(i, spec)
 	}
@@ -639,7 +640,15 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			topStory = &store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: content, Gist: r.gist, IsTopStory: true}
 			continue
 		}
-		blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL})
+		var chartJSON json.RawMessage
+		if r.chart != nil {
+			if b, err := json.Marshal(r.chart); err != nil {
+				log.Warn("pulsar daily: encoding block chart failed, dropping it", "block", r.spec.Key, "err", err)
+			} else {
+				chartJSON = b
+			}
+		}
+		blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL, Chart: chartJSON})
 	}
 
 	// Stage D — assemble (Top Story first, if any) and persist.
@@ -670,6 +679,11 @@ type dailyGeneratedBlock struct {
 	gist     string
 	verdict  string
 	imageURL string
+	// chart carries weather's structured forecast (setWeatherChart) through
+	// to the frontend so the Daily card can render the same rich strip a
+	// normal chat turn's weather tool gets, instead of the plain-prose
+	// fallback direct-dispatch blocks otherwise get stuck with.
+	chart *tools.ChartSpec
 	// costUSD accumulates every LLM call this block's generation made —
 	// its own content-generation call plus (for a Watch block) the
 	// diff-judge call — so runDailyPipeline can sum a real total for the
@@ -690,6 +704,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 	var imageURL string
 	var cost float64
 	var err error
+	var chart *tools.ChartSpec
 	custom := customInstructions[spec.Key]
 
 	switch spec.Kind {
@@ -702,6 +717,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 			content = tools.Dispatch(spec.Key, "{}", ctx)
 			if strings.HasPrefix(content, "error:") {
 				err = fmt.Errorf("%s", content)
+			}
+			chart = ctx.ChartSnapshot()
+			if spec.Key == "weather" && chart != nil {
+				content = tools.TrimWeatherForecastSection(content)
 			}
 		}
 	case dailyBlockPick:
@@ -719,7 +738,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, cfg *config.Confi
 	}
 
 	if !spec.Watch {
-		return &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost}
+		return &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost, chart: chart}
 	}
 
 	yesterdayBlock, ok := yesterdayByKey[spec.Key]

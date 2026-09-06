@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
@@ -24,6 +24,7 @@
 	} from '@lucide/svelte';
 	import type { PulsarDailyBlock } from '$lib/types';
 	import PulsarDailyConfigModal from '$lib/components/PulsarDailyConfigModal.svelte';
+	import ChartCard from '$lib/components/ChartCard.svelte';
 
 	// blockIcons: a Lucide icon component per block key, matching the
 	// mockup's visual language — no per-kind structured layout (weather
@@ -54,18 +55,93 @@
 	let expandingKey = $state('');
 	let showConfig = $state(false);
 
-	onMount(async () => {
-		await Promise.all([pulsarDailyState.loadConfig(), pulsarDailyState.loadEdition('latest')]);
-		if (pulsarDailyState.edition) {
-			viewedDate = pulsarDailyState.edition.date;
-			latestDate = pulsarDailyState.edition.date;
-			localStorage.setItem('polaris-daily-last-seen', viewedDate);
-			// Clears the sidebar's dot immediately — Sidebar.svelte persists
-			// across client-side navigation and only checks
-			// hasNewEdition once on its own mount, so opening /daily needs
-			// to flip this itself rather than waiting for a future reload.
-			pulsarDailyState.hasNewEdition = false;
+	// Masonry column assignment — see the .board style comment for why this
+	// is JS-driven rather than CSS multi-column. columnCount mirrors the
+	// old CSS breakpoints (3 / 2 / 1 at 900px / 620px); boardWidth comes
+	// from bind:clientWidth on .board itself.
+	let columnCount = $state(3);
+	let boardWidth = $state(0);
+	let measureEls: Record<string, HTMLElement> = {};
+	let heights = $state<Record<string, number>>({});
+
+	function updateColumnCount() {
+		if (window.matchMedia('(max-width: 620px)').matches) columnCount = 1;
+		else if (window.matchMedia('(max-width: 900px)').matches) columnCount = 2;
+		else columnCount = 3;
+	}
+
+	const gapPx = $derived(
+		typeof document !== 'undefined'
+			? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-lg')) || 16
+			: 16
+	);
+	const perColumnWidth = $derived(
+		boardWidth > 0 ? (boardWidth - gapPx * (columnCount - 1)) / columnCount : 0
+	);
+
+	// Re-measure whenever the edition, column count, or board width
+	// changes. Reads heights are NOT taken here (only written), so this
+	// can't loop on its own writes.
+	$effect(() => {
+		const blocks = pulsarDailyState.edition?.blocks ?? [];
+		// Referencing these keeps the effect reactive to their changes even
+		// though they're not used directly below (measureEls reads the
+		// live DOM instead).
+		void columnCount;
+		void perColumnWidth;
+		if (!blocks.length) return;
+		tick().then(() => {
+			const next: Record<string, number> = {};
+			for (const b of blocks) {
+				const el = measureEls[b.key];
+				if (el) next[b.key] = el.offsetHeight;
+			}
+			heights = next;
+		});
+	});
+
+	// Greedy shortest-column assignment — a single very tall card no
+	// longer starves other columns the way CSS column-balancing did,
+	// because real measured heights (not a naive total/N estimate) decide
+	// placement.
+	const columns = $derived.by(() => {
+		const blocks = pulsarDailyState.edition?.blocks ?? [];
+		const cols: PulsarDailyBlock[][] = Array.from({ length: columnCount }, () => []);
+		const colHeights = new Array(columnCount).fill(0);
+		for (const b of blocks) {
+			let target = 0;
+			for (let i = 1; i < columnCount; i++) {
+				if (colHeights[i] < colHeights[target]) target = i;
+			}
+			cols[target].push(b);
+			colHeights[target] += (heights[b.key] ?? 0) + gapPx;
 		}
+		return cols;
+	});
+
+	onMount(() => {
+		// onMount's own return value is only used as a cleanup callback
+		// when onMount's callback is synchronous — an async callback's
+		// resolved value is ignored, so the data-loading half runs in a
+		// fire-and-forget inner async function instead of making this
+		// whole callback async.
+		updateColumnCount();
+		window.addEventListener('resize', updateColumnCount);
+		(async () => {
+			await Promise.all([pulsarDailyState.loadConfig(), pulsarDailyState.loadEdition('latest')]);
+			if (pulsarDailyState.edition) {
+				viewedDate = pulsarDailyState.edition.date;
+				latestDate = pulsarDailyState.edition.date;
+				localStorage.setItem('polaris-daily-last-seen', viewedDate);
+				// Clears the sidebar's dot immediately — Sidebar.svelte
+				// persists across client-side navigation and only checks
+				// hasNewEdition once on its own mount, so opening /daily
+				// needs to flip this itself rather than waiting for a
+				// future reload.
+				pulsarDailyState.hasNewEdition = false;
+			}
+		})();
+		return () => window.removeEventListener('resize', updateColumnCount);
 	});
 
 	function formatDate(dateStr: string): string {
@@ -76,20 +152,64 @@
 		return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 	}
 
-	async function goPrevious() {
-		if (!viewedDate) return;
-		await pulsarDailyState.loadEdition(viewedDate, 'before');
-		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
+	// Short form for the sticky header — the full dateline lives in the
+	// masthead, which scrolls out of view with the rest of the content
+	// (this page's .content, not the document, owns scrolling). Without
+	// this, scrolling into the cards left no visible cue for which day
+	// you were viewing except scrolling all the way back up — a real
+	// complaint, reproduced live by scrolling past the masthead on a
+	// non-today edition.
+	function formatShortDate(dateStr: string): string {
+		const d = new Date(dateStr + 'T00:00:00');
+		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 	}
 
-	// goToday reloads the latest edition — also doubles as "forward" nav
-	// after going back exactly one step, since a general "next day after
-	// this one" endpoint doesn't exist yet (multi-step-back-then-forward
-	// browsing is a rare enough path for v1 to leave as a known gap
-	// rather than build a whole second query for).
+	// atEarliestEdition backs a one-shot "you've reached the earliest
+	// edition" notice — a real bug found live via design critique: without
+	// this, clicking ← Previous past the oldest edition left the sticky
+	// header's date pill (and the masthead dateline) still showing the
+	// last valid date while the body dropped into the generic "No edition
+	// yet" empty state, implying that date itself had nothing generated
+	// rather than "there's nothing earlier than this." Sticky until the
+	// next successful nav (Today/Next/a Previous that actually lands
+	// somewhere), not auto-dismissed on a timer — there's nothing else to
+	// do about it until the user moves on anyway.
+	let atEarliestEdition = $state(false);
+
+	async function goPrevious() {
+		if (!viewedDate) return;
+		const priorEdition = pulsarDailyState.edition;
+		const priorDate = viewedDate;
+		await pulsarDailyState.loadEdition(viewedDate, 'before');
+		if (pulsarDailyState.edition) {
+			viewedDate = pulsarDailyState.edition.date;
+			atEarliestEdition = false;
+		} else {
+			// Nothing earlier exists — restore what was already on screen
+			// instead of leaving the header and body disagreeing about
+			// which date failed to load.
+			pulsarDailyState.edition = priorEdition;
+			pulsarDailyState.editionState = 'loaded';
+			viewedDate = priorDate;
+			atEarliestEdition = true;
+		}
+	}
+
+	// goNext mirrors goPrevious via NextDailyEdition — previously the only
+	// way "forward" was possible at all was re-fetching "latest", which
+	// broke the moment a user stepped back more than one day (no "day
+	// after this one" query existed to walk forward one step at a time).
+	async function goNext() {
+		if (!viewedDate || viewedDate === latestDate) return;
+		await pulsarDailyState.loadEdition(viewedDate, 'after');
+		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
+		atEarliestEdition = false;
+	}
+
 	async function goToday() {
 		await pulsarDailyState.loadEdition('latest');
 		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
+		atEarliestEdition = false;
 	}
 
 	// expand used to POST to the server and wait for the *entire* turn
@@ -154,11 +274,21 @@
 <header class="header">
 	<div class="header-left">
 		{#if !appState.sidebarOpen}
-			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
+			<button
+				class="icon-btn"
+				onclick={() => appState.toggleSidebar()}
+				title="Open sidebar"
+				aria-label="Open sidebar"
+			>
 				<PanelLeft size={18} />
 			</button>
 		{/if}
 		<h1 class="page-title">The Daily</h1>
+		{#if viewedDate}
+			<span class="header-date" class:not-today={viewedDate !== latestDate}>
+				{formatShortDate(viewedDate)}
+			</span>
+		{/if}
 	</div>
 	<div class="header-right">
 		{#if pulsarDailyState.edition && pulsarDailyState.edition.cost_usd > 0}
@@ -167,7 +297,12 @@
 				${pulsarDailyState.edition.cost_usd.toFixed(4)}
 			</span>
 		{/if}
-		<button class="icon-btn" onclick={() => (showConfig = true)} title="Configure The Daily">
+		<button
+			class="icon-btn"
+			onclick={() => (showConfig = true)}
+			title="Configure The Daily"
+			aria-label="Configure The Daily"
+		>
 			<Settings size={18} />
 		</button>
 	</div>
@@ -181,9 +316,13 @@
 			<div class="dateline"><span>{formatDate(viewedDate)}</span></div>
 		{/if}
 		<div class="edition-nav">
-			<button onclick={goPrevious}>← Previous</button>
+			<button disabled={atEarliestEdition} onclick={goPrevious}>← Previous</button>
 			<button class:active={viewedDate === latestDate} onclick={goToday}>Today</button>
+			<button disabled={viewedDate === latestDate} onclick={goNext}>Next →</button>
 		</div>
+		{#if atEarliestEdition}
+			<p class="nav-boundary-note">You've reached the earliest edition.</p>
+		{/if}
 	</div>
 
 	{#if pulsarDailyState.editionState === 'loading'}
@@ -194,40 +333,72 @@
 			or configure it now.
 		</p>
 	{:else if pulsarDailyState.edition}
-		<div class="board">
-			{#each pulsarDailyState.edition.blocks as block (block.key)}
-				{@const Icon = blockIcons[block.key] ?? Newspaper}
-				<button
-					class="card"
-					class:top-story={block.is_top_story}
-					disabled={expandingKey === block.key}
-					onclick={() => expand(block)}
-				>
-					{#if block.is_top_story}
-						<span class="kicker-label">Top Story</span>
-						<h3 class="headline">{block.title}</h3>
-						{#if block.image_url}
-							<img src={block.image_url} alt="" />
-						{/if}
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						<div class="card-body">{@html renderContent(block.content)}</div>
-					{:else}
-						<div class="card-head">
-							<div class="card-icon">
-								<Icon size={15} />
-							</div>
-							<div class="card-title">{block.title}</div>
-						</div>
-						{#if block.key === 'picture_of_day' && block.image_url}
-							<img src={block.image_url} alt="" />
-						{/if}
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						<div class="card-body">{@html renderContent(block.content)}</div>
+		{#snippet card(block: PulsarDailyBlock, measuring: boolean)}
+			{@const Icon = blockIcons[block.key] ?? Newspaper}
+			<button
+				class="card"
+				class:top-story={block.is_top_story}
+				disabled={expandingKey === block.key}
+				tabindex={measuring ? -1 : 0}
+				aria-hidden={measuring}
+				onclick={() => !measuring && expand(block)}
+			>
+				{#if block.is_top_story}
+					<span class="kicker-label">Top Story</span>
+					<h3 class="headline">{block.title}</h3>
+					{#if block.image_url}
+						<img src={block.image_url} alt={block.title} />
 					{/if}
-					<div class="expand-hint">
-						{expandingKey === block.key ? 'Opening…' : 'Continue in chat →'}
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<div class="card-body">{@html renderContent(block.content)}</div>
+				{:else}
+					<div class="card-head">
+						<div class="card-icon">
+							<Icon size={15} />
+						</div>
+						<div class="card-title">{block.title}</div>
 					</div>
-				</button>
+					{#if block.key === 'picture_of_day' && block.image_url}
+						<img src={block.image_url} alt={block.title} />
+					{/if}
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<div class="card-body">{@html renderContent(block.content)}</div>
+					{#if block.chart}
+						<!-- Weather's own structured forecast (setWeatherChart) —
+						     the same ChartCard a normal chat turn's weather tool
+						     gets, so Daily's card isn't stuck with plain prose
+						     just because it's a dailyBlockDirect dispatch. The
+						     forecast bullet list this would otherwise duplicate
+						     is already stripped server-side (see
+						     TrimWeatherForecastSection). -->
+						<ChartCard chart={block.chart} />
+					{/if}
+				{/if}
+				<div class="expand-hint">
+					{expandingKey === block.key ? 'Opening…' : 'Continue in chat →'}
+				</div>
+			</button>
+		{/snippet}
+
+		<!-- Invisible reference copies at the real per-column width, purely
+		     so the $effect above can read each card's true rendered
+		     offsetHeight before deciding which visible column it goes in.
+		     Not interactive (aria-hidden, tabindex -1, click no-op). -->
+		<div class="board-measure" style="width: {perColumnWidth}px" aria-hidden="true">
+			{#each pulsarDailyState.edition.blocks as block (block.key)}
+				<div bind:this={measureEls[block.key]}>
+					{@render card(block, true)}
+				</div>
+			{/each}
+		</div>
+
+		<div class="board" bind:clientWidth={boardWidth}>
+			{#each columns as col, i (i)}
+				<div class="board-column">
+					{#each col as block (block.key)}
+						{@render card(block, false)}
+					{/each}
+				</div>
 			{/each}
 		</div>
 
@@ -275,6 +446,21 @@
 		font-family: var(--font-serif);
 		font-size: 20px;
 		font-weight: 700;
+	}
+	/* Stays visible in the sticky header after the masthead's own full
+	   dateline scrolls out of view — see formatShortDate's doc comment. */
+	.header-date {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		padding: 2px var(--space-sm);
+		border-radius: var(--radius-full);
+		border: 1px solid transparent;
+		white-space: nowrap;
+	}
+	.header-date.not-today {
+		color: var(--color-accent);
+		border-color: var(--color-accent);
+		background: var(--color-accent-soft);
 	}
 	.content {
 		flex: 1;
@@ -336,34 +522,56 @@
 		border-color: var(--color-accent);
 		color: var(--color-accent);
 	}
+	.edition-nav button:disabled {
+		cursor: default;
+		opacity: 0.4;
+	}
+	.nav-boundary-note {
+		margin: var(--space-sm) 0 0;
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
 
 	/* True masonry via CSS multi-column layout, not a fixed-row-span
 	   grid — see docs/plans/pulsar-daily.md's "Frontend layout": a
 	   fixed-row-span grid clipped real content once column width
 	   narrowed. Each .card sizes to its own content and flows into
 	   whichever column has room next. */
+	/* JS-computed masonry (see script's `columns` derivation), not CSS
+	   multi-column — column-fill's "balance" mode estimates each column's
+	   target height as totalHeight / columnCount, then packs greedily; a
+	   single very tall card (the real, Stage-C-elaborated Top Story) throws
+	   that estimate off badly enough that a whole column goes unused.
+	   column-fill: auto fixes the balance heuristic but needs an explicit
+	   container height to fill sequentially against, and there's no way to
+	   know that height in advance without measuring anyway — so we measure
+	   real card heights in JS and assign greedily to the shortest column
+	   ourselves instead of asking the browser to guess. */
 	.board {
-		column-count: 3;
-		column-gap: var(--space-lg);
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-lg);
 		max-width: 1180px;
 		margin: 0 auto;
 	}
-	@media (max-width: 900px) {
-		.board {
-			column-count: 2;
-		}
+	.board-column {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-lg);
+		flex: 1 1 0;
+		min-width: 0;
 	}
-	@media (max-width: 620px) {
-		.board {
-			column-count: 1;
-		}
+	.board-measure {
+		position: absolute;
+		visibility: hidden;
+		pointer-events: none;
+		top: 0;
+		left: -9999px;
 	}
 
 	.card {
-		display: inline-block;
+		display: block;
 		width: 100%;
-		break-inside: avoid;
-		margin-bottom: var(--space-lg);
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);

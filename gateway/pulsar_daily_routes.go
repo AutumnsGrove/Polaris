@@ -152,6 +152,25 @@ func (s *Server) handleGetPreviousDailyEdition(w http.ResponseWriter, r *http.Re
 	writeJSON(w, edition)
 }
 
+// handleGetNextDailyEdition backs the "Next →" button — the mirror image
+// of handleGetPreviousDailyEdition, the oldest edition strictly after the
+// given date. See store.NextDailyEdition's doc comment for why this
+// didn't exist until now.
+func (s *Server) handleGetNextDailyEdition(w http.ResponseWriter, r *http.Request) {
+	date := r.PathValue("date")
+	edition, err := s.db.NextDailyEdition(date)
+	if errors.Is(err, store.ErrDailyEditionNotFound) {
+		http.Error(w, "no later edition found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Warn("getting next pulsar daily edition failed", "date", date, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, edition)
+}
+
 // dailyFollowupFamily picks which of the plan doc's three expand-to-chat
 // prompt families applies to a block — see "Expand-to-chat prompt
 // templates" for why these three (not one bespoke template per block)

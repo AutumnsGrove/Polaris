@@ -230,6 +230,40 @@ func TestHandleGetPreviousDailyEdition(t *testing.T) {
 	}
 }
 
+func TestHandleGetNextDailyEdition(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	if err := h.db.UpsertDailyEdition("2026-09-03", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Sunny"}}, 0); err != nil {
+		t.Fatalf("seeding edition: %v", err)
+	}
+	if err := h.db.UpsertDailyEdition("2026-09-07", []store.PulsarDailyBlock{{Key: "weather", Title: "Weather", Content: "Rainy"}}, 0); err != nil {
+		t.Fatalf("seeding edition: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/pulsar/daily/editions/2026-09-05/next"))
+	if err != nil {
+		t.Fatalf("GET next edition: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var next store.PulsarDailyEdition
+	json.NewDecoder(resp.Body).Decode(&next)
+	if next.Date != "2026-09-07" {
+		t.Errorf("next edition = %+v, want 2026-09-07 (the missed 2026-09-06 shouldn't matter)", next)
+	}
+
+	resp2, err := http.Get(h.url("/api/pulsar/daily/editions/2026-09-07/next"))
+	if err != nil {
+		t.Fatalf("GET next edition past the newest: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 past the newest edition", resp2.StatusCode)
+	}
+}
+
 func TestHandleExpandDailyBlock_UnknownDateReturns404(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
