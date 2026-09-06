@@ -612,6 +612,16 @@ var migrations = []string{
 	// potato's existing DB skipped it entirely, surfacing as "no such
 	// column: no_research" the moment a thread was reopened.
 	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
+	// Re-attempt, appended fresh: the entry above ran once already as part
+	// of the broken mid-list deploy — on a database that already executed
+	// it (silently, as a tolerated "duplicate column" skip against
+	// whatever migration actually ended up at that shifted index), its
+	// user_version has already moved past that slot, so the entry above
+	// alone will never run again there. This one gives it an actually-new
+	// slot to run in for real. Safe everywhere else too: a fresh database
+	// already has the column from CREATE TABLE, so both this and the
+	// entry above just hit the same tolerated duplicate-column skip.
+	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
