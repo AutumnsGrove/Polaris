@@ -190,6 +190,30 @@ func (s *Server) handleGetDailyTrace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, trace)
 }
 
+// handleGenerateDailyNow is the manual "Generate now" trigger — previously
+// the only way to force a real run for testing was editing time_of_day to
+// land between last_generated_at and the current clock and waiting for
+// the scheduler's own once-a-minute tick to notice (see pulsar_daily.go's
+// isDailyDue), a workaround with no place in the actual product. Fires
+// the same runDailyPipelineRecovered the scheduler itself calls, so
+// there's exactly one code path for "run a Daily generation" regardless
+// of what triggered it. Returns immediately (202) rather than blocking
+// on the pipeline — Stage A-D can take several minutes of real research
+// calls, far longer than any reasonable HTTP timeout, and the frontend
+// already has a "did it work" signal (last_generated_at changing) it can
+// poll for without this request needing to stay open.
+func (s *Server) handleGenerateDailyNow(w http.ResponseWriter, r *http.Request) {
+	if !s.dailyGenerationRunning.CompareAndSwap(false, true) {
+		http.Error(w, "a Daily generation is already running", http.StatusConflict)
+		return
+	}
+	go func() {
+		defer s.dailyGenerationRunning.Store(false)
+		s.runDailyPipelineRecovered()
+	}()
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // dailyFollowupFamily picks which of the plan doc's three expand-to-chat
 // prompt families applies to a block — see "Expand-to-chat prompt
 // templates" for why these three (not one bespoke template per block)

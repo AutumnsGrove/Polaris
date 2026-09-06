@@ -58,6 +58,21 @@
 	let saving = $state(false);
 	let error = $state('');
 
+	// generateNow's own status — separate from saving/error above since
+	// triggering a generation and saving config are unrelated actions
+	// that can each fail independently without the modal conflating them.
+	let generating = $state(false);
+	let generateResult = $state('');
+
+	async function generateNow() {
+		if (generating) return;
+		generating = true;
+		generateResult = '';
+		const result = await pulsarDailyState.generateNow();
+		generating = false;
+		generateResult = result.error || 'Started — check The Daily page in a few minutes.';
+	}
+
 	// wizardBlock: which block's "help me write this" interview is
 	// currently open, if any — same one-at-a-time modal-over-modal shape
 	// PulsarRoutineForm.svelte's own wizard button uses.
@@ -204,6 +219,15 @@
 				<input type="time" bind:value={timeOfDay} />
 			</div>
 			<p class="hint">Server-local time — no timezone handling.</p>
+			<div class="row">
+				<span>Right now</span>
+				<button type="button" class="btn generate-now-btn" onclick={generateNow} disabled={generating}>
+					{generating ? 'Starting…' : 'Generate now'}
+				</button>
+			</div>
+			<p class="hint">
+				{generateResult || 'Runs today’s edition immediately with the currently-saved settings, not whatever’s still unsaved in this form.'}
+			</p>
 
 			{#if error}
 				<p class="error">{error}</p>
@@ -348,5 +372,10 @@
 
 	.save-btn {
 		margin-left: auto;
+	}
+
+	.generate-now-btn {
+		font-size: 13px;
+		padding: var(--space-sm) var(--space-md);
 	}
 </style>

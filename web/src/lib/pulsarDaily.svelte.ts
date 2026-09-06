@@ -75,6 +75,22 @@ export class PulsarDailyState {
 		this.editionState = 'loaded';
 	}
 
+	// generateNow triggers a real Daily generation immediately, bypassing
+	// time_of_day — previously the only way to force a run was editing
+	// time_of_day to land between last_generated_at and now and waiting
+	// for the scheduler's own once-a-minute tick, a workaround with no
+	// place in the settings panel. Fire-and-forget: the backend returns
+	// 202 the instant the pipeline starts in the background, not once
+	// it's done (Stage A-D can take several minutes of real research
+	// calls). 409 means one's already running — surfaced as a distinct
+	// result so the UI can say so instead of a generic failure.
+	async generateNow(): Promise<{ error: string; alreadyRunning: boolean }> {
+		const res = await fetch('/api/pulsar/daily/generate', { method: 'POST' });
+		if (res.status === 409) return { error: 'A generation is already running.', alreadyRunning: true };
+		if (!res.ok) return { error: (await res.text()) || 'Something went wrong — try again.', alreadyRunning: false };
+		return { error: '', alreadyRunning: false };
+	}
+
 	async checkForNewEdition(lastSeenDate: string | null) {
 		const res = await fetch('/api/pulsar/daily/editions/latest');
 		if (!res.ok) return;

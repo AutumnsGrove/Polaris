@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -176,6 +177,71 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 		if tr.Included {
 			t.Errorf("trace for %q has Included=true, want false — it never made the degraded edition", tr.BlockKey)
 		}
+	}
+}
+
+// TestHandleGenerateDailyNow drives the manual "Generate now" trigger
+// through the real HTTP handler, not runDailyPipeline directly — the
+// previous only way to force a real run for testing was the time_of_day
+// scheduler-tick workaround documented in pulsar_daily.go's isDailyDue,
+// which has no place in the actual product. Same four-cheap-blocks setup
+// as TestRunDailyPipeline_FullFirstDayRun, just triggered over HTTP and
+// waited out via WaitForActiveTurns (the same shutdown-drain mechanism
+// runDailyPipelineRecovered registers with) instead of calling the
+// pipeline function synchronously.
+func TestHandleGenerateDailyNow(t *testing.T) {
+	bodies := []string{
+		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."),
+		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),
+		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),
+		plainSSEBody("A new open-weight model release was the big tech story today."),
+		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"tech_science\",\"reasoning\":\"Bigger than a quiet headlines day\"}"}}`),
+		plainSSEBody("Deeper dive on the open-weight release."),
+	}
+	srv := sequencedSSEServer(t, bodies)
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "tech_science"},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "23:59", // far in the future — only the manual trigger should fire this run
+	})
+	resp.Body.Close()
+
+	genResp, err := http.Post(h.url("/api/pulsar/daily/generate"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST generate: %v", err)
+	}
+	defer genResp.Body.Close()
+	if genResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 Accepted (fire-and-forget — the pipeline runs in the background)", genResp.StatusCode)
+	}
+
+	// A second click while the first run is still in flight must be
+	// rejected, not queue a wasteful overlapping run.
+	genResp2, err := http.Post(h.url("/api/pulsar/daily/generate"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST generate (second, concurrent): %v", err)
+	}
+	defer genResp2.Body.Close()
+	if genResp2.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 Conflict for a generation already in flight", genResp2.StatusCode)
+	}
+
+	h.srvObj.BeginShutdown()
+	if err := h.srvObj.WaitForActiveTurns(context.Background()); err != nil {
+		t.Fatalf("waiting for the triggered generation to finish: %v", err)
+	}
+
+	today := time.Now().Format("2006-01-02")
+	edition, err := h.db.GetDailyEdition(today)
+	if err != nil {
+		t.Fatalf("GetDailyEdition: %v", err)
+	}
+	if len(edition.Blocks) != 4 {
+		t.Errorf("edition.Blocks = %+v, want the 4-block run the manual trigger actually produced", edition.Blocks)
 	}
 }
 
