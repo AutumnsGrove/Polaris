@@ -2,7 +2,18 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- interactive-widget=resizes-content (Safari 17.4+, Chrome 108+) makes
+		     the on-screen keyboard shrink the real layout viewport instead of
+		     just the visual one — the default resizes-visual mode is why
+		     +layout.svelte needed a JS visualViewport/--app-height workaround
+		     just to keep .shell aligned, and why anything never folded into
+		     that system (fixed-position sheets/modals, raw vh sizing) still
+		     jumped or clipped when the keyboard opened. This fixes the whole
+		     class of bugs at the source instead of one surface at a time. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<meta name="text-scale" content="scale" />
 		<link rel="icon" type="image/png" href="%sveltekit.assets%/favicon-32.png" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />

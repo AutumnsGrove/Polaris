@@ -479,7 +479,14 @@ a {
 	position: relative;
 	width: 100%;
 	max-width: 440px;
-	max-height: 85vh;
+	/* Not a plain 85vh — see +layout.svelte's --app-height doc comment.
+	   iOS's on-screen keyboard doesn't affect vh (even with
+	   interactive-widget=resizes-content, only newer browser versions
+	   honor that), so a modal sized off it can demand more height than
+	   is actually visible once the keyboard opens, forcing this
+	   bottom-anchored sheet to overflow off the top of its own backdrop
+	   and get clipped. */
+	max-height: calc(var(--app-height, 100dvh) * 0.85);
 	overflow-y: auto;
 	/* True glass, not a flat card: a step up to the deepest surface tone
 	   (rather than a border) does the elevating, an inset highlight along
@@ -527,7 +534,10 @@ a {
 
 	.modal-panel {
 		max-width: 100%;
-		max-height: 82vh;
+		/* Same --app-height reasoning as the desktop rule above — matters
+		   more here since every mobile modal is the bottom-sheet case this
+		   was actually written for. */
+		max-height: calc(var(--app-height, 100dvh) * 0.82);
 		border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 		/* Extra top padding clears the grab handle below. */
 		padding: var(--space-xl) var(--space-lg) max(var(--space-lg), env(safe-area-inset-bottom));

@@ -179,7 +179,10 @@
 	.wizard-panel {
 		display: flex;
 		flex-direction: column;
-		max-height: 78vh;
+		/* --app-height, not plain vh — see app.css's .modal-panel doc
+		   comment on why a keyboard-open modal needs to track the
+		   actually-visible height, not the full-window one. */
+		max-height: calc(var(--app-height, 100dvh) * 0.78);
 		/* The shared .modal-panel is a plain scrolling block (right for a
 		   form); this needs the scrolling to happen inside .transcript
 		   instead, with the header/compose bar pinned. */
@@ -389,7 +392,7 @@
 
 	@media (max-width: 768px) {
 		.wizard-panel {
-			max-height: 82vh;
+			max-height: calc(var(--app-height, 100dvh) * 0.82);
 		}
 	}
 </style>

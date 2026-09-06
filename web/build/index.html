@@ -2,7 +2,18 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- interactive-widget=resizes-content (Safari 17.4+, Chrome 108+) makes
+		     the on-screen keyboard shrink the real layout viewport instead of
+		     just the visual one — the default resizes-visual mode is why
+		     +layout.svelte needed a JS visualViewport/--app-height workaround
+		     just to keep .shell aligned, and why anything never folded into
+		     that system (fixed-position sheets/modals, raw vh sizing) still
+		     jumped or clipped when the keyboard opened. This fixes the whole
+		     class of bugs at the source instead of one surface at a time. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
 		<meta name="text-scale" content="scale" />
 		<link rel="icon" type="image/png" href="/favicon-32.png" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -19,9 +30,9 @@
 		<link href="/_app/immutable/entry/start.DDzl-PsE.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/mkNxXjWW.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/FJvQSSjd.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.B_FHKLVd.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.D2_M2fNx.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Dwg-UyE8.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CHFOwT_I.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BQKv_Sza.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yxIY6p6V.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CWac1nlN.js" rel="modulepreload">
@@ -37,7 +48,7 @@
 		<link href="/_app/immutable/chunks/vBR5Tlwe.js" rel="modulepreload">
 		
 		<link href="/_app/immutable/assets/PulsarUnreadBadge.CtDSqFY-.css" rel="stylesheet">
-		<link href="/_app/immutable/assets/0.B-N_eAGj.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/0.CqQqoEiJ.css" rel="stylesheet">
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">
@@ -51,7 +62,7 @@
 
 					Promise.all([
 						import("/_app/immutable/entry/start.DDzl-PsE.js"),
-						import("/_app/immutable/entry/app.B_FHKLVd.js")
+						import("/_app/immutable/entry/app.D2_M2fNx.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
