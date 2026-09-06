@@ -34,6 +34,13 @@ with citations.
   (an ephemeral, non-persisted chat — nothing about it is saved beyond the prompt you accept) turns
   a vague idea into a tuned prompt via a short back-and-forth interview. Missed a scheduled fire
   because the box was off? It catches up the moment Polaris is back, not silently until next time
+- **Pulsar Daily** (`/daily`, the sidebar's Sunrise icon) — one "morning newspaper" edition a day
+  instead of N separate routines to remember to check: weather (a full week's range chart, not just
+  today), word of the day, on this day, a quote, picture of the day, top headlines, trending, local
+  news, sports, plus any general-purpose blocks you define yourself. A Top Story is elected from
+  whichever block changed most since yesterday's edition; blocks that haven't genuinely moved get
+  quietly dropped rather than repeating themselves, so a quiet day produces a shorter page instead
+  of padded filler. Generates on its own schedule, or on demand via Settings' "Generate now"
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
