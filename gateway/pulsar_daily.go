@@ -204,16 +204,37 @@ func appendCustomInstruction(task, custom string) string {
 	return task + " The reader specifically wants: " + custom + "."
 }
 
+// appendPickHistoryExclusion tells a fresh-pick block every past pick it
+// already made — see store.AllDailyBlockContents' doc comment for why
+// this exists (a non-Watch block never gets diffed against yesterday by
+// design, so nothing else tells the model to vary its pick over time). An
+// empty history is a no-op, same shape as appendCustomInstruction.
+func appendPickHistoryExclusion(task string, history []string) string {
+	if len(history) == 0 {
+		return task
+	}
+	return task + " Already used before — don't repeat any of these: " + strings.Join(history, " | ") + "."
+}
+
+// dailyPickHistoryCap bounds how much past-pick history gets loaded and
+// folded into a fresh-pick block's task — a safety valve against an
+// unbounded prompt after years of daily runs, not a "how far back to
+// check" cutoff (see store.AllDailyBlockContents). 500 days is comfortably
+// more than enough to kill any realistic repeat.
+const dailyPickHistoryCap = 500
+
 // generateDailyPickBlock is a plain one-shot LLM call for a fresh-pick
 // block that leans on the model's own knowledge — no tools, no research,
 // same "cheap and shallow every day" framing the plan doc's expand-to-
 // chat section uses to justify the opposite (deep) behavior on tap.
-func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string) (string, float64, error) {
+// history is this block key's past picks — see appendPickHistoryExclusion.
+func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, customInstruction string, history []string) (string, float64, error) {
 	task, ok := dailyPickTasks[key]
 	if !ok {
 		return "", 0, fmt.Errorf("no pick task defined for block %q", key)
 	}
 	task = appendCustomInstruction(task, customInstruction)
+	task = appendPickHistoryExclusion(task, history)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: "You are writing one short card for a personal daily digest page. Be " +
 			"concise, concrete, and skimmable — 2-4 sentences, no headers, no restating the task."},
@@ -912,7 +933,11 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 			}
 		}
 	case dailyBlockPick:
-		content, cost, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom)
+		history, historyErr := s.db.AllDailyBlockContents(spec.Key, dailyPickHistoryCap)
+		if historyErr != nil {
+			log.Warn("pulsar daily: loading pick history failed, proceeding without it", "block", spec.Key, "err", historyErr)
+		}
+		content, cost, err = generateDailyPickBlock(reqCtx, writerClient, spec.Key, custom, history)
 	case dailyBlockResearch:
 		var task string
 		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)

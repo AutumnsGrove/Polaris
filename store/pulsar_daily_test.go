@@ -61,6 +61,59 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	}
 }
 
+func TestAllDailyBlockContents(t *testing.T) {
+	s := openTestStore(t)
+
+	// No history yet — a block that's never fired should return an empty
+	// slice, not an error (the normal case for a brand-new install).
+	history, err := s.AllDailyBlockContents("word_of_day", 500)
+	if err != nil {
+		t.Fatalf("AllDailyBlockContents (empty): %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("history = %+v, want empty before any trace rows exist", history)
+	}
+
+	dates := []string{"2026-09-05", "2026-09-06", "2026-09-07"}
+	words := []string{"Petrichor", "Numinous", "Numinous"}
+	for i, date := range dates {
+		if err := s.UpsertDailyBlockTrace(PulsarDailyBlockTrace{
+			EditionDate: date, BlockKey: "word_of_day", Title: "Word of the Day", StageAContent: words[i],
+		}); err != nil {
+			t.Fatalf("UpsertDailyBlockTrace(%s): %v", date, err)
+		}
+	}
+	// A different block key's history must never bleed into another's.
+	if err := s.UpsertDailyBlockTrace(PulsarDailyBlockTrace{
+		EditionDate: "2026-09-07", BlockKey: "quote", Title: "Quote of the Day", StageAContent: "Stay hungry, stay foolish.",
+	}); err != nil {
+		t.Fatalf("UpsertDailyBlockTrace(quote): %v", err)
+	}
+
+	history, err = s.AllDailyBlockContents("word_of_day", 500)
+	if err != nil {
+		t.Fatalf("AllDailyBlockContents: %v", err)
+	}
+	want := []string{"Numinous", "Numinous", "Petrichor"} // most recent first
+	if len(history) != len(want) {
+		t.Fatalf("history = %+v, want %+v", history, want)
+	}
+	for i := range want {
+		if history[i] != want[i] {
+			t.Errorf("history[%d] = %q, want %q (most-recent-first order)", i, history[i], want[i])
+		}
+	}
+
+	// limit caps how far back it reaches, not which block it reaches into.
+	capped, err := s.AllDailyBlockContents("word_of_day", 2)
+	if err != nil {
+		t.Fatalf("AllDailyBlockContents (capped): %v", err)
+	}
+	if len(capped) != 2 {
+		t.Fatalf("capped history = %+v, want exactly 2 entries", capped)
+	}
+}
+
 func TestDailyEdition_UpsertGetLatest(t *testing.T) {
 	s := openTestStore(t)
 

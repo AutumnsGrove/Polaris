@@ -389,3 +389,42 @@ func (s *Store) GetDailyTrace(editionDate string) ([]PulsarDailyBlockTrace, erro
 	}
 	return out, nil
 }
+
+// AllDailyBlockContents returns this block key's full pick history, most
+// recent first, capped at `limit` rows — reuses pulsar_daily_trace (which
+// already records exactly this, one row per block per date) rather than
+// adding a new table. Backs a fresh-pick block's (word_of_day, quote)
+// anti-repeat instruction: a non-Watch block never gets diffed against
+// yesterday by design (see dailyBlockRegistry's Watch doc comment), so
+// without this a narrow custom instruction can make the model converge on
+// the same pick day after day with nothing telling it what it already
+// used — a real, observed bug ("Numinous" picked two days running, not
+// caught by a mere "yesterday" check since the repeat could just as
+// easily land a month later). limit is a safety valve on how large the
+// exclusion instruction can grow after years of daily runs, not a
+// "recent window" — the whole point is catching a repeat from any point
+// in the past, not just the last few days.
+func (s *Store) AllDailyBlockContents(blockKey string, limit int) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT stage_a_content FROM pulsar_daily_trace
+		 WHERE block_key = ? AND stage_a_content != ''
+		 ORDER BY edition_date DESC LIMIT ?`, blockKey, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("all daily block contents: %w", err)
+	}
+	defer rows.Close()
+
+	out := []string{}
+	for rows.Next() {
+		var content string
+		if err := rows.Scan(&content); err != nil {
+			return nil, fmt.Errorf("all daily block contents: scan: %w", err)
+		}
+		out = append(out, content)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("all daily block contents: %w", err)
+	}
+	return out, nil
+}

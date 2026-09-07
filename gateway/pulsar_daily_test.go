@@ -219,6 +219,23 @@ func TestAppendCustomInstruction(t *testing.T) {
 	}
 }
 
+func TestAppendPickHistoryExclusion(t *testing.T) {
+	base := "Pick one interesting word."
+
+	if got := appendPickHistoryExclusion(base, nil); got != base {
+		t.Errorf("appendPickHistoryExclusion with no history changed the task: %q", got)
+	}
+	if got := appendPickHistoryExclusion(base, []string{}); got != base {
+		t.Errorf("appendPickHistoryExclusion with empty history changed the task: %q", got)
+	}
+
+	got := appendPickHistoryExclusion(base, []string{"Numinous", "Petrichor"})
+	want := base + " Already used before — don't repeat any of these: Numinous | Petrichor."
+	if got != want {
+		t.Errorf("appendPickHistoryExclusion() = %q, want %q", got, want)
+	}
+}
+
 func TestDailyBlockRegistry_FreshPickBlocksAreNotWatch(t *testing.T) {
 	freshPicks := []string{"word_of_day", "weather", "on_this_day", "quote", "picture_of_day"}
 	for _, key := range freshPicks {
