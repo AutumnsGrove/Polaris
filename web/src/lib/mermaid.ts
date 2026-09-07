@@ -19,7 +19,17 @@ async function loadMermaid() {
 }
 
 function getMermaid() {
-	if (!mermaidPromise) mermaidPromise = loadMermaid();
+	if (!mermaidPromise) {
+		// If the dynamic import itself rejects (a transient network blip, a
+		// stale chunk hash after a deploy), don't leave that rejected promise
+		// cached — every later call would reuse it and mermaid rendering
+		// would stay silently broken for the rest of the tab's life. Clear
+		// the cache on failure so the next render attempt gets a fresh try.
+		mermaidPromise = loadMermaid().catch((err) => {
+			mermaidPromise = undefined;
+			throw err;
+		});
+	}
 	return mermaidPromise;
 }
 
@@ -30,6 +40,75 @@ function getMermaid() {
 function mermaidTheme(): 'dark' | 'default' {
 	if (typeof document === 'undefined') return 'dark';
 	return document.documentElement.dataset.theme === 'light' ? 'default' : 'dark';
+}
+
+// Best-effort repair for the single most common real failure (confirmed
+// live: see prompt.md's node-label-quoting instruction, added after hitting
+// this exact parse error): an unquoted `ID[label]` node whose label
+// contains punctuation mermaid's own grammar reserves for other syntax
+// (parentheses, colons, pipes, `#`, braces) — mermaid reads that punctuation
+// as a new token instead of label text and fails the whole diagram over one
+// label. The model is told to always quote labels, but LLM instruction-
+// following isn't 100%, so this backstops that rather than replacing it.
+//
+// Deliberately narrow: only the plain `ID[label]` node shape (not `(...)`,
+// `{...}`, `((...))`, `[[...]]`, and friends) since that's the shape that's
+// actually broken this way in practice — a fully general, grammar-aware
+// fixer for every node shape is a lot of surface area to maintain for
+// failure modes that haven't actually been observed. The character class
+// excluding `[`, `]`, and `"` from the label match means an already-quoted
+// label, or one using a different node shape, simply doesn't match and is
+// left untouched.
+const UNQUOTED_LABEL = /(^|[\s;])([A-Za-z][\w-]*)\[([^[\]"]*)\]/g;
+const RISKY_PUNCTUATION = /[()#|:{}]/;
+
+function autoQuoteLabels(source: string): string {
+	return source.replace(UNQUOTED_LABEL, (match, pre: string, id: string, label: string) => {
+		if (!RISKY_PUNCTUATION.test(label)) return match;
+		// A literal double quote inside the label would immediately close
+		// the quoted string we're about to wrap it in and re-break the
+		// parse — mermaid has no in-string escape for this, so drop to a
+		// plain single quote rather than leaving it broken.
+		return `${pre}${id}["${label.replace(/"/g, "'")}"]`;
+	});
+}
+
+// A `style NodeId fill:#f9f,stroke:#333` line customizes a node's
+// background but, without an explicit `color:` property, leaves the text
+// color at mermaid's theme default — confirmed live: a light custom fill
+// (e.g. pale yellow) under this app's dark theme default label color
+// produces near-illegible light-on-light text. This isn't a parse failure
+// (mermaid renders it "successfully"), so nothing in the render/retry path
+// above would ever catch it — it's a proactive readability pass, not error
+// recovery, and runs unconditionally on every diagram rather than only
+// after a failed render.
+const STYLE_FILL_LINE = /^(\s*style\s+\S+\s+)([^\n]*\bfill:\s*#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b[^\n]*)$/gm;
+const HAS_COLOR_PROP = /(^|,)\s*color:/;
+
+function expandHex(hex: string): string {
+	return hex.length === 3
+		? hex
+				.split('')
+				.map((c) => c + c)
+				.join('')
+		: hex;
+}
+
+// Standard YIQ perceived-brightness split (not full WCAG contrast — this
+// only needs to pick a legible side, not a precise contrast ratio).
+function readableTextColorFor(hex: string): '#000000' | '#ffffff' {
+	const full = expandHex(hex);
+	const r = parseInt(full.slice(0, 2), 16);
+	const g = parseInt(full.slice(2, 4), 16);
+	const b = parseInt(full.slice(4, 6), 16);
+	return (r * 299 + g * 587 + b * 114) / 1000 > 140 ? '#000000' : '#ffffff';
+}
+
+function ensureStyleContrast(source: string): string {
+	return source.replace(STYLE_FILL_LINE, (match, prefix: string, props: string, fillHex: string) => {
+		if (HAS_COLOR_PROP.test(props)) return match;
+		return `${prefix}${props},color:${readableTextColorFor(fillHex)}`;
+	});
 }
 
 let renderCounter = 0;
@@ -153,7 +232,29 @@ export async function renderMermaidIn(container: HTMLElement): Promise<void> {
 	);
 	if (freshBlocks.length === 0 && staleDiagrams.length === 0) return;
 
-	const mermaid = await getMermaid();
+	let mermaid: Awaited<ReturnType<typeof loadMermaid>>;
+	try {
+		mermaid = await getMermaid();
+	} catch {
+		// The library itself failed to load (as opposed to a single
+		// diagram's source failing to parse) — every fresh block in this
+		// pass is equally unable to render, not just one. Give each the same
+		// visible fallback a parse error gets, rather than throwing out of
+		// this function and leaving them as untouched, unexplained code
+		// blocks (this async function is invoked as `void renderMermaidIn(...)`
+		// from ChatTurnView.svelte, so an uncaught throw here is otherwise a
+		// silent, invisible failure).
+		for (const block of freshBlocks) {
+			block.dataset.mermaidFailed = 'true';
+			if (!block.querySelector('.mermaid-error-note')) {
+				const note = document.createElement('div');
+				note.className = 'mermaid-error-note';
+				note.textContent = "Couldn't render this diagram — showing the source instead.";
+				block.appendChild(note);
+			}
+		}
+		return;
+	}
 	// Re-initialized on every pass (cheap, synchronous) rather than once at
 	// load — theme is read live so a mid-session theme toggle, or the
 	// settings fetch settling after a diagram's first paint, affects
@@ -169,24 +270,41 @@ export async function renderMermaidIn(container: HTMLElement): Promise<void> {
 		// The browser has already HTML-unescaped the fence's textContent for
 		// us (markdown.ts escaped it only so it survives as literal text
 		// inside the <code> tag) — this is the original mermaid source.
-		const source = code?.textContent ?? '';
+		const source = ensureStyleContrast(code?.textContent ?? '');
 		try {
 			const svg = await renderOne(mermaid, source);
 			block.replaceWith(buildDiagramWrapper(source, svg, theme));
+			continue;
 		} catch {
-			// Parse errors are a property of the source, not the theme —
-			// mark so a later theme-only pass doesn't retry a diagram
-			// that's already known to fail (it never would, but it fails
-			// the same way every time and there's no reason to redo the
-			// work). The existing note check still avoids a duplicate
-			// note within this same pass.
-			block.dataset.mermaidFailed = 'true';
-			if (!block.querySelector('.mermaid-error-note')) {
-				const note = document.createElement('div');
-				note.className = 'mermaid-error-note';
-				note.textContent = "Couldn't render this diagram — showing the source instead.";
-				block.appendChild(note);
+			// Fall through to the auto-quote retry below before giving up.
+		}
+		const fixed = autoQuoteLabels(source);
+		if (fixed !== source) {
+			try {
+				const svg = await renderOne(mermaid, fixed);
+				// The corrected source, not the original, becomes what
+				// "view source" and the copy button hand back — it's the
+				// text that actually produced what's on screen, and the
+				// original was, by definition, invalid mermaid anyway.
+				block.replaceWith(buildDiagramWrapper(fixed, svg, theme));
+				continue;
+			} catch {
+				// Punctuation wasn't the (only) problem — fall through to
+				// the same failure note a plain parse error gets.
 			}
+		}
+		// Parse errors are a property of the source, not the theme — mark so
+		// a later theme-only pass doesn't retry a diagram that's already
+		// known to fail (it never would, but it fails the same way every
+		// time and there's no reason to redo the work, including the
+		// auto-quote retry above). The existing note check still avoids a
+		// duplicate note within this same pass.
+		block.dataset.mermaidFailed = 'true';
+		if (!block.querySelector('.mermaid-error-note')) {
+			const note = document.createElement('div');
+			note.className = 'mermaid-error-note';
+			note.textContent = "Couldn't render this diagram — showing the source instead.";
+			block.appendChild(note);
 		}
 	}
 

@@ -3,10 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // happy-dom has no SVG renderer, so the real 'mermaid' package can't run in
 // this test environment — mock it and drive the DOM-pass logic in
 // mermaid.ts directly. render() succeeds for any source containing "graph"
-// and rejects otherwise, standing in for a real parse error.
+// and rejects otherwise, standing in for a real parse error. It also
+// rejects an unquoted `ID[label]` node whose label contains punctuation
+// mermaid's real grammar reserves for other syntax — the same failure mode
+// confirmed live against the actual mermaid package (see mermaid.ts's
+// autoQuoteLabels doc comment) — so the auto-quote-retry tests below
+// exercise the same condition renderMermaidIn's real fallback logic reacts
+// to, not a fictional stand-in for it.
 const initialize = vi.fn();
+const UNQUOTED_RISKY_LABEL = /[A-Za-z][\w-]*\[[^[\]"]*[()#|:{}][^[\]"]*\]/;
 const render = vi.fn(async (id: string, source: string) => {
 	if (!source.includes('graph')) throw new Error('Parse error: bad diagram');
+	if (UNQUOTED_RISKY_LABEL.test(source)) throw new Error('Parse error: unquoted punctuation in label');
 	return { svg: `<svg data-id="${id}">${source}</svg>` };
 });
 
@@ -79,6 +87,74 @@ describe('renderMermaidIn', () => {
 		expect(block).not.toBeNull();
 		expect(block?.textContent).toContain('not a real diagram');
 		expect(container.querySelector('.mermaid-error-note')).not.toBeNull();
+	});
+
+	it('auto-quotes an unquoted node label with punctuation and retries once before giving up', async () => {
+		const container = containerWith(
+			fenceBlock('graph TD\n  A[Step 1: Charging] --> B[Step 2: Writing (Exposing)]')
+		);
+		await renderMermaidIn(container);
+
+		// First attempt (raw source) rejects, second attempt (auto-quoted)
+		// succeeds — no error note, no leftover raw <pre>.
+		expect(render).toHaveBeenCalledTimes(2);
+		expect(container.querySelector('.mermaid-error-note')).toBeNull();
+		expect(container.querySelector('pre[data-mermaid]')).toBeNull();
+		// The corrected (quoted) source becomes canonical — it's what
+		// actually rendered, and the original was invalid mermaid anyway.
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toBe(
+			'graph TD\n  A["Step 1: Charging"] --> B["Step 2: Writing (Exposing)"]'
+		);
+	});
+
+	it('still falls back to the error note when auto-quoting does not fix the source', async () => {
+		const container = containerWith(fenceBlock('not a real diagram (with parens)'));
+		await renderMermaidIn(container);
+
+		// autoQuoteLabels can't help here (no `ID[...]` shape at all), and
+		// the mock's "graph" gate means it fails either way — still just
+		// one visible, non-crashing fallback.
+		expect(container.querySelector('.mermaid-error-note')).not.toBeNull();
+		expect(container.querySelector('pre[data-mermaid]')).not.toBeNull();
+	});
+
+	it('leaves an already-quoted label untouched (no needless re-render diff)', async () => {
+		const container = containerWith(fenceBlock('graph TD; A["Step 1 (init)"] --> B["Step 2"];'));
+		await renderMermaidIn(container);
+
+		expect(render).toHaveBeenCalledTimes(1);
+		expect(container.querySelector('.mermaid-error-note')).toBeNull();
+	});
+
+	it('adds an explicit contrasting color to a custom style fill that is missing one', async () => {
+		const container = containerWith(
+			fenceBlock('graph TD; A["Step 1"];\n  style A fill:#ffe08a,stroke:#b8860b')
+		);
+		await renderMermaidIn(container);
+
+		// A light fill (#ffe08a) with no explicit `color:` would otherwise
+		// render with this app's light default label text on top of it —
+		// legible on neither. Dark text gets added automatically.
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toContain('style A fill:#ffe08a,stroke:#b8860b,color:#000000');
+	});
+
+	it('picks light text for a dark custom fill', async () => {
+		const container = containerWith(fenceBlock('graph TD; A["Step 1"];\n  style A fill:#1a1a2e'));
+		await renderMermaidIn(container);
+
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toContain('style A fill:#1a1a2e,color:#ffffff');
+	});
+
+	it('does not touch a style line that already sets an explicit color', async () => {
+		const source = 'graph TD; A["Step 1"];\n  style A fill:#ffe08a,color:#111111';
+		const container = containerWith(fenceBlock(source));
+		await renderMermaidIn(container);
+
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toBe(source);
 	});
 
 	it('does nothing when the container has no mermaid blocks', async () => {

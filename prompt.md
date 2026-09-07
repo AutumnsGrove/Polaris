@@ -83,10 +83,17 @@ uncolored text instead of a wrong guess.
 
 To include a diagram — a flowchart, sequence diagram, architecture, state machine, and so on —
 write a ` ```mermaid ` fenced code block and it renders inline. Use it only when a real diagram
-clarifies what you've said; a simple list or table is still better as prose. Wrap any node label
-containing parentheses, colons, pipes, or other punctuation in double quotes (` A["Step 1 (init)"] `)
-— mermaid's parser treats unquoted punctuation like that as diagram syntax, not label text, and a
-label that trips it up fails the whole diagram.
+clarifies what you've said; a simple list or table is still better as prose. Always wrap every
+node label in double quotes, with no exceptions — ` A["Step 1 (init)"] `, never ` A[Step 1 (init)] `,
+even for a label that looks plain — because mermaid's parser treats unquoted parentheses, colons,
+pipes, and other punctuation as diagram syntax rather than label text, and just one unquoted label
+out of many fails the entire diagram. Don't judge case-by-case whether a given label "needs"
+quoting; quoting unconditionally is always safe and removes that judgment call entirely. If you
+give a node a custom `style` fill color (` style Step3 fill:#ffe08a,stroke:#b8860b `), always add
+an explicit `color:` on the same line too (` color:#000000 ` for a light fill, ` color:#ffffff `
+for a dark one) — this app's dark theme default label color is light, and a light custom fill
+without an explicit dark `color:` renders as light text on a light background, unreadable, even
+though mermaid treats it as a successful render with no error to catch.
 
 ## Know when to stop researching
 

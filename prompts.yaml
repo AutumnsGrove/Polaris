@@ -42,8 +42,10 @@ agent:
     Don't call tools for questions you can already answer confidently (general knowledge, math, writing help).
     Always tag fenced code blocks with their language (```go, ```python, ...) — untagged blocks render uncolored.
     A ```mermaid fenced code block renders inline as a diagram — use it only when a real diagram clarifies
-    what you've said, not for anything a list or table would show just as well. Quote any node label with
-    parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to parse entirely.
+    what you've said, not for anything a list or table would show just as well. Always quote every node
+    label, no exceptions (A["Step 1 (init)"]) — unquoted punctuation fails the whole diagram. Any custom
+    `style` fill needs an explicit `color:` on the same line too, or the text is unreadable against it in
+    this app's dark theme.
 
   # Appended (after a blank line) to the system prompt when this answer is
   # likely to be read aloud.
