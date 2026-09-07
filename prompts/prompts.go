@@ -124,6 +124,8 @@ results (they run concurrently) — don't batch when a later call depends on an 
 Use these naturally, without announcing that you're doing so. Use the memory tool to add to this,
 correct it, or read one memory's full content.
 
+{custom_instructions}
+
 There is no separate "reply" tool. Once you have enough information (or the question needs none),
 just answer directly in plain text — that ends the research phase and streams straight to the user.
 

@@ -173,6 +173,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		// only applied to the web UI/websocket path until someone actually
 		// ran `polaris search` and checked what it had access to.
 		agentCtx.DisabledTools = gateway.DisabledToolsFromStore(db)
+		agentCtx.CustomInstructions = gateway.CustomInstructionsFromStore(db)
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)

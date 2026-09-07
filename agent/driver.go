@@ -211,6 +211,7 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	}
 	prompt = applyToolsPlaceholder(prompt, ctx)
 	prompt = applyMemoriesPlaceholder(prompt, ctx)
+	prompt = applyCustomInstructionsPlaceholder(prompt, ctx)
 	if voiceMode {
 		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
@@ -251,6 +252,16 @@ func applyToolsPlaceholder(prompt string, ctx *tools.Context) string {
 // a code path that never shows its system prompt to anyone.
 func applyMemoriesPlaceholder(prompt string, ctx *tools.Context) string {
 	return strings.ReplaceAll(prompt, "{memories}", tools.MemoryIndexPrompt(ctx))
+}
+
+// applyCustomInstructionsPlaceholder replaces every "{custom_instructions}"
+// occurrence with the operator's settings-panel free-text field (ctx.
+// CustomInstructions) — empty by default, which collapses the placeholder
+// to nothing rather than leaving a literal token or an empty heading with
+// nothing under it, same cosmetic tradeoff applyMemoriesPlaceholder makes
+// for an unwired memory store.
+func applyCustomInstructionsPlaceholder(prompt string, ctx *tools.Context) string {
+	return strings.ReplaceAll(prompt, "{custom_instructions}", ctx.CustomInstructions)
 }
 
 // deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the

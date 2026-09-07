@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"polaris/store"
@@ -262,6 +263,47 @@ func TestHandlePutSettings_RejectsUnknownFocusMode(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for an unknown focus mode", resp.StatusCode)
+	}
+}
+
+func TestHandlePutSettings_CustomInstructionsRoundTrips(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"custom_instructions": "Always answer in French."})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	getResp, err := http.Get(h.url("/api/settings"))
+	if err != nil {
+		t.Fatalf("GET /api/settings: %v", err)
+	}
+	defer getResp.Body.Close()
+	var settings map[string]interface{}
+	json.NewDecoder(getResp.Body).Decode(&settings)
+	if settings["custom_instructions"] != "Always answer in French." {
+		t.Errorf("custom_instructions = %v, want %q", settings["custom_instructions"], "Always answer in French.")
+	}
+}
+
+func TestHandlePutSettings_RejectsOverlongCustomInstructions(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"custom_instructions": strings.Repeat("a", 4001)})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for custom_instructions over the length cap", resp.StatusCode)
 	}
 }
 

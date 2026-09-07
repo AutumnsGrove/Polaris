@@ -103,6 +103,17 @@ export class SettingsState {
 	// touched this setting behaves exactly as before it existed.
 	memoryEnabled = $state(true);
 
+	// Free-text operator steering substituted into prompt.md's
+	// {custom_instructions} placeholder on every turn (see
+	// gateway/settings.go's settingCustomInstructions and
+	// agent/driver.go's applyCustomInstructionsPlaceholder) — distinct
+	// from prompt.md itself: this is meant for a short standing
+	// preference set from the phone ("reply in French", "I'm a nurse,
+	// use clinical terms") without hand-editing a file on the host.
+	// Empty string (the default) means the placeholder collapses to
+	// nothing.
+	customInstructions = $state('');
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -187,6 +198,7 @@ export class SettingsState {
 		this.toggleableTools = data.toggleable_tools ?? [];
 		this.disabledTools = data.disabled_tools ?? [];
 		this.memoryEnabled = data.memory_enabled ?? true;
+		this.customInstructions = data.custom_instructions ?? '';
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -237,6 +249,15 @@ export class SettingsState {
 	async setMemoryEnabled(enabled: boolean) {
 		this.memoryEnabled = enabled;
 		await this.put({ memory_enabled: enabled });
+	}
+
+	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —
+	// unlike the toggle/select settings above, this is free-text the user
+	// is actively typing, so a round trip per character would be both
+	// wasteful and racy against itself.
+	async setCustomInstructions(value: string) {
+		this.customInstructions = value;
+		await this.put({ custom_instructions: value });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

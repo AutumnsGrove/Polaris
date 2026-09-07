@@ -72,6 +72,18 @@ func TestLoadSystemPrompt_AppliesFocusModeInstruction(t *testing.T) {
 	}
 }
 
+func TestLoadSystemPrompt_AppliesCustomInstructions(t *testing.T) {
+	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
+	if strings.Contains(base, "{custom_instructions}") {
+		t.Error("an empty CustomInstructions should collapse the placeholder, not leave the literal token")
+	}
+
+	withCustom := loadSystemPrompt(&tools.Context{CustomInstructions: "Always answer in French."}, false, "", false, false)
+	if !strings.Contains(withCustom, "Always answer in French.") {
+		t.Errorf("prompt = %q, want it to contain the operator's custom instructions", withCustom)
+	}
+}
+
 func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
 	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
 	unknown := loadSystemPrompt(&tools.Context{}, false, "not_a_real_mode", false, false)

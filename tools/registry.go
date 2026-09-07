@@ -329,6 +329,16 @@ type Context struct {
 	// NoResearch above. Keyed by tool name, matching catalogOrder.
 	DisabledTools map[string]bool
 
+	// CustomInstructions is the settings panel's free-text field (see
+	// gateway.CustomInstructionsFromStore) — operator-authored steering
+	// ("always answer in French", "I'm a nurse, use clinical terminology")
+	// substituted into prompt.md wherever it writes "{custom_instructions}"
+	// (see agent/driver.go's applyCustomInstructionsPlaceholder). Empty
+	// string (the zero value, and the default until the operator sets one)
+	// collapses that placeholder to nothing, same as CustomInstructions
+	// being genuinely unset.
+	CustomInstructions string
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"polaris/agent"
@@ -40,7 +41,19 @@ const (
 	// toggle gates more than just the tool call the model can make (see
 	// MemoryEnabledFromStore's doc comment).
 	settingMemoryEnabled = "memory_enabled"
+	// settingCustomInstructions stores the settings panel's free-text
+	// operator-steering field — see CustomInstructionsFromStore and
+	// agent/driver.go's applyCustomInstructionsPlaceholder. Empty/unset
+	// means no custom instructions, same as an empty string.
+	settingCustomInstructions = "custom_instructions"
 )
+
+// maxCustomInstructionsChars caps settingCustomInstructions — this text
+// gets substituted into the system prompt on every single turn, so an
+// unbounded paste (a whole document, accidentally) would silently inflate
+// every request's cost and context usage rather than failing loudly at
+// save time.
+const maxCustomInstructionsChars = 4000
 
 // DisabledToolsFromStore reads the disabled_tools setting and returns it as
 // the lookup set tools.Context.DisabledTools expects — shared by
@@ -98,6 +111,24 @@ func MemoryEnabledFromStore(db *store.Store) bool {
 	return val != "false"
 }
 
+// CustomInstructionsFromStore reads the custom_instructions setting —
+// shared by gateway/turn.go and cmd/search.go's one-shot CLI path, same
+// "every real entry point honors the operator's own settings" reasoning as
+// DisabledToolsFromStore/MemoryEnabledFromStore. A nil db, a read error, or
+// an unset value all default to "" (no custom instructions), which
+// applyCustomInstructionsPlaceholder collapses the {custom_instructions}
+// placeholder down to nothing.
+func CustomInstructionsFromStore(db *store.Store) string {
+	if db == nil {
+		return ""
+	}
+	val, err := db.GetSetting(settingCustomInstructions)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
 // validVoiceInputModes gates handlePutSettings — see settingVoiceInputMode.
 var validVoiceInputModes = map[string]bool{"hold": true, "toggle": true}
 
@@ -152,19 +183,21 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		// a per-user setting — sent alongside so the settings panel can
 		// render checkboxes without hardcoding tool names/descriptions that
 		// only otherwise live in tools/descriptions/*.yaml.
-		"toggleable_tools": tools.ToggleableTools(),
-		"memory_enabled":   MemoryEnabledFromStore(s.db),
+		"toggleable_tools":    tools.ToggleableTools(),
+		"memory_enabled":      MemoryEnabledFromStore(s.db),
+		"custom_instructions": all[settingCustomInstructions],
 	})
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Theme            *string   `json:"theme"`
-		DefaultModel     *string   `json:"default_model"`
-		DefaultFocusMode *string   `json:"default_focus_mode"`
-		VoiceInputMode   *string   `json:"voice_input_mode"`
-		DisabledTools    *[]string `json:"disabled_tools"`
-		MemoryEnabled    *bool     `json:"memory_enabled"`
+		Theme              *string   `json:"theme"`
+		DefaultModel       *string   `json:"default_model"`
+		DefaultFocusMode   *string   `json:"default_focus_mode"`
+		VoiceInputMode     *string   `json:"voice_input_mode"`
+		DisabledTools      *[]string `json:"disabled_tools"`
+		MemoryEnabled      *bool     `json:"memory_enabled"`
+		CustomInstructions *string   `json:"custom_instructions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -264,6 +297,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "memory enabled changed", map[string]interface{}{"memory_enabled": *req.MemoryEnabled}, "")
+	}
+	if req.CustomInstructions != nil {
+		if len(*req.CustomInstructions) > maxCustomInstructionsChars {
+			http.Error(w, fmt.Sprintf("custom_instructions must be %d characters or fewer", maxCustomInstructionsChars), http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingCustomInstructions, *req.CustomInstructions); err != nil {
+			log.Warn("saving custom_instructions setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving custom_instructions setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "custom instructions changed", map[string]interface{}{"length": len(*req.CustomInstructions)}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

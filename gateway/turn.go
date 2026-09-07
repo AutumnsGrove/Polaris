@@ -453,6 +453,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		NoResearch:             msg.NoResearch,
 		QuickMode:              msg.QuickMode,
 		DisabledTools:          DisabledToolsFromStore(s.db),
+		CustomInstructions:     CustomInstructionsFromStore(s.db),
 		LLM:                    client,
 		Emit:                   emit,
 		MaxTurns:               cfg.MaxAgentTurns,
@@ -483,10 +484,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if workerModelCfg, ok := cfg.ResearchWorkerModel(); ok {
 			workerClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
 				// AllowFallbacks(true) — see the main client's construction
-			// above for why: an escape valve for every pinned provider
-			// being down at once, not a relaxation of the normal curated
-			// preference order.
-			WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: boolPtr(true)}).
+				// above for why: an escape valve for every pinned provider
+				// being down at once, not a relaxation of the normal curated
+				// preference order.
+				WithProvider(&llm.ProviderRouting{Order: workerModelCfg.Provider, AllowFallbacks: boolPtr(true)}).
 				WithSessionID(threadID)
 			if rc := workerModelCfg.Reasoning; rc != nil && rc.Enabled {
 				workerClient = workerClient.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})

@@ -257,6 +257,22 @@
 			</section>
 
 			<section>
+				<h3>Custom instructions</h3>
+				<textarea
+					class="custom-instructions-input"
+					placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
+					maxlength="4000"
+					value={appState.settings.customInstructions}
+					onblur={(e) => appState.settings.setCustomInstructions(e.currentTarget.value)}
+				></textarea>
+				<p class="hint">
+					Added to every answer as steering, on top of <code>prompt.md</code>. Edit
+					<code>prompt.md</code> directly for anything more involved than a short standing
+					preference.
+				</p>
+			</section>
+
+			<section>
 				<h3>Voice</h3>
 				<div class="row">
 					<span>Mic button</span>
@@ -609,6 +625,24 @@
 	}
 
 	.location-row input::placeholder {
+		color: var(--color-text-dim);
+	}
+
+	.custom-instructions-input {
+		width: 100%;
+		min-height: 72px;
+		resize: vertical;
+		border: none;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-well);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 13px;
+		font-family: inherit;
+		color: var(--color-text);
+	}
+
+	.custom-instructions-input::placeholder {
 		color: var(--color-text-dim);
 	}
 
