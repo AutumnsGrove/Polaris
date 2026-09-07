@@ -23,7 +23,7 @@ func twoPagePDFBytes(t *testing.T) []byte {
 
 func TestHandleReadAttachment_NoAttachmentErrors(t *testing.T) {
 	ctx := newTestContext()
-	result := handleReadAttachment(`{}`, ctx)
+	result := handleReadAttachment(`{}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error with no AttachmentData", result)
 	}
@@ -33,7 +33,7 @@ func TestHandleReadAttachment_DefaultsToFirstPage(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AttachmentData = twoPagePDFBytes(t)
 
-	result := handleReadAttachment(`{}`, ctx)
+	result := handleReadAttachment(`{}`, ctx, "test-call")
 	if !strings.Contains(result, "Page One Text") {
 		t.Errorf("result = %q, want page 1's content when page is unset", result)
 	}
@@ -49,7 +49,7 @@ func TestHandleReadAttachment_SpecificPage(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AttachmentData = twoPagePDFBytes(t)
 
-	result := handleReadAttachment(`{"page":2}`, ctx)
+	result := handleReadAttachment(`{"page":2}`, ctx, "test-call")
 	if !strings.Contains(result, "Page Two Text") {
 		t.Errorf("result = %q, want page 2's content", result)
 	}
@@ -65,7 +65,7 @@ func TestHandleReadAttachment_InstructionsRunFilterPass(t *testing.T) {
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "filtered result"}}},
 	}
 
-	result := handleReadAttachment(`{"instructions":"just the total"}`, ctx)
+	result := handleReadAttachment(`{"instructions":"just the total"}`, ctx, "test-call")
 	if !strings.Contains(result, "filtered result") {
 		t.Errorf("result = %q, want the filter pass's output", result)
 	}
@@ -75,7 +75,7 @@ func TestHandleReadAttachment_QueryFindsMatchingPage(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AttachmentData = twoPagePDFBytes(t)
 
-	result := handleReadAttachment(`{"query":"Page Two"}`, ctx)
+	result := handleReadAttachment(`{"query":"Page Two"}`, ctx, "test-call")
 	if !strings.Contains(result, "[page 2]") {
 		t.Errorf("result = %q, want it to report the match on page 2", result)
 	}
@@ -88,7 +88,7 @@ func TestHandleReadAttachment_QueryWithNoMatchesSaysSo(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AttachmentData = twoPagePDFBytes(t)
 
-	result := handleReadAttachment(`{"query":"nonexistent term xyz"}`, ctx)
+	result := handleReadAttachment(`{"query":"nonexistent term xyz"}`, ctx, "test-call")
 	if !strings.Contains(result, "no matches") {
 		t.Errorf("result = %q, want a clear no-matches message", result)
 	}

@@ -54,7 +54,7 @@ var readAttachmentDef = llm.ToolDef{
 
 func init() { Register("read_attachment", handleReadAttachment) }
 
-func handleReadAttachment(argsJSON string, ctx *Context) string {
+func handleReadAttachment(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Page         int    `json:"page"`
 		Query        string `json:"query"`
@@ -62,11 +62,11 @@ func handleReadAttachment(argsJSON string, ctx *Context) string {
 	}
 	if argsJSON != "" {
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			return emitToolError(ctx, "read_attachment", nil, "error: "+err.Error())
+			return emitToolError(ctx, "read_attachment", nil, "error: "+err.Error(), callID)
 		}
 	}
 	if len(ctx.AttachmentData) == 0 {
-		return emitToolError(ctx, "read_attachment", nil, "error: no attachment is available to read this turn")
+		return emitToolError(ctx, "read_attachment", nil, "error: no attachment is available to read this turn", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
@@ -74,6 +74,7 @@ func handleReadAttachment(argsJSON string, ctx *Context) string {
 		"args": map[string]interface{}{
 			"page": args.Page, "query": args.Query, "instructions": args.Instructions, "filename": ctx.AttachmentFilename,
 		},
+		"call_id": callID,
 	})
 
 	var result string
@@ -84,14 +85,14 @@ func handleReadAttachment(argsJSON string, ctx *Context) string {
 		} else {
 			result = formatPDFSearchResult(args.Query, matches, totalPages)
 		}
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result, "call_id": callID})
 		return result
 	}
 
 	_, text, totalPages, err := pdfPageText(ctx.AttachmentData, args.Page)
 	if err != nil {
 		result = "error: " + err.Error()
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -120,7 +121,7 @@ func handleReadAttachment(argsJSON string, ctx *Context) string {
 		}
 	}
 
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "read_attachment", "result": result, "call_id": callID})
 	return result
 }
 

@@ -43,7 +43,7 @@ var spawnResearchersDef = llm.ToolDef{
 
 func init() { Register("spawn_researchers", handleSpawnResearchers) }
 
-func handleSpawnResearchers(argsJSON string, ctx *Context) string {
+func handleSpawnResearchers(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Tasks []struct {
 			Objective string `json:"objective"`
@@ -51,15 +51,15 @@ func handleSpawnResearchers(argsJSON string, ctx *Context) string {
 		} `json:"tasks"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "spawn_researchers", nil, "error: "+err.Error())
+		return emitToolError(ctx, "spawn_researchers", nil, "error: "+err.Error(), callID)
 	}
 	if len(args.Tasks) == 0 {
-		return emitToolError(ctx, "spawn_researchers", nil, "error: at least one task is required")
+		return emitToolError(ctx, "spawn_researchers", nil, "error: at least one task is required", callID)
 	}
 	if ctx.SpawnResearchers == nil {
 		result := "error: spawn_researchers is not available in this context"
 		log.Warn("spawn_researchers called with no SpawnResearchers closure configured")
-		return emitToolError(ctx, "spawn_researchers", map[string]interface{}{"task_count": len(args.Tasks)}, result)
+		return emitToolError(ctx, "spawn_researchers", map[string]interface{}{"task_count": len(args.Tasks)}, result, callID)
 	}
 
 	tasks := make([]SubAgentTask, len(args.Tasks))
@@ -68,8 +68,9 @@ func handleSpawnResearchers(argsJSON string, ctx *Context) string {
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "spawn_researchers",
-		"args": map[string]interface{}{"task_count": len(tasks)},
+		"tool":    "spawn_researchers",
+		"args":    map[string]interface{}{"task_count": len(tasks)},
+		"call_id": callID,
 	})
 
 	reports := ctx.SpawnResearchers(ctx, tasks)
@@ -99,6 +100,7 @@ func handleSpawnResearchers(argsJSON string, ctx *Context) string {
 		"tool":      "spawn_researchers",
 		"result":    formatted,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return formatted
 }

@@ -70,7 +70,7 @@ var webReadDef = llm.ToolDef{
 
 func init() { Register("web_read", handleWebRead) }
 
-func handleWebRead(argsJSON string, ctx *Context) string {
+func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		URL          string `json:"url"`
 		Instructions string `json:"instructions"`
@@ -78,19 +78,20 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		Page         int    `json:"page"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "web_read", nil, "error: "+err.Error())
+		return emitToolError(ctx, "web_read", nil, "error: "+err.Error(), callID)
 	}
 	if args.URL == "" {
-		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL}, "error: url is required")
+		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL}, "error: url is required", callID)
 	}
 	if ctx.Blocklist.Blocked(args.URL) {
 		return emitToolError(ctx, "web_read", map[string]interface{}{"url": args.URL},
-			"error: this source is blocked and cannot be read")
+			"error: this source is blocked and cannot be read", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "web_read",
-		"args": map[string]interface{}{"url": args.URL, "instructions": args.Instructions, "offset": args.Offset, "page": args.Page},
+		"tool":    "web_read",
+		"args":    map[string]interface{}{"url": args.URL, "instructions": args.Instructions, "offset": args.Offset, "page": args.Page},
+		"call_id": callID,
 	})
 
 	title, siteName, imageURL, text, totalPages, err := fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist, args.Page)
@@ -135,7 +136,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 
 	if err != nil {
 		log.Warn("web_read failed", "url", args.URL, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error()})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error(), "call_id": callID})
 		return "error: " + err.Error()
 	}
 	if fallbackUsed != "" {
@@ -192,6 +193,7 @@ func handleWebRead(argsJSON string, ctx *Context) string {
 		"tool":      "web_read",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 
 	return result

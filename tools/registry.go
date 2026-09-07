@@ -628,7 +628,7 @@ func (c *Context) ChartSnapshot() *ChartSpec {
 	return c.Chart
 }
 
-type HandlerFunc func(argsJSON string, ctx *Context) string
+type HandlerFunc func(argsJSON string, ctx *Context, callID string) string
 
 var registry = map[string]HandlerFunc{}
 
@@ -636,16 +636,16 @@ func Register(name string, fn HandlerFunc) {
 	registry[name] = fn
 }
 
-func Dispatch(name, argsJSON string, ctx *Context) string {
+func Dispatch(name, argsJSON string, ctx *Context, callID string) string {
 	fn, ok := registry[name]
 	if !ok {
 		result := "error: unknown tool " + name
 		log.Warn("model called unknown tool", "tool", name)
-		ctx.Emit("tool_call", map[string]interface{}{"tool": name})
-		ctx.Emit("tool_result", map[string]interface{}{"tool": name, "result": result})
+		ctx.Emit("tool_call", map[string]interface{}{"tool": name, "call_id": callID})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": name, "result": result, "call_id": callID})
 		return result
 	}
-	return fn(argsJSON, ctx)
+	return fn(argsJSON, ctx, callID)
 }
 
 // emitToolError reports a tool call that failed before doing any real work
@@ -656,9 +656,9 @@ func Dispatch(name, argsJSON string, ctx *Context) string {
 // validation failure was invisible in the event trail: Dispatch's return
 // value went straight back to the model with no record a call was ever
 // attempted.
-func emitToolError(ctx *Context, tool string, args map[string]interface{}, result string) string {
-	ctx.Emit("tool_call", map[string]interface{}{"tool": tool, "args": args})
-	ctx.Emit("tool_result", map[string]interface{}{"tool": tool, "result": result})
+func emitToolError(ctx *Context, tool string, args map[string]interface{}, result string, callID string) string {
+	ctx.Emit("tool_call", map[string]interface{}{"tool": tool, "args": args, "call_id": callID})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": tool, "result": result, "call_id": callID})
 	return result
 }
 

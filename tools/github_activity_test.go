@@ -11,7 +11,7 @@ import (
 
 func TestHandleGitHubActivity_RepoRequired(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"kind":"releases"}`, ctx)
+	result := handleGitHubActivity(`{"kind":"releases"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "repo") {
 		t.Errorf("result = %q, want a repo-required error", result)
 	}
@@ -19,7 +19,7 @@ func TestHandleGitHubActivity_RepoRequired(t *testing.T) {
 
 func TestHandleGitHubActivity_KindRequired(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "kind") {
 		t.Errorf("result = %q, want a kind-required error", result)
 	}
@@ -27,7 +27,7 @@ func TestHandleGitHubActivity_KindRequired(t *testing.T) {
 
 func TestHandleGitHubActivity_InvalidKind(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"stargazers"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"stargazers"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "kind") {
 		t.Errorf("result = %q, want an invalid-kind error", result)
 	}
@@ -35,7 +35,7 @@ func TestHandleGitHubActivity_InvalidKind(t *testing.T) {
 
 func TestHandleGitHubActivity_InvalidRepo(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"not a repo","kind":"releases"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"not a repo","kind":"releases"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want a parse error", result)
 	}
@@ -43,7 +43,7 @@ func TestHandleGitHubActivity_InvalidRepo(t *testing.T) {
 
 func TestHandleGitHubActivity_PRNumberRequiredForPRKind(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "pr_number") {
 		t.Errorf("result = %q, want a pr_number-required error", result)
 	}
@@ -51,7 +51,7 @@ func TestHandleGitHubActivity_PRNumberRequiredForPRKind(t *testing.T) {
 
 func TestHandleGitHubActivity_SinceRequiredForCommitsKind(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "since") {
 		t.Errorf("result = %q, want a since-required error", result)
 	}
@@ -59,7 +59,7 @@ func TestHandleGitHubActivity_SinceRequiredForCommitsKind(t *testing.T) {
 
 func TestHandleGitHubActivity_CommitsInvalidSinceFormat(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"not-a-date"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"not-a-date"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "since") {
 		t.Errorf("result = %q, want a since-parse error", result)
 	}
@@ -245,7 +245,7 @@ func newGithubActivityTestServer(t *testing.T) *httptest.Server {
 func TestHandleGitHubActivity_Releases_Success(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases"}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a formatted release list", result)
 	}
@@ -265,7 +265,7 @@ func TestHandleGitHubActivity_Releases_Success(t *testing.T) {
 func TestHandleGitHubActivity_Releases_EmptyList(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/empty","kind":"releases"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/empty","kind":"releases"}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a friendly no-releases message, not an error", result)
 	}
@@ -277,7 +277,7 @@ func TestHandleGitHubActivity_Releases_EmptyList(t *testing.T) {
 func TestHandleGitHubActivity_Releases_LimitClampedToRequestedCount(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases","limit":1}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases","limit":1}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a formatted release list", result)
 	}
@@ -291,7 +291,7 @@ func TestHandleGitHubActivity_Releases_LimitClampedToRequestedCount(t *testing.T
 func TestHandleGitHubActivity_PR_Success(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr","pr_number":42}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr","pr_number":42}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a formatted PR detail block", result)
 	}
@@ -312,7 +312,7 @@ func TestHandleGitHubActivity_PR_Success(t *testing.T) {
 func TestHandleGitHubActivity_PR_NotFound(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr","pr_number":999}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"pr","pr_number":999}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want a not-found error", result)
 	}
@@ -323,7 +323,7 @@ func TestHandleGitHubActivity_PR_NotFound(t *testing.T) {
 func TestHandleGitHubActivity_Issues_Success(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues"}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a formatted issue list", result)
 	}
@@ -351,7 +351,7 @@ func TestHandleGitHubActivity_Issues_StatePassedThrough(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues","state":"all"}`, ctx)
+	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues","state":"all"}`, ctx, "test-call")
 	if gotState != "all" {
 		t.Errorf("issues request state = %q, want %q", gotState, "all")
 	}
@@ -373,7 +373,7 @@ func TestHandleGitHubActivity_Issues_DefaultStateIsOpen(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues"}`, ctx)
+	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"issues"}`, ctx, "test-call")
 	if gotState != "open" {
 		t.Errorf("issues request state = %q, want default %q", gotState, "open")
 	}
@@ -384,7 +384,7 @@ func TestHandleGitHubActivity_Issues_DefaultStateIsOpen(t *testing.T) {
 func TestHandleGitHubActivity_Commits_Success(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a formatted commit list", result)
 	}
@@ -414,7 +414,7 @@ func TestHandleGitHubActivity_Commits_SinceSentAsQueryParam(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx)
+	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx, "test-call")
 	if !strings.HasPrefix(gotSince, "2026-08-01T00:00:00") {
 		t.Errorf("commits request since = %q, want it normalized to a full RFC3339 timestamp", gotSince)
 	}
@@ -423,7 +423,7 @@ func TestHandleGitHubActivity_Commits_SinceSentAsQueryParam(t *testing.T) {
 func TestHandleGitHubActivity_Commits_EmptyList(t *testing.T) {
 	newGithubActivityTestServer(t)
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/empty","kind":"commits","since":"2026-08-01"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/empty","kind":"commits","since":"2026-08-01"}`, ctx, "test-call")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want a friendly no-commits message, not an error", result)
 	}
@@ -448,7 +448,7 @@ func TestHandleGitHubActivity_UsesBearerTokenWhenSet(t *testing.T) {
 
 	ctx := newTestContext()
 	ctx.GitHubToken = "test-token-123"
-	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases"}`, ctx)
+	handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"releases"}`, ctx, "test-call")
 	if gotAuth != "Bearer test-token-123" {
 		t.Errorf("Authorization header = %q, want %q", gotAuth, "Bearer test-token-123")
 	}
@@ -465,7 +465,7 @@ func TestHandleGitHubActivity_RepoNotFound(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"ghost/ghost","kind":"releases"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"ghost/ghost","kind":"releases"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want a not-found error", result)
 	}
@@ -483,7 +483,7 @@ func TestHandleGitHubActivity_RateLimited(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx)
+	result := handleGitHubActivity(`{"repo":"octocat/hello-world","kind":"commits","since":"2026-08-01"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "rate limit") {
 		t.Errorf("result = %q, want a rate-limit error", result)
 	}

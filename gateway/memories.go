@@ -180,7 +180,7 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 		}
 		messages = append(messages, llm.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
 		for _, tc := range resp.ToolCalls {
-			result := tools.Dispatch(tc.Function.Name, tc.Function.Arguments, memCtx)
+			result := tools.Dispatch(tc.Function.Name, tc.Function.Arguments, memCtx, tc.ID)
 			messages = append(messages, llm.ChatMessage{Role: "tool", ToolCallID: tc.ID, Content: result})
 		}
 	}

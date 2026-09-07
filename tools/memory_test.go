@@ -79,7 +79,7 @@ func newMemoryTestContext() (*Context, *fakeMemoryStore) {
 func TestHandleMemory_WriteThenView(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
 
-	result := Dispatch("memory", `{"action":"write","name":"user-timezone","type":"user","description":"the user's timezone","content":"US/Pacific"}`, ctx)
+	result := Dispatch("memory", `{"action":"write","name":"user-timezone","type":"user","description":"the user's timezone","content":"US/Pacific"}`, ctx, "test-call")
 	if !strings.Contains(result, "saved memory") {
 		t.Fatalf("write result = %q", result)
 	}
@@ -93,7 +93,7 @@ func TestHandleMemory_WriteThenView(t *testing.T) {
 		t.Errorf("write result = %q, want it to contain the full content, not just a bare confirmation", result)
 	}
 
-	result = Dispatch("memory", `{"action":"view","name":"user-timezone"}`, ctx)
+	result = Dispatch("memory", `{"action":"view","name":"user-timezone"}`, ctx, "test-call")
 	if !strings.Contains(result, "US/Pacific") {
 		t.Errorf("view result = %q, want it to contain the full content", result)
 	}
@@ -101,8 +101,8 @@ func TestHandleMemory_WriteThenView(t *testing.T) {
 
 func TestHandleMemory_WriteRejectsDuplicateName(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	Dispatch("memory", `{"action":"write","name":"dup","type":"project","description":"d","content":"c"}`, ctx)
-	result := Dispatch("memory", `{"action":"write","name":"dup","type":"project","description":"d2","content":"c2"}`, ctx)
+	Dispatch("memory", `{"action":"write","name":"dup","type":"project","description":"d","content":"c"}`, ctx, "test-call")
+	result := Dispatch("memory", `{"action":"write","name":"dup","type":"project","description":"d2","content":"c2"}`, ctx, "test-call")
 	if !strings.Contains(result, "already exists") {
 		t.Errorf("result = %q, want an already-exists error", result)
 	}
@@ -110,7 +110,7 @@ func TestHandleMemory_WriteRejectsDuplicateName(t *testing.T) {
 
 func TestHandleMemory_WriteRejectsInvalidName(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	result := Dispatch("memory", `{"action":"write","name":"Not Kebab Case","type":"user","description":"d","content":"c"}`, ctx)
+	result := Dispatch("memory", `{"action":"write","name":"Not Kebab Case","type":"user","description":"d","content":"c"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error for a non-slug name", result)
 	}
@@ -119,7 +119,7 @@ func TestHandleMemory_WriteRejectsInvalidName(t *testing.T) {
 func TestHandleMemory_WriteRejectsOverlongDescription(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
 	long := strings.Repeat("a", MaxMemoryDescriptionChars+1)
-	result := Dispatch("memory", `{"action":"write","name":"too-long","type":"user","description":"`+long+`","content":"c"}`, ctx)
+	result := Dispatch("memory", `{"action":"write","name":"too-long","type":"user","description":"`+long+`","content":"c"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error for an over-cap description", result)
 	}
@@ -127,12 +127,12 @@ func TestHandleMemory_WriteRejectsOverlongDescription(t *testing.T) {
 
 func TestHandleMemory_EditIsPartial(t *testing.T) {
 	ctx, fs := newMemoryTestContext()
-	Dispatch("memory", `{"action":"write","name":"partial","type":"user","description":"orig desc","content":"orig content"}`, ctx)
+	Dispatch("memory", `{"action":"write","name":"partial","type":"user","description":"orig desc","content":"orig content"}`, ctx, "test-call")
 
 	// Only description supplied — content must survive untouched, exercising
 	// the same empty-means-unchanged contract store.UpdateMemory relies on
 	// to stay race-free (see store/memory.go).
-	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"new desc"}`, ctx)
+	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"new desc"}`, ctx, "test-call")
 	if fs.rows["partial"].Content != "orig content" {
 		t.Errorf("Content = %q after description-only edit, want it untouched", fs.rows["partial"].Content)
 	}
@@ -150,9 +150,9 @@ func TestHandleMemory_EditIsPartial(t *testing.T) {
 
 func TestHandleMemory_EditRejectsOverlongDescription(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	Dispatch("memory", `{"action":"write","name":"partial","type":"user","description":"orig","content":"orig"}`, ctx)
+	Dispatch("memory", `{"action":"write","name":"partial","type":"user","description":"orig","content":"orig"}`, ctx, "test-call")
 	long := strings.Repeat("a", MaxMemoryDescriptionChars+1)
-	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"`+long+`"}`, ctx)
+	result := Dispatch("memory", `{"action":"edit","name":"partial","description":"`+long+`"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error for an over-cap description", result)
 	}
@@ -160,7 +160,7 @@ func TestHandleMemory_EditRejectsOverlongDescription(t *testing.T) {
 
 func TestHandleMemory_EditMissingNameReturnsNotFound(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	result := Dispatch("memory", `{"action":"edit","name":"nope","description":"x"}`, ctx)
+	result := Dispatch("memory", `{"action":"edit","name":"nope","description":"x"}`, ctx, "test-call")
 	if !strings.Contains(result, "no memory named") {
 		t.Errorf("result = %q, want a not-found error", result)
 	}
@@ -168,8 +168,8 @@ func TestHandleMemory_EditMissingNameReturnsNotFound(t *testing.T) {
 
 func TestHandleMemory_Forget(t *testing.T) {
 	ctx, fs := newMemoryTestContext()
-	Dispatch("memory", `{"action":"write","name":"temp","type":"project","description":"d","content":"c"}`, ctx)
-	result := Dispatch("memory", `{"action":"forget","name":"temp"}`, ctx)
+	Dispatch("memory", `{"action":"write","name":"temp","type":"project","description":"d","content":"c"}`, ctx, "test-call")
+	result := Dispatch("memory", `{"action":"forget","name":"temp"}`, ctx, "test-call")
 	if !strings.Contains(result, "forgot memory") {
 		t.Errorf("result = %q", result)
 	}
@@ -180,9 +180,9 @@ func TestHandleMemory_Forget(t *testing.T) {
 
 func TestHandleMemory_ViewListAndPromptShareFormatting(t *testing.T) {
 	ctx, _ := newMemoryTestContext()
-	Dispatch("memory", `{"action":"write","name":"a","type":"user","description":"desc a","content":"c"}`, ctx)
+	Dispatch("memory", `{"action":"write","name":"a","type":"user","description":"desc a","content":"c"}`, ctx, "test-call")
 
-	viewResult := Dispatch("memory", `{"action":"view"}`, ctx)
+	viewResult := Dispatch("memory", `{"action":"view"}`, ctx, "test-call")
 	promptResult := MemoryIndexPrompt(ctx)
 
 	// Both must render the one entry with the same per-line shape — the
@@ -200,7 +200,7 @@ func TestHandleMemory_ViewListAndPromptShareFormatting(t *testing.T) {
 
 func TestHandleMemory_UnavailableWhenNotWiredIntoContext(t *testing.T) {
 	ctx := newTestContext() // no memory closures set
-	result := Dispatch("memory", `{"action":"write","name":"x","type":"user","description":"d","content":"c"}`, ctx)
+	result := Dispatch("memory", `{"action":"write","name":"x","type":"user","description":"d","content":"c"}`, ctx, "test-call")
 	if !strings.Contains(result, "not available") {
 		t.Errorf("result = %q, want a not-available error", result)
 	}

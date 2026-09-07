@@ -8,7 +8,7 @@ import (
 func TestHandleVisualize_Line_SetsChart(t *testing.T) {
 	ctx := newTestContext()
 	args := `{"kind":"line","title":"Temps","series":[{"label":"High","points":[{"x":"Mon","y":70},{"x":"Tue","y":72}]}]}`
-	handleVisualize(args, ctx)
+	handleVisualize(args, ctx, "test-call")
 
 	if ctx.Chart == nil {
 		t.Fatal("Chart is nil, want a set chart")
@@ -23,7 +23,7 @@ func TestHandleVisualize_Line_SetsChart(t *testing.T) {
 
 func TestHandleVisualize_UnrecognizedKind_RejectsWithoutSettingChart(t *testing.T) {
 	ctx := newTestContext()
-	result := handleVisualize(`{"kind":"pie","title":"x"}`, ctx)
+	result := handleVisualize(`{"kind":"pie","title":"x"}`, ctx, "test-call")
 
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error", result)
@@ -39,7 +39,7 @@ func TestHandleVisualize_Bar_RejectsMultipleSeries(t *testing.T) {
 		{"label":"A","points":[{"x":"1","y":1}]},
 		{"label":"B","points":[{"x":"1","y":2}]}
 	]}`
-	result := handleVisualize(args, ctx)
+	result := handleVisualize(args, ctx, "test-call")
 
 	if !strings.Contains(result, "exactly one series") {
 		t.Errorf("result = %q, want a single-series-only error", result)
@@ -56,7 +56,7 @@ func TestHandleVisualize_Bar_RejectsOverBarCap(t *testing.T) {
 		points = append(points, `{"x":"a","y":1}`)
 	}
 	args := `{"kind":"bar","title":"Too many","series":[{"label":"A","points":[` + strings.Join(points, ",") + `]}]}`
-	result := handleVisualize(args, ctx)
+	result := handleVisualize(args, ctx, "test-call")
 
 	if !strings.Contains(result, "too many bars") {
 		t.Errorf("result = %q, want a too-many-bars error", result)
@@ -69,7 +69,7 @@ func TestHandleVisualize_Bar_RejectsOverBarCap(t *testing.T) {
 func TestHandleVisualize_Line_RejectsEmptySeries(t *testing.T) {
 	ctx := newTestContext()
 	args := `{"kind":"line","title":"Empty","series":[{"label":"A","points":[]}]}`
-	result := handleVisualize(args, ctx)
+	result := handleVisualize(args, ctx, "test-call")
 
 	if !strings.Contains(result, "has no points") {
 		t.Errorf("result = %q, want a no-points error", result)
@@ -86,7 +86,7 @@ func TestHandleVisualize_Line_RejectsOverPointCap(t *testing.T) {
 		points = append(points, `{"x":"a","y":1}`)
 	}
 	args := `{"kind":"line","title":"Too many","series":[{"label":"A","points":[` + strings.Join(points, ",") + `]}]}`
-	result := handleVisualize(args, ctx)
+	result := handleVisualize(args, ctx, "test-call")
 
 	if !strings.Contains(result, "too many points") {
 		t.Errorf("result = %q, want a too-many-points error", result)
@@ -103,7 +103,7 @@ func TestHandleVisualize_Timeline_RejectsOverEventCap(t *testing.T) {
 		events = append(events, `{"date":"2026-01-01","label":"x"}`)
 	}
 	args := `{"kind":"timeline","title":"Too many","events":[` + strings.Join(events, ",") + `]}`
-	result := handleVisualize(args, ctx)
+	result := handleVisualize(args, ctx, "test-call")
 
 	if !strings.Contains(result, "too many events") {
 		t.Errorf("result = %q, want a too-many-events error", result)
@@ -115,7 +115,7 @@ func TestHandleVisualize_Timeline_RejectsOverEventCap(t *testing.T) {
 
 func TestHandleVisualize_Meter_RequiresValue(t *testing.T) {
 	ctx := newTestContext()
-	result := handleVisualize(`{"kind":"meter","title":"Usage"}`, ctx)
+	result := handleVisualize(`{"kind":"meter","title":"Usage"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "requires a value") {
 		t.Errorf("result = %q, want a value-required error", result)
@@ -128,7 +128,7 @@ func TestHandleVisualize_Meter_RequiresValue(t *testing.T) {
 func TestHandleVisualize_Meter_SetsChart(t *testing.T) {
 	ctx := newTestContext()
 	args := `{"kind":"meter","title":"Context usage","value":{"current":80,"min":0,"max":100,"label":"tokens"}}`
-	handleVisualize(args, ctx)
+	handleVisualize(args, ctx, "test-call")
 
 	if ctx.Chart == nil || ctx.Chart.Value == nil {
 		t.Fatalf("Chart = %+v, want a set value", ctx.Chart)
@@ -140,8 +140,8 @@ func TestHandleVisualize_Meter_SetsChart(t *testing.T) {
 
 func TestHandleVisualize_SecondCallOverwritesFirst(t *testing.T) {
 	ctx := newTestContext()
-	handleVisualize(`{"kind":"line","title":"First","series":[{"label":"A","points":[{"x":"1","y":1}]}]}`, ctx)
-	handleVisualize(`{"kind":"bar","title":"Second","series":[{"label":"B","points":[{"x":"1","y":2}]}]}`, ctx)
+	handleVisualize(`{"kind":"line","title":"First","series":[{"label":"A","points":[{"x":"1","y":1}]}]}`, ctx, "test-call")
+	handleVisualize(`{"kind":"bar","title":"Second","series":[{"label":"B","points":[{"x":"1","y":2}]}]}`, ctx, "test-call")
 
 	if ctx.Chart == nil || ctx.Chart.Title != "Second" {
 		t.Errorf("Chart = %+v, want last-write-wins with title=Second", ctx.Chart)

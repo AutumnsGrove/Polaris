@@ -78,7 +78,7 @@ var memoryNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // case far under this in practice, not the cap itself.
 const MaxMemoryDescriptionChars = 2000
 
-func handleMemory(argsJSON string, ctx *Context) string {
+func handleMemory(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Action      string `json:"action"`
 		Name        string `json:"name"`
@@ -87,14 +87,14 @@ func handleMemory(argsJSON string, ctx *Context) string {
 		Content     string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "memory", nil, "error: "+err.Error())
+		return emitToolError(ctx, "memory", nil, "error: "+err.Error(), callID)
 	}
 
 	logArgs := map[string]interface{}{"action": args.Action, "name": args.Name}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "memory", "args": logArgs})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "memory", "args": logArgs, "call_id": callID})
 
 	result := dispatchMemoryAction(ctx, args.Action, args.Name, args.Type, args.Description, args.Content)
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "memory", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "memory", "result": result, "call_id": callID})
 	return result
 }
 

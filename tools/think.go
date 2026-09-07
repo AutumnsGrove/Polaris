@@ -27,12 +27,12 @@ var thinkDef = llm.ToolDef{
 
 func init() { Register("think", handleThink) }
 
-func handleThink(argsJSON string, ctx *Context) string {
+func handleThink(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Thought string `json:"thought"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "think", nil, "error: "+err.Error())
+		return emitToolError(ctx, "think", nil, "error: "+err.Error(), callID)
 	}
 	ctx.Emit("thinking", map[string]interface{}{"content": args.Thought})
 	return "noted"

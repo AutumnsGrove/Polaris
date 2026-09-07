@@ -11,7 +11,7 @@ import (
 
 func TestHandleMusic_NotConfigured(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleMusic(`{"mode":"track","artist":"Radiohead","track":"Airbag"}`, ctx)
+	result := handleMusic(`{"mode":"track","artist":"Radiohead","track":"Airbag"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" || !strings.Contains(result, "aren't configured") {
 		t.Errorf("result = %q, want a not-configured error", result)
 	}
@@ -19,7 +19,7 @@ func TestHandleMusic_NotConfigured(t *testing.T) {
 
 func TestHandleMusic_ArtistRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"track","track":"Airbag"}`, ctx)
+	result := handleMusic(`{"mode":"track","track":"Airbag"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an artist-required error", result)
 	}
@@ -27,7 +27,7 @@ func TestHandleMusic_ArtistRequired(t *testing.T) {
 
 func TestHandleMusic_UnknownMode(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"vibes","artist":"Radiohead"}`, ctx)
+	result := handleMusic(`{"mode":"vibes","artist":"Radiohead"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" || !strings.Contains(result, "unknown mode") {
 		t.Errorf("result = %q, want an unknown-mode error", result)
 	}
@@ -35,7 +35,7 @@ func TestHandleMusic_UnknownMode(t *testing.T) {
 
 func TestHandleMusic_TrackModeRequiresTrack(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"track","artist":"Radiohead"}`, ctx)
+	result := handleMusic(`{"mode":"track","artist":"Radiohead"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a track-required error", result)
 	}
@@ -43,7 +43,7 @@ func TestHandleMusic_TrackModeRequiresTrack(t *testing.T) {
 
 func TestHandleMusic_AlbumTracksModeRequiresAlbum(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"album_tracks","artist":"Radiohead"}`, ctx)
+	result := handleMusic(`{"mode":"album_tracks","artist":"Radiohead"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an album-required error", result)
 	}
@@ -152,7 +152,7 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"track","artist":"Test Artist","track":"Song"}`, ctx)
+	result := handleMusic(`{"mode":"track","artist":"Test Artist","track":"Song"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted similar-tracks result", result)
 	}
@@ -224,7 +224,7 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"album_tracks","artist":"Test Artist","album":"Test Album"}`, ctx)
+	result := handleMusic(`{"mode":"album_tracks","artist":"Test Artist","album":"Test Album"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted aggregated result", result)
 	}
@@ -294,7 +294,7 @@ func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) 
 	fakeDeezer(t, "https://cdn.deezer.example/cover.jpg")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"similar_albums","artist":"Test Artist","album":"Test Album"}`, ctx)
+	result := handleMusic(`{"mode":"similar_albums","artist":"Test Artist","album":"Test Album"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted similar-albums result", result)
 	}
@@ -347,7 +347,7 @@ func TestHandleMusic_LastFMAPIError(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, LastFMAPIKey: "key"}
-	result := handleMusic(`{"mode":"track","artist":"Nobody","track":"Nothing"}`, ctx)
+	result := handleMusic(`{"mode":"track","artist":"Nobody","track":"Nothing"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an error surfaced from last.fm's error field", result)
 	}

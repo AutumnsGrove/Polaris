@@ -44,36 +44,37 @@ var youtubeTranscriptDef = llm.ToolDef{
 
 func init() { Register("youtube_transcript", handleYouTubeTranscript) }
 
-func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
+func handleYouTubeTranscript(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		URL string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "youtube_transcript", nil, "error: "+err.Error())
+		return emitToolError(ctx, "youtube_transcript", nil, "error: "+err.Error(), callID)
 	}
 	if args.URL == "" {
-		return emitToolError(ctx, "youtube_transcript", map[string]interface{}{"url": args.URL}, "error: url is required")
+		return emitToolError(ctx, "youtube_transcript", map[string]interface{}{"url": args.URL}, "error: url is required", callID)
 	}
 
 	videoID, err := extractYouTubeID(args.URL)
 	if err != nil {
-		ctx.Emit("tool_call", map[string]interface{}{"tool": "youtube_transcript", "args": map[string]interface{}{"url": args.URL}})
+		ctx.Emit("tool_call", map[string]interface{}{"tool": "youtube_transcript", "args": map[string]interface{}{"url": args.URL}, "call_id": callID})
 		result := "error: " + err.Error()
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "youtube_transcript", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "youtube_transcript", "result": result, "call_id": callID})
 		return result
 	}
 	watchURL := youtubeWatchBaseURL + videoID
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "youtube_transcript",
-		"args": map[string]interface{}{"url": watchURL},
+		"tool":    "youtube_transcript",
+		"args":    map[string]interface{}{"url": watchURL},
+		"call_id": callID,
 	})
 
 	title, transcript, err := fetchYouTubeTranscript(ctx.Ctx, videoID)
 	if err != nil {
 		log.Warn("youtube_transcript failed", "video_id", videoID, "err", err)
 		result := "error: " + err.Error()
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "youtube_transcript", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "youtube_transcript", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -83,6 +84,7 @@ func handleYouTubeTranscript(argsJSON string, ctx *Context) string {
 		"tool":      "youtube_transcript",
 		"result":    transcript,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return transcript
 }

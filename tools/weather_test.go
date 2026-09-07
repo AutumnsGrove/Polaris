@@ -27,7 +27,7 @@ func startFakeNominatimReverse(t *testing.T) {
 
 func TestHandleWeather_NoLocationAndNoDefault(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWeather(`{}`, ctx)
+	result := handleWeather(`{}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an error for a missing location with no default configured", result)
 	}
@@ -52,7 +52,7 @@ func TestHandleWeather_UsesDefaultLocationAndFormatsForecast(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321", // coordinate pair skips Geocode's Nominatim call, but reverse-geocodes for display
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleWeather(`{}`, ctx)
+	result := handleWeather(`{}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted forecast", result)
 	}
@@ -80,7 +80,7 @@ func TestHandleWeather_ReverseGeocodesRawCoordinatesForDisplay(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleWeather(`{}`, ctx)
+	result := handleWeather(`{}`, ctx, "test-call")
 	if !strings.Contains(result, "Weather for Seattle, Washington:") {
 		t.Errorf("result = %q, want the reverse-geocoded place name in place of raw coordinates", result)
 	}
@@ -113,7 +113,7 @@ func TestHandleWeather_ReverseGeocodeFailureFallsBackToCoordinates(t *testing.T)
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleWeather(`{}`, ctx)
+	result := handleWeather(`{}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted forecast despite the reverse-geocode failure", result)
 	}
@@ -144,7 +144,7 @@ func TestHandleWeather_IncludeHourlyAddsHourlyBlock(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleWeather(`{"include_hourly": true}`, ctx)
+	result := handleWeather(`{"include_hourly": true}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted forecast", result)
 	}
@@ -180,7 +180,7 @@ func TestHandleWeather_OmitsHourlyByDefault(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleWeather(`{}`, ctx)
+	result := handleWeather(`{}`, ctx, "test-call")
 	if strings.Contains(result, "Hourly") {
 		t.Errorf("result = %q, want no hourly section when include_hourly is omitted", result)
 	}
@@ -210,7 +210,7 @@ func TestHandleWeather_MultiDayForecastAttachesChart(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	handleWeather(`{"forecast_days": 3}`, ctx)
+	handleWeather(`{"forecast_days": 3}`, ctx, "test-call")
 
 	if ctx.Chart == nil {
 		t.Fatal("Chart is nil, want a Tier-1 auto-attached chart for a multi-day forecast")
@@ -291,7 +291,7 @@ func TestHandleWeather_SingleDayForecastSetsNoChart(t *testing.T) {
 		DefaultLocation: "47.6062, -122.3321",
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	handleWeather(`{"forecast_days": 1}`, ctx)
+	handleWeather(`{"forecast_days": 1}`, ctx, "test-call")
 
 	if ctx.Chart != nil {
 		t.Errorf("Chart = %+v, want nil — a single day has nothing worth plotting", ctx.Chart)

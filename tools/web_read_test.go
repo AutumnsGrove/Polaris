@@ -280,7 +280,7 @@ func writeBlocklistFile(t *testing.T, contents string) string {
 
 func TestHandleWebRead_URLRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(`{}`, ctx)
+	result := handleWebRead(`{}`, ctx, "test-call")
 	if result != "error: url is required" {
 		t.Errorf("result = %q, want the url-required error", result)
 	}
@@ -304,7 +304,7 @@ func TestHandleWebRead_BlockedDomainRejectedWithoutFetching(t *testing.T) {
 	}
 
 	ctx := &Context{Ctx: context.Background(), Blocklist: bl, Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "blocked") {
 		t.Errorf("result = %q, want a blocked-source error", result)
@@ -319,7 +319,7 @@ func TestHandleWebRead_WithoutInstructions_ReturnsFullText(t *testing.T) {
 	srv := fakeHTMLPage(t, http.StatusOK, html)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "Full extracted content here.") {
 		t.Errorf("result = %q, want the extracted text unfiltered", result)
@@ -340,7 +340,7 @@ func TestHandleWebRead_CitationIncludesImageURL(t *testing.T) {
 	srv := fakeHTMLPage(t, http.StatusOK, html)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
 
 	if len(ctx.Citations) != 1 || ctx.Citations[0].ImageURL != "https://example.com/lead.jpg" {
 		t.Errorf("Citations = %+v, want the og:image URL carried through", ctx.Citations)
@@ -358,7 +358,7 @@ func TestHandleWebRead_WithInstructions_AppliesFilterPass(t *testing.T) {
 	}
 	ctx := &Context{Ctx: context.Background(), LLM: mock, Emit: func(string, map[string]interface{}) {}}
 
-	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"just the prices"}`, ctx)
+	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"just the prices"}`, ctx, "test-call")
 	if result != "$10, $20, $30" {
 		t.Errorf("result = %q, want the filtered content from the mock, not the full page", result)
 	}
@@ -383,7 +383,7 @@ func TestHandleWebRead_QuickModeSkipsFilterPassEvenWithInstructions(t *testing.T
 	}
 	ctx := &Context{Ctx: context.Background(), LLM: mock, QuickMode: true, Emit: func(string, map[string]interface{}) {}}
 
-	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"just the prices"}`, ctx)
+	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"just the prices"}`, ctx, "test-call")
 	if strings.Contains(result, "$10, $20, $30") && !strings.Contains(result, "lots of other text") {
 		t.Errorf("result = %q, want the full unfiltered page text, not the filter pass's output", result)
 	}
@@ -398,7 +398,7 @@ func TestHandleWebRead_OffsetContinuesReading(t *testing.T) {
 	srv := fakeHTMLPage(t, http.StatusOK, html)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	first := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx)
+	first := handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
 	if strings.Contains(first, "SECOND_CHUNK_MARKER") {
 		t.Errorf("first read should stop before the marker, got a result containing it")
 	}
@@ -407,7 +407,7 @@ func TestHandleWebRead_OffsetContinuesReading(t *testing.T) {
 	}
 
 	ctx2 := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	second := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":%d}`, srv.URL, maxExtractedChars), ctx2)
+	second := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":%d}`, srv.URL, maxExtractedChars), ctx2, "test-call")
 	if !strings.Contains(second, "SECOND_CHUNK_MARKER") {
 		t.Errorf("second = %q, want it to contain the marker past the first chunk", second)
 	}
@@ -426,7 +426,7 @@ func TestHandleWebRead_InstructionsSeeBeyondDisplayWindow(t *testing.T) {
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "DEEP_TARGET_VALUE"}}},
 	}
 	ctx := &Context{Ctx: context.Background(), LLM: mock, Emit: func(string, map[string]interface{}) {}}
-	handleWebRead(`{"url":"`+srv.URL+`","instructions":"find the target value"}`, ctx)
+	handleWebRead(`{"url":"`+srv.URL+`","instructions":"find the target value"}`, ctx, "test-call")
 
 	if len(mock.Calls) != 1 {
 		t.Fatalf("CallCount = %d, want exactly 1", len(mock.Calls))
@@ -446,7 +446,7 @@ func TestHandleWebRead_FilterFailureFallsBackToFullText(t *testing.T) {
 	}
 	ctx := &Context{Ctx: context.Background(), LLM: mock, Emit: func(string, map[string]interface{}) {}}
 
-	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"anything"}`, ctx)
+	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"anything"}`, ctx, "test-call")
 	if !strings.Contains(result, "Full content, filter will fail") {
 		t.Errorf("result = %q, want the full extracted text as a fallback", result)
 	}
@@ -627,7 +627,7 @@ func TestHandleWebRead_PDFPageParam(t *testing.T) {
 	srv := twoPageTestPDFServer(t)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(fmt.Sprintf(`{"url":"%s","page":2}`, srv.URL), ctx)
+	result := handleWebRead(fmt.Sprintf(`{"url":"%s","page":2}`, srv.URL), ctx, "test-call")
 
 	if !strings.Contains(result, "Page Two Text") {
 		t.Errorf("result = %q, want page 2's content when page:2 is requested", result)
@@ -643,7 +643,7 @@ func TestHandleWebRead_PDFIgnoresOffsetPagination(t *testing.T) {
 	srv := twoPageTestPDFServer(t)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":5}`, srv.URL), ctx)
+	result := handleWebRead(fmt.Sprintf(`{"url":"%s","offset":5}`, srv.URL), ctx, "test-call")
 
 	if !strings.Contains(result, "Page One Text") {
 		t.Errorf("result = %q, want page 1's full content, unaffected by offset", result)
@@ -660,7 +660,7 @@ func TestHandleWebRead_DeadLinkFallsBackToArchiveOrg(t *testing.T) {
 	withWaybackAPI(t, waybackServer.URL)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "Content recovered from the archive.") {
 		t.Errorf("result = %q, want the archive.org snapshot's content", result)
@@ -682,7 +682,7 @@ func TestHandleWebRead_NoArchiveSnapshotFallsBackToTavily(t *testing.T) {
 		Emit:   func(string, map[string]interface{}) {},
 		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
 	}
-	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "Rendered by Tavily.") {
 		t.Errorf("result = %q, want Tavily's content once archive.org has no snapshot", result)
@@ -712,7 +712,7 @@ func TestHandleWebRead_EmptyBodyFallsBackToTavilyWithoutArchiveOrg(t *testing.T)
 		Emit:   func(string, map[string]interface{}) {},
 		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
 	}
-	result := handleWebRead(`{"url":"`+jsRenderedServer.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+jsRenderedServer.URL+`"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "Full SPA content via Tavily.") {
 		t.Errorf("result = %q, want Tavily's rendered content", result)
@@ -730,7 +730,7 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 	// No ctx.Tavily configured at all — mirrors a deployment that hasn't
 	// set TAVILY_API_KEY.
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx)
+	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx, "test-call")
 
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error when every fallback is unavailable", result)

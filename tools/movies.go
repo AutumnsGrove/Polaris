@@ -90,39 +90,39 @@ const (
 	tmdbPosterSize = "w342"
 )
 
-func handleMovies(argsJSON string, ctx *Context) string {
+func handleMovies(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Title     string `json:"title"`
 		MediaType string `json:"media_type"`
 		Year      int    `json:"year"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "movies", nil, "error: "+err.Error())
+		return emitToolError(ctx, "movies", nil, "error: "+err.Error(), callID)
 	}
 	if ctx.TMDBAPIKey == "" {
 		return emitToolError(ctx, "movies", map[string]interface{}{"title": args.Title},
-			"error: movies lookups aren't configured — set tmdb.api_key in config.yaml")
+			"error: movies lookups aren't configured — set tmdb.api_key in config.yaml", callID)
 	}
 	args.Title = strings.TrimSpace(args.Title)
 	if args.Title == "" {
-		return emitToolError(ctx, "movies", nil, "error: title is required")
+		return emitToolError(ctx, "movies", nil, "error: title is required", callID)
 	}
 	if args.MediaType != "movie" && args.MediaType != "tv" {
 		return emitToolError(ctx, "movies", map[string]interface{}{"title": args.Title, "media_type": args.MediaType},
-			`error: media_type must be "movie" or "tv"`)
+			`error: media_type must be "movie" or "tv"`, callID)
 	}
 
 	callArgs := map[string]interface{}{"title": args.Title, "media_type": args.MediaType}
 	if args.Year != 0 {
 		callArgs["year"] = args.Year
 	}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "movies", "args": callArgs})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "movies", "args": callArgs, "call_id": callID})
 
 	result, err := lookupMovieRecommendations(ctx, args.Title, args.MediaType, args.Year)
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("movies failed", "title", args.Title, "media_type", args.MediaType, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "movies", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "movies", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -132,6 +132,7 @@ func handleMovies(argsJSON string, ctx *Context) string {
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
 		"cards":     ctx.CardsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

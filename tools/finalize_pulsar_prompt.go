@@ -46,29 +46,30 @@ var finalizePulsarPromptDef = llm.ToolDef{
 
 func init() { Register("finalize_pulsar_prompt", handleFinalizePulsarPrompt) }
 
-func handleFinalizePulsarPrompt(argsJSON string, ctx *Context) string {
+func handleFinalizePulsarPrompt(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Prompt string `json:"prompt"`
 		Name   string `json:"name"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "finalize_pulsar_prompt", nil, "error: "+err.Error())
+		return emitToolError(ctx, "finalize_pulsar_prompt", nil, "error: "+err.Error(), callID)
 	}
 	args.Prompt = strings.TrimSpace(args.Prompt)
 	args.Name = strings.TrimSpace(args.Name)
 	if args.Prompt == "" {
 		return emitToolError(ctx, "finalize_pulsar_prompt", map[string]interface{}{"prompt": args.Prompt},
-			"error: prompt is required")
+			"error: prompt is required", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "finalize_pulsar_prompt",
-		"args": map[string]interface{}{"prompt": args.Prompt, "name": args.Name},
+		"tool":    "finalize_pulsar_prompt",
+		"args":    map[string]interface{}{"prompt": args.Prompt, "name": args.Name},
+		"call_id": callID,
 	})
 
 	ctx.SetWizardFinal(&WizardFinal{Prompt: args.Prompt, Name: args.Name})
 
 	result := "(turn paused — the drafted prompt has been handed back to the routine form)"
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "finalize_pulsar_prompt", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "finalize_pulsar_prompt", "result": result, "call_id": callID})
 	return result
 }

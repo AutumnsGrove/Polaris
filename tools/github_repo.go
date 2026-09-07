@@ -57,16 +57,16 @@ var githubAPIBaseURL = "https://api.github.com"
 
 const githubUserAgent = "Polaris/1.0 (personal search assistant; +https://github.com/AutumnsGrove/Polaris)"
 
-func handleGitHubRepo(argsJSON string, ctx *Context) string {
+func handleGitHubRepo(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Repo          string `json:"repo"`
 		IncludeReadme *bool  `json:"include_readme"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "github_repo", nil, "error: "+err.Error())
+		return emitToolError(ctx, "github_repo", nil, "error: "+err.Error(), callID)
 	}
 	if args.Repo == "" {
-		return emitToolError(ctx, "github_repo", map[string]interface{}{"repo": args.Repo}, "error: repo is required")
+		return emitToolError(ctx, "github_repo", map[string]interface{}{"repo": args.Repo}, "error: repo is required", callID)
 	}
 	includeReadme := true
 	if args.IncludeReadme != nil {
@@ -75,20 +75,21 @@ func handleGitHubRepo(argsJSON string, ctx *Context) string {
 
 	owner, repo, err := parseGitHubRepo(args.Repo)
 	if err != nil {
-		return emitToolError(ctx, "github_repo", map[string]interface{}{"repo": args.Repo}, "error: "+err.Error())
+		return emitToolError(ctx, "github_repo", map[string]interface{}{"repo": args.Repo}, "error: "+err.Error(), callID)
 	}
 	slug := owner + "/" + repo
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "github_repo",
-		"args": map[string]interface{}{"repo": slug},
+		"tool":    "github_repo",
+		"args":    map[string]interface{}{"repo": slug},
+		"call_id": callID,
 	})
 
 	stats, err := fetchGitHubRepoStats(ctx.Ctx, owner, repo, ctx.GitHubToken)
 	if err != nil {
 		result := "error: " + err.Error()
 		log.Warn("github_repo failed", "repo", slug, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "github_repo", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "github_repo", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -112,6 +113,7 @@ func handleGitHubRepo(argsJSON string, ctx *Context) string {
 		"tool":      "github_repo",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

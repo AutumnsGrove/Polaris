@@ -11,7 +11,7 @@ import (
 
 func TestHandleNearbySearch_QueryRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleNearbySearch(`{}`, ctx)
+	result := handleNearbySearch(`{}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a query-required error", result)
 	}
@@ -19,7 +19,7 @@ func TestHandleNearbySearch_QueryRequired(t *testing.T) {
 
 func TestHandleNearbySearch_NoLocationAndNoDefault(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleNearbySearch(`{"query":"coffee shop"}`, ctx)
+	result := handleNearbySearch(`{"query":"coffee shop"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an error for a missing location with no default configured", result)
 	}
@@ -40,7 +40,7 @@ func TestHandleNearbySearch_UsesDefaultLocationWhenOmitted(t *testing.T) {
 		SearXNG:         search.NewSearXNGClient(srv.URL, nil),
 		Emit:            func(string, map[string]interface{}) {},
 	}
-	result := handleNearbySearch(`{"query":"coffee shop"}`, ctx)
+	result := handleNearbySearch(`{"query":"coffee shop"}`, ctx, "test-call")
 	if result == "" {
 		t.Error("expected some result using the default location, got empty string")
 	}
@@ -59,7 +59,7 @@ func TestHandleNearbySearch_FoursquareNotConfigured_FallsBackToSearXNG(t *testin
 		Emit:    func(string, map[string]interface{}) {},
 	}
 	// Foursquare left nil — no API key configured.
-	result := handleNearbySearch(`{"query":"coffee shop","location":"47.6062, -122.3321"}`, ctx)
+	result := handleNearbySearch(`{"query":"coffee shop","location":"47.6062, -122.3321"}`, ctx, "test-call")
 	if result == "" {
 		t.Fatal("expected a formatted result from the SearXNG fallback")
 	}

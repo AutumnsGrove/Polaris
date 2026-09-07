@@ -65,7 +65,7 @@ var webSearchDef = llm.ToolDef{
 
 func init() { Register("web_search", handleWebSearch) }
 
-func handleWebSearch(argsJSON string, ctx *Context) string {
+func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
@@ -73,10 +73,10 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		Page       int    `json:"page"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "web_search", nil, "error: "+err.Error())
+		return emitToolError(ctx, "web_search", nil, "error: "+err.Error(), callID)
 	}
 	if args.Query == "" {
-		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query}, "error: query is required")
+		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query}, "error: query is required", callID)
 	}
 	if args.MaxResults <= 0 || args.MaxResults > 20 {
 		args.MaxResults = 5
@@ -93,8 +93,9 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		callArgs["page"] = args.Page
 	}
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "web_search",
-		"args": callArgs,
+		"tool":    "web_search",
+		"args":    callArgs,
+		"call_id": callID,
 	})
 
 	if ctx.ResearchBudget != nil && !ctx.ResearchBudget.Allowed() {
@@ -104,18 +105,18 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 		// operation; the soft nudge is the real steering mechanism.
 		result := "error: this session's search budget has been exhausted (research budget circuit breaker) — stop searching and answer with what you have so far."
 		log.Warn("web_search: research budget hard ceiling reached, refusing", "query", args.Query)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result, "call_id": callID})
 		return result
 	}
 
 	if ctx.PinnedProvider == "brave" {
-		return handlePinnedBraveSearch(ctx, args.Query)
+		return handlePinnedBraveSearch(ctx, args.Query, callID)
 	}
 
 	if ctx.SearXNG == nil {
 		result := "error: web search is not configured"
 		log.Warn("web_search called with no SearXNG client configured", "query", args.Query)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -137,7 +138,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	})
 	if err != nil {
 		log.Warn("web_search failed", "query", args.Query, "category", args.Category, "page", args.Page, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error()})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "error: " + err.Error(), "call_id": callID})
 		return "error: " + err.Error()
 	}
 
@@ -167,7 +168,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveFallback(ctx, args.Query, "Brave (SearXNG degraded)"); ok {
+			} else if formatted, ok := braveFallback(ctx, args.Query, "Brave (SearXNG degraded)", callID); ok {
 				return formatted
 			}
 		}
@@ -176,12 +177,12 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 				log.Warn("web_search: checking parallel usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= parallelMonthlyCap {
 				log.Warn("web_search: parallel monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", parallelMonthlyCap)
-			} else if formatted, ok := parallelFallback(ctx, args.Query); ok {
+			} else if formatted, ok := parallelFallback(ctx, args.Query, callID); ok {
 				return formatted
 			}
 		}
 		if ctx.Tavily != nil {
-			if formatted, ok := tavilyFallback(ctx, args.Query); ok {
+			if formatted, ok := tavilyFallback(ctx, args.Query, callID); ok {
 				return formatted
 			}
 		}
@@ -198,13 +199,13 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 				msg += fmt.Sprintf(" SearXNG itself won't be retried for about %s.", wait)
 			}
 		}
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": msg})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": msg, "call_id": callID})
 		return msg
 	}
 
 	if len(resp.Results) == 0 {
 		log.Info("web_search: no results", "query", args.Query, "category", args.Category, "page", args.Page)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "no results"})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": "no results", "call_id": callID})
 		return "no results found"
 	}
 
@@ -212,7 +213,7 @@ func handleWebSearch(argsJSON string, ctx *Context) string {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	formatted := formatSearchResults(ctx, "SearXNG", "searxng", args.Query, args.Category, args.Page, results)
+	formatted := formatSearchResults(ctx, "SearXNG", "searxng", args.Query, args.Category, args.Page, results, callID)
 	return formatted
 }
 
@@ -240,7 +241,7 @@ type searchResultLike struct {
 // ("Brave (SearXNG degraded)") — store.Store.GetStats aggregates on the
 // key so fallback-hit counts don't depend on parsing display text that's
 // free to change wording without breaking stats.
-func formatSearchResults(ctx *Context, provider, providerKey, query, category string, page int, results []searchResultLike) string {
+func formatSearchResults(ctx *Context, provider, providerKey, query, category string, page int, results []searchResultLike, callID string) string {
 	urls := make([]string, 0, len(results))
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[via %s]\n\n", provider)
@@ -258,6 +259,7 @@ func formatSearchResults(ctx *Context, provider, providerKey, query, category st
 		"result":    formatted,
 		"citations": ctx.CitationsSnapshot(),
 		"provider":  providerKey,
+		"call_id":   callID,
 	})
 
 	return formatted
@@ -271,18 +273,18 @@ func formatSearchResults(ctx *Context, provider, providerKey, query, category st
 // that cap guards against elsewhere). IncrementBraveUsage is still
 // called when set, purely so the run's own usage is visible to whatever
 // isolated store the caller wired it against — see cmd/benchmark.go.
-func handlePinnedBraveSearch(ctx *Context, query string) string {
+func handlePinnedBraveSearch(ctx *Context, query string, callID string) string {
 	if ctx.Brave == nil {
 		result := "error: web search is not configured (PinnedProvider=brave but no Brave client set)"
 		log.Warn("web_search: PinnedProvider=brave with no Brave client", "query", query)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result, "call_id": callID})
 		return result
 	}
-	if formatted, ok := braveFallback(ctx, query, "Brave (pinned)"); ok {
+	if formatted, ok := braveFallback(ctx, query, "Brave (pinned)", callID); ok {
 		return formatted
 	}
 	result := "no results found"
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result, "call_id": callID})
 	return result
 }
 
@@ -299,7 +301,7 @@ func handlePinnedBraveSearch(ctx *Context, query string) string {
 // human-readable provider string shown in the "[via ...]" transcript
 // line — callers pass a different one depending on why Brave fired
 // (degraded-SearXNG fallback vs. handlePinnedBraveSearch's pinned mode).
-func braveFallback(ctx *Context, query, label string) (formatted string, ok bool) {
+func braveFallback(ctx *Context, query, label string, callID string) (formatted string, ok bool) {
 	dedupKey := searchDedupKey("brave", query, "", 1, 5)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*brave.SearchResponse, error) {
 		r, e := ctx.Brave.Search(ctx.Ctx, query, 0)
@@ -333,7 +335,7 @@ func braveFallback(ctx *Context, query, label string) (formatted string, ok bool
 		}
 		results = append(results, searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content})
 	}
-	return formatSearchResults(ctx, label, "brave", query, "", 1, results), true
+	return formatSearchResults(ctx, label, "brave", query, "", 1, results, callID), true
 }
 
 // parallelFallback tries Parallel's Search API once SearXNG has confirmed
@@ -346,7 +348,7 @@ func braveFallback(ctx *Context, query, label string) (formatted string, ok bool
 // per-request pricing) almost certainly still billed for it, whether or
 // not anything useful came back. Returns ok=false on any failure so the
 // caller falls through to Tavily instead.
-func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
+func parallelFallback(ctx *Context, query string, callID string) (formatted string, ok bool) {
 	dedupKey := searchDedupKey("parallel", query, "", 1, 5)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*parallel.SearchResponse, error) {
 		r, e := ctx.Parallel.Search(ctx.Ctx, query, 5)
@@ -375,7 +377,7 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", "parallel", query, "", 1, results), true
+	return formatSearchResults(ctx, "Parallel (SearXNG degraded)", "parallel", query, "", 1, results, callID), true
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
@@ -383,7 +385,7 @@ func parallelFallback(ctx *Context, query string) (formatted string, ok bool) {
 // or an empty result so the caller falls through to the plain "degraded"
 // message instead — this is a best-effort rescue, not something worth its
 // own error path back to the model.
-func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
+func tavilyFallback(ctx *Context, query string, callID string) (formatted string, ok bool) {
 	dedupKey := searchDedupKey("tavily", query, "", 1, 5)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*tavily.SearchResponse, error) {
 		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5)
@@ -405,5 +407,5 @@ func tavilyFallback(ctx *Context, query string) (formatted string, ok bool) {
 	for i, r := range resp.Results {
 		results[i] = searchResultLike{Title: r.Title, URL: r.URL, Content: r.Content}
 	}
-	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", "tavily", query, "", 1, results), true
+	return formatSearchResults(ctx, "Tavily (SearXNG degraded)", "tavily", query, "", 1, results, callID), true
 }

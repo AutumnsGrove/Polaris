@@ -4,7 +4,7 @@ import "testing"
 
 func TestHandleAskUserQuestion_SetsPendingQuestion(t *testing.T) {
 	ctx := newTestContext()
-	result := Dispatch("ask_user_question", `{"question":"What's your budget?","options":["Under $50","$50-100"]}`, ctx)
+	result := Dispatch("ask_user_question", `{"question":"What's your budget?","options":["Under $50","$50-100"]}`, ctx, "test-call")
 
 	if result == "" {
 		t.Fatal("handler returned an empty result")
@@ -25,7 +25,7 @@ func TestHandleAskUserQuestion_SetsPendingQuestion(t *testing.T) {
 
 func TestHandleAskUserQuestion_RequiresQuestion(t *testing.T) {
 	ctx := newTestContext()
-	result := Dispatch("ask_user_question", `{"question":"  "}`, ctx)
+	result := Dispatch("ask_user_question", `{"question":"  "}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an error for a blank question", result)
 	}
@@ -36,7 +36,7 @@ func TestHandleAskUserQuestion_RequiresQuestion(t *testing.T) {
 
 func TestHandleAskUserQuestion_CapsOptions(t *testing.T) {
 	ctx := newTestContext()
-	Dispatch("ask_user_question", `{"question":"Which?","options":["a","b","c","d","e","f","g","h"]}`, ctx)
+	Dispatch("ask_user_question", `{"question":"Which?","options":["a","b","c","d","e","f","g","h"]}`, ctx, "test-call")
 	if got := len(ctx.PendingQuestion.Options); got != maxAskUserQuestionOptions {
 		t.Errorf("Options len = %d, want capped at %d", got, maxAskUserQuestionOptions)
 	}
@@ -44,7 +44,7 @@ func TestHandleAskUserQuestion_CapsOptions(t *testing.T) {
 
 func TestHandleAskUserQuestion_WantsLocation(t *testing.T) {
 	ctx := newTestContext()
-	Dispatch("ask_user_question", `{"question":"Where are you?","wants_location":true}`, ctx)
+	Dispatch("ask_user_question", `{"question":"Where are you?","wants_location":true}`, ctx, "test-call")
 	if !ctx.PendingQuestion.WantsLocation {
 		t.Error("WantsLocation = false, want true")
 	}
@@ -59,7 +59,7 @@ func TestHandleAskUserQuestion_WantsLocation(t *testing.T) {
 func TestHandleAskUserQuestion_Plan(t *testing.T) {
 	ctx := newTestContext()
 	Dispatch("ask_user_question", `{"question":"Here's my plan — run it?","options":["Run it","Cancel"],`+
-		`"plan":{"sub_agent_objectives":["Research Austin","Research Nashville"],"estimated_search_calls":12}}`, ctx)
+		`"plan":{"sub_agent_objectives":["Research Austin","Research Nashville"],"estimated_search_calls":12}}`, ctx, "test-call")
 
 	if ctx.PendingQuestion.Plan == nil {
 		t.Fatal("PendingQuestion.Plan is nil, want it set")
@@ -80,7 +80,7 @@ func TestHandleAskUserQuestion_Plan(t *testing.T) {
 // no Plan on the resulting PendingQuestion, not an empty-but-non-nil one.
 func TestHandleAskUserQuestion_NoPlanLeavesFieldNil(t *testing.T) {
 	ctx := newTestContext()
-	Dispatch("ask_user_question", `{"question":"What's your budget?"}`, ctx)
+	Dispatch("ask_user_question", `{"question":"What's your budget?"}`, ctx, "test-call")
 	if ctx.PendingQuestion.Plan != nil {
 		t.Errorf("Plan = %+v, want nil when no plan argument was sent", ctx.PendingQuestion.Plan)
 	}
@@ -91,7 +91,7 @@ func TestHandleAskUserQuestion_NoPlanLeavesFieldNil(t *testing.T) {
 // same as no plan at all, not a Plan with a zero-length slice.
 func TestHandleAskUserQuestion_EmptyPlanObjectivesLeavesFieldNil(t *testing.T) {
 	ctx := newTestContext()
-	Dispatch("ask_user_question", `{"question":"q","plan":{"sub_agent_objectives":[]}}`, ctx)
+	Dispatch("ask_user_question", `{"question":"q","plan":{"sub_agent_objectives":[]}}`, ctx, "test-call")
 	if ctx.PendingQuestion.Plan != nil {
 		t.Errorf("Plan = %+v, want nil when sub_agent_objectives is empty", ctx.PendingQuestion.Plan)
 	}

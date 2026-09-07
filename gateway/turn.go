@@ -317,6 +317,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["result"].(string); ok {
 			evt.Result = v
 		}
+		if v, ok := payload["call_id"].(string); ok {
+			evt.CallID = v
+		}
 		if v, ok := payload["provider"].(string); ok {
 			evt.Provider = v
 		}
@@ -807,13 +810,13 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 	case "commentary":
 		s.db.LogEvent(threadID, "info", "turn", "commentary", map[string]interface{}{"content": evt.Content}, turnID)
 	case "tool_call":
-		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args}, turnID)
+		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args, "call_id": evt.CallID}, turnID)
 	case "tool_result":
 		level := "info"
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		data := map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider}
+		data := map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID}
 		// chart_kind is only meaningful for visualize's own tool_result —
 		// store.Store.GetStats reads it back to report which kinds the
 		// model actually reaches for (see ChartKindCounts's doc comment).

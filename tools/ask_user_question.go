@@ -78,7 +78,7 @@ var askUserQuestionDef = llm.ToolDef{
 
 func init() { Register("ask_user_question", handleAskUserQuestion) }
 
-func handleAskUserQuestion(argsJSON string, ctx *Context) string {
+func handleAskUserQuestion(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Question       string   `json:"question"`
 		Options        []string `json:"options"`
@@ -90,12 +90,12 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 		} `json:"plan"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "ask_user_question", nil, "error: "+err.Error())
+		return emitToolError(ctx, "ask_user_question", nil, "error: "+err.Error(), callID)
 	}
 	args.Question = strings.TrimSpace(args.Question)
 	if args.Question == "" {
 		return emitToolError(ctx, "ask_user_question", map[string]interface{}{"question": args.Question},
-			"error: question is required")
+			"error: question is required", callID)
 	}
 	if len(args.Options) > maxAskUserQuestionOptions {
 		args.Options = args.Options[:maxAskUserQuestionOptions]
@@ -107,6 +107,7 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 			"question": args.Question, "options": args.Options, "wants_location": args.WantsLocation,
 			"wants_web_search": args.WantsWebSearch,
 		},
+		"call_id": callID,
 	})
 
 	var plan *ResearchPlan
@@ -126,6 +127,6 @@ func handleAskUserQuestion(argsJSON string, ctx *Context) string {
 	// turn's history is rebuilt purely from persisted user/assistant
 	// messages, not from this call's in-memory tool-result scaffolding.
 	result := "(turn paused — waiting for the user's reply to this question)"
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "ask_user_question", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "ask_user_question", "result": result, "call_id": callID})
 	return result
 }

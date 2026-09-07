@@ -395,8 +395,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		if len(resp.ToolCalls) == 0 {
 			if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
 				emitCommentary(ctx, resp.Content)
-				for _, pc := range calls {
-					result := tools.Dispatch(pc.name, pc.argsJSON, ctx)
+				for i, pc := range calls {
+					result := tools.Dispatch(pc.name, pc.argsJSON, ctx, fmt.Sprintf("pseudo-%d", i))
 					messages = append(messages, llm.ChatMessage{
 						Role: "user",
 						Content: fmt.Sprintf("[%s result]\n%s\n\nContinue answering the original question using this — "+
@@ -675,7 +675,7 @@ func dispatchToolCallsConcurrently(calls []llm.ToolCall, ctx *tools.Context) []t
 					results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
 				}
 			}()
-			results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx)}
+			results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx, call.ID)}
 		}(i, call)
 	}
 	wg.Wait()

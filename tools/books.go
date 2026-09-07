@@ -116,17 +116,17 @@ const (
 	candidateSourceSubject = "subject" // Open Library subject overlap
 )
 
-func handleBooks(argsJSON string, ctx *Context) string {
+func handleBooks(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Title  string `json:"title"`
 		Author string `json:"author"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "books", nil, "error: "+err.Error())
+		return emitToolError(ctx, "books", nil, "error: "+err.Error(), callID)
 	}
 	args.Title = strings.TrimSpace(args.Title)
 	if args.Title == "" {
-		return emitToolError(ctx, "books", nil, "error: title is required")
+		return emitToolError(ctx, "books", nil, "error: title is required", callID)
 	}
 	args.Author = strings.TrimSpace(args.Author)
 
@@ -134,13 +134,13 @@ func handleBooks(argsJSON string, ctx *Context) string {
 	if args.Author != "" {
 		callArgs["author"] = args.Author
 	}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "books", "args": callArgs})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "books", "args": callArgs, "call_id": callID})
 
 	result, err := lookupSimilarBooks(ctx, args.Title, args.Author)
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("books failed", "title", args.Title, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "books", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "books", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -149,6 +149,7 @@ func handleBooks(argsJSON string, ctx *Context) string {
 		"tool":      "books",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

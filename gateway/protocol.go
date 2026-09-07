@@ -187,6 +187,13 @@ type ServerEvent struct {
 	Tool     string         `json:"tool,omitempty"`
 	Args     map[string]any `json:"args,omitempty"`
 	Result   string         `json:"result,omitempty"`
+	// CallID correlates a tool_result back to its own tool_call when the
+	// model fires 2+ concurrent calls to the same tool in one turn (see
+	// agent/driver.go's dispatchToolCallsConcurrently) — positional/
+	// name-based matching alone is ambiguous once results can complete out
+	// of call order, which caused two concurrent memory writes' results to
+	// get cross-wired onto the wrong timeline card in the frontend.
+	CallID string `json:"call_id,omitempty"`
 	// Provider is web_search's normalized fallback-source key ("searxng",
 	// "brave", "parallel", "tavily") — set only on web_search's tool_result
 	// events, so store.Store.GetStats can tally how often each fallback

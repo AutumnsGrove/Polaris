@@ -50,25 +50,26 @@ var referenceLookupDef = llm.ToolDef{
 
 func init() { Register("reference_lookup", handleReferenceLookup) }
 
-func handleReferenceLookup(argsJSON string, ctx *Context) string {
+func handleReferenceLookup(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Source     string `json:"source"`
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "reference_lookup", nil, "error: "+err.Error())
+		return emitToolError(ctx, "reference_lookup", nil, "error: "+err.Error(), callID)
 	}
 	if args.Query == "" {
-		return emitToolError(ctx, "reference_lookup", map[string]interface{}{"query": args.Query}, "error: query is required")
+		return emitToolError(ctx, "reference_lookup", map[string]interface{}{"query": args.Query}, "error: query is required", callID)
 	}
 	if args.MaxResults <= 0 || args.MaxResults > 10 {
 		args.MaxResults = 3
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "reference_lookup",
-		"args": map[string]interface{}{"source": args.Source, "query": args.Query},
+		"tool":    "reference_lookup",
+		"args":    map[string]interface{}{"source": args.Source, "query": args.Query},
+		"call_id": callID,
 	})
 
 	var result string
@@ -85,7 +86,7 @@ func handleReferenceLookup(argsJSON string, ctx *Context) string {
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("reference_lookup failed", "source", args.Source, "query", args.Query, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "reference_lookup", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "reference_lookup", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -94,6 +95,7 @@ func handleReferenceLookup(argsJSON string, ctx *Context) string {
 		"tool":      "reference_lookup",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

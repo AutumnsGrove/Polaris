@@ -56,14 +56,14 @@ func init() { Register("weather", handleWeather) }
 // waybackAvailabilityAPI.
 var openMeteoBaseURL = "https://api.open-meteo.com/v1/forecast"
 
-func handleWeather(argsJSON string, ctx *Context) string {
+func handleWeather(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Location      string `json:"location"`
 		ForecastDays  int    `json:"forecast_days"`
 		IncludeHourly bool   `json:"include_hourly"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "weather", nil, "error: "+err.Error())
+		return emitToolError(ctx, "weather", nil, "error: "+err.Error(), callID)
 	}
 	if args.ForecastDays <= 0 || args.ForecastDays > 7 {
 		args.ForecastDays = 3
@@ -72,19 +72,20 @@ func handleWeather(argsJSON string, ctx *Context) string {
 	locationQuery := ctx.ResolveLocation(args.Location)
 	if locationQuery == "" {
 		return emitToolError(ctx, "weather", map[string]interface{}{"location": args.Location},
-			"error: no location given and no default_location configured — specify a location")
+			"error: no location given and no default_location configured — specify a location", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "weather",
-		"args": map[string]interface{}{"location": locationQuery},
+		"tool":    "weather",
+		"args":    map[string]interface{}{"location": locationQuery},
+		"call_id": callID,
 	})
 
 	geo, err := places.Geocode(ctx.Ctx, locationQuery)
 	if err != nil || geo == nil {
 		result := fmt.Sprintf("error: couldn't resolve location %q", locationQuery)
 		log.Warn("weather: geocode failed", "location", locationQuery, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "weather", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "weather", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -105,7 +106,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 	if err != nil {
 		result := "error: " + err.Error()
 		log.Warn("weather: fetch failed", "location", geo.DisplayName, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "weather", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "weather", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -118,6 +119,7 @@ func handleWeather(argsJSON string, ctx *Context) string {
 		"result":    summary,
 		"citations": ctx.CitationsSnapshot(),
 		"chart":     ctx.ChartSnapshot(),
+		"call_id":   callID,
 	})
 	return summary
 }

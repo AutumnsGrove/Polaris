@@ -13,7 +13,7 @@ import (
 
 func TestHandleBooks_TitleRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleBooks(`{"title":""}`, ctx)
+	result := handleBooks(`{"title":""}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a title-required error", result)
 	}
@@ -136,7 +136,7 @@ func TestHandleBooks_NoHardcoverKey_UsesOpenLibrary(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result (no key configured means open library directly)", result)
 	}
@@ -195,7 +195,7 @@ func TestHandleBooks_HardcoverSuccess_AggregatesAcrossLists(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result", result)
 	}
@@ -259,7 +259,7 @@ func TestHandleBooks_GenreOverlap_OutranksRawListCount(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result", result)
 	}
@@ -291,7 +291,7 @@ func TestHandleBooks_HardcoverAuthError_FallsBackToOpenLibrary(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "expired-key"}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want the tool to degrade to open library, not fail outright", result)
 	}
@@ -386,7 +386,7 @@ func TestHandleBooks_ThinHardcoverData_SupplementedWithOpenLibrary(t *testing.T)
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
-	result := handleBooks(`{"title":"Obscure Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Obscure Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result", result)
 	}
@@ -436,7 +436,7 @@ func TestHandleBooks_HardcoverNoLists_FallsBackToOpenLibrary(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
-	result := handleBooks(`{"title":"No Lists Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"No Lists Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want fallback to open library to succeed", result)
 	}
@@ -489,7 +489,7 @@ func TestHandleBooks_HardcoverCandidateDescription(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, HardcoverAPIKey: "key"}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result", result)
 	}
@@ -530,7 +530,7 @@ func TestHandleBooks_OpenLibraryCandidateDescription(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx)
+	result := handleBooks(`{"title":"Source Book","author":"Test Author"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted result", result)
 	}
@@ -548,7 +548,7 @@ func TestHandleBooks_NotFoundOnEitherSource(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleBooks(`{"title":"Zzxqvblorp Nonexistent Title"}`, ctx)
+	result := handleBooks(`{"title":"Zzxqvblorp Nonexistent Title"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a clear not-found error, not a silent empty success", result)
 	}

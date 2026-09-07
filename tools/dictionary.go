@@ -59,21 +59,22 @@ var freeDictionaryAPIBaseURL = "https://freedictionaryapi.com/api/v1/entries/en"
 // reference_lookup's arXiv max_results cap.
 const maxDictionaryDefinitionsPerSense = 3
 
-func handleDictionary(argsJSON string, ctx *Context) string {
+func handleDictionary(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Word string `json:"word"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "dictionary", nil, "error: "+err.Error())
+		return emitToolError(ctx, "dictionary", nil, "error: "+err.Error(), callID)
 	}
 	word := strings.TrimSpace(args.Word)
 	if word == "" {
-		return emitToolError(ctx, "dictionary", map[string]interface{}{"word": args.Word}, "error: word is required")
+		return emitToolError(ctx, "dictionary", map[string]interface{}{"word": args.Word}, "error: word is required", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "dictionary",
-		"args": map[string]interface{}{"word": word},
+		"tool":    "dictionary",
+		"args":    map[string]interface{}{"word": word},
+		"call_id": callID,
 	})
 
 	result, err := lookupDictionaryAPIDev(ctx, word)
@@ -84,7 +85,7 @@ func handleDictionary(argsJSON string, ctx *Context) string {
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("dictionary failed", "word", word, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "dictionary", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "dictionary", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -93,6 +94,7 @@ func handleDictionary(argsJSON string, ctx *Context) string {
 		"tool":      "dictionary",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

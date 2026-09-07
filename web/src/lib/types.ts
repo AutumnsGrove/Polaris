@@ -106,7 +106,18 @@ export interface ResearchPlan {
 export type ServerEvent =
 	| { type: 'thinking'; thread_id?: string; content: string }
 	| { type: 'reasoning'; thread_id?: string; content: string }
-	| { type: 'tool_call'; thread_id?: string; tool: string; args?: Record<string, unknown> }
+	| {
+			type: 'tool_call';
+			thread_id?: string;
+			tool: string;
+			args?: Record<string, unknown>;
+			// Correlates this call to its own tool_result — see
+			// gateway/protocol.go's ServerEvent.CallID doc comment. Needed
+			// because the model can fire 2+ concurrent calls to the same
+			// tool in one turn, and results can complete out of launch
+			// order.
+			call_id?: string;
+	  }
 	| {
 			type: 'tool_result';
 			thread_id?: string;
@@ -119,6 +130,7 @@ export type ServerEvent =
 			citations?: Citation[];
 			cards?: Card[];
 			chart?: ChartSpec;
+			call_id?: string;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
 	// What the model said before deciding to call a tool (or before an
@@ -452,6 +464,11 @@ export type TimelineItem =
 			provider?: string;
 			citations?: Citation[];
 			done: boolean;
+			// Mirrors ServerEvent's call_id — lets handleEvent's tool_result
+			// case match this exact call instead of falling back to a
+			// name-based backward scan, which is ambiguous once 2+
+			// concurrent calls to the same tool can finish out of order.
+			callId?: string;
 	  };
 
 export interface ChatTurn {

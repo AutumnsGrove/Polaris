@@ -85,13 +85,33 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 		} else if (evt.source.startsWith('tool.')) {
 			const tool = evt.source.slice('tool.'.length);
 			if (evt.message === 'tool call started') {
-				timeline.push({ kind: 'tool', tool, args: data.args, done: false });
+				timeline.push({ kind: 'tool', tool, args: data.args, callId: data.call_id, done: false });
 			} else if (evt.message === 'tool call finished') {
-				for (let i = timeline.length - 1; i >= 0; i--) {
-					const item = timeline[i];
-					if (item.kind === 'tool' && item.tool === tool && !item.done) {
-						timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
-						break;
+				// Same call_id-first matching as handleEvent's live
+				// 'tool_result' case (see its doc comment) — persisted
+				// events from two concurrent same-tool calls (e.g. two
+				// memory writes) are just as ambiguous to a name-only
+				// backward scan as the live stream is, so a reopened
+				// thread needs the same fix or the cross-wired-card bug
+				// just reappears on reload.
+				let matched = false;
+				if (data.call_id) {
+					for (let i = timeline.length - 1; i >= 0; i--) {
+						const item = timeline[i];
+						if (item.kind === 'tool' && item.callId === data.call_id && !item.done) {
+							timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
+							matched = true;
+							break;
+						}
+					}
+				}
+				if (!matched) {
+					for (let i = timeline.length - 1; i >= 0; i--) {
+						const item = timeline[i];
+						if (item.kind === 'tool' && item.tool === tool && !item.done) {
+							timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
+							break;
+						}
 					}
 				}
 			}
@@ -1106,17 +1126,39 @@ export class AppState {
 				this.closeOpenReasoning(turn);
 				turn.timeline = [
 					...(turn.timeline ?? []),
-					{ kind: 'tool', tool: e.tool, args: e.args, done: false }
+					{ kind: 'tool', tool: e.tool, args: e.args, callId: e.call_id, done: false }
 				];
 				break;
 
 			case 'tool_result': {
 				const items = [...(turn.timeline ?? [])];
-				for (let i = items.length - 1; i >= 0; i--) {
-					const item = items[i];
-					if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
-						items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
-						break;
+				// Prefer an exact call_id match — the model can fire two
+				// concurrent calls to the same tool in one turn (e.g. two
+				// memory writes), and goroutine completion order isn't
+				// guaranteed to match launch order, so a name-only backward
+				// scan can attach a result to the wrong card (see
+				// agent/driver.go's dispatchToolCallsConcurrently doc
+				// comment). Fall back to the old name-based scan only when
+				// call_id is missing, for backward compatibility with any
+				// path that doesn't send one.
+				let matched = false;
+				if (e.call_id) {
+					for (let i = items.length - 1; i >= 0; i--) {
+						const item = items[i];
+						if (item.kind === 'tool' && item.callId === e.call_id && !item.done) {
+							items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
+							matched = true;
+							break;
+						}
+					}
+				}
+				if (!matched) {
+					for (let i = items.length - 1; i >= 0; i--) {
+						const item = items[i];
+						if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
+							items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
+							break;
+						}
 					}
 				}
 				turn.timeline = items;

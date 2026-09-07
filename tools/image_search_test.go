@@ -58,7 +58,7 @@ func TestHandleImageSearch_FormatsResultsAsImageCards(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"curtain bang shag"}`, ctx)
+	result := handleImageSearch(`{"query":"curtain bang shag"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "[via SearXNG]") {
 		t.Errorf("result = %q, want a provider tag naming SearXNG", result)
@@ -81,7 +81,7 @@ func TestHandleImageSearch_FormatsResultsAsImageCards(t *testing.T) {
 
 func TestHandleImageSearch_QueryRequired(t *testing.T) {
 	ctx := newTestContext()
-	result := handleImageSearch(`{}`, ctx)
+	result := handleImageSearch(`{}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error", result)
 	}
@@ -95,7 +95,7 @@ func TestHandleImageSearch_NoResultsNotDegraded(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"something obscure"}`, ctx)
+	result := handleImageSearch(`{"query":"something obscure"}`, ctx, "test-call")
 	if result != "no images found" {
 		t.Errorf("result = %q, want %q", result, "no images found")
 	}
@@ -137,7 +137,7 @@ func TestHandleImageSearch_DegradedFallsBackToBrave(t *testing.T) {
 		Emit:                func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "[via Brave") {
 		t.Errorf("result = %q, want a provider tag naming Brave as the source", result)
@@ -175,7 +175,7 @@ func TestHandleImageSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T)
 		Emit: func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "degraded") {
 		t.Errorf("result = %q, want a degraded message", result)
@@ -196,7 +196,7 @@ func TestHandleImageSearch_DegradedWithoutBraveReturnsDegradedMessage(t *testing
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleImageSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 	if !strings.Contains(result, "degraded") {
 		t.Errorf("result = %q, want it to mention image search being degraded", result)
 	}

@@ -73,7 +73,7 @@ func TestFormatGitHubCount(t *testing.T) {
 
 func TestHandleGitHubRepo_RepoRequired(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubRepo(`{}`, ctx)
+	result := handleGitHubRepo(`{}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a repo-required error", result)
 	}
@@ -81,7 +81,7 @@ func TestHandleGitHubRepo_RepoRequired(t *testing.T) {
 
 func TestHandleGitHubRepo_InvalidRepo(t *testing.T) {
 	ctx := newTestContext()
-	result := handleGitHubRepo(`{"repo":"not a repo"}`, ctx)
+	result := handleGitHubRepo(`{"repo":"not a repo"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a parse error", result)
 	}
@@ -98,7 +98,7 @@ func TestHandleGitHubRepo_NotFound(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	result := handleGitHubRepo(`{"repo":"ghost/ghost"}`, ctx)
+	result := handleGitHubRepo(`{"repo":"ghost/ghost"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a not-found error", result)
 	}
@@ -162,7 +162,7 @@ func TestHandleGitHubRepo_FullStatsAndReadme(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	result := handleGitHubRepo(`{"repo":"octocat/hello-world"}`, ctx)
+	result := handleGitHubRepo(`{"repo":"octocat/hello-world"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted stats block", result)
 	}
@@ -208,7 +208,7 @@ func TestHandleGitHubRepo_SkipsReadmeWhenIncludeReadmeFalse(t *testing.T) {
 	t.Cleanup(func() { githubAPIBaseURL = original })
 
 	ctx := newTestContext()
-	result := handleGitHubRepo(`{"repo":"octocat/hello-world","include_readme":false}`, ctx)
+	result := handleGitHubRepo(`{"repo":"octocat/hello-world","include_readme":false}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted stats block", result)
 	}

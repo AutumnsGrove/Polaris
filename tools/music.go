@@ -106,7 +106,7 @@ const (
 	maxSimilarAlbumsShown     = 10
 )
 
-func handleMusic(argsJSON string, ctx *Context) string {
+func handleMusic(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Mode   string `json:"mode"`
 		Artist string `json:"artist"`
@@ -114,15 +114,15 @@ func handleMusic(argsJSON string, ctx *Context) string {
 		Album  string `json:"album"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "music", nil, "error: "+err.Error())
+		return emitToolError(ctx, "music", nil, "error: "+err.Error(), callID)
 	}
 	if ctx.LastFMAPIKey == "" {
 		return emitToolError(ctx, "music", map[string]interface{}{"mode": args.Mode},
-			"error: music lookups aren't configured — set lastfm.api_key in config.yaml")
+			"error: music lookups aren't configured — set lastfm.api_key in config.yaml", callID)
 	}
 	args.Artist = strings.TrimSpace(args.Artist)
 	if args.Artist == "" {
-		return emitToolError(ctx, "music", map[string]interface{}{"mode": args.Mode}, "error: artist is required")
+		return emitToolError(ctx, "music", map[string]interface{}{"mode": args.Mode}, "error: artist is required", callID)
 	}
 
 	callArgs := map[string]interface{}{"mode": args.Mode, "artist": args.Artist}
@@ -132,7 +132,7 @@ func handleMusic(argsJSON string, ctx *Context) string {
 	if args.Album != "" {
 		callArgs["album"] = args.Album
 	}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "music", "args": callArgs})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "music", "args": callArgs, "call_id": callID})
 
 	var result string
 	var err error
@@ -162,7 +162,7 @@ func handleMusic(argsJSON string, ctx *Context) string {
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("music failed", "mode", args.Mode, "artist", args.Artist, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "music", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "music", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -172,6 +172,7 @@ func handleMusic(argsJSON string, ctx *Context) string {
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
 		"cards":     ctx.CardsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

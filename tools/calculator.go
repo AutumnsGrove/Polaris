@@ -255,37 +255,38 @@ func calculatorDaysBetween(date1, date2 string) (float64, error) {
 	return t2.Sub(t1).Hours() / 24, nil
 }
 
-func handleCalculator(argsJSON string, ctx *Context) string {
+func handleCalculator(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Expression string `json:"expression"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "calculator", nil, "error: "+err.Error())
+		return emitToolError(ctx, "calculator", nil, "error: "+err.Error(), callID)
 	}
 	expression := strings.TrimSpace(args.Expression)
 	if expression == "" {
-		return emitToolError(ctx, "calculator", map[string]interface{}{"expression": args.Expression}, "error: expression is required")
+		return emitToolError(ctx, "calculator", map[string]interface{}{"expression": args.Expression}, "error: expression is required", callID)
 	}
 	if len(expression) > maxCalculatorExpressionLen {
 		return emitToolError(ctx, "calculator", map[string]interface{}{"expression": expression},
-			fmt.Sprintf("error: expression too long (%d chars, max %d)", len(expression), maxCalculatorExpressionLen))
+			fmt.Sprintf("error: expression too long (%d chars, max %d)", len(expression), maxCalculatorExpressionLen), callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool": "calculator",
 		"args": map[string]interface{}{"expression": expression},
+		"call_id": callID,
 	})
 
 	result, err := evalCalculatorExpression(expression)
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("calculator failed", "expression", expression, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "calculator", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "calculator", "result": result, "call_id": callID})
 		return result
 	}
 
 	log.Info("calculator", "expression", expression, "result", result)
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "calculator", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "calculator", "result": result, "call_id": callID})
 	return result
 }
 

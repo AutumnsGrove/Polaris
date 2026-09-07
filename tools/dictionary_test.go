@@ -9,7 +9,7 @@ import (
 
 func TestHandleDictionary_WordRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleDictionary(`{}`, ctx)
+	result := handleDictionary(`{}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a word-required error", result)
 	}
@@ -36,7 +36,7 @@ func TestHandleDictionary_PrimarySuccess(t *testing.T) {
 	t.Cleanup(func() { dictionaryAPIDevBaseURL = original })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleDictionary(`{"word":"ephemeral"}`, ctx)
+	result := handleDictionary(`{"word":"ephemeral"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted definition", result)
 	}
@@ -73,7 +73,7 @@ func TestHandleDictionary_PrimaryNotFoundFallsBackToSecondary(t *testing.T) {
 	t.Cleanup(func() { freeDictionaryAPIBaseURL = originalFallback })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleDictionary(`{"word":"quixotic"}`, ctx)
+	result := handleDictionary(`{"word":"quixotic"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want the fallback source's formatted definition", result)
 	}
@@ -101,7 +101,7 @@ func TestHandleDictionary_BothSourcesFail(t *testing.T) {
 	t.Cleanup(func() { freeDictionaryAPIBaseURL = originalFallback })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleDictionary(`{"word":"asdkjqwe123nonsense"}`, ctx)
+	result := handleDictionary(`{"word":"asdkjqwe123nonsense"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a not-found error", result)
 	}

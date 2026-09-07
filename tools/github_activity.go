@@ -69,7 +69,7 @@ var githubActivityDef = llm.ToolDef{
 
 func init() { Register("github_activity", handleGitHubActivity) }
 
-func handleGitHubActivity(argsJSON string, ctx *Context) string {
+func handleGitHubActivity(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Repo     string `json:"repo"`
 		Kind     string `json:"kind"`
@@ -79,26 +79,27 @@ func handleGitHubActivity(argsJSON string, ctx *Context) string {
 		Limit    *int   `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "github_activity", nil, "error: "+err.Error())
+		return emitToolError(ctx, "github_activity", nil, "error: "+err.Error(), callID)
 	}
 	if args.Repo == "" {
-		return emitToolError(ctx, "github_activity", map[string]interface{}{"repo": args.Repo}, "error: repo is required")
+		return emitToolError(ctx, "github_activity", map[string]interface{}{"repo": args.Repo}, "error: repo is required", callID)
 	}
 	if args.Kind == "" {
 		return emitToolError(ctx, "github_activity", map[string]interface{}{"repo": args.Repo},
-			"error: kind is required (one of releases, pr, issues, commits)")
+			"error: kind is required (one of releases, pr, issues, commits)", callID)
 	}
 
 	owner, repo, err := parseGitHubRepo(args.Repo)
 	if err != nil {
 		return emitToolError(ctx, "github_activity", map[string]interface{}{"repo": args.Repo, "kind": args.Kind},
-			"error: "+err.Error())
+			"error: "+err.Error(), callID)
 	}
 	slug := owner + "/" + repo
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "github_activity",
-		"args": map[string]interface{}{"repo": slug, "kind": args.Kind},
+		"tool":    "github_activity",
+		"args":    map[string]interface{}{"repo": slug, "kind": args.Kind},
+		"call_id": callID,
 	})
 
 	var result string
@@ -126,7 +127,7 @@ func handleGitHubActivity(argsJSON string, ctx *Context) string {
 	if err != nil {
 		result = "error: " + err.Error()
 		log.Warn("github_activity failed", "repo", slug, "kind", args.Kind, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "github_activity", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "github_activity", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -135,6 +136,7 @@ func handleGitHubActivity(argsJSON string, ctx *Context) string {
 		"tool":      "github_activity",
 		"result":    result,
 		"citations": ctx.CitationsSnapshot(),
+		"call_id":   callID,
 	})
 	return result
 }

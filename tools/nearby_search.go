@@ -47,7 +47,7 @@ var nearbySearchDef = llm.ToolDef{
 
 func init() { Register("nearby_search", handleNearbySearch) }
 
-func handleNearbySearch(argsJSON string, ctx *Context) string {
+func handleNearbySearch(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Query    string  `json:"query"`
 		Location string  `json:"location"`
@@ -55,11 +55,11 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 		Limit    int     `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "nearby_search", nil, "error: "+err.Error())
+		return emitToolError(ctx, "nearby_search", nil, "error: "+err.Error(), callID)
 	}
 	if args.Query == "" {
 		return emitToolError(ctx, "nearby_search", map[string]interface{}{"query": args.Query},
-			"error: query is required (e.g. 'coffee shop', 'pharmacy')")
+			"error: query is required (e.g. 'coffee shop', 'pharmacy')", callID)
 	}
 	if args.Limit <= 0 || args.Limit > 50 {
 		args.Limit = 5
@@ -72,19 +72,20 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 	locationQuery := ctx.ResolveLocation(args.Location)
 	if locationQuery == "" {
 		return emitToolError(ctx, "nearby_search", map[string]interface{}{"query": args.Query},
-			"error: no location given and no default_location configured — specify a location")
+			"error: no location given and no default_location configured — specify a location", callID)
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "nearby_search",
-		"args": map[string]interface{}{"query": args.Query, "location": locationQuery},
+		"tool":    "nearby_search",
+		"args":    map[string]interface{}{"query": args.Query, "location": locationQuery},
+		"call_id": callID,
 	})
 
 	geo, err := places.Geocode(ctx.Ctx, locationQuery)
 	if err != nil || geo == nil {
 		result := fmt.Sprintf("error: couldn't resolve location %q", locationQuery)
 		log.Warn("nearby_search: geocode failed", "location", locationQuery, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -100,7 +101,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 			summary := "Searching near: " + geo.DisplayName + "\n\n" + places.FormatPlaces(matches)
 			log.Info("nearby_search (foursquare)", "query", args.Query, "location", geo.DisplayName, "matches", len(matches))
 			ctx.Emit("tool_result", map[string]interface{}{
-				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(),
+				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(), "call_id": callID,
 			})
 			return summary
 		}
@@ -122,7 +123,7 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 			}
 			log.Info("nearby_search (searxng fallback)", "query", args.Query, "location", geo.DisplayName, "results", len(resp.Results))
 			ctx.Emit("tool_result", map[string]interface{}{
-				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(),
+				"tool": "nearby_search", "result": summary, "citations": ctx.CitationsSnapshot(), "call_id": callID,
 			})
 			return summary
 		}
@@ -130,6 +131,6 @@ func handleNearbySearch(argsJSON string, ctx *Context) string {
 
 	result := "error: nearby search failed (Foursquare not configured or unreachable, and web search fallback also failed)"
 	log.Warn("nearby_search: all paths failed", "query", args.Query, "location", locationQuery)
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result})
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "nearby_search", "result": result, "call_id": callID})
 	return result
 }

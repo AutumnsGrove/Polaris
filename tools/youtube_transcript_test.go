@@ -162,7 +162,7 @@ func TestFetchYouTubeTranscript_NoCaptions(t *testing.T) {
 
 func TestHandleYouTubeTranscript_URLRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleYouTubeTranscript(`{}`, ctx)
+	result := handleYouTubeTranscript(`{}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want a url-required error", result)
 	}
@@ -170,7 +170,7 @@ func TestHandleYouTubeTranscript_URLRequired(t *testing.T) {
 
 func TestHandleYouTubeTranscript_InvalidURL(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleYouTubeTranscript(`{"url":"not a youtube url"}`, ctx)
+	result := handleYouTubeTranscript(`{"url":"not a youtube url"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an invalid-url error", result)
 	}
@@ -181,7 +181,7 @@ func TestHandleYouTubeTranscript_Success(t *testing.T) {
 	withYouTubeWatchBaseURL(t, srv.URL+"/watch?v=")
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ"}`, ctx)
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ"}`, ctx, "test-call")
 	if !strings.Contains(result, "This is the transcript.") {
 		t.Errorf("result = %q, want it to contain the transcript", result)
 	}

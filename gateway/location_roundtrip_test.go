@@ -19,10 +19,10 @@ import (
 // do with the round trip itself — this exercises the exact same
 // ResolveLocation -> RequestLocation path they use, without that.
 func init() {
-	tools.Register("test_location_probe", func(argsJSON string, ctx *tools.Context) string {
-		ctx.Emit("tool_call", map[string]interface{}{"tool": "test_location_probe"})
+	tools.Register("test_location_probe", func(argsJSON string, ctx *tools.Context, callID string) string {
+		ctx.Emit("tool_call", map[string]interface{}{"tool": "test_location_probe", "call_id": callID})
 		loc := ctx.ResolveLocation("")
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "test_location_probe", "result": loc})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "test_location_probe", "result": loc, "call_id": callID})
 		return loc
 	})
 }

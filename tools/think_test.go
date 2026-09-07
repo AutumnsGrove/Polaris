@@ -16,7 +16,7 @@ func TestHandleThink(t *testing.T) {
 		},
 	}
 
-	result := handleThink(`{"thought":"I should search for this"}`, ctx)
+	result := handleThink(`{"thought":"I should search for this"}`, ctx, "test-call")
 	if result != "noted" {
 		t.Errorf("result = %q, want %q", result, "noted")
 	}
@@ -30,7 +30,7 @@ func TestHandleThink(t *testing.T) {
 
 func TestHandleThink_InvalidJSON(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	result := handleThink(`not json`, ctx)
+	result := handleThink(`not json`, ctx, "test-call")
 	if result == "noted" {
 		t.Error("expected an error result for invalid JSON, got \"noted\"")
 	}

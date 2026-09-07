@@ -9,7 +9,7 @@ import (
 
 func TestHandleReferenceLookup_QueryRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleReferenceLookup(`{"source":"wikipedia"}`, ctx)
+	result := handleReferenceLookup(`{"source":"wikipedia"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a query-required error", result)
 	}
@@ -17,7 +17,7 @@ func TestHandleReferenceLookup_QueryRequired(t *testing.T) {
 
 func TestHandleReferenceLookup_UnknownSource(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleReferenceLookup(`{"source":"bing","query":"go"}`, ctx)
+	result := handleReferenceLookup(`{"source":"bing","query":"go"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want an unknown-source error", result)
 	}
@@ -39,7 +39,7 @@ func TestHandleReferenceLookup_Wikipedia(t *testing.T) {
 	t.Cleanup(func() { wikipediaAPIBaseURL = original })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleReferenceLookup(`{"source":"wikipedia","query":"golang"}`, ctx)
+	result := handleReferenceLookup(`{"source":"wikipedia","query":"golang"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want a formatted summary", result)
 	}
@@ -62,7 +62,7 @@ func TestHandleReferenceLookup_WikipediaNoResults(t *testing.T) {
 	t.Cleanup(func() { wikipediaAPIBaseURL = original })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleReferenceLookup(`{"source":"wikipedia","query":"asdkjqwe123nonsense"}`, ctx)
+	result := handleReferenceLookup(`{"source":"wikipedia","query":"asdkjqwe123nonsense"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("result = %q, want a not-found error", result)
 	}
@@ -87,7 +87,7 @@ func TestHandleReferenceLookup_Arxiv(t *testing.T) {
 	t.Cleanup(func() { arxivAPIBaseURL = original })
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleReferenceLookup(`{"source":"arxiv","query":"transformers"}`, ctx)
+	result := handleReferenceLookup(`{"source":"arxiv","query":"transformers"}`, ctx, "test-call")
 	if result == "" || result[:6] == "error:" {
 		t.Fatalf("result = %q, want formatted paper results", result)
 	}

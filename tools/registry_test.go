@@ -14,7 +14,7 @@ func newTestContext() *Context {
 }
 
 func TestDispatch_UnknownTool(t *testing.T) {
-	result := Dispatch("not_a_real_tool", "{}", newTestContext())
+	result := Dispatch("not_a_real_tool", "{}", newTestContext(), "test-call")
 	if result != "error: unknown tool not_a_real_tool" {
 		t.Errorf("result = %q, want the unknown-tool error", result)
 	}
@@ -24,7 +24,7 @@ func TestDispatch_KnownTool(t *testing.T) {
 	// "think" self-registers via init() in think.go — exercised here
 	// through the registry rather than calling handleThink directly, to
 	// cover Dispatch's lookup path too.
-	result := Dispatch("think", `{"thought":"testing"}`, newTestContext())
+	result := Dispatch("think", `{"thought":"testing"}`, newTestContext(), "test-call")
 	if result != "noted" {
 		t.Errorf("result = %q, want %q", result, "noted")
 	}

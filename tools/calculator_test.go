@@ -44,7 +44,7 @@ func TestHandleCalculator(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshaling args for %q: %v", c.expression, err)
 		}
-		got := handleCalculator(string(argsBytes), ctx)
+		got := handleCalculator(string(argsBytes), ctx, "test-call")
 		if got != c.want {
 			t.Errorf("handleCalculator(%q) = %q, want %q", c.expression, got, c.want)
 		}
@@ -53,7 +53,7 @@ func TestHandleCalculator(t *testing.T) {
 
 func TestHandleCalculator_RejectsUnknownFunction(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"open(\"file\")"}`, ctx)
+	got := handleCalculator(`{"expression":"open(\"file\")"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for an unknown function, got %q", got)
 	}
@@ -61,7 +61,7 @@ func TestHandleCalculator_RejectsUnknownFunction(t *testing.T) {
 
 func TestHandleCalculator_RejectsVariables(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"x + 1"}`, ctx)
+	got := handleCalculator(`{"expression":"x + 1"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for an undefined variable, got %q", got)
 	}
@@ -69,7 +69,7 @@ func TestHandleCalculator_RejectsVariables(t *testing.T) {
 
 func TestHandleCalculator_EmptyExpression(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":""}`, ctx)
+	got := handleCalculator(`{"expression":""}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for an empty expression, got %q", got)
 	}
@@ -82,7 +82,7 @@ func TestHandleCalculator_NonFiniteResultsAreErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshaling args for %q: %v", expression, err)
 		}
-		got := handleCalculator(string(argsBytes), ctx)
+		got := handleCalculator(string(argsBytes), ctx, "test-call")
 		if got == "" || got[:6] != "error:" {
 			t.Errorf("handleCalculator(%q) = %q, want an error for a non-finite result", expression, got)
 		}
@@ -94,7 +94,7 @@ func TestHandleCalculator_LetCannotRedeclareReservedName(t *testing.T) {
 	// e is already bound to Euler's number in calculatorEnv — a let can't
 	// shadow it. Locks in this behavior so a future allowlist addition
 	// that silently changes it doesn't go unnoticed.
-	got := handleCalculator(`{"expression":"let e = 5; e * 2"}`, ctx)
+	got := handleCalculator(`{"expression":"let e = 5; e * 2"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for redeclaring a reserved name, got %q", got)
 	}
@@ -102,7 +102,7 @@ func TestHandleCalculator_LetCannotRedeclareReservedName(t *testing.T) {
 
 func TestHandleCalculator_MaxRejectsZeroArgs(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"max()"}`, ctx)
+	got := handleCalculator(`{"expression":"max()"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for max() with no arguments, got %q", got)
 	}
@@ -110,7 +110,7 @@ func TestHandleCalculator_MaxRejectsZeroArgs(t *testing.T) {
 
 func TestHandleCalculator_FactorialRejectsNonInteger(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"factorial(3.5)"}`, ctx)
+	got := handleCalculator(`{"expression":"factorial(3.5)"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for a non-integer factorial input, got %q", got)
 	}
@@ -118,7 +118,7 @@ func TestHandleCalculator_FactorialRejectsNonInteger(t *testing.T) {
 
 func TestHandleCalculator_DaysBetweenRejectsBadDate(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"days_between(\"not-a-date\", \"2026-09-01\")"}`, ctx)
+	got := handleCalculator(`{"expression":"days_between(\"not-a-date\", \"2026-09-01\")"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for an unparseable date, got %q", got)
 	}
@@ -126,7 +126,7 @@ func TestHandleCalculator_DaysBetweenRejectsBadDate(t *testing.T) {
 
 func TestHandleCalculator_InvalidJSON(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`not json`, ctx)
+	got := handleCalculator(`not json`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error result for invalid JSON, got %q", got)
 	}
@@ -155,7 +155,7 @@ func TestHandleCalculator_AllDocumentedFunctions(t *testing.T) {
 	}
 	for _, c := range cases {
 		argsBytes, _ := json.Marshal(map[string]string{"expression": c.expression})
-		if got := handleCalculator(string(argsBytes), ctx); got != c.want {
+		if got := handleCalculator(string(argsBytes), ctx, "test-call"); got != c.want {
 			t.Errorf("handleCalculator(%q) = %q, want %q", c.expression, got, c.want)
 		}
 	}
@@ -169,7 +169,7 @@ func TestHandleCalculator_VariadicsAcceptSingleArgument(t *testing.T) {
 	for _, expression := range []string{"max(5)", "min(5)", "sum(5)", "avg(5)"} {
 		argsBytes, _ := json.Marshal(map[string]string{"expression": expression})
 		want := expression + " = 5"
-		if got := handleCalculator(string(argsBytes), ctx); got != want {
+		if got := handleCalculator(string(argsBytes), ctx, "test-call"); got != want {
 			t.Errorf("handleCalculator(%q) = %q, want %q", expression, got, want)
 		}
 	}
@@ -185,7 +185,7 @@ func TestHandleCalculator_DaysBetween(t *testing.T) {
 	}
 	for _, c := range cases {
 		argsBytes, _ := json.Marshal(map[string]string{"expression": c.expression})
-		if got := handleCalculator(string(argsBytes), ctx); got != c.want {
+		if got := handleCalculator(string(argsBytes), ctx, "test-call"); got != c.want {
 			t.Errorf("handleCalculator(%q) = %q, want %q", c.expression, got, c.want)
 		}
 	}
@@ -224,14 +224,14 @@ func TestHandleCalculator_ExpressionLengthCap(t *testing.T) {
 		t.Fatalf("test setup: built expression of length %d, want %d", len(atCap), maxCalculatorExpressionLen)
 	}
 	argsBytes, _ := json.Marshal(map[string]string{"expression": atCap})
-	got := handleCalculator(string(argsBytes), ctx)
+	got := handleCalculator(string(argsBytes), ctx, "test-call")
 	if len(got) >= 6 && got[:6] == "error:" {
 		t.Errorf("an expression exactly at the %d-char cap was rejected: %q", maxCalculatorExpressionLen, got)
 	}
 
 	overCap := atCap + "+1"
 	argsBytes, _ = json.Marshal(map[string]string{"expression": overCap})
-	got = handleCalculator(string(argsBytes), ctx)
+	got = handleCalculator(string(argsBytes), ctx, "test-call")
 	if len(got) < 6 || got[:6] != "error:" || !strings.Contains(got, "too long") {
 		t.Errorf("handleCalculator(len=%d) = %q, want a \"too long\" error", len(overCap), got)
 	}
@@ -246,7 +246,7 @@ func TestHandleCalculator_LetCannotRedeclareAnyReservedName(t *testing.T) {
 	for _, name := range []string{"e", "pi", "sqrt", "min", "days_between", "factorial"} {
 		expression := fmt.Sprintf("let %s = 5; %s", name, name)
 		argsBytes, _ := json.Marshal(map[string]string{"expression": expression})
-		got := handleCalculator(string(argsBytes), ctx)
+		got := handleCalculator(string(argsBytes), ctx, "test-call")
 		if got == "" || got[:6] != "error:" {
 			t.Errorf("handleCalculator(%q) = %q, want an error — %q is a reserved name", expression, got, name)
 		}
@@ -255,7 +255,7 @@ func TestHandleCalculator_LetCannotRedeclareAnyReservedName(t *testing.T) {
 
 func TestHandleCalculator_LetCannotRedeclareSameNameTwice(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"let a = 1; let a = 2; a"}`, ctx)
+	got := handleCalculator(`{"expression":"let a = 1; let a = 2; a"}`, ctx, "test-call")
 	if got == "" || got[:6] != "error:" {
 		t.Errorf("expected an error for redeclaring the same let-bound name twice, got %q", got)
 	}
@@ -295,7 +295,7 @@ func TestHandleCalculator_ClosedSandbox(t *testing.T) {
 	}
 	for _, expression := range blocked {
 		argsBytes, _ := json.Marshal(map[string]string{"expression": expression})
-		got := handleCalculator(string(argsBytes), ctx)
+		got := handleCalculator(string(argsBytes), ctx, "test-call")
 		if got == "" || got[:6] != "error:" {
 			t.Errorf("handleCalculator(%q) = %q, want an error — this must stay outside calculator's sandbox", expression, got)
 		}
@@ -310,7 +310,7 @@ func TestHandleCalculator_ClosedSandbox(t *testing.T) {
 // predicate names started getting explicit blocking entries.
 func TestHandleCalculator_SumStillOverridesPredicateSum(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	got := handleCalculator(`{"expression":"sum(1,2,3)"}`, ctx)
+	got := handleCalculator(`{"expression":"sum(1,2,3)"}`, ctx, "test-call")
 	want := "sum(1,2,3) = 6"
 	if got != want {
 		t.Errorf("handleCalculator(%q) = %q, want %q", "sum(1,2,3)", got, want)

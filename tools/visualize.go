@@ -104,7 +104,7 @@ var visualizeDef = llm.ToolDef{
 
 func init() { Register("visualize", handleVisualize) }
 
-func handleVisualize(argsJSON string, ctx *Context) string {
+func handleVisualize(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Kind   string `json:"kind"`
 		Title  string `json:"title"`
@@ -129,15 +129,15 @@ func handleVisualize(argsJSON string, ctx *Context) string {
 		} `json:"value"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "visualize", nil, "error: "+err.Error())
+		return emitToolError(ctx, "visualize", nil, "error: "+err.Error(), callID)
 	}
 
 	callArgs := map[string]interface{}{"kind": args.Kind, "title": args.Title}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "visualize", "args": callArgs})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "visualize", "args": callArgs, "call_id": callID})
 
 	fail := func(msg string) string {
 		result := "error: " + msg
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "visualize", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "visualize", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -207,9 +207,10 @@ func handleVisualize(argsJSON string, ctx *Context) string {
 		"list or table in your reply, just refer to it in prose.", args.Title, args.Kind)
 	log.Info("visualize", "kind", args.Kind, "title", args.Title)
 	ctx.Emit("tool_result", map[string]interface{}{
-		"tool":   "visualize",
-		"result": result,
-		"chart":  ctx.ChartSnapshot(),
+		"tool":    "visualize",
+		"result":  result,
+		"chart":   ctx.ChartSnapshot(),
+		"call_id": callID,
 	})
 	return result
 }

@@ -10,7 +10,7 @@ import (
 
 func TestHandleMovies_NotConfigured(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleMovies(`{"title":"The Martian","media_type":"movie"}`, ctx)
+	result := handleMovies(`{"title":"The Martian","media_type":"movie"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" || !strings.Contains(result, "aren't configured") {
 		t.Errorf("result = %q, want a not-configured error", result)
 	}
@@ -18,7 +18,7 @@ func TestHandleMovies_NotConfigured(t *testing.T) {
 
 func TestHandleMovies_TitleRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"media_type":"movie"}`, ctx)
+	result := handleMovies(`{"media_type":"movie"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" || !strings.Contains(result, "title is required") {
 		t.Errorf("result = %q, want a title-required error", result)
 	}
@@ -26,7 +26,7 @@ func TestHandleMovies_TitleRequired(t *testing.T) {
 
 func TestHandleMovies_InvalidMediaType(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"title":"The Martian","media_type":"book"}`, ctx)
+	result := handleMovies(`{"title":"The Martian","media_type":"book"}`, ctx, "test-call")
 	if result == "" || result[:6] != "error:" || !strings.Contains(result, "media_type") {
 		t.Errorf("result = %q, want a media_type error", result)
 	}
@@ -83,7 +83,7 @@ func TestHandleMovies_Success(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"title":"The Martian","media_type":"movie"}`, ctx)
+	result := handleMovies(`{"title":"The Martian","media_type":"movie"}`, ctx, "test-call")
 
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("unexpected error: %s", result)
@@ -138,7 +138,7 @@ func TestHandleMovies_TVMediaType(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"title":"Breaking Bad","media_type":"tv"}`, ctx)
+	result := handleMovies(`{"title":"Breaking Bad","media_type":"tv"}`, ctx, "test-call")
 
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("unexpected error: %s", result)
@@ -159,7 +159,7 @@ func TestHandleMovies_NoResultsFound(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"title":"Not A Real Movie Xyz","media_type":"movie"}`, ctx)
+	result := handleMovies(`{"title":"Not A Real Movie Xyz","media_type":"movie"}`, ctx, "test-call")
 	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "no movie found") {
 		t.Errorf("result = %q, want a no-results error", result)
 	}
@@ -190,7 +190,7 @@ func TestHandleMovies_ThinRecommendationsSupplementedBySimilar(t *testing.T) {
 	})
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}, TMDBAPIKey: "key"}
-	result := handleMovies(`{"title":"New Release","media_type":"movie"}`, ctx)
+	result := handleMovies(`{"title":"New Release","media_type":"movie"}`, ctx, "test-call")
 
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("unexpected error: %s", result)

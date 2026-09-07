@@ -68,7 +68,7 @@ func TestHandleWebSearch_FormatsResultsAndAddsCitations(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"golang release"}`, ctx)
+	result := handleWebSearch(`{"query":"golang release"}`, ctx, "test-call")
 	if result == "" || result == "no results found" {
 		t.Fatalf("result = %q, want formatted results", result)
 	}
@@ -88,7 +88,7 @@ func TestHandleWebSearch_NoResults(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"something obscure"}`, ctx)
+	result := handleWebSearch(`{"query":"something obscure"}`, ctx, "test-call")
 	if result != "no results found" {
 		t.Errorf("result = %q, want %q", result, "no results found")
 	}
@@ -106,7 +106,7 @@ func TestHandleWebSearch_DegradedWithoutTavilyReturnsDistinctMessage(t *testing.
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if result == "no results found" {
 		t.Error("result = \"no results found\" — a degraded SearXNG response must not be reported as a confirmed empty result")
@@ -143,7 +143,7 @@ func TestHandleWebSearch_DegradedFallsBackToTavily(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "Cold Brew Green Tea") || !strings.Contains(result, "example.com/cold-brew") {
 		t.Errorf("result = %q, want the Tavily fallback result formatted in", result)
@@ -170,7 +170,7 @@ func TestHandleWebSearch_DegradedTavilyAlsoFailsReturnsDegradedMessage(t *testin
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "degraded") {
 		t.Errorf("result = %q, want the degraded message when both SearXNG and the Tavily fallback fail", result)
@@ -247,7 +247,7 @@ func TestHandleWebSearch_DegradedPrefersBraveOverParallelAndTavily(t *testing.T)
 		Emit:                func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Brave") || !strings.Contains(result, "example.com/brave-result") {
 		t.Errorf("result = %q, want the Brave fallback result formatted in", result)
@@ -289,7 +289,7 @@ func TestHandleWebSearch_DegradedSkipsBraveWhenMonthlyCapReached(t *testing.T) {
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Parallel") {
 		t.Errorf("result = %q, want the Parallel fallback result — Brave should have been skipped at the cap", result)
@@ -324,7 +324,7 @@ func TestHandleWebSearch_DegradedFallsBackToParallelWhenBraveErrors(t *testing.T
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Parallel") {
 		t.Errorf("result = %q, want the Parallel fallback result when Brave itself errors", result)
@@ -359,7 +359,7 @@ func TestHandleWebSearch_DegradedPrefersParallelOverTavily(t *testing.T) {
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Parallel") || !strings.Contains(result, "example.com/parallel-result") {
 		t.Errorf("result = %q, want the Parallel fallback result formatted in", result)
@@ -409,7 +409,7 @@ func TestHandleWebSearch_DegradedSkipsParallelWhenMonthlyCapReached(t *testing.T
 		Emit:   func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Tavily") {
 		t.Errorf("result = %q, want the Tavily fallback result — Parallel should have been skipped at the cap", result)
@@ -448,7 +448,7 @@ func TestHandleWebSearch_DegradedFallsBackToTavilyWhenParallelErrors(t *testing.
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	if !strings.Contains(result, "From Tavily") {
 		t.Errorf("result = %q, want the Tavily fallback result when Parallel itself errors", result)
@@ -472,7 +472,7 @@ func TestHandleWebSearch_PageParamForwardedAndClamped(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	handleWebSearch(`{"query":"golang release","page":3}`, ctx)
+	handleWebSearch(`{"query":"golang release","page":3}`, ctx, "test-call")
 	if gotPageno != "3" {
 		t.Errorf("pageno = %q, want %q", gotPageno, "3")
 	}
@@ -480,7 +480,7 @@ func TestHandleWebSearch_PageParamForwardedAndClamped(t *testing.T) {
 	// Out-of-range values (0, negative, or past the 5-page cap) fall back
 	// to page 1 rather than forwarding something SearXNG might reject or
 	// that would silently run the agent past the documented cap.
-	handleWebSearch(`{"query":"golang release","page":99}`, ctx)
+	handleWebSearch(`{"query":"golang release","page":99}`, ctx, "test-call")
 	if gotPageno != "" {
 		t.Errorf("pageno = %q, want omitted (clamped back to page 1)", gotPageno)
 	}
@@ -488,7 +488,7 @@ func TestHandleWebSearch_PageParamForwardedAndClamped(t *testing.T) {
 
 func TestHandleWebSearch_QueryRequired(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebSearch(`{}`, ctx)
+	result := handleWebSearch(`{}`, ctx, "test-call")
 	if result != "error: query is required" {
 		t.Errorf("result = %q, want the query-required error", result)
 	}
@@ -496,7 +496,7 @@ func TestHandleWebSearch_QueryRequired(t *testing.T) {
 
 func TestHandleWebSearch_InvalidJSON(t *testing.T) {
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
-	result := handleWebSearch(`not json`, ctx)
+	result := handleWebSearch(`not json`, ctx, "test-call")
 	if result == "" {
 		t.Error("expected an error result for invalid JSON")
 	}
@@ -519,7 +519,7 @@ func TestHandleWebSearch_RecordsSearXNGCallAsNonFallback(t *testing.T) {
 		ResearchBudget: budget,
 	}
 
-	handleWebSearch(`{"query":"golang release"}`, ctx)
+	handleWebSearch(`{"query":"golang release"}`, ctx, "test-call")
 
 	total, fallback := budget.Summary()
 	if total != 1 {
@@ -550,7 +550,7 @@ func TestHandleWebSearch_RecordsFallbackCallAsFallback(t *testing.T) {
 		ResearchBudget:      budget,
 	}
 
-	handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx)
+	handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
 
 	total, fallback := budget.Summary()
 	if total != 2 {
@@ -585,7 +585,7 @@ func TestHandleWebSearch_RefusesAtHardCeilingWithoutCallingSearXNG(t *testing.T)
 		ResearchBudget: budget,
 	}
 
-	result := handleWebSearch(`{"query":"anything"}`, ctx)
+	result := handleWebSearch(`{"query":"anything"}`, ctx, "test-call")
 
 	if hits != 0 {
 		t.Errorf("SearXNG was hit %d times, want 0 — the hard ceiling should refuse before any network call", hits)
@@ -636,12 +636,12 @@ func TestHandleWebSearch_ConcurrentIdenticalQueriesShareOneCall(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		handleWebSearch(`{"query":"golang release"}`, ctx)
+		handleWebSearch(`{"query":"golang release"}`, ctx, "test-call")
 	}()
 	go func() {
 		defer wg.Done()
 		<-started
-		handleWebSearch(`{"query":"Golang   Release"}`, ctx) // near-identical phrasing, must still dedupe
+		handleWebSearch(`{"query":"Golang   Release"}`, ctx, "test-call") // near-identical phrasing, must still dedupe
 	}()
 
 	<-started
@@ -674,7 +674,7 @@ func TestHandleWebSearch_NilBudgetIsUnaffected(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleWebSearch(`{"query":"golang release"}`, ctx)
+	result := handleWebSearch(`{"query":"golang release"}`, ctx, "test-call")
 	if result == "" || strings.Contains(strings.ToLower(result), "budget") {
 		t.Errorf("result = %q, want a normal formatted result with nil ResearchBudget", result)
 	}

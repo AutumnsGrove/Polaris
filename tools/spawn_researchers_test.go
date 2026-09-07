@@ -7,7 +7,7 @@ import (
 
 func TestHandleSpawnResearchers_NoClosureConfigured(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	result := handleSpawnResearchers(`{"tasks":[{"objective":"x"}]}`, ctx)
+	result := handleSpawnResearchers(`{"tasks":[{"objective":"x"}]}`, ctx, "test-call")
 	if !strings.Contains(strings.ToLower(result), "error") {
 		t.Errorf("result = %q, want an error when SpawnResearchers is unconfigured", result)
 	}
@@ -15,7 +15,7 @@ func TestHandleSpawnResearchers_NoClosureConfigured(t *testing.T) {
 
 func TestHandleSpawnResearchers_InvalidJSON(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	result := handleSpawnResearchers(`not json`, ctx)
+	result := handleSpawnResearchers(`not json`, ctx, "test-call")
 	if result == "" {
 		t.Error("expected an error result for invalid JSON")
 	}
@@ -23,7 +23,7 @@ func TestHandleSpawnResearchers_InvalidJSON(t *testing.T) {
 
 func TestHandleSpawnResearchers_EmptyTasksRequiresAtLeastOne(t *testing.T) {
 	ctx := &Context{Emit: func(string, map[string]interface{}) {}}
-	result := handleSpawnResearchers(`{"tasks":[]}`, ctx)
+	result := handleSpawnResearchers(`{"tasks":[]}`, ctx, "test-call")
 	if !strings.Contains(strings.ToLower(result), "error") {
 		t.Errorf("result = %q, want an error for zero tasks", result)
 	}
@@ -47,7 +47,7 @@ func TestHandleSpawnResearchers_PassesThroughTasksAndFormatsReports(t *testing.T
 		},
 	}
 
-	result := handleSpawnResearchers(`{"tasks":[{"objective":"research city X","guidance":"focus on 2020-2025"}]}`, ctx)
+	result := handleSpawnResearchers(`{"tasks":[{"objective":"research city X","guidance":"focus on 2020-2025"}]}`, ctx, "test-call")
 
 	if len(gotTasks) != 1 || gotTasks[0].Objective != "research city X" || gotTasks[0].Guidance != "focus on 2020-2025" {
 		t.Errorf("gotTasks = %+v, want the parsed objective/guidance passed through", gotTasks)
@@ -79,7 +79,7 @@ func TestHandleSpawnResearchers_MultipleReportsAllFormattedAndCited(t *testing.T
 		},
 	}
 
-	result := handleSpawnResearchers(`{"tasks":[{"objective":"alpha"},{"objective":"beta"}]}`, ctx)
+	result := handleSpawnResearchers(`{"tasks":[{"objective":"alpha"},{"objective":"beta"}]}`, ctx, "test-call")
 
 	if !strings.Contains(result, "claim for alpha") || !strings.Contains(result, "claim for beta") {
 		t.Errorf("result = %q, want both sub-agents' claims present", result)

@@ -316,7 +316,7 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 	}
 
 	argsJSON, _ := json.Marshal(map[string]string{"query": query})
-	result := tools.Dispatch("image_search", string(argsJSON), ctx)
+	result := tools.Dispatch("image_search", string(argsJSON), ctx, "pulsar-daily-image-search")
 	if strings.HasPrefix(result, "error:") || strings.HasPrefix(result, "image search is degraded") {
 		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: %s", result)
 	}
@@ -805,7 +805,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 			if spec.Key == "weather" {
 				dispatchArgs = `{"forecast_days":7}`
 			}
-			content = tools.Dispatch(spec.Key, dispatchArgs, ctx)
+			content = tools.Dispatch(spec.Key, dispatchArgs, ctx, "pulsar-daily-"+spec.Key)
 			if strings.HasPrefix(content, "error:") {
 				err = fmt.Errorf("%s", content)
 			}

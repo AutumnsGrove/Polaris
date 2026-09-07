@@ -52,27 +52,27 @@ var imageSearchDef = llm.ToolDef{
 
 func init() { Register("image_search", handleImageSearch) }
 
-func handleImageSearch(argsJSON string, ctx *Context) string {
+func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Query string `json:"query"`
 		Count int    `json:"count"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "image_search", nil, "error: "+err.Error())
+		return emitToolError(ctx, "image_search", nil, "error: "+err.Error(), callID)
 	}
 	if args.Query == "" {
-		return emitToolError(ctx, "image_search", map[string]interface{}{"query": args.Query}, "error: query is required")
+		return emitToolError(ctx, "image_search", map[string]interface{}{"query": args.Query}, "error: query is required", callID)
 	}
 	if args.Count <= 0 || args.Count > imageSearchMaxCount {
 		args.Count = imageSearchDefaultCount
 	}
 
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "image_search", "args": map[string]interface{}{"query": args.Query}})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "image_search", "args": map[string]interface{}{"query": args.Query}, "call_id": callID})
 
 	if ctx.SearXNG == nil {
 		result := "error: image search is not configured"
 		log.Warn("image_search called with no SearXNG client configured", "query", args.Query)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": result})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": result, "call_id": callID})
 		return result
 	}
 
@@ -82,7 +82,7 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 	})
 	if err != nil {
 		log.Warn("image_search: searxng failed", "query", args.Query, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": "error: " + err.Error()})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": "error: " + err.Error(), "call_id": callID})
 		return "error: " + err.Error()
 	}
 
@@ -94,7 +94,7 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 				log.Warn("image_search: checking brave usage failed, skipping fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("image_search: brave monthly cap reached, skipping fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveImageFallback(ctx, args.Query, args.Count); ok {
+			} else if formatted, ok := braveImageFallback(ctx, args.Query, args.Count, callID); ok {
 				return formatted
 			}
 		}
@@ -103,13 +103,13 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 		msg := "image search is degraded and unavailable right now — SearXNG's image engines are being " +
 			"rate-limited or blocked, and Brave's image fallback isn't configured or couldn't help either. " +
 			"Say plainly that image search is down right now rather than describing images from memory."
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": msg})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": msg, "call_id": callID})
 		return msg
 	}
 
 	if len(resp.Results) == 0 {
 		log.Info("image_search: no results", "query", args.Query)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": "no images found"})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "image_search", "result": "no images found", "call_id": callID})
 		return "no images found"
 	}
 
@@ -121,7 +121,7 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 			Title: r.Title, Subtitle: hostnameOf(r.URL), ImageURL: r.Thumbnail, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "SearXNG", args.Query)
+	return finishImageSearch(ctx, "SearXNG", args.Query, callID)
 }
 
 // braveImageFallback tries Brave's Image Search API once SearXNG has
@@ -130,7 +130,7 @@ func handleImageSearch(argsJSON string, ctx *Context) string {
 // checked-before-call, incremented-only-on-success shape as web_search's
 // braveFallback. Returns ok=false on any failure or empty result so the
 // caller falls through to the plain "degraded" message.
-func braveImageFallback(ctx *Context, query string, count int) (result string, ok bool) {
+func braveImageFallback(ctx *Context, query string, count int, callID string) (result string, ok bool) {
 	dedupKey := searchDedupKey("brave-images", query, "images", 1, count)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*brave.ImageSearchResponse, error) {
 		r, e := ctx.Brave.SearchImages(ctx.Ctx, query, count)
@@ -162,10 +162,10 @@ func braveImageFallback(ctx *Context, query string, count int) (result string, o
 			Title: r.Title, Subtitle: source, ImageURL: r.ImageSrc, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query), true
+	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query, callID), true
 }
 
-func finishImageSearch(ctx *Context, provider, query string) string {
+func finishImageSearch(ctx *Context, provider, query string, callID string) string {
 	cards := ctx.CardsSnapshot()
 	imageCount := 0
 	for _, c := range cards {
@@ -177,9 +177,10 @@ func finishImageSearch(ctx *Context, provider, query string) string {
 		"no need to describe them individually in prose.", provider, imageCount, query)
 	log.Info("image_search", "provider", provider, "query", query, "results", imageCount)
 	ctx.Emit("tool_result", map[string]interface{}{
-		"tool":   "image_search",
-		"result": result,
-		"cards":  cards,
+		"tool":    "image_search",
+		"result":  result,
+		"cards":   cards,
+		"call_id": callID,
 	})
 	return result
 }
