@@ -129,6 +129,102 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	}
 }
 
+// TestRunDailyPipeline_ItemizedTopStory covers the per-story expansion
+// path (finalize_daily_items) end to end — a list-shaped block
+// (headlines) that calls the tool instead of replying in prose, wins Top
+// Story, and gets Stage C elaboration applied to its single most
+// significant item rather than the whole list. Verifies both halves of
+// the "front-page tease, section still has it" design: the synthetic Top
+// Story entry is keyed "top_story" (not "headlines" — see
+// runDailyPipeline's topStoryBlockKey comment) and carries the
+// elaborated single-item content, while headlines' own regular card
+// still carries all its original Items untouched.
+//
+// All 4 Stage A bodies are identical (the same finalize_daily_items call)
+// rather than one-per-block, deliberately: Stage A's blocks fire as
+// concurrent goroutines against sequencedSSEServer, which assigns bodies
+// by arrival order, not by which logical block asked — the same reason
+// TestRunDailyPipeline_FullFirstDayRun's assertions only check aggregate
+// facts, never "block X definitely got body Y". Making every Stage A
+// slot serve the same scripted response sidesteps that race instead of
+// fighting it: quote (a plain no-tools pick call) just gets empty content
+// from a tool-call-shaped body it doesn't know how to parse, harmless
+// since quote's actual content is never asserted here.
+func TestRunDailyPipeline_ItemizedTopStory(t *testing.T) {
+	itemsArgs := `{"items":[` +
+		`{"title":"Nvidia buys Hugging Face","summary":"Nvidia announced a $13B acquisition of the open-weight hosting platform.","source":"TechCrunch","url":"https://techcrunch.com/nvidia-hf"},` +
+		`{"title":"New open-weight model ships","summary":"A rival lab shipped a new open-weight model with strong benchmark gains.","source":"The Verge","url":"https://theverge.com/new-model"}` +
+		`]}`
+	itemsBody := toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"finalize_daily_items","arguments":` + fmt.Sprintf("%q", itemsArgs) + `}}`)
+	bodies := []string{
+		itemsBody, // Stage A: quote (pick — tool call ignored, ends up with empty content, unasserted)
+		itemsBody, // Stage A: on_this_day (research, itemized)
+		itemsBody, // Stage A: headlines (research, itemized)
+		itemsBody, // Stage A: trending (research, itemized)
+		toolCallSSEBody(`{"id":"call_2","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"headlines\",\"reasoning\":\"The Nvidia acquisition is the bigger development\"}"}}`), // Stage B
+		plainSSEBody("Deeper dive: the Nvidia acquisition includes board seats and a multi-year compute commitment."), // Stage C, elaborating item[0] only
+	}
+	srv := sequencedSSEServer(t, bodies)
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT daily config status = %d, want 200", resp.StatusCode)
+	}
+
+	h.srvObj.runDailyPipeline(context.Background())
+
+	today := time.Now().Format("2006-01-02")
+	edition, err := h.db.GetDailyEdition(today)
+	if err != nil {
+		t.Fatalf("GetDailyEdition: %v", err)
+	}
+
+	// 5 blocks, not 4: headlines won Top Story but, being itemized, still
+	// keeps its own regular card too (see runDailyPipeline's Stage C/D).
+	if len(edition.Blocks) != 5 {
+		t.Fatalf("got %d blocks, want 5 (quote, on_this_day, trending, headlines' own card, plus the synthetic top_story entry)", len(edition.Blocks))
+	}
+
+	top := edition.Blocks[0]
+	if !top.IsTopStory || top.Key != "top_story" {
+		t.Errorf("edition.Blocks[0] = %+v, want Key=\"top_story\" (not \"headlines\" — that key is reserved for headlines' own regular card)", top)
+	}
+	if top.Title != "Nvidia buys Hugging Face" {
+		t.Errorf("top.Title = %q, want the elected item's own title, not the parent block's title", top.Title)
+	}
+	if top.Content == "" || top.Content == "Nvidia announced a $13B acquisition of the open-weight hosting platform." {
+		t.Errorf("top.Content = %q, want the Stage C elaborated version, not the item's raw quick summary", top.Content)
+	}
+
+	var headlinesCard *store.PulsarDailyBlock
+	for i := range edition.Blocks {
+		if edition.Blocks[i].Key == "headlines" {
+			headlinesCard = &edition.Blocks[i]
+		}
+	}
+	if headlinesCard == nil {
+		t.Fatal("no block with Key \"headlines\" found — the parent list block should still render its own card")
+	}
+	if headlinesCard.IsTopStory {
+		t.Error("headlines' own card incorrectly marked IsTopStory — only the synthetic top_story entry should be")
+	}
+	if len(headlinesCard.Items) != 2 {
+		t.Fatalf("headlines.Items = %+v, want both original items intact, including the one promoted to Top Story", headlinesCard.Items)
+	}
+	if headlinesCard.Items[0].Title != "Nvidia buys Hugging Face" || headlinesCard.Items[1].Title != "New open-weight model ships" {
+		t.Errorf("headlines.Items = %+v, want both items in their original order", headlinesCard.Items)
+	}
+}
+
 // TestRunDailyPipeline_BelowFloorShowsDegradedNotice covers Stage D's
 // "something's actually broken" floor: every enabled block generation
 // failing (a model that always errors, here simulated by pointing at a

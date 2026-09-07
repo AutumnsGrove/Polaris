@@ -143,11 +143,23 @@ var dailyPickTasks = map[string]string{
 		"why it's worth reading today. Avoid the most overused quotes if a fresher one fits.",
 }
 
+// dailyItemsInstruction is appended to every list-shaped block's task
+// (headlines, trending, and every custom block — see
+// dailyBlockWantsItems) so the model knows to end with
+// finalize_daily_items instead of one merged paragraph. This is the only
+// place that actually mandates the tool call: unlike the wizard's
+// finalize_pulsar_prompt (mandated by a dedicated system prompt swapped
+// in via PulsarWizard/PulsarDailyBlockTitle), a Daily research block runs
+// under the ordinary chat system prompt, so the task text itself has to
+// carry the instruction.
+const dailyItemsInstruction = " Call finalize_daily_items with each distinct story as its own item, most " +
+	"significant first — don't merge multiple stories into one prose paragraph."
+
 var dailyResearchTasks = map[string]string{
-	"headlines": "Give me a short rundown of today's biggest general news headlines — 2-4 sentences covering " +
-		"the most significant stories, written for someone who wants the gist, not a full briefing.",
+	"headlines": "Give me a short rundown of today's biggest general news headlines — the most significant " +
+		"stories, written for someone who wants the gist, not a full briefing." + dailyItemsInstruction,
 	"trending": "What's genuinely trending or being talked about today (news, culture, internet, or " +
-		"otherwise)? 2-4 sentences, skimmable.",
+		"otherwise)?" + dailyItemsInstruction,
 	// on_this_day moved here from dailyPickTasks — see the registry entry's
 	// doc comment for why a knowledge-only call was the wrong shape for a
 	// task that asks the model to verify anything.
@@ -233,14 +245,26 @@ func dailyResearchTaskFor(key, location, sportsTeams, customInstruction string) 
 // agent.Run — no thread, no streaming, no history, mirror of
 // runWizardTurn's shape. task is the fully-built prompt text; see
 // dailyResearchTaskFor for the fixed-registry case and dailyBlockSpec.
-// CustomTask for the user-authored case.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string) (string, float64, error) {
-	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
+// CustomTask for the user-authored case. wantsItems offers
+// finalize_daily_items — see newDailyToolContext's doc comment. When the
+// model calls it, items is the structured story list (and content is a
+// flattened prose join of the same, via agent.flattenDailyItems, kept for
+// the diff-judge/gist/trace paths); when it doesn't (or wantsItems is
+// false), items is nil and content is the model's plain-prose answer,
+// exactly as before this existed.
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, cost float64, err error) {
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, wantsItems)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		return "", 0, err
+		return "", nil, 0, err
 	}
-	return strings.TrimSpace(result.Answer), result.CostUSD, nil
+	if result.DailyItemsFinal != nil {
+		items = make([]store.PulsarDailyBlockItem, 0, len(result.DailyItemsFinal.Items))
+		for _, it := range result.DailyItemsFinal.Items {
+			items = append(items, store.PulsarDailyBlockItem{Title: it.Title, Summary: it.Summary, Source: it.Source, URL: it.URL})
+		}
+	}
+	return strings.TrimSpace(result.Answer), items, result.CostUSD, nil
 }
 
 // generateDailyElaboration is Stage C's deeper pass on the elected Top
@@ -254,7 +278,7 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 		"story has genuinely chart-worthy quantitative data, or image_search if a relevant image would "+
 		"help. Don't just restate the quick version — add to it.", title, quickContent)
 
-	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
+	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		return "", 0, err
@@ -269,9 +293,15 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 // independent mini-generation, not a shared turn. Carries the full
 // SearXNG/Brave/Parallel/Tavily + usage-cap wiring web_search needs (see
 // CLAUDE.md's "Web search fallback chain" — a new call site that skips
-// any of these degrades silently instead of erroring).
-func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClient, cfg *config.Config, location string) *tools.Context {
+// any of these degrades silently instead of erroring). wantsItems offers
+// finalize_daily_items (see tools.Context.PulsarDailyItems) — true only
+// for a list-shaped block's own Stage A generation (headlines/trending/
+// custom), never for Stage C's elaboration of a single already-chosen
+// item, and never for weather/picture's direct tools.Dispatch calls
+// (which never construct an agent.Run tool menu at all).
+func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClient, cfg *config.Config, location string, wantsItems bool) *tools.Context {
 	return &tools.Context{
+		PulsarDailyItems: wantsItems,
 		// Ctx is normally set by agent.Run itself (see its doc comment on
 		// Context.Ctx) — but Weather and Picture of the Day's image_search
 		// call tools.Dispatch directly, bypassing agent.Run entirely, so
@@ -629,6 +659,10 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		imageURL string
 		costUSD  float64
 		chart    *tools.ChartSpec
+		// items is non-empty only for a list-shaped block (headlines/
+		// trending/custom) whose agent.Run called finalize_daily_items —
+		// see dailyBlockWantsItems.
+		items []store.PulsarDailyBlockItem
 	}
 	results := make([]*stageAResult, len(blockSpecs))
 	var wg sync.WaitGroup
@@ -649,7 +683,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			}()
 			r := s.generateOneDailyBlock(reqCtx, today, cfg, writerClient, architectClient, spec, location, cfgRow.WeatherLocation, cfgRow.SportsTeams, cfgRow.CustomInstructions, yesterdayByKey, hasYesterday)
 			if r != nil {
-				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart}
+				results[i] = &stageAResult{spec: spec, content: r.content, gist: r.gist, verdict: r.verdict, imageURL: r.imageURL, costUSD: r.costUSD, chart: r.chart, items: r.items}
 			}
 		}(i, spec)
 	}
@@ -697,21 +731,6 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		if r == nil || r.verdict == "unchanged" {
 			continue // dropped — either a genuinely quiet Watch block, or a hard generation failure (see generateOneDailyBlock).
 		}
-		if r.spec.Key == topStoryKey {
-			elaborated, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, r.spec.Title, r.content, location)
-			totalCost += elabCost
-			content := r.content
-			if err != nil {
-				log.Warn("pulsar daily: stage C elaboration failed, using the quick version", "block", r.spec.Key, "err", err)
-			} else {
-				content = elaborated
-			}
-			topStory = &store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: content, Gist: r.gist, IsTopStory: true}
-			if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, true, topStoryReasoning, content, elabCost); err != nil {
-				log.Warn("pulsar daily: recording top story trace outcome failed", "block", r.spec.Key, "err", err)
-			}
-			continue
-		}
 		var chartJSON json.RawMessage
 		if r.chart != nil {
 			if b, err := json.Marshal(r.chart); err != nil {
@@ -720,7 +739,56 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 				chartJSON = b
 			}
 		}
-		blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL, Chart: chartJSON})
+		if r.spec.Key == topStoryKey {
+			// A list-shaped block (headlines/trending/custom) has no
+			// single "the story" to deepen — Stage C elaborates whichever
+			// item the model itself ordered first (see
+			// finalize_daily_items.yaml's "most significant first"), not
+			// the whole digest. Elaborating a multi-item digest wholesale
+			// was the actual root cause of the "massive Top Story" bug:
+			// this instruction is written for a single narrative, so
+			// applying it to a list just made every item in the list
+			// longer.
+			elabTitle, elabQuick := r.spec.Title, r.content
+			if len(r.items) > 0 {
+				elabTitle, elabQuick = r.items[0].Title, r.items[0].Summary
+			}
+			elaborated, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
+			totalCost += elabCost
+			content := elabQuick
+			if err != nil {
+				log.Warn("pulsar daily: stage C elaboration failed, using the quick version", "block", r.spec.Key, "err", err)
+			} else {
+				content = elaborated
+			}
+			// topStoryBlockKey is a fixed literal, not r.spec.Key, only
+			// when this block is itemized — see below, where the same
+			// block also gets its own regular card in `blocks` under its
+			// real key. Two entries sharing one Key would collide in the
+			// frontend's keyed masonry list (`{#each ... (block.key)}`)
+			// and in tomorrow's yesterdayByKey lookup. A non-itemized
+			// winner keeps exactly today's behavior: one entry, its own
+			// real key, nothing separate to duplicate.
+			topStoryBlockKey := r.spec.Key
+			if len(r.items) > 0 {
+				topStoryBlockKey = "top_story"
+			}
+			topStory = &store.PulsarDailyBlock{Key: topStoryBlockKey, Title: elabTitle, Content: content, Gist: r.gist, IsTopStory: true}
+			if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, true, topStoryReasoning, content, elabCost); err != nil {
+				log.Warn("pulsar daily: recording top story trace outcome failed", "block", r.spec.Key, "err", err)
+			}
+			// Front-page tease, section still has it — the parent block's
+			// own card renders normally with every item intact (including
+			// the one just promoted above), same as any other day it
+			// didn't win Top Story. Skipped for a non-itemized winner:
+			// its whole content just became the Top Story, nothing left
+			// to show separately.
+			if len(r.items) > 0 {
+				blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL, Chart: chartJSON, Items: r.items})
+			}
+			continue
+		}
+		blocks = append(blocks, store.PulsarDailyBlock{Key: r.spec.Key, Title: r.spec.Title, Content: r.content, Gist: r.gist, ImageURL: r.imageURL, Chart: chartJSON, Items: r.items})
 		if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, false, "", "", 0); err != nil {
 			log.Warn("pulsar daily: recording block trace outcome failed", "block", r.spec.Key, "err", err)
 		}
@@ -768,6 +836,23 @@ type dailyGeneratedBlock struct {
 	// whole edition. Direct tool dispatches (Weather) and image_search
 	// itself cost nothing here; only the LLM calls do.
 	costUSD float64
+	// items is non-empty only for a list-shaped block whose agent.Run
+	// called finalize_daily_items — see dailyBlockWantsItems.
+	items []store.PulsarDailyBlockItem
+}
+
+// dailyBlockWantsItems reports whether a block's generation should offer
+// finalize_daily_items — true for every block that's structurally a list
+// of distinct stories (headlines, trending, and any user-authored custom
+// block), false for a single-place/single-team narrative (local, sports)
+// or anything that isn't a research/custom block at all. This is the one
+// place that decision lives; a new list-shaped registry block only needs
+// adding here, not touched at every call site.
+func dailyBlockWantsItems(spec dailyBlockSpec) bool {
+	if spec.Kind == dailyBlockCustom {
+		return true
+	}
+	return spec.Key == "headlines" || spec.Key == "trending"
 }
 
 // dailyBlockLocation picks which location a dailyBlockDirect block's tool
@@ -798,15 +883,16 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	var cost float64
 	var err error
 	var chart *tools.ChartSpec
+	var items []store.PulsarDailyBlockItem
 	custom := customInstructions[spec.Key]
 
 	switch spec.Kind {
 	case dailyBlockDirect:
 		if spec.Key == "picture_of_day" {
-			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location)
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
 			content, imageURL, cost, err = generateDailyPictureBlock(reqCtx, writerClient, ctx, custom)
 		} else {
-			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation))
+			ctx := s.newDailyToolContext(reqCtx, writerClient, cfg, dailyBlockLocation(spec.Key, location, weatherLocation), false)
 			// Weather asks for a full week, not handleWeather's normal
 			// 3-day chat default — a Daily edition is read once a day, not
 			// mid-conversation, so the wider range chart is worth more here
@@ -831,10 +917,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		var task string
 		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)
 		if err == nil {
-			content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location)
+			content, items, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
 		}
 	case dailyBlockCustom:
-		content, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask, location)
+		content, items, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
 	}
 
 	// traceErr carries a hard-failure's error text into the trace row
@@ -874,7 +960,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	}
 
 	if !spec.Watch {
-		g := &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost, chart: chart}
+		g := &dailyGeneratedBlock{content: content, imageURL: imageURL, costUSD: cost, chart: chart, items: items}
 		writeTrace(g, "")
 		return g
 	}
@@ -884,7 +970,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		// No prior content to diff against — treat as notable rather
 		// than skipping the diff-judge call silently, per the plan
 		// doc's "First-ever day" note.
-		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost, items: items}
 		writeTrace(g, "")
 		return g
 	}
@@ -892,7 +978,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	verdict, verdictCost, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
 	if err != nil {
 		log.Warn("pulsar daily: diff-judge failed, treating block as normal", "block", spec.Key, "err", err)
-		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost, items: items}
 		writeTrace(g, "")
 		return g
 	}
@@ -902,6 +988,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		verdict:       verdict.Verdict,
 		diffReasoning: verdict.Reasoning,
 		costUSD:       cost + verdictCost,
+		items:         items,
 	}
 	writeTrace(g, "")
 	return g

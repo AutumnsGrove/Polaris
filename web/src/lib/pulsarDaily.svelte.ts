@@ -106,12 +106,18 @@ export class PulsarDailyState {
 	// navigating until the whole answer finished); the caller sends the
 	// result over the live WebSocket instead, the same path any typed
 	// message already takes, so navigation and streaming happen exactly
-	// like a message the user sent themselves.
-	async resolveExpand(date: string, blockKey: string): Promise<DailyExpandResolution | null> {
+	// like a message the user sent themselves. itemIndex, when given,
+	// scopes the seed to one story within a list-shaped block's items
+	// instead of the whole block — the per-story "Continue in chat".
+	async resolveExpand(
+		date: string,
+		blockKey: string,
+		itemIndex?: number
+	): Promise<DailyExpandResolution | null> {
 		const res = await fetch('/api/pulsar/daily/expand', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ date, block_key: blockKey })
+			body: JSON.stringify({ date, block_key: blockKey, item_index: itemIndex })
 		});
 		if (!res.ok) return null;
 		return (await res.json()) as DailyExpandResolution;

@@ -249,6 +249,12 @@ func dailyFollowupFamily(key string) string {
 type pulsarDailyExpandRequest struct {
 	Date     string `json:"date"`
 	BlockKey string `json:"block_key"`
+	// ItemIndex, when set, scopes the expand to one story within a
+	// list-shaped block's Items (see store.PulsarDailyBlock.Items) instead
+	// of the block's whole flattened Content — the per-story "Continue in
+	// chat" affordance. Omitted (nil) means the old whole-block behavior,
+	// used by every non-itemized block and the synthetic Top Story card.
+	ItemIndex *int `json:"item_index,omitempty"`
 }
 
 // pulsarDailyExpandResponse hands back the seeded message text (and, for
@@ -312,6 +318,21 @@ func (s *Server) handleExpandDailyBlock(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// seedTitle/seedContent default to the whole block, same as before
+	// per-item expand existed. When ItemIndex names one of this block's
+	// Items, narrow to just that story instead — the reader tapped one
+	// headline within a list, not "tell me more about this whole digest".
+	seedTitle, seedContent := block.Title, block.Content
+	if req.ItemIndex != nil {
+		idx := *req.ItemIndex
+		if idx < 0 || idx >= len(block.Items) {
+			http.Error(w, "item_index out of range for that block", http.StatusBadRequest)
+			return
+		}
+		item := block.Items[idx]
+		seedTitle, seedContent = item.Title, item.Summary
+	}
+
 	p := prompts.Get()
 	var followup string
 	switch dailyFollowupFamily(block.Key) {
@@ -322,7 +343,7 @@ func (s *Server) handleExpandDailyBlock(w http.ResponseWriter, r *http.Request) 
 	default:
 		followup = p.PulsarDaily.ResearchFollowup
 	}
-	seeded := fmt.Sprintf(p.PulsarDaily.ExpandPrefix, block.Title, block.Content) + " " + followup
+	seeded := fmt.Sprintf(p.PulsarDaily.ExpandPrefix, seedTitle, seedContent) + " " + followup
 
 	resp := pulsarDailyExpandResponse{Content: seeded}
 	if block.ImageURL != "" {

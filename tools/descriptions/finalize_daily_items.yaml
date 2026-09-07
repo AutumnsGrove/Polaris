@@ -1,0 +1,14 @@
+name: finalize_daily_items
+requires: pulsar_daily_items
+description: >-
+  end with a structured list of distinct stories instead of one merged paragraph.
+api_description: >-
+  End this generation with every distinct story you found as its own item — title, a 1-3 sentence
+  summary, and (if you have one) a source name and link. Never merge two different stories into one
+  item's summary, and never fold multiple items into one paragraph of prose instead of calling this.
+
+  Order items most significant first — the first item is the one most likely to be pulled out and
+  elaborated on separately, so put your best/biggest story there.
+
+  Calling this tool ENDS the turn, same as finalize_pulsar_prompt. If you only found one real story
+  worth reporting, that's fine — call this with a single item rather than padding the list.

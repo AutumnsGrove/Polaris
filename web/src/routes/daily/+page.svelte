@@ -216,20 +216,31 @@
 	// server only resolves what the seeded message should say; sending it
 	// happens over the browser's own live WebSocket connection, exactly
 	// the path a typed message already takes, so navigation is immediate
-	// and the answer streams in live.
-	async function expand(block: PulsarDailyBlock) {
+	// and the answer streams in live. itemIndex, when given, scopes this
+	// to one story within a list-shaped block's items instead of the
+	// whole block — the per-story "Continue in chat" affordance.
+	// expandingKey uses a composite `key:index` identifier in that case so
+	// only that one item's button shows "Opening…", not every item in the
+	// same card.
+	async function expand(block: PulsarDailyBlock, itemIndex?: number) {
+		const trackingKey = itemIndex === undefined ? block.key : `${block.key}:${itemIndex}`;
 		if (expandingKey) return;
-		expandingKey = block.key;
+		expandingKey = trackingKey;
 		try {
-			const resolved = await pulsarDailyState.resolveExpand(viewedDate, block.key);
+			const resolved = await pulsarDailyState.resolveExpand(viewedDate, block.key, itemIndex);
 			if (!resolved) return;
-			// titleSeed: the block's own title + content, not the seeded
-			// wrapper message — see gateway/protocol.go's
-			// ClientMessage.TitleSeed doc comment for why generating a
-			// title straight from the wrapper text broke (a real,
-			// observed bug: the title model answered the wrapper's
-			// embedded "tell me more" instruction instead of titling it).
-			const titleSeed = `${block.title}: ${block.content}`.slice(0, 300);
+			// titleSeed: the story's own title + summary (or the block's,
+			// for a whole-block expand), not the seeded wrapper message —
+			// see gateway/protocol.go's ClientMessage.TitleSeed doc comment
+			// for why generating a title straight from the wrapper text
+			// broke (a real, observed bug: the title model answered the
+			// wrapper's embedded "tell me more" instruction instead of
+			// titling it).
+			const seedSource =
+				itemIndex !== undefined && block.items
+					? block.items[itemIndex]
+					: { title: block.title, summary: block.content };
+			const titleSeed = `${seedSource.title}: ${seedSource.summary}`.slice(0, 300);
 			appState.newThread();
 			await goto('/');
 			appState.send(
@@ -333,49 +344,85 @@
 	{:else if pulsarDailyState.edition}
 		{#snippet card(block: PulsarDailyBlock, measuring: boolean)}
 			{@const Icon = blockIcons[block.key] ?? Newspaper}
-			<button
-				class="card"
-				class:top-story={block.is_top_story}
-				disabled={expandingKey === block.key}
-				tabindex={measuring ? -1 : 0}
-				aria-hidden={measuring}
-				onclick={() => !measuring && expand(block)}
-			>
-				{#if block.is_top_story}
-					<span class="kicker-label">Top Story</span>
-					<h3 class="headline">{block.title}</h3>
-					{#if block.image_url}
-						<img src={block.image_url} alt={block.title} />
-					{/if}
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					<div class="card-body">{@html renderContent(block.content)}</div>
-				{:else}
+			{#if !block.is_top_story && block.items?.length}
+				<!-- List-shaped block (headlines/trending/custom) — each story
+				     is its own independently expandable row instead of one
+				     prose blob with a single all-or-nothing "Continue in
+				     chat", per the plan doc's per-story expansion design. Not
+				     a <button> itself (unlike every other card shape here):
+				     the card as a whole isn't one clickable affordance, each
+				     item row is. -->
+				<div class="card items-card" aria-hidden={measuring}>
 					<div class="card-head">
 						<div class="card-icon">
 							<Icon size={15} />
 						</div>
 						<div class="card-title">{block.title}</div>
 					</div>
-					{#if block.key === 'picture_of_day' && block.image_url}
-						<img src={block.image_url} alt={block.title} />
-					{/if}
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					<div class="card-body">{@html renderContent(block.content)}</div>
-					{#if block.chart}
-						<!-- Weather's own structured forecast (setWeatherChart) —
-						     the same ChartCard a normal chat turn's weather tool
-						     gets, so Daily's card isn't stuck with plain prose
-						     just because it's a dailyBlockDirect dispatch. The
-						     forecast bullet list this would otherwise duplicate
-						     is already stripped server-side (see
-						     TrimWeatherForecastSection). -->
-						<ChartCard chart={block.chart} />
-					{/if}
-				{/if}
-				<div class="expand-hint">
-					{expandingKey === block.key ? 'Opening…' : 'Continue in chat →'}
+					{#each block.items as item, i (i)}
+						{@const trackingKey = `${block.key}:${i}`}
+						<button
+							class="item-row"
+							disabled={expandingKey === trackingKey}
+							tabindex={measuring ? -1 : 0}
+							onclick={() => !measuring && expand(block, i)}
+						>
+							<div class="item-title">{item.title}</div>
+							<p class="item-summary">{item.summary}</p>
+							{#if item.source}
+								<span class="item-source">{item.source}</span>
+							{/if}
+							<div class="expand-hint">
+								{expandingKey === trackingKey ? 'Opening…' : 'Continue in chat →'}
+							</div>
+						</button>
+					{/each}
 				</div>
-			</button>
+			{:else}
+				<button
+					class="card"
+					class:top-story={block.is_top_story}
+					disabled={expandingKey === block.key}
+					tabindex={measuring ? -1 : 0}
+					aria-hidden={measuring}
+					onclick={() => !measuring && expand(block)}
+				>
+					{#if block.is_top_story}
+						<span class="kicker-label">Top Story</span>
+						<h3 class="headline">{block.title}</h3>
+						{#if block.image_url}
+							<img src={block.image_url} alt={block.title} />
+						{/if}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<div class="card-body">{@html renderContent(block.content)}</div>
+					{:else}
+						<div class="card-head">
+							<div class="card-icon">
+								<Icon size={15} />
+							</div>
+							<div class="card-title">{block.title}</div>
+						</div>
+						{#if block.key === 'picture_of_day' && block.image_url}
+							<img src={block.image_url} alt={block.title} />
+						{/if}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<div class="card-body">{@html renderContent(block.content)}</div>
+						{#if block.chart}
+							<!-- Weather's own structured forecast (setWeatherChart) —
+							     the same ChartCard a normal chat turn's weather tool
+							     gets, so Daily's card isn't stuck with plain prose
+							     just because it's a dailyBlockDirect dispatch. The
+							     forecast bullet list this would otherwise duplicate
+							     is already stripped server-side (see
+							     TrimWeatherForecastSection). -->
+							<ChartCard chart={block.chart} />
+						{/if}
+					{/if}
+					<div class="expand-hint">
+						{expandingKey === block.key ? 'Opening…' : 'Continue in chat →'}
+					</div>
+				</button>
+			{/if}
 		{/snippet}
 
 		<!-- Invisible reference copies at the real per-column width, purely
@@ -597,6 +644,63 @@
 	.card:hover .expand-hint,
 	.card:focus-visible .expand-hint {
 		opacity: 1;
+	}
+
+	/* items-card is a plain container, not itself clickable (each row
+	   below is its own button) — override .card's pointer cursor/hover
+	   lift, which only make sense on a whole-card affordance. */
+	.items-card {
+		cursor: default;
+	}
+	.items-card:hover,
+	.items-card:focus-visible {
+		transform: none;
+		border-color: var(--color-border);
+		box-shadow: var(--shadow-sm), var(--shadow-glass-edge);
+	}
+
+	.item-row {
+		display: block;
+		width: 100%;
+		background: none;
+		border: none;
+		border-top: 1px solid var(--color-border);
+		padding: var(--space-md) 0 0;
+		margin-top: var(--space-md);
+		text-align: left;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+	.item-row:first-of-type {
+		border-top: none;
+		padding-top: 0;
+		margin-top: 0;
+	}
+	.item-row:disabled {
+		cursor: default;
+		opacity: 0.7;
+	}
+	.item-row:hover .expand-hint,
+	.item-row:focus-visible .expand-hint {
+		opacity: 1;
+	}
+	.item-title {
+		font-weight: 600;
+		font-size: 13.5px;
+		color: var(--color-text);
+	}
+	.item-summary {
+		margin: var(--space-xs) 0 0;
+		font-size: 13px;
+		color: var(--color-text-dim);
+	}
+	.item-source {
+		display: inline-block;
+		margin-top: var(--space-xs);
+		font-size: 11px;
+		color: var(--color-text-dim);
+		opacity: 0.7;
 	}
 
 	.card-head {

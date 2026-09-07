@@ -20,6 +20,7 @@ var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
 	"image_search", "read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
+	"finalize_daily_items",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -125,6 +126,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// registry.go's PulsarWizard doc comment. Never offered on a
 		// normal chat/pulse turn, regardless of NoResearch/DisabledTools.
 		return ctx.PulsarWizard
+	case "pulsar_daily_items":
+		// A Pulsar Daily list-block generation only — see registry.go's
+		// PulsarDailyItems doc comment. Never offered on a normal
+		// chat/pulse turn or any other Daily block kind.
+		return ctx.PulsarDailyItems
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -187,6 +193,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"finalize_pulsar_prompt": {Name: "finalize_pulsar_prompt", Requires: "pulsar_wizard",
 		Description:    "end the interview and hand back the drafted Pulsar routine prompt.",
 		APIDescription: "End the interview and hand back the drafted, ready-to-schedule Pulsar routine prompt — this ends the turn."},
+	"finalize_daily_items": {Name: "finalize_daily_items", Requires: "pulsar_daily_items",
+		Description:    "end with a structured list of distinct stories instead of one merged paragraph.",
+		APIDescription: "End with every distinct story found as its own item (title, summary, source) instead of one merged paragraph — this ends the turn."},
 }
 
 var (
@@ -259,7 +268,10 @@ func loadCatalog() map[string]catalogEntry {
 // preferences themselves, and memory already has its own dedicated
 // settings section (see gateway/memories.go) rather than a plain on/off
 // switch.
-var nonToggleable = map[string]bool{"think": true, "ask_user_question": true, "memory": true, "finalize_pulsar_prompt": true}
+var nonToggleable = map[string]bool{
+	"think": true, "ask_user_question": true, "memory": true,
+	"finalize_pulsar_prompt": true, "finalize_daily_items": true,
+}
 
 // ToolInfo is one individually toggleable tool's identity, for the
 // settings panel — see ToggleableTools.

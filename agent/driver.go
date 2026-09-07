@@ -272,6 +272,26 @@ func currentContextPreamble() string {
 	)
 }
 
+// flattenDailyItems joins a finalize_daily_items call's structured list
+// into plain prose, one story per paragraph — used as Result.Answer so
+// every existing text-based consumer (the diff-judge, trace records)
+// keeps working unchanged; the structured list itself survives separately
+// on Result.DailyItemsFinal for a caller that wants per-item rendering.
+func flattenDailyItems(items []tools.DailyItem) string {
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		line := "**" + it.Title + "** — " + it.Summary
+		if it.Source != "" {
+			line += " (" + it.Source + ")"
+		}
+		if it.URL != "" {
+			line += " " + it.URL
+		}
+		parts = append(parts, line)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // Result is what one turn produces, once the model settles on a
 // plain-text final answer.
 type Result struct {
@@ -300,6 +320,12 @@ type Result struct {
 	// prompt text the same way PendingQuestion's Answer holds the question
 	// text, so it reads naturally if ever displayed as a plain reply.
 	WizardFinal *tools.WizardFinal
+	// DailyItemsFinal is non-nil when the turn ended early because
+	// finalize_daily_items was called — only possible on a Pulsar Daily
+	// list-block generation (see tools.Context.PulsarDailyItems). Same
+	// early-exit shape as WizardFinal, just carrying a structured item
+	// list instead of a single drafted prompt.
+	DailyItemsFinal *tools.DailyItemsFinal
 	// TurnCount is how many iterations of the main loop below actually
 	// ran before this Result was produced (1 for a plain first-turn
 	// answer, more for each tool-call round-trip) — including the forced
@@ -486,6 +512,29 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				TurnCount:     turn + 1,
 				ResearchCalls: researchCalls,
 				WizardFinal:   ctx.WizardFinal,
+			}, nil
+		}
+
+		// finalize_daily_items was called — same early-exit shape as
+		// WizardFinal above, just for a Pulsar Daily list-block generation.
+		// Answer is a flattened prose join of the items (title/summary/
+		// source, one per line), not the structured list itself — callers
+		// that only look at Answer (the diff-judge, trace records, a model
+		// that never went down this path) still get sane text; a caller
+		// that wants the structured shape reads DailyItemsFinal directly.
+		if ctx.DailyItemsFinal != nil {
+			flattened := flattenDailyItems(ctx.DailyItemsFinal.Items)
+			ctx.Emit("token", map[string]interface{}{"content": flattened})
+			return &Result{
+				Answer:          flattened,
+				Citations:       ctx.Citations,
+				Cards:           ctx.Cards,
+				Chart:           ctx.Chart,
+				CostUSD:         totalCost,
+				ContextTokens:   resp.PromptTokens + resp.CompletionTokens,
+				TurnCount:       turn + 1,
+				ResearchCalls:   researchCalls,
+				DailyItemsFinal: ctx.DailyItemsFinal,
 			}, nil
 		}
 

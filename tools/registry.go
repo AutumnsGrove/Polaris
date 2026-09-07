@@ -302,6 +302,16 @@ type Context struct {
 	// when this is set. Empty means the ordinary routine-prompt wizard.
 	PulsarDailyBlockTitle string
 
+	// PulsarDailyItems, when true, marks this turn as a Pulsar Daily
+	// block generation whose content is a list of distinct stories
+	// (headlines/trending/custom blocks), not a single narrative — the
+	// only thing it gates is finalize_daily_items's offering (catalog.go's
+	// "pulsar_daily_items" Requires case), same isolation PulsarWizard
+	// gives finalize_pulsar_prompt. Only ever set true by
+	// gateway/pulsar_daily.go's block-context builder, never in a normal
+	// chat/pulse turn. Zero value (false) is normal behavior.
+	PulsarDailyItems bool
+
 	// DisabledTools is the settings panel's per-tool on/off list (see
 	// gateway.DisabledToolsFromStore) — a tool named here is excluded
 	// regardless of Requires or Category, checked first in offered(). Nil
@@ -359,6 +369,15 @@ type Context struct {
 	// PendingQuestion's mutex exists.
 	wizardFinalMu sync.Mutex
 	WizardFinal   *WizardFinal
+
+	// DailyItemsFinal, once set, tells agent.Run to end the turn the same
+	// way WizardFinal does — see finalize_daily_items.go and
+	// PulsarDailyItems above. Only ever populated on a Pulsar Daily
+	// list-block generation, since finalize_daily_items is never offered
+	// otherwise. dailyItemsFinalMu guards it for the same concurrent-
+	// dispatch reason WizardFinal's mutex exists.
+	dailyItemsFinalMu sync.Mutex
+	DailyItemsFinal   *DailyItemsFinal
 }
 
 // WizardFinal is the tuned prompt the model drafted once it decided the
@@ -382,6 +401,37 @@ func (c *Context) SetWizardFinal(f *WizardFinal) {
 	defer c.wizardFinalMu.Unlock()
 	if c.WizardFinal == nil {
 		c.WizardFinal = f
+	}
+}
+
+// DailyItemsFinal is the structured list of distinct stories a Pulsar
+// Daily list-block generation (headlines/trending/custom blocks) drafted
+// once it decided it had enough — see finalize_daily_items.go. Never
+// persisted directly; gateway/pulsar_daily.go reads it off agent.Run's
+// Result and builds store.PulsarDailyBlockItem rows from it.
+type DailyItemsFinal struct {
+	Items []DailyItem `json:"items"`
+}
+
+// DailyItem is one distinct story within a Pulsar Daily list block.
+type DailyItem struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	// Source is a short outlet/site name (e.g. "The Verge"), not the URL
+	// itself — kept separate so the frontend can render "Title — Source"
+	// without parsing a domain out of URL.
+	Source string `json:"source,omitempty"`
+	URL    string `json:"url,omitempty"`
+}
+
+// SetDailyItemsFinal records the turn-ending drafted item list, if none
+// has been recorded yet this turn — same first-write-wins reasoning as
+// SetWizardFinal.
+func (c *Context) SetDailyItemsFinal(f *DailyItemsFinal) {
+	c.dailyItemsFinalMu.Lock()
+	defer c.dailyItemsFinalMu.Unlock()
+	if c.DailyItemsFinal == nil {
+		c.DailyItemsFinal = f
 	}
 }
 
@@ -679,6 +729,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"image_search": imageSearchDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
+		"finalize_daily_items":   finalizeDailyItemsDef,
 	}
 }
 

@@ -161,6 +161,26 @@ type PulsarDailyBlock struct {
 	// The frontend decodes it as the same ChartSpec shape ChartCard.svelte
 	// already renders for chat turns.
 	Chart json.RawMessage `json:"chart,omitempty"`
+	// Items holds a list-shaped block's distinct stories (headlines/
+	// trending/custom blocks) — populated only when the block's own
+	// agent.Run called finalize_daily_items; nil/empty means "prose
+	// block", and the frontend falls back to rendering Content as a
+	// single card the way every block has always rendered. Content is
+	// still populated even for an itemized block (a flattened join of
+	// these same items) purely so the diff-judge/gist/trace code paths,
+	// which are all text-based, keep working unchanged.
+	Items []PulsarDailyBlockItem `json:"items,omitempty"`
+}
+
+// PulsarDailyBlockItem is one distinct story within a list-shaped Pulsar
+// Daily block — see PulsarDailyBlock.Items and tools.DailyItem, which
+// this mirrors (store can't import tools; tools already imports store,
+// same reasoning as Chart's doc comment above).
+type PulsarDailyBlockItem struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Source  string `json:"source,omitempty"`
+	URL     string `json:"url,omitempty"`
 }
 
 // PulsarDailyEdition is one calendar date's assembled Daily page.

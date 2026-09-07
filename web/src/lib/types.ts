@@ -349,9 +349,21 @@ export interface PulsarDailyCustomBlock {
 	instructions: string;
 }
 
+// PulsarDailyBlockItem mirrors store.PulsarDailyBlockItem — one distinct
+// story within a list-shaped block.
+export interface PulsarDailyBlockItem {
+	title: string;
+	summary: string;
+	source?: string;
+	url?: string;
+}
+
 // PulsarDailyBlock mirrors store.PulsarDailyBlock — one rendered card in
 // an edition. image_url is only ever set for picture_of_day; chart is only
 // ever set for weather (see gateway/pulsar_daily.go's generateOneDailyBlock).
+// items is only ever set for a list-shaped block (headlines/trending/
+// custom) whose generation called finalize_daily_items — empty/absent
+// means a plain prose card, rendered from content as always.
 export interface PulsarDailyBlock {
 	key: string;
 	title: string;
@@ -360,6 +372,7 @@ export interface PulsarDailyBlock {
 	is_top_story: boolean;
 	image_url?: string;
 	chart?: ChartSpec;
+	items?: PulsarDailyBlockItem[];
 }
 
 // PulsarDailyEdition mirrors store.PulsarDailyEdition — one calendar
