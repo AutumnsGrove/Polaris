@@ -237,6 +237,36 @@ describe('AppState.handleEvent', () => {
 		expect(state.suggestions).toEqual([]);
 	});
 
+	// Regression test: a brand-new thread's dispatch()/send() path only
+	// ever sets currentThreadId (see 'done' below), never currentThread
+	// itself — only openThread() does that, normally when navigating to an
+	// *existing* thread. ChatView.svelte's header reads
+	// appState.currentThread.title (not appState.threads, which excludes
+	// pulsar threads — see its own doc comment), so without a refresh here
+	// the header silently kept showing no title at all for a freshly
+	// created thread, even after generateTitle's one-time LLM title landed
+	// server-side and the sidebar (via loadThreads()) already showed it.
+	it("done refreshes currentThread so a brand-new thread's freshly generated title reaches the header, not just the sidebar", async () => {
+		state.send('hello');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		expect(state.currentThread).toBeNull();
+
+		const fetchSpy = vi.fn((url: string) => {
+			if (url === '/api/threads/t1') {
+				return Promise.resolve({ ok: true, json: async () => ({ id: 't1', title: 'Capital of France' }) });
+			}
+			return Promise.resolve({ ok: true, json: async () => [] });
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		fireEvent(state, { type: 'done', thread_id: 't1', cost_usd: 0.002 });
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(fetchSpy).toHaveBeenCalledWith('/api/threads/t1');
+		expect(state.currentThread?.title).toBe('Capital of France');
+	});
+
 	// The backend now generates follow-up suggestions in a detached
 	// goroutine kicked off after 'done' ships (see gateway/turn.go), so
 	// the turn footer doesn't stall behind that extra LLM call. They
