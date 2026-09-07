@@ -18,8 +18,8 @@ import (
 // end and checked what actually lands in the persisted edition row.
 //
 // Blocks are deliberately picked to dodge agent.Run's tool-calling loop
-// (no SearXNG/Brave double needed): "quote" and "on_this_day" are plain
-// no-tools pick calls, "headlines" and "trending" are
+// (no SearXNG/Brave double needed): "quote" is a plain no-tools pick
+// call; "on_this_day", "headlines", and "trending" are all
 // dailyBlockResearch but a model that replies in plain prose with no
 // tool call makes agent.Run terminate after one round anyway, same as a
 // real "the model didn't need a tool" turn. Four blocks, not fewer —
@@ -32,7 +32,7 @@ import (
 func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 	bodies := []string{
 		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."), // Stage A: quote (pick)
-		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (pick)
+		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (research)
 		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),          // Stage A: headlines (research)
 		plainSSEBody("A new open-weight model release was the big story trending today."),                  // Stage A: trending (research)
 		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"trending\",\"reasoning\":\"The open-weight release is a bigger development than a quiet headlines day\"}"}}`), // Stage B
@@ -191,7 +191,7 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 func TestRunDailyPipeline_CustomBlock(t *testing.T) {
 	bodies := []string{
 		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."), // Stage A: quote (pick)
-		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (pick)
+		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (research)
 		plainSSEBody("Otiose — serving no practical purpose. From Latin otium, \"leisure\"."),               // Stage A: word_of_day (pick)
 		plainSSEBody("NVDA closed at $142.50, up 2%. AAPL closed at $228.10, roughly flat on the day."),     // Stage A: custom block (research)
 		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"custom_stocks\",\"reasoning\":\"Only notable candidate today\"}"}}`), // Stage B

@@ -71,7 +71,15 @@ type dailyBlockSpec struct {
 var dailyBlockRegistry = []dailyBlockSpec{
 	{Key: "word_of_day", Title: "Word of the Day", Kind: dailyBlockPick, Watch: false},
 	{Key: "weather", Title: "Weather", Kind: dailyBlockDirect, Watch: false},
-	{Key: "on_this_day", Title: "On This Day", Kind: dailyBlockPick, Watch: false},
+	// on_this_day was a dailyBlockPick (no tools) until a real bug was found
+	// live: a custom instruction asking it to "verify" the historical fact
+	// it picks made a knowledge-only call produce a degenerate empty
+	// completion, since it has no way to verify anything. Promoted to
+	// dailyBlockResearch so it actually can — real web_search + a citation,
+	// not an unverified claim presented as fact. Still Watch: false; a
+	// different historical event each day is still a fresh pick by
+	// construction, not something to diff against yesterday.
+	{Key: "on_this_day", Title: "On This Day", Kind: dailyBlockResearch, Watch: false},
 	{Key: "quote", Title: "Quote of the Day", Kind: dailyBlockPick, Watch: false},
 	{Key: "picture_of_day", Title: "Picture of the Day", Kind: dailyBlockDirect, Watch: false},
 	{Key: "headlines", Title: "Top Headlines", Kind: dailyBlockResearch, Watch: true},
@@ -131,9 +139,6 @@ var dailyPickTasks = map[string]string{
 	"word_of_day": "Pick one interesting, not-too-common English word and write a short Word of the Day " +
 		"entry: the word, its definition, and a one-sentence note on its etymology or a memorable example " +
 		"of use. Keep it to 2-3 short sentences total — this is one card in a larger digest, not a full essay.",
-	"on_this_day": "Pick one genuinely interesting historical event that happened on today's calendar date " +
-		"(any past year) and write 2-3 short sentences about it. Prefer something notable over the most " +
-		"overused textbook example if you can.",
 	"quote": "Share one genuinely interesting quote (with correct attribution) and, in one short sentence, " +
 		"why it's worth reading today. Avoid the most overused quotes if a fresher one fits.",
 }
@@ -143,6 +148,12 @@ var dailyResearchTasks = map[string]string{
 		"the most significant stories, written for someone who wants the gist, not a full briefing.",
 	"trending": "What's genuinely trending or being talked about today (news, culture, internet, or " +
 		"otherwise)? 2-4 sentences, skimmable.",
+	// on_this_day moved here from dailyPickTasks — see the registry entry's
+	// doc comment for why a knowledge-only call was the wrong shape for a
+	// task that asks the model to verify anything.
+	"on_this_day": "Look up and verify one genuinely interesting historical event that happened on today's " +
+		"calendar date (any past year) using web_search, then write 2-3 short sentences about it with a " +
+		"source link. Prefer something notable over the most overused textbook example if you can.",
 	"local": "Give me a short local news/events digest for {{location}} — 2-4 sentences on anything notable " +
 		"happening there today.",
 	"sports": "Give me a short update on today's notable sports scores/results for these teams/leagues: " +
