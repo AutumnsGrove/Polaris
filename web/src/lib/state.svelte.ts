@@ -1249,6 +1249,23 @@ export class AppState {
 					// for a plain send: the variants map just comes back
 					// the same as before.
 					void this.refreshVariants(e.thread_id);
+					// A brand-new thread's first turn (or a first-message
+					// edit) just got its one-time LLM-generated title
+					// persisted server-side (see gateway/turn.go's
+					// isNewThread/isFirstMessageEdit title-gating block) —
+					// but currentThread itself was never populated for this
+					// flow (dispatch()/send() only ever set currentThreadId,
+					// not currentThread; only openThread() does that,
+					// normally on navigating to an *existing* thread). Without
+					// this, ChatView.svelte's header (which reads
+					// appState.currentThread.title, not the sidebar's
+					// already-refreshed `threads` list, to also cover a
+					// pulsar thread the list excludes) silently kept showing
+					// no title at all until the thread was closed and
+					// reopened, even though the real title existed server-side
+					// the whole time. Harmless no-op on every other turn: the
+					// row comes back the same as before.
+					void this.refreshCurrentThreadIfMatches(e.thread_id);
 				}
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
