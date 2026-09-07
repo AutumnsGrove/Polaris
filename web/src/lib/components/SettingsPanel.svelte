@@ -5,6 +5,7 @@
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import MemorySettings from './MemorySettings.svelte';
+	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
 
 	function close() {
@@ -17,6 +18,7 @@
 	// settings view, which is the right default every time.
 	let showStats = $state(false);
 	let showMemory = $state(false);
+	let showMemoryImport = $state(false);
 	let showTools = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
@@ -139,6 +141,20 @@
 					<p class="hint">Loading…</p>
 				</section>
 			{/if}
+		{:else if showMemoryImport}
+			<div class="modal-panel-header">
+				<button
+					class="icon-btn"
+					onclick={() => (showMemoryImport = false)}
+					title="Back to Memory"
+				>
+					<ChevronLeft size={18} />
+				</button>
+				<h2>Import memories</h2>
+				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
+			</div>
+
+			<MemoryImport />
 		{:else if showMemory}
 			<div class="modal-panel-header">
 				<button class="icon-btn" onclick={() => (showMemory = false)} title="Back to settings">
@@ -148,7 +164,7 @@
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 			</div>
 
-			<MemorySettings />
+			<MemorySettings onImport={() => (showMemoryImport = true)} />
 		{:else if showTools}
 			<div class="modal-panel-header">
 				<button class="icon-btn" onclick={() => (showTools = false)} title="Back to settings">

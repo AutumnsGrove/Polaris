@@ -53,6 +53,8 @@ type Set struct {
 		TitleRegenerateTask   string `yaml:"title_regenerate_task"`
 		CompactionSystem      string `yaml:"compaction_system"`
 		MemoryChatSystem      string `yaml:"memory_chat_system"`
+		MemoryExportPrompt    string `yaml:"memory_export_prompt"`
+		MemoryImportSystem    string `yaml:"memory_import_system"`
 	} `yaml:"turn"`
 
 	Tools struct {
@@ -305,6 +307,62 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"single best match rather than asking a clarifying question — there's no back-and-forth here, just " +
 		"one instruction and one resulting action.\n\nCurrent memories:\n%s"
 
+	d.Turn.MemoryExportPrompt = "Export all of your stored memories and any context you've learned about me " +
+		"from past conversations. Preserve my words verbatim where possible, especially for instructions and " +
+		"preferences.\n\n## Categories (output in this order):\n\n1. **Instructions**: Rules I've explicitly " +
+		"asked you to follow going forward — tone, format, style, \"always do X\", \"never do Y\", and " +
+		"corrections to your behavior. Only include rules from stored memories, not from conversations.\n\n" +
+		"2. **Identity**: Name, age, location, education, family, relationships, languages, and personal " +
+		"interests.\n\n3. **Career**: Current and past roles, companies, and general skill areas.\n\n" +
+		"4. **Projects**: Projects I meaningfully built or committed to. Ideally ONE entry per project. " +
+		"Include what it does, current status, and any key decisions. Use the project name or a short " +
+		"descriptor as the first words of the entry.\n\n5. **Preferences**: Opinions, tastes, and " +
+		"working-style preferences that apply broadly.\n\n## Format:\n\nUse section headers for each " +
+		"category. Within each category, list one entry per line, sorted by oldest date first. Format each " +
+		"line as:\n\n[YYYY-MM-DD] - Entry content here.\n\nIf no date is known, use [unknown] instead.\n\n" +
+		"## Output:\n- Wrap the entire export in a single code block for easy copying.\n- After the code " +
+		"block, state whether this is the complete set or if more remain."
+
+	d.Turn.MemoryImportSystem = "You're importing a memory export from another AI assistant into Polaris's " +
+		"own memory store — a one-time migration, not a normal conversation. The user has pasted, as their " +
+		"message below, that other assistant's answer to a prompt asking it to describe everything it " +
+		"remembers about them, grouped into Instructions/Identity/Career/Projects/Preferences sections with " +
+		"one dated fact per line in the form \"[YYYY-MM-DD] - fact\" or \"[unknown] - fact\".\n\n" +
+		"Default to NOT importing most of it. An export dump is written by an assistant trying to be " +
+		"thorough, not one applying the \"worth remembering in every future conversation\" bar the memory " +
+		"tool already holds every write to — a line existing in the dump doesn't mean it clears that bar, " +
+		"and dozens of lines being formatted identically doesn't mean dozens of them deserve their own " +
+		"memory. Skip a one-off event, a passing hobby or taste mention that wouldn't change how you'd " +
+		"answer an unrelated future question (a favorite season, a single food like/dislike, one movie " +
+		"watched once, a single game they play), or anything that just restates something already obvious. " +
+		"When in doubt, leave it out — a fact worth keeping will resurface naturally in a real conversation " +
+		"and get saved properly then.\n\n" +
+		"For what does clear the bar, don't write one memory per line either. Bundle related minor facts — " +
+		"several hobbies, several small tastes, several biographical details that are individually thin but " +
+		"collectively describe who they are — into a small number of consolidated memories (e.g. one " +
+		"\"user-interests\" memory listing hobbies together, one \"user-background\" memory covering " +
+		"biography), rather than a separate memory per fact. Reserve a standalone memory for something " +
+		"substantial enough to stand alone on its own permanent line in the always-shown index: an identity " +
+		"essential (name, location, career), an explicit instruction or correction, an ongoing project, or a " +
+		"preference significant enough that bundling it in would bury it. A good target for a real export " +
+		"dump is a small handful of memories per category, not one per line.\n\n" +
+		"Map categories to Polaris's own four types: Instructions -> feedback (one memory per distinct rule, " +
+		"never bundled — each is independently actionable). Projects -> project, one memory per project, " +
+		"slugged project-*, never user-*. Identity/Career/Preferences -> user, bundled per the paragraph " +
+		"above rather than one-per-line. A Preference that's really guidance on how to work with them " +
+		"(\"always do X\", \"never do Y\") -> feedback instead of user. A line with a real date (not " +
+		"\"[unknown]\") should carry that date as occurred_at on whichever memory it ends up in, normalized " +
+		"to plain YYYY-MM-DD; if several dated facts land in one bundled memory, use whichever date is most " +
+		"significant, or leave occurred_at unset if none stands out.\n\n" +
+		"Before writing, check the current index below for a memory this fact supersedes, contradicts, or " +
+		"restates, or an existing bundled memory it belongs alongside — edit that memory in place instead " +
+		"of creating a new one that duplicates or fragments it further. Keep each description short enough " +
+		"to fit the memory tool's own character cap; put anything longer in content instead.\n\n" +
+		"Once you've gone through the whole dump, reply with one short, plain-text summary covering both " +
+		"what was imported (roughly how many memories, of which kinds) and roughly how much was " +
+		"intentionally left out as not worth keeping — no markdown, no per-memory play-by-play.\n\n" +
+		"Current memories:\n%s"
+
 	d.Tools.WebReadFilterSystem = "You are the filter pass for a research assistant's web_read tool: a narrow, " +
 		"mechanical extraction step, not a general assistant. You will be given an instruction and a page's " +
 		"extracted text. Follow the instruction precisely and return ONLY what it asked for — no commentary, " +
@@ -492,6 +550,22 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Turn.CompactionSystem == "" {
 		s.Turn.CompactionSystem = defaults.Turn.CompactionSystem
+	}
+	// MemoryChatSystem was missing from this fallback list entirely until
+	// now — a real gap: an installed prompts.yaml predating this prompt's
+	// addition, or one with the key accidentally deleted, would send the
+	// memory-chat model call an empty system prompt (just the raw
+	// fmt.Sprintf %s memory index, no instructions at all) instead of
+	// falling back to the compiled-in default like every other prompt
+	// here does.
+	if s.Turn.MemoryChatSystem == "" {
+		s.Turn.MemoryChatSystem = defaults.Turn.MemoryChatSystem
+	}
+	if s.Turn.MemoryExportPrompt == "" {
+		s.Turn.MemoryExportPrompt = defaults.Turn.MemoryExportPrompt
+	}
+	if s.Turn.MemoryImportSystem == "" {
+		s.Turn.MemoryImportSystem = defaults.Turn.MemoryImportSystem
 	}
 	if s.Tools.WebReadFilterSystem == "" {
 		s.Tools.WebReadFilterSystem = defaults.Tools.WebReadFilterSystem

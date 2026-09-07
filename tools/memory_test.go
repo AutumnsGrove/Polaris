@@ -25,7 +25,7 @@ func (f *fakeMemoryStore) wireInto(ctx *Context) {
 	ctx.ListMemories = func() ([]store.MemoryIndexEntry, error) {
 		entries := make([]store.MemoryIndexEntry, 0, len(f.rows))
 		for _, m := range f.rows {
-			entries = append(entries, store.MemoryIndexEntry{Name: m.Name, Type: m.Type, Description: m.Description})
+			entries = append(entries, store.MemoryIndexEntry{Name: m.Name, Type: m.Type, Description: m.Description, OccurredAt: m.OccurredAt})
 		}
 		return entries, nil
 	}
@@ -36,14 +36,14 @@ func (f *fakeMemoryStore) wireInto(ctx *Context) {
 		}
 		return &m, nil
 	}
-	ctx.WriteMemory = func(name, memType, description, content string) error {
+	ctx.WriteMemory = func(name, memType, description, content, occurredAt string) error {
 		if _, exists := f.rows[name]; exists {
 			return store.ErrMemoryExists
 		}
-		f.rows[name] = store.Memory{Name: name, Type: memType, Description: description, Content: content}
+		f.rows[name] = store.Memory{Name: name, Type: memType, Description: description, Content: content, OccurredAt: occurredAt}
 		return nil
 	}
-	ctx.EditMemory = func(name, memType, description, content string) error {
+	ctx.EditMemory = func(name, memType, description, content, occurredAt string) error {
 		m, ok := f.rows[name]
 		if !ok {
 			return store.ErrMemoryNotFound
@@ -56,6 +56,9 @@ func (f *fakeMemoryStore) wireInto(ctx *Context) {
 		}
 		if content != "" {
 			m.Content = content
+		}
+		if occurredAt != "" {
+			m.OccurredAt = occurredAt
 		}
 		f.rows[name] = m
 		return nil
@@ -195,6 +198,34 @@ func TestHandleMemory_ViewListAndPromptShareFormatting(t *testing.T) {
 	}
 	if promptResult != wantLine {
 		t.Errorf("MemoryIndexPrompt result = %q, want %q", promptResult, wantLine)
+	}
+}
+
+func TestHandleMemory_WriteWithOccurredAtAppearsInIndexAndView(t *testing.T) {
+	ctx, fs := newMemoryTestContext()
+	result := Dispatch("memory", `{"action":"write","name":"dated","type":"project","description":"d","content":"c","occurred_at":"2026-03-01"}`, ctx, "test-call")
+	if !strings.Contains(result, "2026-03-01") {
+		t.Errorf("write result = %q, want it to contain the occurred_at date", result)
+	}
+	if fs.rows["dated"].OccurredAt != "2026-03-01" {
+		t.Errorf("OccurredAt = %q, want 2026-03-01", fs.rows["dated"].OccurredAt)
+	}
+
+	viewResult := Dispatch("memory", `{"action":"view"}`, ctx, "test-call")
+	wantLine := "- [project, 2026-03-01] dated: d"
+	if viewResult != wantLine {
+		t.Errorf("view result = %q, want %q", viewResult, wantLine)
+	}
+	if got := MemoryIndexPrompt(ctx); got != wantLine {
+		t.Errorf("MemoryIndexPrompt = %q, want %q", got, wantLine)
+	}
+}
+
+func TestHandleMemory_WriteRejectsMalformedOccurredAt(t *testing.T) {
+	ctx, _ := newMemoryTestContext()
+	result := Dispatch("memory", `{"action":"write","name":"dated","type":"project","description":"d","content":"c","occurred_at":"not-a-date"}`, ctx, "test-call")
+	if !strings.HasPrefix(result, "error:") {
+		t.Errorf("result = %q, want an error for a malformed occurred_at", result)
 	}
 }
 

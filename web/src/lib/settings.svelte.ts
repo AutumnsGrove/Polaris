@@ -49,6 +49,10 @@ export interface Memory {
 	type: 'user' | 'feedback' | 'project' | 'reference';
 	description: string;
 	content: string;
+	// occurred_at: optional "YYYY-MM-DD" for when the fact itself became
+	// true, distinct from created_at/updated_at's row-bookkeeping
+	// timestamps — empty string when not set, see store/memory.go.
+	occurred_at: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -140,6 +144,21 @@ export class SettingsState {
 	// channel; a failed request uses showToast instead (see
 	// sendMemoryInstruction).
 	memoryChatMessage = $state('');
+
+	// "Bring memories from another AI" — see MemoryImport.svelte. exportPrompt
+	// is fetched lazily (not at app startup, unlike most of this class'
+	// other state) since it's only ever needed once the user actually opens
+	// that subpage; '' before then is indistinguishable from "not loaded
+	// yet" here on purpose — the component's own fetch-on-mount just always
+	// (re)loads it, same "don't trust a stale snapshot" reasoning as
+	// loadMemories below, so there's no separate loaded flag to track.
+	exportPrompt = $state('');
+	// True while a pasted dump is being parsed server-side — this is a
+	// much longer round trip than memoryChatBusy's (see
+	// maxMemoryImportToolTurns vs. maxMemoryChatToolTurns), often several
+	// tool-call rounds before the model answers.
+	importBusy = $state(false);
+	importMessage = $state('');
 
 	// True once load() has resolved — +page.svelte's composer uses this
 	// (not just checking defaultFocusMode's value) to apply the loaded
@@ -549,6 +568,50 @@ export class SettingsState {
 			this.memoryChatMessage = "Couldn't reach the server — try again.";
 		} finally {
 			this.memoryChatBusy = false;
+		}
+	}
+
+	// Fetched fresh every time MemoryImport.svelte mounts — the whole point
+	// of serving this from prompts.yaml instead of hardcoding it in the
+	// frontend is that it's hot-editable server-side (see
+	// gateway/memory_import.go's handleMemoryExportPrompt), so a stale
+	// client-cached copy would defeat that.
+	async loadExportPrompt() {
+		try {
+			const res = await fetch('/api/memories/export-prompt');
+			if (!res.ok) return;
+			const data = await res.json();
+			this.exportPrompt = data.prompt ?? '';
+		} catch {
+			// Best-effort — the copy button just has nothing to copy yet.
+		}
+	}
+
+	// Drives the "paste what it said back" box — one request runs the
+	// whole parse/dedup/write pass server-side (see
+	// gateway/memory_import.go's handleMemoryImport) and returns a summary
+	// plus the fully refreshed list, same response shape
+	// sendMemoryInstruction gets from its own endpoint.
+	async importMemories(dump: string) {
+		this.importBusy = true;
+		this.importMessage = '';
+		try {
+			const res = await fetch('/api/memories/import', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ dump })
+			});
+			if (!res.ok) {
+				this.importMessage = "Couldn't parse that — try pasting the whole export again.";
+				return;
+			}
+			const data = await res.json();
+			this.importMessage = data.message ?? '';
+			this.memories = data.memories ?? this.memories;
+		} catch {
+			this.importMessage = 'Could not reach the server — try again.';
+		} finally {
+			this.importBusy = false;
 		}
 	}
 

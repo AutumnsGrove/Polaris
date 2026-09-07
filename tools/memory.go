@@ -51,6 +51,10 @@ var memoryDef = llm.ToolDef{
 					"type":        "string",
 					"description": "The full memory body, only fetched on demand via view. For feedback/project memories, lead with the fact or rule, then a Why: line and a How to apply: line. Required for write; optional for edit (omit to leave unchanged).",
 				},
+				"occurred_at": map[string]interface{}{
+					"type": "string",
+					"description": "Optional ISO date (YYYY-MM-DD) for when this fact became true or was learned — set it when the date itself matters (a decision, a deadline, a fact that could go stale) and convert relative phrasing (\"yesterday\", \"last week\") to an absolute date using today's date. Omit for durable facts with no meaningful date. Optional for both write and edit; omit on edit to leave unchanged.",
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -85,6 +89,7 @@ func handleMemory(argsJSON string, ctx *Context, callID string) string {
 		Type        string `json:"type"`
 		Description string `json:"description"`
 		Content     string `json:"content"`
+		OccurredAt  string `json:"occurred_at"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "memory", nil, "error: "+err.Error(), callID)
@@ -93,17 +98,17 @@ func handleMemory(argsJSON string, ctx *Context, callID string) string {
 	logArgs := map[string]interface{}{"action": args.Action, "name": args.Name}
 	ctx.Emit("tool_call", map[string]interface{}{"tool": "memory", "args": logArgs, "call_id": callID})
 
-	result := dispatchMemoryAction(ctx, args.Action, args.Name, args.Type, args.Description, args.Content)
+	result := dispatchMemoryAction(ctx, args.Action, args.Name, args.Type, args.Description, args.Content, args.OccurredAt)
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "memory", "result": result, "call_id": callID})
 	return result
 }
 
-func dispatchMemoryAction(ctx *Context, action, name, memType, description, content string) string {
+func dispatchMemoryAction(ctx *Context, action, name, memType, description, content, occurredAt string) string {
 	switch action {
 	case "write":
-		return handleMemoryWrite(ctx, name, memType, description, content)
+		return handleMemoryWrite(ctx, name, memType, description, content, occurredAt)
 	case "edit":
-		return handleMemoryEdit(ctx, name, memType, description, content)
+		return handleMemoryEdit(ctx, name, memType, description, content, occurredAt)
 	case "view":
 		return handleMemoryView(ctx, name)
 	case "forget":
@@ -113,7 +118,13 @@ func dispatchMemoryAction(ctx *Context, action, name, memType, description, cont
 	}
 }
 
-func handleMemoryWrite(ctx *Context, name, memType, description, content string) string {
+// occurredAtRe enforces the plain "YYYY-MM-DD" shape the tool description
+// asks the model for — no time component, since occurred_at is a date the
+// model reasons about (e.g. "is this fact still current"), never
+// formatted or compared like the DATETIME created_at/updated_at columns.
+var occurredAtRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+func handleMemoryWrite(ctx *Context, name, memType, description, content, occurredAt string) string {
 	if ctx.WriteMemory == nil {
 		return "error: memory is not available in this context"
 	}
@@ -129,13 +140,16 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 	if len(description) > MaxMemoryDescriptionChars {
 		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), MaxMemoryDescriptionChars)
 	}
-	if err := ctx.WriteMemory(name, memType, description, content); err != nil {
+	if occurredAt != "" && !occurredAtRe.MatchString(occurredAt) {
+		return "error: occurred_at must be a plain YYYY-MM-DD date, or omitted"
+	}
+	if err := ctx.WriteMemory(name, memType, description, content, occurredAt); err != nil {
 		if err == store.ErrMemoryExists {
 			return fmt.Sprintf("error: a memory named %q already exists — use action=edit to update it", name)
 		}
 		return "error: " + err.Error()
 	}
-	return fmt.Sprintf("saved memory %q\n\n%s", name, formatMemoryBody(memType, description, content))
+	return fmt.Sprintf("saved memory %q\n\n%s", name, formatMemoryBody(memType, description, content, occurredAt))
 }
 
 // formatMemoryBody renders a memory's full type/description/content — used
@@ -146,8 +160,11 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content string)
 // contains short of a follow-up view call. This is also what a user
 // expanding that tool-call block in the chat transcript UI sees, per its
 // own doc comment in ToolEvent.svelte.
-func formatMemoryBody(memType, description, content string) string {
-	return fmt.Sprintf("[%s] %s\n\n%s", memType, description, content)
+func formatMemoryBody(memType, description, content, occurredAt string) string {
+	if occurredAt == "" {
+		return fmt.Sprintf("[%s] %s\n\n%s", memType, description, content)
+	}
+	return fmt.Sprintf("[%s, %s] %s\n\n%s", memType, occurredAt, description, content)
 }
 
 // handleMemoryEdit passes name/memType/description/content straight through
@@ -156,7 +173,7 @@ func formatMemoryBody(memType, description, content string) string {
 // reintroduce exactly the concurrent-edit race that a single atomic UPDATE
 // avoids. An empty memType/description/content is EditMemory's own signal
 // for "leave this field alone", so there's nothing here to merge.
-func handleMemoryEdit(ctx *Context, name, memType, description, content string) string {
+func handleMemoryEdit(ctx *Context, name, memType, description, content, occurredAt string) string {
 	if ctx.EditMemory == nil {
 		return "error: memory is not available in this context"
 	}
@@ -169,7 +186,10 @@ func handleMemoryEdit(ctx *Context, name, memType, description, content string) 
 	if len(description) > MaxMemoryDescriptionChars {
 		return fmt.Sprintf("error: description is %d characters, must be %d or fewer — it's shown in full on every future turn, so keep it short and put detail in content instead", len(description), MaxMemoryDescriptionChars)
 	}
-	if err := ctx.EditMemory(name, memType, description, content); err != nil {
+	if occurredAt != "" && !occurredAtRe.MatchString(occurredAt) {
+		return "error: occurred_at must be a plain YYYY-MM-DD date, or omitted"
+	}
+	if err := ctx.EditMemory(name, memType, description, content, occurredAt); err != nil {
 		if err == store.ErrMemoryNotFound {
 			return fmt.Sprintf("error: no memory named %q — use action=write to create it", name)
 		}
@@ -182,7 +202,7 @@ func handleMemoryEdit(ctx *Context, name, memType, description, content string) 
 	// atomic UPDATE already committed before this read starts.
 	if ctx.GetMemory != nil {
 		if m, err := ctx.GetMemory(name); err == nil {
-			return fmt.Sprintf("updated memory %q\n\n%s", name, formatMemoryBody(m.Type, m.Description, m.Content))
+			return fmt.Sprintf("updated memory %q\n\n%s", name, formatMemoryBody(m.Type, m.Description, m.Content, m.OccurredAt))
 		}
 	}
 	return fmt.Sprintf("updated memory %q", name)
@@ -200,7 +220,10 @@ func handleMemoryView(ctx *Context, name string) string {
 			}
 			return "error: " + err.Error()
 		}
-		return fmt.Sprintf("[%s] %s — %s\n\n%s", m.Type, m.Name, m.Description, m.Content)
+		if m.OccurredAt == "" {
+			return fmt.Sprintf("[%s] %s — %s\n\n%s", m.Type, m.Name, m.Description, m.Content)
+		}
+		return fmt.Sprintf("[%s, %s] %s — %s\n\n%s", m.Type, m.OccurredAt, m.Name, m.Description, m.Content)
 	}
 
 	if ctx.ListMemories == nil {
@@ -269,14 +292,21 @@ func MemoryIndexPrompt(ctx *Context) string {
 // {memories} prompt block (MemoryIndexPrompt) and by memory(action=view)'s
 // list-all output (handleMemoryView), so a model that's learned to read one
 // never sees the same data reformatted differently when it double-checks
-// via the other.
+// via the other. A dated entry gets its date folded into the same bracket
+// ("- [type, YYYY-MM-DD] name: description") rather than a separate
+// column, so undated entries (most of them — occurred_at is opt-in) don't
+// pay for a blank field on every single line.
 func formatMemoryIndex(entries []store.MemoryIndexEntry) string {
 	var sb strings.Builder
 	for i, e := range entries {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		fmt.Fprintf(&sb, "- [%s] %s: %s", e.Type, e.Name, e.Description)
+		if e.OccurredAt == "" {
+			fmt.Fprintf(&sb, "- [%s] %s: %s", e.Type, e.Name, e.Description)
+		} else {
+			fmt.Fprintf(&sb, "- [%s, %s] %s: %s", e.Type, e.OccurredAt, e.Name, e.Description)
+		}
 	}
 	return sb.String()
 }

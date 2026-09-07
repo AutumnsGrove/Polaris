@@ -15,7 +15,7 @@ import (
 
 func TestHandleListMemories(t *testing.T) {
 	h := newTestHarness(t, "")
-	if err := h.db.CreateMemory("user-timezone", "user", "the user's timezone", "US/Pacific"); err != nil {
+	if err := h.db.CreateMemory("user-timezone", "user", "the user's timezone", "US/Pacific", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestHandleListMemories(t *testing.T) {
 
 func TestHandleUpdateMemory(t *testing.T) {
 	h := newTestHarness(t, "")
-	if err := h.db.CreateMemory("partial", "user", "orig desc", "orig content"); err != nil {
+	if err := h.db.CreateMemory("partial", "user", "orig desc", "orig content", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
@@ -63,6 +63,50 @@ func TestHandleUpdateMemory(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateMemory_OccurredAt(t *testing.T) {
+	h := newTestHarness(t, "")
+	if err := h.db.CreateMemory("dated", "project", "d", "c", ""); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"occurred_at": "2026-03-01"})
+	req, _ := http.NewRequest(http.MethodPatch, h.url("/api/memories/dated"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+
+	m, err := h.db.GetMemory("dated")
+	if err != nil {
+		t.Fatalf("GetMemory: %v", err)
+	}
+	if m.OccurredAt != "2026-03-01" {
+		t.Errorf("OccurredAt = %q, want 2026-03-01", m.OccurredAt)
+	}
+}
+
+func TestHandleUpdateMemory_RejectsMalformedOccurredAt(t *testing.T) {
+	h := newTestHarness(t, "")
+	if err := h.db.CreateMemory("dated", "project", "d", "c", ""); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"occurred_at": "not-a-date"})
+	req, _ := http.NewRequest(http.MethodPatch, h.url("/api/memories/dated"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestHandleUpdateMemory_UnknownNameReturns404(t *testing.T) {
 	h := newTestHarness(t, "")
 	body, _ := json.Marshal(map[string]string{"description": "x"})
@@ -79,7 +123,7 @@ func TestHandleUpdateMemory_UnknownNameReturns404(t *testing.T) {
 
 func TestHandleUpdateMemory_RejectsOverlongDescription(t *testing.T) {
 	h := newTestHarness(t, "")
-	if err := h.db.CreateMemory("m", "user", "d", "c"); err != nil {
+	if err := h.db.CreateMemory("m", "user", "d", "c", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 	long := strings.Repeat("a", 2001)
@@ -97,7 +141,7 @@ func TestHandleUpdateMemory_RejectsOverlongDescription(t *testing.T) {
 
 func TestHandleDeleteMemory(t *testing.T) {
 	h := newTestHarness(t, "")
-	if err := h.db.CreateMemory("temp", "project", "d", "c"); err != nil {
+	if err := h.db.CreateMemory("temp", "project", "d", "c", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
@@ -166,7 +210,7 @@ func TestHandleMemoryChat_AppliesModelChosenEditAndReturnsConfirmation(t *testin
 	toolArgs := `{"action":"forget","name":"stale-fact"}`
 	srv := memoryChatLLMServer(t, toolArgs, "Forgot the memory about the stale fact.")
 	h := newTestHarness(t, srv.URL)
-	if err := h.db.CreateMemory("stale-fact", "project", "no longer true", "this was true once"); err != nil {
+	if err := h.db.CreateMemory("stale-fact", "project", "no longer true", "this was true once", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 

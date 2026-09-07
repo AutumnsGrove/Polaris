@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { Trash2, Send, Brain, LoaderPinwheel } from '@lucide/svelte';
+	import type { Memory } from '$lib/settings.svelte';
+	import { Trash2, Send, Brain, LoaderPinwheel, Download, FileDown } from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import ConfirmModal from './ConfirmModal.svelte';
+
+	// Owned by SettingsPanel, not this component — "Import" opens its own
+	// sibling subpage (MemoryImport.svelte) one level down from Memory,
+	// same flat "showX" nav SettingsPanel already uses for Stats/Memory/
+	// Tools, just one button deeper instead of a true nested route.
+	let { onImport }: { onImport: () => void } = $props();
 
 	// Re-fetched every time this mounts (the panel unmounts this entirely
 	// on close, same as the rest of SettingsPanel's sub-pages) rather than
@@ -76,6 +83,15 @@
 		if (Number.isNaN(d.getTime())) return iso;
 		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 	}
+
+	// occurred_at (when set) is the date that actually matters to a reader
+	// scanning this list — when the fact became true — vs. updated_at,
+	// which is only "when Polaris last touched the row" and can lag or
+	// lead the real date by a lot. Falls back to updated_at for the common
+	// case of a memory with no meaningful date of its own.
+	function memoryDateLabel(memory: Memory): string {
+		return memory.occurred_at ? formatDate(memory.occurred_at) : formatDate(memory.updated_at);
+	}
 </script>
 
 <section class="memory-instruction">
@@ -111,6 +127,9 @@
 	{#if appState.settings.memoryChatMessage}
 		<p class="hint chat-confirmation">{appState.settings.memoryChatMessage}</p>
 	{/if}
+	<button class="btn import-link-btn" onclick={onImport}>
+		<Download size={14} /> Bring memories from another AI
+	</button>
 </section>
 
 <section class="memory-list">
@@ -130,7 +149,7 @@
 					<div class="memory-row-header">
 						<span class="type-badge">{typeLabels[memory.type] ?? memory.type}</span>
 						<span class="memory-name">{memory.name}</span>
-						<span class="memory-date">{formatDate(memory.updated_at)}</span>
+						<span class="memory-date">{memoryDateLabel(memory)}</span>
 					</div>
 					<p class="memory-description">{memory.description}</p>
 				</div>
@@ -170,6 +189,9 @@
 				{/if}
 			</div>
 		{/each}
+		<a class="btn export-btn" href="/api/memories/export" download>
+			<FileDown size={14} /> Export all memories
+		</a>
 	{/if}
 </section>
 
@@ -263,6 +285,49 @@
 
 	.chat-confirmation {
 		padding: 0 var(--space-sm);
+	}
+
+	.import-link-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-xs);
+		width: 100%;
+		margin-top: var(--space-sm);
+		border: none;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-md);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+	}
+
+	.import-link-btn:hover {
+		color: var(--color-text);
+	}
+
+	/* An <a>, not a <button> — a plain download link is enough to trigger
+	   the browser's native "save file" flow (see gateway/memory_export.go's
+	   Content-Disposition header), no fetch/Blob/synthetic-click JS
+	   needed, but that means resetting the button-like styling browsers
+	   don't apply to anchors by default. */
+	.export-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-xs);
+		margin-top: var(--space-sm);
+		border: none;
+		background: var(--color-surface-2);
+		border-radius: var(--radius-md);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+		text-decoration: none;
+	}
+
+	.export-btn:hover {
+		color: var(--color-text);
 	}
 
 	.memory-list {

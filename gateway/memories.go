@@ -6,10 +6,12 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"polaris/llm"
@@ -34,6 +36,7 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 		Type        *string `json:"type"`
 		Description *string `json:"description"`
 		Content     *string `json:"content"`
+		OccurredAt  *string `json:"occurred_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -60,8 +63,16 @@ func (s *Server) handleUpdateMemory(w http.ResponseWriter, r *http.Request) {
 	if req.Content != nil {
 		content = *req.Content
 	}
+	occurredAt := ""
+	if req.OccurredAt != nil {
+		occurredAt = *req.OccurredAt
+		if occurredAt != "" && !occurredAtRe.MatchString(occurredAt) {
+			http.Error(w, "occurred_at must be a plain YYYY-MM-DD date", http.StatusBadRequest)
+			return
+		}
+	}
 
-	if err := s.db.UpdateMemory(name, memType, description, content); err != nil {
+	if err := s.db.UpdateMemory(name, memType, description, content, occurredAt); err != nil {
 		if errors.Is(err, store.ErrMemoryNotFound) {
 			http.Error(w, "memory not found", http.StatusNotFound)
 		} else {
@@ -98,6 +109,10 @@ func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 // its own small set here rather than exporting that function, since this
 // is the only place outside the tools package that needs the same check.
 var validMemoryTypes = map[string]bool{"user": true, "feedback": true, "project": true, "reference": true}
+
+// occurredAtRe mirrors tools.occurredAtRe (unexported) — same rationale as
+// validMemoryTypes above.
+var occurredAtRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 // maxMemoryChatToolTurns bounds handleMemoryChat's tool-call loop. Raised
 // from an initial 4 after a live test showed a single instruction naming
@@ -142,8 +157,34 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.FinishTurn()
 
+	confirmation, err := s.runMemoryToolLoop(r.Context(), prompts.Get().Turn.MemoryChatSystem, instruction, maxMemoryChatToolTurns)
+	if err != nil {
+		log.Warn("memory chat completion failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	memories, err := s.db.ListMemoriesFull()
+	if err != nil {
+		log.Warn("listing memories after memory chat failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.db.LogEvent("", "info", "memory", "memory changed via settings panel chat", map[string]interface{}{"instruction": instruction}, "")
+	writeJSON(w, map[string]interface{}{"message": confirmation, "memories": memories})
+}
+
+// runMemoryToolLoop drives a model with only the memory tool available
+// until it answers in plain text instead of calling the tool again — the
+// shared engine behind both handleMemoryChat (a short user instruction)
+// and handleMemoryImport (a whole pasted memory dump, see
+// gateway/memory_import.go), which differ only in their system prompt,
+// user message, and turn budget. systemPromptFmt is formatted with the
+// current memory index exactly like every other %s-templated prompt in
+// prompts.yaml.
+func (s *Server) runMemoryToolLoop(ctx context.Context, systemPromptFmt, userMessage string, maxTurns int) (string, error) {
 	memCtx := &tools.Context{
-		Ctx:          r.Context(),
+		Ctx:          ctx,
 		Emit:         func(string, map[string]interface{}) {},
 		ListMemories: s.db.ListMemories,
 		GetMemory:    s.db.GetMemory,
@@ -162,17 +203,15 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	messages := []llm.ChatMessage{
-		{Role: "system", Content: fmt.Sprintf(prompts.Get().Turn.MemoryChatSystem, tools.MemoryIndexPrompt(memCtx))},
-		{Role: "user", Content: instruction},
+		{Role: "system", Content: fmt.Sprintf(systemPromptFmt, tools.MemoryIndexPrompt(memCtx))},
+		{Role: "user", Content: userMessage},
 	}
 
 	var confirmation string
-	for i := 0; i < maxMemoryChatToolTurns; i++ {
-		resp, err := client.ChatCompletionWithTools(r.Context(), messages, memoryOnlyDefs, func(string) {}, nil)
+	for i := 0; i < maxTurns; i++ {
+		resp, err := client.ChatCompletionWithTools(ctx, messages, memoryOnlyDefs, func(string) {}, nil)
 		if err != nil {
-			log.Warn("memory chat completion failed", "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return "", err
 		}
 		if len(resp.ToolCalls) == 0 {
 			confirmation = strings.TrimSpace(resp.Content)
@@ -185,21 +224,12 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if confirmation == "" {
-		// Hit maxMemoryChatToolTurns without ever answering in plain text —
-		// the requested changes (if any were valid) already landed via the
-		// tool calls dispatched above, this is just a missing final
-		// summary, not a failed instruction.
+		// Hit maxTurns without ever answering in plain text — whatever
+		// changes were valid already landed via the tool calls dispatched
+		// above, this is just a missing final summary, not a failed run.
 		confirmation = "Done."
 	}
-
-	memories, err := s.db.ListMemoriesFull()
-	if err != nil {
-		log.Warn("listing memories after memory chat failed", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.db.LogEvent("", "info", "memory", "memory changed via settings panel chat", map[string]interface{}{"instruction": instruction}, "")
-	writeJSON(w, map[string]interface{}{"message": confirmation, "memories": memories})
+	return confirmation, nil
 }
 
 // memoryOnlyToolDefs filters the normal tool catalog down to just the

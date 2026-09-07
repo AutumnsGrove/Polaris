@@ -30,16 +30,27 @@ type Memory struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
 	Content     string `json:"content"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// OccurredAt is an optional "YYYY-MM-DD", distinct from CreatedAt/
+	// UpdatedAt (row bookkeeping) — when the fact itself became true or
+	// was learned, if that's meaningful and known. Empty when not set.
+	OccurredAt string `json:"occurred_at"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 // MemoryIndexEntry is the compact, always-in-context form of a memory —
-// name and description only, no content — as listed by ListMemories.
+// as listed by ListMemories. OccurredAt rides along (unlike CreatedAt/
+// UpdatedAt, which never do) because it's the one date that's actually
+// useful for the model to see while scanning the index itself: staleness
+// and dedup decisions ("does this contradict/supersede an existing dated
+// fact?") need it every turn, not just on a follow-up view call — same
+// reasoning tools/memory.go's api_description already gives for editing
+// in place rather than leaving stale entries around.
 type MemoryIndexEntry struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`
 	Description string `json:"description"`
+	OccurredAt  string `json:"occurred_at"`
 }
 
 // CreateMemory inserts a brand-new memory, failing with ErrMemoryExists if
@@ -55,14 +66,14 @@ type MemoryIndexEntry struct {
 // (overwriting it with the new type/description/content) instead of
 // failing; a name matching an active row still fails with ErrMemoryExists,
 // same as before.
-func (s *Store) CreateMemory(name, memType, description, content string) error {
+func (s *Store) CreateMemory(name, memType, description, content, occurredAt string) error {
 	var disabled int
 	err := s.db.QueryRow(`SELECT disabled FROM memories WHERE name = ?`, name).Scan(&disabled)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if _, err := s.db.Exec(
-			`INSERT INTO memories (name, type, description, content) VALUES (?, ?, ?, ?)`,
-			name, memType, description, content,
+			`INSERT INTO memories (name, type, description, content, occurred_at) VALUES (?, ?, ?, ?, ?)`,
+			name, memType, description, content, occurredAt,
 		); err != nil {
 			if isUniqueConstraintErr(err) {
 				// A concurrent insert of the same brand-new name won this
@@ -79,8 +90,8 @@ func (s *Store) CreateMemory(name, memType, description, content string) error {
 		return ErrMemoryExists
 	default:
 		if _, err := s.db.Exec(
-			`UPDATE memories SET type = ?, description = ?, content = ?, disabled = 0, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
-			memType, description, content, name,
+			`UPDATE memories SET type = ?, description = ?, content = ?, occurred_at = ?, disabled = 0, updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
+			memType, description, content, occurredAt, name,
 		); err != nil {
 			return fmt.Errorf("create memory (reviving forgotten name): %w", err)
 		}
@@ -103,15 +114,22 @@ func (s *Store) CreateMemory(name, memType, description, content string) error {
 // exist or is currently disabled (forgotten) — editing something forgotten
 // isn't meaningful; CreateMemory's revival path is the way to bring a
 // forgotten name back.
-func (s *Store) UpdateMemory(name, memType, description, content string) error {
+//
+// occurredAt shares memType/description/content's "empty means unchanged"
+// convention, which means an edit can't explicitly clear a date once set
+// (same pre-existing limitation as content, which can't be blanked via
+// edit either) — an acceptable gap since a wrong date is corrected by
+// setting a new one, not by removing it entirely.
+func (s *Store) UpdateMemory(name, memType, description, content, occurredAt string) error {
 	res, err := s.db.Exec(
 		`UPDATE memories SET
 			type = CASE WHEN ? = '' THEN type ELSE ? END,
 			description = CASE WHEN ? = '' THEN description ELSE ? END,
 			content = CASE WHEN ? = '' THEN content ELSE ? END,
+			occurred_at = CASE WHEN ? = '' THEN occurred_at ELSE ? END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE name = ? AND disabled = 0`,
-		memType, memType, description, description, content, content, name,
+		memType, memType, description, description, content, content, occurredAt, occurredAt, name,
 	)
 	if err != nil {
 		return fmt.Errorf("update memory: %w", err)
@@ -133,9 +151,9 @@ func (s *Store) UpdateMemory(name, memType, description, content string) error {
 func (s *Store) GetMemory(name string) (*Memory, error) {
 	var m Memory
 	err := s.db.QueryRow(
-		`SELECT name, type, description, content, created_at, updated_at FROM memories WHERE name = ? AND disabled = 0`,
+		`SELECT name, type, description, content, occurred_at, created_at, updated_at FROM memories WHERE name = ? AND disabled = 0`,
 		name,
-	).Scan(&m.Name, &m.Type, &m.Description, &m.Content, &m.CreatedAt, &m.UpdatedAt)
+	).Scan(&m.Name, &m.Type, &m.Description, &m.Content, &m.OccurredAt, &m.CreatedAt, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrMemoryNotFound
 	}
@@ -150,7 +168,7 @@ func (s *Store) GetMemory(name string) (*Memory, error) {
 // together in the rendered {memories} prompt block — see
 // agent/driver.go's applyMemoriesPlaceholder.
 func (s *Store) ListMemories() ([]MemoryIndexEntry, error) {
-	rows, err := s.db.Query(`SELECT name, type, description FROM memories WHERE disabled = 0 ORDER BY type, name`)
+	rows, err := s.db.Query(`SELECT name, type, description, occurred_at FROM memories WHERE disabled = 0 ORDER BY type, name`)
 	if err != nil {
 		return nil, fmt.Errorf("list memories: %w", err)
 	}
@@ -159,7 +177,7 @@ func (s *Store) ListMemories() ([]MemoryIndexEntry, error) {
 	entries := []MemoryIndexEntry{}
 	for rows.Next() {
 		var e MemoryIndexEntry
-		if err := rows.Scan(&e.Name, &e.Type, &e.Description); err != nil {
+		if err := rows.Scan(&e.Name, &e.Type, &e.Description, &e.OccurredAt); err != nil {
 			return nil, fmt.Errorf("list memories: %w", err)
 		}
 		entries = append(entries, e)
@@ -175,7 +193,7 @@ func (s *Store) ListMemories() ([]MemoryIndexEntry, error) {
 // narrow (three short columns) matters there in a way it doesn't for a
 // settings-panel page load.
 func (s *Store) ListMemoriesFull() ([]Memory, error) {
-	rows, err := s.db.Query(`SELECT name, type, description, content, created_at, updated_at FROM memories WHERE disabled = 0 ORDER BY type, name`)
+	rows, err := s.db.Query(`SELECT name, type, description, content, occurred_at, created_at, updated_at FROM memories WHERE disabled = 0 ORDER BY type, name`)
 	if err != nil {
 		return nil, fmt.Errorf("list memories: %w", err)
 	}
@@ -184,7 +202,7 @@ func (s *Store) ListMemoriesFull() ([]Memory, error) {
 	memories := []Memory{}
 	for rows.Next() {
 		var m Memory
-		if err := rows.Scan(&m.Name, &m.Type, &m.Description, &m.Content, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.Name, &m.Type, &m.Description, &m.Content, &m.OccurredAt, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("list memories: %w", err)
 		}
 		memories = append(memories, m)

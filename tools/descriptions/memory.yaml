@@ -55,6 +55,15 @@ api_description: >-
     a habit they've mentioned) — kept short, just enough to know where to look.
 
 
+  occurred_at (optional, YYYY-MM-DD): set this when a fact has a meaningful date distinct from
+  today — a decision made on a specific day, a deadline, something that could go stale and needs
+  a "true as of" marker for a future you to judge. Convert relative phrasing ("yesterday", "last
+  week", "since Tuesday") to an absolute date using the current date rather than storing the
+  relative phrase itself, the same way you'd convert it for a user memory's content. Leave it
+  unset for durable facts with no meaningful date (who they are, a standing preference) — most
+  memories should have no date at all.
+
+
   Also do NOT save: anything easily rederived (their name if already in the transcript), ephemeral
   details specific to the current conversation (a one-off event, a plan for later today), or
   anything already obvious from context. If asked to forget something, find it via view and use

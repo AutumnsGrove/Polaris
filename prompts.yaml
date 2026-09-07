@@ -292,6 +292,95 @@ turn:
     Current memories:
     %s
 
+  # Shown verbatim in the Memory settings panel with a one-tap copy button —
+  # the user pastes this into another AI assistant (claude.ai, ChatGPT) to
+  # get back a plain-text dump of what it remembers about them, which they
+  # then paste into Polaris's own import box. No %s here — unlike every
+  # other prompt in this file, this one is never sent to a model by
+  # Polaris itself, it's copy-paste content for a human. Wording matches
+  # claude.ai's own memory-export prompt, which is already assistant-
+  # agnostic (it never refers to itself by name), so it works unmodified
+  # against ChatGPT or any other assistant too.
+  memory_export_prompt: |-
+    Export all of your stored memories and any context you've learned about me from past conversations. Preserve my words verbatim where possible, especially for instructions and preferences.
+
+    ## Categories (output in this order):
+
+    1. **Instructions**: Rules I've explicitly asked you to follow going forward — tone, format, style, "always do X", "never do Y", and corrections to your behavior. Only include rules from stored memories, not from conversations.
+
+    2. **Identity**: Name, age, location, education, family, relationships, languages, and personal interests.
+
+    3. **Career**: Current and past roles, companies, and general skill areas.
+
+    4. **Projects**: Projects I meaningfully built or committed to. Ideally ONE entry per project. Include what it does, current status, and any key decisions. Use the project name or a short descriptor as the first words of the entry.
+
+    5. **Preferences**: Opinions, tastes, and working-style preferences that apply broadly.
+
+    ## Format:
+
+    Use section headers for each category. Within each category, list one entry per line, sorted by oldest date first. Format each line as:
+
+    [YYYY-MM-DD] - Entry content here.
+
+    If no date is known, use [unknown] instead.
+
+    ## Output:
+    - Wrap the entire export in a single code block for easy copying.
+    - After the code block, state whether this is the complete set or if more remain.
+
+  # %s is the current memory index (see tools.MemoryIndexPrompt) — see
+  # gateway/memory_import.go's handleMemoryImport. The user message that
+  # follows this system prompt is the raw dump pasted from another AI,
+  # unmodified — this prompt is what turns that prose into structured
+  # memory tool calls.
+  memory_import_system: |-
+    You're importing a memory export from another AI assistant into Polaris's own memory store — a
+    one-time migration, not a normal conversation. The user has pasted, as their message below,
+    that other assistant's answer to a prompt asking it to describe everything it remembers about
+    them, grouped into Instructions/Identity/Career/Projects/Preferences sections with one dated
+    fact per line in the form "[YYYY-MM-DD] - fact" or "[unknown] - fact".
+
+    Default to NOT importing most of it. An export dump is written by an assistant trying to be
+    thorough, not one applying the "worth remembering in every future conversation" bar the memory
+    tool already holds every write to — a line existing in the dump doesn't mean it clears that bar,
+    and dozens of lines being formatted identically doesn't mean dozens of them deserve their own
+    memory. Skip a one-off event, a passing hobby or taste mention that wouldn't change how you'd
+    answer an unrelated future question (a favorite season, a single food like/dislike, one movie
+    watched once, a single game they play), or anything that just restates something already
+    obvious. When in doubt, leave it out — a fact worth keeping will resurface naturally in a real
+    conversation and get saved properly then.
+
+    For what does clear the bar, don't write one memory per line either. Bundle related minor facts
+    — several hobbies, several small tastes, several biographical details that are individually thin
+    but collectively describe who they are — into a small number of consolidated memories (e.g. one
+    "user-interests" memory listing hobbies together, one "user-background" memory covering
+    biography), rather than a separate memory per fact. Reserve a standalone memory for something
+    substantial enough to stand alone on its own permanent line in the always-shown index: an
+    identity essential (name, location, career), an explicit instruction or correction, an ongoing
+    project, or a preference significant enough that bundling it in would bury it. A good target for
+    a real export dump is a small handful of memories per category, not one per line.
+
+    Map categories to Polaris's own four types: Instructions -> feedback (one memory per distinct
+    rule, never bundled — each is independently actionable). Projects -> project, one memory per
+    project, slugged project-*, never user-*. Identity/Career/Preferences -> user, bundled per the
+    paragraph above rather than one-per-line. A Preference that's really guidance on how to work
+    with them ("always do X", "never do Y") -> feedback instead of user. A line with a real date
+    (not "[unknown]") should carry that date as occurred_at on whichever memory it ends up in,
+    normalized to plain YYYY-MM-DD; if several dated facts land in one bundled memory, use whichever
+    date is most significant, or leave occurred_at unset if none stands out.
+
+    Before writing, check the current index below for a memory this fact supersedes, contradicts, or
+    restates, or an existing bundled memory it belongs alongside — edit that memory in place instead
+    of creating a new one that duplicates or fragments it further. Keep each description short
+    enough to fit the memory tool's own character cap; put anything longer in content instead.
+
+    Once you've gone through the whole dump, reply with one short, plain-text summary covering both
+    what was imported (roughly how many memories, of which kinds) and roughly how much was
+    intentionally left out as not worth keeping — no markdown, no per-memory play-by-play.
+
+    Current memories:
+    %s
+
 # Per-tool prompts — see tools/web_read.go.
 tools:
   web_read_filter_system: >-

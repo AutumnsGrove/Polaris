@@ -5,10 +5,10 @@ import "testing"
 func TestMemory_CreateGetListUpdateDelete(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.CreateMemory("user-timezone", "user", "the user's timezone", "US/Pacific"); err != nil {
+	if err := s.CreateMemory("user-timezone", "user", "the user's timezone", "US/Pacific", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
-	if err := s.CreateMemory("feedback-terse", "feedback", "keep replies short", "the user prefers terse replies"); err != nil {
+	if err := s.CreateMemory("feedback-terse", "feedback", "keep replies short", "the user prefers terse replies", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
@@ -32,7 +32,7 @@ func TestMemory_CreateGetListUpdateDelete(t *testing.T) {
 		t.Errorf("entries in unexpected order: %+v", entries)
 	}
 
-	if err := s.UpdateMemory("user-timezone", "user", "the user's timezone", "US/Eastern"); err != nil {
+	if err := s.UpdateMemory("user-timezone", "user", "the user's timezone", "US/Eastern", ""); err != nil {
 		t.Fatalf("UpdateMemory: %v", err)
 	}
 	m, err = s.GetMemory("user-timezone")
@@ -54,12 +54,12 @@ func TestMemory_CreateGetListUpdateDelete(t *testing.T) {
 func TestMemory_UpdatePartialFieldsLeavesOthersUnchanged(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.CreateMemory("partial", "user", "original description", "original content"); err != nil {
+	if err := s.CreateMemory("partial", "user", "original description", "original content", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
 	// Empty type/content: only description changes.
-	if err := s.UpdateMemory("partial", "", "new description", ""); err != nil {
+	if err := s.UpdateMemory("partial", "", "new description", "", ""); err != nil {
 		t.Fatalf("UpdateMemory (description only): %v", err)
 	}
 	m, err := s.GetMemory("partial")
@@ -73,7 +73,7 @@ func TestMemory_UpdatePartialFieldsLeavesOthersUnchanged(t *testing.T) {
 	// Empty type/description: only content changes — the shape a second,
 	// independent edit call (e.g. from a concurrent tool dispatch batch)
 	// would use.
-	if err := s.UpdateMemory("partial", "", "", "new content"); err != nil {
+	if err := s.UpdateMemory("partial", "", "", "new content", ""); err != nil {
 		t.Fatalf("UpdateMemory (content only): %v", err)
 	}
 	m, err = s.GetMemory("partial")
@@ -85,13 +85,54 @@ func TestMemory_UpdatePartialFieldsLeavesOthersUnchanged(t *testing.T) {
 	}
 }
 
+// TestMemory_OccurredAtSetAndPreservedOnPartialUpdate covers both halves of
+// occurred_at's contract: CreateMemory persists it, and — per UpdateMemory's
+// "empty means unchanged" convention, same as type/description/content — an
+// edit that omits it doesn't clear a previously-set date.
+func TestMemory_OccurredAtSetAndPreservedOnPartialUpdate(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.CreateMemory("dated", "project", "d", "c", "2026-01-15"); err != nil {
+		t.Fatalf("CreateMemory: %v", err)
+	}
+	m, err := s.GetMemory("dated")
+	if err != nil {
+		t.Fatalf("GetMemory: %v", err)
+	}
+	if m.OccurredAt != "2026-01-15" {
+		t.Errorf("OccurredAt = %q, want 2026-01-15", m.OccurredAt)
+	}
+
+	if err := s.UpdateMemory("dated", "", "new description", "", ""); err != nil {
+		t.Fatalf("UpdateMemory (description only): %v", err)
+	}
+	m, err = s.GetMemory("dated")
+	if err != nil {
+		t.Fatalf("GetMemory after update: %v", err)
+	}
+	if m.OccurredAt != "2026-01-15" {
+		t.Errorf("OccurredAt = %q after unrelated update, want it left unchanged at 2026-01-15", m.OccurredAt)
+	}
+
+	if err := s.UpdateMemory("dated", "", "", "", "2026-02-01"); err != nil {
+		t.Fatalf("UpdateMemory (occurred_at only): %v", err)
+	}
+	m, err = s.GetMemory("dated")
+	if err != nil {
+		t.Fatalf("GetMemory after occurred_at update: %v", err)
+	}
+	if m.OccurredAt != "2026-02-01" {
+		t.Errorf("OccurredAt = %q, want 2026-02-01", m.OccurredAt)
+	}
+}
+
 func TestMemory_CreateDuplicateNameFails(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.CreateMemory("dup", "project", "first", "content"); err != nil {
+	if err := s.CreateMemory("dup", "project", "first", "content", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
-	if err := s.CreateMemory("dup", "project", "second", "other content"); err != ErrMemoryExists {
+	if err := s.CreateMemory("dup", "project", "second", "other content", ""); err != ErrMemoryExists {
 		t.Errorf("second CreateMemory: err = %v, want ErrMemoryExists", err)
 	}
 }
@@ -99,7 +140,7 @@ func TestMemory_CreateDuplicateNameFails(t *testing.T) {
 func TestMemory_UpdateOrDeleteMissingReturnsNotFound(t *testing.T) {
 	s := openTestStore(t)
 
-	if err := s.UpdateMemory("nope", "user", "d", "c"); err != ErrMemoryNotFound {
+	if err := s.UpdateMemory("nope", "user", "d", "c", ""); err != ErrMemoryNotFound {
 		t.Errorf("UpdateMemory on missing name: err = %v, want ErrMemoryNotFound", err)
 	}
 	if err := s.DeleteMemory("nope"); err != ErrMemoryNotFound {
@@ -114,7 +155,7 @@ func TestMemory_UpdateOrDeleteMissingReturnsNotFound(t *testing.T) {
 // no-op success.
 func TestMemory_DeleteIsSoftAndExcludesEverywhere(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateMemory("temp", "project", "d", "c"); err != nil {
+	if err := s.CreateMemory("temp", "project", "d", "c", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 
@@ -131,7 +172,7 @@ func TestMemory_DeleteIsSoftAndExcludesEverywhere(t *testing.T) {
 	if full, err := s.ListMemoriesFull(); err != nil || len(full) != 0 {
 		t.Errorf("ListMemoriesFull after delete = %+v, err %v, want empty", full, err)
 	}
-	if err := s.UpdateMemory("temp", "project", "new", "new"); err != ErrMemoryNotFound {
+	if err := s.UpdateMemory("temp", "project", "new", "new", ""); err != ErrMemoryNotFound {
 		t.Errorf("UpdateMemory on a disabled name: err = %v, want ErrMemoryNotFound", err)
 	}
 
@@ -157,14 +198,14 @@ func TestMemory_DeleteIsSoftAndExcludesEverywhere(t *testing.T) {
 // permanently blocked by a disabled row still occupying the primary key.
 func TestMemory_CreateRevivesForgottenName(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.CreateMemory("reused", "user", "original", "original content"); err != nil {
+	if err := s.CreateMemory("reused", "user", "original", "original content", ""); err != nil {
 		t.Fatalf("CreateMemory: %v", err)
 	}
 	if err := s.DeleteMemory("reused"); err != nil {
 		t.Fatalf("DeleteMemory: %v", err)
 	}
 
-	if err := s.CreateMemory("reused", "project", "brand new", "brand new content"); err != nil {
+	if err := s.CreateMemory("reused", "project", "brand new", "brand new content", ""); err != nil {
 		t.Fatalf("CreateMemory (revival): %v", err)
 	}
 	m, err := s.GetMemory("reused")

@@ -127,8 +127,8 @@ type Context struct {
 	// "memory_store" Requires case, gated on WriteMemory != nil.
 	ListMemories func() ([]store.MemoryIndexEntry, error)
 	GetMemory    func(name string) (*store.Memory, error)
-	WriteMemory  func(name, memType, description, content string) error
-	EditMemory   func(name, memType, description, content string) error
+	WriteMemory  func(name, memType, description, content, occurredAt string) error
+	EditMemory   func(name, memType, description, content, occurredAt string) error
 	ForgetMemory func(name string) error
 
 	// GitHubToken is an optional personal access token attached to

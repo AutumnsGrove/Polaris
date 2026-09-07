@@ -1,0 +1,1 @@
+import{at as e,it as t}from"./DzL110-D2.js";var n=(n,r)=>e.lang.round(t.parse(n)[r]);export{n as t};

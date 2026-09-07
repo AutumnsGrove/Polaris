@@ -352,6 +352,16 @@ CREATE TABLE IF NOT EXISTS memories (
 	content TEXT NOT NULL,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- occurred_at: an optional "YYYY-MM-DD" the model sets when a fact has
+	-- a meaningful date distinct from row bookkeeping (created_at/
+	-- updated_at record when Polaris touched the row, not when the fact
+	-- itself became true) — a decision date, a deadline, a "true as of"
+	-- marker. Plain TEXT, not DATETIME: it's a model-supplied date with no
+	-- time component, never compared against CURRENT_TIMESTAMP. Empty
+	-- string (not NULL) for memories with no meaningful date, matching
+	-- every other optional TEXT column in this schema, so callers never
+	-- have to sql.NullString-unwrap it.
+	occurred_at TEXT NOT NULL DEFAULT '',
 	-- disabled: soft-delete flag, same shape as threads.disabled above —
 	-- "forgetting" a memory sets this rather than issuing a real DELETE,
 	-- so the record survives but is excluded from every read path
@@ -622,6 +632,11 @@ var migrations = []string{
 	// already has the column from CREATE TABLE, so both this and the
 	// entry above just hit the same tolerated duplicate-column skip.
 	`ALTER TABLE threads ADD COLUMN no_research INTEGER NOT NULL DEFAULT 0`,
+	// occurred_at — see the schema comment above. Appended at the end per
+	// this file's own established rule: applyMigrations tracks progress by
+	// positional index, so a new column always goes last, never inserted
+	// alongside the schema comment it corresponds to.
+	`ALTER TABLE memories ADD COLUMN occurred_at TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {

@@ -38,7 +38,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.TMDBAPIKey = "test-key"
 	ctx.AttachmentData = []byte("pdf bytes")
 	ctx.RequestLocation = func() (string, bool) { return "", false }
-	ctx.WriteMemory = func(name, memType, description, content string) error { return nil }
+	ctx.WriteMemory = func(name, memType, description, content, occurredAt string) error { return nil }
 	ctx.DeepResearch = true
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	ctx.PulsarWizard = true
