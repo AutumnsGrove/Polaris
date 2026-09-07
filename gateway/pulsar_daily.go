@@ -152,8 +152,9 @@ var dailyPickTasks = map[string]string{
 // in via PulsarWizard/PulsarDailyBlockTitle), a Daily research block runs
 // under the ordinary chat system prompt, so the task text itself has to
 // carry the instruction.
-const dailyItemsInstruction = " Call finalize_daily_items with each distinct story as its own item, most " +
-	"significant first — don't merge multiple stories into one prose paragraph."
+const dailyItemsInstruction = " Call finalize_daily_items with the 3-5 most significant distinct stories as " +
+	"separate items, most significant first — don't pad the list with minor stories just to fill it out, " +
+	"and don't merge multiple stories into one prose paragraph. Keep each item's summary to 1-2 sentences."
 
 var dailyResearchTasks = map[string]string{
 	"headlines": "Give me a short rundown of today's biggest general news headlines — the most significant " +
@@ -289,15 +290,19 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 }
 
 // generateDailyElaboration is Stage C's deeper pass on the elected Top
-// Story block — more research budget, more paragraphs, told explicitly
-// what the quick version already said so it adds to it instead of
-// repeating it.
+// Story block — more research budget, told explicitly what the quick
+// version already said so it adds to it instead of repeating it. Capped
+// at 3-4 paragraphs deliberately: an earlier, uncapped version of this
+// prompt ("more paragraphs, additional context") produced a real,
+// observed 17KB Top Story card from a single elected item — this is meant
+// to read as one deeper digest card, not a full feature article.
 func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (string, float64, error) {
 	task := fmt.Sprintf("This is today's lead story for a personal daily digest, titled %q. Here's the "+
-		"quick version already written: %s\n\nWrite a deeper, more thorough version — more paragraphs, "+
-		"additional context or background research, a pulled quote if one fits. Use visualize if the "+
-		"story has genuinely chart-worthy quantitative data, or image_search if a relevant image would "+
-		"help. Don't just restate the quick version — add to it.", title, quickContent)
+		"quick version already written: %s\n\nWrite a deeper but still concise version — 3-4 short "+
+		"paragraphs, not a full feature article. Add real additional context or background research (not "+
+		"padding), and a pulled quote if one genuinely fits. Use visualize if the story has genuinely "+
+		"chart-worthy quantitative data, or image_search if a relevant image would help. Don't just "+
+		"restate the quick version — add to it, but keep it tight.", title, quickContent)
 
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
