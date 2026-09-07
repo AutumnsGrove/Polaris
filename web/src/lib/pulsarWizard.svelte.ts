@@ -36,7 +36,11 @@ export class PulsarWizardState {
 	// the whole interview to writing a short steering instruction for one
 	// Pulsar Daily block instead of a routine prompt — see
 	// gateway/pulsar_wizard.go's wizardStartRequest.DailyBlockTitle.
-	async start(seed: string, dailyBlockTitle?: string) {
+	// isCustomBlock, only meaningful alongside dailyBlockTitle, further
+	// scopes it to a custom block's own full instructions field instead of
+	// a fixed block's one-line steer — see wizardStartRequest.
+	// IsCustomDailyBlock.
+	async start(seed: string, dailyBlockTitle?: string, isCustomBlock?: boolean) {
 		this.open = true;
 		this.sessionId = null;
 		this.transcript = [];
@@ -47,7 +51,11 @@ export class PulsarWizardState {
 			const res = await fetch('/api/pulsar/wizard/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ seed, daily_block_title: dailyBlockTitle ?? '' })
+				body: JSON.stringify({
+					seed,
+					daily_block_title: dailyBlockTitle ?? '',
+					is_custom_daily_block: isCustomBlock ?? false
+				})
 			});
 			if (!res.ok) {
 				this.error = (await res.text()) || 'Something went wrong starting the wizard.';

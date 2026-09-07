@@ -44,6 +44,11 @@ type wizardSession struct {
 	// includes it — a follow-up turn otherwise has no way to know this
 	// interview is scoped to one block instead of a whole routine.
 	dailyBlockTitle string
+	// isCustomDailyBlock: set for a custom block's full-instructions
+	// interview (see wizardStartRequest.IsCustomDailyBlock) — same
+	// carried-across-every-turn reasoning as dailyBlockTitle. Meaningless
+	// when dailyBlockTitle is empty.
+	isCustomDailyBlock bool
 }
 
 // wizardStartRequest's Seed is whatever the routine form's prompt field
@@ -52,9 +57,14 @@ type wizardSession struct {
 // instead of the user's own draft. DailyBlockTitle, when non-empty, scopes
 // the whole interview to writing a short steering instruction for one
 // Pulsar Daily block instead — see tools.Context.PulsarDailyBlockTitle.
+// IsCustomDailyBlock, only meaningful alongside a non-empty
+// DailyBlockTitle, further scopes it to a custom block's own full
+// instructions field instead — see
+// tools.Context.PulsarDailyCustomBlockWizard.
 type wizardStartRequest struct {
-	Seed            string `json:"seed"`
-	DailyBlockTitle string `json:"daily_block_title"`
+	Seed               string `json:"seed"`
+	DailyBlockTitle    string `json:"daily_block_title"`
+	IsCustomDailyBlock bool   `json:"is_custom_daily_block"`
 }
 
 type wizardTurnRequest struct {
@@ -87,16 +97,20 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := uuid.NewString()
 	dailyBlockTitle := strings.TrimSpace(req.DailyBlockTitle)
+	isCustomDailyBlock := req.IsCustomDailyBlock && dailyBlockTitle != ""
 	turnMessage := strings.TrimSpace(req.Seed)
 	if turnMessage == "" {
-		if dailyBlockTitle != "" {
+		switch {
+		case isCustomDailyBlock:
+			turnMessage = prompts.Get().PulsarDaily.CustomBlockWizardOpenerTask
+		case dailyBlockTitle != "":
 			turnMessage = prompts.Get().PulsarDaily.WizardOpenerTask
-		} else {
+		default:
 			turnMessage = prompts.Get().PulsarWizard.OpenerTask
 		}
 	}
 
-	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, dailyBlockTitle)
+	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, dailyBlockTitle, isCustomDailyBlock)
 	if err != nil {
 		log.Warn("pulsar wizard start failed", "err", err)
 		http.Error(w, "the wizard hit an error starting up — try again", http.StatusInternalServerError)
@@ -104,7 +118,7 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.wizardMu.Lock()
-	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), dailyBlockTitle: dailyBlockTitle}
+	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), dailyBlockTitle: dailyBlockTitle, isCustomDailyBlock: isCustomDailyBlock}
 	s.wizardMu.Unlock()
 
 	writeJSON(w, wizardResponse{SessionID: sessionID, Question: result.question, Final: result.final, Answer: result.answer})
@@ -134,7 +148,7 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.runWizardTurn(r.Context(), session.history, message, session.dailyBlockTitle)
+	result, err := s.runWizardTurn(r.Context(), session.history, message, session.dailyBlockTitle, session.isCustomDailyBlock)
 	if err != nil {
 		log.Warn("pulsar wizard turn failed", "session", req.SessionID, "err", err)
 		http.Error(w, "the wizard hit an error — try again", http.StatusInternalServerError)
@@ -179,7 +193,7 @@ type wizardTurnResult struct {
 // generateTitle/generateSuggestions shape), just with no thread, no DB
 // writes, and no streaming: the answer comes back directly in the HTTP
 // response, not over the WebSocket.
-func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage, dailyBlockTitle string) (*wizardTurnResult, error) {
+func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage, dailyBlockTitle string, isCustomDailyBlock bool) (*wizardTurnResult, error) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
 	// AllowFallbacks(true) — escape valve for every pinned provider being
@@ -209,13 +223,14 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	disabled["visualize"] = true
 
 	agentCtx := &tools.Context{
-		NoResearch:            true,
-		PulsarWizard:          true,
-		PulsarDailyBlockTitle: dailyBlockTitle,
-		DisabledTools:         disabled,
-		LLM:                   client,
-		Emit:                  func(string, map[string]interface{}) {}, // no live client to stream to
-		MaxTurns:              cfg.MaxAgentTurns,
+		NoResearch:                   true,
+		PulsarWizard:                 true,
+		PulsarDailyBlockTitle:        dailyBlockTitle,
+		PulsarDailyCustomBlockWizard: isCustomDailyBlock,
+		DisabledTools:                disabled,
+		LLM:                          client,
+		Emit:                         func(string, map[string]interface{}) {}, // no live client to stream to
+		MaxTurns:                     cfg.MaxAgentTurns,
 		// RequestLocation is never actually called here — no location-
 		// needing tool (weather/nearby_search) is ever offered under
 		// NoResearch above — but catalog.go's "interactive_chat" gate on

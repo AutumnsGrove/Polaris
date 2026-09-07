@@ -13,14 +13,18 @@
 	// why this also closes the wizard. dailyBlockTitle, when set, scopes
 	// the interview to one Pulsar Daily block's steering instruction
 	// instead of a whole routine prompt (see pulsarWizardState.start).
+	// isCustomBlock, only meaningful alongside dailyBlockTitle, further
+	// scopes it to a custom block's own full instructions field.
 	let {
 		seed,
 		dailyBlockTitle,
+		isCustomBlock,
 		onClose,
 		onAccept
 	}: {
 		seed: string;
 		dailyBlockTitle?: string;
+		isCustomBlock?: boolean;
 		onClose: () => void;
 		onAccept: (prompt: string, name?: string) => void;
 	} = $props();
@@ -58,7 +62,7 @@
 		// /pulsar/[id]/+page.svelte's identical note on why: an async
 		// onMount callback's returned Promise isn't treated as a teardown
 		// function by Svelte).
-		void pulsarWizardState.start(seed, dailyBlockTitle);
+		void pulsarWizardState.start(seed, dailyBlockTitle, isCustomBlock);
 	});
 
 	function submitFreeform() {

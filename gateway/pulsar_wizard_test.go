@@ -389,3 +389,59 @@ func TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt(t *testing.T) {
 		t.Errorf("session.dailyBlockTitle = %q, want %q — a follow-up turn needs this remembered", title, "Local")
 	}
 }
+
+// TestHandleWizardStart_CustomDailyBlockScopesSystemPrompt mirrors
+// TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt for the custom-
+// block variant — a fixed block's steer and a custom block's full
+// instructions are different scopes with different system prompts (see
+// prompts.PulsarDaily.WizardSystem vs. CustomBlockWizardSystem), so a
+// request naming both fields must pick the custom-block one, not silently
+// fall back to the fixed-block wording.
+func TestHandleWizardStart_CustomDailyBlockScopesSystemPrompt(t *testing.T) {
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n")
+		fmt.Fprint(w, "data: [DONE]\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+
+	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{
+		"daily_block_title":     "Stock Watchlist",
+		"is_custom_daily_block": true,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(capturedBody, "Stock Watchlist") {
+		t.Errorf("request body doesn't mention the block title %q: %s", "Stock Watchlist", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "general purpose") {
+		t.Error("request body doesn't look like the custom-block wizard system prompt")
+	}
+	if strings.Contains(capturedBody, "This is NOT a whole routine prompt") {
+		t.Error("request body used the fixed-block wizard's system prompt instead of the custom-block one")
+	}
+
+	sessionID, _ := decoded["session_id"].(string)
+	h.srvObj.wizardMu.Lock()
+	session, exists := h.srvObj.wizardSessions[sessionID]
+	isCustom := false
+	if exists {
+		isCustom = session.isCustomDailyBlock
+	}
+	h.srvObj.wizardMu.Unlock()
+	if !exists {
+		t.Fatal("session was not stored server-side")
+	}
+	if !isCustom {
+		t.Error("session.isCustomDailyBlock = false, want true — a follow-up turn needs this remembered")
+	}
+}

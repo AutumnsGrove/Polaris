@@ -104,11 +104,21 @@
 
 	// wizardBlock: which block's "help me write this" interview is
 	// currently open, if any — same one-at-a-time modal-over-modal shape
-	// PulsarRoutineForm.svelte's own wizard button uses.
-	let wizardBlock = $state<{ key: string; label: string } | null>(null);
+	// PulsarRoutineForm.svelte's own wizard button uses. isCustom
+	// distinguishes a custom block's own full instructions field (written
+	// to customBlocks) from a fixed registry block's short steer (written
+	// to customInstructions) — different storage, different wizard system
+	// prompt server-side (see gateway/pulsar_wizard.go's
+	// IsCustomDailyBlock).
+	let wizardBlock = $state<{ key: string; label: string; isCustom: boolean } | null>(null);
 
 	function acceptWizardInstruction(text: string) {
-		customInstructions[wizardBlock!.key] = text;
+		if (wizardBlock!.isCustom) {
+			const block = customBlocks.find((b) => b.key === wizardBlock!.key);
+			if (block) block.instructions = text;
+		} else {
+			customInstructions[wizardBlock!.key] = text;
+		}
 		wizardBlock = null;
 	}
 
@@ -201,7 +211,7 @@
 								<button
 									type="button"
 									class="wizard-btn"
-									onclick={() => (wizardBlock = { key: opt.key, label: opt.label })}
+									onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
 								>
 									<Sparkles size={12} />
 									Help me write this
@@ -223,7 +233,7 @@
 								<button
 									type="button"
 									class="wizard-btn"
-									onclick={() => (wizardBlock = { key: opt.key, label: opt.label })}
+									onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
 								>
 									<Sparkles size={12} />
 									Help me write this
@@ -266,6 +276,19 @@
 									oninput={(e) => (block.title = e.currentTarget.value)}
 									placeholder="Title, e.g. Stock Watchlist"
 								/>
+								<button
+									type="button"
+									class="wizard-btn"
+									onclick={() =>
+										(wizardBlock = {
+											key: block.key,
+											label: block.title || 'this block',
+											isCustom: true
+										})}
+								>
+									<Sparkles size={12} />
+									Help me write this
+								</button>
 								<button
 									type="button"
 									class="icon-btn"
@@ -339,8 +362,11 @@
 
 {#if wizardBlock}
 	<PulsarPromptWizard
-		seed={customInstructions[wizardBlock.key] ?? ''}
+		seed={wizardBlock.isCustom
+			? (customBlocks.find((b) => b.key === wizardBlock!.key)?.instructions ?? '')
+			: (customInstructions[wizardBlock.key] ?? '')}
 		dailyBlockTitle={wizardBlock.label}
+		isCustomBlock={wizardBlock.isCustom}
 		onClose={() => (wizardBlock = null)}
 		onAccept={acceptWizardInstruction}
 	/>

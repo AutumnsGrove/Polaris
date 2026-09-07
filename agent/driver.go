@@ -182,6 +182,12 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		// relevant here, and {tools}/{memories} aren't referenced in
 		// either wizard system prompt's own text.
 		if ctx.PulsarDailyBlockTitle != "" {
+			if ctx.PulsarDailyCustomBlockWizard {
+				// A custom block's own full instructions, not a fixed
+				// block's one-line steer — see
+				// tools.Context.PulsarDailyCustomBlockWizard's doc comment.
+				return fmt.Sprintf(p.PulsarDaily.CustomBlockWizardSystem, ctx.PulsarDailyBlockTitle)
+			}
 			// Scoped to one Daily block's short steering instruction
 			// instead of a whole routine prompt — see
 			// tools.Context.PulsarDailyBlockTitle's doc comment.

@@ -302,6 +302,15 @@ type Context struct {
 	// when this is set. Empty means the ordinary routine-prompt wizard.
 	PulsarDailyBlockTitle string
 
+	// PulsarDailyCustomBlockWizard, when true alongside a non-empty
+	// PulsarDailyBlockTitle, further scopes the interview to a
+	// user-authored custom block's own full instructions field instead of
+	// a fixed registry block's short steer — see agent/driver.go's
+	// loadSystemPrompt, which picks prompts.PulsarDaily.
+	// CustomBlockWizardSystem instead of WizardSystem when this is set.
+	// Meaningless without PulsarDailyBlockTitle also set.
+	PulsarDailyCustomBlockWizard bool
+
 	// PulsarDailyItems, when true, marks this turn as a Pulsar Daily
 	// block generation whose content is a list of distinct stories
 	// (headlines/trending/custom blocks), not a single narrative — the

@@ -79,6 +79,19 @@ type Set struct {
 		// loadSystemPrompt.
 		WizardSystem     string `yaml:"wizard_system"`
 		WizardOpenerTask string `yaml:"wizard_opener_task"`
+		// CustomBlockWizardSystem/CustomBlockWizardOpenerTask back the
+		// same "help me write this" interview, scoped instead to a
+		// user-authored custom block's own full instructions field (see
+		// tools.Context.PulsarDailyCustomBlockWizard) — closer in scope to
+		// PulsarWizard.System (a whole task: sources, coverage, format)
+		// than WizardSystem above (a one-line steer for a fixed block),
+		// plus explicit guidance steering away from asking for a sprawling
+		// multi-story digest in one block — the root cause of a real,
+		// observed bug where Stage C's elaboration pass blew up a 5-6
+		// story custom block into a 17KB "Top Story". Has one %s verb for
+		// the block's own title, same as WizardSystem.
+		CustomBlockWizardSystem     string `yaml:"custom_block_wizard_system"`
+		CustomBlockWizardOpenerTask string `yaml:"custom_block_wizard_opener_task"`
 	} `yaml:"pulsar_daily"`
 
 	Vision struct {
@@ -436,6 +449,32 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 	d.PulsarDaily.WizardOpenerTask = "The user hasn't said what they want this block to focus on yet — ask a " +
 		"single focused opening question to find out."
 
+	d.PulsarDaily.CustomBlockWizardSystem = "You are helping the user write the full instructions for a new " +
+		"\"general purpose\" block of their Pulsar Daily digest, titled %q. Unlike a fixed block's short " +
+		"steer, this IS the whole task — scope (what topic/region/subject), sources if they care which ones, " +
+		"what to include vs. skip, and format. Your job is a short interview, not a conversation: ask ONE " +
+		"focused question at a time via ask_user_question (with options where a natural finite set exists) " +
+		"until you have enough. Most blocks need 2-4 questions, not a long interrogation. Every reply you " +
+		"give must be a tool call, either ask_user_question or finalize_pulsar_prompt — never a plain-text " +
+		"message with no tool call.\n\n" +
+		"Important: steer the user toward ONE clear focus rather than a sprawling multi-story digest in a " +
+		"single block (e.g. \"today's top 5-6 stories across every beat\") — a block that tries to cover too " +
+		"much becomes an unwieldy Top Story candidate if it's ever elected, and a vaguer read day to day. If " +
+		"they genuinely do want multiple distinct items (e.g. a watchlist of several stocks, several games), " +
+		"that's fine — just make sure the instructions tell the block to keep each one a clean, separately " +
+		"summarizable item (a short title + a few sentences + a source, one per story) rather than one long " +
+		"merged narrative, since the block's own generation step is built to report distinct items " +
+		"independently, not blend them together.\n\n" +
+		"Once you have enough, call finalize_pulsar_prompt with the finished instructions in its `prompt` " +
+		"field, written the way you'd hand them to the block right now (e.g. \"Check today's closing prices " +
+		"for NVDA and AAPL and report them\"), not a description of what the block will do. Leave `name` " +
+		"empty — it isn't meaningful here. If the user replies after you've already finalized once (asking " +
+		"to change something), treat it as a revision request and call finalize_pulsar_prompt again with the " +
+		"updated draft."
+
+	d.PulsarDaily.CustomBlockWizardOpenerTask = "The user hasn't described what this custom block should " +
+		"check on yet — ask a single focused opening question to find out."
+
 	return d
 }
 
@@ -590,6 +629,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarDaily.WizardOpenerTask == "" {
 		s.PulsarDaily.WizardOpenerTask = defaults.PulsarDaily.WizardOpenerTask
+	}
+	if s.PulsarDaily.CustomBlockWizardSystem == "" {
+		s.PulsarDaily.CustomBlockWizardSystem = defaults.PulsarDaily.CustomBlockWizardSystem
+	}
+	if s.PulsarDaily.CustomBlockWizardOpenerTask == "" {
+		s.PulsarDaily.CustomBlockWizardOpenerTask = defaults.PulsarDaily.CustomBlockWizardOpenerTask
 	}
 	return &s
 }
