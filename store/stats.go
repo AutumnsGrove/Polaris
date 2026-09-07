@@ -25,6 +25,15 @@ type Stats struct {
 	TotalCostUSD  float64 `json:"total_cost_usd"`
 	PeriodCostUSD float64 `json:"period_cost_usd"`
 
+	// CostBySource splits TotalCostUSD/PeriodCostUSD three ways — Polaris
+	// (regular chat, every threads.source other than "pulsar"), Pulsar
+	// (routine pulses, threads.source = "pulsar"), and Daily (Pulsar
+	// Daily editions). Daily is a wholly separate cost path
+	// (pulsar_daily_editions.cost_usd) — it's never a thread at all, so
+	// it was previously invisible in both totals above; this is the first
+	// place its cost is surfaced anywhere in Stats.
+	CostBySource CostBySource `json:"cost_by_source"`
+
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
 
@@ -68,6 +77,21 @@ type Stats struct {
 	// asked for multiple days") than "which chart kinds does the model
 	// choose".
 	ChartKindCounts map[string]int `json:"chart_kind_counts"`
+}
+
+// SourceCost is one bucket's period/all-time cost — see
+// Stats.CostBySource.
+type SourceCost struct {
+	PeriodCostUSD float64 `json:"period_cost_usd"`
+	TotalCostUSD  float64 `json:"total_cost_usd"`
+}
+
+// CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
+// the cost actually came from.
+type CostBySource struct {
+	Polaris SourceCost `json:"polaris"`
+	Pulsar  SourceCost `json:"pulsar"`
+	Daily   SourceCost `json:"daily"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -120,6 +144,88 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		return nil, err
 	}
 	stats.AvgTurnDurationMs = int64(avgTurnDurationMs)
+
+	// CostBySource's Polaris/Pulsar halves mirror TotalCostUSD/
+	// PeriodCostUSD's own two different source columns exactly (threads.
+	// cost_usd for all-time, messages.cost_usd joined through threads for
+	// the period) — so "Polaris + Pulsar" always sums back to the plain
+	// total/period figures above, not a second, subtly different number.
+	totalBySourceRows, err := s.db.Query(
+		`SELECT source, COALESCE(SUM(cost_usd), 0) FROM threads WHERE disabled = 0 GROUP BY source`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for totalBySourceRows.Next() {
+		var source string
+		var cost float64
+		if err := totalBySourceRows.Scan(&source, &cost); err != nil {
+			totalBySourceRows.Close()
+			return nil, err
+		}
+		if source == "pulsar" {
+			stats.CostBySource.Pulsar.TotalCostUSD += cost
+		} else {
+			stats.CostBySource.Polaris.TotalCostUSD += cost
+		}
+	}
+	if err := totalBySourceRows.Err(); err != nil {
+		return nil, err
+	}
+	totalBySourceRows.Close()
+
+	periodBySourceQuery := `SELECT threads.source, COALESCE(SUM(messages.cost_usd), 0)
+		FROM messages JOIN threads ON messages.thread_id = threads.id`
+	periodBySourceArgs := []interface{}{}
+	if since != "" {
+		periodBySourceQuery += ` WHERE messages.created_at >= ?`
+		periodBySourceArgs = append(periodBySourceArgs, since)
+	}
+	periodBySourceQuery += ` GROUP BY threads.source`
+	periodBySourceRows, err := s.db.Query(periodBySourceQuery, periodBySourceArgs...)
+	if err != nil {
+		return nil, err
+	}
+	for periodBySourceRows.Next() {
+		var source string
+		var cost float64
+		if err := periodBySourceRows.Scan(&source, &cost); err != nil {
+			periodBySourceRows.Close()
+			return nil, err
+		}
+		if source == "pulsar" {
+			stats.CostBySource.Pulsar.PeriodCostUSD += cost
+		} else {
+			stats.CostBySource.Polaris.PeriodCostUSD += cost
+		}
+	}
+	if err := periodBySourceRows.Err(); err != nil {
+		return nil, err
+	}
+	periodBySourceRows.Close()
+
+	// Daily's cost never touches threads/messages at all (see
+	// pulsar_daily_editions' own doc comment) — a separate query, not a
+	// third bucket folded into the joins above. Period-filtered by
+	// edition_date (a calendar date), not created_at: a same-day
+	// regenerate keeps the row's original created_at, so filtering by
+	// insert time would silently miss a re-run edition a user actually
+	// looks at today.
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM pulsar_daily_editions`,
+	).Scan(&stats.CostBySource.Daily.TotalCostUSD); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		stats.CostBySource.Daily.PeriodCostUSD = stats.CostBySource.Daily.TotalCostUSD
+	} else {
+		sinceDate := time.Now().AddDate(0, 0, -periodDays).Format("2006-01-02")
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM pulsar_daily_editions WHERE edition_date >= ?`, sinceDate,
+		).Scan(&stats.CostBySource.Daily.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+	}
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
 	// variant fork isn't a thread the user thinks of as "one of theirs".

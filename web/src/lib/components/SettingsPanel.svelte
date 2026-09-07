@@ -91,6 +91,14 @@
 						<span>Cost</span>
 						<span>${appState.settings.usage.period_cost_usd.toFixed(2)}</span>
 					</div>
+					<div class="row cost-by-source-row">
+						<span>Polaris / Pulsar / Daily</span>
+						<span
+							>${appState.settings.usage.cost_by_source.polaris.period_cost_usd.toFixed(2)} / ${appState.settings.usage.cost_by_source.pulsar.period_cost_usd.toFixed(
+								2
+							)} / ${appState.settings.usage.cost_by_source.daily.period_cost_usd.toFixed(2)}</span
+						>
+					</div>
 					<div class="row">
 						<span>Threads / turns</span>
 						<span>{appState.settings.usage.thread_count} / {appState.settings.usage.turn_count}</span>
@@ -132,8 +140,12 @@
 						<span>{appState.settings.usage.compaction_count}</span>
 					</div>
 					<p class="hint">
-						All-time cost: ${appState.settings.usage.total_cost_usd.toFixed(2)}. Run
-						<code>polaris stats</code> for the full per-tool breakdown.
+						All-time cost: ${appState.settings.usage.total_cost_usd.toFixed(2)} (Polaris ${appState.settings.usage.cost_by_source.polaris.total_cost_usd.toFixed(
+							2
+						)} / Pulsar ${appState.settings.usage.cost_by_source.pulsar.total_cost_usd.toFixed(
+							2
+						)} / Daily ${appState.settings.usage.cost_by_source.daily.total_cost_usd.toFixed(2)}).
+						Run <code>polaris stats</code> for the full per-tool breakdown.
 					</p>
 				</section>
 			{:else}
@@ -452,6 +464,14 @@
 		gap: var(--space-md);
 		margin-bottom: var(--space-sm);
 		font-size: 14px;
+	}
+
+	/* Reads as a sub-breakdown of the "Cost" row directly above it, not a
+	   separate metric of its own. */
+	.cost-by-source-row {
+		margin-top: calc(-1 * var(--space-sm) + 2px);
+		font-size: 12px;
+		color: var(--color-text-dim);
 	}
 
 	/* Dims the rest of a section (everything below its own on/off row)

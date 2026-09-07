@@ -3,6 +3,7 @@ package store
 import (
 	"strconv"
 	"testing"
+	"time"
 )
 
 // TestGetStats_AvgTurnDurationHandlesFractionalAverage guards against a
@@ -41,6 +42,58 @@ func TestGetStats_AvgTurnDurationHandlesFractionalAverage(t *testing.T) {
 	// (5000 + 3021) / 2 = 4010.5, truncated to 4010.
 	if stats.AvgTurnDurationMs != 4010 {
 		t.Errorf("AvgTurnDurationMs = %d, want 4010", stats.AvgTurnDurationMs)
+	}
+}
+
+// TestGetStats_CostBySource covers the three-way split (Polaris/Pulsar/
+// Daily) — Polaris and Pulsar are distinguished by threads.source, Daily
+// is a wholly separate cost path (pulsar_daily_editions) that never
+// touches threads/messages at all, previously invisible in either total.
+func TestGetStats_CostBySource(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.CreateThread("web-thread", "Chat", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread (web): %v", err)
+	}
+	if _, err := s.AddMessage("web-thread", "assistant", "hi", "[]", "[]", 0.01, "turn-1"); err != nil {
+		t.Fatalf("AddMessage (web): %v", err)
+	}
+
+	if err := s.CreateThread("pulsar-thread", "Pulse", "test-model", "pulsar"); err != nil {
+		t.Fatalf("CreateThread (pulsar): %v", err)
+	}
+	if _, err := s.AddMessage("pulsar-thread", "assistant", "hi", "[]", "[]", 0.02, "turn-2"); err != nil {
+		t.Fatalf("AddMessage (pulsar): %v", err)
+	}
+
+	today := time.Now().UTC().Format("2006-01-02")
+	if err := s.UpsertDailyEdition(today, []PulsarDailyBlock{{Key: "quote", Title: "Quote", Content: "x"}}, 0.03); err != nil {
+		t.Fatalf("UpsertDailyEdition: %v", err)
+	}
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.CostBySource.Polaris.TotalCostUSD != 0.01 {
+		t.Errorf("Polaris.TotalCostUSD = %v, want 0.01", stats.CostBySource.Polaris.TotalCostUSD)
+	}
+	if stats.CostBySource.Pulsar.TotalCostUSD != 0.02 {
+		t.Errorf("Pulsar.TotalCostUSD = %v, want 0.02", stats.CostBySource.Pulsar.TotalCostUSD)
+	}
+	if stats.CostBySource.Daily.TotalCostUSD != 0.03 {
+		t.Errorf("Daily.TotalCostUSD = %v, want 0.03", stats.CostBySource.Daily.TotalCostUSD)
+	}
+	// Polaris + Pulsar must sum back to the plain (unsplit) total, not a
+	// second, subtly different number computed a different way.
+	if got, want := stats.CostBySource.Polaris.TotalCostUSD+stats.CostBySource.Pulsar.TotalCostUSD, stats.TotalCostUSD; got != want {
+		t.Errorf("Polaris+Pulsar = %v, want stats.TotalCostUSD = %v", got, want)
+	}
+	if stats.CostBySource.Polaris.PeriodCostUSD != 0.01 || stats.CostBySource.Pulsar.PeriodCostUSD != 0.02 {
+		t.Errorf("period costs = %+v, want 0.01/0.02", stats.CostBySource)
+	}
+	if stats.CostBySource.Daily.PeriodCostUSD != 0.03 {
+		t.Errorf("Daily.PeriodCostUSD = %v, want 0.03 (today's edition, within a 30-day window)", stats.CostBySource.Daily.PeriodCostUSD)
 	}
 }
 
