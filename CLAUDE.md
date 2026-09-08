@@ -152,7 +152,13 @@ pattern for new work here, not just the Docker-specific cases above.
   body it actually received, for asserting what the app really sent — e.g. that a disabled tool
   didn't make it into that turn's offered tools list. Built for driving Playwright against the real
   app from a Claude Code remote/cloud session with no real `OPENROUTER_API_KEY` on hand; see the
-  package doc comment in `dev/fakeopenrouter/main.go` for the full usage example.
+  package doc comment in `dev/fakeopenrouter/main.go` for the full usage example. Plain FIFO only
+  works for sequential turns — Pulsar Daily's Stage A fires N blocks as genuinely concurrent
+  `/chat/completions` calls (see `gateway/pulsar_daily.go`), so which physical request lands in
+  which queue slot depends on goroutine scheduling, not which logical block asked. A queued
+  response's optional `match` substring pins it to whichever request body actually contains that
+  text instead, ahead of plain-FIFO entries and independent of queue position — see the same doc
+  comment's "Plain FIFO breaks down..." section.
 - `prompts.yaml` / `prompts/prompts.go` — every LLM prompt fragment except `prompt.md` itself,
   hot-reloaded with compiled-in defaults as a fallback
 - `search/searxng.go` — SearXNG's own engines (Brave, Google, DuckDuckGo, Startpage) do rate-limit

@@ -45,6 +45,23 @@
 // it into the messages). POST /_control/reset clears both the queue and
 // that log between test scenarios, so one server process can serve a
 // whole Playwright suite instead of needing a fresh restart per case.
+//
+// Plain FIFO breaks down for a feature that fires several genuinely
+// concurrent /chat/completions calls at once from one turn — e.g. Pulsar
+// Daily's Stage A, which generates every enabled block as its own
+// goroutine (see gateway/pulsar_daily.go). Which physical request lands
+// in which queue slot then depends on goroutine scheduling, not which
+// logical block asked, so "the 3rd queued response" can't reliably target
+// "the headlines block's response." Give an entry a "match" substring to
+// pin it to whichever request body actually contains that text instead —
+// checked ahead of plain FIFO order and independent of queue position;
+// entries with no "match" keep serving strict FIFO among themselves, so
+// an existing sequential-turn script needs no changes:
+//
+//	curl -sX POST http://127.0.0.1:18901/_control/queue -d '{"responses":[
+//	  {"match":"Top Headlines","content":"Concurrent block reply for headlines specifically."},
+//	  {"content":"Generic reply for every other concurrent block this turn fires."}
+//	]}'
 package main
 
 import (
@@ -54,6 +71,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -74,6 +92,13 @@ type queuedToolCall struct {
 type queuedResponse struct {
 	Content   string           `json:"content,omitempty"`
 	ToolCalls []queuedToolCall `json:"tool_calls,omitempty"`
+	// Match, when non-empty, restricts this entry to a request whose raw
+	// body contains this substring — see the package doc comment's
+	// "Plain FIFO breaks down..." section for why. Entries with Match set
+	// are checked, in queue order, before any plain-FIFO entry, and can be
+	// consumed out of position; entries with Match empty are untouched by
+	// this and continue serving each other in strict arrival order.
+	Match string `json:"match,omitempty"`
 }
 
 // defaultReply is what every call gets when the queue is empty — lets a
@@ -101,14 +126,9 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.calls = append(s.calls, json.RawMessage(body))
-	var resp queuedResponse
-	if len(s.queue) > 0 {
-		resp = s.queue[0]
-		s.queue = s.queue[1:]
-	} else {
-		resp = queuedResponse{Content: defaultReply}
-	}
 	s.mu.Unlock()
+
+	resp := s.takeResponse(string(body))
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	flusher, ok := w.(http.Flusher)
@@ -183,6 +203,30 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		sseLine(string(finishChunk))
 	}
 	sseLine("[DONE]")
+}
+
+// takeResponse pops and returns the queued response for one incoming
+// request body — a matched entry (Match set and contained in body) ahead
+// of the next plain-FIFO entry (Match empty), regardless of queue
+// position, or defaultReply if the queue has nothing eligible. See
+// queuedResponse.Match's doc comment for why a matched lookup is needed
+// at all alongside plain FIFO.
+func (s *server) takeResponse(body string) queuedResponse {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, resp := range s.queue {
+		if resp.Match != "" && strings.Contains(body, resp.Match) {
+			s.queue = append(s.queue[:i:i], s.queue[i+1:]...)
+			return resp
+		}
+	}
+	for i, resp := range s.queue {
+		if resp.Match == "" {
+			s.queue = append(s.queue[:i:i], s.queue[i+1:]...)
+			return resp
+		}
+	}
+	return queuedResponse{Content: defaultReply}
 }
 
 func (s *server) handleQueue(w http.ResponseWriter, r *http.Request) {
