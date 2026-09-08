@@ -46,6 +46,12 @@
 	];
 
 	const cfg = pulsarDailyState.config;
+	// dailyEnabled: the whole-feature on/off switch — distinct from
+	// enabledBlocks below, which picks which blocks run once Daily itself
+	// is on. Defaults true so an existing config (created before this
+	// field existed) reads as "was already running", matching the
+	// backend's own column default — see store's enabled column comment.
+	let dailyEnabled = $state(cfg?.enabled ?? true);
 	let enabledBlocks = $state(new Set(cfg?.enabled_blocks ?? blockOptions.map((b) => b.key)));
 	let sportsTeams = $state(cfg?.sports_teams ?? '');
 	// customInstructions: keyed by block key, one entry per customizable
@@ -160,7 +166,8 @@
 			weather_location: weatherLocation.trim(),
 			architect_model: architectModel,
 			writer_model: writerModel,
-			time_of_day: timeOfDay
+			time_of_day: timeOfDay,
+			enabled: dailyEnabled
 		};
 
 		const result = await pulsarDailyState.updateConfig(input);
@@ -183,6 +190,19 @@
 		</div>
 
 		<form onsubmit={submit}>
+			<div class="row daily-enabled-row">
+				<span>The Daily</span>
+				<label class="switch">
+					<input type="checkbox" bind:checked={dailyEnabled} />
+					<span class="slider"></span>
+				</label>
+			</div>
+			<p class="hint">
+				{dailyEnabled
+					? 'Generates automatically at the scheduled time below.'
+					: "Off — won't generate on its own. \"Generate now\" still works."}
+			</p>
+
 			<h3>Blocks</h3>
 			<div class="block-list">
 				{#each blockOptions as opt (opt.key)}
@@ -532,5 +552,60 @@
 	.generate-now-btn {
 		font-size: 13px;
 		padding: var(--space-sm) var(--space-md);
+	}
+
+	.daily-enabled-row {
+		font-weight: 600;
+	}
+
+	/* Same switch construction as PulsarRoutineForm.svelte/
+	   SettingsPanel.svelte/ComposerMenu.svelte — duplicated, not shared,
+	   since Svelte scopes component styles per-file. */
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 36px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.slider {
+		position: absolute;
+		inset: 0;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.slider::before {
+		content: '';
+		position: absolute;
+		width: 14px;
+		height: 14px;
+		left: 2px;
+		top: 2px;
+		background: var(--color-text-dim);
+		border-radius: 50%;
+		transition:
+			transform 0.15s ease,
+			background 0.15s ease;
+	}
+
+	.switch input:checked + .slider {
+		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+		border-color: var(--color-accent);
+	}
+
+	.switch input:checked + .slider::before {
+		transform: translateX(16px);
+		background: var(--color-accent);
 	}
 </style>

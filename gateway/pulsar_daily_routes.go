@@ -37,6 +37,7 @@ type pulsarDailyConfigRequest struct {
 	ArchitectModel     string                         `json:"architect_model"`
 	WriterModel        string                         `json:"writer_model"`
 	TimeOfDay          string                         `json:"time_of_day"`
+	Enabled            bool                           `json:"enabled"`
 }
 
 // validateDailyConfig checks a config request is something the pipeline
@@ -101,7 +102,7 @@ func (s *Server) handleUpdateDailyConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.CustomBlocks, req.WeatherLocation, req.ArchitectModel, req.WriterModel, req.TimeOfDay); err != nil {
+	if err := s.db.UpdateDailyConfig(req.EnabledBlocks, req.SportsTeams, req.CustomInstructions, req.CustomBlocks, req.WeatherLocation, req.ArchitectModel, req.WriterModel, req.TimeOfDay, req.Enabled); err != nil {
 		log.Warn("updating pulsar daily config failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

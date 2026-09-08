@@ -11,6 +11,7 @@ export interface PulsarDailyConfigInput {
 	architect_model: string;
 	writer_model: string;
 	time_of_day: string;
+	enabled: boolean;
 }
 
 // PulsarDailyState is Pulsar Daily's own store, same shape/reasoning as

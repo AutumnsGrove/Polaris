@@ -146,23 +146,23 @@ func TestIsDailyDue(t *testing.T) {
 	}{
 		{
 			name: "never generated, scheduled time already passed today",
-			cfg:  &store.PulsarDailyConfig{TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 4, 12, 0, 0, 0, loc)},
+			cfg:  &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 4, 12, 0, 0, 0, loc)},
 			want: true,
 		},
 		{
 			name: "created after today's scheduled time already passed — must not fire immediately on save",
-			cfg:  &store.PulsarDailyConfig{TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 5, 7, 30, 0, 0, loc)},
+			cfg:  &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 5, 7, 30, 0, 0, loc)},
 			want: false,
 		},
 		{
 			name: "already generated today, not due again",
-			cfg: &store.PulsarDailyConfig{TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
+			cfg: &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
 				LastGeneratedAt: timePtr(time.Date(2026, 9, 5, 7, 0, 0, 0, loc))},
 			want: false,
 		},
 		{
 			name: "last generated yesterday, due again today",
-			cfg: &store.PulsarDailyConfig{TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
+			cfg: &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc),
 				LastGeneratedAt: timePtr(time.Date(2026, 9, 4, 7, 0, 0, 0, loc))},
 			want: true,
 		},
@@ -172,7 +172,7 @@ func TestIsDailyDue(t *testing.T) {
 			// if nothing was actually missed, i.e. this config didn't exist
 			// yet at that point.
 			name: "scheduled time later today hasn't arrived, and nothing earlier was missed",
-			cfg:  &store.PulsarDailyConfig{TimeOfDay: "20:00", CreatedAt: time.Date(2026, 9, 5, 0, 1, 0, 0, loc)},
+			cfg:  &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "20:00", CreatedAt: time.Date(2026, 9, 5, 0, 1, 0, 0, loc)},
 			want: false,
 		},
 		{
@@ -180,8 +180,16 @@ func TestIsDailyDue(t *testing.T) {
 			// occurrence with no generation since — this is the "catch up on
 			// restart" case isRoutineDue already establishes, not a bug.
 			name: "scheduled time later today hasn't arrived, but yesterday's occurrence was missed",
-			cfg:  &store.PulsarDailyConfig{TimeOfDay: "20:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc)},
+			cfg:  &store.PulsarDailyConfig{Enabled: true, TimeOfDay: "20:00", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, loc)},
 			want: true,
+		},
+		{
+			// The global on/off switch — otherwise identical to the first
+			// case above (which wants true), confirming Enabled gates before
+			// any time-of-day math runs at all.
+			name: "disabled, even though the schedule itself is due",
+			cfg:  &store.PulsarDailyConfig{Enabled: false, TimeOfDay: "07:00", CreatedAt: time.Date(2026, 9, 4, 12, 0, 0, 0, loc)},
+			want: false,
 		},
 	}
 	for _, tt := range tests {

@@ -274,11 +274,11 @@ func dailyResearchTaskFor(key, location, sportsTeams, customInstruction string) 
 // the diff-judge/gist/trace paths); when it doesn't (or wantsItems is
 // false), items is nil and content is the model's plain-prose answer,
 // exactly as before this existed.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, cost float64, err error) {
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, chart *tools.ChartSpec, cost float64, err error) {
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, wantsItems)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, nil, 0, err
 	}
 	if result.DailyItemsFinal != nil {
 		items = make([]store.PulsarDailyBlockItem, 0, len(result.DailyItemsFinal.Items))
@@ -286,7 +286,7 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 			items = append(items, store.PulsarDailyBlockItem{Title: it.Title, Summary: it.Summary, Source: it.Source, URL: it.URL})
 		}
 	}
-	return strings.TrimSpace(result.Answer), items, result.CostUSD, nil
+	return strings.TrimSpace(result.Answer), items, agentCtx.ChartSnapshot(), result.CostUSD, nil
 }
 
 // generateDailyElaboration is Stage C's deeper pass on the elected Top
@@ -296,7 +296,7 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 // prompt ("more paragraphs, additional context") produced a real,
 // observed 17KB Top Story card from a single elected item — this is meant
 // to read as one deeper digest card, not a full feature article.
-func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (string, float64, error) {
+func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (string, *tools.ChartSpec, float64, error) {
 	task := fmt.Sprintf("This is today's lead story for a personal daily digest, titled %q. Here's the "+
 		"quick version already written: %s\n\nWrite a deeper but still concise version — 3-4 short "+
 		"paragraphs, not a full feature article. Add real additional context or background research (not "+
@@ -307,9 +307,9 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		return "", 0, err
+		return "", nil, 0, err
 	}
-	return strings.TrimSpace(result.Answer), result.CostUSD, nil
+	return strings.TrimSpace(result.Answer), agentCtx.ChartSnapshot(), result.CostUSD, nil
 }
 
 // newDailyToolContext builds the tools.Context one research/elaboration
@@ -572,6 +572,9 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 // this avoids (an immediate fire on save if today's time-of-day already
 // passed).
 func isDailyDue(c *store.PulsarDailyConfig, now time.Time) bool {
+	if !c.Enabled {
+		return false
+	}
 	hour, minute, ok := parseTimeOfDay(c.TimeOfDay)
 	if !ok {
 		return false
@@ -830,13 +833,25 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			if len(r.items) > 0 {
 				elabTitle, elabQuick = r.items[0].Title, r.items[0].Summary
 			}
-			elaborated, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
+			elaborated, elabChart, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
 			totalCost += elabCost
 			content := elabQuick
 			if err != nil {
 				log.Warn("pulsar daily: stage C elaboration failed, using the quick version", "block", r.spec.Key, "err", err)
 			} else {
 				content = elaborated
+				// Stage C's own visualize call (if any) supersedes whatever
+				// Stage A produced — the elaboration is the deeper, later
+				// pass on the same story, so its chart is the more
+				// considered one when both exist.
+				if elabChart != nil {
+					chartJSON = nil
+					if b, err := json.Marshal(elabChart); err != nil {
+						log.Warn("pulsar daily: encoding top story elaboration chart failed, dropping it", "block", r.spec.Key, "err", err)
+					} else {
+						chartJSON = b
+					}
+				}
 			}
 			// topStoryBlockKey is a fixed literal, not r.spec.Key, only
 			// when this block is itemized — see below, where the same
@@ -850,7 +865,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			if len(r.items) > 0 {
 				topStoryBlockKey = "top_story"
 			}
-			topStory = &store.PulsarDailyBlock{Key: topStoryBlockKey, Title: elabTitle, Content: content, Gist: r.gist, IsTopStory: true}
+			topStory = &store.PulsarDailyBlock{Key: topStoryBlockKey, Title: elabTitle, Content: content, Gist: r.gist, IsTopStory: true, Chart: chartJSON}
 			if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, true, topStoryReasoning, content, elabCost); err != nil {
 				log.Warn("pulsar daily: recording top story trace outcome failed", "block", r.spec.Key, "err", err)
 			}
@@ -998,10 +1013,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		var task string
 		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)
 		if err == nil {
-			content, items, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
+			content, items, chart, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
 		}
 	case dailyBlockCustom:
-		content, items, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
+		content, items, chart, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
 	}
 
 	// traceErr carries a hard-failure's error text into the trace row

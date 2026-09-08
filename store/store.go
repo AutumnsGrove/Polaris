@@ -478,7 +478,13 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- last_generated_at: NULL means never generated yet. Checked against
 	-- time_of_day by the scheduler tick, same isRoutineDue-style due-check
 	-- pulsar_routines' last_run_at drives.
-	last_generated_at DATETIME
+	last_generated_at DATETIME,
+	-- enabled: the Daily-wide on/off switch — checked by the scheduler
+	-- before any due-check runs at all, so turning it off means no
+	-- generation happens today, not "generate but hide it". Defaults to 1
+	-- (on) — a first-time GetDailyConfig INSERT OR IGNORE row should behave
+	-- like the feature always did before this column existed.
+	enabled INTEGER NOT NULL DEFAULT 1
 );
 
 -- pulsar_daily_editions holds one assembled edition per calendar date — what
@@ -637,6 +643,12 @@ var migrations = []string{
 	// positional index, so a new column always goes last, never inserted
 	// alongside the schema comment it corresponds to.
 	`ALTER TABLE memories ADD COLUMN occurred_at TEXT NOT NULL DEFAULT ''`,
+	// enabled: the Daily-wide on/off switch — see the schema comment above
+	// enabled_blocks. Defaults to 1 (on) so an existing install's edition
+	// keeps generating on upgrade exactly as it did before this column
+	// existed, rather than silently going dark until someone opens
+	// settings and notices.
+	`ALTER TABLE pulsar_daily_config ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`,
 }
 
 func Open(path string) (*Store, error) {

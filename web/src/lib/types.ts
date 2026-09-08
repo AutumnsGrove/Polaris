@@ -340,6 +340,12 @@ export interface PulsarDailyConfig {
 	time_of_day: string;
 	created_at: string;
 	last_generated_at: string | null;
+	// enabled: the Daily-wide on/off switch — false means the scheduler
+	// skips today's due-check entirely (see gateway's isDailyDue), not
+	// just hides the sidebar entry. "Generate now" still works regardless,
+	// since that's an explicit user action, not the unattended firing this
+	// switch exists to stop.
+	enabled: boolean;
 }
 
 // PulsarDailyCustomBlock mirrors store.PulsarDailyCustomBlock.

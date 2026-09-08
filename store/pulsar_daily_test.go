@@ -15,6 +15,9 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	if c.ArchitectModel != "deepseek-pro" || c.WriterModel != "deepseek" || c.TimeOfDay != "07:00" {
 		t.Errorf("GetDailyConfig defaults = %+v, want the column defaults", c)
 	}
+	if !c.Enabled {
+		t.Error("Enabled should default to true")
+	}
 	if c.LastGeneratedAt != nil {
 		t.Errorf("LastGeneratedAt should be unset before any generation, got %+v", c.LastGeneratedAt)
 	}
@@ -29,7 +32,7 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	customBlocks := []PulsarDailyCustomBlock{
 		{Key: "custom_abc123", Title: "Stock Watchlist", Instructions: "Check NVDA and AAPL closing prices"},
 	}
-	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", customInstructions, customBlocks, "Seattle, WA", "deepseek-pro", "deepseek", "06:30"); err != nil {
+	if err := s.UpdateDailyConfig([]string{"weather", "sports"}, "Warriors, 49ers", customInstructions, customBlocks, "Seattle, WA", "deepseek-pro", "deepseek", "06:30", false); err != nil {
 		t.Fatalf("UpdateDailyConfig: %v", err)
 	}
 	c, err = s.GetDailyConfig()
@@ -38,6 +41,9 @@ func TestDailyConfig_DefaultsThenUpdate(t *testing.T) {
 	}
 	if len(c.EnabledBlocks) != 2 || c.SportsTeams != "Warriors, 49ers" || c.TimeOfDay != "06:30" {
 		t.Errorf("GetDailyConfig after update = %+v, want the values just written", c)
+	}
+	if c.Enabled {
+		t.Error("Enabled should be false after writing false")
 	}
 	if c.WeatherLocation != "Seattle, WA" {
 		t.Errorf("WeatherLocation = %q, want the value just written", c.WeatherLocation)
