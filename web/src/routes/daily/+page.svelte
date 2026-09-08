@@ -336,6 +336,13 @@
 
 	{#if pulsarDailyState.editionState === 'loading'}
 		<p class="empty">Loading today's edition…</p>
+	{:else if pulsarDailyState.editionState === 'error'}
+		<p class="empty">
+			Couldn't reach the server — check your connection and
+			<button class="retry-link" onclick={() => pulsarDailyState.loadEdition(viewedDate || 'latest')}
+				>try again</button
+			>.
+		</p>
 	{:else if pulsarDailyState.editionState === 'not-found'}
 		<p class="empty">
 			No edition yet — Pulsar Daily generates once a day at your configured time. Check back then,
@@ -519,6 +526,15 @@
 		font-size: 13.5px;
 		line-height: 1.6;
 		color: var(--color-text-dim);
+	}
+	.retry-link {
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		color: var(--color-accent);
+		text-decoration: underline;
+		cursor: pointer;
 	}
 
 	.masthead {

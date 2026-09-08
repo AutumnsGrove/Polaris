@@ -49,19 +49,37 @@ export class PulsarState {
 	totalUnread = $derived(Object.values(this.unreadCounts).reduce((sum, n) => sum + n, 0));
 
 	async loadRoutines() {
-		const res = await fetch('/api/pulsar/routines');
-		this.routines = res.ok ? ((await res.json()) ?? []) : [];
-		this.loaded = true;
+		try {
+			const res = await fetch('/api/pulsar/routines');
+			this.routines = res.ok ? ((await res.json()) ?? []) : [];
+		} catch {
+			// Network failure (offline, DNS, TLS — a real case for "phone
+			// over Tailscale") — same empty-list fallback as a non-ok
+			// response, just via a different failure path. Without this
+			// catch, a rejected fetch() promise here is unhandled: nothing
+			// downstream awaits loadRoutines() with its own try/catch.
+			this.routines = [];
+		} finally {
+			this.loaded = true;
+		}
 	}
 
 	async loadArchivedRoutines() {
-		const res = await fetch('/api/pulsar/routines?archived=true');
-		this.archivedRoutines = res.ok ? ((await res.json()) ?? []) : [];
+		try {
+			const res = await fetch('/api/pulsar/routines?archived=true');
+			this.archivedRoutines = res.ok ? ((await res.json()) ?? []) : [];
+		} catch {
+			this.archivedRoutines = [];
+		}
 	}
 
 	async loadUnreadCounts() {
-		const res = await fetch('/api/pulsar/unread');
-		this.unreadCounts = res.ok ? ((await res.json()) ?? {}) : {};
+		try {
+			const res = await fetch('/api/pulsar/unread');
+			this.unreadCounts = res.ok ? ((await res.json()) ?? {}) : {};
+		} catch {
+			this.unreadCounts = {};
+		}
 	}
 
 	// routineById looks a routine up out of whichever of
@@ -81,6 +99,8 @@ export class PulsarState {
 		try {
 			const res = await fetch(`/api/pulsar/routines/${routineId}/pulses`);
 			this.currentPulses = res.ok ? ((await res.json()) ?? []) : [];
+		} catch {
+			this.currentPulses = [];
 		} finally {
 			this.currentPulsesLoading = false;
 		}
@@ -89,43 +109,61 @@ export class PulsarState {
 	// Returns { error } instead of throwing/returning null on failure —
 	// PulsarRoutineForm.svelte shows validateSchedule's message (see
 	// gateway/pulsar_routes.go) inline rather than just failing silently.
+	// A network failure (fetch() itself rejecting) gets the same treatment
+	// as a non-ok response, not an unhandled rejection.
 	async createRoutine(input: PulsarRoutineInput): Promise<{ routine: PulsarRoutine | null; error: string }> {
-		const res = await fetch('/api/pulsar/routines', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(input)
-		});
-		if (!res.ok) return { routine: null, error: await res.text() };
-		const routine = (await res.json()) as PulsarRoutine;
-		await this.loadRoutines();
-		return { routine, error: '' };
+		try {
+			const res = await fetch('/api/pulsar/routines', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(input)
+			});
+			if (!res.ok) return { routine: null, error: await res.text() };
+			const routine = (await res.json()) as PulsarRoutine;
+			await this.loadRoutines();
+			return { routine, error: '' };
+		} catch {
+			return { routine: null, error: 'Could not reach the server — try again.' };
+		}
 	}
 
 	async updateRoutine(
 		id: number,
 		input: PulsarRoutineInput
 	): Promise<{ routine: PulsarRoutine | null; error: string }> {
-		const res = await fetch(`/api/pulsar/routines/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(input)
-		});
-		if (!res.ok) return { routine: null, error: await res.text() };
-		const routine = (await res.json()) as PulsarRoutine;
-		await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
-		return { routine, error: '' };
+		try {
+			const res = await fetch(`/api/pulsar/routines/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(input)
+			});
+			if (!res.ok) return { routine: null, error: await res.text() };
+			const routine = (await res.json()) as PulsarRoutine;
+			await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
+			return { routine, error: '' };
+		} catch {
+			return { routine: null, error: 'Could not reach the server — try again.' };
+		}
 	}
 
 	async archiveRoutine(id: number): Promise<boolean> {
-		const res = await fetch(`/api/pulsar/routines/${id}/archive`, { method: 'POST' });
-		if (res.ok) await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
-		return res.ok;
+		try {
+			const res = await fetch(`/api/pulsar/routines/${id}/archive`, { method: 'POST' });
+			if (res.ok) await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
+			return res.ok;
+		} catch {
+			return false;
+		}
 	}
 
 	async unarchiveRoutine(id: number): Promise<boolean> {
-		const res = await fetch(`/api/pulsar/routines/${id}/unarchive`, { method: 'POST' });
-		if (res.ok) await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
-		return res.ok;
+		try {
+			const res = await fetch(`/api/pulsar/routines/${id}/unarchive`, { method: 'POST' });
+			if (res.ok) await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
+			return res.ok;
+		} catch {
+			return false;
+		}
 	}
 }
 
