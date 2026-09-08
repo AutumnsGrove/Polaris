@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +12,16 @@ import (
 	"polaris/models"
 	"polaris/store"
 )
+
+// TestMain overrides remoteImageDialContext's SSRF guard for the whole
+// package's test binary — tests fetch remote images from httptest
+// servers, which bind to loopback on purpose, and the real guard exists
+// specifically to block that address class in production. Same pattern
+// as tools/web_read_test.go's own dialContext override.
+func TestMain(m *testing.M) {
+	remoteImageDialContext = (&net.Dialer{}).DialContext
+	os.Exit(m.Run())
+}
 
 // testHarness bundles a live Server (backed by a real temp-file SQLite
 // store and a real config.yaml, exactly like production) behind an

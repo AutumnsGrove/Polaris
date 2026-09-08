@@ -380,6 +380,16 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return d.DialContext(ctx, network, net.JoinHostPort(dialIP.String(), port))
 }
 
+// SafeDialContext exposes safeDialContext for reuse outside this file.
+// web_read isn't the only place that fetches a URL an attacker can fully
+// control — gateway/attachments.go's remote image fetch (Pulsar Daily's
+// "Picture of the Day", sourced from an image_search result) needs the
+// exact same SSRF/DNS-rebinding protection and previously used a plain
+// http.DefaultClient with none.
+func SafeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return safeDialContext(ctx, network, addr)
+}
+
 // isDisallowedIP flags loopback, RFC1918/RFC4193 private, link-local, and
 // unspecified addresses — the ranges that reach something other than a
 // genuine public web server (a cloud metadata endpoint, an internal admin

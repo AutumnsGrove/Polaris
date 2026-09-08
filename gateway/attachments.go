@@ -168,6 +168,19 @@ func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHea
 	return UploadResponse{ID: id, Filename: header.Filename, ContentType: contentType, SizeBytes: written}, nil
 }
 
+// remoteImageDialContext is a var, not a direct reference to
+// tools.SafeDialContext, so tests can point it at a plain, unrestricted
+// dialer for a loopback httptest.Server — same pattern as
+// tools/web_read.go's own dialContext var. Real Pulsar Daily traffic
+// always targets a public image URL surfaced by image_search, which is
+// exactly as attacker-influenceable as anything web_read fetches, so it
+// needs the same SSRF/DNS-rebinding-aware guard rather than
+// http.DefaultClient's unrestricted dialer — without this, a crafted
+// search-result image URL pointing at an internal host (a cloud metadata
+// endpoint, a LAN admin panel) would get fetched, saved to disk, and
+// handed back as a normal attachment.
+var remoteImageDialContext = tools.SafeDialContext
+
 // fetchImageURLBytes is a var (not a plain function call) so tests can
 // stub the network fetch — same pattern as search.nominatimBaseURL and
 // web_read.go's waybackAvailabilityAPI.
@@ -176,7 +189,11 @@ var fetchImageURLBytes = func(reqCtx context.Context, url string) (data []byte, 
 	if err != nil {
 		return nil, "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{DialContext: remoteImageDialContext},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
