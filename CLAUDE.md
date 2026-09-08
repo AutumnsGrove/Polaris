@@ -191,6 +191,36 @@ gap only found by running `polaris search` live and checking what it actually ha
 code review. Any new CLI command or server entry point that can trigger `web_search` needs the same
 four pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not just the LLM client.
 
+## Pulsar and Pulsar Daily
+
+"Pulsar" is not a typo for Polaris and not a mismatched term — it's a real, sizeable subsystem
+(routines + `tools/`, `store/`, `gateway/` files all named `pulsar_*`), named for the astronomical
+object: a saved prompt that fires on a schedule instead of when you type it, each firing ("pulse")
+running through the exact same `agent.Run` turn pipeline as a normal message. One scheduler
+(`gateway/pulsar_scheduler.go`, a once-a-minute goroutine, same no-external-cron shape as
+`backup.go`'s daily snapshot job) drives two distinct surfaces built on that one primitive:
+
+- **Pulsar** (`/pulsar`) — user-defined recurring routines (daily/weekly/monthly), each a real
+  thread (`threads.source == "pulsar"`) told what it reported last time so it states only what's
+  new rather than restating still-true facts. `gateway/pulsar_wizard.go`'s ephemeral,
+  non-persisted interview turns a vague idea into a tuned prompt;
+  `tools/finalize_pulsar_prompt.go` forces that final output through a tool call instead of
+  parseable prose. Design doc: `docs/plans/pulsar-routines.md`.
+- **Pulsar Daily** (`/daily`) — a *different, singleton* surface, not a `routine.kind == 'daily'`
+  special case: one "morning newspaper" edition/day assembling ~10 independent mini-generations
+  (`gateway/pulsar_daily.go`'s Stage A — weather is a direct tool call, word-of-day/on-this-day/
+  quote are single no-tools LLM picks, headlines/trending/local/sports/custom blocks are
+  narrow-toolset `agent.Run`s) rather than one big agent turn. A second, tool-call-only pass
+  (`tools/finalize_daily_items.go`) diffs each "Watch" block against yesterday's stored content
+  and can drop it as unchanged; a ranking pass elects a Top Story for deeper elaboration. Storage
+  is a singleton daily config, not routine-shaped. Design doc: `docs/plans/pulsar-daily.md`
+  (living/mid-design — check its "Status" line before assuming a section is final).
+
+Relevant code beyond the two `gateway/pulsar_scheduler.go`/`pulsar_wizard.go` files above:
+`gateway/pulsar_routes.go`, `gateway/pulsar_daily_routes.go`, `store/pulsar.go`,
+`store/pulsar_daily.go`. README's Pulsar/Pulsar Daily bullets are the user-facing description;
+this section is only the "where the code lives" pointer.
+
 ## Conventions worth knowing before editing Go here
 
 - `uv`/Python-specific instructions some global CLAUDE.md files carry do **not** apply — this is a
