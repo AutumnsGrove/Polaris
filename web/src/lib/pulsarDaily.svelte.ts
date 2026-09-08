@@ -24,9 +24,13 @@ export class PulsarDailyState {
 	// the "← Yesterday"/"Tomorrow →" nav can move this backward/forward.
 	// null while loading; 'not-found' distinguishes "no edition exists
 	// for this date yet" (a real, expected state before the first
-	// generation ever runs) from "still fetching".
+	// generation ever runs) from "still fetching". 'error' is a network
+	// failure (offline/DNS/TLS) rather than a real 404 — previously
+	// collapsed into the same 'not-found' bucket, which told a user with
+	// a flaky connection "no edition yet" when the truth was "couldn't
+	// even ask the server."
 	edition = $state<PulsarDailyEdition | null>(null);
-	editionState = $state<'loading' | 'loaded' | 'not-found'>('loading');
+	editionState = $state<'loading' | 'loaded' | 'not-found' | 'error'>('loading');
 
 	// hasNewEdition backs the sidebar's plain dot indicator (singleton,
 	// so just a boolean — see the plan doc's "Indicator is a plain dot,
@@ -35,19 +39,30 @@ export class PulsarDailyState {
 	hasNewEdition = $state(false);
 
 	async loadConfig() {
-		const res = await fetch('/api/pulsar/daily/config');
-		this.config = res.ok ? ((await res.json()) as PulsarDailyConfig) : null;
+		try {
+			const res = await fetch('/api/pulsar/daily/config');
+			this.config = res.ok ? ((await res.json()) as PulsarDailyConfig) : null;
+		} catch {
+			// Network failure (offline/DNS/TLS) gets the same "no config
+			// loaded" outcome as a non-ok response, not an unhandled
+			// rejection — see loadEdition's identical reasoning below.
+			this.config = null;
+		}
 	}
 
 	async updateConfig(input: PulsarDailyConfigInput): Promise<{ error: string }> {
-		const res = await fetch('/api/pulsar/daily/config', {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(input)
-		});
-		if (!res.ok) return { error: await res.text() };
-		this.config = (await res.json()) as PulsarDailyConfig;
-		return { error: '' };
+		try {
+			const res = await fetch('/api/pulsar/daily/config', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(input)
+			});
+			if (!res.ok) return { error: await res.text() };
+			this.config = (await res.json()) as PulsarDailyConfig;
+			return { error: '' };
+		} catch {
+			return { error: 'Could not reach the server — try again.' };
+		}
 	}
 
 	// loadEdition fetches "latest", a specific "YYYY-MM-DD", or the
@@ -62,19 +77,29 @@ export class PulsarDailyState {
 				: mode === 'after'
 					? `/api/pulsar/daily/editions/${date}/next`
 					: `/api/pulsar/daily/editions/${date}`;
-		const res = await fetch(path);
-		if (res.status === 404) {
+		try {
+			const res = await fetch(path);
+			if (res.status === 404) {
+				this.edition = null;
+				this.editionState = 'not-found';
+				return;
+			}
+			if (!res.ok) {
+				this.edition = null;
+				this.editionState = 'not-found';
+				return;
+			}
+			this.edition = (await res.json()) as PulsarDailyEdition;
+			this.editionState = 'loaded';
+		} catch {
+			// A rejected fetch() (offline/DNS/TLS) previously left
+			// editionState stuck at 'loading' forever — the initial
+			// Promise.all in /daily's onMount had no catch, so a failed
+			// first load produced no user-facing error at all rather than
+			// falling into the (already-handled) 'not-found' empty state.
 			this.edition = null;
-			this.editionState = 'not-found';
-			return;
+			this.editionState = 'error';
 		}
-		if (!res.ok) {
-			this.edition = null;
-			this.editionState = 'not-found';
-			return;
-		}
-		this.edition = (await res.json()) as PulsarDailyEdition;
-		this.editionState = 'loaded';
 	}
 
 	// generateNow triggers a real Daily generation immediately, bypassing
@@ -87,17 +112,27 @@ export class PulsarDailyState {
 	// calls). 409 means one's already running — surfaced as a distinct
 	// result so the UI can say so instead of a generic failure.
 	async generateNow(): Promise<{ error: string; alreadyRunning: boolean }> {
-		const res = await fetch('/api/pulsar/daily/generate', { method: 'POST' });
-		if (res.status === 409) return { error: 'A generation is already running.', alreadyRunning: true };
-		if (!res.ok) return { error: (await res.text()) || 'Something went wrong — try again.', alreadyRunning: false };
-		return { error: '', alreadyRunning: false };
+		try {
+			const res = await fetch('/api/pulsar/daily/generate', { method: 'POST' });
+			if (res.status === 409) return { error: 'A generation is already running.', alreadyRunning: true };
+			if (!res.ok) return { error: (await res.text()) || 'Something went wrong — try again.', alreadyRunning: false };
+			return { error: '', alreadyRunning: false };
+		} catch {
+			return { error: 'Could not reach the server — try again.', alreadyRunning: false };
+		}
 	}
 
 	async checkForNewEdition(lastSeenDate: string | null) {
-		const res = await fetch('/api/pulsar/daily/editions/latest');
-		if (!res.ok) return;
-		const latest = (await res.json()) as PulsarDailyEdition;
-		this.hasNewEdition = lastSeenDate === null || latest.date > lastSeenDate;
+		try {
+			const res = await fetch('/api/pulsar/daily/editions/latest');
+			if (!res.ok) return;
+			const latest = (await res.json()) as PulsarDailyEdition;
+			this.hasNewEdition = lastSeenDate === null || latest.date > lastSeenDate;
+		} catch {
+			// Silent no-op, same as a non-ok response above — this is a
+			// background poll (see Sidebar.svelte's call site), not a
+			// user-initiated action with anywhere to show an error.
+		}
 	}
 
 	// resolveExpand looks up what a card's expand-to-chat message should
@@ -114,13 +149,17 @@ export class PulsarDailyState {
 		blockKey: string,
 		itemIndex?: number
 	): Promise<DailyExpandResolution | null> {
-		const res = await fetch('/api/pulsar/daily/expand', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ date, block_key: blockKey, item_index: itemIndex })
-		});
-		if (!res.ok) return null;
-		return (await res.json()) as DailyExpandResolution;
+		try {
+			const res = await fetch('/api/pulsar/daily/expand', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ date, block_key: blockKey, item_index: itemIndex })
+			});
+			if (!res.ok) return null;
+			return (await res.json()) as DailyExpandResolution;
+		} catch {
+			return null;
+		}
 	}
 }
 

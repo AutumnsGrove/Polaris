@@ -49,7 +49,14 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		if cfgRow, err := s.db.GetDailyConfig(); err != nil {
 			log.Warn("loading pulsar daily config failed", "err", err)
 		} else if isDailyDue(cfgRow, time.Now()) {
-			go s.runDailyPipelineRecovered()
+			if !s.startDailyGenerationIfIdle() {
+				// A manual "Generate now" click won this instant's race —
+				// see startDailyGenerationIfIdle's doc comment. Nothing to
+				// do: that run will produce today's edition just as well,
+				// and next tick's isDailyDue will already be false once it
+				// finishes.
+				log.Info("pulsar daily: due, but a generation was already running — skipping this tick")
+			}
 		}
 
 		routines, err := s.db.ListActivePulsarRoutines()
@@ -215,7 +222,19 @@ func parseDayOfMonth(s string) (int, bool) {
 // stack net/http recovers, so an unrecovered panic in one routine's pulse
 // would otherwise take down the whole process instead of just failing
 // that one pulse.
+// pulsarRoutineSem bounds how many pulse turns run at once, across every
+// tick combined — without it, several routines sharing the same
+// time_of_day (a plausible default: several routines all left at "daily
+// 7am") would each fire their own concurrent agent.Run with nothing
+// capping how many real web_search/LLM calls run simultaneously.
+// Acquired here rather than before the `go` statement in RunPulsarScheduler
+// so the scheduler's own dispatch loop never blocks — only the pulse's
+// actual work waits for a free slot.
+var pulsarRoutineSem = make(chan struct{}, 5)
+
 func (s *Server) firePulseRecovered(r store.PulsarRoutine) {
+	pulsarRoutineSem <- struct{}{}
+	defer func() { <-pulsarRoutineSem }()
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Error("panic firing pulsar pulse", "routine", r.ID, "name", r.Name, "panic", rec)

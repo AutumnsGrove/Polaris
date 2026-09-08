@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -111,14 +112,17 @@ type Server struct {
 	wizardMu       sync.Mutex
 	wizardSessions map[string]*wizardSession
 
-	// dailyGenerationRunning guards the manual "Generate now" trigger
-	// (handleGenerateDailyNow) against a second click firing an
-	// overlapping run — the scheduler's own once-a-minute tick can't
-	// double-fire (isDailyDue goes false the instant last_generated_at is
-	// set, which happens before Stage A even starts — see
-	// runDailyPipeline), but nothing stopped two rapid manual clicks from
-	// starting two full pipelines at once, each paying for its own
-	// research-heavy LLM calls for no benefit.
+	// dailyGenerationRunning guards every path that can start a Daily
+	// generation run — the scheduler's automatic once-a-minute due-check
+	// and the manual "Generate now" button both go through
+	// startDailyGenerationIfIdle, which CAS-guards this flag. The
+	// scheduler alone can't double-fire itself (isDailyDue goes false the
+	// instant last_generated_at is set, which happens before Stage A even
+	// starts — see runDailyPipeline), and two rapid manual clicks are the
+	// same story — but neither of those checks the other's flag on its
+	// own, so a manual click landing in the same instant the scheduler's
+	// tick decides today's edition is due would otherwise start two
+	// concurrent pipelines with nothing to stop it.
 	dailyGenerationRunning atomic.Bool
 }
 
@@ -158,7 +162,40 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler { return csrfProtect(s.mux) }
+
+// csrfProtect rejects a cross-origin state-changing request by comparing
+// the browser-supplied Origin header against the request's own Host.
+// Polaris has no login page and nothing resembling a CSRF token to check
+// instead — the whole deployment model assumes only the operator's own
+// devices can reach it at all (Tailscale-only, see CLAUDE.md) — but that
+// assumption breaks the moment the operator's own browser, which DOES
+// have tailnet access, loads a page an attacker controls. Every mutating
+// route below (PUT /api/settings, POST /api/update, POST /api/restart,
+// DELETE /api/threads/{id}, the Pulsar routes, ...) accepts a JSON body
+// via a plain http.HandlerFunc that never inspects Content-Type before
+// decoding, which makes it reachable as a cross-origin browser "simple
+// request" (no preflight) — the hostile page never needs to read the
+// response, just fire the request, so a naive CORS allowlist wouldn't
+// have stopped it either.
+//
+// A request with no Origin header is let through unchanged: this is a
+// same-origin-browser check, not authentication, and non-browser callers
+// (cmd/docker_client.go's HTTP client, curl, a future automation script)
+// never send one.
+func csrfProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+					http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // TryStartTurn registers a new turn goroutine with the server's shutdown
 // tracking, returning false if a shutdown is already underway (see

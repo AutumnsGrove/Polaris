@@ -218,14 +218,10 @@ func (s *Server) handleGetDailyTrace(w http.ResponseWriter, r *http.Request) {
 // already has a "did it work" signal (last_generated_at changing) it can
 // poll for without this request needing to stay open.
 func (s *Server) handleGenerateDailyNow(w http.ResponseWriter, r *http.Request) {
-	if !s.dailyGenerationRunning.CompareAndSwap(false, true) {
+	if !s.startDailyGenerationIfIdle() {
 		http.Error(w, "a Daily generation is already running", http.StatusConflict)
 		return
 	}
-	go func() {
-		defer s.dailyGenerationRunning.Store(false)
-		s.runDailyPipelineRecovered()
-	}()
 	w.WriteHeader(http.StatusAccepted)
 }
 

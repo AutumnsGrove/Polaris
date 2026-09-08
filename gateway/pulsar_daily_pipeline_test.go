@@ -3,7 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -344,6 +347,116 @@ func TestRunDailyPipeline_CustomBlock(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("GetDailyTrace = %+v, want a row for the custom block", trace)
+	}
+}
+
+// diffJudgeMatchServer serves toolCallBody only to the one request whose
+// body identifies it as the diff-judge call for blockTitle (dailyDiffJudge's
+// system message always contains "You are comparing yesterday's and
+// today's content" plus the block's own title — see its doc comment),
+// and genericBody to every other request. Matching on request content
+// rather than arrival order, unlike sequencedSSEServer above, is what
+// makes it possible to control a single specific call's outcome when
+// Stage A's blocks fire as genuinely concurrent goroutines (see
+// TestRunDailyPipeline_ItemizedTopStory's doc comment on why that FIFO
+// queue can't be trusted to hand a scripted response to a specific
+// logical call).
+func diffJudgeMatchServer(t *testing.T, blockTitle, genericBody, toolCallBody string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		if strings.Contains(string(body), "You are comparing yesterday's and today's content") &&
+			strings.Contains(string(body), blockTitle) {
+			fmt.Fprint(w, toolCallBody)
+		} else {
+			fmt.Fprint(w, genericBody)
+		}
+		flusher.Flush()
+	}))
+}
+
+// TestRunDailyPipeline_UnchangedBlockDroppedFromEdition covers the
+// diff-judge's signature behavior end to end: a Watch block whose verdict
+// comes back "unchanged" against a real seeded "yesterday" edition must
+// be excluded from the persisted edition entirely, not just have its
+// verdict recorded somewhere. Every other runDailyPipeline test either
+// has no "yesterday" at all — every Watch block then defaults to
+// "notable", skipping the diff-judge call outright, see
+// generateOneDailyBlock's "First-ever day" branch — or drives a hard
+// failure; none seed real prior content and confirm the drop actually
+// happens.
+//
+// headlines is the only enabled Watch block, so Stage B never fires (zero
+// "notable" candidates) — nothing to script for Stage B/C. The other four
+// enabled blocks are all non-Watch fresh picks, chosen so the edition
+// lands at exactly dailyMinBlockCount after headlines drops out,
+// distinguishing "one block correctly excluded" from
+// TestRunDailyPipeline_BelowFloorShowsDegradedNotice's "everything
+// failed" degraded-notice path.
+func TestRunDailyPipeline_UnchangedBlockDroppedFromEdition(t *testing.T) {
+	genericBody := plainSSEBody("A generic block reply — content doesn't matter for this test's assertions.")
+	unchangedVerdict := toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"record_verdict","arguments":"{\"verdict\":\"unchanged\",\"gist\":\"Same as yesterday\",\"reasoning\":\"No new development since yesterday's report\"}"}}`)
+	srv := diffJudgeMatchServer(t, "Top Headlines", genericBody, unchangedVerdict)
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	if err := h.db.UpsertDailyEdition(yesterday, []store.PulsarDailyBlock{
+		{Key: "headlines", Title: "Top Headlines", Content: "Yesterday: markets closed flat, no major news."},
+	}, 0); err != nil {
+		t.Fatalf("seeding yesterday's edition: %v", err)
+	}
+
+	resp := putDailyConfig(t, h, map[string]interface{}{
+		"enabled_blocks":  []string{"headlines", "quote", "word_of_day", "on_this_day", "sports"},
+		"sports_teams":    "Lakers",
+		"architect_model": "deepseek-pro",
+		"writer_model":    "deepseek",
+		"time_of_day":     "07:00",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT daily config status = %d, want 200", resp.StatusCode)
+	}
+
+	h.srvObj.runDailyPipeline(context.Background())
+
+	today := time.Now().Format("2006-01-02")
+	edition, err := h.db.GetDailyEdition(today)
+	if err != nil {
+		t.Fatalf("GetDailyEdition: %v", err)
+	}
+
+	for _, b := range edition.Blocks {
+		if b.Key == "headlines" {
+			t.Errorf("edition.Blocks contains %q, want it dropped as unchanged", b.Key)
+		}
+	}
+	if len(edition.Blocks) != dailyMinBlockCount {
+		t.Fatalf("got %d blocks, want exactly %d (the 4 fresh-pick blocks; headlines dropped, not collapsed into a degraded notice)", len(edition.Blocks), dailyMinBlockCount)
+	}
+
+	trace, err := h.db.GetDailyTrace(today)
+	if err != nil {
+		t.Fatalf("GetDailyTrace: %v", err)
+	}
+	var headlinesTrace *store.PulsarDailyBlockTrace
+	for i := range trace {
+		if trace[i].BlockKey == "headlines" {
+			headlinesTrace = &trace[i]
+		}
+	}
+	if headlinesTrace == nil {
+		t.Fatal("no trace row for headlines — a dropped block should still leave a real trace record")
+	}
+	if headlinesTrace.Verdict != "unchanged" {
+		t.Errorf("headlines trace.Verdict = %q, want %q", headlinesTrace.Verdict, "unchanged")
+	}
+	if headlinesTrace.Included {
+		t.Error("headlines trace.Included = true, want false — it never made the persisted edition")
 	}
 }
 

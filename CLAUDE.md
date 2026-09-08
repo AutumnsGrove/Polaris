@@ -152,7 +152,13 @@ pattern for new work here, not just the Docker-specific cases above.
   body it actually received, for asserting what the app really sent — e.g. that a disabled tool
   didn't make it into that turn's offered tools list. Built for driving Playwright against the real
   app from a Claude Code remote/cloud session with no real `OPENROUTER_API_KEY` on hand; see the
-  package doc comment in `dev/fakeopenrouter/main.go` for the full usage example.
+  package doc comment in `dev/fakeopenrouter/main.go` for the full usage example. Plain FIFO only
+  works for sequential turns — Pulsar Daily's Stage A fires N blocks as genuinely concurrent
+  `/chat/completions` calls (see `gateway/pulsar_daily.go`), so which physical request lands in
+  which queue slot depends on goroutine scheduling, not which logical block asked. A queued
+  response's optional `match` substring pins it to whichever request body actually contains that
+  text instead, ahead of plain-FIFO entries and independent of queue position — see the same doc
+  comment's "Plain FIFO breaks down..." section.
 - `prompts.yaml` / `prompts/prompts.go` — every LLM prompt fragment except `prompt.md` itself,
   hot-reloaded with compiled-in defaults as a fallback
 - `search/searxng.go` — SearXNG's own engines (Brave, Google, DuckDuckGo, Startpage) do rate-limit
@@ -190,6 +196,36 @@ wired for the CLI's one-shot `polaris search` path even after the web UI/assista
 gap only found by running `polaris search` live and checking what it actually had access to, not by
 code review. Any new CLI command or server entry point that can trigger `web_search` needs the same
 four pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not just the LLM client.
+
+## Pulsar and Pulsar Daily
+
+"Pulsar" is not a typo for Polaris and not a mismatched term — it's a real, sizeable subsystem
+(routines + `tools/`, `store/`, `gateway/` files all named `pulsar_*`), named for the astronomical
+object: a saved prompt that fires on a schedule instead of when you type it, each firing ("pulse")
+running through the exact same `agent.Run` turn pipeline as a normal message. One scheduler
+(`gateway/pulsar_scheduler.go`, a once-a-minute goroutine, same no-external-cron shape as
+`backup.go`'s daily snapshot job) drives two distinct surfaces built on that one primitive:
+
+- **Pulsar** (`/pulsar`) — user-defined recurring routines (daily/weekly/monthly), each a real
+  thread (`threads.source == "pulsar"`) told what it reported last time so it states only what's
+  new rather than restating still-true facts. `gateway/pulsar_wizard.go`'s ephemeral,
+  non-persisted interview turns a vague idea into a tuned prompt;
+  `tools/finalize_pulsar_prompt.go` forces that final output through a tool call instead of
+  parseable prose. Design doc: `docs/plans/pulsar-routines.md`.
+- **Pulsar Daily** (`/daily`) — a *different, singleton* surface, not a `routine.kind == 'daily'`
+  special case: one "morning newspaper" edition/day assembling ~10 independent mini-generations
+  (`gateway/pulsar_daily.go`'s Stage A — weather is a direct tool call, word-of-day/on-this-day/
+  quote are single no-tools LLM picks, headlines/trending/local/sports/custom blocks are
+  narrow-toolset `agent.Run`s) rather than one big agent turn. A second, tool-call-only pass
+  (`tools/finalize_daily_items.go`) diffs each "Watch" block against yesterday's stored content
+  and can drop it as unchanged; a ranking pass elects a Top Story for deeper elaboration. Storage
+  is a singleton daily config, not routine-shaped. Design doc: `docs/plans/pulsar-daily.md`
+  (living/mid-design — check its "Status" line before assuming a section is final).
+
+Relevant code beyond the two `gateway/pulsar_scheduler.go`/`pulsar_wizard.go` files above:
+`gateway/pulsar_routes.go`, `gateway/pulsar_daily_routes.go`, `store/pulsar.go`,
+`store/pulsar_daily.go`. README's Pulsar/Pulsar Daily bullets are the user-facing description;
+this section is only the "where the code lives" pointer.
 
 ## Conventions worth knowing before editing Go here
 

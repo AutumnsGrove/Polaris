@@ -5,17 +5,44 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
+// wsReadLimit bounds a single incoming WebSocket frame. ClientMessage is
+// always small text (a chat message plus a few scalar fields — see
+// protocol.go; attachments are uploaded separately over REST and
+// referenced by ID, never inlined here), so this is generous headroom,
+// not a tight fit — it exists only to stop an oversized frame from a
+// misbehaving or hostile client from pressuring memory on the Le Potato
+// SBC, which gorilla/websocket's unset-by-default limit does nothing to
+// prevent.
+const wsReadLimit = 1 << 20 // 1 MiB
+
 var upgrader = websocket.Upgrader{
-	// Tailscale-only deployment (like every other service in this
-	// homelab) — no public exposure, so a permissive origin check is
-	// fine here rather than maintaining an allowlist.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	// This is a same-origin check, not authentication — it doesn't
+	// replace the Tailscale-only network boundary, it closes the gap in
+	// it. Without this, any page loaded in the operator's own browser
+	// (which does have tailnet access) could open a cross-site WebSocket
+	// here (CSWSH) and drive full agent turns on the operator's behalf —
+	// worse than a blind CSRF POST, since the attacker's own page
+	// receives every streamed event, so it can read chat output and
+	// burn the operator's OpenRouter/Brave/Parallel budget. A request
+	// with no Origin header (a non-browser client, or a same-origin
+	// proxy that strips it) is let through — there's nothing to compare
+	// against, and this check exists to stop a *browser* acting
+	// cross-origin, not to gate non-browser access.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		return err == nil && u.Host == r.Host
+	},
 }
 
 // pongWait/pingPeriod implement a standard gorilla/websocket keepalive:
@@ -39,6 +66,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	conn.SetReadLimit(wsReadLimit)
 
 	// gorilla/websocket connections aren't safe for concurrent writes;
 	// emit() is called synchronously from the agent loop on this same
