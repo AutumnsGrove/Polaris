@@ -629,6 +629,15 @@ func (s *Server) startDailyGenerationIfIdle() bool {
 	return true
 }
 
+// dailyBlockSem bounds how many Stage A blocks generate concurrently at
+// once, shared across every call to runDailyPipeline (a package-level
+// var, not local to it, the same reasoning pulsar_scheduler.go's
+// pulsarRoutineSem gives for its own cap). The registry's fixed block set
+// is small, but store.PulsarDailyConfig.CustomBlocks lets a user add an
+// arbitrary number of "general purpose" blocks, and nothing else caps how
+// many concurrent agent.Run/LLM calls one edition's Stage A can produce.
+var dailyBlockSem = make(chan struct{}, 4)
+
 // runDailyPipeline runs Stage A-D once — see the plan doc's "Generation
 // pipeline" for the full staged design. Meant to be called from the
 // scheduler when isDailyDue reports true; also safe to call for a manual
@@ -733,6 +742,16 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		}
 		wg.Add(1)
 		go func(i int, spec dailyBlockSpec) {
+			// dailyBlockSem bounds how many blocks actually generate at
+			// once — the fixed registry set is small, but a user can add
+			// an arbitrary number of custom blocks, and nothing else caps
+			// how many concurrent agent.Run/LLM calls one edition's Stage A
+			// can produce. Acquired inside the goroutine, not before the
+			// `go` statement above, so every block is still queued
+			// immediately and its wg.Add(1)/Done() pair always matches
+			// regardless of how long it waits for a free slot.
+			dailyBlockSem <- struct{}{}
+			defer func() { <-dailyBlockSem }()
 			defer wg.Done()
 			defer func() {
 				if rec := recover(); rec != nil {
