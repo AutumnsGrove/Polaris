@@ -458,7 +458,7 @@ func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yester
 	if err != nil {
 		return dailyVerdict{}, 0, err
 	}
-	verdict, err := parseDailyVerdict(resp)
+	verdict, err := parseDailyVerdict(title, resp)
 	return verdict, resp.CostUSD, err
 }
 
@@ -467,9 +467,14 @@ func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yester
 // tool — same "helpful degradation over hard failure" instinct as
 // wizardResponse.Answer's fallback for the wizard's own model
 // occasionally skipping its required tool call. An unrecognized verdict
-// string gets the same treatment.
-func parseDailyVerdict(resp *llm.ChatResponse) (dailyVerdict, error) {
+// string gets the same treatment. Both coercions are logged (title
+// identifies which block) rather than swallowed silently — a model that
+// starts consistently skipping the tool call or returning a bogus verdict
+// would otherwise be invisible in logs, since every caller's own error
+// paths only cover a hard failure, not this kind of quiet degradation.
+func parseDailyVerdict(title string, resp *llm.ChatResponse) (dailyVerdict, error) {
 	if len(resp.ToolCalls) == 0 {
+		log.Warn("pulsar daily: diff-judge answered in plain prose instead of calling record_verdict — defaulting to normal", "block", title)
 		return dailyVerdict{Verdict: "normal", Gist: strings.TrimSpace(resp.Content)}, nil
 	}
 	var args struct {
@@ -481,6 +486,7 @@ func parseDailyVerdict(resp *llm.ChatResponse) (dailyVerdict, error) {
 		return dailyVerdict{}, err
 	}
 	if args.Verdict != "unchanged" && args.Verdict != "notable" && args.Verdict != "normal" {
+		log.Warn("pulsar daily: diff-judge returned an unrecognized verdict — defaulting to normal", "block", title, "verdict", args.Verdict)
 		args.Verdict = "normal"
 	}
 	return dailyVerdict{Verdict: args.Verdict, Gist: strings.TrimSpace(args.Gist), Reasoning: strings.TrimSpace(args.Reasoning)}, nil
@@ -538,6 +544,7 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 		return "", "", 0, err
 	}
 	if len(resp.ToolCalls) == 0 {
+		log.Warn("pulsar daily: top-story ranking answered in plain prose instead of calling elect_top_story — defaulting to the first candidate", "fallback_key", candidates[0].Key)
 		return candidates[0].Key, "", resp.CostUSD, nil
 	}
 	var args struct {
@@ -545,6 +552,7 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 		Reasoning string `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
+		log.Warn("pulsar daily: top-story ranking returned unparseable tool-call arguments — defaulting to the first candidate", "err", err, "fallback_key", candidates[0].Key)
 		return candidates[0].Key, "", resp.CostUSD, nil
 	}
 	for _, c := range candidates {
@@ -552,6 +560,7 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 			return args.WinnerKey, strings.TrimSpace(args.Reasoning), resp.CostUSD, nil
 		}
 	}
+	log.Warn("pulsar daily: top-story ranking named a winner_key outside the candidate list — defaulting to the first candidate", "winner_key", args.WinnerKey, "fallback_key", candidates[0].Key)
 	return candidates[0].Key, "", resp.CostUSD, nil
 }
 
@@ -595,6 +604,29 @@ func (s *Server) runDailyPipelineRecovered() {
 		}
 	}()
 	s.runDailyPipeline(context.Background())
+}
+
+// startDailyGenerationIfIdle starts a Daily generation run unless one is
+// already in flight, returning false (a no-op) in that case. This is the
+// one place either trigger for a Daily run — the scheduler's own
+// once-a-minute due-check and handleGenerateDailyNow's manual "Generate
+// now" button — is allowed to actually start runDailyPipelineRecovered,
+// sharing dailyGenerationRunning's CAS between them. Without a single
+// shared guard, a manual click landing in the same instant the scheduler
+// decides today's edition is due would start two concurrent
+// runDailyPipeline runs: doubled LLM spend, and two runs racing to
+// UpsertDailyEdition/UpsertDailyBlockTrace (both last-write-wins, keyed
+// by date) for the same date, producing an edition whose blocks don't
+// consistently reflect either run alone.
+func (s *Server) startDailyGenerationIfIdle() bool {
+	if !s.dailyGenerationRunning.CompareAndSwap(false, true) {
+		return false
+	}
+	go func() {
+		defer s.dailyGenerationRunning.Store(false)
+		s.runDailyPipelineRecovered()
+	}()
+	return true
 }
 
 // runDailyPipeline runs Stage A-D once — see the plan doc's "Generation

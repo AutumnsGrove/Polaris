@@ -49,7 +49,14 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		if cfgRow, err := s.db.GetDailyConfig(); err != nil {
 			log.Warn("loading pulsar daily config failed", "err", err)
 		} else if isDailyDue(cfgRow, time.Now()) {
-			go s.runDailyPipelineRecovered()
+			if !s.startDailyGenerationIfIdle() {
+				// A manual "Generate now" click won this instant's race —
+				// see startDailyGenerationIfIdle's doc comment. Nothing to
+				// do: that run will produce today's edition just as well,
+				// and next tick's isDailyDue will already be false once it
+				// finishes.
+				log.Info("pulsar daily: due, but a generation was already running — skipping this tick")
+			}
 		}
 
 		routines, err := s.db.ListActivePulsarRoutines()
