@@ -32,16 +32,19 @@ back into the conversation — not just describe that it exists.
   answerable without the model guessing keywords.
 - A real link back to the source thread in every search result, rendered as a normal citation so
   it's clickable in the chat UI exactly like a web citation is today.
-- A per-turn budget on cumulative `read` content, so a broad scan across several threads can't
-  silently eat the whole context window — see "Context budget for `read`" below.
+- `read`'s filtered mode: the same "double RAG" LLM-filter pattern `web_read` already uses
+  (`instructions` in, a small extra LLM pass over the full thread, a condensed answer out) instead
+  of always returning a raw content dump — see "The `read` action" below. This is the expected way
+  `read` gets used, with a raw-transcript fallback for when filtering genuinely isn't what's needed.
 - Toggleable from the settings panel, on by default, same mechanism as `web_search`/`memory`-
   adjacent tools.
 
 **Out of scope for v1** (flagged for later, not forgotten):
 - **Semantic/embedding search** — see "v2: semantic search" below for the design and, more
   importantly, why it's deliberately not in v1.
-- Pagination within `read` for a single very long thread — v1 caps and truncates with a note
-  instead (see "The `read` action").
+- Pagination within *raw-mode* `read` for a single very long thread — v1 caps and truncates with a
+  note instead (see "The `read` action"). Filtered mode doesn't have this problem in the first
+  place, since the filter pass absorbs the full thread regardless of size.
 - A dedicated batch/offline "trend report" feature (see the old draft of this section, now folded
   into "Recency mode + reasoning over titles" below) — turned out not to be needed: recency mode
   plus the model reasoning over titles/snippets it already gets from `search` covers the actual
@@ -63,8 +66,10 @@ back into the conversation — not just describe that it exists.
 5. The chat UI turns that markdown link into a real citation chip (reusing the existing citation
    pipeline — see "Linking back to the thread"), and tapping it opens that exact old thread.
 6. If the user follows up *"what did we land on?"*, the model calls
-   `search_chats(action="read", thread_id="a1b2c3")` to pull the full old conversation back in and
-   answer from it directly, instead of re-searching or telling the user to go read it themselves.
+   `search_chats(action="read", thread_id="a1b2c3", instructions="what GPU did we end up deciding on, and why")`
+   — a filter LLM pass reads the full old thread and hands back just that, not a raw transcript —
+   and the model answers from it directly, instead of re-searching or telling the user to go read
+   it themselves.
 
 **A second, recency-mode example:** user asks *"what have I been asking you about lately?"* — no
 keyword to search for. Model calls `search_chats(action="search")` with no query, gets back the 10
@@ -114,6 +119,13 @@ var searchChatsDef = llm.ToolDef{
 					"type":        "string",
 					"description": "Required for read: the thread_id from a prior search result.",
 				},
+				"instructions": map[string]interface{}{
+					"type": "string",
+					"description": "Optional for read: what specifically to pull out of the thread " +
+						"(\"what did we decide about X\", \"the exact wording of the plan we settled on\"), " +
+						"instead of the full transcript. Strongly preferred over omitting this — see the " +
+						"read action's own notes below.",
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -126,8 +138,11 @@ tool's) should tell the model plainly: only search when the user references past
 ("did I already ask...", "what did we decide about...", "that thing I mentioned before") — not on
 every turn; always cite a search hit's link in the reply if you reference it, the same way a web
 source gets cited, so the user gets a working pointer back to the original chat, not just a
-description of one; and prefer `read` over re-explaining from the snippet alone once you actually
-need the old thread's content to answer, not just its existence.
+description of one; prefer `read` over re-explaining from the snippet alone once you actually need
+the old thread's content to answer, not just its existence; and when you do call `read`, pass
+`instructions` describing what you're looking for rather than omitting it — you'll get back a
+focused answer instead of a raw transcript, exactly the same trade-off `web_read`'s own
+`instructions` parameter already makes, and it costs you nothing extra to ask for it.
 
 This schema is deliberately future-proof for v2: if semantic search is added later, it slots in
 *behind* `action="search"` as a second internal ranking signal merged into the same result list —
@@ -171,52 +186,63 @@ one; see the next section for why `read`'s cost profile is completely different.
 
 ## The `read` action
 
-Fetches a specific past thread's content by `thread_id`. Reuses `store.GetThread` +
-`store.GetMessages` plus the exact compaction-substitution logic `gateway/turn.go`'s `loadHistory`
-already has (a long thread that's been auto-compacted has its early messages replaced by
-`Thread.CompactedSummary` — `read` should show that same collapsed view, not error or silently omit
-it) — worth factoring that little substitution loop out of `loadHistory` into a small shared
-helper both call, rather than duplicating it.
+Fetches a specific past thread's content by `thread_id`, either as a filtered extract
+(`instructions` given) or the raw transcript (`instructions` omitted). Both modes reuse
+`store.GetThread` + `store.GetMessages` plus the exact compaction-substitution logic
+`gateway/turn.go`'s `loadHistory` already has (a long thread that's been auto-compacted has its
+early messages replaced by `Thread.CompactedSummary` — `read` should show that same collapsed
+view, not error or silently omit it) — worth factoring that little substitution loop out of
+`loadHistory` into a small shared helper both call, rather than duplicating it.
 
-v1 caps total returned content at a fixed character budget (e.g. 8,000 chars, generous enough for
-the large majority of real threads) and truncates with a plain "...(N earlier messages omitted,
-thread continues)" note rather than building real pagination — matching how `read_attachment`
-handles a similarly-shaped "this could be arbitrarily large" problem for PDFs, but simpler, since
-unlike a PDF there's no natural page boundary to page through by. A truncated `read` result still
-includes the thread's link, so the model can at least point the user at it even when it can't
-inline the whole thing. Real pagination (page through a long thread's messages the way
-`read_attachment` pages through a PDF) is a reasonable follow-up if truncation turns out to bite in
-practice — not built now on the theory it might be needed.
+### Filtered mode (`instructions` given) — the expected default path
 
-## Context budget for `read`
+This is the "double RAG" pattern `web_read` already established (`tools/web_read.go`'s
+`filterExtractedText`/`args.Instructions` branch), applied here instead of to a fetched web page:
+run one extra small LLM pass over the *full* reconstructed thread text, asking it to pull out only
+what `instructions` asked for, and return that instead of a raw chunk. Concretely, mirroring
+`web_read`'s implementation almost exactly:
 
-A single `read` is capped at 8,000 chars (above), but that only bounds *one* call — nothing stops
-the model from calling `read` on several threads in the same turn, and real threads vary a lot in
-size (some of this codebase's own long deep-research or coding threads are genuinely a meaningful
-fraction of a model's context window on their own). Ten such reads in one turn, even truncated to
-8,000 chars each, is up to 80,000 chars (~16-20K tokens) added to that turn's request — a small
-slice of a 128K-context model's budget, but a serious bite out of a smaller one, and either way
-it's real cost and latency for content the model may not have actually needed in full.
+- Reuses `ctx.LLM` — the turn's own already-configured client/model, not a separate one, for the
+  same reason `web_read` does (the provider pin and its prompt-cache pricing are already set up on
+  it). Gated the same way too: only runs when `ctx.LLM != nil && !ctx.QuickMode` (Atlas's Quick
+  Answer mode skips the filter pass for `web_read` to save a sequential round-trip; `read` should
+  make the identical trade-off for the identical reason).
+- A new `prompts.Tools.ThreadReadFilterSystem` prompt fragment (`prompts.yaml`, hot-reloadable,
+  alongside the existing `web_read_filter_system`) — same "narrow, mechanical extraction, no
+  commentary" instructions as `WebReadFilterSystem`, reworded for "a past conversation" instead of
+  "a page."
+- Filter input is the *whole* reconstructed thread (compaction-substituted, uncapped up to a
+  generous bound — mirroring `web_read`'s `maxFilterInputChars` (100,000), since the point of the
+  filter pass is exactly to reach content that would never fit in a raw display window anyway).
+  This is why filtered `read` doesn't need the old 8,000-char display cap at all: the *filter
+  model* absorbs the full size, and only its condensed answer — typically a few sentences to a
+  short paragraph — lands in the root turn's context.
+- On filter failure (LLM call errors), fall back to raw mode rather than failing the whole tool
+  call — same non-fatal-degradation choice `web_read` makes.
 
-Fix: a per-turn cumulative budget on `read` content, reusing this codebase's existing
-circuit-breaker shape (`tools.ResearchBudget`, `tools/research_budget.go` — currently scoped to
-Deep Research's search-call count, but the same "track usage on the turn's `Context`, refuse once
-a ceiling is hit, tell the model plainly why" pattern applies directly here). Concretely: a
-mutex-protected running total on `tools.Context` (turn-scoped already, same lifetime as
-`Citations`/`Cards`), incremented by each `read` call's actual (post-truncation) content length,
-hard-capped at a fixed ceiling — e.g. 24,000 chars, room for two or three full-size reads before
-it kicks in. A `read` call past the ceiling returns an error explaining the budget is spent for
-this turn and nudging the model to work with what it already pulled, or fall back to `search`'s
-titles/snippets for anything it hasn't read yet, rather than silently truncating further or
-refusing with no explanation.
+This is what makes "read 10 threads to reason about a trend" cheap in practice, not the recency
+mode's titles/previews alone: even a `read` on a genuinely huge thread costs the root turn only as
+much context as the filtered answer itself, regardless of how large the source thread was. It also
+makes the char-budget concern from the original design (raw dumps compounding across several
+`read` calls in one turn) mostly moot for the mode the model should actually be using.
 
-This is a backstop, not the primary defense — the real mitigation is that recency mode (above)
-never needs `read` at all for a broad scan: titles and short previews are what the model should be
-reasoning over when the question is "what have I been asking about" across many threads, and
-`read` is for drilling into the one (or two) threads that scan already identified as actually
-relevant. `search_chats.yaml`'s `api_description` should say this directly — prefer scanning
-`search` results over chaining `read` calls — so the budget cap is there for when that guidance
-doesn't fully land, not the thing doing the steering.
+### Raw mode (`instructions` omitted) — the fallback, not the norm
+
+Returns the thread's transcript directly, still capped at a fixed display budget (8,000 chars,
+same truncate-with-a-continuation-note behavior as before) since there's no filter pass to absorb
+the size here. This exists for the genuine cases filtering can't serve well — the model wants to
+quote something verbatim, or the user explicitly asked to see the whole conversation — not as the
+expected everyday path. `search_chats.yaml`'s `api_description` should say this plainly, the same
+asymmetry `web_read`'s own description already implies by making `instructions` optional but
+clearly worth using: pass `instructions` unless you specifically need the raw, full transcript.
+
+No separate per-turn cumulative budget on top of this (the earlier draft of this plan added one,
+modeled on `tools.ResearchBudget`) — dropped as unneeded machinery once filtered mode is the
+expected path: `web_read` itself has no cumulative cap across multiple calls in one turn either,
+and chaining several *filtered* reads doesn't have the same blow-up shape raw reads did, since
+each one's contribution to context is bounded by its answer's own brevity, not by source-thread
+size. The single-call 8,000-char cap on raw mode is enough of a backstop on its own, consistent
+with how `web_read` is trusted to behave without a second, turn-level guard rail.
 
 ## Linking back to the thread
 
@@ -249,9 +275,14 @@ value in `tools/catalog.go` (`ctx.SearchThreads != nil`, mirroring `memory_store
 `ctx.WriteMemory != nil` check):
 
 ```go
-SearchThreads func(query string, limit int) ([]store.MessageSearchResult, error)
-ReadThread    func(threadID string) (*store.ThreadReadResult, error)
+SearchThreads     func(query string, limit int) ([]store.MessageSearchResult, error)
+ListRecentThreads func(cursor string) (threads []store.ThreadSummary, nextCursor string, err error)
+ReadThread        func(threadID string) (*store.ThreadReadResult, error)
 ```
+
+All three wired together at the same call sites or not at all — same "one closure being non-nil
+implies the rest are too" convention `memory`'s five closures already establish, rather than each
+being independently checked.
 
 **Every entry point that builds a `tools.Context` for a real turn needs this wired**, not just the
 main chat path — this is precisely the class of gap CLAUDE.md already documents for `web_search`
@@ -281,12 +312,13 @@ Unit tests (Go, `store` and `tools` packages): `search_chats` result formatting 
 emission; recency mode's cursor pagination (a fixed 10-per-page, stable across a page 2 fetch even
 if a new thread was created after page 1 was returned); the `read` action's compaction-substitution
 matches `loadHistory`'s existing behavior bit-for-bit (best done by extracting the shared helper,
-not duplicating the logic and hoping the two stay in sync); the per-turn `read` budget actually
-refuses a call once the cumulative ceiling is crossed, and that the ceiling resets between turns
-(it lives on `tools.Context`, which is already turn-scoped — same lifetime guarantee `Citations`
-relies on); `chat_search` gating in `catalog.go` behaves like `memory_store`'s; the CLI wiring in
-`cmd/search.go` actually has `SearchThreads`/`ReadThread` set (a plain "does `polaris search` end
-up with a working `search_chats` tool" check — this is exactly the class of gap that bit
+not duplicating the logic and hoping the two stay in sync); filtered-mode `read` falls back to raw
+mode on a filter-LLM failure rather than erroring the whole call (mirroring `web_read`'s own
+`filterExtractedText` failure path — a good candidate for a shared test helper between the two,
+since the fallback shape is identical); `chat_search` gating in `catalog.go` behaves like
+`memory_store`'s; the CLI wiring in `cmd/search.go` actually has `SearchThreads`/`ReadThread` set
+(a plain "does `polaris search` end up with a working `search_chats` tool" check — this is exactly
+the class of gap that bit
 `web_search` in this same file before, per CLAUDE.md).
 
 Live check per CLAUDE.md's "verify on real hardware" culture: run `polaris search`/the web chat
@@ -346,10 +378,11 @@ version of this you actually described wanting.
 
 ## Open questions for later
 
-- The three new tunable constants (recency mode's 10-per-page, `read`'s 8,000-char single-read
-  cap, and the 24,000-char per-turn cumulative `read` budget) are reasonable starting points, not
-  validated against real usage — same "needs live-usage tuning" caveat this doc already applies to
-  RRF's `k` in the parked v2 design.
-- Whether the per-turn `read` budget should be configurable (e.g. larger on a big-context model,
-  smaller on a small local one) rather than one fixed constant — v1 ships the fixed constant and
-  only adds this if it turns out to actually matter in practice.
+- The tunable constants (recency mode's 10-per-page, raw `read`'s 8,000-char cap, filtered `read`'s
+  100,000-char filter-input bound) are reasonable starting points mirrored from `web_read`'s own
+  numbers, not validated against real search-chats usage specifically — same "needs live-usage
+  tuning" caveat this doc already applies to RRF's `k` in the parked v2 design.
+- Whether `instructions` should be outright required for `read` rather than optional-but-steered —
+  v1 keeps it optional (matching `web_read`'s own contract exactly) and leans on prompt guidance to
+  make filtered mode the normal path; worth revisiting only if the model turns out to reach for raw
+  mode more than expected in practice.
