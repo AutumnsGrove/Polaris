@@ -98,8 +98,9 @@ func handleReadAttachment(argsJSON string, ctx *Context, callID string) string {
 
 	result = text
 	if args.Instructions != "" && ctx.LLM != nil {
-		if filtered, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, text, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, text, args.Instructions); ferr == nil {
 			result = filtered
+			ctx.AddCost(filterCost)
 		} else {
 			log.Warn("read_attachment: filter pass failed, using full page text", "err", ferr)
 		}

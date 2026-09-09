@@ -359,6 +359,18 @@ type Context struct {
 	cardsMu sync.Mutex
 	Cards   []Card
 
+	// ExtraCostUSD accumulates LLM spend a tool handler incurred on its
+	// own — a filter/extraction pass (web_read and read_attachment's
+	// instructions param, see filterExtractedText) — that agent.Run's own
+	// per-turn ChatCompletionWithTools/ChatCompletionStreaming calls never
+	// see, since that spend happens inside a tool handler's own separate
+	// LLM call, not the main loop. Without this, it's real spend (already
+	// billed by OpenRouter) that's invisible everywhere Polaris reports a
+	// thread's total cost. Same concurrency shape as Citations/Cards:
+	// extraCostMu guards it for the same parallel-tool-dispatch reason.
+	extraCostMu  sync.Mutex
+	ExtraCostUSD float64
+
 	// Chart holds this turn's chart, if any tool produced one (see
 	// ChartSpec). Unlike Citations/Cards this is last-write-wins, not an
 	// accumulator — a turn produces at most one chart, so a second
@@ -631,6 +643,20 @@ func (c *Context) CardsSnapshot() []Card {
 	out := make([]Card, len(c.Cards))
 	copy(out, c.Cards)
 	return out
+}
+
+// AddCost records LLM spend a tool handler incurred internally — see
+// ExtraCostUSD's doc comment for why this exists at all. Safe to call
+// concurrently from multiple tool handlers dispatched in parallel, same
+// reasoning as AddCitation/AddCard. agent.Run reads ctx.ExtraCostUSD
+// directly (not via a snapshot method) when building its Result, the same
+// way it reads ctx.Citations/ctx.Cards directly — safe because that read
+// only ever happens after a turn's dispatch has fully joined, provably
+// sequential with every AddCost call that ran during it.
+func (c *Context) AddCost(usd float64) {
+	c.extraCostMu.Lock()
+	defer c.extraCostMu.Unlock()
+	c.ExtraCostUSD += usd
 }
 
 // ChartSpec is a structured chart a tool wants rendered instead of (or

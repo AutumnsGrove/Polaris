@@ -99,6 +99,14 @@ type queuedResponse struct {
 	// consumed out of position; entries with Match empty are untouched by
 	// this and continue serving each other in strict arrival order.
 	Match string `json:"match,omitempty"`
+	// Cost scripts this response's reported usage.cost — real OpenRouter
+	// responses carry actual spend here (llm.Client.ChatCompletionStreaming
+	// reads it into ChatResponse.CostUSD), and every response defaulted to
+	// 0 until this field existed, which made it impossible to script a
+	// live, non-zero-cost scenario against a real running server (e.g. to
+	// verify a tool's internal filter-pass LLM call actually gets counted
+	// toward a thread's total cost, not silently dropped).
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // defaultReply is what every call gets when the queue is empty — lets a
@@ -168,7 +176,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		finishChunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "tool_calls"}},
-			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": 0},
+			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": resp.Cost},
 			"model":   "fake-openrouter",
 		})
 		sseLine(string(finishChunk))
@@ -197,7 +205,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		finishChunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "stop"}},
-			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": 0},
+			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": resp.Cost},
 			"model":   "fake-openrouter",
 		})
 		sseLine(string(finishChunk))

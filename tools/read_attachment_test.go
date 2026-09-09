@@ -62,12 +62,18 @@ func TestHandleReadAttachment_InstructionsRunFilterPass(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AttachmentData = twoPagePDFBytes(t)
 	ctx.LLM = &llmtest.MockClient{
-		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "filtered result"}}},
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "filtered result", CostUSD: 0.0021}}},
 	}
 
 	result := handleReadAttachment(`{"instructions":"just the total"}`, ctx, "test-call")
 	if !strings.Contains(result, "filtered result") {
 		t.Errorf("result = %q, want the filter pass's output", result)
+	}
+	// Regression check for the same gap web_read had: this filter call's
+	// cost must reach ctx.ExtraCostUSD, not get silently discarded — see
+	// Context.ExtraCostUSD's doc comment.
+	if ctx.ExtraCostUSD != 0.0021 {
+		t.Errorf("ctx.ExtraCostUSD = %v, want 0.0021 — the filter pass's cost never reached the turn's cost tracking", ctx.ExtraCostUSD)
 	}
 }
 
