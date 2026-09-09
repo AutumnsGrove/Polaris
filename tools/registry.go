@@ -131,6 +131,20 @@ type Context struct {
 	EditMemory   func(name, memType, description, content, occurredAt string) error
 	ForgetMemory func(name string) error
 
+	// SearchThreads/ListRecentThreads/ReadThread back the search_chats tool
+	// (tools/search_chats.go) — narrow closures over store.Store, same
+	// pattern as the memory closures above. All three wired together at the
+	// same call sites or not at all — same "one non-nil closure implies the
+	// rest are too" convention memory's five closures already establish
+	// (see catalog.go's "chat_search" Requires case, gated on
+	// SearchThreads != nil). Nil wherever a real chat history shouldn't be
+	// searched/read at all (e.g. cmd/benchmark.go's isolated runs — same
+	// reasoning as that command deliberately skipping the memory closures
+	// too).
+	SearchThreads     func(query string, limit int) ([]store.MessageSearchResult, error)
+	ListRecentThreads func(cursor string) (threads []store.ThreadSummary, nextCursor string, err error)
+	ReadThread        func(threadID string) (*store.ThreadReadResult, error)
+
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
 	// unauthenticated" — GitHub's REST API works fine without one, just
@@ -772,7 +786,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
 		"image_search": imageSearchDef, "read_attachment": readAttachmentDef,
-		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "spawn_researchers": spawnResearchersDef,
+		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
 	}

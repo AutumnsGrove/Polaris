@@ -1,0 +1,34 @@
+name: search_chats
+requires: chat_search
+description: >-
+  search or list your own past conversations, and read one back in full.
+api_description: >-
+  Search the user's own prior conversation history — not the web. Only reach for this when the
+  user references something from a past conversation ("did I already ask...", "what did we decide
+  about...", "that thing I mentioned before", "what have I been asking about lately"), not on every
+  turn.
+
+
+  Two actions: search (action="search") finds matching past threads — give 'query' for a keyword
+  search, or omit it entirely to list your most recent threads newest-first instead (use this for
+  "what have I been up to" style questions rather than guessing keywords; paginate further with the
+  'cursor' a page returns, if you need to look further back). read (action="read") fetches one past
+  thread's full content by the thread_id a search result returned.
+
+
+  Always cite a search hit's link in your reply if you reference it, the same way you'd cite a web
+  source — the user gets a real, clickable pointer back to the original chat, not just a
+  description of one. Use the exact relative path a result gave you, verbatim: [Title](/t/abc123).
+  Never prepend a domain, "https://", or anything else in front of it, and never invent or guess
+  one — /t/... is a path within this app itself, not a URL to a separate website, and a made-up
+  domain will not work.
+
+
+  Prefer read over re-explaining from a search snippet alone once you actually need the old
+  thread's content to answer, not just its existence. When you call read, pass 'instructions'
+  describing what you're looking for ("what did we decide about X", "the exact wording of the plan
+  we settled on") rather than omitting it — you'll get back a focused answer instead of a raw
+  transcript, the same trade-off web_read's own 'instructions' parameter makes, and it costs
+  nothing extra to ask for it. Omit 'instructions' only when you genuinely need the raw, full
+  transcript (quoting something verbatim, or the user explicitly asked to see the whole
+  conversation).

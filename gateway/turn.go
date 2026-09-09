@@ -15,6 +15,7 @@ import (
 	"polaris/config"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/store"
 	"polaris/tools"
 )
 
@@ -457,6 +458,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		LLM:                    client,
 		Emit:                   emit,
 		MaxTurns:               cfg.MaxAgentTurns,
+		SearchThreads:          s.db.SearchMessages,
+		ListRecentThreads:      s.db.ListThreadsPage,
+		ReadThread:             s.db.ReadThread,
 	}
 	// Left nil (not wired above) when the operator has turned memory off —
 	// see MemoryEnabledFromStore's doc comment for why leaving these nil
@@ -1166,22 +1170,10 @@ func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMe
 		return nil, err
 	}
 
-	history := make([]llm.ChatMessage, 0, len(msgs)+1)
-	if thread.CompactedSummary != "" {
-		history = append(history, llm.ChatMessage{
-			Role: "assistant",
-			Content: "(Summary of earlier conversation, compacted to save context — the full history " +
-				"is no longer available, only this summary)\n\n" + thread.CompactedSummary,
-		})
-	}
-	for _, m := range msgs {
-		if m.ID <= thread.CompactedThroughID {
-			continue // covered by the summary above
-		}
-		if excludeFromID != 0 && m.ID >= excludeFromID {
-			continue
-		}
-		history = append(history, llm.ChatMessage{Role: m.Role, Content: m.Content})
+	entries := store.EffectiveHistory(thread, msgs, excludeFromID)
+	history := make([]llm.ChatMessage, len(entries))
+	for i, e := range entries {
+		history[i] = llm.ChatMessage{Role: e.Role, Content: e.Content}
 	}
 	return history, nil
 }

@@ -172,7 +172,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 				filterInput = filterInput[:maxFilterInputChars]
 			}
 		}
-		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, filterInput, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, filterInput, args.Instructions); ferr == nil {
 			result = filtered
 			ctx.AddCost(filterCost)
 		} else {
@@ -673,10 +673,13 @@ func looksEmpty(text string) bool {
 }
 
 // filterExtractedText runs a small, cheap LLM pass over already-extracted
-// page text to pull out only what the caller asked for — the "double RAG"
-// step. Reuses the thread's selected model/client rather than spinning up
-// a separate one, since the provider pin (and its prompt-cache pricing)
-// is already configured on it.
+// text to pull out only what the caller asked for — the "double RAG" step.
+// Reuses the thread's selected model/client rather than spinning up a
+// separate one, since the provider pin (and its prompt-cache pricing) is
+// already configured on it. systemPrompt lets each caller supply its own
+// framing (web_read's "a page" vs. search_chats' "a past conversation") over
+// the same mechanical extraction shape — see prompts.Tools.
+// WebReadFilterSystem/ThreadReadFilterSystem.
 //
 // Returns the call's own CostUSD alongside the filtered text — this is a
 // real, separately-billed LLM call the main agent loop never sees on its
@@ -685,9 +688,9 @@ func looksEmpty(text string) bool {
 // matters (this used to be silently dropped here, which meant a thread's
 // displayed cost never reflected an instructions filter pass actually
 // ran).
-func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, instructions string) (text string, costUSD float64, err error) {
+func filterExtractedText(ctx context.Context, client llm.ChatClient, systemPrompt, pageText, instructions string) (text string, costUSD float64, err error) {
 	messages := []llm.ChatMessage{
-		{Role: "system", Content: prompts.Get().Tools.WebReadFilterSystem},
+		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText)},
 	}
 

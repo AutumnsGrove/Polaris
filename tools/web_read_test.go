@@ -456,7 +456,7 @@ func TestFilterExtractedText(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer", CostUSD: 0.0042}}},
 	}
-	result, cost, err := filterExtractedText(context.Background(), mock, "page text", "an instruction")
+	result, cost, err := filterExtractedText(context.Background(), mock, "system prompt", "page text", "an instruction")
 	if err != nil {
 		t.Fatalf("filterExtractedText returned error: %v", err)
 	}

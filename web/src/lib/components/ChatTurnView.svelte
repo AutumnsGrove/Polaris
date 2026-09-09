@@ -121,6 +121,11 @@
 	}
 
 	function hostname(url: string): string {
+		// search_chats citations use a relative "/t/{id}" URL, not a full
+		// one — new URL() throws with no base for those (caught below,
+		// falling through to returning the raw path), which read as a fake
+		// domain in the source-list footer instead of anything sensible.
+		if (url.startsWith('/t/')) return 'This chat';
 		try {
 			return new URL(url).hostname;
 		} catch {

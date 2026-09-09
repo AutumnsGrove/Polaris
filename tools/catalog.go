@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
-	"image_search", "read_attachment", "ask_user_question", "memory", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items",
 }
 
@@ -113,6 +113,12 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// see registry.go's doc comment on these fields), so any one of them
 		// being non-nil already implies the rest are too.
 		return ctx.WriteMemory != nil
+	case "chat_search":
+		// Gated on SearchThreads rather than a dedicated bool, same
+		// reasoning as memory_store above: every wiring site sets all
+		// three search_chats closures together (see gateway/turn.go,
+		// cmd/search.go) or none at all (cmd/benchmark.go).
+		return ctx.SearchThreads != nil
 	case "deep_research":
 		// Both conditions checked, not just one: DeepResearch alone
 		// doesn't imply the closure was ever wired (a config/call path
@@ -187,6 +193,10 @@ var catalogDefaults = map[string]catalogEntry{
 	"memory": {Name: "memory", Requires: "memory_store",
 		Description:    "write, edit, view, or forget durable memories about the user or ongoing work.",
 		APIDescription: "Write, edit, view, or forget durable memories about the user or ongoing work, carried across threads."},
+	"search_chats": {Name: "search_chats", Requires: "chat_search",
+		Description: "search or list your own past conversations, and read one back in full.",
+		APIDescription: "Search your own past conversations by keyword, or list your most recent ones when no " +
+			"query is given, and read one back in full (filtered to what you ask for, or raw)."},
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
 		Description:    "fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.",
 		APIDescription: "Fan out to multiple independent research sub-agents running in parallel, each investigating one focused angle, then report back their findings for you to synthesize."},

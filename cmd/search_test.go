@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -93,6 +94,75 @@ func TestRunSearch_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(output, "cost: $0.0002") {
 		t.Errorf("output = %q, want the cost printed", output)
+	}
+}
+
+// searchChatsToolCallServer fakes a model that calls search_chats first,
+// then answers from the result — a two-round SSE server, same shape as
+// gateway/ask_test.go's commentaryThenAnswerServer.
+func searchChatsToolCallServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var reqCount int32
+
+	round1 := []string{
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search_chats","arguments":"{\"action\":\"search\",\"query\":\"graphics card\"}"}}]}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":0.0001}}`,
+		`data: [DONE]`,
+	}
+	round2 := []string{
+		`data: {"choices":[{"delta":{"content":"No past threads matched that."}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`,
+		`data: [DONE]`,
+	}
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&reqCount, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		lines := round1
+		if n >= 2 {
+			lines = round2
+		}
+		for _, line := range lines {
+			fmt.Fprintf(w, "%s\n", line)
+			flusher.Flush()
+		}
+	}))
+}
+
+// TestRunSearch_SearchChatsToolIsWired is this file's own version of the
+// gap CLAUDE.md flags for cmd/search.go specifically: a live-only
+// capability (here, search_chats' SearchThreads/ListRecentThreads/
+// ReadThread closures) that's easy to wire for the web UI/websocket path
+// and forget for `polaris search`'s CLI one-shot path — the exact class of
+// gap that bit web_search's Brave/Parallel wiring in this same file
+// before. Drives a real tool-call
+// round trip through runSearch rather than inspecting agentCtx directly
+// (which is a local variable, not exposed) — if search_chats' closures
+// were left nil here, catalog.go's "chat_search" gate would exclude the
+// tool from the model's menu entirely and this fake model's tool call
+// would never even be offered/dispatched, or handleSearchChats would
+// return "search_chats is not available in this context" instead of a
+// real (even if empty) search result.
+func TestRunSearch_SearchChatsToolIsWired(t *testing.T) {
+	srv := searchChatsToolCallServer(t)
+
+	origConfigPath, origModel := configPath, searchModel
+	configPath = writeSearchTestConfig(t, srv.URL)
+	searchModel = ""
+	t.Cleanup(func() { configPath, searchModel = origConfigPath, origModel })
+
+	output := captureStdout(t, func() {
+		if err := runSearch(nil, []string{"did", "I", "ask", "about", "graphics", "cards"}); err != nil {
+			t.Fatalf("runSearch returned error: %v", err)
+		}
+	})
+
+	if strings.Contains(output, "not available in this context") {
+		t.Errorf("output = %q, want search_chats' closures wired even on the CLI one-shot path", output)
+	}
+	if !strings.Contains(output, "No past threads matched that.") {
+		t.Errorf("output = %q, want the final answer after the search_chats round trip", output)
 	}
 }
 

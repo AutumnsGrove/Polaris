@@ -174,6 +174,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		// ran `polaris search` and checked what it had access to.
 		agentCtx.DisabledTools = gateway.DisabledToolsFromStore(db)
 		agentCtx.CustomInstructions = gateway.CustomInstructionsFromStore(db)
+		agentCtx.SearchThreads = db.SearchMessages
+		agentCtx.ListRecentThreads = db.ListThreadsPage
+		agentCtx.ReadThread = db.ReadThread
 	}
 
 	result, err := agent.Run(context.Background(), agentCtx, nil, query)
