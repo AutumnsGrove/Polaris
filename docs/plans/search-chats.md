@@ -247,32 +247,30 @@ each one's contribution to context is bounded by its answer's own brevity, not b
 size. The single-call 8,000-char cap on raw mode is enough of a backstop on its own, consistent
 with how `web_read` is trusted to behave without a second, turn-level guard rail.
 
-## Cost tracking for the filter pass (and a pre-existing gap this surfaced)
+## Cost tracking for the filter pass — fixed, already shipped
 
-Checked before designing this, since a second hidden LLM call per `read` is exactly the kind of
-cost that's easy to lose track of: **`web_read`'s existing `instructions` filter pass is not
-currently counted in a thread's total cost.** `filterExtractedText` (`tools/web_read.go`) gets back
-a full `*llm.ChatResponse` from its `ChatCompletionStreaming` call — including a populated
-`CostUSD` field, confirmed against `llm/client.go`'s `ChatResponse` and how every other caller of
-this method uses it (`gateway/turn.go`'s title-generation, compaction, and suggestion calls all
-thread `resp.CostUSD` through to `store.Store.AddThreadCost`) — but it only ever returns
-`resp.Content`, discarding the rest. Neither the `tool_result` event `web_read` emits nor
-`agent.Run`'s own `totalCost` accumulator (`agent/driver.go`) ever sees it: `totalCost` only sums
-`resp.CostUSD` from the main tool-calling loop's own per-turn completion calls — it has no
-visibility into an LLM call a tool handler makes on its own. So every real thread that's used
-`web_read` with `instructions` has had that filter call's actual spend silently missing from its
-displayed total this whole time — a real, live gap, not a hypothetical one, and worth fixing
-regardless of this plan.
+**This part is done, not just planned.** Checked before designing the rest of this feature, since
+a second hidden LLM call per `read` is exactly the kind of cost that's easy to lose track of:
+`web_read`'s existing `instructions` filter pass turned out not to be counted in a thread's total
+cost at all — and neither was `read_attachment`'s own copy of the same filter call. Both call
+`filterExtractedText` (`tools/web_read.go`), which got back a full `*llm.ChatResponse` — including
+a populated `CostUSD` field, confirmed against `llm/client.go`'s `ChatResponse` and how every other
+caller of that method uses it (`gateway/turn.go`'s title-generation, compaction, and suggestion
+calls all thread `resp.CostUSD` through to `store.Store.AddThreadCost`) — but only ever used
+`resp.Content`, discarding the rest. Neither tool's `tool_result` event nor `agent.Run`'s own
+`totalCost` accumulator (`agent/driver.go`) ever saw it: `totalCost` only sums `resp.CostUSD` from
+the main tool-calling loop's own per-turn completion calls, with no visibility into an LLM call a
+tool handler makes on its own. So every real thread that used either tool's `instructions` param
+had that filter call's actual spend silently missing from its displayed total — confirmed live via
+`dev/fakeopenrouter` (see below), not just by reading the code.
 
-**Fix, shared infrastructure both `web_read` and `search_chats`'s filtered `read` should use:** a
-new mutex-protected cost accumulator on `tools.Context`, the same shape as `Citations`/`Cards`
-(`AddCitation`/`AddCard`'s "append under a mutex during parallel dispatch, read back as a snapshot
-once the turn's tool calls have all joined" pattern):
+**Shipped fix**, in the same commit that found this — `tools.Context` gets a new mutex-protected
+accumulator, the same shape as `Citations`/`Cards`:
 
 ```go
-// in tools/registry.go, alongside citationsMu/cardsMu
+// tools/registry.go, alongside citationsMu/cardsMu
 extraCostMu  sync.Mutex
-extraCostUSD float64
+ExtraCostUSD float64
 
 // AddCost records LLM spend a tool handler incurred internally (a filter/
 // extraction pass, e.g.) that agent.Run's own per-turn completion calls
@@ -281,30 +279,32 @@ extraCostUSD float64
 func (c *Context) AddCost(usd float64) {
 	c.extraCostMu.Lock()
 	defer c.extraCostMu.Unlock()
-	c.extraCostUSD += usd
-}
-
-// ExtraCostSnapshot mirrors CitationsSnapshot's own safe-to-read-after-
-// dispatch contract.
-func (c *Context) ExtraCostSnapshot() float64 {
-	c.extraCostMu.Lock()
-	defer c.extraCostMu.Unlock()
-	return c.extraCostUSD
+	c.ExtraCostUSD += usd
 }
 ```
 
-Two call-site changes follow: `handleWebRead` adds `ctx.AddCost(resp.CostUSD)` right where
-`filterExtractedText`'s caller currently discards the rest of `resp` (fixing the existing gap),
-and the new `search_chats` filtered-`read` handler does the same for its own filter call.
-`agent.Run` folds `ctx.ExtraCostSnapshot()` into every `Result{CostUSD: ...}` it constructs — there
-are several return points (an early error, `ask_user_question`, the normal end-of-loop path, etc.),
-each already threading `ctx.Citations`/`ctx.Cards` through the same way, so this is the same kind
-of small, repeated addition at each site, not a new pattern to invent.
+No separate snapshot method — `agent.Run` reads `ctx.ExtraCostUSD` directly at each `Result{}`
+construction, the same way it already reads `ctx.Citations`/`ctx.Cards` directly rather than via
+`CitationsSnapshot()`/`CardsSnapshot()`: safe because that read only ever happens after a turn's
+dispatch has fully joined. `filterExtractedText` now returns its `costUSD` alongside the filtered
+text, and both callers (`handleWebRead`, `handleReadAttachment`) call `ctx.AddCost(filterCost)` on
+success; `agent.Run` folds `ctx.ExtraCostUSD` into every `Result{CostUSD: ...}` it constructs
+(seven return points — an early error, `ask_user_question`, the normal end-of-loop path, etc. —
+each already threading `ctx.Citations`/`ctx.Cards` through the same way).
 
-Whether fixing `web_read`'s existing gap ships together with this plan's implementation or as its
-own small, separate fix first is a sequencing question, not a design one — the shared `AddCost`
-mechanism is needed either way, and there's no reason for the new tool to ship with the same bug
-`web_read` already has now that it's been found.
+**Live-verified**, not just unit-tested: `dev/fakeopenrouter` got a small addition too — a `cost`
+field on its scriptable `queuedResponse`, since every response defaulted to reporting `$0` before,
+which made it impossible to script a real non-zero-cost scenario against a running server at all.
+With that in place, a scripted `web_read` turn (a tool-call response, the filter pass's own
+response, the final answer — three separately-costed calls) against a real running `polaris run`
+process reported `cost_usd: 0.05` end-to-end, both in the `POST /api/ask` response and the
+thread's persisted `cost_usd` fetched back via `GET /api/threads/:id` — and, rebuilding the
+pre-fix code and replaying the identical script, `0.013` (exactly the two main-loop calls, missing
+the filter pass's $0.037) — confirming both that the fix works and that the bug was real.
+
+This work (shared infrastructure both `web_read`/`read_attachment` and `search_chats`'s filtered
+`read` use) already exists on this branch; `search_chats`'s own filtered `read` handler just needs
+to call the same `ctx.AddCost` when it's built, not invent anything new.
 
 ## Linking back to the thread
 
@@ -377,11 +377,12 @@ matches `loadHistory`'s existing behavior bit-for-bit (best done by extracting t
 not duplicating the logic and hoping the two stay in sync); filtered-mode `read` falls back to raw
 mode on a filter-LLM failure rather than erroring the whole call (mirroring `web_read`'s own
 `filterExtractedText` failure path — a good candidate for a shared test helper between the two,
-since the fallback shape is identical); `Context.AddCost`/`ExtraCostSnapshot` actually accumulate
-under concurrent calls (same style as the existing `TestContext_AddCitation_DeduplicatesByURL`)
-and `agent.Run`'s `Result.CostUSD` reflects it at every return point, not just the happy path; and,
-ideally, a regression test on `web_read` itself confirming its filter pass's cost now reaches
-`Result.CostUSD` — the kind of test that would have caught the pre-existing gap directly. `chat_search`
+since the fallback shape is identical); and that the new `read` handler's own filtered call reaches
+`ctx.AddCost` the same way `web_read`/`read_attachment`'s already-shipped fix does (see
+`TestHandleWebRead_FilterPassCostReachesContext`/`TestHandleReadAttachment_InstructionsRunFilterPass`
+and `TestRun_ExtraToolCostIncludedInResultCost` for the pattern to follow — `Context.AddCost`
+itself and its concurrent-safety are already covered by `TestContext_AddCost_Accumulates`/
+`TestContext_AddCost_ConcurrentCallsAllLand`). `chat_search`
 gating in `catalog.go` behaves like
 `memory_store`'s; the CLI wiring in `cmd/search.go` actually has `SearchThreads`/`ReadThread` set
 (a plain "does `polaris search` end up with a working `search_chats` tool" check — this is exactly

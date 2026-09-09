@@ -1066,3 +1066,32 @@ func TestRun_WrapUpErrorStillReportsCost(t *testing.T) {
 		t.Errorf("result.CostUSD = %v, want 0.04 (both loop calls' cost, accrued before the wrap-up call failed)", result.CostUSD)
 	}
 }
+
+// TestRun_ExtraToolCostIncludedInResultCost is the regression test for the
+// gap Context.ExtraCostUSD's doc comment describes: a tool handler that
+// makes its own internal LLM call (web_read/read_attachment's instructions
+// filter pass, via ctx.AddCost) spends real money the main loop's own
+// per-turn completion calls never see. ctx.ExtraCostUSD is set directly
+// here rather than via a real filtering tool call, to test driver.go's own
+// responsibility (folding it into every Result{CostUSD: ...}) in
+// isolation from tools.Context.AddCost's own accumulation, which
+// tools/web_read_test.go and tools/read_attachment_test.go already cover
+// at the call site.
+func TestRun_ExtraToolCostIncludedInResultCost(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "final answer", CostUSD: 0.01}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.ExtraCostUSD = 0.005 // simulates a tool handler having already called ctx.AddCost mid-dispatch
+
+	result, err := Run(context.Background(), ctx, nil, "hi")
+	if err != nil {
+		t.Fatalf("Run returned an error: %v", err)
+	}
+	if result.CostUSD != 0.015 {
+		t.Errorf("result.CostUSD = %v, want 0.015 (0.01 main-loop cost + 0.005 extra tool-handler cost)", result.CostUSD)
+	}
+}

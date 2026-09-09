@@ -454,14 +454,43 @@ func TestHandleWebRead_FilterFailureFallsBackToFullText(t *testing.T) {
 
 func TestFilterExtractedText(t *testing.T) {
 	mock := &llmtest.MockClient{
-		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer"}}},
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer", CostUSD: 0.0042}}},
 	}
-	result, err := filterExtractedText(context.Background(), mock, "page text", "an instruction")
+	result, cost, err := filterExtractedText(context.Background(), mock, "page text", "an instruction")
 	if err != nil {
 		t.Fatalf("filterExtractedText returned error: %v", err)
 	}
 	if result != "extracted answer" {
 		t.Errorf("result = %q, want %q", result, "extracted answer")
+	}
+	// This is the exact value that used to be silently discarded — see
+	// Context.ExtraCostUSD's doc comment for why returning it matters.
+	if cost != 0.0042 {
+		t.Errorf("cost = %v, want 0.0042", cost)
+	}
+}
+
+// TestHandleWebRead_FilterPassCostReachesContext is the regression test for
+// the gap this doc comment on Context.ExtraCostUSD describes: before this
+// fix, a filter pass's real LLM spend never reached anywhere Polaris
+// reports a thread's total cost. Exercises the real handleWebRead path
+// (not filterExtractedText directly) so it catches a regression at the
+// actual call site, not just in the helper's own signature.
+func TestHandleWebRead_FilterPassCostReachesContext(t *testing.T) {
+	html := `<html><body><article>The price is $42, hidden among a lot of other unrelated text about something else entirely.</article></body></html>`
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "$42", CostUSD: 0.0015}}},
+	}
+	ctx := &Context{Ctx: context.Background(), LLM: mock, Emit: func(string, map[string]interface{}) {}}
+
+	result := handleWebRead(`{"url":"`+srv.URL+`","instructions":"what is the price"}`, ctx, "test-call")
+	if result != "$42" {
+		t.Fatalf("result = %q, want %q", result, "$42")
+	}
+	if ctx.ExtraCostUSD != 0.0015 {
+		t.Errorf("ctx.ExtraCostUSD = %v, want 0.0015 — the filter pass's cost never reached the turn's cost tracking", ctx.ExtraCostUSD)
 	}
 }
 

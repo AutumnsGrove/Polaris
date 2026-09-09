@@ -172,8 +172,9 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 				filterInput = filterInput[:maxFilterInputChars]
 			}
 		}
-		if filtered, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, filterInput, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, filterInput, args.Instructions); ferr == nil {
 			result = filtered
+			ctx.AddCost(filterCost)
 		} else {
 			log.Warn("web_read: filter pass failed, using full extracted text", "url", args.URL, "err", ferr)
 			// On filter failure, silently fall back to the extracted text
@@ -676,7 +677,15 @@ func looksEmpty(text string) bool {
 // step. Reuses the thread's selected model/client rather than spinning up
 // a separate one, since the provider pin (and its prompt-cache pricing)
 // is already configured on it.
-func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, instructions string) (string, error) {
+//
+// Returns the call's own CostUSD alongside the filtered text — this is a
+// real, separately-billed LLM call the main agent loop never sees on its
+// own, so every caller must feed it into ctx.AddCost(costUSD) rather than
+// discarding it; see Context.ExtraCostUSD's doc comment for why that
+// matters (this used to be silently dropped here, which meant a thread's
+// displayed cost never reflected an instructions filter pass actually
+// ran).
+func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, instructions string) (text string, costUSD float64, err error) {
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().Tools.WebReadFilterSystem},
 		{Role: "user", Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText)},
@@ -684,7 +693,7 @@ func filterExtractedText(ctx context.Context, client llm.ChatClient, pageText, i
 
 	resp, err := client.ChatCompletionStreaming(ctx, messages, func(string) {}, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	return resp.Content, nil
+	return resp.Content, resp.CostUSD, nil
 }

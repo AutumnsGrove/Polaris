@@ -30,6 +30,37 @@ func TestDispatch_KnownTool(t *testing.T) {
 	}
 }
 
+func TestContext_AddCost_Accumulates(t *testing.T) {
+	ctx := newTestContext()
+	ctx.AddCost(0.001)
+	ctx.AddCost(0.002)
+	if ctx.ExtraCostUSD != 0.003 {
+		t.Errorf("ExtraCostUSD = %v, want 0.003", ctx.ExtraCostUSD)
+	}
+}
+
+func TestContext_AddCost_ConcurrentCallsAllLand(t *testing.T) {
+	// Same concurrency shape AddCitation/AddCard already need to survive —
+	// agent.Run dispatches every tool call from one model turn concurrently,
+	// so multiple handlers can call AddCost at the same instant.
+	ctx := newTestContext()
+	const n = 100
+	done := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func() {
+			ctx.AddCost(0.01)
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < n; i++ {
+		<-done
+	}
+	want := 0.01 * n
+	if diff := ctx.ExtraCostUSD - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("ExtraCostUSD = %v, want %v (a lost update means the mutex isn't doing its job)", ctx.ExtraCostUSD, want)
+	}
+}
+
 func TestContext_AddCitation_DeduplicatesByURL(t *testing.T) {
 	ctx := newTestContext()
 	ctx.AddCitation(Citation{Title: "First", URL: "https://example.com/a"})
