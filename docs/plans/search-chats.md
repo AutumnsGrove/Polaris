@@ -16,37 +16,35 @@ just a routine's own history, and hand back a real, clickable pointer into it.
 Polaris already half-solves this for humans: the sidebar's search box (`gateway/threads.go`'s
 `handleSearchThreads`, backed by `store.Store.SearchMessages` and the `messages_fts` FTS5 index)
 lets *you* find an old chat by typing keywords. This plan exposes that same capability to the
-model as a tool, adds a second, complementary semantic-search path for when your phrasing doesn't
-match the old chat's wording, and adds a `read` action so the model can actually pull a found
-thread's content back into the conversation — not just describe that it exists.
+model as a tool, and adds a `read` action so the model can actually pull a found thread's content
+back into the conversation — not just describe that it exists.
 
 ## Scope
 
 **v1 in scope:**
 - A single new tool, `search_chats`, with two actions: `search` (find matching past threads) and
   `read` (fetch one past thread's full content by ID).
-- Hybrid search: the existing FTS5 keyword index (always available, reused as-is) plus a new
-  semantic/embedding path (only active when Ollama is configured — see "Degradation" below),
-  merged via Reciprocal Rank Fusion.
+- Search is FTS5 keyword search, full stop — reusing `store.Store.SearchMessages` (the same index
+  already backing the sidebar's search box) essentially unchanged.
 - A real link back to the source thread in every search result, rendered as a normal citation so
   it's clickable in the chat UI exactly like a web citation is today.
 - Toggleable from the settings panel, on by default, same mechanism as `web_search`/`memory`-
   adjacent tools.
 
 **Out of scope for v1** (flagged for later, not forgotten):
+- **Semantic/embedding search** — see "v2: semantic search" below for the design and, more
+  importantly, why it's deliberately not in v1.
 - Pagination within `read` for a single very long thread — v1 caps and truncates with a note
   instead (see "The `read` action").
-- A dedicated settings toggle for *just* the semantic half (e.g. "keyword-only mode") — v1's one
-  toggle covers the whole tool.
-- Retuning `embed.CosineSimilarity`'s threshold/RRF's `k` against real usage — ships with
-  reasonable starting constants (documented inline, same "not yet tuned" honesty as
-  `agent/query_similarity.go`'s own thresholds), not a validated-against-real-traffic value.
+- Corpus-wide analytics ("what have I been asking about lately") — this tool is single-query
+  retrieval, not aggregation. See "Can this support trend analysis?" below; it's a related but
+  distinct feature, not an extension of this one.
 
 ## Walkthrough (the motivating example)
 
 1. User, in a new or unrelated thread: *"did I ever talk about upgrading my graphics card?"*
 2. Model calls `search_chats(action="search", query="graphics card upgrade GPU")`.
-3. The tool runs both search tiers, merges them, and returns something like:
+3. FTS5 (prefix-matched, so "upgrad" still matches "upgrading", "upgrade", etc.) returns:
    ```
    1. "Should I get a 4070 or wait for the 5070?" (thread a1b2c3, 2026-07-14)
       /t/a1b2c3
@@ -109,99 +107,19 @@ source gets cited, so the user gets a working pointer back to the original chat,
 description of one; and prefer `read` over re-explaining from the snippet alone once you actually
 need the old thread's content to answer, not just its existence.
 
-## Search implementation (hybrid)
+This schema is deliberately future-proof for v2: if semantic search is added later, it slots in
+*behind* `action="search"` as a second internal ranking signal merged into the same result list —
+no new action, no new parameter, no change to how the model calls this tool. That's a design
+constraint worth keeping in mind, not just a happy accident: it's why v2 stayed a "later, if
+needed" appendix instead of something that had to be decided now.
 
-### Tier 1 — keyword (FTS5), always available
+## Search implementation (v1: FTS5 only)
 
-Reuses `store.Store.SearchMessages` completely unchanged — it already does the right thing
+Reuses `store.Store.SearchMessages` essentially unchanged — it already does the right thing
 (resolves forked threads to their root, excludes disabled/pulsar/non-continued-Atlas threads,
-ranks by FTS5 bm25). No new code here beyond a thin wrapper closure (see "Wiring").
-
-### Tier 2 — semantic (embeddings), available only when Ollama is configured
-
-Polaris already has an embeddings client (`embed.Client`, `embed/embed.go`) and a cosine-similarity
-helper (`embed.CosineSimilarity`) — today used for exactly one thing, `agent/query_similarity.go`'s
-in-turn "are you repeating the same search" signal. Nothing about either is specific to that use;
-this reuses both for a second, independent purpose: persistent semantic search over message
-history.
-
-**New table**, added via the normal `migrations` slice in `store/store.go`:
-
-```sql
-CREATE TABLE IF NOT EXISTS message_embeddings (
-	message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
-	embedding  BLOB NOT NULL,   -- little-endian float32s, packed via encoding/binary
-	model      TEXT NOT NULL,   -- the embed_model that produced this vector
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-BLOB (packed float32s), not a JSON array column: unlike `blocked_sources.txt`/`domain_rankings.yaml`
--style config, this table is never meant to be hand-edited, so the usual "keep it human-readable"
-reasoning doesn't apply — a JSON array of ~768 floats per row is pure overhead here (parse cost, disk).
-
-**Why `model` is stored per row, not assumed:** if the user ever changes `ollama.embed_model` in
-`config.yaml`, a query embedded with the *new* model is not comparable to a vector stored under the
-*old* one — cosine similarity across two different embedding models' vector spaces is meaningless,
-not just "less accurate." The semantic search path must only compare against rows whose `model`
-matches the currently configured `embed_model`; rows from a stale model are treated exactly like
-rows that were never embedded at all (see backfill, below) — this is a correctness requirement, not
-a nice-to-have, and needs a regression test (embed under model A, switch config to model B, confirm
-the stale row is excluded from results and gets re-embedded).
-
-**Indexing — two paths, both best-effort and non-blocking:**
-
-1. **On write.** Wherever a user/assistant message is persisted via `store.Store.AddMessage`
-   (`gateway/turn.go`'s main turn-completion path), fire a background goroutine that embeds the new
-   message's content and calls a new `store.Store.SaveMessageEmbedding(messageID, vec, model)` —
-   same "fire-and-forget, log at Debug on failure, never affect the actual response" shape as
-   `warmUpEmbedClient` in `agent/query_similarity.go`. A failed or slow embed here must never delay
-   sending the reply to the user.
-2. **Backfill sweep**, for messages that predate this feature or whose stored `model` no longer
-   matches config. Piggybacks on the existing once-a-minute Pulsar scheduler tick
-   (`gateway/pulsar_scheduler.go`'s `RunPulsarScheduler`, same "no new ticker" pattern it already
-   uses for the wizard-session sweep and the Daily due-check) rather than a blocking startup
-   migration: a fresh install or a newly-configured Ollama could have thousands of pre-existing
-   messages, and embedding all of them synchronously at startup (or in a SQL migration, which can't
-   even call Ollama) would either block server start or silently fail if Ollama isn't up yet. Each
-   tick embeds a small bounded batch (e.g. 20 rows: `store.Store.MessagesMissingEmbeddings(20)`,
-   selecting messages with no `message_embeddings` row *or* a stale `model`) — slow enough to never
-   hammer a modest Ollama instance running on the same potato as everything else, self-healing if
-   Ollama is briefly down (just tries again next tick), and naturally idle (does nothing) once
-   caught up.
-
-Both paths no-op entirely when the server's embed client is nil (`ollama.base_url` unset) — same
-nil-check gating as every other optional-dependency client in this codebase (`tavily.NewClient`,
-`places.NewFoursquareClient`, `embed.NewClient` itself).
-
-**Query time:** embed the query string once via the same `embed.Client.Embed`, then a new
-`store.Store.SearchMessagesSemantic(vec []float32, limit int) ([]MessageSearchResult, error)` does
-a brute-force cosine-similarity scan over `message_embeddings` (joined against `messages`/`threads`
-with the *exact* same filter clause `SearchMessages` already uses — disabled/pulsar/non-continued-
-Atlas exclusion, fork-root resolution — factor that `WHERE`/`JOIN` shape into a shared helper so the
-two tiers can never drift apart on which threads are eligible). Brute-force, not an ANN index: this
-is a single-operator install with realistically thousands, not millions, of messages — a linear
-scan in Go is plenty fast at that scale, and adds no new dependency (sqlite-vec or similar) for a
-problem this small.
-
-### Merging the two tiers
-
-Reciprocal Rank Fusion — not a new technique for this codebase, the exact same algorithm
-`docs/plans/local-search-frontend.md`'s Atlas ranking design already specifies for combining
-multiple engines' incomparable rankings into one list. Same reasoning applies here: FTS5's bm25
-score and cosine similarity aren't on comparable scales, so merging by *rank position* (score =
-Σ 1/(k + rank_i) across whichever list(s) a result appears in, k = 60, the standard RRF constant)
-sidesteps having to normalize two unrelated scoring functions against each other. Implemented as a
-plain Go function in the tool handler (`tools/search_chats.go`), not store-side — it's pure
-in-memory merging of two already-fetched result lists, no SQL involved.
-
-### Degradation
-
-No Ollama configured → Tier 2 never runs (embed client is nil) → the tool is FTS5-keyword-only,
-silently, with zero difference to the model-facing tool contract. This is deliberate: the feature
-must work identically well on a bare-metal or Docker install that never set `ollama.base_url`,
-matching how `agent/query_similarity.go`'s signal already degrades to "just doesn't fire" under the
-same condition.
+ranks by FTS5 bm25). No new index, no new table, no new background job. The tool handler
+(`tools/search_chats.go`) is a thin wrapper: format results, cap at `limit`, call `AddCitation`
+per hit (see "Linking back to the thread").
 
 ## The `read` action
 
@@ -219,7 +137,7 @@ handles a similarly-shaped "this could be arbitrarily large" problem for PDFs, b
 unlike a PDF there's no natural page boundary to page through by. A truncated `read` result still
 includes the thread's link, so the model can at least point the user at it even when it can't
 inline the whole thing. Real pagination (page through a long thread's messages the way
-`read_attachment` pages through a PDF) is a reasonable v2 if truncation turns out to bite in
+`read_attachment` pages through a PDF) is a reasonable follow-up if truncation turns out to bite in
 practice — not built now on the theory it might be needed.
 
 ## Linking back to the thread
@@ -249,19 +167,13 @@ regardless of what `citationLabel`'s own URL-parsing does for display purposes.
 
 New closures on `tools.Context` (`tools/registry.go`), same pattern as `WriteMemory`/`GetMemory`/
 etc. — a nil closure means "not available," gating the tool off via a new `chat_search` `Requires`
-value in `tools/catalog.go` (`ctx.SearchThreadsKeyword != nil`, mirroring `memory_store`'s
+value in `tools/catalog.go` (`ctx.SearchThreads != nil`, mirroring `memory_store`'s
 `ctx.WriteMemory != nil` check):
 
 ```go
-SearchThreadsKeyword  func(query string, limit int) ([]store.MessageSearchResult, error)
-SearchThreadsSemantic func(vec []float32, limit int) ([]store.MessageSearchResult, error) // nil-safe to call even with embed disabled — see below
-ReadThread            func(threadID string) (*store.ThreadReadResult, error)
+SearchThreads func(query string, limit int) ([]store.MessageSearchResult, error)
+ReadThread    func(threadID string) (*store.ThreadReadResult, error)
 ```
-
-`SearchThreadsSemantic` is wired to a real closure even when Ollama isn't configured — it just
-returns an empty slice, so the tool handler doesn't need its own separate "is semantic available"
-branch; whether Tier 2 contributes anything is decided once, inside the closure, not scattered
-across call sites.
 
 **Every entry point that builds a `tools.Context` for a real turn needs this wired**, not just the
 main chat path — this is precisely the class of gap CLAUDE.md already documents for `web_search`
@@ -287,28 +199,69 @@ settings panel lists it like any other optional tool, on by default, per your an
 
 ## Testing & verification
 
-Unit tests (Go, `store` and `tools` packages): `SearchMessagesSemantic` filters out stale-model
-rows; RRF merge produces a stable, deduped-by-thread-and-message ordering given two overlapping
-input lists; the `read` action's compaction-substitution matches `loadHistory`'s existing behavior
+Unit tests (Go, `store` and `tools` packages): `search_chats` result formatting and citation
+emission; the `read` action's compaction-substitution matches `loadHistory`'s existing behavior
 bit-for-bit (best done by extracting the shared helper, not duplicating the logic and hoping the
-two stay in sync); `chat_search` gating in `catalog.go` behaves like `memory_store`'s.
+two stay in sync); `chat_search` gating in `catalog.go` behaves like `memory_store`'s; the CLI
+wiring in `cmd/search.go` actually has `SearchThreads`/`ReadThread` set (a plain "does
+`polaris search` end up with a working `search_chats` tool" check — this is exactly the class of
+gap that bit `web_search` in this same file before, per CLAUDE.md).
 
-Per this repo's own stated culture (`CLAUDE.md`'s "Verify on real hardware, not just review or
-mocked tests"), this feature specifically needs a live check beyond `go test`: confirm the backfill
-sweep actually catches up a real `polaris.db` with pre-existing message history once
-`ollama.base_url` is set, using `dev/fakeopenrouter` for the chat completions side and a real (or
-locally-run) Ollama for the embeddings side — a mocked embed client can't catch a real backfill
-batch size/rate mismatch or a genuinely broken model-mismatch filter the way actually watching the
-`message_embeddings` table fill in over several scheduler ticks can.
+Live check per CLAUDE.md's "verify on real hardware" culture: run `polaris search`/the web chat
+against a real `polaris.db` with actual message history and confirm a `search_chats` call finds a
+real old thread and the returned link opens it — `dev/fakeopenrouter` scripts the model side of
+this so it's a deterministic thing to test, not a "hope a live model decides to call the tool"
+situation.
 
-## Open questions for later
+## v2 (later, if actually needed): semantic search
 
-- RRF's `k=60` and the semantic-tier's own result cap are unvalidated starting points, same
-  "needs real-usage tuning" caveat `agent/query_similarity.go` already carries for its own
-  constants.
-- Whether `read`'s 8,000-char truncation is the right budget, or whether real long-thread usage
-  demands actual pagination sooner than expected.
-- A "forget this from search" per-thread opt-out (some old threads might be sensitive enough that
-  the user wouldn't want the model surfacing them unprompted) isn't in v1 — worth a follow-up ask
-  if it comes up in practice, but nothing in the current design blocks adding it later (a `threads`
-  column + a `WHERE` clause both search tiers already share via the joined-filter helper above).
+The original draft of this plan built a full hybrid design here: a second search tier using the
+existing (but currently narrowly-scoped) `embed.Client`/`embed.CosineSimilarity` — a new
+`message_embeddings` table, an async on-write indexer, a backfill sweep piggybacked on the Pulsar
+scheduler tick, and Reciprocal Rank Fusion to merge it with FTS5. That's deliberately *not* what's
+being built for v1. Reasoning, worth keeping attached to this doc rather than just dropped:
+
+- **This is a search over your own words, not someone else's.** Semantic search earns its keep
+  when query phrasing diverges a lot from the stored text (paraphrase, synonyms, different
+  language). Recalling your own recurring topics in your own vocabulary is a much easier case —
+  FTS5's prefix matching already tolerates a fair amount of slop, and real vocabulary gaps
+  ("GPU" vs. "graphics card") are the exception, not the norm, for one person's own chat history.
+- **Real operational cost, not just build cost.** A new table, an async indexer, a backfill sweep,
+  and a model-mismatch tracking scheme are ongoing maintenance surface, and the actual production
+  target is a Le Potato SBC — a low-power ARM board already running Polaris and SearXNG.
+  Backfilling embeddings for a real message history on that hardware is a genuine resource
+  question that deserves being watched live before being built, not assumed away.
+- **Unproven dependency.** There's no guarantee `ollama.base_url` is even configured on a given
+  install. Building persistent infra against an optional dependency that may not exist is exactly
+  the kind of premature generalization this codebase's own conventions warn against elsewhere.
+
+**Trigger for revisiting:** real usage surfacing a concrete "I know I talked about this but
+FTS5-keyword search can't find it" pattern — not a hypothetical one. If that happens, the design
+sketch above (new table, on-write + backfill indexing, RRF merge) is still the right shape; it's
+parked, not discarded.
+
+## Can this tool support trend analysis ("what have I been asking about")?
+
+No — not without the model guessing keywords, which isn't what trend analysis needs. Worth being
+explicit about why, since it's a natural next question but a genuinely different feature:
+
+`search_chats` is a **retrieval** tool — it answers "find the thread(s) matching this specific
+query," bounded to a handful of results so it fits in a normal turn's context. Trend analysis
+("what topics have I asked about most this year") is an **aggregation** problem over the *entire*
+corpus, with no natural query string at all — there's nothing to search *for*. The only way to
+force it through `search_chats` would be to have the model repeatedly guess candidate keywords and
+search each one, which is exactly the "guessing at keywords" you're trying to avoid, and still
+wouldn't cover a topic phrased in a way none of the guesses happened to hit.
+
+If this is something you'd actually want, it's a different, smaller feature worth its own plan
+rather than bolted onto this one — and it doesn't need semantic search/embeddings to work. The
+cheap, already-available building block is `Thread.Title` (`store.Store.ListThreads`) — every
+thread already has an LLM-generated title summarizing what it was about, and titles are compact
+enough that even a few thousand of them fit comfortably in one LLM call's context, unlike full
+message content. A trends feature would most likely be a batch/offline job (closer to Pulsar
+Daily's shape — one summarization pass over accumulated data — than a live per-turn tool call):
+pull all thread titles (+ dates) in one cheap SQL query, hand the list to one LLM call to cluster
+and summarize recurring themes, and render that as its own view or report rather than a chat
+answer. Not designing this now — flagging it as the natural next question if you want it, since
+it's a genuinely different shape of feature from `search_chats` and shouldn't get force-fit into
+this tool's design.
