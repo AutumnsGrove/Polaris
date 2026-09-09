@@ -36,6 +36,9 @@ export default defineConfig({
 		})
 	],
 	server: {
+		// Pinned off Vite's default (5173) — that port is permanently
+		// claimed by another project (Lattice/Aspen) on this machine.
+		port: 45173,
 		// Local dev: `vite dev` proxies API + WebSocket calls to the Go
 		// backend running on :8899, so the frontend gets hot reload while
 		// still talking to the real agent loop.
