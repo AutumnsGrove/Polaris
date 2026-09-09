@@ -132,6 +132,26 @@ var Registry = []config.ModelConfig{
 		},
 	},
 	{
+		// Diffusion-based (dLLM), not autoregressive — generates/refines
+		// tokens in parallel instead of one at a time, which is the whole
+		// reason it's here: a speed comparison against the sequential
+		// models above. Text-only per live OpenRouter endpoint metadata
+		// (input_modalities: ["text"] only), single-provider (Inception
+		// itself, 99.99% 1-day uptime per GET /api/v1/models/inception/
+		// mercury-2.5-20260908/endpoints), full tool_choice support
+		// (none/auto/required/function all true).
+		ID:          "mercury",
+		Name:        "Mercury 2.5",
+		Model:       "inception/mercury-2.5",
+		Provider:    []string{"inception"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+	},
+	{
 		// Text-only (no image input) — NOT marked multimodal, matching
 		// mimo-pro above, so Config.MultimodalModel doesn't accidentally
 		// pick this for image-description duty. The ":free" slug routes
