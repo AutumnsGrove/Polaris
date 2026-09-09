@@ -7,10 +7,18 @@ import (
 	"strings"
 	"testing"
 
+	"polaris/models"
 	"polaris/store"
 )
 
 func TestHandleModels_ListsConfiguredModelsWithDefault(t *testing.T) {
+	// Read before the local `models` variable below shadows the package
+	// name for the rest of this function — comparing against the real
+	// registry's own length, not a hardcoded count, so this test can't go
+	// stale again the way it did when Mercury 2.5 was added to the
+	// registry (models/models.go) without this count being bumped to
+	// match, silently breaking CI for every PR afterward until noticed.
+	wantModelCount := len(models.Registry)
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
 	resp, err := http.Get(h.url("/api/models"))
@@ -28,8 +36,8 @@ func TestHandleModels_ListsConfiguredModelsWithDefault(t *testing.T) {
 		t.Fatalf("decoding response: %v", err)
 	}
 	// Models now come from the registry (models/models.go), not config.yaml
-	if len(models) != 6 {
-		t.Fatalf("got %d models, want 6 from registry", len(models))
+	if len(models) != wantModelCount {
+		t.Fatalf("got %d models, want %d from registry", len(models), wantModelCount)
 	}
 	// Default is set in testutil_test.go's writeTestConfig
 	defaultFound := false
@@ -45,6 +53,9 @@ func TestHandleModels_ListsConfiguredModelsWithDefault(t *testing.T) {
 }
 
 func TestHandleModels_HotReloadsModelOverrides(t *testing.T) {
+	// Same "read before the local `models` var shadows the package name"
+	// reasoning as TestHandleModels_ListsConfiguredModelsWithDefault above.
+	wantModelCount := len(models.Registry)
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
 	// Models are now defined in the registry (models/models.go), but
@@ -69,9 +80,9 @@ func TestHandleModels_HotReloadsModelOverrides(t *testing.T) {
 	}
 	json.NewDecoder(resp.Body).Decode(&models)
 
-	// Should still have all 6 registry models
-	if len(models) != 6 {
-		t.Errorf("got %d models after config rewrite, want 6", len(models))
+	// Should still have every registry model
+	if len(models) != wantModelCount {
+		t.Errorf("got %d models after config rewrite, want %d", len(models), wantModelCount)
 	}
 }
 
