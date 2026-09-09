@@ -22,12 +22,18 @@ back into the conversation — not just describe that it exists.
 ## Scope
 
 **v1 in scope:**
-- A single new tool, `search_chats`, with two actions: `search` (find matching past threads) and
-  `read` (fetch one past thread's full content by ID).
-- Search is FTS5 keyword search, full stop — reusing `store.Store.SearchMessages` (the same index
+- A single new tool, `search_chats`, with two actions: `search` (find matching past threads,
+  either by keyword or — with `query` omitted — by recency) and `read` (fetch one past thread's
+  full content by ID).
+- Keyword search is FTS5, full stop — reusing `store.Store.SearchMessages` (the same index
   already backing the sidebar's search box) essentially unchanged.
+- Recency mode: `search` with no `query` lists threads newest-first instead, paginated via a
+  cursor — see "Recency mode" below. This is what makes "what have I been asking about lately"
+  answerable without the model guessing keywords.
 - A real link back to the source thread in every search result, rendered as a normal citation so
   it's clickable in the chat UI exactly like a web citation is today.
+- A per-turn budget on cumulative `read` content, so a broad scan across several threads can't
+  silently eat the whole context window — see "Context budget for `read`" below.
 - Toggleable from the settings panel, on by default, same mechanism as `web_search`/`memory`-
   adjacent tools.
 
@@ -36,9 +42,10 @@ back into the conversation — not just describe that it exists.
   importantly, why it's deliberately not in v1.
 - Pagination within `read` for a single very long thread — v1 caps and truncates with a note
   instead (see "The `read` action").
-- Corpus-wide analytics ("what have I been asking about lately") — this tool is single-query
-  retrieval, not aggregation. See "Can this support trend analysis?" below; it's a related but
-  distinct feature, not an extension of this one.
+- A dedicated batch/offline "trend report" feature (see the old draft of this section, now folded
+  into "Recency mode + reasoning over titles" below) — turned out not to be needed: recency mode
+  plus the model reasoning over titles/snippets it already gets from `search` covers the actual
+  want well enough that a separate aggregation feature isn't worth building for this.
 
 ## Walkthrough (the motivating example)
 
@@ -58,6 +65,13 @@ back into the conversation — not just describe that it exists.
 6. If the user follows up *"what did we land on?"*, the model calls
    `search_chats(action="read", thread_id="a1b2c3")` to pull the full old conversation back in and
    answer from it directly, instead of re-searching or telling the user to go read it themselves.
+
+**A second, recency-mode example:** user asks *"what have I been asking you about lately?"* — no
+keyword to search for. Model calls `search_chats(action="search")` with no query, gets back the 10
+most recent threads (titles + dates + short previews), and answers directly from that list — e.g.
+*"Mostly GPU shopping and a couple of cooking questions this week — you also asked about
+[refinancing the car loan](/t/f9e8d7) a few days ago."* No `read` calls needed here at all; the
+titles/previews already carry enough signal to answer a "what have I been up to" question.
 
 ## Tool design: `search_chats`
 
@@ -81,12 +95,20 @@ var searchChatsDef = llm.ToolDef{
 						"thread's full content by the thread_id a search result returned.",
 				},
 				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Required for search. Free-text description of what you're looking for.",
+					"type": "string",
+					"description": "Optional for search. Free-text description of what you're looking for. " +
+						"Omit entirely to list your most recent threads instead, newest first — use this " +
+						"for \"what have I been asking about\" style questions instead of guessing keywords.",
 				},
 				"limit": map[string]interface{}{
 					"type":        "integer",
 					"description": "Optional for search: max results to return (default 5, max 15).",
+				},
+				"cursor": map[string]interface{}{
+					"type": "string",
+					"description": "Optional for search: pass back the cursor a prior search call returned " +
+						"to fetch the next page — only meaningful for recency mode (no query); a keyword " +
+						"search's results aren't paged.",
 				},
 				"thread_id": map[string]interface{}{
 					"type":        "string",
@@ -121,6 +143,32 @@ ranks by FTS5 bm25). No new index, no new table, no new background job. The tool
 (`tools/search_chats.go`) is a thin wrapper: format results, cap at `limit`, call `AddCitation`
 per hit (see "Linking back to the thread").
 
+## Recency mode (`search` with no `query`)
+
+`query` omitted switches `search` from FTS5 ranking to plain recency ordering — newest thread
+first, same `updated_at` field the sidebar already sorts by. This is the mechanism behind "what
+have I been asking about lately": the model calls `search_chats(action="search")` with no query,
+gets back a page of recent threads (title + date + short preview, no full content — cheap, the
+same shape a keyword hit already returns), and reasons over that list directly rather than
+guessing keywords to search for.
+
+**Fixed page size: 10 threads per page**, not the keyword path's tunable `limit` — recency mode
+is meant to be paged through deliberately (page 1, then page 2 if the model decides it needs
+more), not dialed up to a big single fetch, so a flat, predictable page size is more useful here
+than a model-guessed number. `store.Store` needs a new method for this — `ListThreadsPage(cursor
+string) (threads []ThreadSummary, nextCursor string, error)`, cursor-paginated (not
+offset-based, so it stays stable if a new thread is created between page fetches) over the same
+`disabled`/`pulsar`/non-continued-Atlas exclusion `SearchMessages` already applies. `search`'s
+formatted result includes the returned `nextCursor` inline (e.g. "10 more results — pass
+cursor=\"...\" to see the next page") so the model can decide whether it's worth fetching another
+page rather than always chaining through the model's own judgment being the only thing bounding
+how many pages get pulled.
+
+Each page is small by construction (10 titles + short previews, not full thread bodies), so even
+a model that pages through several screens of recent threads to answer a broader question stays
+cheap — this is the whole reason recency mode is a `search`-shaped feature and not a `read`-shaped
+one; see the next section for why `read`'s cost profile is completely different.
+
 ## The `read` action
 
 Fetches a specific past thread's content by `thread_id`. Reuses `store.GetThread` +
@@ -139,6 +187,36 @@ includes the thread's link, so the model can at least point the user at it even 
 inline the whole thing. Real pagination (page through a long thread's messages the way
 `read_attachment` pages through a PDF) is a reasonable follow-up if truncation turns out to bite in
 practice — not built now on the theory it might be needed.
+
+## Context budget for `read`
+
+A single `read` is capped at 8,000 chars (above), but that only bounds *one* call — nothing stops
+the model from calling `read` on several threads in the same turn, and real threads vary a lot in
+size (some of this codebase's own long deep-research or coding threads are genuinely a meaningful
+fraction of a model's context window on their own). Ten such reads in one turn, even truncated to
+8,000 chars each, is up to 80,000 chars (~16-20K tokens) added to that turn's request — a small
+slice of a 128K-context model's budget, but a serious bite out of a smaller one, and either way
+it's real cost and latency for content the model may not have actually needed in full.
+
+Fix: a per-turn cumulative budget on `read` content, reusing this codebase's existing
+circuit-breaker shape (`tools.ResearchBudget`, `tools/research_budget.go` — currently scoped to
+Deep Research's search-call count, but the same "track usage on the turn's `Context`, refuse once
+a ceiling is hit, tell the model plainly why" pattern applies directly here). Concretely: a
+mutex-protected running total on `tools.Context` (turn-scoped already, same lifetime as
+`Citations`/`Cards`), incremented by each `read` call's actual (post-truncation) content length,
+hard-capped at a fixed ceiling — e.g. 24,000 chars, room for two or three full-size reads before
+it kicks in. A `read` call past the ceiling returns an error explaining the budget is spent for
+this turn and nudging the model to work with what it already pulled, or fall back to `search`'s
+titles/snippets for anything it hasn't read yet, rather than silently truncating further or
+refusing with no explanation.
+
+This is a backstop, not the primary defense — the real mitigation is that recency mode (above)
+never needs `read` at all for a broad scan: titles and short previews are what the model should be
+reasoning over when the question is "what have I been asking about" across many threads, and
+`read` is for drilling into the one (or two) threads that scan already identified as actually
+relevant. `search_chats.yaml`'s `api_description` should say this directly — prefer scanning
+`search` results over chaining `read` calls — so the budget cap is there for when that guidance
+doesn't fully land, not the thing doing the steering.
 
 ## Linking back to the thread
 
@@ -200,12 +278,16 @@ settings panel lists it like any other optional tool, on by default, per your an
 ## Testing & verification
 
 Unit tests (Go, `store` and `tools` packages): `search_chats` result formatting and citation
-emission; the `read` action's compaction-substitution matches `loadHistory`'s existing behavior
-bit-for-bit (best done by extracting the shared helper, not duplicating the logic and hoping the
-two stay in sync); `chat_search` gating in `catalog.go` behaves like `memory_store`'s; the CLI
-wiring in `cmd/search.go` actually has `SearchThreads`/`ReadThread` set (a plain "does
-`polaris search` end up with a working `search_chats` tool" check — this is exactly the class of
-gap that bit `web_search` in this same file before, per CLAUDE.md).
+emission; recency mode's cursor pagination (a fixed 10-per-page, stable across a page 2 fetch even
+if a new thread was created after page 1 was returned); the `read` action's compaction-substitution
+matches `loadHistory`'s existing behavior bit-for-bit (best done by extracting the shared helper,
+not duplicating the logic and hoping the two stay in sync); the per-turn `read` budget actually
+refuses a call once the cumulative ceiling is crossed, and that the ceiling resets between turns
+(it lives on `tools.Context`, which is already turn-scoped — same lifetime guarantee `Citations`
+relies on); `chat_search` gating in `catalog.go` behaves like `memory_store`'s; the CLI wiring in
+`cmd/search.go` actually has `SearchThreads`/`ReadThread` set (a plain "does `polaris search` end
+up with a working `search_chats` tool" check — this is exactly the class of gap that bit
+`web_search` in this same file before, per CLAUDE.md).
 
 Live check per CLAUDE.md's "verify on real hardware" culture: run `polaris search`/the web chat
 against a real `polaris.db` with actual message history and confirm a `search_chats` call finds a
@@ -240,28 +322,34 @@ FTS5-keyword search can't find it" pattern — not a hypothetical one. If that h
 sketch above (new table, on-write + backfill indexing, RRF merge) is still the right shape; it's
 parked, not discarded.
 
-## Can this tool support trend analysis ("what have I been asking about")?
+## Trend analysis ("what have I been asking about") — resolved via recency mode
 
-No — not without the model guessing keywords, which isn't what trend analysis needs. Worth being
-explicit about why, since it's a natural next question but a genuinely different feature:
+Earlier drafts of this doc treated this as a separate, out-of-scope aggregation feature (a
+batch job clustering every thread title you've ever written). Landed somewhere smaller and
+more useful instead: **recency mode plus the model reasoning over what it gets back is enough**,
+without needing a dedicated analytics feature.
 
-`search_chats` is a **retrieval** tool — it answers "find the thread(s) matching this specific
-query," bounded to a handful of results so it fits in a normal turn's context. Trend analysis
-("what topics have I asked about most this year") is an **aggregation** problem over the *entire*
-corpus, with no natural query string at all — there's nothing to search *for*. The only way to
-force it through `search_chats` would be to have the model repeatedly guess candidate keywords and
-search each one, which is exactly the "guessing at keywords" you're trying to avoid, and still
-wouldn't cover a topic phrased in a way none of the guesses happened to hit.
+`search_chats(action="search")` with no query returns a page of recent threads — title, date,
+short preview — and the model can page through a few screens of that (10 threads at a time) and
+just reason about what it sees, the same way it reasons about anything else in context. This
+isn't exhaustive analysis over your entire multi-year history in one pass, and it won't catch a
+topic that only ever came up in a thread from page 40 the model didn't bother fetching — but for
+"what have I been asking about lately," recency-ordered titles are already most of what a trend
+answer would say, at a fraction of the cost and none of the new infrastructure a real batch
+clustering job would need.
 
-If this is something you'd actually want, it's a different, smaller feature worth its own plan
-rather than bolted onto this one — and it doesn't need semantic search/embeddings to work. The
-cheap, already-available building block is `Thread.Title` (`store.Store.ListThreads`) — every
-thread already has an LLM-generated title summarizing what it was about, and titles are compact
-enough that even a few thousand of them fit comfortably in one LLM call's context, unlike full
-message content. A trends feature would most likely be a batch/offline job (closer to Pulsar
-Daily's shape — one summarization pass over accumulated data — than a live per-turn tool call):
-pull all thread titles (+ dates) in one cheap SQL query, hand the list to one LLM call to cluster
-and summarize recurring themes, and render that as its own view or report rather than a chat
-answer. Not designing this now — flagging it as the natural next question if you want it, since
-it's a genuinely different shape of feature from `search_chats` and shouldn't get force-fit into
-this tool's design.
+If a genuinely comprehensive all-time version of this becomes worth having later, the batch/
+title-clustering sketch from the earlier draft is still the right shape for it — pull every
+`Thread.Title` in one cheap SQL query, one LLM call to cluster/summarize, closer to Pulsar
+Daily's model than a live tool call. Not building that now: recency mode already covers the
+version of this you actually described wanting.
+
+## Open questions for later
+
+- The three new tunable constants (recency mode's 10-per-page, `read`'s 8,000-char single-read
+  cap, and the 24,000-char per-turn cumulative `read` budget) are reasonable starting points, not
+  validated against real usage — same "needs live-usage tuning" caveat this doc already applies to
+  RRF's `k` in the parked v2 design.
+- Whether the per-turn `read` budget should be configurable (e.g. larger on a big-context model,
+  smaller on a small local one) rather than one fixed constant — v1 ships the fixed constant and
+  only adds this if it turns out to actually matter in practice.
