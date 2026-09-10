@@ -559,6 +559,151 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_trace (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(edition_date, block_key)
 );
+
+-- constellation_config is Constellation's singleton settings row (see
+-- docs/plans/constellation.md) -- same shape as pulsar_daily_config: one
+-- row (id fixed to 1), not a per-item table, since there's only ever one
+-- Constellation.
+CREATE TABLE IF NOT EXISTS constellation_config (
+	id                    INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled               INTEGER NOT NULL DEFAULT 0,
+	poll_interval_minutes INTEGER NOT NULL DEFAULT 60,
+	last_checked_at       DATETIME,
+	-- model: empty means "use whatever config.DefaultModel currently
+	-- resolves to" -- same empty-means-inherit pattern
+	-- pulsar_daily_config.weather_location uses.
+	model                 TEXT NOT NULL DEFAULT '',
+	created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- stars is Constellation's main table, one row per topic -- see the plan
+-- doc's "Database schema" section for the full reasoning behind each
+-- column, most notably status/is_personal's routing rules.
+CREATE TABLE IF NOT EXISTS stars (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	title        TEXT NOT NULL,
+	category     TEXT NOT NULL,
+	summary      TEXT NOT NULL DEFAULT '',
+	body         TEXT NOT NULL DEFAULT '',
+	tags         TEXT NOT NULL DEFAULT '[]',
+	status       TEXT NOT NULL DEFAULT 'proposed',
+	confidence   TEXT NOT NULL DEFAULT '',
+	is_personal  INTEGER NOT NULL DEFAULT 0,
+	disabled     INTEGER NOT NULL DEFAULT 0,
+	created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- stars_fts is an external-content FTS5 index over stars, same
+-- external-content-plus-sync-triggers shape as messages_fts above. Indexes
+-- title+summary only (not the full body) -- search_stars is a dedup/
+-- link-discovery lead-finder, not a full-body search.
+CREATE VIRTUAL TABLE IF NOT EXISTS stars_fts USING fts5(
+	title, summary,
+	content='stars', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS stars_fts_ai AFTER INSERT ON stars BEGIN
+	INSERT INTO stars_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+END;
+
+CREATE TRIGGER IF NOT EXISTS stars_fts_ad AFTER DELETE ON stars BEGIN
+	INSERT INTO stars_fts(stars_fts, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+END;
+
+CREATE TRIGGER IF NOT EXISTS stars_fts_au AFTER UPDATE ON stars BEGIN
+	INSERT INTO stars_fts(stars_fts, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+	INSERT INTO stars_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+END;
+
+-- star_sources backs the "Linked articles" list on Star detail -- a real
+-- table, not a JSON blob, because a thread can contribute to the same star
+-- more than once over time (see "Revisiting a thread" in the plan doc);
+-- each contribution upserts (refreshes linked_at) rather than duplicating.
+CREATE TABLE IF NOT EXISTS star_sources (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	star_id   INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	thread_id TEXT NOT NULL REFERENCES threads(id),
+	linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE (star_id, thread_id)
+);
+
+-- star_edges is the reflection layer -- star-to-star connections shown on
+-- the Map and "Nearby in the constellation". star_a_id < star_b_id is
+-- enforced so a pair is only ever stored once regardless of which order
+-- link_stars was called with -- see Store.LinkStars.
+CREATE TABLE IF NOT EXISTS star_edges (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	star_a_id  INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	star_b_id  INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	reasoning  TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	CHECK (star_a_id < star_b_id),
+	UNIQUE (star_a_id, star_b_id)
+);
+
+-- shooting_star_runs is one row per shooting star -- one agent.Run over one
+-- thread. needs_retry/error implement unconditional, no-backoff retry (see
+-- the plan doc's "Failure and retry"); cost_usd is a cached rollup of
+-- shooting_star_events.cost_usd for this run, never its own source of
+-- truth.
+CREATE TABLE IF NOT EXISTS shooting_star_runs (
+	id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+	thread_id             TEXT NOT NULL REFERENCES threads(id),
+	last_message_id_seen  INTEGER NOT NULL,
+	started_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	finished_at           DATETIME,
+	summary               TEXT NOT NULL DEFAULT '',
+	error                 TEXT NOT NULL DEFAULT '',
+	needs_retry           INTEGER NOT NULL DEFAULT 0,
+	cost_usd              REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_shooting_star_runs_thread ON shooting_star_runs(thread_id);
+
+-- shooting_star_candidates is one row per topic candidate Weaver proposes
+-- within a run -- populated as a side effect of create_star/update_star
+-- (see Store.CreateStar/UpdateStar callers in gateway/constellation_weaver.go),
+-- not by a separate logging step.
+CREATE TABLE IF NOT EXISTS shooting_star_candidates (
+	id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+	run_id             INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
+	title              TEXT NOT NULL,
+	confidence_class   TEXT NOT NULL DEFAULT '',
+	decision           TEXT NOT NULL DEFAULT '',
+	reasoning          TEXT NOT NULL DEFAULT '',
+	resulting_star_id  INTEGER REFERENCES stars(id),
+	created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- shooting_star_events is a generic trace of every tool call and
+-- completion turn in a run, not just the writes -- the cost-auditability
+-- record: one row per LLM completion call in the loop, whether that turn
+-- called a tool or ended the run in plain text ('final_answer').
+CREATE TABLE IF NOT EXISTS shooting_star_events (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	run_id     INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
+	tool       TEXT NOT NULL,
+	args       TEXT NOT NULL DEFAULT '{}',
+	result     TEXT NOT NULL DEFAULT '',
+	cost_usd   REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_shooting_star_events_run ON shooting_star_events(run_id);
+
+-- star_reviews is the human side of the observability story, sibling to
+-- shooting_star_runs/shooting_star_candidates on the machine side --
+-- scoped to Inbox review only (see the plan doc's "Reviewing and editing a
+-- star" for why an Edit-star correction on an already-confirmed star does
+-- not write here).
+CREATE TABLE IF NOT EXISTS star_reviews (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	star_id    INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	action     TEXT NOT NULL,
+	correction TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // migrations adds columns to a threads table created before they existed.

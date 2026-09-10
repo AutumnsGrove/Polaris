@@ -52,6 +52,59 @@ func TestGet_MissingFileFallsBackToDefaults(t *testing.T) {
 	}
 }
 
+func TestGet_WeaverMissingFileFallsBackToDefaults(t *testing.T) {
+	withPromptsFile(t, "")
+
+	got := Get()
+	if got.Weaver.System != defaults.Weaver.System {
+		t.Errorf("Weaver.System = %q, want the built-in default", got.Weaver.System)
+	}
+	if got.Weaver.RevisitInstruction != defaults.Weaver.RevisitInstruction {
+		t.Errorf("Weaver.RevisitInstruction = %q, want the built-in default", got.Weaver.RevisitInstruction)
+	}
+}
+
+func TestGet_WeaverPartialOverrideFillsRestFromDefaults(t *testing.T) {
+	withPromptsFile(t, `weaver:
+  revisit_instruction: "custom revisit prompt %s"
+`)
+
+	got := Get()
+	if got.Weaver.RevisitInstruction != "custom revisit prompt %s" {
+		t.Errorf("Weaver.RevisitInstruction = %q, want the override", got.Weaver.RevisitInstruction)
+	}
+	if got.Weaver.System != defaults.Weaver.System {
+		t.Errorf("Weaver.System = %q, want the built-in default (not overridden)", got.Weaver.System)
+	}
+}
+
+func TestGet_RealPromptsYAML_WeaverSectionLoads(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(orig)
+		mu.Lock()
+		cached = nil
+		mu.Unlock()
+	})
+	mu.Lock()
+	cached = nil
+	mu.Unlock()
+
+	got := Get()
+	if got.Weaver.System == "" {
+		t.Error("real prompts.yaml's weaver.system loaded empty")
+	}
+	if got.Weaver.RevisitInstruction == "" {
+		t.Error("real prompts.yaml's weaver.revisit_instruction loaded empty")
+	}
+}
+
 func TestGet_PartialOverrideFillsRestFromDefaults(t *testing.T) {
 	withPromptsFile(t, `vision:
   describe_image: "custom image prompt"

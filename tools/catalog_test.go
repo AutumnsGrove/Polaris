@@ -48,8 +48,16 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.PulsarDailyItems = true
 	prompt := ToolsPrompt(ctx)
 
+	// weaver_run tools are deliberately excluded here, not asserted
+	// missing-with-a-comment: WeaverRun doesn't just gate them in, it also
+	// suppresses every other tool (see catalog.go's WeaverRun exclusion
+	// clause) — a real Weaver run's menu is disjoint from a normal chat
+	// turn's, so it gets its own ordering test (TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools).
 	lastIdx := -1
 	for _, name := range catalogOrder {
+		if catalogDefaults[name].Requires == "weaver_run" {
+			continue
+		}
 		idx := strings.Index(prompt, "- "+name+":")
 		if idx == -1 {
 			t.Fatalf("ToolsPrompt() missing %q:\n%s", name, prompt)
@@ -58,6 +66,23 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 			t.Errorf("tool %q appears out of catalogOrder in ToolsPrompt() output:\n%s", name, prompt)
 		}
 		lastIdx = idx
+	}
+}
+
+func TestToolsPrompt_WeaverRunIsRestrictedToItsOwnTools(t *testing.T) {
+	ctx := newTestContext()
+	ctx.WeaverRun = true
+	prompt := ToolsPrompt(ctx)
+
+	for _, name := range []string{"search_stars", "read_star", "create_star", "update_star", "link_stars"} {
+		if !strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with WeaverRun missing %q:\n%s", name, prompt)
+		}
+	}
+	for _, name := range []string{"think", "calculator", "web_search", "web_read", "memory"} {
+		if strings.Contains(prompt, "- "+name+":") {
+			t.Errorf("ToolsPrompt() with WeaverRun should exclude %q (main catalog), got:\n%s", name, prompt)
+		}
 	}
 }
 

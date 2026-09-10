@@ -227,13 +227,13 @@ func handleSearchChatsRead(ctx *Context, threadID, instructions string) string {
 		if len(filterInput) > maxFilterInputChars {
 			filterInput = filterInput[:maxFilterInputChars]
 		}
-		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.ThreadReadFilterSystem, filterInput, instructions); ferr == nil {
+		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.ThreadReadFilterSystem, filterInput, instructions); ferr == nil {
 			ctx.AddCost(filterCost)
 			return filtered
 		} else {
 			log.Warn("search_chats: filter pass failed, using raw transcript", "thread_id", threadID, "err", ferr)
 			// Falls through to raw mode below, same non-fatal-degradation
-			// choice web_read's own filterExtractedText failure path makes.
+			// choice web_read's own FilterExtractedText failure path makes.
 		}
 	}
 

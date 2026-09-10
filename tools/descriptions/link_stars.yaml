@@ -1,0 +1,13 @@
+name: link_stars
+requires: weaver_run
+description: >-
+  connect two related-but-distinct stars.
+api_description: >-
+  Record that two distinct stars relate to each other, with a specific reason why. Distinct from a merge:
+  these are two different topics that connect, not the same topic under two names (use update_star for that
+  instead). Idempotent — linking an already-linked pair is a harmless no-op.
+
+  Read both stars with read_star first, so the connection is a real, careful judgment, not a guess from a
+  title alone. reasoning is accountability, not documentation — a vague reason ("both mention technology") is
+  itself a sign the link probably shouldn't be made. There's no cap on how many links you can create; quality
+  comes from careful reasoning, not a numeric ceiling.

@@ -1,0 +1,21 @@
+name: create_star
+requires: weaver_run
+description: >-
+  write a new star.
+api_description: >-
+  Write a new star for a topic genuinely, substantively discussed in this thread — call search_stars first
+  and prefer update_star if a matching star already exists. category is free text (no fixed list) — reuse a
+  category already in use for the same general area rather than inventing a near-duplicate ("technology", not
+  a new "tech").
+
+  confidence_class is "obvious" for a fact/topic actually, substantively discussed, or "fuzzy" for real but
+  genuine uncertainty about it. is_personal marks a star as an inference about who the person IS (a taste, an
+  identity fact, a circumstance) rather than about a topic they discussed — "reads science fiction" is
+  personal, "Ender's Game and the science behind it" is not, even though liking the book says something about
+  them. Setting is_personal=true always starts the star as "proposed" regardless of confidence_class, no
+  exceptions — an inference about someone is a claim that deserves a human look before it's treated as
+  settled.
+
+  The bar is "was this actually discussed with some substance" — not "is this dramatic enough to matter."
+  Most real exchanges about real topics should produce a star. Excluded: pure logistics, a single throwaway
+  reference with nothing said about it, ephemeral/time-bound content with no lasting relevance.

@@ -1,0 +1,13 @@
+name: update_star
+requires: weaver_run
+description: >-
+  merge new content into an existing star.
+api_description: >-
+  Merge new content into an existing star, found via search_stars and read with read_star first. Rewrite
+  summary/body so the star reads as one coherent, current entry — never just append the new content onto the
+  old.
+
+  is_personal works the same as in create_star: true means this star is an inference about who the person IS,
+  not a topic. Any update to a personal star resets its status back to "proposed", even a pure reinforcement
+  of something already confirmed — that's deliberate, not a bug: identity-level content gets a human look
+  every time it changes, not just the first time.

@@ -99,7 +99,7 @@ func handleReadAttachment(argsJSON string, ctx *Context, callID string) string {
 
 	result = text
 	if args.Instructions != "" && ctx.LLM != nil {
-		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, text, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, text, args.Instructions); ferr == nil {
 			result = filtered
 			ctx.AddCost(filterCost)
 		} else {

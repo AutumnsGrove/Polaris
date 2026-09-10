@@ -456,9 +456,9 @@ func TestFilterExtractedText(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "extracted answer", CostUSD: 0.0042}}},
 	}
-	result, cost, err := filterExtractedText(context.Background(), mock, "system prompt", "page text", "an instruction")
+	result, cost, err := FilterExtractedText(context.Background(), mock, "system prompt", "page text", "an instruction")
 	if err != nil {
-		t.Fatalf("filterExtractedText returned error: %v", err)
+		t.Fatalf("FilterExtractedText returned error: %v", err)
 	}
 	if result != "extracted answer" {
 		t.Errorf("result = %q, want %q", result, "extracted answer")
@@ -474,7 +474,7 @@ func TestFilterExtractedText(t *testing.T) {
 // the gap this doc comment on Context.ExtraCostUSD describes: before this
 // fix, a filter pass's real LLM spend never reached anywhere Polaris
 // reports a thread's total cost. Exercises the real handleWebRead path
-// (not filterExtractedText directly) so it catches a regression at the
+// (not FilterExtractedText directly) so it catches a regression at the
 // actual call site, not just in the helper's own signature.
 func TestHandleWebRead_FilterPassCostReachesContext(t *testing.T) {
 	html := `<html><body><article>The price is $42, hidden among a lot of other unrelated text about something else entirely.</article></body></html>`

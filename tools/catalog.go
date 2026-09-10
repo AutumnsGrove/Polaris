@@ -20,7 +20,7 @@ var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
 	"image_search", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
-	"finalize_daily_items",
+	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -88,6 +88,15 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// which it still needs for its own reasoning.
 		return false
 	}
+	if ctx.WeaverRun && e.Requires != "weaver_run" {
+		// Weaver: restrict the menu to exactly its own five tools —
+		// never think/calculator/web_search/anything from the main
+		// catalog, since Weaver's whole job is reading and inferring from
+		// already-written chat content, not researching or computing
+		// anything new (see docs/plans/constellation.md's "Weaver" design
+		// principle: "never Polaris's main chat agent gaining a tool").
+		return false
+	}
 	switch e.Requires {
 	case "":
 		return true
@@ -137,6 +146,10 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// PulsarDailyItems doc comment. Never offered on a normal
 		// chat/pulse turn or any other Daily block kind.
 		return ctx.PulsarDailyItems
+	case "weaver_run":
+		// A Weaver shooting-star run only — see registry.go's WeaverRun
+		// doc comment. Never offered on a normal chat/pulse turn.
+		return ctx.WeaverRun
 	default:
 		log.Warn("tool description declares an unrecognized requires value, excluding tool until fixed",
 			"tool", e.Name, "requires", e.Requires)
@@ -211,6 +224,21 @@ var catalogDefaults = map[string]catalogEntry{
 	"finalize_daily_items": {Name: "finalize_daily_items", Requires: "pulsar_daily_items",
 		Description:    "end with a structured list of distinct stories instead of one merged paragraph.",
 		APIDescription: "End with every distinct story found as its own item (title, summary, source) instead of one merged paragraph — this ends the turn."},
+	"search_stars": {Name: "search_stars", Requires: "weaver_run",
+		Description:    "keyword-search Constellation's existing stars, for dedup-checking and link-discovery.",
+		APIDescription: "Keyword search over Constellation's existing stars by title/summary. Always call this before create_star to check whether this topic already has a star."},
+	"read_star": {Name: "read_star", Requires: "weaver_run",
+		Description:    "read one star's full card.",
+		APIDescription: "Read one star's full card (title, category, tags, status, confidence, summary, body). Mandatory before update_star or link_stars."},
+	"create_star": {Name: "create_star", Requires: "weaver_run",
+		Description:    "write a new star.",
+		APIDescription: "Write a new star for a topic genuinely, substantively discussed in this thread and not already covered by an existing star."},
+	"update_star": {Name: "update_star", Requires: "weaver_run",
+		Description:    "merge new content into an existing star.",
+		APIDescription: "Merge new content into an existing star — rewrite so it reads as one coherent, current entry, never append."},
+	"link_stars": {Name: "link_stars", Requires: "weaver_run",
+		Description:    "connect two related-but-distinct stars.",
+		APIDescription: "Record that two distinct stars relate to each other, with a specific reason why."},
 }
 
 var (
