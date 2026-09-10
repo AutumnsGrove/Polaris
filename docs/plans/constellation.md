@@ -1,16 +1,19 @@
 # Constellation — very early brainstorm, not scoped yet
 
-**Status: idea capture plus a settled UI direction — schema and implementation still not
-started.** This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends
-and Recent Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this
-doc needs the full transcript again) after using the newly-shipped `search_chats` tool to ask
-"what do I actually use you for?" Five brainstorm passes (below, in order) resolved most of the
-open shape questions this doc originally posed, and a sixth pass settled on a specific UI
-direction ("Option D" — see below, mockup at `mockups/vault.html`, not yet renamed to match). A
-seventh pass (see bottom) settled the feature's real name and vocabulary via issue #45.
-"Resolved in a brainstorm" and "a UI direction picked from mockups" still aren't the same as
-"designed and ready to build" — the next real step is sketching a concrete schema and first narrow
-slice, not writing implementation code straight from this doc.
+**Status: settled UI direction plus a first schema sketch — implementation still not started.**
+This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends and Recent
+Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this doc needs
+the full transcript again) after using the newly-shipped `search_chats` tool to ask "what do I
+actually use you for?" Five brainstorm passes (below, in order) resolved most of the open shape
+questions this doc originally posed, a sixth pass settled on a specific UI direction ("Option D" —
+see below, mockup at `mockups/vault.html`, not yet renamed to match), a seventh pass settled the
+feature's real name and vocabulary via issue #45 and opened the "Edit star" question, an eighth
+pass closed that question (free-text, LLM-reconciled, no field editor), and a ninth pass sketched
+the actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus
+full observability. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
+"designed and ready to build" — the next real step is turning the ninth pass's schema sketch into
+real migrations and a first Weaver implementation, not writing that code straight from this doc
+without a design pass on the extraction/merge pipeline itself.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -221,14 +224,14 @@ longer up for grabs on these specific points:
     dedicated Inbox banner in the Library view) rather than shown inline, undifferentiated, in
     the same list.
 
-## Where a start might look like, eventually (not a commitment)
+## Where a start might look like, eventually (superseded — see ninth pass)
 
-Floated during the brainstorm, worth keeping attached even though nothing here is decided: don't
-build the whole thing — pick one narrow slice (just books, or just tech), get auto-save + dedupe
-working for that slice alone, live with it for a week, then decide whether to expand. The
-reflection layer and the "you" layer are reasonable things to leave out of that first slice
-specifically to keep it small — not because either is in doubt (see above, the reflection layer
-is a real target), just sequencing.
+Floated during the brainstorm: don't build the whole thing — pick one narrow slice (just books, or
+just tech), get auto-save + dedupe working for that slice alone, live with it for a week, then
+decide whether to expand. **This category-scoped-rollout idea is dropped as of the ninth pass** —
+see below. The reflection layer and the "you" layer staying out of v1 is unaffected by that change
+— not because either is in doubt (see above, the reflection layer is a real target), just
+sequencing.
 
 ## Editing a star (seventh pass — in progress, not settled)
 
@@ -266,11 +269,111 @@ This closes out the open questions this pass started with. See `mockups/vault.ht
 frame for a first sketch of the "Edit star" sheet UI (a chat-composer-style free-text box over a
 dimmed chapter-detail backdrop, not a form).
 
-### First narrow slice (seventh pass — leaning, not locked)
+### First narrow slice (seventh pass — superseded by the ninth pass, kept for history)
 
 Revisiting "Where a start might look like" above with actual candidates instead of a placeholder
-"books, or just tech": leaning toward **books** first (comes up regularly in conversation, and is
-a clean, bounded category to prove auto-save + dedupe on), **music** second, then **technology**
+"books, or just tech": leaned toward **books** first (comes up regularly in conversation, and is a
+clean, bounded category to prove auto-save + dedupe on), **music** second, then **technology**
 third — flagged as likely the broadest/messiest of the three given how much general tech
-discussion already happens here, so probably not the best first slice even though it's the
-richest source material. None of this is locked — still ideating.
+discussion already happens here, so probably not the best first slice even though it's the richest
+source material. **Dropped in the ninth pass**, once the schema conversation made the mechanism
+this would have needed (a per-category gate) explicit enough to see the problem with it — see
+below.
+
+## Schema sketch (ninth pass)
+
+First real schema pass, built to match `store/store.go`'s existing conventions (the FTS5
+external-content-plus-triggers pattern from `messages_fts`, the singleton-row pattern from
+`pulsar_daily_config`, and — see below — the observability-trace pattern from
+`pulsar_daily_trace`). Lives in the same `polaris.db`, as a handful of new tables — never a
+separate database, matching "Lives entirely inside Polaris" from the fourth pass above.
+
+**No per-category gate — dropped, not deferred.** The original plan (see "First narrow slice"
+above) was to restrict Weaver to one category at a time via config, expanding after living with it
+a week. Rejected once it got concrete: gating by category means the model would have to *classify
+against the gate* before deciding whether to write anything, which is exactly the kind of forcing
+this system is supposed to avoid — topics should emerge from what's actually being talked about,
+not be pre-approved against a shrinking allowlist. **`constellation_config` is a plain global
+on/off, nothing scoped underneath it.** Whatever mix of books/music/technology/other actually shows
+up is the real signal; the trace tables below (not a content filter) are the safety net for
+watching that unfold, same as "no per-poll cap on backlog size" was rejected for a symmetrical
+reason back in the third pass — restricting scope doesn't reduce risk here, it just hides
+information you'd rather have.
+
+- **`constellation_config`** — singleton row, same shape as `pulsar_daily_config`:
+  ```
+  id                      INTEGER PRIMARY KEY CHECK (id = 1)
+  enabled                 INTEGER NOT NULL DEFAULT 0
+  poll_interval_minutes   INTEGER NOT NULL DEFAULT 60
+  last_checked_at         DATETIME
+  model                   TEXT NOT NULL DEFAULT '<registry id>'
+  created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ```
+- **`stars`** — the main table, one row per topic:
+  ```
+  id           INTEGER PRIMARY KEY AUTOINCREMENT
+  title        TEXT NOT NULL
+  category     TEXT NOT NULL
+  summary      TEXT NOT NULL DEFAULT ''    -- the Library card's one-liner
+  body         TEXT NOT NULL DEFAULT ''    -- the Markdown chapter body
+  tags         TEXT NOT NULL DEFAULT '[]'  -- JSON array, shown as chips
+  status       TEXT NOT NULL DEFAULT 'proposed'  -- 'auto' | 'proposed'
+  confidence   TEXT NOT NULL DEFAULT ''
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ```
+  Columns beyond what the UI already shows (Library card, Chapter detail) aren't invented ahead of
+  need — a genuinely backend-only field gets added by migration once Weaver's extraction pass
+  actually needs somewhere to put it, not speculatively now.
+- **`star_sources`** — child table, the "Linked articles" list:
+  ```
+  id          INTEGER PRIMARY KEY AUTOINCREMENT
+  star_id     INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE
+  thread_id   INTEGER NOT NULL REFERENCES threads(id)
+  linked_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ```
+  A real table, not a JSON blob (unlike e.g. `pulsar_daily_editions.blocks`), because it's queried
+  the other direction too — "has thread X already been folded into a star" is the idempotency
+  check the poller needs on every run.
+- **`stars_fts`** — FTS5 external-content index over `stars(title, summary)`, same
+  external-content-plus-triggers shape as `messages_fts`. Backs the dedup/merge retrieval
+  prefilter from the third pass above.
+- **`shooting_star_runs`** / **`shooting_star_candidates`** — full observability from day one, not
+  an add-later concern. Directly modeled on `pulsar_daily_trace`, which exists *because* a real
+  silent-drop bug (a block generated then discarded with nothing but an ephemeral log line) was
+  genuinely hard to debug without it — Weaver's pipeline has the same shape (an extraction call,
+  then a per-candidate merge-or-new decision), so it gets the same treatment up front instead of
+  waiting for its own version of that bug:
+  ```
+  -- one row per thread Weaver processes
+  CREATE TABLE shooting_star_runs (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id        INTEGER NOT NULL REFERENCES threads(id),
+      started_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at      DATETIME,
+      candidate_count  INTEGER NOT NULL DEFAULT 0,  -- 0 is a valid, common outcome, not an error
+      extraction_raw   TEXT NOT NULL DEFAULT '',    -- what the extraction call actually said
+      error            TEXT NOT NULL DEFAULT '',
+      cost_usd         REAL NOT NULL DEFAULT 0
+  );
+
+  -- one row per candidate topic proposed within a run
+  CREATE TABLE shooting_star_candidates (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id             INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
+      title              TEXT NOT NULL,
+      confidence_class   TEXT NOT NULL DEFAULT '',  -- 'obvious' | 'fuzzy'
+      decision           TEXT NOT NULL DEFAULT '',  -- 'new_star' | 'merged' | 'proposed'
+      reasoning          TEXT NOT NULL DEFAULT '',  -- why — same role as pulsar_daily_trace.diff_reasoning
+      resulting_star_id  INTEGER REFERENCES stars(id),
+      cost_usd           REAL NOT NULL DEFAULT 0,
+      created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
+  For any thread, this makes "what did Weaver see, propose, decide, and why" fully reconstructable
+  — nothing silently dropped, matching this doc's own "verify on real hardware" culture: you
+  shouldn't have to trust that the pipeline did the right thing, you should be able to look.
+
+**Deliberately not in this pass:** the reflection-layer cross-links table (`star_edges` or
+similar) — still allowed to land after the reflection layer itself is actually being built (see
+the fourth pass above), not guessed at today.
