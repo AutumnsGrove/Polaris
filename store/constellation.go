@@ -515,6 +515,31 @@ func (s *Store) RecordShootingStarCandidate(runID int64, title, confidenceClass,
 	return nil
 }
 
+// LatestCandidateReasoning returns the most recent
+// shooting_star_candidates.reasoning recorded for a star — the "why" a
+// human reviewing it in the Inbox needs (see the plan doc's "Reviewing a
+// proposed star": the Review screen surfaces this as a "Why this needs a
+// look" block, the same sentence Weaver already logged for the trace
+// tables, not a separately-authored summary). Returns "" if the star has
+// no candidate row at all (shouldn't normally happen — create_star/
+// update_star always log one — but a star reached some other way
+// shouldn't 500 over it).
+func (s *Store) LatestCandidateReasoning(starID int64) (string, error) {
+	var reasoning string
+	err := s.db.QueryRow(
+		`SELECT reasoning FROM shooting_star_candidates
+		 WHERE resulting_star_id = ? ORDER BY created_at DESC LIMIT 1`,
+		starID,
+	).Scan(&reasoning)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("latest candidate reasoning: %w", err)
+	}
+	return reasoning, nil
+}
+
 // RecordShootingStarEvent logs one completion call in Weaver's loop —
 // every turn produces a row, whether it called a tool or ended the run in
 // plain text ('final_answer'), plus the double-RAG filter pass on a

@@ -50,6 +50,12 @@
 	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
 	--color-accent-2: oklch(78% 0.06 235);
 	--color-accent-2-strong: oklch(68% 0.09 235);
+	/* Constellation's third accent — "about the person" stars
+	   (stars.is_personal), sitting between the warm gold accent and cool
+	   blue accent-2. Picked in mockups/constellation-personal-star-options.html
+	   (option E: color-shift + text badge, no icon — an icon+badge combo
+	   read as cluttered once compared side by side). */
+	--color-personal: oklch(78% 0.1 322);
 	--color-danger: oklch(65% 0.19 25);
 	--color-danger-bg: oklch(28% 0.05 25);
 
@@ -197,6 +203,9 @@
 	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 20%, transparent);
 	--color-accent-2: oklch(48% 0.1 240);
 	--color-accent-2-strong: oklch(40% 0.11 240);
+	/* Same darken+chroma-boost treatment as accent-2 above, so the personal
+	   accent holds contrast against the warm-paper light background. */
+	--color-personal: oklch(52% 0.13 322);
 	--color-danger: oklch(52% 0.19 25);
 	--color-danger-bg: oklch(93% 0.04 25);
 

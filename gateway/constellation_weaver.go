@@ -76,6 +76,18 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		_ = db.FinishShootingStarRun(runID, "", err.Error(), true)
 		return fmt.Errorf("shooting star: %w", err)
 	}
+
+	// result.CostUSD is agent.Run's own running total (agent/driver.go
+	// accumulates it once per completion call) — the real cost of this
+	// shooting star, previously never recorded anywhere. Every other event
+	// logs a real per-tool-call trace at cost 0 (tool dispatch itself isn't
+	// billed, see newWeaverToolContext's callbacks); this one row is what
+	// actually carries the dollar figure into FinishShootingStarRun's
+	// SUM(shooting_star_events.cost_usd) rollup. Logged before either exit
+	// branch below — hitting the turn cap still means real, billed
+	// completion calls happened on the way there, not a $0 no-op.
+	_ = db.RecordShootingStarEvent(runID, "final_answer", "", strings.TrimSpace(result.Answer), result.CostUSD)
+
 	if result.TurnCount > weaverMaxTurns {
 		// agent.Run forces a wrap-up answer rather than erroring when it
 		// runs out of turns (see agent/driver.go's "Ran out of turns"

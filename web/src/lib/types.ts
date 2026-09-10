@@ -570,3 +570,114 @@ export interface MessageSearchResult {
 	snippet: string;
 	created_at: string;
 }
+
+// --- Constellation ---------------------------------------------------
+// Mirrors store/constellation.go's structs 1:1 (verified against the real
+// Go source, not guessed) and gateway/constellation_routes.go's response
+// wrapper types. See docs/plans/constellation.md for the feature design.
+
+// Mirrors store.ConstellationConfig. model: '' means "use whatever
+// config.DefaultModel currently resolves to" — the settings picker's
+// "Same as chat (default)" option maps to this, not a copied-in model id.
+export interface ConstellationConfig {
+	enabled: boolean;
+	poll_interval_minutes: number;
+	last_checked_at: string | null;
+	model: string;
+	created_at: string;
+}
+
+// Mirrors store.Star. tags is a real array on the wire — the Go struct
+// unmarshals the stars.tags TEXT column to []string before serializing,
+// this is never JSON-encoded-as-a-string.
+export interface Star {
+	id: number;
+	title: string;
+	category: string;
+	summary: string;
+	body: string;
+	tags: string[];
+	status: 'auto' | 'proposed' | 'confirmed' | 'rejected';
+	confidence: string;
+	is_personal: boolean;
+	disabled: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+// Mirrors store.StarSource. Deliberately has no title — only thread_id is
+// stored. Resolve a display title client-side via appState.threads (see
+// ConstellationState.resolveSourceTitle in constellation.svelte.ts) rather
+// than an extra fetch per source.
+export interface StarSource {
+	thread_id: string;
+	linked_at: string;
+}
+
+// Mirrors store.StarEdge — one linked star as seen from a specific star's
+// own detail view (the "other side" of the edge, not both star ids).
+export interface StarEdge {
+	other_star_id: number;
+	reasoning: string;
+}
+
+// Mirrors store.StarEdgePair — both sides of an edge, for the Map's full
+// edge list (gateway/constellation_routes.go's constellationMap).
+export interface StarEdgePair {
+	star_a_id: number;
+	star_b_id: number;
+	reasoning: string;
+}
+
+// Mirrors gateway/constellation_routes.go's constellationStarDetail —
+// GET /api/constellation/stars/{id}'s response shape.
+export interface ConstellationStarDetail {
+	star: Star;
+	sources: StarSource[];
+	edges: StarEdge[];
+	// The most recent shooting_star_candidates.reasoning for this star —
+	// "" if none exists. Backs the Review screen's "Why this needs a look"
+	// block (see gateway/constellation_routes.go's constellationStarDetail).
+	reasoning: string;
+}
+
+// Mirrors store.ConstellationStats — GET /api/constellation/stats.
+export interface ConstellationStats {
+	period_days: number;
+	total_cost_usd: number;
+	period_cost_usd: number;
+	shooting_star_count: number;
+	star_counts_by_status: Record<string, number>;
+	tool_call_counts: Record<string, number>;
+	review_action_counts: Record<string, number>;
+	links_created_count: number;
+	max_turns_count: number;
+	needs_retry_count: number;
+}
+
+// Mirrors gateway/constellation_routes.go's constellationDigest — GET
+// /api/constellation/digest. show is false when both counts are zero (the
+// Library banner renders nothing in that case, per the plan doc's "no
+// signal, no output" instinct).
+export interface ConstellationDigest {
+	new_count: number;
+	links_count: number;
+	highlight: string;
+	show: boolean;
+}
+
+// Mirrors store.ConstellationWeekItem — one row of GET
+// /api/constellation/week.
+export interface ConstellationWeekItem {
+	kind: 'new' | 'updated' | 'linked';
+	title: string;
+	detail?: string;
+	timestamp: string;
+}
+
+// Mirrors gateway/constellation_routes.go's constellationMap — GET
+// /api/constellation/map.
+export interface ConstellationMap {
+	stars: Star[];
+	edges: StarEdgePair[];
+}

@@ -235,6 +235,14 @@
 				<span class="daily-dot" title="New edition"></span>
 			{/if}
 		</button>
+		<button
+			class="pulsar-entry"
+			class:active={page.url.pathname.startsWith('/constellation')}
+			onclick={() => goto('/constellation')}
+		>
+			<Star size={16} />
+			<span class="pulsar-label">Constellation</span>
+		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
 			<input

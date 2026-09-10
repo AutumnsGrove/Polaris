@@ -121,9 +121,13 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 // constellation" (Edges) blocks in one response, since both are always
 // read together on that screen.
 type constellationStarDetail struct {
-	Star    store.Star        `json:"star"`
+	Star    store.Star         `json:"star"`
 	Sources []store.StarSource `json:"sources"`
 	Edges   []store.StarEdge   `json:"edges"`
+	// Reasoning: shooting_star_candidates' own "why" for this star, most
+	// recent row — see store.Store.LatestCandidateReasoning's doc comment.
+	// "" for a star with no candidate row (shouldn't normally happen).
+	Reasoning string `json:"reasoning"`
 }
 
 func (s *Server) handleGetConstellationStar(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +164,13 @@ func (s *Server) handleGetConstellationStar(w http.ResponseWriter, r *http.Reque
 	if edges == nil {
 		edges = []store.StarEdge{}
 	}
-	writeJSON(w, constellationStarDetail{Star: *star, Sources: sources, Edges: edges})
+	reasoning, err := s.db.LatestCandidateReasoning(id)
+	if err != nil {
+		log.Warn("getting star candidate reasoning failed", "err", err, "id", id)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, constellationStarDetail{Star: *star, Sources: sources, Edges: edges, Reasoning: reasoning})
 }
 
 // constellationStarPatchRequest covers the star's own overflow menu —
