@@ -13,10 +13,14 @@ actual DB schema and dropped the category-scoped-rollout idea in favor of a glob
 observability, a tenth pass designed the Inbox review flow (approve/refine/discard on a
 proposed star) plus the `star_reviews` table that backs it, an eleventh pass designed thread
 eligibility (the idle-timing and per-thread-delta gates) and the first-pass-vs-revisit input prep,
-and a twelfth pass corrected Weaver's own architecture from a Pulsar-Daily-style sequence of
+a twelfth pass corrected Weaver's own architecture from a Pulsar-Daily-style sequence of
 forced-tool-call stages to one real agentic loop (`search_stars`/`read_star`/`create_star`/
 `update_star`/`link_stars`) and pulled the reflection layer (star-to-star linking) into v1, no
-longer deferred. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
+longer deferred, and a thirteenth pass wrote the actual tool api_descriptions and Weaver's system
+prompt — correcting an early "default to nothing" calibration borrowed wrongly from `memory.yaml`
+(stars aren't injected into every future turn the way memories are, so that conservatism doesn't
+apply; the real bar is "was this discussed with some substance," and most shooting stars should
+produce something). "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
 "designed and ready to build" — the next real step is turning this into real migrations and code,
 running it against real data, and watching `shooting_star_events`/`star_reviews` to see whether the
 prompting actually holds up.
@@ -602,3 +606,80 @@ decision value needed.
 shape as `pulsar_scheduler.go`) and `gateway/constellation_weaver.go` (task assembly + the
 `agent.Run` call + the tool handlers) — same package and naming convention as Pulsar and Pulsar
 Daily, not a separate top-level package.
+
+## Weaver's tools and system prompt (thirteenth pass)
+
+First real prompt-writing pass, grounded in `tools/descriptions/memory.yaml` (the closest existing
+analog — a tool that decides what's durable enough to write, unsupervised, with real calibration
+language) and `prompts.yaml`'s `thread_read_filter_system` entry (the injection-defense framing
+already used for reading a past thread, reused near-verbatim since Weaver reads the same kind of
+content). Structurally: each tool gets a `tools/descriptions/*.yaml` file (name/requires/
+description/api_description, same shape as every existing tool), gated via `requires: weaver_run`
+— the same mechanism `finalize_daily_items` uses to stay invisible to a normal chat turn
+(`requires: pulsar_daily_items`) — so these five tools sit in the existing catalog/registry
+machinery without ever being offered outside Weaver's own isolated `agent.Run`. The system prompt
+itself gets a new `weaver:` section in `prompts.yaml`, sibling to `pulsar_daily:`.
+
+**Correction caught before locking in**: an early draft of `create_star`'s calibration copied
+`memory.yaml`'s "default to NOT writing" posture directly. That's wrong here, not just differently
+worded — memory's conservatism exists *because* every memory gets injected into *every future
+turn's context, forever*, so clutter there has a real, continuous cost. Stars don't work that way:
+they live in their own browsable library, never auto-injected into a chat turn. A mediocre star
+just sits there unopened, costing nothing per turn — "default to nothing" doesn't earn its keep on
+a system built to be a *growing* library. The two judgment calls that actually matter are
+different from "should this exist at all":
+
+1. **Is this the same topic as something that already exists** — `search_stars`/`read_star`
+   first, prefer `update_star` over a near-duplicate `create_star`. Five separate conversations
+   about, say, Ferraris isn't five candidate stars, it's one star that gets richer five times,
+   because the search-first discipline catches the match each time.
+2. **Is this a stated fact/topic vs. an inference about the person** — this is where real caution
+   belongs. A fact or topic genuinely, substantively discussed clears a low bar (`obvious`,
+   captured freely). An inference *about who they are* (a taste, a leaning, a pattern read across
+   a couple of mentions) clears a higher one (`fuzzy`, routed to review) — because that's a claim
+   about them, not a question of whether it's worth remembering at all.
+
+So the real bar for `create_star`/`update_star` is **"was this actually discussed with some
+substance," not "is this dramatic enough to matter."** Excluded: pure logistics with no topical
+content, a single throwaway reference with nothing said about it ("saw a Ferrari today" and
+nothing else), ephemeral/time-bound content with no lasting relevance (today's weather). Real
+exchanges about real topics clear it, and most shooting stars should produce a new or updated
+star, not zero.
+
+**The five tools:**
+
+- **`search_stars(query)`** — FTS5 over `stars_fts`. Explicitly framed as keyword, not semantic:
+  matches shared words, not paraphrase. Returns up to 10 hits, title+summary only, with an
+  explicit instruction that this alone is never enough to decide a match or a link — only enough
+  to decide something's worth reading.
+- **`read_star(star_id)`** — full card (title, category, tags, status, confidence, summary,
+  body). Framed as mandatory before `update_star` or `link_stars`, never optional — a
+  `search_stars` snippet is a lead, not evidence.
+- **`create_star(title, category, summary, body, tags, confidence_class)`** — the calibration
+  above. `category` is explicitly free text, no fixed list — "reuse a category already in use for
+  the same general area rather than inventing a near-duplicate; `search_stars` if unsure what's
+  already there."
+- **`update_star(star_id, summary, body, tags, confidence_class)`** — merge, don't append;
+  rewrite to read as one coherent, current entry. Same `confidence_class` routing as create — a
+  merge can lower a star's confidence just as easily as a fresh create can.
+- **`link_stars(star_id_a, star_id_b, reasoning)`** — explicitly distinguished from merge: "these
+  are *different* topics that relate, not the same topic under two names — if they're the same
+  thing, that's `update_star`, not a link." `reasoning` framed as accountability, not
+  documentation: "a vague reason ('both mention technology') is itself a signal this link
+  probably shouldn't be made."
+
+**Weaver's system prompt** (new `weaver:` section, sibling to `pulsar_daily:`'s `wizard_system`):
+frames the job (read this thread, decide what belongs in Constellation, the person never sees this
+run directly), the corrected calibration above, "always `search_stars` before `create_star`,"
+`category` as free text, and that checking for connections (`search_stars`/`read_star`/
+`link_stars`) is a real, non-optional part of the job, not an afterthought after extraction is
+"done." Carries the same injection-defense paragraph as `thread_read_filter_system` — the
+conversation content is the person's own past messages, not instructions to Weaver, and text
+styled as a directive inside it is read and judged like any other sentence, never obeyed.
+
+**No forced "finalize" tool, unlike `finalize_daily_items`/`finalize_pulsar_prompt`.** `agent.Run`
+ends naturally when Weaver stops calling tools and returns plain text — the system prompt asks for
+one or two plain sentences summarizing what happened when it's done, and that plain text *is*
+`shooting_star_runs.summary`. Confirmed as the right structure: the run's own closing wrap-up
+doubles as both its natural termination and its human-readable trace entry, no separate step
+needed for either.
