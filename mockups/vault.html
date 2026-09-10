@@ -231,12 +231,18 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-map .map-area { position: relative; flex: 1; }
 #screen-map svg.lines { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 #screen-map .lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.35; }
+#screen-map .lines line.personal { stroke: var(--color-personal); }
 #screen-map .cluster-label { position: absolute; z-index: 1; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-dim); opacity: 0.6; }
 #screen-map .node { position: absolute; z-index: 5; display: flex; align-items: center; gap: 7px; transform: translate(-50%, -50%); }
 #screen-map .node .dot { border-radius: var(--radius-full); background: var(--color-accent); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-accent) 45%, transparent); flex-shrink: 0; }
 #screen-map .node .dot.big { width: 13px; height: 13px; }
 #screen-map .node .dot.med { width: 10px; height: 10px; }
 #screen-map .node .dot.small { width: 8px; height: 8px; box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+/* .personal — same star, same map, distinguished only by dot color (no
+   separate cluster: is_personal is orthogonal to category, so a personal
+   star sits wherever its topic naturally clusters). */
+#screen-map .node .dot.personal { background: var(--color-personal); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+#screen-map .node .dot.small.personal { box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-personal) 40%, transparent); }
 #screen-map .node .label { font-size: 12px; font-weight: 500; color: var(--color-text); white-space: nowrap; text-shadow: 0 1px 4px rgba(10,6,3,0.6); }
 #screen-map .tabbar { position: relative; z-index: 20; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); flex-shrink: 0; }
 #screen-map .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
@@ -314,7 +320,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-refine .composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 10px 10px 16px; border-radius: 22px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
 #screen-refine .composer-text { flex: 1; font-size: 14px; line-height: 1.5; color: var(--color-text); }
 #screen-refine .composer-text .placeholder-hint { color: var(--color-text-dim); }
-#screen-refine .composer-send { flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-full); background: var(--color-accent-2); color: var(--color-bg); display: flex; align-items: center; justify-content: center; border: none; }
+#screen-refine .composer-send { flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); display: flex; align-items: center; justify-content: center; border: none; }
 #screen-refine .sheet-footnote { font-size: 11px; color: var(--color-text-dim); text-align: center; margin-top: 14px; }
 </style>
 </head>
@@ -542,6 +548,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<svg class="lines" viewBox="0 0 390 674">
 						<line x1="255" y1="200" x2="285" y2="245"></line>
 						<line x1="285" y1="245" x2="262" y2="310"></line>
+						<line x1="255" y1="200" x2="325" y2="222" class="personal"></line>
 						<line x1="140" y1="425" x2="210" y2="460"></line>
 					</svg>
 
@@ -553,6 +560,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<div class="node" style="left: 255px; top: 200px;"><span class="dot big"></span><span class="label">Ender's Game</span></div>
 					<div class="node" style="left: 285px; top: 245px;"><span class="dot small"></span><span class="label">Child psychology</span></div>
 					<div class="node" style="left: 262px; top: 310px;"><span class="dot small"></span><span class="label">Ethics of command</span></div>
+					<div class="node" style="left: 325px; top: 222px;"><span class="dot small personal"></span><span class="label">Reads sci-fi</span></div>
 
 					<div class="cluster-label" style="left: 90px; top: 385px;">Science &amp; History</div>
 					<div class="node" style="left: 140px; top: 425px;"><span class="dot med"></span><span class="label">Surveyor 1</span></div>
