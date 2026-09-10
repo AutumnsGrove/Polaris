@@ -632,6 +632,21 @@ func TestEligibleConstellationThreads_Gates(t *testing.T) {
 		t.Fatalf("DeleteThread: %v", err)
 	}
 
+	// A pulsar-sourced thread (a routine's pulse history), otherwise
+	// eligible by every other gate — excluded outright, same as
+	// ListThreads' own source != 'pulsar' filter. Weaver should never mine
+	// Constellation's own scheduled-pulse output for new stars.
+	pulsar := uuid.NewString()
+	if err := s.CreateThread(pulsar, "Test pulse", "deepseek", "pulsar"); err != nil {
+		t.Fatalf("CreateThread (pulsar): %v", err)
+	}
+	if _, err := s.AddMessage(pulsar, "user", "some pulse content", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage (pulsar): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET created_at = datetime('now', '-2 hours') WHERE thread_id = ?`, pulsar); err != nil {
+		t.Fatalf("backdating message: %v", err)
+	}
+
 	got, err := s.EligibleConstellationThreads(60)
 	if err != nil {
 		t.Fatalf("EligibleConstellationThreads: %v", err)
@@ -647,7 +662,7 @@ func TestEligibleConstellationThreads_Gates(t *testing.T) {
 			t.Errorf("EligibleConstellationThreads missing expected thread %q; got %v", id, got)
 		}
 	}
-	for _, excluded := range []string{midThought, upToDate, failedThenSucceeded, disabled} {
+	for _, excluded := range []string{midThought, upToDate, failedThenSucceeded, disabled, pulsar} {
 		if gotSet[excluded] {
 			t.Errorf("EligibleConstellationThreads wrongly included %q; got %v", excluded, got)
 		}

@@ -1079,11 +1079,18 @@ func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, er
 //   - delta gate (only checked when the retry gate doesn't already apply):
 //     no prior run at all, or new messages since the last run's
 //     last_message_id_seen
+//   - source = 'pulsar' is excluded outright, same as ListThreads/
+//     SearchMessages — a pulsar routine's own pulse history isn't a
+//     conversation Weaver should mine for stars: it's Constellation's own
+//     downstream content-adjacent surface talking to itself, and letting a
+//     pulse thread back in as a shooting-star candidate would eventually
+//     feed Weaver's output back into Weaver.
 func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id
 		FROM threads t
 		WHERE t.disabled = 0
+		  AND t.source != 'pulsar'
 		  AND (SELECT MAX(m.created_at) FROM messages m WHERE m.thread_id = t.id) <= datetime('now', '-' || ? || ' minutes')
 		  AND (
 		    (SELECT r.needs_retry FROM shooting_star_runs r
