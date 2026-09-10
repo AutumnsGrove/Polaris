@@ -33,6 +33,12 @@ export const FOCUS_MODES: FocusModeOption[] = [
 	{ id: 'academic', label: 'Academic', description: 'Prefer academic sources', icon: GraduationCap },
 	{ id: 'news', label: 'News', description: 'Prefer news sources', icon: Newspaper },
 	{
+		id: 'shopper',
+		label: 'Shopper',
+		description: 'Find and compare real products',
+		icon: ShoppingCart
+	},
+	{
 		id: 'first_principles',
 		label: 'First Principles',
 		description: 'Reason up from fundamentals',
@@ -49,11 +55,5 @@ export const FOCUS_MODES: FocusModeOption[] = [
 		label: 'Safari',
 		description: 'Immersive, interactive exploration',
 		icon: Binoculars
-	},
-	{
-		id: 'shopper',
-		label: 'Shopper',
-		description: 'Find and compare real products',
-		icon: ShoppingCart
 	}
 ];
