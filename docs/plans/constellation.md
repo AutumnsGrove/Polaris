@@ -1,30 +1,18 @@
 # Constellation — very early brainstorm, not scoped yet
 
-**Status: settled UI direction plus a first schema sketch — implementation still not started.**
-This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends and Recent
-Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this doc needs
-the full transcript again) after using the newly-shipped `search_chats` tool to ask "what do I
-actually use you for?" Five brainstorm passes (below, in order) resolved most of the open shape
-questions this doc originally posed, a sixth pass settled on a specific UI direction ("Option D" —
-see below, mockup at `mockups/vault.html`, not yet renamed to match), a seventh pass settled the
-feature's real name and vocabulary via issue #45 and opened the "Edit star" question, an eighth
-pass closed that question (free-text, LLM-reconciled, no field editor), a ninth pass sketched the
-actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus full
-observability, a tenth pass designed the Inbox review flow (approve/refine/discard on a
-proposed star) plus the `star_reviews` table that backs it, an eleventh pass designed thread
-eligibility (the idle-timing and per-thread-delta gates) and the first-pass-vs-revisit input prep,
-a twelfth pass corrected Weaver's own architecture from a Pulsar-Daily-style sequence of
-forced-tool-call stages to one real agentic loop (`search_stars`/`read_star`/`create_star`/
-`update_star`/`link_stars`) and pulled the reflection layer (star-to-star linking) into v1, no
-longer deferred, and a thirteenth pass wrote the actual tool api_descriptions and Weaver's system
-prompt — correcting an early "default to nothing" calibration borrowed wrongly from `memory.yaml`
-(stars aren't injected into every future turn the way memories are, so that conservatism doesn't
-apply; the real bar is "was this discussed with some substance," and most shooting stars should
-produce something) — and a fourteenth pass pulled the first pass's deferred "you" layer into v1 as
-a single `stars.is_personal` flag rather than a separate subsystem, with a deliberately strict
-(and deliberately softenable-later) status-routing rule. "Resolved in a brainstorm" and "a schema
-sketch" still aren't the same as "designed and ready to build" — the next real step is turning this
-into real migrations and code, running it against real data, and watching
+**Status: full v1 design — schema, Weaver's own architecture and prompts, the review UI, and every
+mockup screen settled. Implementation still not started.** This came out of a live brainstorm with
+Polaris itself (see the "Polaris Usage Trends and Recent Queries" thread on the potato,
+2026-09-09/10 — ask to search past chats for it if this doc needs the full transcript again) after
+using the newly-shipped `search_chats` tool to ask "what do I actually use you for?" Fifteen passes
+now, in order below; the short version: passes 1-5 worked out the core shape, 6 picked the UI
+direction (`mockups/vault.html`), 7-8 settled naming and the Edit-star flow, 9 sketched the schema
+and dropped a category-gated rollout for a global on/off, 10 designed the Inbox review flow, 11-13
+designed and wrote Weaver's actual architecture (one real agentic loop, not staged calls) and its
+tools/prompts, 14 pulled the "you" layer into v1 as a single `is_personal` flag, and 15 scoped the
+weekly digest banner down to a plain query for v1 (real synthesized prose is v2). "Resolved in a
+brainstorm" and "a schema sketch" still aren't the same as "designed and ready to build" — the next
+real step is turning this into real migrations and code, running it against real data, and watching
 `shooting_star_events`/`star_reviews` to see whether the prompting actually holds up.
 
 ## Naming (settled — seventh pass, issue #45)
@@ -747,5 +735,48 @@ side by side, which the standalone options file was built specifically to catch 
 in the main mockup. Folded into `mockups/vault.html`: the Library's new "Reads science fiction"
 card (Books & Ideas section) and the Inbox's existing "Might be weighing a move" card (now showing
 both a `badge-personal` and its original `badge-proposed` — status and type are different axes,
-both worth showing). Map's node treatment for a personal star is the one piece of this not done
-yet — noted, not designed.
+both worth showing). Map's node treatment landed too, same pass: a small `--color-personal`-tinted
+node (no separate cluster — `is_personal` is orthogonal to category, so it sits wherever its topic
+naturally clusters) with a violet-tinted connecting line where it links to a topic star — the
+"Reads science fiction" ↔ "Ender's Game" example from this pass's own discussion, made real on the
+map. Also caught and fixed while comparing screens side by side: the Refine sheet's send button
+was blue, inconsistent with every other primary action button (Continue in chat, Edit star's own
+send button, Approve) — cards varying by provenance (auto/proposed/personal) is intentional, an
+action button varying by which screen it's on wasn't, now gold throughout.
+
+## The "This week" digest, v1 scoped down to a query (fifteenth pass)
+
+The Library's digest banner ("This week: 4 new, 1 link surfaced — Ender's Game → child psychology")
+has been sitting in the mockup since the sixth pass with no design behind it. Turns out its actual
+copy is far more modest than the fourth pass's original idea (real synthesized prose — "you keep
+circling back to space and to where you might live") — it's just counts plus one concrete example,
+and that version needs **zero LLM calls**, v1 scope:
+
+- **"N new"** — `COUNT(*) FROM stars WHERE created_at >= now - 7 days`.
+- **"N links surfaced"** — `COUNT(*) FROM star_edges WHERE created_at >= now - 7 days`.
+- **The highlight line** — the most recent `star_edges` row this week, rendered
+  `{star_a.title} → {star_b.title}`; falls back to the most recent new star's title if no links
+  happened this week; **the banner doesn't render at all if both counts are zero** — same
+  "no signal, no output" instinct the poller itself runs on (the `her-go` lesson from the first
+  pass, applied here too).
+
+Pure query against tables Weaver already writes, computed live on Library load — no scheduler, no
+cadence-check, no new trace table, no cost. This is core v1, not a stretch addition, since it's
+essentially free once the rest of Weaver exists.
+
+**Tapping the banner → a new "This week" screen**, reverse-chronological feed of exactly what the
+banner is summarizing — everything actually *made* in the last 7 days: new stars, updated
+(merged) stars, and new links. Deliberately excludes review actions (approve/discard) — those are
+resolutions of something already made, not new material themselves, and "stuff that was made"
+was the actual ask. Reuses the existing card component (same visual language as the Library's
+`chapter-card`) in a flat list, each row tagged "New"/"Updated"/"Linked" instead of a category, with
+a relative timestamp — not a new timeline/activity-feed visual pattern, since this screen doesn't
+carry enough weight to earn one.
+
+**v2, explicitly not now**: a real synthesized-prose version, closer to the fourth pass's original
+ambition. Floated shape: a second, distinct Weaver-style pipeline — given the week's stars as
+context ("here's what was created/updated this week, summarize trends if you see any"), either
+read tool-by-tool the same way the main Weaver loop reads stars, or one larger context injection
+of everything that week at once. Which of those two shapes is right, and its own cadence-check
+(`last_weekly_digest_at`, same `isDailyDue`-style pattern Pulsar Daily already uses) is real design
+work for later, not decided here — v1 stays a query, on purpose.
