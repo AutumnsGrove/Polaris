@@ -251,10 +251,26 @@ prompt text plus which cards the model chooses to produce at the end, identical 
 - **Structured `price` (amount + currency).** Free text only in v1, per `highlight`'s tool shape
   above; add structure only if something ever actually sorts/filters/aggregates on price, which
   nothing does today.
-- **Other `highlight` callers** (a future "highlight the best 3 places" or "highlight the top repos"
-  use case) — the whole point of naming it generically is that these need zero tool changes when
-  they show up, just a prompt somewhere telling the model to reach for `highlight`. None are
-  designed here; nothing forces them to exist.
+- **Other `highlight` callers** — the whole point of naming it generically is that these need zero
+  tool changes when they show up, just a prompt somewhere telling the model to reach for
+  `highlight`. Candidates that came up discussing this doc, none designed or committed to here:
+  - **Places** — `nearby_search`/Foursquare already returns real photos per place; the `price`
+    field could hold distance or a `$$` range instead of a dollar amount, the same "it's just free
+    text" property that makes it work for shopping in the first place.
+  - **GitHub repos** — `github_repo`/`github_activity` already fetch stats; `price` could hold a
+    star count (`"★ 4.2k"`).
+  - **Travel** — flights/hotels found via `web_search`, same "compare a handful of real options"
+    shape as shopping.
+  - **Listings in general** — job postings, real estate, event tickets: title + link + optional
+    short badge + often a photo.
+  - **A Researcher-focus-mode source grid** — the strongest few sources on a topic as a visual grid
+    instead of citations buried in prose, when the user's comparing options rather than reading a
+    synthesized answer.
+  - **Pulsar Daily blocks** beyond the already-noted "Deals" idea — e.g. "New releases this week" —
+    since it's surfacing search-found items, not computing similarity, it doesn't need
+    music/books/movies' recommendation-engine machinery at all.
+  Nothing here forces any of these to exist; listed so the next time one comes up, it's a prompt
+  change reaching for an existing tool, not a "should this be its own tool" conversation again.
 
 ## Next steps
 
