@@ -361,8 +361,6 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-settings .usage-link .icon { color: var(--color-accent); flex-shrink: 0; }
 #screen-settings .usage-link .label { flex: 1; font-size: 14px; font-weight: 500; }
 #screen-settings .usage-link .chev { color: var(--color-text-dim); }
-#screen-settings .backfill-note { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-accent-2) 10%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent-2) 26%, transparent); font-size: 12px; line-height: 1.5; color: var(--color-text-dim); margin-bottom: 20px; }
-#screen-settings .backfill-note .icon { color: var(--color-accent-2); flex-shrink: 0; }
 
 /* ---------------- Screen 10 — Constellation Usage ---------------- */
 #screen-usage { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
@@ -904,11 +902,6 @@ a { color: var(--color-accent-2); text-decoration: none; }
 							<span class="label">Constellation usage</span>
 							<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
 						</div>
-					</div>
-
-					<div class="backfill-note">
-						<span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="10"></circle></svg></span>
-						Backfill through your existing 160 threads happens once, from the CLI (<code>polaris constellation backfill</code>) &mdash; not something you'll need to trigger from here again.
 					</div>
 				</div>
 			</div>
