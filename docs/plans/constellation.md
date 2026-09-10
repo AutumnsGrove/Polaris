@@ -13,7 +13,11 @@ tools/prompts, 14 pulled the "you" layer into v1 as a single `is_personal` flag,
 weekly digest banner down to a plain query for v1 (real synthesized prose is v2). "Resolved in a
 brainstorm" and "a schema sketch" still aren't the same as "designed and ready to build" — the next
 real step is turning this into real migrations and code, running it against real data, and watching
-`shooting_star_events`/`star_reviews` to see whether the prompting actually holds up.
+`shooting_star_events`/`star_reviews` to see whether the prompting actually holds up. A sixteenth
+pass gave Constellation its own, fully separate cost-tracking surface (never folded into Polaris's
+own `Stats.CostBySource`) and made cost genuinely auditable — `shooting_star_events` now logs one
+row per LLM completion call, not just per tool call, so `shooting_star_runs.cost_usd` is a cached
+rollup of itemized events rather than an opaque total.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -555,11 +559,16 @@ decision value needed.
       finished_at           DATETIME,
       summary               TEXT NOT NULL DEFAULT '',  -- Weaver's own closing wrap-up of what it did
       error                 TEXT NOT NULL DEFAULT '',
+      -- cost_usd: a cached rollup, SUM(shooting_star_events.cost_usd) for
+      -- this run_id — see the sixteenth pass. Never its own source of
+      -- truth; always reconcilable against the itemized events.
       cost_usd              REAL NOT NULL DEFAULT 0
   );
   ```
-- **`shooting_star_candidates`** — unchanged shape from the ninth pass, now gets a `run_id` FK and
-  is populated by `create_star`/`update_star`'s side effects rather than a discrete resolve stage:
+- **`shooting_star_candidates`** — mostly unchanged shape from the ninth pass, now gets a `run_id`
+  FK and is populated by `create_star`/`update_star`'s side effects rather than a discrete resolve
+  stage. **No `cost_usd` here** (corrected, sixteenth pass) — cost isn't attributable per candidate
+  once Weaver is one continuous loop, only per completion call; see `shooting_star_events` below:
   ```
   CREATE TABLE shooting_star_candidates (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -569,7 +578,6 @@ decision value needed.
       decision           TEXT NOT NULL DEFAULT '',   -- 'new_star' | 'merged'
       reasoning          TEXT NOT NULL DEFAULT '',
       resulting_star_id  INTEGER REFERENCES stars(id),
-      cost_usd           REAL NOT NULL DEFAULT 0,
       created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   ```
@@ -589,14 +597,19 @@ decision value needed.
   and dropped mid-discussion: one continuous loop wants one generic trace, not a bespoke table per
   tool. Captures *every* tool call in a run — `search_stars`/`read_star` included, not just the
   writes — which is what actually answers "is Weaver over-linking or under-linking in practice,"
-  the same observability instinct as `star_reviews` answering the confidence-gate question:
+  the same observability instinct as `star_reviews` answering the confidence-gate question. **Gains
+  `cost_usd` in the sixteenth pass** — see that pass for the full reasoning: one row per LLM
+  completion call in the loop, not just per tool call, so `tool` also takes `'filter_pass'` (the
+  double-RAG pre-pass on a revisit) and `'final_answer'` (the turn that ends the run in plain
+  text) alongside the five real tool names:
   ```
   CREATE TABLE shooting_star_events (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       run_id      INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
-      tool        TEXT NOT NULL,               -- 'search_stars' | 'read_star' | 'create_star' | 'update_star' | 'link_stars'
+      tool        TEXT NOT NULL,               -- 'search_stars' | 'read_star' | 'create_star' | 'update_star' | 'link_stars' | 'filter_pass' | 'final_answer'
       args        TEXT NOT NULL DEFAULT '{}',
       result      TEXT NOT NULL DEFAULT '',
+      cost_usd    REAL NOT NULL DEFAULT 0,
       created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   ```
@@ -780,3 +793,55 @@ read tool-by-tool the same way the main Weaver loop reads stars, or one larger c
 of everything that week at once. Which of those two shapes is right, and its own cadence-check
 (`last_weekly_digest_at`, same `isDailyDue`-style pattern Pulsar Daily already uses) is real design
 work for later, not decided here — v1 stays a query, on purpose.
+
+## Constellation gets its own, fully separate cost tracking (sixteenth pass)
+
+Constellation's spend is explicitly **not** Polaris spend — not a fourth bucket in the existing
+`Stats.CostBySource` (which currently splits Polaris/Pulsar/Daily), a wholly separate surface.
+Decided against the precedent that might suggest otherwise: Pulsar and Pulsar Daily's costs *did*
+get folded into that same breakdown, but specifically because they're close in shape to the core
+chat system (real threads, or a daily edition of the same kind of generation) — Weaver isn't
+either of those, it's a different kind of thing entirely, so it gets a different kind of view.
+
+**Backend**: `store.ConstellationStats` (new type, sibling to `Stats`) + `GetConstellationStats
+(periodDays int)` — same "aggregate on demand from tables, no running counters, no second source
+of truth to keep in sync" philosophy `GetStats` already uses, pointed at Constellation's own
+tables instead:
+- Cost (period + all-time) — `SUM(shooting_star_events.cost_usd)`, not
+  `shooting_star_runs.cost_usd` directly (see the auditability fix below — the run-level number is
+  now a cached rollup of the itemized events, not its own source of truth).
+- Shooting star count, star counts by status (auto/proposed/confirmed/rejected).
+- Tool call counts by tool, from `shooting_star_events` `GROUP BY tool` — scoped to Weaver's five
+  real tools only (`search_stars`/`read_star`/`create_star`/`update_star`/`link_stars`); the cost
+  sum above includes the non-tool event kinds below too, but the *call-count* breakdown doesn't,
+  same distinction `Stats.SearchProviderCounts`' doc comment already draws between "what actually
+  answered" and "what was billed."
+- Review action counts (approved/refined/discarded, from `star_reviews`) — the confidence-gate
+  tuning signal from pass 10, finally surfaced somewhere visible instead of "a query someone runs."
+- Links created count.
+
+**Route**: `GET /api/constellation/stats`, new (`gateway/constellation_routes.go`).
+
+**Frontend**: Constellation's own settings section gets its own `Info` icon (same `lucide` icon,
+same "Usage stats" idea) opening its own "Constellation Usage" panel — a separate component
+instance, separate data fetch, never touching `Stats`/`CostBySource`. One discoverability bridge,
+not a data merge: the *main* Usage panel gets a small link ("→ Constellation usage") that navigates
+into it, same sibling-panel-state pattern `SettingsPanel.svelte` already uses for
+`showStats`/`showMemory`/`showMemoryImport` (a new `showConstellationStats` alongside them). The
+link exists so it's findable from where people already look for costs; the two totals never touch.
+
+**The actual auditability fix, prompted by "I want this fully auditable for costs":**
+`shooting_star_candidates.cost_usd` (pass 9) is dropped outright — dead weight from the abandoned
+multi-stage design, where each candidate resolution was its own billed call. Now that Weaver is one
+continuous `agent.Run`, cost only exists at the level of each individual completion call inside the
+loop (`agent/driver.go` already accumulates exactly this — `totalCost += resp.CostUSD` once per
+turn — it just never surfaced anything but the final sum before now). `shooting_star_events` gains
+a `cost_usd REAL NOT NULL DEFAULT 0` column, and the run loop logs **one event per LLM completion
+call**, not just per tool call — every turn in the loop produces a row, whether that turn called a
+tool (`tool` names it, `args`/`result` as before) or ended the run in plain text (`tool =
+'final_answer'`, `result` = the closing summary). The double-RAG filter pass on a revisit (its own,
+separate billed call, before the loop even starts) gets logged the same way (`tool =
+'filter_pass'`). This makes `shooting_star_runs.cost_usd` a cached rollup —
+`SUM(shooting_star_events.cost_usd) WHERE run_id = ?` — never a number with nothing itemized
+behind it. Nothing about a shooting star's cost should ever be a black box: every dollar traces to
+a specific completion call, in order, with what it produced.
