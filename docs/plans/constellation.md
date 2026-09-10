@@ -1,4 +1,4 @@
-# Knowledge vault — very early brainstorm, not scoped yet
+# Constellation — very early brainstorm, not scoped yet
 
 **Status: idea capture plus a settled UI direction — schema and implementation still not
 started.** This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends
@@ -6,29 +6,53 @@ and Recent Queries" thread on the potato, 2026-09-09/10 — ask to search past c
 doc needs the full transcript again) after using the newly-shipped `search_chats` tool to ask
 "what do I actually use you for?" Five brainstorm passes (below, in order) resolved most of the
 open shape questions this doc originally posed, and a sixth pass settled on a specific UI
-direction ("Option D" — see below, mockup at `mockups/vault.html`). "Resolved in a brainstorm" and
-"a UI direction picked from mockups" still aren't the same as "designed and ready to build" — the
-next real step is sketching a concrete schema and first narrow slice, not writing implementation
-code straight from this doc.
+direction ("Option D" — see below, mockup at `mockups/vault.html`, not yet renamed to match). A
+seventh pass (see bottom) settled the feature's real name and vocabulary via issue #45.
+"Resolved in a brainstorm" and "a UI direction picked from mockups" still aren't the same as
+"designed and ready to build" — the next real step is sketching a concrete schema and first narrow
+slice, not writing implementation code straight from this doc.
+
+## Naming (settled — seventh pass, issue #45)
+
+This doc's early passes below were written under working names ("vault," "chapter," "the DOT
+agent," "a job") before the real names existed. Left as-is for brainstorm-log fidelity, but the
+real vocabulary going forward is:
+
+- **Constellation** — the feature itself. Was "Knowledge vault" / "Vault" earlier in this doc.
+- **Star** — a single topic/chapter (what earlier passes below call a "chapter"). Also the literal
+  visual metaphor the chosen UI direction (Option D, sixth pass) already uses on its Map screen:
+  topics plotted as star nodes, clustered by category, with reflection-layer cross-links drawn as
+  connecting lines between them.
+- **Shooting star** — one background processing run (earlier passes' working name "a job," itself
+  mirroring Pulsar's own "pulse"): one isolated, fresh-context run through a single new thread.
+- **Weaver** — the agent that does the reading/inferring and writes/merges stars (earlier passes'
+  placeholder "the DOT agent"). Draws the connecting lines between stars (the reflection layer) and
+  weaves chat *threads* into the constellation. Settled after a naming brainstorm alongside
+  "Cartographer" (map-the-scattered-points framing) and a few astronomy-proper-noun options (Argus,
+  Almagest) — Weaver won on the thread/weaving pun and reads well next to Polaris/Atlas/Pulsar.
+
+When reading "vault"/"chapter"/"the DOT agent"/"a job" below, mentally substitute
+Constellation/star/Weaver/shooting star — the doc's history isn't being rewritten term-by-term,
+just annotated here so the vocabulary shift is explicit.
 
 ## The core idea
 
 Polaris auto-generates and maintains a personal knowledge library built out of everything asked
 across every thread, organized by **topic, not by chat**. Ask about Cloudflare Workers four times
-across four unrelated threads, and that collapses into *one* living chapter that grows over time,
-not four scattered notes. Inspired by DOT (New Computer) — specifically the "it remembers you and
-reflects it back" feel, not just a notes dump or a passive transcript log.
+across four unrelated threads, and that collapses into *one* living chapter (a **star**) that grows
+over time, not four scattered notes. Inspired by DOT (New Computer) — specifically the "it
+remembers you and reflects it back" feel, not just a notes dump or a passive transcript log.
 
 **"Vault" and "Obsidian" are inspiration/reference points, not the literal target.** This is its
-own thing, native to SQLite — chapters live in the database (frontmatter-equivalent fields as real
-columns: title, status, confidence, sources, tags, etc., not literal YAML) so the agents doing the
-writing/merging can update them the way any other Polaris data gets updated, not by parsing and
-rewriting Markdown files on every change. Obsidian-style Markdown-with-frontmatter is a target
-*export format* — "assemble into `.md` on demand" — for whenever the user actually wants a real,
-portable vault on disk, not the system's own storage. Same underlying principles (one note per
-topic, linkable, frontmatter-carrying), different substrate. This also resolves the earlier "how
-does this touch a vault on disk" question from the first pass — there's no vault-on-disk to touch
-in v1 at all, just database reads/writes, same shape as every other Polaris subsystem.
+own thing, native to SQLite — chapters (stars) live in the database (frontmatter-equivalent fields
+as real columns: title, status, confidence, sources, tags, etc., not literal YAML) so the agents
+doing the writing/merging can update them the way any other Polaris data gets updated, not by
+parsing and rewriting Markdown files on every change. Obsidian-style Markdown-with-frontmatter is a
+target *export format* — "assemble into `.md` on demand" — for whenever the user actually wants a
+real, portable vault on disk, not the system's own storage. Same underlying principles (one note
+per topic, linkable, frontmatter-carrying), different substrate. This also resolves the earlier
+"how does this touch a vault on disk" question from the first pass — there's no vault-on-disk to
+touch in v1 at all, just database reads/writes, same shape as every other Polaris subsystem.
 
 ## Shape that came out of the brainstorm (not decided, just sketched)
 
@@ -37,11 +61,11 @@ in v1 at all, just database reads/writes, same shape as every other Polaris subs
   (reading tastes, location plans, mood) or otherwise low-confidence gets proposed instead —
   never auto-written, always a yes/no.
 - **Structure sketch** (now a DB shape, not literal folders — see "SQLite, not a real vault"
-  above; folder names below are really just status/category groupings a chapters table would
-  filter on, and become real folders only at export time): chapters are either **auto** (written
-  directly) or **proposed** (awaiting approval, the DB equivalent of an "Inbox"), plus some
-  higher-level table-of-contents grouping ("Atlas"-equivalent) over the chapters themselves. Each
-  chapter carries frontmatter-equivalent columns: `title`, `type`, `created`/`updated`,
+  above; folder names below are really just status/category groupings a chapters (stars) table
+  would filter on, and become real folders only at export time): chapters are either **auto**
+  (written directly) or **proposed** (awaiting approval, the DB equivalent of an "Inbox"), plus
+  some higher-level table-of-contents grouping ("Atlas"-equivalent) over the chapters themselves.
+  Each chapter carries frontmatter-equivalent columns: `title`, `type`, `created`/`updated`,
   `status: auto|proposed`, `confidence`, `sources` (links back to the originating thread(s)),
   `tags`.
 - **A thin "reflection layer"** — cross-links between chapters that surface a connection the user
@@ -59,22 +83,20 @@ longer up for grabs on these specific points:
 
 - **Not MCP. A totally separate agent, in a totally separate environment, with a totally
   different, narrow tool set.** This isn't Polaris's own `agent.Run` loop gaining a new tool —
-  it's a distinct agent that never needs `web_search`, `calculator`, `visualize`, or anything else
-  in the main catalog, because its whole job is reading/inferring from already-written chat
-  content, not researching or computing anything new. Its tool set is closer to "read a thread,
-  read/write the vault, maybe search the vault for an existing related chapter" — nothing else.
-  Whatever this agent is called for real (working name so far is just "the DOT agent," a
-  placeholder borrowed from the app that inspired this, not a real name — naming is an explicit
-  bikeshed for later, not now).
+  it's a distinct agent (Weaver) that never needs `web_search`, `calculator`, `visualize`, or
+  anything else in the main catalog, because its whole job is reading/inferring from already-
+  written chat content, not researching or computing anything new. Its tool set is closer to "read
+  a thread, read/write the constellation, maybe search the constellation for an existing related
+  star" — nothing else.
 - **Trigger model: an interval-based background poller, not live-per-message and not an
   unconditional nightly job.** Something like "check every hour: any new thread(s) since last
-  check?" If yes, the agent goes through them. If no — **zero AI calls, full stop, silently
-  skipped.** This is a hard requirement, not a nice-to-have: it directly guards against a real
-  failure mode from a past project (`her-go`, a Go program simulating "Samantha" from *Her*) whose
-  nightly "dream sequence" ran unconditionally every single night regardless of whether anything
-  new had actually happened that day — burning real tokens for zero informational gain, every
-  night, forever. This system is explicitly designed to never do that: no new input since last
-  check means no LLM call is made at all, not even a cheap one.
+  check?" If yes, Weaver runs a shooting star through them. If no — **zero AI calls, full stop,
+  silently skipped.** This is a hard requirement, not a nice-to-have: it directly guards against a
+  real failure mode from a past project (`her-go`, a Go program simulating "Samantha" from *Her*)
+  whose nightly "dream sequence" ran unconditionally every single night regardless of whether
+  anything new had actually happened that day — burning real tokens for zero informational gain,
+  every night, forever. This system is explicitly designed to never do that: no new input since
+  last check means no LLM call is made at all, not even a cheap one.
 - **A new, dedicated UI surface — not the existing thread/chat UI at all.** Described as wanting
   something "nice, slick, card-like," entirely fresh for this project, explicitly not reusing the
   thread-list/chat-transcript visual language. Framed as wanting this to feel like an actual
@@ -90,11 +112,11 @@ longer up for grabs on these specific points:
 - **Dedup/merge pipeline**: (1) one LLM call reads a new thread's effective content and proposes
   0–N candidate topics (title + short summary + confidence: obvious/factual vs. fuzzy/personal —
   zero candidates is a valid, common outcome, not an error); (2) for each candidate, a cheap FTS5
-  retrieval prefilter over existing chapters' title/tags/summary (the same mechanism
-  `search_chats` already built, applied to a `chapters` table instead of `messages`) pulls back
-  the top handful of plausibly-related existing chapters; (3) one LLM call per candidate, given
-  the new candidate plus those few existing chapter summaries, both decides *and* produces the
-  merged result in the same call ("no match → new chapter" or "matches chapter X → here's X's
+  retrieval prefilter over existing chapters' (stars') title/tags/summary (the same mechanism
+  `search_chats` already built, applied to a `chapters`/`stars` table instead of `messages`) pulls
+  back the top handful of plausibly-related existing chapters; (3) one LLM call per candidate,
+  given the new candidate plus those few existing chapter summaries, both decides *and* produces
+  the merged result in the same call ("no match → new chapter" or "matches chapter X → here's X's
   updated content"), rather than a separate decide-then-merge round trip. Deliberately FTS5, not
   embeddings, for the retrieval step — same reasoning `search_chats`' own v2 (semantic search)
   was deferred for: one person's own vocabulary doesn't drift enough from itself to need it, and
@@ -109,22 +131,22 @@ longer up for grabs on these specific points:
   but rejected: deferring doesn't reduce total cost, it only delays it, so there's no real benefit
   for a system with no shared/contended resource to protect — it would just elongate the process.
   A poll processes everything it finds, every time.
-- **One isolated, fresh-context processing run per new thread, run sequentially — not one
-  continuous session walking the whole backlog, and not concurrent runs either.** Mirrors
-  `agent.SpawnResearchers`' own reasoning for isolated sub-agent contexts (narrower context per
-  unit of work beats one shared blob accumulating unrelated topics), but sequential rather than
-  concurrent: each run's writes commit to the DB before the next run starts, so run N's own FTS5
-  retrieval step naturally sees whatever run N-1 just wrote — which is what actually prevents two
-  threads in the same backlog from independently creating duplicate chapters for the same
-  emerging topic, without needing a shared context or any extra coordination to get that
-  self-correction. Running concurrently (Deep Research sub-agent style) would reintroduce exactly
-  that race, for no benefit here since nothing needs cross-thread reasoning within one poll.
+- **One isolated, fresh-context processing run per new thread (one shooting star), run
+  sequentially — not one continuous session walking the whole backlog, and not concurrent runs
+  either.** Mirrors `agent.SpawnResearchers`' own reasoning for isolated sub-agent contexts
+  (narrower context per unit of work beats one shared blob accumulating unrelated topics), but
+  sequential rather than concurrent: each run's writes commit to the DB before the next run
+  starts, so run N's own FTS5 retrieval step naturally sees whatever run N-1 just wrote — which is
+  what actually prevents two threads in the same backlog from independently creating duplicate
+  chapters for the same emerging topic, without needing a shared context or any extra coordination
+  to get that self-correction. Running concurrently (Deep Research sub-agent style) would
+  reintroduce exactly that race, for no benefit here since nothing needs cross-thread reasoning
+  within one poll.
 
 ## Decided so far (fourth pass — where it lives, on/off, tone, reflection layer)
 
-- **Working name for the execution unit: a "job."** Mirrors Pulsar's own naming (a routine fires a
-  "pulse") — a placeholder until something better surfaces, same as "the DOT agent" itself, but
-  good enough to write code and docs against instead of saying "the execution run" every time.
+- **Working name for the execution unit: a "job."** (Now named for real: a **shooting star** — see
+  Naming above.) Mirrors Pulsar's own naming (a routine fires a "pulse").
 - **Lives entirely inside Polaris — same repo, same binary, same database.** Not a separate
   project or sidecar process; an extension of the search agent side of the app, using the existing
   SQLite store. Explicitly **not** expected to make the main chat agent itself any better at
@@ -141,9 +163,9 @@ longer up for grabs on these specific points:
   the user already read the original thread once; a chapter should always link back to that
   original thread for anyone who wants the full context again.
 - **A concrete new interaction, worth designing for even this early**: a "Continue in chat" button
-  on a chapter card. Reading a Cloudflare Workers chapter and suddenly have a follow-up ("how do
-  Durable Objects work")? One tap starts a fresh chat pre-loaded with a reference back to that
-  chapter (an attachment-ID-style reference dropped into the omnibox, not a fully retyped
+  on a chapter (star) card. Reading a Cloudflare Workers chapter and suddenly have a follow-up
+  ("how do Durable Objects work")? One tap starts a fresh chat pre-loaded with a reference back to
+  that chapter (an attachment-ID-style reference dropped into the omnibox, not a fully retyped
   question) so the question can just be typed and sent immediately, without re-establishing
   context by hand.
 - **The reflection layer is fully wanted, not a maybe.** Explicitly not being scoped down to "just
@@ -173,7 +195,8 @@ longer up for grabs on these specific points:
 - **Chosen: a fourth, combined direction ("Option D").** Mockup committed at
   `mockups/vault.html` (three screens: Library, Chapter detail, Map, in that file's own
   `#screen-*` sections) — this is the actual target for the eventual UI, not just one more idea
-  still up for grabs:
+  still up for grabs. The mockup file itself hasn't been renamed to match the Constellation/star
+  vocabulary yet — treat "vault"/"chapter" inside it as "constellation"/"star" until it is.
   - **Library** (default/home view): A's grouped-by-category structure (Technology, Books &
     Ideas, Science & History, ...) rendered with C's card polish — an elevated `chapter-card`
     row per chapter (icon tile, title, one-line summary, tags, chevron) instead of A's flatter
@@ -206,3 +229,32 @@ working for that slice alone, live with it for a week, then decide whether to ex
 reflection layer and the "you" layer are reasonable things to leave out of that first slice
 specifically to keep it small — not because either is in doubt (see above, the reflection layer
 is a real target), just sequencing.
+
+## Editing a star (seventh pass — in progress, not settled)
+
+Floated as an important gap this doc hadn't addressed: the auto-save/proposed model above handles
+Weaver getting a fact right or wrong at write time, but not the user correcting a star *after* it
+exists — the memory-panel precedent (a one-off "actually I like coffee more than tea" correction
+that a one-off agent pass reconciles into the stored memory) is the shape to follow here too.
+Two entry points sketched, both hung off a star:
+
+- **"Continue in chat"** (already designed above, fourth pass) — the star's context gets injected
+  into a fresh chat so the correction/follow-up happens conversationally, same as today's design.
+- **"Edit star"** — a new, second option, parallel to the existing memory-panel edit flow: a
+  direct, one-off edit/correction to the star's own content without spinning up a new chat thread
+  at all.
+
+Not yet decided: whether "Edit star" is a free-text correction that a one-off Weaver-style pass
+reconciles into the star (mirroring the memory panel exactly), a direct field-level edit UI, or
+some combination; how an edited star interacts with the dedup/merge pipeline the next time a
+related thread comes in; whether an edit is itself logged/versioned. Still cooking — see the issue
+thread for the live discussion.
+
+### First narrow slice (seventh pass — leaning, not locked)
+
+Revisiting "Where a start might look like" above with actual candidates instead of a placeholder
+"books, or just tech": leaning toward **books** first (comes up regularly in conversation, and is
+a clean, bounded category to prove auto-save + dedupe on), **music** second, then **technology**
+third — flagged as likely the broadest/messiest of the three given how much general tech
+discussion already happens here, so probably not the best first slice even though it's the
+richest source material. None of this is locked — still ideating.
