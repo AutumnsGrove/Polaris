@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Vault — Option D — mockup</title>
+<title>Constellation — Option D — mockup</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <style>
 @import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
@@ -28,7 +28,7 @@
 	--color-accent-2: oklch(78% 0.06 235);
 	/* --color-personal: "about the person" stars (stars.is_personal) — a third
 	   accent sitting between the warm gold and cool blue above, picked from
-	   mockups/vault-personal-star-options.html's option E (color-shift + badge,
+	   mockups/constellation-personal-star-options.html's option E (color-shift + badge,
 	   the corner icon dropped — it overlapped the badge and read as cluttered). */
 	--color-personal: oklch(78% 0.1 322);
 
@@ -63,7 +63,7 @@ body {
 
 /* Page chrome around the three phone frames below — this wrapper, the
    heading, and the frame labels are review-doc scaffolding, not part of
-   Vault's own UI (same "mockup page vs. the app itself" split as
+   Constellation's own UI (same "mockup page vs. the app itself" split as
    pulsar-daily.html's masthead/board). */
 .page-head {
 	max-width: 1360px;
@@ -134,7 +134,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-library .section { margin-bottom: 22px; }
 #screen-library .section-header { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); padding: 0 4px 10px; }
 #screen-library .card-list { display: flex; flex-direction: column; gap: 8px; }
-#screen-library .chapter-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+#screen-library .star-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
 #screen-library .tile { width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); }
 #screen-library .card-main { flex: 1; min-width: 0; }
 #screen-library .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -144,55 +144,55 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-library .card-bottom { display: flex; align-items: center; gap: 6px; }
 #screen-library .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
 #screen-library .card-chev { margin-left: auto; color: var(--color-text-dim); }
-/* .personal — stars.is_personal: chosen treatment (vault-personal-star-options.html,
+/* .personal — stars.is_personal: chosen treatment (constellation-personal-star-options.html,
    option E minus its corner icon) is a tinted tile/border plus a text badge, nothing else. */
-#screen-library .chapter-card.personal { border-color: color-mix(in srgb, var(--color-personal) 32%, var(--color-border)); }
-#screen-library .chapter-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
+#screen-library .star-card.personal { border-color: color-mix(in srgb, var(--color-personal) 32%, var(--color-border)); }
+#screen-library .star-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
 #screen-library .badge-personal { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-personal) 18%, transparent); color: var(--color-personal); flex-shrink: 0; }
 #screen-library .tabbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); }
 #screen-library .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
 #screen-library .tab.active { color: var(--color-accent); }
 #screen-library .tab span { font-size: 11px; font-weight: 500; }
 
-/* ---------------- Screen 2 — Chapter detail ---------------- */
-#screen-chapter { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
-#screen-chapter .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
-#screen-chapter .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
-#screen-chapter .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-#screen-chapter .chapter-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 100px; }
-#screen-chapter .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-#screen-chapter .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); flex-shrink: 0; }
-#screen-chapter .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); }
-#screen-chapter .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
-#screen-chapter h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
-#screen-chapter .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-#screen-chapter .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
-#screen-chapter .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
-#screen-chapter .chapter-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 20px 0 8px; }
-#screen-chapter .chapter-body h2:first-child { margin-top: 0; }
-#screen-chapter .chapter-body p { font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
-#screen-chapter .block-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); margin: 24px 0 10px; }
-#screen-chapter .chip-row { display: flex; flex-direction: column; gap: 8px; }
-#screen-chapter .source-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); font-size: 13px; }
-#screen-chapter .source-chip .icon-tile { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--color-surface-3); color: var(--color-text-dim); }
+/* ---------------- Screen 2 — Star detail ---------------- */
+#screen-star { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
+#screen-star .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
+#screen-star .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-star .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+#screen-star .star-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 100px; }
+#screen-star .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+#screen-star .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); flex-shrink: 0; }
+#screen-star .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); }
+#screen-star .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
+#screen-star h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
+#screen-star .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#screen-star .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-star .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
+#screen-star .star-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 20px 0 8px; }
+#screen-star .star-body h2:first-child { margin-top: 0; }
+#screen-star .star-body p { font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+#screen-star .block-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); margin: 24px 0 10px; }
+#screen-star .chip-row { display: flex; flex-direction: column; gap: 8px; }
+#screen-star .source-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); font-size: 13px; }
+#screen-star .source-chip .icon-tile { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--color-surface-3); color: var(--color-text-dim); }
 /* "Nearby in the constellation" — Option B's spatial reflection-layer
    visualization survives here as one bounded sub-section on an
    otherwise flat reading page, not its own screen (see Screen 3 for
    where the full map lives). */
-#screen-chapter .constellation-block { border-radius: var(--radius-lg); background: oklch(13% 0.012 65); border: 1px solid var(--color-border); padding: 16px 14px 14px; position: relative; overflow: hidden; }
-#screen-chapter .constellation-block::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(1px 1px at 15% 30%, rgba(255,255,255,0.3) 50%, transparent 51%), radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.22) 50%, transparent 51%), radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.26) 50%, transparent 51%); background-size: 90px 90px, 110px 110px, 80px 80px; pointer-events: none; }
-#screen-chapter .constellation-label { font-size: 11px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 14px; position: relative; }
-#screen-chapter .mini-lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.4; }
-#screen-chapter .mini-nodes { display: flex; justify-content: space-between; position: relative; z-index: 1; }
-#screen-chapter .mini-node { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 33%; }
-#screen-chapter .mini-node .dot { width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
-#screen-chapter .mini-node.self .dot { background: var(--color-accent); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-#screen-chapter .mini-node .mini-label { font-size: 11px; text-align: center; }
-#screen-chapter .mini-node.self .mini-label { font-weight: 600; }
-#screen-chapter .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 60%, transparent); }
-#screen-chapter .bottom-actions { display: flex; gap: 10px; }
-#screen-chapter .continue-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
-#screen-chapter .edit-btn { flex-shrink: 0; width: 46px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border-strong); color: var(--color-text); cursor: pointer; }
+#screen-star .constellation-block { border-radius: var(--radius-lg); background: oklch(13% 0.012 65); border: 1px solid var(--color-border); padding: 16px 14px 14px; position: relative; overflow: hidden; }
+#screen-star .constellation-block::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(1px 1px at 15% 30%, rgba(255,255,255,0.3) 50%, transparent 51%), radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.22) 50%, transparent 51%), radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.26) 50%, transparent 51%); background-size: 90px 90px, 110px 110px, 80px 80px; pointer-events: none; }
+#screen-star .constellation-label { font-size: 11px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 14px; position: relative; }
+#screen-star .mini-lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.4; }
+#screen-star .mini-nodes { display: flex; justify-content: space-between; position: relative; z-index: 1; }
+#screen-star .mini-node { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 33%; }
+#screen-star .mini-node .dot { width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
+#screen-star .mini-node.self .dot { background: var(--color-accent); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+#screen-star .mini-node .mini-label { font-size: 11px; text-align: center; }
+#screen-star .mini-node.self .mini-label { font-weight: 600; }
+#screen-star .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 60%, transparent); }
+#screen-star .bottom-actions { display: flex; gap: 10px; }
+#screen-star .continue-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
+#screen-star .edit-btn { flex-shrink: 0; width: 46px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border-strong); color: var(--color-text); cursor: pointer; }
 
 /* ---------------- Screen 4 — Edit star sheet (over a dimmed Screen 2) ---------------- */
 #screen-edit { width: 390px; height: 844px; background: var(--color-bg); position: relative; overflow: hidden; }
@@ -305,7 +305,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 
 /* ---------------- Screen 7 — Refine sheet (over a dimmed Screen 6) ---------------- */
 /* Same sheet mechanics as Screen 4's Edit-star sheet, over Review star's
-   backdrop instead of Chapter detail's — the two-sided ask ("what's right,
+   backdrop instead of Star detail's — the two-sided ask ("what's right,
    what's wrong") is what earns this its own frame rather than reusing
    Screen 4's copy verbatim. */
 #screen-refine { width: 390px; height: 844px; background: var(--color-bg); position: relative; overflow: hidden; }
@@ -344,12 +344,12 @@ a { color: var(--color-accent-2); text-decoration: none; }
 <body>
 
 <div class="page-head">
-	<h1 class="kicker">Vault — Option D (selected direction)</h1>
+	<h1 class="kicker">Constellation — Option D (selected direction)</h1>
 	<p>
 		Combines Option A's grouped-by-category library structure with Option C's elevated card
 		treatment for the day-to-day browsing screen, keeps the "Linked articles" sources list, and
 		folds Option B's constellation into a compact "Nearby in the constellation" sub-section on
-		the chapter page. The full star map survives as its own screen, reached through a
+		the star page. The full star map survives as its own screen, reached through a
 		Library / Map tab bar rather than competing with the list for the home view.
 	</p>
 </div>
@@ -361,14 +361,14 @@ a { color: var(--color-accent-2); text-decoration: none; }
 		<div class="phone">
 			<div id="screen-library">
 				<div class="topbar">
-					<div class="brand">Vault</div>
+					<div class="brand">Constellation</div>
 					<div class="icon-btn" aria-label="Search">
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
 					</div>
 				</div>
 
 				<div class="scroll">
-					<div class="meta-line">42 chapters &middot; drawn from 160 threads</div>
+					<div class="meta-line">42 stars &middot; drawn from 160 threads</div>
 
 					<div class="banner-stack">
 						<div class="banner digest">
@@ -378,7 +378,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 						</div>
 						<div class="banner inbox">
 							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg></span>
-							<span class="label">2 chapters proposed<small>Awaiting your review in the Inbox</small></span>
+							<span class="label">2 stars proposed<small>Awaiting your review in the Inbox</small></span>
 							<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
 						</div>
 					</div>
@@ -386,7 +386,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<div class="section">
 						<div class="section-header">Technology</div>
 						<div class="card-list">
-							<div class="chapter-card">
+							<div class="star-card">
 								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
 								<div class="card-main">
 									<div class="card-top"><span class="card-title">Cloudflare Workers</span><span class="card-time">2d</span></div>
@@ -397,7 +397,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 									</div>
 								</div>
 							</div>
-							<div class="chapter-card">
+							<div class="star-card">
 								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
 								<div class="card-main">
 									<div class="card-top"><span class="card-title">SQLite at the edge</span><span class="card-time">5d</span></div>
@@ -414,7 +414,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<div class="section">
 						<div class="section-header">Books &amp; Ideas</div>
 						<div class="card-list">
-							<div class="chapter-card">
+							<div class="star-card">
 								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
 								<div class="card-main">
 									<div class="card-top"><span class="card-title">Ender's Game &mdash; themes</span><span class="card-time">1w</span></div>
@@ -425,7 +425,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 									</div>
 								</div>
 							</div>
-							<div class="chapter-card personal">
+							<div class="star-card personal">
 								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
 								<div class="card-main">
 									<div class="card-top"><span class="card-title">Reads science fiction</span><span class="badge-personal">Personal</span></div>
@@ -442,7 +442,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<div class="section">
 						<div class="section-header">Science &amp; History</div>
 						<div class="card-list">
-							<div class="chapter-card">
+							<div class="star-card">
 								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"></path><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
 								<div class="card-main">
 									<div class="card-top"><span class="card-title">Surveyor 1</span><span class="card-time">2w</span></div>
@@ -472,9 +472,9 @@ a { color: var(--color-accent-2); text-decoration: none; }
 	</div>
 
 	<div class="frame-group">
-		<div class="frame-label">2 — Chapter detail<span class="sub">"Linked articles" + "Nearby in the constellation"</span></div>
+		<div class="frame-label">2 — Star detail<span class="sub">"Linked articles" + "Nearby in the constellation"</span></div>
 		<div class="phone">
-			<div id="screen-chapter">
+			<div id="screen-star">
 				<div class="topbar">
 					<div class="icon-btn" aria-label="Back">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -485,7 +485,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					</div>
 				</div>
 
-				<div class="chapter-scroll">
+				<div class="star-scroll">
 					<div class="tile-row">
 						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
 						<div>
@@ -498,7 +498,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 					<div class="tags-row"><span class="tag">infra</span><span class="tag">edge</span><span class="tag">serverless</span></div>
 					<div class="meta-row">Updated 2 days ago &middot; first noted Aug 14</div>
 
-					<div class="chapter-body">
+					<div class="star-body">
 						<h2>What it is</h2>
 						<p>A V8-isolate runtime at Cloudflare's edge &mdash; no cold-start container, code runs within milliseconds of a request landing at the nearest PoP. Comes up whenever the tradeoff against a long-running process is being weighed.</p>
 						<h2>Durable Objects vs KV vs D1</h2>
@@ -519,7 +519,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 
 					<div class="block-label">Nearby in the constellation</div>
 					<div class="constellation-block">
-						<div class="constellation-label">3 related chapters</div>
+						<div class="constellation-label">3 related stars</div>
 						<svg class="mini-lines" viewBox="0 0 320 20" style="position: absolute; top: 44px; left: 14px; width: calc(100% - 28px); height: 20px;">
 							<line x1="53" y1="6" x2="160" y2="6"></line>
 							<line x1="160" y1="6" x2="267" y2="6"></line>
@@ -552,7 +552,7 @@ a { color: var(--color-accent-2); text-decoration: none; }
 		<div class="phone">
 			<div id="screen-map">
 				<div class="topbar">
-					<div class="brand">Vault</div>
+					<div class="brand">Constellation</div>
 					<div class="topbar-right">
 						<span class="unconfirmed-pill">2 unconfirmed</span>
 						<div class="icon-btn" aria-label="Search">

@@ -1,23 +1,25 @@
 # Constellation — very early brainstorm, not scoped yet
 
-**Status: full v1 design — schema, Weaver's own architecture and prompts, the review UI, and every
-mockup screen settled. Implementation still not started.** This came out of a live brainstorm with
-Polaris itself (see the "Polaris Usage Trends and Recent Queries" thread on the potato,
-2026-09-09/10 — ask to search past chats for it if this doc needs the full transcript again) after
-using the newly-shipped `search_chats` tool to ask "what do I actually use you for?" Fifteen passes
-now, in order below; the short version: passes 1-5 worked out the core shape, 6 picked the UI
-direction (`mockups/vault.html`), 7-8 settled naming and the Edit-star flow, 9 sketched the schema
-and dropped a category-gated rollout for a global on/off, 10 designed the Inbox review flow, 11-13
-designed and wrote Weaver's actual architecture (one real agentic loop, not staged calls) and its
-tools/prompts, 14 pulled the "you" layer into v1 as a single `is_personal` flag, and 15 scoped the
-weekly digest banner down to a plain query for v1 (real synthesized prose is v2). "Resolved in a
-brainstorm" and "a schema sketch" still aren't the same as "designed and ready to build" — the next
-real step is turning this into real migrations and code, running it against real data, and watching
-`shooting_star_events`/`star_reviews` to see whether the prompting actually holds up. A sixteenth
-pass gave Constellation its own, fully separate cost-tracking surface (never folded into Polaris's
-own `Stats.CostBySource`) and made cost genuinely auditable — `shooting_star_events` now logs one
-row per LLM completion call, not just per tool call, so `shooting_star_runs.cost_usd` is a cached
-rollup of itemized events rather than an opaque total.
+**Status: planning phase complete.** Schema, Weaver's own architecture and prompts, the review UI,
+cost auditability, and every mockup screen are settled — and as of the seventeenth pass, so is the
+mockup's own vocabulary (`mockups/constellation.html`, `mockups/constellation-personal-star-options.html`
+— see "Naming" below, this doc's own long-standing "not yet renamed to match" caveat is now
+resolved). **Implementation still not started — this was, deliberately, a planning-only exercise.**
+This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends and Recent
+Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this doc needs
+the full transcript again) after using the newly-shipped `search_chats` tool to ask "what do I
+actually use you for?" Seventeen passes now, in order below; the short version: passes 1-5 worked
+out the core shape, 6 picked the UI direction, 7-8 settled naming and the Edit-star flow, 9
+sketched the schema and dropped a category-gated rollout for a global on/off, 10 designed the
+Inbox review flow, 11-13 designed and wrote Weaver's actual architecture (one real agentic loop,
+not staged calls) and its tools/prompts, 14 pulled the "you" layer into v1 as a single
+`is_personal` flag, 15 scoped the weekly digest banner down to a plain query for v1 (real
+synthesized prose is v2), 16 gave Constellation its own fully separate, auditable cost-tracking
+surface, and 17 renamed the mockup files and swept every last `vault`/`chapter` reference in them
+to match the real vocabulary. "Resolved in a brainstorm" and "a schema sketch" still aren't the
+same as "designed and ready to build" — the next real step is turning this into real migrations
+and code, running it against real data, and watching `shooting_star_events`/`star_reviews` to see
+whether the prompting actually holds up.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -201,10 +203,11 @@ longer up for grabs on these specific points:
   "C — The Digest" (a DOT-style scrolling card stream, a factual "This week" digest pinned on
   top, swipe-style Inbox approval cards for proposed chapters).
 - **Chosen: a fourth, combined direction ("Option D").** Mockup committed at
-  `mockups/vault.html` (three screens: Library, Chapter detail, Map, in that file's own
-  `#screen-*` sections) — this is the actual target for the eventual UI, not just one more idea
-  still up for grabs. The mockup file itself hasn't been renamed to match the Constellation/star
-  vocabulary yet — treat "vault"/"chapter" inside it as "constellation"/"star" until it is.
+  `mockups/constellation.html` (now eight screens — Library, Star detail, Map, Edit star, Inbox,
+  Review star, Refine, This week — grown well past the original three across later passes; see
+  each screen's own `#screen-*` section) — this is the actual target for the eventual UI, not just
+  one more idea still up for grabs. Renamed to match the Constellation/star vocabulary in the
+  seventeenth pass — no more "vault"/"chapter" anywhere in it.
   - **Library** (default/home view): A's grouped-by-category structure (Technology, Books &
     Ideas, Science & History, ...) rendered with C's card polish — an elevated `chapter-card`
     row per chapter (icon tile, title, one-line summary, tags, chevron) instead of A's flatter
@@ -270,7 +273,7 @@ Two entry points sketched, both hung off a star:
   gets. Simpler is correct here: this is corrective, low-frequency, low-stakes input, not something
   that needs an audit trail.
 
-This closes out the open questions this pass started with. See `mockups/vault.html`'s new fourth
+This closes out the open questions this pass started with. See `mockups/constellation.html`'s new fourth
 frame for a first sketch of the "Edit star" sheet UI (a chat-composer-style free-text box over a
 dimmed chapter-detail backdrop, not a form).
 
@@ -405,7 +408,7 @@ usually gets *part* of it right. The middle option is a **Refine** sheet, visual
 composer pattern as Edit star, but asking a two-sided question ("what did it get right, what was
 wrong") instead of Edit star's one-sided "what's wrong or what to add." Sending a refinement both
 corrects the star *and* resolves the review in one step — there's no separate confirm-after-refine
-tap, since providing the correction already is the human decision point. See `mockups/vault.html`
+tap, since providing the correction already is the human decision point. See `mockups/constellation.html`
 frames 5-7 (Inbox list, Review star, Refine sheet) for the sketch, including a new **"Why this
 needs a look"** block on the Review screen that surfaces `shooting_star_candidates.reasoning`
 directly — the same sentence Weaver already logs for the trace tables, now put in front of the
@@ -741,11 +744,11 @@ subsystem":
 - `star_reviews`/Inbox/Review/Refine all work unmodified — a personal star is just a proposed star
   in the same queue.
 
-**Settled: option E from `mockups/vault-personal-star-options.html`, minus its corner icon** — a
+**Settled: option E from `mockups/constellation-personal-star-options.html`, minus its corner icon** — a
 tinted tile/border (`--color-personal`, a third accent between the existing warm gold and cool
 blue) plus a text badge, nothing else. The icon overlapping the badge read as cluttered once seen
 side by side, which the standalone options file was built specifically to catch before it landed
-in the main mockup. Folded into `mockups/vault.html`: the Library's new "Reads science fiction"
+in the main mockup. Folded into `mockups/constellation.html`: the Library's new "Reads science fiction"
 card (Books & Ideas section) and the Inbox's existing "Might be weighing a move" card (now showing
 both a `badge-personal` and its original `badge-proposed` — status and type are different axes,
 both worth showing). Map's node treatment landed too, same pass: a small `--color-personal`-tinted
@@ -845,3 +848,21 @@ separate billed call, before the loop even starts) gets logged the same way (`to
 `SUM(shooting_star_events.cost_usd) WHERE run_id = ?` — never a number with nothing itemized
 behind it. Nothing about a shooting star's cost should ever be a black box: every dollar traces to
 a specific completion call, in order, with what it produced.
+
+## Mockup rename, and the planning phase closes out (seventeenth pass)
+
+`mockups/vault.html` → `mockups/constellation.html`, `mockups/vault-personal-star-options.html` →
+`mockups/constellation-personal-star-options.html` — `git mv`, history preserved. Every leftover
+`vault`/`chapter` reference inside both files swept to the real vocabulary (`#screen-chapter` →
+`#screen-star`, `.chapter-card` → `.star-card`, the "Vault" brand wordmark → "Constellation", "42
+chapters" → "42 stars," and so on) — the sixth pass's long-standing "not yet renamed to match"
+caveat, carried across ten subsequent passes, is finally resolved. Cross-references between the two
+mockup files, and every reference to either from this doc, updated to match.
+
+With this, the planning phase is genuinely complete: schema, Weaver's real architecture and
+prompts, the full review UI, cost auditability, and all eight mockup screens, consistently named
+throughout. Deliberately no application code was written anywhere in this process — the mockup
+(review-doc HTML/CSS) was always the one explicit exception, everything else stayed design and
+prose. The next step, whenever it happens, is a clean implementation pass against this doc — real
+migrations, the five tool files, the scheduler, and a first Weaver run against real data — not
+more design.
