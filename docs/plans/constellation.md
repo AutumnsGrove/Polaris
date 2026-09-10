@@ -118,7 +118,8 @@ longer up for grabs on these specific points:
   from conversations — a way to directly hand the system a URL ("save this for later") that gets
   fetched and run through the same inference pipeline as "a thing the user is into," independent
   of whether it ever came up in a chat at all. This means the poller's "anything new to process?"
-  check needs to cover saved-links-since-last-check too, not just new threads.
+  check needs to cover saved-links-since-last-check too, not just new threads. **Explicitly held
+  for v2** (thirteenth pass) — real, wanted, not being designed as part of this v1 pass.
 
 ## Decided so far (third pass — dedup/merge)
 
@@ -316,9 +317,17 @@ information you'd rather have.
   enabled                 INTEGER NOT NULL DEFAULT 0
   poll_interval_minutes   INTEGER NOT NULL DEFAULT 60
   last_checked_at         DATETIME
-  model                   TEXT NOT NULL DEFAULT '<registry id>'
+  model                   TEXT NOT NULL DEFAULT ''
   created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   ```
+  `model` empty means "use whatever `config.DefaultModel` currently resolves to" — the exact same
+  empty-means-inherit-the-default pattern `pulsar_daily_config.weather_location` already uses
+  ("empty means use `default_location`, same fallback every other location-aware tool already
+  has"), resolved live at run time rather than copied in once, so it stays in sync if the app-wide
+  default model ever changes. The settings panel gets a model dropdown — same model list and
+  picker every other model-select surface in the app uses (Pulsar's per-routine model,
+  Daily's architect/writer models) — with "Same as chat (default)" as the first option mapping to
+  the empty string, and every other entry an explicit override.
 - **`stars`** — the main table, one row per topic:
   ```
   id           INTEGER PRIMARY KEY AUTOINCREMENT
