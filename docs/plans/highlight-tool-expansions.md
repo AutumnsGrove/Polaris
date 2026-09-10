@@ -2,16 +2,19 @@
 
 Follow-up to #49 ("Expand highlight tool to more callers") and to `docs/plans/shopping-mode.md`,
 which built `highlight` deliberately domain-agnostic and left a list of candidate callers
-undesigned. This plan picks up four of them (media spotlighting, GitHub repos, image curation) plus
-one unrelated model-roster addition bundled in at the same time. Places (Foursquare) get the same
-treatment as media; a Researcher-mode source grid is still deferred, same as shopping-mode.md left
-it. A fifth initiative, added after live-spiking a couple of real pages, gives `web_read` best-effort
-schema.org/JSON-LD extraction — recipes and job postings are its first two callers, sharing the same
-small infrastructure.
+undesigned. This plan picks up three of them (media spotlighting, GitHub repos, image curation).
+Places (Foursquare) get the same treatment as media; a Researcher-mode source grid is still
+deferred, same as shopping-mode.md left it. A fourth initiative, added after live-spiking a couple
+of real pages, gives `web_read` best-effort schema.org/JSON-LD extraction — recipes and job postings
+are its first two callers, sharing the same small infrastructure.
 
 Ideation notes below record the forks actually considered and which way each one went, since two of
-the four initiatives ended up *not* touching `highlight.go` at all — worth keeping visible so the
+the three initiatives ended up *not* touching `highlight.go` at all — worth keeping visible so the
 "why" isn't lost the next time this file is read.
+
+(An unrelated DeepSeek V4.1 Flash model-roster addition came up in the same conversation and was
+originally §4 here — split out to issue #52 since it has nothing to do with `highlight` itself.
+Image curation below would benefit from it once it lands, but doesn't depend on it.)
 
 ## 1. Spotlighting a favorite from books/music/movies/places — no `highlight` schema change
 
@@ -133,31 +136,7 @@ than a new capability class.
   already established for shopping/repos/places.
 - `image_search.yaml`'s `api_description` gets the review-mode explanation; no new focus mode.
 
-## 4. DeepSeek V4.1 Flash — added alongside the existing `deepseek` entry, not replacing it
-
-Confirmed released today (2026-09-10) — DeepSeek's own release notes describe it as a multimodal
-(text+image) MoE, sparser/cheaper tier of the V4.1 family, positioned above V4 Pro on
-performance/speed despite the "Flash" naming. Genuinely useful for §3 above: it'd be the first model
-in `models/models.go` that's both multimodal *and* not the dedicated small describe-only `mimo`
-model, meaning image curation gets to run on the same model actually driving the conversation instead
-of always paying for a separate describer call.
-
-**Explicitly additive** — the existing `deepseek` entry (`deepseek/deepseek-v4-flash-0731`, five-deep
-provider fallback chain, `ResearchWorker: true`) stays exactly as-is. This is a new, separate
-`config.ModelConfig` entry, e.g. `ID: "deepseek-v41-flash"`, `Model:
-"deepseek/deepseek-v4.1-flash"`, `Multimodal: true`. Per the user's own steer, it's running roughly
-3x the existing Flash entry's price — not a drop-in upgrade, a separate option to try.
-
-**Not finalized here, and shouldn't be guessed at**: provider/pricing/quantization selection needs the
-same live `GET /api/v1/models/deepseek/deepseek-v4.1-flash/endpoints` survey `deepseek`/`deepseek-pro`'s
-own doc comments record doing before picking a `Provider` list — the model released today, and a
-same-day WebFetch against OpenRouter's page didn't return real structured pricing (the page appears too
-fresh to scrape cleanly, and there's no OpenRouter API key in this environment to hit `/endpoints`
-directly). Whoever implements this should run that survey for real before committing a `Provider` list,
-exactly per this repo's "verify on real hardware, not just review" culture — a wrong guess here means a
-silent 404/misroute the same way `mimo-pro`'s multimodal flag once did.
-
-## 5. `web_read` gains best-effort schema.org/JSON-LD extraction — shared infra, two callers
+## 4. `web_read` gains best-effort schema.org/JSON-LD extraction — shared infra, two callers
 
 Came out of a live spike (not just review, per this repo's culture): fetched real pages via curl with
 `web_read`'s own User-Agent to see what's actually there before designing anything.
@@ -230,8 +209,8 @@ undermine the exact discipline `highlight` was built to enforce at the tool laye
 - **Travel (flights/hotels) and other listings** (real estate, event tickets) — still real
   `highlight` candidates per the original issue, same "compare a handful of real options" shape as
   shopping/places/jobs, just not designed in this pass. Job postings moved out of this bucket into
-  §5 once the JSON-LD spike showed a concrete, mostly-reliable path.
-- **`Event`/`Product` schema.org types** in the same JSON-LD registry §5 builds — natural next entries
+  §4 once the JSON-LD spike showed a concrete, mostly-reliable path.
+- **`Event`/`Product` schema.org types** in the same JSON-LD registry §4 builds — natural next entries
   once `Recipe`/`JobPosting` are shipped and the registry pattern is proven; would cover travel/ticket
   listings above for free. Not built now — no live spike done for either type yet.
 
@@ -254,24 +233,22 @@ undermine the exact discipline `highlight` was built to enforce at the tool laye
 7. `tools/image_search.go` — optional `mode` argument (`"auto"`/`"review"`); review mode returns a
    numbered candidate list instead of auto-adding Cards, gated on `ctx.Multimodal` with a clear tool
    error otherwise. `tools/descriptions/image_search.yaml` gets the review-mode explanation.
-8. `models/models.go` — new `deepseek-v41-flash` entry, additive alongside the existing `deepseek`.
-   **Blocked on a real live `/endpoints` provider/pricing survey** — do not guess the `Provider` list.
-9. `tools/web_read.go` — read `<script type="application/ld+json">` blocks before the existing
+8. `tools/web_read.go` — read `<script type="application/ld+json">` blocks before the existing
    `doc.Find("script, ...").Remove()` step; a small `@type`-keyed registry (`"Recipe"`,
    `"JobPosting"` to start) each rendering one labeled summary line, appended to the returned `text`
    alongside `og:image`/`og:site_name`. No match / parse failure / no JSON-LD at all → today's
    behavior, unchanged, exactly as already true for a page with no `og:image`.
-10. `tools/descriptions/web_read.yaml` + `tools/descriptions/highlight.yaml` — one sentence each: when
-    a structured summary line is present and the user's asking to compare/narrow down a few real
-    options (recipes, jobs, or anything else the registry later covers), call `highlight` with it.
-11. Live-verify before calling any of this done, per `CLAUDE.md`'s culture: a real turn asking for a
+9. `tools/descriptions/web_read.yaml` + `tools/descriptions/highlight.yaml` — one sentence each: when
+   a structured summary line is present and the user's asking to compare/narrow down a few real
+   options (recipes, jobs, or anything else the registry later covers), call `highlight` with it.
+10. Live-verify before calling any of this done, per `CLAUDE.md`'s culture: a real turn asking for a
     book/movie/repo/place recommendation and then "highlight your favorite," a real multi-repo
-    comparison turn (does the carousel actually group them), a real image-curation turn on
-    `deepseek-v41-flash` once its provider list is confirmed (does `view_image` actually get called,
-    does `highlight` render captions correctly), confirming `mode: "review"` is correctly refused on a
-    non-multimodal thread, and a real recipe + a real Lever job posting turn (does the JSON-LD line
-    show up in `web_read`'s result, does a Greenhouse posting degrade cleanly to plain text).
-12. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
-    resource directory, no new CLI command, no new settings-panel server-mutating action. The new
-    model entry is compiled into the binary/image like any other Go code change, not a runtime
-    resource needing a bind mount.
+    comparison turn (does the carousel actually group them), a real image-curation turn on whatever
+    multimodal model is current at the time (issue #52 tracks adding DeepSeek V4.1 Flash, but this
+    doesn't block on it — `mimo` already covers the multimodal case today) confirming `view_image`
+    gets called and `highlight` renders captions correctly, confirming `mode: "review"` is correctly
+    refused on a non-multimodal thread, and a real recipe + a real Lever job posting turn (does the
+    JSON-LD line show up in `web_read`'s result, does a Greenhouse posting degrade cleanly to plain
+    text).
+11. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
+    resource directory, no new CLI command, no new settings-panel server-mutating action.
