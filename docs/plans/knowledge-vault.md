@@ -1,13 +1,15 @@
 # Knowledge vault — very early brainstorm, not scoped yet
 
-**Status: idea capture only, no design review, nothing built.** This came out of a live brainstorm
-with Polaris itself (see the "Polaris Usage Trends and Recent Queries" thread on the potato,
-2026-09-09/10 — ask to search past chats for it if this doc needs the full transcript again)
-after using the newly-shipped `search_chats` tool to ask "what do I actually use you for?" Five
-brainstorm passes (below, in order) resolved most of the open shape questions this doc originally
-posed, but "resolved in a brainstorm" isn't the same as "designed and ready to build" — the next
-real step is sketching a concrete schema and first narrow slice, not writing implementation code
-straight from this doc.
+**Status: idea capture plus a settled UI direction — schema and implementation still not
+started.** This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends
+and Recent Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this
+doc needs the full transcript again) after using the newly-shipped `search_chats` tool to ask
+"what do I actually use you for?" Five brainstorm passes (below, in order) resolved most of the
+open shape questions this doc originally posed, and a sixth pass settled on a specific UI
+direction ("Option D" — see below, mockup at `mockups/vault.html`). "Resolved in a brainstorm" and
+"a UI direction picked from mockups" still aren't the same as "designed and ready to build" — the
+next real step is sketching a concrete schema and first narrow slice, not writing implementation
+code straight from this doc.
 
 ## The core idea
 
@@ -159,6 +161,42 @@ longer up for grabs on these specific points:
   plain text. Export is therefore pure assembly: take the stored structured fields, take the
   stored body, concatenate, done. No remaining open questions from this doc's brainstorm passes —
   the next real step is sketching a concrete schema/first-slice, not more open-ended ideation.
+
+## Decided so far (sixth pass — UI direction)
+
+- **Three initial directions were mocked up and compared** as phone-width UI mockups: "A — The
+  Index" (an editorial table of contents, grouped by category, closest to Polaris's existing
+  thread-list visual language), "B — The Constellation" (chapters as stars on a literal
+  night-sky map, topic clusters, reflection-layer cross-links drawn as connecting lines), and
+  "C — The Digest" (a DOT-style scrolling card stream, a factual "This week" digest pinned on
+  top, swipe-style Inbox approval cards for proposed chapters).
+- **Chosen: a fourth, combined direction ("Option D").** Mockup committed at
+  `mockups/vault.html` (three screens: Library, Chapter detail, Map, in that file's own
+  `#screen-*` sections) — this is the actual target for the eventual UI, not just one more idea
+  still up for grabs:
+  - **Library** (default/home view): A's grouped-by-category structure (Technology, Books &
+    Ideas, Science & History, ...) rendered with C's card polish — an elevated `chapter-card`
+    row per chapter (icon tile, title, one-line summary, tags, chevron) instead of A's flatter
+    list rows. A slim "This week" digest banner and an Inbox ("N chapters proposed") banner sit
+    above the grouped sections.
+  - **Chapter detail**: title/tags/confidence/status frontmatter fields, reading-first body
+    prose (serif headings only, matching the rest of the app's typography convention), a
+    **"Linked articles"** block listing the originating thread(s) (the chapter's `sources`
+    field), and — new in this direction — a **"Nearby in the constellation"** sub-section: a
+    compact, bounded revival of Option B's spatial reflection-layer visualization (a small
+    starfield-textured panel with 2-3 connected nodes) in place of a flat "related chapters"
+    chip list, without needing its own screen. "Continue in chat" stays a pinned bottom button.
+  - **Map**: Option B's full star-map view (topic clusters as star nodes, reflection-layer links
+    as connecting lines) survives as a real, full screen — not a bottom sheet, not the default
+    view. It's reached via a **Library / Map tab bar** at the bottom, shared between the two
+    top-level screens, so the constellation is a deliberate, opt-in exploration mode rather than
+    competing with the list for the home view. Chapter detail is a drill-in from Library and
+    does not carry the tab bar.
+  - This settles the "structure sketch" section's open UI question above: the higher-level
+    TOC/"Atlas"-equivalent grouping is literally the category sections in the Library view, and
+    auto-vs-proposed chapters are visually distinguished (a status badge on the chapter page, a
+    dedicated Inbox banner in the Library view) rather than shown inline, undifferentiated, in
+    the same list.
 
 ## Where a start might look like, eventually (not a commitment)
 
