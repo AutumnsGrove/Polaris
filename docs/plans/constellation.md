@@ -11,13 +11,15 @@ feature's real name and vocabulary via issue #45 and opened the "Edit star" ques
 pass closed that question (free-text, LLM-reconciled, no field editor), a ninth pass sketched the
 actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus full
 observability, a tenth pass designed the Inbox review flow (approve/refine/discard on a
-proposed star) plus the `star_reviews` table that backs it, and an eleventh pass designed the
-Weaver extraction/merge pipeline itself — eligibility, the first-pass-vs-revisit split, and reusing
-`filterExtractedText` (already built for `web_read`/`search_chats`) as the "double RAG" step on
-revisits. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as "designed and
-ready to build" — the next real step is turning this into real migrations and code, not writing
-that code straight from this doc without first designing the reflection-layer linking mechanism
-(in progress — see the open question below) and running it against real data.
+proposed star) plus the `star_reviews` table that backs it, an eleventh pass designed thread
+eligibility (the idle-timing and per-thread-delta gates) and the first-pass-vs-revisit input prep,
+and a twelfth pass corrected Weaver's own architecture from a Pulsar-Daily-style sequence of
+forced-tool-call stages to one real agentic loop (`search_stars`/`read_star`/`create_star`/
+`update_star`/`link_stars`) and pulled the reflection layer (star-to-star linking) into v1, no
+longer deferred. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
+"designed and ready to build" — the next real step is turning this into real migrations and code,
+running it against real data, and watching `shooting_star_events`/`star_reviews` to see whether the
+prompting actually holds up.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -471,10 +473,11 @@ keep chatting in them — there's no archive/close concept to lean on instead). 
   backing the "Linked articles" UI list: one row per `(star_id, thread_id)`, **upserted** (refresh
   `linked_at`) rather than duplicated on a repeat contribution — `UNIQUE(star_id, thread_id)`.
 
-**Stage 1 — Extraction, and it's genuinely different on a first pass vs. a revisit:**
+**Input prep, before Weaver's own loop starts, genuinely different on a first pass vs. a
+revisit** — this part is still a discrete Go-orchestrated step, not a tool call:
 
 - **First-ever pass on a thread**: no prior notes exist, so there's nothing to filter *for* —
-  "what's worth remembering here" is an open-ended question. Stage 1 gets the thread's raw content
+  "what's worth remembering here" is an open-ended question. Weaver gets the thread's raw content
   (`store.ReadThread`) directly, no filter pass. **The double-RAG mechanism only unlocks starting
   on the second (or n+1th) pass** — a first pass never gets it, by design, not as a missing
   feature.
@@ -485,23 +488,117 @@ keep chatting in them — there's no archive/close concept to lean on instead). 
   notes: *"Check for updates on: [prior star titles + one-line summaries]. Flag anything that
   updates, corrects, or adds to those, plus anything genuinely new."* That's the real second model
   run — cheap relative to a full re-read, and it's the existing `filterExtractedText`, not new
-  code. The *condensed result*, not the raw delta, is what Stage 1's extraction call actually
-  reads.
-- Either way, Stage 1 itself is one forced-tool-call (`record_star_candidates`, same
-  `dailyDiffJudge`-style "always call the tool, never plain text, log-and-degrade-to-empty on a
-  skip" shape as `parseDailyVerdict`) proposing 0-N candidates: `title`, `summary`, `category`
-  (free text, the model's own words — no fixed list, keeping "let topics emerge" true at the field
-  level too, not just the config level), `confidence_class` (`obvious` | `fuzzy`). This call is
-  what writes the `shooting_star_runs` row.
+  code. The *condensed result*, not the raw delta, becomes Weaver's starting task text.
 
-**Stage 2 — Resolve**, per candidate, sequential (unchanged from the ninth pass's sketch): FTS5
-prefilter over `stars_fts` → top ~5 existing stars → one forced-tool-call, `dailyDiffJudge`-shaped,
-that decides **and** drafts in the same call (`new_star` | `merged` | `ambiguous`, plus the actual
-title/category/summary/body/tags/reasoning). Status routing: `obvious` + not `ambiguous` → `auto`;
-everything else (`fuzzy`, or `ambiguous` regardless of confidence) → `proposed`, per the third
-pass's "ambiguous is treated the same as fuzzy." Writes/merges the `stars` row, upserts
-`star_sources`, inserts one `shooting_star_candidates` row.
+**Correction, twelfth pass: what happens after that input is assembled is NOT a sequence of
+Go-orchestrated forced-tool-call stages — see below.** The paragraph originally here described
+"Stage 1 extraction" and "Stage 2 resolve" as two separate one-shot calls the way Pulsar Daily's
+`dailyDiffJudge` works. That's wrong for Weaver specifically: it should be one real agentic loop,
+Weaver's own tool calls doing the reading, deciding, and writing — see "Weaver's toolset" below.
+
+## Weaver's toolset, and reflection-layer linking pulled into v1 (twelfth pass)
+
+Corrects the eleventh pass's architecture: Weaver isn't a sequence of Go-orchestrated forced-tool-
+call stages (that was drifting toward Pulsar Daily's shape). It's **one `agent.Run` per shooting
+star**, narrow toolset, Weaver's own tool calls deciding what's worth noting, whether it matches
+something existing, and whether it's worth linking — exactly what the second pass originally said
+("its tool set is closer to 'read a thread, read/write the vault, maybe search the vault'"). Go
+code does exactly one thing before the loop starts: assemble the task text (raw content on a first
+pass, the `filterExtractedText`-condensed delta plus prior notes on a revisit — previous section,
+unchanged). Everything after that is Weaver's own reasoning and tool calls.
+
+**Also new this pass: the reflection layer (star-to-star linking) is pulled into v1.** Previously
+deferred (fourth/ninth passes — "not required in v1," `star_edges` "not guessed at today"). That
+call is reversed: linked stars are wanted from day one, not a stretch goal.
+
+**Weaver's toolset** (own narrow catalog, `tools.Register`-style, never the main chat agent's
+`web_search`/`calculator`/etc.):
+
+- **`search_stars(query)`** — FTS5 over `stars_fts`, returns matching `star_id`/title/summary.
+  Does dedup-checking *and* link-discovery duty — same tool, Weaver decides which question it's
+  asking with it.
+- **`read_star(star_id)`** — the full card (title, category, tags, summary, body). Look-before-
+  you-link, and look-before-you-merge — a model judging a connection or a match from a title+
+  summary snippet alone has no way to be careful; one that can actually read the candidate does.
+- **`create_star(title, category, summary, body, tags, confidence_class)`** — writes a new `stars`
+  row (`status` derived from `confidence_class` exactly as before: `obvious` → `auto`, `fuzzy` →
+  `proposed`), and writes the matching `shooting_star_candidates` row (`decision = 'new_star'`) as
+  a side effect of the call itself — logging isn't a separate Go-orchestrated step anymore, it's
+  built into what the tool handler does.
+- **`update_star(star_id, summary, body, tags, confidence_class)`** — merges into an existing
+  star, same side-effect logging (`decision = 'merged'`).
+- **`link_stars(star_id_a, star_id_b, reasoning)`** — writes `star_edges`, idempotent (no-ops if
+  the pair's already linked). **No cap on how many links a run can create.** Quality is a
+  prompting problem, backstopped by `read_star` actually existing (so a careful decision is
+  *possible*) and by full observability (below) making an over-linking prompt visible in the data,
+  not a numeric ceiling.
+
+**This also simplifies the decision model**: there's no separate "ambiguous match" case. Deciding
+"is this the same topic as something existing" now happens *inside* Weaver's own reasoning (via
+`search_stars`/`read_star`) before it ever calls `create_star` or `update_star` — genuine
+uncertainty about a match just means reaching for `confidence_class = fuzzy` on whichever call it
+makes, same `proposed`-routing outcome as the ninth pass's "ambiguous routes like fuzzy," no third
+decision value needed.
+
+**Schema, corrected for the agentic-loop shape:**
+
+- **`shooting_star_runs`** — one row per shooting star (the whole `agent.Run`, not one stage):
+  ```
+  CREATE TABLE shooting_star_runs (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id             INTEGER NOT NULL REFERENCES threads(id),
+      last_message_id_seen  INTEGER NOT NULL,
+      started_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at           DATETIME,
+      summary               TEXT NOT NULL DEFAULT '',  -- Weaver's own closing wrap-up of what it did
+      error                 TEXT NOT NULL DEFAULT '',
+      cost_usd              REAL NOT NULL DEFAULT 0
+  );
+  ```
+- **`shooting_star_candidates`** — unchanged shape from the ninth pass, now gets a `run_id` FK and
+  is populated by `create_star`/`update_star`'s side effects rather than a discrete resolve stage:
+  ```
+  CREATE TABLE shooting_star_candidates (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id             INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
+      title              TEXT NOT NULL,
+      confidence_class   TEXT NOT NULL DEFAULT '',   -- 'obvious' | 'fuzzy'
+      decision           TEXT NOT NULL DEFAULT '',   -- 'new_star' | 'merged'
+      reasoning          TEXT NOT NULL DEFAULT '',
+      resulting_star_id  INTEGER REFERENCES stars(id),
+      cost_usd           REAL NOT NULL DEFAULT 0,
+      created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
+- **`star_edges`** — comes out of "deferred," unchanged from the ninth pass's original sketch:
+  ```
+  CREATE TABLE star_edges (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      star_a_id   INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+      star_b_id   INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+      reasoning   TEXT NOT NULL DEFAULT '',
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK (star_a_id < star_b_id),
+      UNIQUE (star_a_id, star_b_id)
+  );
+  ```
+- **`shooting_star_events`** — new this pass, replacing an earlier `star_link_passes` idea floated
+  and dropped mid-discussion: one continuous loop wants one generic trace, not a bespoke table per
+  tool. Captures *every* tool call in a run — `search_stars`/`read_star` included, not just the
+  writes — which is what actually answers "is Weaver over-linking or under-linking in practice,"
+  the same observability instinct as `star_reviews` answering the confidence-gate question:
+  ```
+  CREATE TABLE shooting_star_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id      INTEGER NOT NULL REFERENCES shooting_star_runs(id) ON DELETE CASCADE,
+      tool        TEXT NOT NULL,               -- 'search_stars' | 'read_star' | 'create_star' | 'update_star' | 'link_stars'
+      args        TEXT NOT NULL DEFAULT '{}',
+      result      TEXT NOT NULL DEFAULT '',
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
 
 **Where this would live**: `gateway/constellation_scheduler.go` (poller, same once-a-minute ticker
-shape as `pulsar_scheduler.go`) and `gateway/constellation_weaver.go` (the two stages) — same
-package and naming convention as Pulsar and Pulsar Daily, not a separate top-level package.
+shape as `pulsar_scheduler.go`) and `gateway/constellation_weaver.go` (task assembly + the
+`agent.Run` call + the tool handlers) — same package and naming convention as Pulsar and Pulsar
+Daily, not a separate top-level package.
