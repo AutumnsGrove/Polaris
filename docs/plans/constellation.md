@@ -424,11 +424,14 @@ person who actually has to make the call, not just kept for debugging.
   time (repeated dedup merges before it's ever reviewed), so a resolution belongs to the *star* at
   review time, not to any one candidate event.
 
-**Worth flagging, not yet fully settled:** whether an Edit-star correction (eighth pass, on an
-already-*confirmed* star) should also start writing to `star_reviews` now that "full observability"
-is an explicit value, or whether that table stays scoped to the Inbox-review moment specifically
-(the eighth pass's "no versioning/logging beyond the normal write" call was made before this pass
-existed). Leaning toward keeping Edit-star as-is — the observability gap this pass closes is
-specifically "was Weaver's confidence judgment right," which doesn't apply to a star that already
-passed review — but flagging it since it's a real tension with the newer stated value, not a
-settled call.
+**Settled: Edit-star stays unlogged.** `star_reviews` is scoped to the Inbox-review moment only —
+an Edit-star correction on an already-*confirmed* star (eighth pass) does not write to it. The
+observability question that actually matters — is Weaver flagging too much or too little, and once
+something lands in the Inbox is the person mostly just confirming it (gate too cautious), or
+routinely reaching for Refine/Discard (gate too loose, or the extraction itself needs prompt work)
+— is fully answered by watching `star_reviews`' `action` distribution alongside
+`shooting_star_candidates`' own `confidence_class`/`decision` columns. A separate log of ordinary
+maintenance edits to stars nothing was ever unsure about wouldn't add signal to that specific
+question, so it's left out. This is the day-one observability answer for whether the confidence
+gate (and the extraction prompt behind it) will need tuning — no dashboard needed yet, just a
+query someone runs against `star_reviews`/`shooting_star_candidates` once there's real data.
