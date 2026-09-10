@@ -244,11 +244,27 @@ Two entry points sketched, both hung off a star:
   direct, one-off edit/correction to the star's own content without spinning up a new chat thread
   at all.
 
-Not yet decided: whether "Edit star" is a free-text correction that a one-off Weaver-style pass
-reconciles into the star (mirroring the memory panel exactly), a direct field-level edit UI, or
-some combination; how an edited star interacts with the dedup/merge pipeline the next time a
-related thread comes in; whether an edit is itself logged/versioned. Still cooking — see the issue
-thread for the live discussion.
+**Decided (eighth pass):**
+
+- **"Edit star" is free-text only, LLM-reconciled — never a field-level editor.** The user types a
+  correction/addition in their own words ("actually I finished this one, wasn't just researching
+  it"); Weaver runs a one-off pass that folds it into the star's actual fields. This will never
+  grow into a structured form or a Markdown text box — the whole point is that it doesn't feel
+  like there's frontmatter sitting under the star at all. It should feel like talking to
+  Constellation, not editing a record.
+- **Most of a star's fields are backend-only.** Some (title, tags, confidence/status badge, body)
+  are shown in the UI per the Chapter-detail design above; the rest exist purely for
+  categorization/sorting/retrieval (the FTS5-facing side of the schema) and are never surfaced to
+  the user directly, edited or otherwise.
+- **An edit is not a special case for the dedup/merge pipeline.** It's just a new signal, folded
+  in through the same reconciliation Weaver already does for a new thread touching an existing
+  star — no separate "edit path," no versioning/logging beyond whatever the normal write already
+  gets. Simpler is correct here: this is corrective, low-frequency, low-stakes input, not something
+  that needs an audit trail.
+
+This closes out the open questions this pass started with. See `mockups/vault.html`'s new fourth
+frame for a first sketch of the "Edit star" sheet UI (a chat-composer-style free-text box over a
+dimmed chapter-detail backdrop, not a form).
 
 ### First narrow slice (seventh pass — leaning, not locked)
 
