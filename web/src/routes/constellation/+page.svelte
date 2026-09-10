@@ -86,7 +86,7 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<h1 class="page-title">Constellation</h1>
+		<h1 class="page-title"><span class="wordmark">Constellation</span></h1>
 		{#if view === 'map' && unconfirmedCount > 0}
 			<span class="unconfirmed-pill">{unconfirmedCount} unconfirmed</span>
 		{/if}
@@ -262,9 +262,15 @@
 	}
 	.page-title {
 		margin: 0;
-		font-family: var(--font-serif);
 		font-size: 20px;
-		font-weight: 700;
+	}
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — this
+	   page's title renders the literal word "Constellation" as a name, same
+	   as "Polaris"/"Pulsar" get elsewhere in the app. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 	.unconfirmed-pill {
 		font-size: 11px;
