@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -282,6 +283,21 @@ type StarSearchResult struct {
 // rejected stars deliberately: a result here doubles as Weaver's "was this
 // already said no to" check (see the plan doc's "A rejected star is a
 // closed matter, not a candidate").
+//
+// query is rewritten into an OR of its individual words before hitting FTS5
+// — passing a free-text phrase straight to MATCH hits FTS5's default
+// implicit-AND-of-every-token behavior (no stemming either, since
+// stars_fts uses the default unicode61 tokenizer), which requires every
+// single word — including stop words like "of" — to literally co-occur in
+// one row. Live-confirmed as the actual root cause of Weaver creating
+// duplicate stars for the same topic: a real query like "purpose of life
+// meaning existence" against an existing "The purpose/meaning of life —
+// philosophical perspectives" star returned zero results (no literal
+// "existence" token in that star), even though every individual word in
+// the query overlaps. OR'ing the same terms against the same star finds it
+// immediately. This is Weaver's own dedup mechanism doing exactly what the
+// system prompt asks ("always call search_stars before create_star") and
+// getting a false "nothing found" back.
 func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error) {
 	rows, err := s.db.Query(
 		`SELECT s.id, s.title, s.summary, s.status
@@ -289,7 +305,7 @@ func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error)
 		 JOIN stars s ON s.id = stars_fts.rowid
 		 WHERE stars_fts MATCH ?
 		 ORDER BY rank
-		 LIMIT ?`, query, limit,
+		 LIMIT ?`, orFTSQuery(query), limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("search stars: %w", err)
@@ -305,6 +321,26 @@ func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error)
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// orFTSQuery turns a free-text query into an FTS5 query string that
+// matches a row containing ANY of the individual words, not (FTS5's
+// default) every single one of them. Each word is double-quoted so
+// FTS5-special characters in the query (hyphens, colons, quotes — real
+// possibilities in a Weaver-generated search query) are treated as
+// literal text instead of query syntax, which would otherwise return a
+// query-syntax error for a query FTS5 rejects outright rather than a
+// clean empty result.
+func orFTSQuery(query string) string {
+	words := strings.Fields(query)
+	if len(words) == 0 {
+		return `""`
+	}
+	quoted := make([]string, len(words))
+	for i, w := range words {
+		quoted[i] = `"` + strings.ReplaceAll(w, `"`, `""`) + `"`
+	}
+	return strings.Join(quoted, " OR ")
 }
 
 // LinkStarSource upserts a star_sources row — a thread can contribute to
@@ -694,7 +730,24 @@ func (s *Store) GetConstellationStats(periodDays int) (*ConstellationStats, erro
 		return nil, fmt.Errorf("constellation stats: max turns count: %w", err)
 	}
 
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM shooting_star_runs WHERE needs_retry = 1`).Scan(&stats.NeedsRetryCount); err != nil {
+	// Distinct threads whose MOST RECENT run still needs a retry — not a
+	// raw COUNT(*) over every needs_retry=1 row ever written. needs_retry
+	// only ever gets updated on the run row it was set on; a thread that
+	// failed once and later succeeded leaves that old row's flag sitting
+	// at 1 forever, so a plain COUNT(*) silently double-counts history
+	// instead of reporting what's actually stuck right now (confirmed
+	// live: stayed at 10 even after every one of those 10 threads had
+	// already been retried successfully). Mirrors the exact "most recent
+	// run per thread" logic EligibleConstellationThreads' own retry gate
+	// already uses, so this reports the same set the scheduler will
+	// actually reattempt.
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT thread_id FROM shooting_star_runs r
+			WHERE r.id = (SELECT r2.id FROM shooting_star_runs r2 WHERE r2.thread_id = r.thread_id ORDER BY r2.id DESC LIMIT 1)
+			  AND r.needs_retry = 1
+		)
+	`).Scan(&stats.NeedsRetryCount); err != nil {
 		return nil, fmt.Errorf("constellation stats: needs retry count: %w", err)
 	}
 
