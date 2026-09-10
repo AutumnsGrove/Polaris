@@ -463,6 +463,88 @@ func TestGetConstellationStats_Aggregates(t *testing.T) {
 	}
 }
 
+func TestRecordStarReconcileCost_RollsIntoStats(t *testing.T) {
+	s := openTestStore(t)
+	starID, _ := s.CreateStar(Star{Title: "A", Category: "technology", Status: "confirmed"})
+
+	// A Refine/Edit correction has no shooting_star_runs row to hang a
+	// RecordShootingStarEvent call off of — this is its own cost trail,
+	// which GetConstellationStats must still fold into the same
+	// Total/PeriodCostUSD figure Weaver's own runs feed (see
+	// gateway/constellation_routes.go's reconcileAndSaveStar, which
+	// previously discarded this cost entirely).
+	if err := s.RecordStarReconcileCost(starID, 0.0042); err != nil {
+		t.Fatalf("RecordStarReconcileCost: %v", err)
+	}
+
+	stats, err := s.GetConstellationStats(0)
+	if err != nil {
+		t.Fatalf("GetConstellationStats: %v", err)
+	}
+	if diff := stats.TotalCostUSD - 0.0042; diff > 0.00001 || diff < -0.00001 {
+		t.Errorf("TotalCostUSD = %v, want to include the 0.0042 reconcile cost", stats.TotalCostUSD)
+	}
+	if diff := stats.PeriodCostUSD - 0.0042; diff > 0.00001 || diff < -0.00001 {
+		t.Errorf("PeriodCostUSD = %v, want to include the 0.0042 reconcile cost", stats.PeriodCostUSD)
+	}
+}
+
+func TestSetStarStatusAndRecordReview_WritesBothAtomically(t *testing.T) {
+	s := openTestStore(t)
+	starID, _ := s.CreateStar(Star{Title: "A", Category: "technology", Status: "proposed"})
+
+	if err := s.SetStarStatusAndRecordReview(starID, "confirmed", "approved", ""); err != nil {
+		t.Fatalf("SetStarStatusAndRecordReview: %v", err)
+	}
+
+	star, err := s.GetStar(starID)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if star.Status != "confirmed" {
+		t.Errorf("Status = %q, want confirmed", star.Status)
+	}
+	stats, err := s.GetConstellationStats(0)
+	if err != nil {
+		t.Fatalf("GetConstellationStats: %v", err)
+	}
+	if stats.ReviewActionCounts["approved"] != 1 {
+		t.Errorf("ReviewActionCounts = %+v, want approved=1 to have been written alongside the status change", stats.ReviewActionCounts)
+	}
+}
+
+func TestLatestCandidateReasoningBulk_ReturnsMostRecentPerStar(t *testing.T) {
+	s := openTestStore(t)
+	threadID := seedThread(t, s)
+	runID, err := s.StartShootingStarRun(threadID, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	starA, _ := s.CreateStar(Star{Title: "A", Category: "technology", Status: "proposed"})
+	starB, _ := s.CreateStar(Star{Title: "B", Category: "technology", Status: "proposed"})
+
+	if err := s.RecordShootingStarCandidate(runID, "A", "unsure", "new_star", "stale reason", &starA); err != nil {
+		t.Fatalf("RecordShootingStarCandidate: %v", err)
+	}
+	if err := s.RecordShootingStarCandidate(runID, "A", "unsure", "new_star", "fresh reason", &starA); err != nil {
+		t.Fatalf("RecordShootingStarCandidate: %v", err)
+	}
+	if err := s.RecordShootingStarCandidate(runID, "B", "unsure", "new_star", "reason for B", &starB); err != nil {
+		t.Fatalf("RecordShootingStarCandidate: %v", err)
+	}
+
+	got, err := s.LatestCandidateReasoningBulk([]int64{starA, starB})
+	if err != nil {
+		t.Fatalf("LatestCandidateReasoningBulk: %v", err)
+	}
+	if got[starA] != "fresh reason" {
+		t.Errorf("reasoning[A] = %q, want the most recently recorded row", got[starA])
+	}
+	if got[starB] != "reason for B" {
+		t.Errorf("reasoning[B] = %q, want %q", got[starB], "reason for B")
+	}
+}
+
 func TestEligibleConstellationThreads_Gates(t *testing.T) {
 	s := openTestStore(t)
 

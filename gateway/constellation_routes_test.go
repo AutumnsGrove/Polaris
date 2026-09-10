@@ -91,6 +91,35 @@ func TestHandleListConstellationStars_SectionsFilterCorrectly(t *testing.T) {
 	}
 }
 
+func TestHandleListConstellationStars_InboxIncludesReasoning(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	proposed, _ := h.db.CreateStar(store.Star{Title: "Proposed star", Category: "technology", Status: "proposed"})
+	if err := h.db.CreateThread("thread-1", "Test thread", "deepseek", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	runID, err := h.db.StartShootingStarRun("thread-1", 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	if err := h.db.RecordShootingStarCandidate(runID, "Proposed star", "unsure", "new_star", "only mentioned once, low confidence", &proposed); err != nil {
+		t.Fatalf("RecordShootingStarCandidate: %v", err)
+	}
+
+	resp, err := http.Get(h.url("/api/constellation/stars?section=inbox"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	var stars []store.Star
+	if err := json.NewDecoder(resp.Body).Decode(&stars); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(stars) != 1 || stars[0].Reasoning != "only mentioned once, low confidence" {
+		t.Errorf("stars = %+v, want the inbox star's Reasoning bulk-populated from shooting_star_candidates", stars)
+	}
+}
+
 func TestHandleGetConstellationStar_IncludesSourcesAndEdges(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

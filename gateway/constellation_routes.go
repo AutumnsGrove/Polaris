@@ -113,6 +113,24 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 	if stars == nil {
 		stars = []store.Star{}
 	}
+	if section == "inbox" && len(stars) > 0 {
+		// Inbox cards show Weaver's own "why" instead of the drafted
+		// summary (StarCard's reason prop) — the same reasoning text the
+		// Review screen's "Why this needs a look" block already surfaces,
+		// just at the list level too, one bulk query instead of N.
+		ids := make([]int64, len(stars))
+		for i, s := range stars {
+			ids[i] = s.ID
+		}
+		reasoning, err := s.db.LatestCandidateReasoningBulk(ids)
+		if err != nil {
+			log.Warn("bulk-loading inbox reasoning failed", "err", err)
+		} else {
+			for i := range stars {
+				stars[i].Reasoning = reasoning[stars[i].ID]
+			}
+		}
+	}
 	writeJSON(w, stars)
 }
 
@@ -271,20 +289,16 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 
 	switch req.Action {
 	case "approve":
-		if err := s.db.SetStarStatus(id, "confirmed"); err != nil {
+		if err := s.db.SetStarStatusAndRecordReview(id, "confirmed", "approved", ""); err != nil {
+			log.Warn("approving star failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		if err := s.db.RecordStarReview(id, "approved", ""); err != nil {
-			log.Warn("recording star review failed", "err", err, "id", id)
 		}
 	case "discard":
-		if err := s.db.SetStarStatus(id, "rejected"); err != nil {
+		if err := s.db.SetStarStatusAndRecordReview(id, "rejected", "discarded", ""); err != nil {
+			log.Warn("discarding star failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		if err := s.db.RecordStarReview(id, "discarded", ""); err != nil {
-			log.Warn("recording star review failed", "err", err, "id", id)
 		}
 	case "refine":
 		if strings.TrimSpace(req.Correction) == "" {
@@ -306,24 +320,20 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 			// value for this — it's the same real outcome), but with the
 			// actual correction text kept as the reason, unlike a plain
 			// Discard's own empty correction.
-			if err := s.db.SetStarStatus(id, "rejected"); err != nil {
+			if err := s.db.SetStarStatusAndRecordReview(id, "rejected", "discarded", req.Correction); err != nil {
+				log.Warn("recording invalidated refine failed", "err", err, "id", id)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
-			}
-			if err := s.db.RecordStarReview(id, "discarded", req.Correction); err != nil {
-				log.Warn("recording star review failed", "err", err, "id", id)
 			}
 			break
 		}
 		// Sending a refinement both corrects the star and resolves the
 		// review in one step — there's no separate confirm-after-refine
 		// tap (see the plan doc's "Refine").
-		if err := s.db.SetStarStatus(id, "confirmed"); err != nil {
+		if err := s.db.SetStarStatusAndRecordReview(id, "confirmed", "refined", req.Correction); err != nil {
+			log.Warn("recording refine failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-		if err := s.db.RecordStarReview(id, "refined", req.Correction); err != nil {
-			log.Warn("recording star review failed", "err", err, "id", id)
 		}
 	default:
 		http.Error(w, "action must be one of approve, discard, refine", http.StatusBadRequest)
@@ -417,9 +427,16 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 		return false, err
 	}
 	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	summary, body, invalidated, _, err := reconcileStarContent(reqCtx, client, *star, correction)
+	summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, client, *star, correction)
 	if err != nil {
 		return false, err
+	}
+	// Recorded regardless of invalidated — the completion call itself was
+	// made and billed either way, only its content gets discarded on a
+	// flat denial. See RecordStarReconcileCost's doc comment for why this
+	// can't just reuse RecordShootingStarEvent.
+	if err := s.db.RecordStarReconcileCost(id, costUSD); err != nil {
+		log.Warn("recording star reconcile cost failed", "err", err, "id", id)
 	}
 	if invalidated {
 		return true, nil

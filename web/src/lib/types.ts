@@ -603,6 +603,11 @@ export interface Star {
 	disabled: boolean;
 	created_at: string;
 	updated_at: string;
+	// reasoning: only ever populated for the "inbox" section listing (see
+	// gateway/constellation_routes.go's handleListConstellationStars) —
+	// Weaver's own "why" for flagging this star, shown on the Inbox
+	// card instead of its summary.
+	reasoning?: string;
 }
 
 // Mirrors store.StarSource. Deliberately has no title — only thread_id is

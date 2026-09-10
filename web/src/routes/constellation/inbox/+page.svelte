@@ -34,7 +34,7 @@
 	{:else}
 		<div class="card-list">
 			{#each constellationState.inboxStars as star (star.id)}
-				<StarCard {star} onclick={() => goto(`/constellation/inbox/${star.id}`)} />
+				<StarCard {star} reason={star.reasoning} onclick={() => goto(`/constellation/inbox/${star.id}`)} />
 			{/each}
 		</div>
 	{/if}

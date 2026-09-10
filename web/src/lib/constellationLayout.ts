@@ -133,6 +133,13 @@ export function layoutStars(
 	// distance/clustering the simulation produced is preserved, it just
 	// guarantees the result actually fits the visible box, regardless of
 	// how far charge/link forces spread things out.
+	//
+	// A single uniform scale factor (min of the two axis ratios), not
+	// independent x/y scales — using separate scales would stretch/squash
+	// the simulation's actual shape to exactly fill a container of any
+	// aspect ratio, distorting the relative distances that make "close on
+	// the map" mean "actually linked/similar." The unused axis is instead
+	// centered within its own target range.
 	const pad = opts.padding;
 	if (nodes.length > 0) {
 		const xs = nodes.map((n) => n.x);
@@ -145,9 +152,12 @@ export function layoutStars(
 		const spanY = maxY - minY || 1;
 		const targetW = Math.max(opts.width - pad * 2, 1);
 		const targetH = Math.max(opts.height - pad * 2, 1);
+		const scale = nodes.length === 1 ? 1 : Math.min(targetW / spanX, targetH / spanY);
+		const offsetX = (targetW - spanX * scale) / 2;
+		const offsetY = (targetH - spanY * scale) / 2;
 		for (const n of nodes) {
-			n.x = nodes.length === 1 ? opts.width / 2 : pad + ((n.x - minX) / spanX) * targetW;
-			n.y = nodes.length === 1 ? opts.height / 2 : pad + ((n.y - minY) / spanY) * targetH;
+			n.x = nodes.length === 1 ? opts.width / 2 : pad + offsetX + (n.x - minX) * scale;
+			n.y = nodes.length === 1 ? opts.height / 2 : pad + offsetY + (n.y - minY) * scale;
 		}
 	}
 

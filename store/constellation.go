@@ -90,6 +90,11 @@ type Star struct {
 	Disabled   bool      `json:"disabled"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	// Reasoning: only ever populated by handleListConstellationStars for
+	// the "inbox" section (see LatestCandidateReasoningBulk) -- every
+	// other reader of Star leaves this "", hence omitempty, so ListStars'
+	// own SQL/scan stays untouched for the other three sections.
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // CreateStar writes a new stars row. A personal star always starts
@@ -576,6 +581,83 @@ func (s *Store) LatestCandidateReasoning(starID int64) (string, error) {
 	return reasoning, nil
 }
 
+// LatestCandidateReasoningBulk is LatestCandidateReasoning for a whole set
+// of stars in one query — the Inbox list (handleListConstellationStars'
+// "inbox" section) needs every proposed star's own "why" for its card,
+// same reasoning text the Review screen's "Why this needs a look" block
+// already surfaces, and doing that as one N-star query instead of N
+// separate round trips. Stars with no candidate row (shouldn't normally
+// happen) are simply absent from the returned map.
+func (s *Store) LatestCandidateReasoningBulk(starIDs []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(starIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(starIDs))
+	for i, id := range starIDs {
+		args[i] = id
+	}
+	rows, err := s.db.Query(
+		`SELECT resulting_star_id, reasoning FROM shooting_star_candidates
+		 WHERE resulting_star_id IN (`+placeholders(len(starIDs))+`)
+		 ORDER BY id ASC`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("latest candidate reasoning bulk: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var reasoning string
+		if err := rows.Scan(&id, &reasoning); err != nil {
+			return nil, fmt.Errorf("latest candidate reasoning bulk: %w", err)
+		}
+		// ORDER BY id ASC (not created_at, which only has second
+		// resolution — two candidates for the same star recorded within
+		// the same second would otherwise tie) + overwrite-on-scan means
+		// the last write wins per id, i.e. the most recently inserted row.
+		out[id] = reasoning
+	}
+	return out, rows.Err()
+}
+
+// RecordStarReconcileCost logs the real, billed cost of one Refine/Edit
+// LLM call (see gateway/constellation_routes.go's reconcileAndSaveStar) —
+// these calls aren't part of any shooting_star_runs row, so they can't use
+// RecordShootingStarEvent (whose run_id column is NOT NULL). Recorded
+// regardless of whether the correction turned out to be a flat denial
+// (invalidated=true) — the model call itself was made and billed either
+// way, so the cost is real even when its content is discarded.
+func (s *Store) RecordStarReconcileCost(starID int64, costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO star_reconcile_events (star_id, cost_usd) VALUES (?, ?)`, starID, costUSD)
+	if err != nil {
+		return fmt.Errorf("record star reconcile cost: %w", err)
+	}
+	return nil
+}
+
+// SetStarStatusAndRecordReview atomically updates a star's status and logs
+// the review action that caused it — approve/discard/refine each write
+// both rows together, so a crash between the two writes (server restart,
+// process kill) can never leave a star's status changed with no matching
+// star_reviews row, or vice versa. Previously these were two independent
+// Execs in the HTTP handler.
+func (s *Store) SetStarStatusAndRecordReview(starID int64, status, action, correction string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("set star status and record review: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE stars SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, status, starID); err != nil {
+		return fmt.Errorf("set star status and record review: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO star_reviews (star_id, action, correction) VALUES (?, ?, ?)`, starID, action, correction); err != nil {
+		return fmt.Errorf("set star status and record review: %w", err)
+	}
+	return tx.Commit()
+}
+
 // RecordShootingStarEvent logs one completion call in Weaver's loop —
 // every turn produces a row, whether it called a tool or ended the run in
 // plain text ('final_answer'), plus the double-RAG filter pass on a
@@ -648,9 +730,19 @@ func (s *Store) GetConstellationStats(periodDays int) (*ConstellationStats, erro
 		ReviewActionCounts: map[string]int{},
 	}
 
+	// Total/period cost is the sum of shooting_star_events (Weaver's own
+	// runs) AND star_reconcile_events (Refine/Edit's one-off calls) — two
+	// tables because the latter has no shooting_star_runs row to hang off
+	// of (see RecordStarReconcileCost's doc comment), but both are real
+	// billed spend and belong in the same total.
 	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events`).Scan(&stats.TotalCostUSD); err != nil {
 		return nil, fmt.Errorf("constellation stats: total cost: %w", err)
 	}
+	var reconcileTotal float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events`).Scan(&reconcileTotal); err != nil {
+		return nil, fmt.Errorf("constellation stats: total reconcile cost: %w", err)
+	}
+	stats.TotalCostUSD += reconcileTotal
 
 	periodFilter := "1=1"
 	if periodDays > 0 {
@@ -660,6 +752,11 @@ func (s *Store) GetConstellationStats(periodDays int) (*ConstellationStats, erro
 	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events WHERE ` + periodFilter).Scan(&stats.PeriodCostUSD); err != nil {
 		return nil, fmt.Errorf("constellation stats: period cost: %w", err)
 	}
+	var reconcilePeriod float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events WHERE ` + periodFilter).Scan(&reconcilePeriod); err != nil {
+		return nil, fmt.Errorf("constellation stats: period reconcile cost: %w", err)
+	}
+	stats.PeriodCostUSD += reconcilePeriod
 
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM shooting_star_runs`).Scan(&stats.ShootingStarCount); err != nil {
 		return nil, fmt.Errorf("constellation stats: shooting star count: %w", err)

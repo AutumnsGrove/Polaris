@@ -704,6 +704,20 @@ CREATE TABLE IF NOT EXISTS star_reviews (
 	correction TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- star_reconcile_events tracks the cost of Refine/Edit-star LLM calls --
+-- reconcileStarContent (gateway/constellation_routes.go) is a one-off
+-- completion outside any shooting_star_runs row (no thread pass, no
+-- agent.Run), so it can't log into shooting_star_events the way Weaver's
+-- own turns do (run_id there is NOT NULL). Previously this cost was
+-- silently dropped entirely -- live-observed as the Usage modal's totals
+-- undercounting real spend by every Refine/Edit call made.
+CREATE TABLE IF NOT EXISTS star_reconcile_events (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	star_id    INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	cost_usd   REAL NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // migrations adds columns to a threads table created before they existed.
