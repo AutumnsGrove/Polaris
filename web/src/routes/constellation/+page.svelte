@@ -6,7 +6,7 @@
 	import { layoutStars } from '$lib/constellationLayout';
 	import StarCard from '$lib/components/StarCard.svelte';
 	import ConstellationSettingsModal from '$lib/components/ConstellationSettingsModal.svelte';
-	import { PanelLeft, Search, Settings, Sparkles, Inbox as InboxIcon, Rows3, Star as StarIcon } from '@lucide/svelte';
+	import { PanelLeft, Search, Settings, Sparkles, Inbox as InboxIcon, Rows3, Map as MapIcon } from '@lucide/svelte';
 	import type { Star } from '$lib/types';
 
 	let view = $state<'library' | 'map'>('library');
@@ -231,7 +231,7 @@
 		<span>Library</span>
 	</button>
 	<button class="tab" class:active={view === 'map'} onclick={() => (view = 'map')}>
-		<StarIcon size={18} />
+		<MapIcon size={18} />
 		<span>Map</span>
 	</button>
 </div>
