@@ -232,6 +232,73 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-map .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
 #screen-map .tab.active { color: var(--color-accent); }
 #screen-map .tab span { font-size: 11px; font-weight: 500; }
+
+/* ---------------- Screen 5 — Inbox (list of proposed stars) ---------------- */
+#screen-inbox { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-inbox .topbar { display: flex; align-items: center; gap: 12px; padding: 20px 20px 6px; flex-shrink: 0; }
+#screen-inbox .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-inbox .title { font-family: 'Asimovian', sans-serif; font-size: 19px; color: var(--color-accent-2); letter-spacing: 0.01em; }
+#screen-inbox .count { font-size: 12px; color: var(--color-text-dim); margin-left: auto; }
+#screen-inbox .lede { padding: 10px 20px 16px; font-size: 12.5px; line-height: 1.5; color: var(--color-text-dim); }
+#screen-inbox .scroll { flex: 1; overflow-y: auto; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+#screen-inbox .proposed-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid color-mix(in srgb, var(--color-accent-2) 28%, var(--color-border)); }
+#screen-inbox .tile { width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent-2) 15%, transparent); color: var(--color-accent-2); }
+#screen-inbox .card-main { flex: 1; min-width: 0; }
+#screen-inbox .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#screen-inbox .card-title { font-size: 14px; font-weight: 600; }
+#screen-inbox .badge-proposed { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); color: var(--color-accent-2); flex-shrink: 0; }
+#screen-inbox .card-reason { font-size: 12px; color: var(--color-text-dim); line-height: 1.45; margin: 4px 0 8px; font-style: italic; }
+#screen-inbox .card-bottom { display: flex; align-items: center; gap: 6px; }
+#screen-inbox .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-inbox .card-chev { margin-left: auto; color: var(--color-text-dim); }
+
+/* ---------------- Screen 6 — Review star (approve / refine / discard) ---------------- */
+#screen-review { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
+#screen-review .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
+#screen-review .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-review .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+#screen-review .review-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 168px; }
+#screen-review .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+#screen-review .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent-2) 15%, transparent); color: var(--color-accent-2); flex-shrink: 0; }
+#screen-review .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); color: var(--color-accent-2); }
+#screen-review .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
+#screen-review h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
+#screen-review .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#screen-review .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-review .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
+/* why-block surfaces shooting_star_candidates.reasoning directly — the same
+   sentence Weaver logged internally for the trace tables, shown here so the
+   review decision isn't a guess at what tripped the confidence gate. */
+#screen-review .why-block { border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-accent-2) 9%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-accent-2) 26%, var(--color-border)); padding: 14px 16px; margin: 4px 0 22px; }
+#screen-review .why-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2); margin-bottom: 6px; }
+#screen-review .why-text { font-size: 13px; line-height: 1.55; color: var(--color-text-dim); font-style: italic; }
+#screen-review .review-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+#screen-review .review-body p { font-size: 14px; line-height: 1.6; margin: 0; }
+#screen-review .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 68%, transparent); display: flex; flex-direction: column; gap: 10px; }
+#screen-review .approve-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
+#screen-review .secondary-row { display: flex; gap: 10px; }
+#screen-review .refine-btn, #screen-review .discard-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border-strong); color: var(--color-text); font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; }
+#screen-review .discard-btn { color: var(--color-text-dim); }
+
+/* ---------------- Screen 7 — Refine sheet (over a dimmed Screen 6) ---------------- */
+/* Same sheet mechanics as Screen 4's Edit-star sheet, over Review star's
+   backdrop instead of Chapter detail's — the two-sided ask ("what's right,
+   what's wrong") is what earns this its own frame rather than reusing
+   Screen 4's copy verbatim. */
+#screen-refine { width: 390px; height: 844px; background: var(--color-bg); position: relative; overflow: hidden; }
+#screen-refine .scrim { position: absolute; inset: 0; background: rgba(8, 5, 2, 0.6); z-index: 10; }
+#screen-refine .sheet { position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; border-radius: 24px 24px 0 0; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-bottom: none; box-shadow: 0 -12px 40px -12px rgba(10, 6, 3, 0.55); padding: 10px 20px 22px; }
+#screen-refine .drag-handle { width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); margin: 0 auto 16px; }
+#screen-refine .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
+#screen-refine .sheet-title { font-family: ui-serif, Georgia, serif; font-size: 19px; font-weight: 500; }
+#screen-refine .sheet-sub { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; }
+#screen-refine .sheet-close { flex-shrink: 0; width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--color-surface-3); display: flex; align-items: center; justify-content: center; color: var(--color-text-dim); }
+#screen-refine .sheet-hint { font-size: 12.5px; line-height: 1.55; color: var(--color-text-dim); margin: 16px 0 18px; }
+#screen-refine .composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 10px 10px 16px; border-radius: 22px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
+#screen-refine .composer-text { flex: 1; font-size: 14px; line-height: 1.5; color: var(--color-text); }
+#screen-refine .composer-text .placeholder-hint { color: var(--color-text-dim); }
+#screen-refine .composer-send { flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-full); background: var(--color-accent-2); color: var(--color-bg); display: flex; align-items: center; justify-content: center; border: none; }
+#screen-refine .sheet-footnote { font-size: 11px; color: var(--color-text-dim); text-align: center; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -505,6 +572,134 @@ a { color: var(--color-accent-2); text-decoration: none; }
 						</button>
 					</div>
 					<div class="sheet-footnote">Reads like a note to Constellation, not a form.</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">5 — Inbox<span class="sub">proposed stars awaiting review, reached from the Library banner</span></div>
+		<div class="phone">
+			<div id="screen-inbox">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="title">Inbox</div>
+					<div class="count">2 proposed</div>
+				</div>
+				<div class="lede">Weaver wasn't confident enough to save these on its own &mdash; a quick look settles them.</div>
+				<div class="scroll">
+					<div class="proposed-card">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div class="card-main">
+							<div class="card-top"><span class="card-title">Into cozy mysteries lately</span><span class="badge-proposed">Proposed</span></div>
+							<div class="card-reason">Came up as a comfort read across two unrelated threads &mdash; not sure yet if it's a real preference or just what was asked about that week.</div>
+							<div class="card-bottom">
+								<span class="tag">books</span><span class="tag">inferred</span>
+								<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+							</div>
+						</div>
+					</div>
+					<div class="proposed-card">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
+						<div class="card-main">
+							<div class="card-top"><span class="card-title">Might be weighing a move</span><span class="badge-proposed">Proposed</span></div>
+							<div class="card-reason">Mentioned twice, both times in passing &mdash; flagged as personal/low-confidence rather than written up on its own.</div>
+							<div class="card-bottom">
+								<span class="tag">personal</span><span class="tag">low-confidence</span>
+								<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">6 — Review star<span class="sub">approve / refine / discard, plus Weaver's own "why"</span></div>
+		<div class="phone">
+			<div id="screen-review">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="crumb">Inbox</div>
+					<div style="width: 36px;"></div>
+				</div>
+
+				<div class="review-scroll">
+					<div class="tile-row">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div>
+							<span class="badge">Proposed</span>
+							<div class="confidence">Low confidence &mdash; inferred, not stated directly</div>
+						</div>
+					</div>
+
+					<h1>Into cozy mysteries lately</h1>
+					<div class="tags-row"><span class="tag">books</span><span class="tag">inferred</span></div>
+					<div class="meta-row">First noted today &middot; from 2 threads</div>
+
+					<div class="why-block">
+						<div class="why-label">Why this needs a look</div>
+						<div class="why-text">&ldquo;Mentioned enjoying the pacing and small-town setting across two different book conversations &mdash; grouping them as a preference rather than two one-off mentions, but neither thread actually confirmed this is an ongoing interest.&rdquo;</div>
+					</div>
+
+					<div class="review-body">
+						<h2>What Weaver drafted</h2>
+						<p>Comes up as a comfort read across a couple of unrelated conversations &mdash; small towns, amateur sleuths, low-stakes plots. Not yet confirmed as a genuine ongoing interest versus a one-off ask.</p>
+					</div>
+				</div>
+
+				<div class="bottom-bar">
+					<button class="approve-btn">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+						Approve
+					</button>
+					<div class="secondary-row">
+						<button class="refine-btn">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+							Refine
+						</button>
+						<button class="discard-btn">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							Discard
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">7 — Refine<span class="sub">the middle option &mdash; "what you got right, what was wrong," same sheet pattern as Edit star</span></div>
+		<div class="phone">
+			<div id="screen-refine">
+				<div class="scrim"></div>
+				<div class="sheet">
+					<div class="drag-handle"></div>
+					<div class="sheet-head">
+						<div>
+							<div class="sheet-title">Refine star</div>
+							<div class="sheet-sub">Into cozy mysteries lately</div>
+						</div>
+						<div class="sheet-close">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+						</div>
+					</div>
+					<div class="sheet-hint">
+						Tell it what it got right and what's off &mdash; Weaver reworks the star from
+						there instead of starting over.
+					</div>
+					<div class="composer">
+						<div class="composer-text"><span class="placeholder-hint">e.g. &ldquo;yeah, been on a real kick lately&rdquo; or &ldquo;not really, I was just asking one for a friend&rdquo;</span></div>
+						<button class="composer-send" aria-label="Send">
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+						</button>
+					</div>
+					<div class="sheet-footnote">Sending this also settles the review &mdash; no separate approve step after.</div>
 				</div>
 			</div>
 		</div>

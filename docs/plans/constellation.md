@@ -8,12 +8,13 @@ actually use you for?" Five brainstorm passes (below, in order) resolved most of
 questions this doc originally posed, a sixth pass settled on a specific UI direction ("Option D" —
 see below, mockup at `mockups/vault.html`, not yet renamed to match), a seventh pass settled the
 feature's real name and vocabulary via issue #45 and opened the "Edit star" question, an eighth
-pass closed that question (free-text, LLM-reconciled, no field editor), and a ninth pass sketched
-the actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus
-full observability. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
-"designed and ready to build" — the next real step is turning the ninth pass's schema sketch into
-real migrations and a first Weaver implementation, not writing that code straight from this doc
-without a design pass on the extraction/merge pipeline itself.
+pass closed that question (free-text, LLM-reconciled, no field editor), a ninth pass sketched the
+actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus full
+observability, and a tenth pass designed the Inbox review flow (approve/refine/discard on a
+proposed star) plus the `star_reviews` table that backs it. "Resolved in a brainstorm" and "a
+schema sketch" still aren't the same as "designed and ready to build" — the next real step is
+turning the schema sketch into real migrations and a first Weaver implementation, not writing that
+code straight from this doc without a design pass on the extraction/merge pipeline itself.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -377,3 +378,57 @@ information you'd rather have.
 **Deliberately not in this pass:** the reflection-layer cross-links table (`star_edges` or
 similar) — still allowed to land after the reflection layer itself is actually being built (see
 the fourth pass above), not guessed at today.
+
+## Reviewing a proposed star (tenth pass)
+
+The Inbox banner in the Library screen (sixth pass) had a destination but no real design — "N
+chapters proposed, awaiting your review" led nowhere in particular. This pass gives it one, and
+it deliberately reuses the free-text/LLM-reconciled shape from the eighth pass's "Edit star"
+rather than inventing a second interaction language: **reviewing a proposed star should feel like
+the same conversation as correcting a confirmed one, not a different, more bureaucratic flow.**
+
+**Three actions on a proposed star, not two.** A flat approve/discard binary throws away exactly
+the input that makes a low-confidence star interesting to review in the first place — Weaver
+usually gets *part* of it right. The middle option is a **Refine** sheet, visually the same
+composer pattern as Edit star, but asking a two-sided question ("what did it get right, what was
+wrong") instead of Edit star's one-sided "what's wrong or what to add." Sending a refinement both
+corrects the star *and* resolves the review in one step — there's no separate confirm-after-refine
+tap, since providing the correction already is the human decision point. See `mockups/vault.html`
+frames 5-7 (Inbox list, Review star, Refine sheet) for the sketch, including a new **"Why this
+needs a look"** block on the Review screen that surfaces `shooting_star_candidates.reasoning`
+directly — the same sentence Weaver already logs for the trace tables, now put in front of the
+person who actually has to make the call, not just kept for debugging.
+
+**Schema additions this implies:**
+
+- **`stars.status` grows two more values**: `'auto' | 'proposed' | 'confirmed' | 'rejected'`.
+  `confirmed` is a formerly-`proposed` star a human approved (as-is, or via Refine) — kept
+  distinct from `auto` so "how often does Weaver's own confidence judgment turn out right" stays
+  answerable later. `rejected` is a soft state, not a delete — same reasoning as `threads.disabled`
+  /`memories.disabled` elsewhere in this schema: a discarded star stays in the trace history
+  (useful for "did Weaver keep re-proposing this" debugging) but drops out of Library/Inbox reads.
+- **New table `star_reviews`** — the human side of the observability story, sibling to
+  `shooting_star_runs`/`shooting_star_candidates` on the machine side. You said full observability
+  from day one; a review decision (and, for Refine, exactly what was typed) is as much a part of
+  that record as what Weaver proposed:
+  ```
+  CREATE TABLE star_reviews (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      star_id     INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+      action      TEXT NOT NULL,             -- 'approved' | 'refined' | 'discarded'
+      correction  TEXT NOT NULL DEFAULT '',  -- the free-text typed, for 'refined'; '' otherwise
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  ```
+  Not merged into `shooting_star_candidates`: a star can accumulate several candidate rows over
+  time (repeated dedup merges before it's ever reviewed), so a resolution belongs to the *star* at
+  review time, not to any one candidate event.
+
+**Worth flagging, not yet fully settled:** whether an Edit-star correction (eighth pass, on an
+already-*confirmed* star) should also start writing to `star_reviews` now that "full observability"
+is an explicit value, or whether that table stays scoped to the Inbox-review moment specifically
+(the eighth pass's "no versioning/logging beyond the normal write" call was made before this pass
+existed). Leaning toward keeping Edit-star as-is — the observability gap this pass closes is
+specifically "was Weaver's confidence judgment right," which doesn't apply to a star that already
+passed review — but flagging it since it's a real tension with the newer stated value, not a
+settled call.
