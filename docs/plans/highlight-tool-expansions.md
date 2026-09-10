@@ -5,7 +5,9 @@ which built `highlight` deliberately domain-agnostic and left a list of candidat
 undesigned. This plan picks up four of them (media spotlighting, GitHub repos, image curation) plus
 one unrelated model-roster addition bundled in at the same time. Places (Foursquare) get the same
 treatment as media; a Researcher-mode source grid is still deferred, same as shopping-mode.md left
-it.
+it. A fifth initiative, added after live-spiking a couple of real pages, gives `web_read` best-effort
+schema.org/JSON-LD extraction — recipes and job postings are its first two callers, sharing the same
+small infrastructure.
 
 Ideation notes below record the forks actually considered and which way each one went, since two of
 the four initiatives ended up *not* touching `highlight.go` at all — worth keeping visible so the
@@ -155,6 +157,62 @@ directly). Whoever implements this should run that survey for real before commit
 exactly per this repo's "verify on real hardware, not just review" culture — a wrong guess here means a
 silent 404/misroute the same way `mimo-pro`'s multimodal flag once did.
 
+## 5. `web_read` gains best-effort schema.org/JSON-LD extraction — shared infra, two callers
+
+Came out of a live spike (not just review, per this repo's culture): fetched real pages via curl with
+`web_read`'s own User-Agent to see what's actually there before designing anything.
+
+**Recipes** (justapinch.com, a real chocolate-chip-cookie recipe page): clean `schema.org/Recipe`
+JSON-LD — `prepTime: "PT5M"`, `cookTime: "PT10M"`, `recipeYield: "10-12"`,
+`aggregateRating: {ratingValue: "5", reviewCount: 2}`. This is near-universal on real recipe sites —
+Google requires this exact schema for recipe rich snippets — so it's reliable, not a lucky find.
+(Food Network's own site 403'd the plain curl request outright — same Akamai-style bot wall
+shopping-mode.md already hit on Amazon. Not every source is reachable; `web_search` surfacing several
+candidates already covers that, same as everywhere else.)
+
+**Job postings**: genuinely inconsistent, worth recording plainly rather than assuming symmetry with
+recipes. `jobs.lever.co` postings carry real `schema.org/JobPosting` JSON-LD (`title`,
+`hiringOrganization`, `jobLocation`, `employmentType`, `datePosted`). `job-boards.greenhouse.io` —
+one of the most widely used ATS platforms — carries **none**: it's a client-rendered SPA
+(`<script type="module">`, zero occurrences of `schema.org` anywhere in the raw HTML), even though the
+salary/location text ("$85,000 - $100,000 + equity + benefits", "Hybrid") is sitting right there as
+plain server-rendered text. `og:image`/`og:title` (company logo, job title) are present on both.
+
+**Design, informed by that asymmetry**: `web_read.go`'s `fetchAndExtract` currently parses the
+document, strips `<script>` tags, then extracts text — which would silently destroy any JSON-LD if it
+ever tried to read it, since that's exactly where it lives. Add a small **best-effort, type-registry**
+extractor, read *before* the script-stripping step:
+
+- Look for `<script type="application/ld+json">` blocks (there can be more than one; schema.org also
+  allows a block to be a JSON array rather than a single object).
+- A small `map[string]func(raw json.RawMessage) string` keyed by `@type` — starting with `"Recipe"`
+  and `"JobPosting"` — each producing one short labeled line, e.g. `Prep: 5 min · Cook: 10 min ·
+  Yield: 10-12 · ★5.0 (2 reviews)` or `Full-time · New York, NY · Posted 2026-08-xx`. Deliberately
+  generic infrastructure, not a `parseRecipe`/`parseJob` pair hardcoded into `fetchAndExtract` itself —
+  the same registry covers `Event`/`Product` later (the travel/listings candidates from the original
+  issue) for free, without touching `fetchAndExtract` again.
+- **Best-effort by construction, matching every other fallback in this codebase**: no matching
+  `@type`, malformed JSON, or a page with no JSON-LD at all (Greenhouse's case) just means this line is
+  absent — `fetchAndExtract` returns exactly what it does today (plain body text, which for the
+  Greenhouse case still contains the salary/location as prose, just unstructured). Never a hard
+  failure; nothing about `web_read`'s existing contract changes for a page with no JSON-LD.
+- Appended to the returned `text`, same channel `og:image`/`og:site_name` already use — no new return
+  value, no signature change to `fetchAndExtract`.
+
+`highlight` itself needs no changes for either caller, same as §1: the model reads the structured line
+in `web_read`'s result this turn, and can put it straight into `price` (`"⏱ 15 min · ★5.0"` for a
+recipe, `"$85k-$100k · Hybrid"` for a job) — satisfies the "must come from something you read this
+turn" invariant cleanly, because now it genuinely did.
+
+**No dedicated focus mode for either** — same reasoning as the recipe discussion: both are self-evident
+from the user's own message ("find me a recipe for X" / "find me jobs for Y"), and the behavior needed
+is tool-usage guidance (search, read a few candidates, notice the structured line if present, call
+`highlight`) that belongs in `web_read.yaml`/`highlight.yaml`'s prompt text — the same "narrow it down"
+sentence already planned for books/movies/music/places in §1 — not a new entry in the focus-mode
+picker. Shopper mode earns its slot by needing a *sustained* behavior change across a whole
+conversation; a recipe or job search is one-shot. Generalizing this into a mode-per-content-type would
+undermine the exact discipline `highlight` was built to enforce at the tool layer.
+
 ## Out of scope / deferred (not designed here)
 
 - **GitHub repo language-composition bar.** Needs `/repos/{owner}/{repo}/languages`, a new `Card`
@@ -169,9 +227,13 @@ silent 404/misroute the same way `mimo-pro`'s multimodal flag once did.
   content-block array across `doRequest`/streaming/provider routing — a genuinely separate, much
   larger change than anything else in this doc. `view_image`'s describe-and-return-text approach
   covers the actual curation use case without it.
-- **Travel (flights/hotels) and general listings** (jobs, real estate, tickets) — still real
+- **Travel (flights/hotels) and other listings** (real estate, event tickets) — still real
   `highlight` candidates per the original issue, same "compare a handful of real options" shape as
-  shopping/places, just not designed in this pass.
+  shopping/places/jobs, just not designed in this pass. Job postings moved out of this bucket into
+  §5 once the JSON-LD spike showed a concrete, mostly-reliable path.
+- **`Event`/`Product` schema.org types** in the same JSON-LD registry §5 builds — natural next entries
+  once `Recipe`/`JobPosting` are shipped and the registry pattern is proven; would cover travel/ticket
+  listings above for free. Not built now — no live spike done for either type yet.
 
 ## Next steps
 
@@ -194,13 +256,22 @@ silent 404/misroute the same way `mimo-pro`'s multimodal flag once did.
    error otherwise. `tools/descriptions/image_search.yaml` gets the review-mode explanation.
 8. `models/models.go` — new `deepseek-v41-flash` entry, additive alongside the existing `deepseek`.
    **Blocked on a real live `/endpoints` provider/pricing survey** — do not guess the `Provider` list.
-9. Live-verify before calling any of this done, per `CLAUDE.md`'s culture: a real turn asking for a
-   book/movie/repo/place recommendation and then "highlight your favorite," a real multi-repo
-   comparison turn (does the carousel actually group them), a real image-curation turn on
-   `deepseek-v41-flash` once its provider list is confirmed (does `view_image` actually get called,
-   does `highlight` render captions correctly), and confirming `mode: "review"` is correctly refused
-   on a non-multimodal thread.
-10. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
+9. `tools/web_read.go` — read `<script type="application/ld+json">` blocks before the existing
+   `doc.Find("script, ...").Remove()` step; a small `@type`-keyed registry (`"Recipe"`,
+   `"JobPosting"` to start) each rendering one labeled summary line, appended to the returned `text`
+   alongside `og:image`/`og:site_name`. No match / parse failure / no JSON-LD at all → today's
+   behavior, unchanged, exactly as already true for a page with no `og:image`.
+10. `tools/descriptions/web_read.yaml` + `tools/descriptions/highlight.yaml` — one sentence each: when
+    a structured summary line is present and the user's asking to compare/narrow down a few real
+    options (recipes, jobs, or anything else the registry later covers), call `highlight` with it.
+11. Live-verify before calling any of this done, per `CLAUDE.md`'s culture: a real turn asking for a
+    book/movie/repo/place recommendation and then "highlight your favorite," a real multi-repo
+    comparison turn (does the carousel actually group them), a real image-curation turn on
+    `deepseek-v41-flash` once its provider list is confirmed (does `view_image` actually get called,
+    does `highlight` render captions correctly), confirming `mode: "review"` is correctly refused on a
+    non-multimodal thread, and a real recipe + a real Lever job posting turn (does the JSON-LD line
+    show up in `web_read`'s result, does a Greenhouse posting degrade cleanly to plain text).
+12. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
     resource directory, no new CLI command, no new settings-panel server-mutating action. The new
     model entry is compiled into the binary/image like any other Go code change, not a runtime
     resource needing a bind mount.
