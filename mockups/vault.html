@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vault — Option D — mockup</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/asimovian@5/latin-400.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Page chrome around the three phone frames below — this wrapper, the
+   heading, and the frame labels are review-doc scaffolding, not part of
+   Vault's own UI (same "mockup page vs. the app itself" split as
+   pulsar-daily.html's masthead/board). */
+.page-head {
+	max-width: 1360px;
+	margin: 0 auto;
+	padding: var(--space-2xl) var(--space-xl) 0;
+}
+.page-head .kicker {
+	font-family: 'Asimovian', sans-serif;
+	color: var(--color-accent);
+	font-size: 1.4rem;
+	letter-spacing: 0.02em;
+	margin: 0 0 var(--space-sm);
+}
+.page-head p {
+	color: var(--color-text-dim);
+	max-width: 680px;
+	line-height: 1.6;
+	font-size: 0.9rem;
+	margin: 0 0 var(--space-md);
+}
+
+.frames {
+	max-width: 1360px;
+	margin: 0 auto;
+	padding: var(--space-xl);
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2xl);
+	justify-content: center;
+}
+.frame-group { display: flex; flex-direction: column; align-items: center; gap: var(--space-md); }
+.frame-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); }
+.frame-label .sub { display: block; text-transform: none; letter-spacing: normal; font-weight: 400; margin-top: 2px; font-size: 0.7rem; }
+.phone {
+	width: 390px;
+	height: 844px;
+	border-radius: 34px;
+	overflow: hidden;
+	border: 7px solid oklch(9% 0.012 65);
+	box-shadow: var(--shadow-lg);
+	position: relative;
+}
+
+/* ===== shared leaf styles reused inside every phone (icon buttons, tags,
+   the confidence badge, etc.) — kept per-screen below rather than
+   hoisted, since a couple of them (icon-btn especially) render
+   differently over the starfield map than over a flat surface. ===== */
+
+a { color: var(--color-accent-2); text-decoration: none; }
+
+/* ---------------- Screen 1 — Library ---------------- */
+#screen-library { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-library .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 8px; flex-shrink: 0; }
+#screen-library .brand { font-family: 'Asimovian', sans-serif; font-size: 22px; color: var(--color-accent); letter-spacing: 0.02em; }
+#screen-library .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); }
+#screen-library .scroll { flex: 1; overflow-y: auto; padding: 0 16px 88px; }
+#screen-library .meta-line { padding: 8px 4px 14px; font-size: 12px; color: var(--color-text-dim); }
+#screen-library .banner-stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+#screen-library .banner { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid; }
+#screen-library .banner .icon { flex-shrink: 0; }
+#screen-library .banner .label { font-size: 13px; font-weight: 500; flex: 1; }
+#screen-library .banner .label small { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-dim); margin-top: 1px; }
+#screen-library .banner .chev { color: var(--color-text-dim); flex-shrink: 0; }
+#screen-library .banner.digest { background: linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)), var(--color-surface)); border-color: var(--color-border); }
+#screen-library .banner.digest .icon { color: var(--color-accent); }
+#screen-library .banner.inbox { background: color-mix(in srgb, var(--color-accent-2) 12%, transparent); border-color: color-mix(in srgb, var(--color-accent-2) 30%, transparent); }
+#screen-library .banner.inbox .icon { color: var(--color-accent-2); }
+#screen-library .section { margin-bottom: 22px; }
+#screen-library .section-header { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); padding: 0 4px 10px; }
+#screen-library .card-list { display: flex; flex-direction: column; gap: 8px; }
+#screen-library .chapter-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+#screen-library .tile { width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); }
+#screen-library .card-main { flex: 1; min-width: 0; }
+#screen-library .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#screen-library .card-title { font-size: 14px; font-weight: 600; }
+#screen-library .card-time { font-size: 11px; color: var(--color-text-dim); flex-shrink: 0; }
+#screen-library .card-sub { font-size: 12px; color: var(--color-text-dim); line-height: 1.4; margin: 3px 0 8px; }
+#screen-library .card-bottom { display: flex; align-items: center; gap: 6px; }
+#screen-library .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-library .card-chev { margin-left: auto; color: var(--color-text-dim); }
+#screen-library .tabbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); }
+#screen-library .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
+#screen-library .tab.active { color: var(--color-accent); }
+#screen-library .tab span { font-size: 11px; font-weight: 500; }
+
+/* ---------------- Screen 2 — Chapter detail ---------------- */
+#screen-chapter { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
+#screen-chapter .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
+#screen-chapter .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-chapter .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+#screen-chapter .chapter-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 100px; }
+#screen-chapter .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+#screen-chapter .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); flex-shrink: 0; }
+#screen-chapter .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); }
+#screen-chapter .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
+#screen-chapter h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
+#screen-chapter .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#screen-chapter .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-chapter .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
+#screen-chapter .chapter-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 20px 0 8px; }
+#screen-chapter .chapter-body h2:first-child { margin-top: 0; }
+#screen-chapter .chapter-body p { font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+#screen-chapter .block-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); margin: 24px 0 10px; }
+#screen-chapter .chip-row { display: flex; flex-direction: column; gap: 8px; }
+#screen-chapter .source-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); font-size: 13px; }
+#screen-chapter .source-chip .icon-tile { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--color-surface-3); color: var(--color-text-dim); }
+/* "Nearby in the constellation" — Option B's spatial reflection-layer
+   visualization survives here as one bounded sub-section on an
+   otherwise flat reading page, not its own screen (see Screen 3 for
+   where the full map lives). */
+#screen-chapter .constellation-block { border-radius: var(--radius-lg); background: oklch(13% 0.012 65); border: 1px solid var(--color-border); padding: 16px 14px 14px; position: relative; overflow: hidden; }
+#screen-chapter .constellation-block::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(1px 1px at 15% 30%, rgba(255,255,255,0.3) 50%, transparent 51%), radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.22) 50%, transparent 51%), radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.26) 50%, transparent 51%); background-size: 90px 90px, 110px 110px, 80px 80px; pointer-events: none; }
+#screen-chapter .constellation-label { font-size: 11px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 14px; position: relative; }
+#screen-chapter .mini-lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.4; }
+#screen-chapter .mini-nodes { display: flex; justify-content: space-between; position: relative; z-index: 1; }
+#screen-chapter .mini-node { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 33%; }
+#screen-chapter .mini-node .dot { width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
+#screen-chapter .mini-node.self .dot { background: var(--color-accent); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+#screen-chapter .mini-node .mini-label { font-size: 11px; text-align: center; }
+#screen-chapter .mini-node.self .mini-label { font-weight: 600; }
+#screen-chapter .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 60%, transparent); }
+#screen-chapter .continue-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
+
+/* ---------------- Screen 3 — Map (optional second page) ---------------- */
+#screen-map {
+	width: 390px; height: 844px; position: relative; display: flex; flex-direction: column;
+	background-color: oklch(13% 0.012 65);
+	background-image:
+		radial-gradient(1.5px 1.5px at 10% 20%, rgba(255,255,255,0.4) 50%, transparent 51%),
+		radial-gradient(1px 1px at 70% 12%, rgba(255,255,255,0.28) 50%, transparent 51%),
+		radial-gradient(1.5px 1.5px at 40% 85%, rgba(255,255,255,0.32) 50%, transparent 51%),
+		radial-gradient(1px 1px at 85% 45%, rgba(255,255,255,0.22) 50%, transparent 51%),
+		radial-gradient(1px 1px at 55% 65%, rgba(255,255,255,0.26) 50%, transparent 51%),
+		radial-gradient(1px 1px at 25% 55%, rgba(255,255,255,0.2) 50%, transparent 51%);
+	background-size: 190px 190px, 230px 230px, 170px 170px, 260px 260px, 150px 150px, 210px 210px;
+}
+#screen-map .topbar { position: relative; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 8px; flex-shrink: 0; }
+#screen-map .brand { font-family: 'Asimovian', sans-serif; font-size: 22px; color: var(--color-accent); letter-spacing: 0.02em; }
+#screen-map .topbar-right { display: flex; align-items: center; gap: 8px; }
+#screen-map .unconfirmed-pill { font-size: 11px; font-weight: 500; color: var(--color-accent-2); background: color-mix(in srgb, var(--color-accent-2) 14%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent-2) 30%, transparent); padding: 5px 10px; border-radius: var(--radius-full); }
+#screen-map .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-surface-2) 70%, transparent); border: 1px solid var(--color-border); color: var(--color-text); }
+#screen-map .map-area { position: relative; flex: 1; }
+#screen-map svg.lines { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+#screen-map .lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.35; }
+#screen-map .cluster-label { position: absolute; z-index: 1; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-dim); opacity: 0.6; }
+#screen-map .node { position: absolute; z-index: 5; display: flex; align-items: center; gap: 7px; transform: translate(-50%, -50%); }
+#screen-map .node .dot { border-radius: var(--radius-full); background: var(--color-accent); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-accent) 45%, transparent); flex-shrink: 0; }
+#screen-map .node .dot.big { width: 13px; height: 13px; }
+#screen-map .node .dot.med { width: 10px; height: 10px; }
+#screen-map .node .dot.small { width: 8px; height: 8px; box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+#screen-map .node .label { font-size: 12px; font-weight: 500; color: var(--color-text); white-space: nowrap; text-shadow: 0 1px 4px rgba(10,6,3,0.6); }
+#screen-map .tabbar { position: relative; z-index: 20; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); flex-shrink: 0; }
+#screen-map .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
+#screen-map .tab.active { color: var(--color-accent); }
+#screen-map .tab span { font-size: 11px; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<h1 class="kicker">Vault — Option D (selected direction)</h1>
+	<p>
+		Combines Option A's grouped-by-category library structure with Option C's elevated card
+		treatment for the day-to-day browsing screen, keeps the "Linked articles" sources list, and
+		folds Option B's constellation into a compact "Nearby in the constellation" sub-section on
+		the chapter page. The full star map survives as its own screen, reached through a
+		Library / Map tab bar rather than competing with the list for the home view.
+	</p>
+</div>
+
+<div class="frames">
+
+	<div class="frame-group">
+		<div class="frame-label">1 — Library<span class="sub">default view · grouped by category</span></div>
+		<div class="phone">
+			<div id="screen-library">
+				<div class="topbar">
+					<div class="brand">Vault</div>
+					<div class="icon-btn" aria-label="Search">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+					</div>
+				</div>
+
+				<div class="scroll">
+					<div class="meta-line">42 chapters &middot; drawn from 160 threads</div>
+
+					<div class="banner-stack">
+						<div class="banner digest">
+							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"></path></svg></span>
+							<span class="label">This week: 4 new, 1 link surfaced<small>Ender's Game &rarr; child psychology</small></span>
+							<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+						</div>
+						<div class="banner inbox">
+							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg></span>
+							<span class="label">2 chapters proposed<small>Awaiting your review in the Inbox</small></span>
+							<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Technology</div>
+						<div class="card-list">
+							<div class="chapter-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Cloudflare Workers</span><span class="card-time">2d</span></div>
+									<div class="card-sub">Edge runtime, Durable Objects, KV vs D1 tradeoffs</div>
+									<div class="card-bottom">
+										<span class="tag">infra</span><span class="tag">edge</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+							<div class="chapter-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">SQLite at the edge</span><span class="card-time">5d</span></div>
+									<div class="card-sub">Litestream, embedded replicas, when not to bother</div>
+									<div class="card-bottom">
+										<span class="tag">infra</span><span class="tag">databases</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Books &amp; Ideas</div>
+						<div class="card-list">
+							<div class="chapter-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Ender's Game &mdash; themes</span><span class="card-time">1w</span></div>
+									<div class="card-sub">Child psychology and the ethics of command</div>
+									<div class="card-bottom">
+										<span class="tag">sci-fi</span><span class="tag">ethics</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Science &amp; History</div>
+						<div class="card-list">
+							<div class="chapter-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"></path><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Surveyor 1</span><span class="card-time">2w</span></div>
+									<div class="card-sub">First US soft lunar landing, June 1966</div>
+									<div class="card-bottom">
+										<span class="tag">spaceflight</span><span class="tag">history</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="tabbar">
+					<div class="tab active">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+						<span>Library</span>
+					</div>
+					<div class="tab">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 9 22 9.5 16.5 14 18 21.5 12 17.5 6 21.5 7.5 14 2 9.5 9 9 12 2"></polygon></svg>
+						<span>Map</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">2 — Chapter detail<span class="sub">"Linked articles" + "Nearby in the constellation"</span></div>
+		<div class="phone">
+			<div id="screen-chapter">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="crumb">Technology</div>
+					<div class="icon-btn" aria-label="More">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+					</div>
+				</div>
+
+				<div class="chapter-scroll">
+					<div class="tile-row">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div>
+							<span class="badge">Auto</span>
+							<div class="confidence">High confidence</div>
+						</div>
+					</div>
+
+					<h1>Cloudflare Workers</h1>
+					<div class="tags-row"><span class="tag">infra</span><span class="tag">edge</span><span class="tag">serverless</span></div>
+					<div class="meta-row">Updated 2 days ago &middot; first noted Aug 14</div>
+
+					<div class="chapter-body">
+						<h2>What it is</h2>
+						<p>A V8-isolate runtime at Cloudflare's edge &mdash; no cold-start container, code runs within milliseconds of a request landing at the nearest PoP. Comes up whenever the tradeoff against a long-running process is being weighed.</p>
+						<h2>Durable Objects vs KV vs D1</h2>
+						<p>Durable Objects for single-writer coordinated state, KV for eventually-consistent read-heavy config, D1 (SQLite) when relational queries matter more than global read latency.</p>
+					</div>
+
+					<div class="block-label">Linked articles</div>
+					<div class="chip-row">
+						<div class="source-chip">
+							<span class="icon-tile"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
+							"Docker CLI parity" &mdash; Aug 14
+						</div>
+						<div class="source-chip">
+							<span class="icon-tile"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
+							"D1 vs KV tradeoffs" &mdash; 2 days ago
+						</div>
+					</div>
+
+					<div class="block-label">Nearby in the constellation</div>
+					<div class="constellation-block">
+						<div class="constellation-label">3 related chapters</div>
+						<svg class="mini-lines" viewBox="0 0 320 20" style="position: absolute; top: 44px; left: 14px; width: calc(100% - 28px); height: 20px;">
+							<line x1="53" y1="6" x2="160" y2="6"></line>
+							<line x1="160" y1="6" x2="267" y2="6"></line>
+						</svg>
+						<div class="mini-nodes">
+							<div class="mini-node self"><span class="dot"></span><span class="mini-label">Cloudflare<br>Workers</span></div>
+							<div class="mini-node"><span class="dot"></span><span class="mini-label">SQLite at<br>the edge</span></div>
+							<div class="mini-node"><span class="dot"></span><span class="mini-label">Docker CLI<br>parity</span></div>
+						</div>
+					</div>
+				</div>
+
+				<div class="bottom-bar">
+					<button class="continue-btn">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+						Continue in chat
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">3 — Map<span class="sub">optional second page, via the tab bar</span></div>
+		<div class="phone">
+			<div id="screen-map">
+				<div class="topbar">
+					<div class="brand">Vault</div>
+					<div class="topbar-right">
+						<span class="unconfirmed-pill">2 unconfirmed</span>
+						<div class="icon-btn" aria-label="Search">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+						</div>
+					</div>
+				</div>
+
+				<div class="map-area">
+					<svg class="lines" viewBox="0 0 390 674">
+						<line x1="255" y1="200" x2="285" y2="245"></line>
+						<line x1="285" y1="245" x2="262" y2="310"></line>
+						<line x1="140" y1="425" x2="210" y2="460"></line>
+					</svg>
+
+					<div class="cluster-label" style="left: 40px; top: 24px;">Technology</div>
+					<div class="node" style="left: 90px; top: 68px;"><span class="dot big"></span><span class="label">Cloudflare Workers</span></div>
+					<div class="node" style="left: 150px; top: 118px;"><span class="dot med"></span><span class="label">SQLite at the edge</span></div>
+
+					<div class="cluster-label" style="left: 208px; top: 172px;">Books &amp; Ideas</div>
+					<div class="node" style="left: 255px; top: 200px;"><span class="dot big"></span><span class="label">Ender's Game</span></div>
+					<div class="node" style="left: 285px; top: 245px;"><span class="dot small"></span><span class="label">Child psychology</span></div>
+					<div class="node" style="left: 262px; top: 310px;"><span class="dot small"></span><span class="label">Ethics of command</span></div>
+
+					<div class="cluster-label" style="left: 90px; top: 385px;">Science &amp; History</div>
+					<div class="node" style="left: 140px; top: 425px;"><span class="dot med"></span><span class="label">Surveyor 1</span></div>
+					<div class="node" style="left: 210px; top: 460px;"><span class="dot small"></span><span class="label">Apollo program</span></div>
+				</div>
+
+				<div class="tabbar">
+					<div class="tab">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+						<span>Library</span>
+					</div>
+					<div class="tab active">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 9 22 9.5 16.5 14 18 21.5 12 17.5 6 21.5 7.5 14 2 9.5 9 9 12 2"></polygon></svg>
+						<span>Map</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+</div>
+</body>
+</html>
