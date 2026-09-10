@@ -2,8 +2,11 @@
 
 A shopping-flavored surface built entirely out of pieces that already exist: `web_search`/
 `web_read` for discovery (no new fetcher, no scraper), a new focus mode for steering, and one new,
-deliberately thin tool — `highlight_products` — whose only job is to turn links the model already
-verified into a masonry grid of product cards. No Amazon-specific code anywhere in this plan.
+deliberately generic tool — `highlight` — whose only job is to turn links the model already
+verified into a masonry grid of cards. Shopping is `highlight`'s first caller, not its only reason
+to exist: the tool itself knows nothing about products, prices, or retailers, so any future
+"here are the best few things I found" use case (places, repos, articles) can reuse it for free.
+No Amazon-specific code anywhere in this plan.
 
 ## Why this exists, and what's already been tested live
 
@@ -55,36 +58,45 @@ Not possible, and worth stating plainly since it's the crux of the design: every
 today comes from `ctx.AddCard()`, called inside a tool handler (`tools/registry.go`'s `Card` type,
 populated by `music.go`/`books.go`/`movies.go`/`image_search.go`). The model's plain reply text has
 no path to that struct. So a tool is required no matter what — the only real design freedom is how
-thin it is. Given the Amazon/SearXNG/Brave findings above, it can be about as thin as a tool gets:
-zero network calls of its own, a pure "promote these already-fetched links" shim, matching the
-user's own "insert links here for special treatment" framing.
+thin (and how narrowly scoped) it is. Given the Amazon/SearXNG/Brave findings above, it can be about
+as thin as a tool gets — zero network calls of its own, a pure "promote these already-fetched links"
+shim — and, per the naming decision below, there's no reason to scope it to shopping at all.
 
-## `highlight_products`
+## `highlight` — a generic, reusable card tool, not a shopping tool
+
+Named for what it does, not what it's used for today: shopping is the first real caller, but the
+tool has no idea what a "product" is. It takes generic `{title, url, price?, image_url?}` items and
+turns them into cards — useful anywhere the model wants to say "here are the best few things I
+found" instead of a paragraph, which is a shape that shows up well beyond shopping (comparing
+places, repos, articles — anything `web_search`/`web_read` already surfaces real links for). Keeping
+it generic now avoids the alternative of a `highlight_products`-shaped tool needing a near-identical
+sibling (`highlight_places`? `highlight_repos`?) the first time a second use case actually shows up —
+one tool, one schema, reused.
 
 ### Shape
 
 ```go
-// tools/highlight_products.go (new)
-var highlightProductsDef = llm.ToolDef{
+// tools/highlight.go (new)
+var highlightDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
-		Name: "highlight_products",
+		Name: "highlight",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"products": map[string]interface{}{
+				"items": map[string]interface{}{
 					"type":     "array",
 					"minItems": 1,
 					// [{ "title": string, "url": string, "price": string?, "image_url": string? }]
-					// price is free text ("$129.99", "£45", "~$40, limited stock"), not a
-					// structured amount+currency pair — nothing downstream sorts or computes on
-					// it, so a schema that only exists to look more "correct" would just be
-					// validation overhead for a single-user tool. image_url is optional; a
-					// missing one renders the same placeholder tile RecommendationsCarousel
-					// already falls back to (Card.ImageURL empty).
+					// price is optional and free text ("$129.99", "£45", "~$40, limited stock") —
+					// not a structured amount+currency pair, since nothing downstream sorts or
+					// computes on it. It's the one shopping-flavored field on an otherwise generic
+					// item shape; a future non-shopping caller just leaves it empty. image_url is
+					// also optional — a missing one renders the same placeholder tile
+					// RecommendationsCarousel already falls back to (Card.ImageURL empty).
 				},
 			},
-			"required": []string{"products"},
+			"required": []string{"items"},
 		},
 	},
 }
@@ -92,41 +104,40 @@ var highlightProductsDef = llm.ToolDef{
 
 **Every `url`/`title`/`price` must come from something the model actually read this turn** —
 `web_search` results or a `web_read` page — never recalled from training data. That's a prompt-level
-instruction (in the tool's `api_description`, loaded from `tools/descriptions/highlight_products.yaml`
-same as every other tool), not something the schema can enforce, but it's the one thing that keeps
-this tool from turning into a hallucinated-price generator. It's a real, acknowledged limitation of
-a zero-fetch tool — see "Explicitly out of scope" for why v1 accepts it rather than adding
-verification.
+instruction (in the tool's `api_description`, loaded from `tools/descriptions/highlight.yaml` same
+as every other tool), not something the schema can enforce, but it's the one thing that keeps this
+tool from turning into a generator of confident-looking but made-up cards. It's a real, acknowledged
+limitation of a zero-fetch tool — see "Explicitly out of scope" for why v1 accepts it rather than
+adding verification.
 
 ### Handler
 
 No HTTP client, no fetch — the entire handler is validation plus `ctx.AddCard`:
 
-- Reject with a tool error if `products` is empty or exceeds a hard cap of **6** (`"error: too many
-  products (N) — highlight_products supports at most 6. Pick the strongest candidates and call
-  again with fewer."`, matching `visualize`'s reject-don't-truncate pattern) — the model was asked
-  for "top 3 or 5," 6 is headroom above that, not an invitation to dump every search result.
+- Reject with a tool error if `items` is empty or exceeds a hard cap of **5** (`"error: too many
+  items (N) — highlight supports at most 5. Pick the strongest candidates and call again with
+  fewer."`, matching `visualize`'s reject-don't-truncate pattern) — five is the actual ask ("top 3
+  or 5"), not a soft target with headroom above it.
 - Each item with an empty `title` or `url` is a tool error, same "fail the whole call, not silently
   drop one entry" posture as `web_read`'s required-field checks.
 - `ctx.Blocklist.Blocked(url)` is checked per item, same guard `web_read` already applies before
   fetching anything — cheap, and there's no reason a known-bad source should get promoted to a
   visually prominent card just because this tool never fetches it itself.
-- For each surviving item: `ctx.AddCard(Card{Title: p.Title, Subtitle: p.Price, ImageURL:
-  p.ImageURL, URL: p.URL, Kind: "product"})`. `AddCard`'s existing de-dupe-by-URL
-  (`registry.go`) applies for free if the model calls this more than once in a turn.
+- For each surviving item: `ctx.AddCard(Card{Title: i.Title, Price: i.Price, ImageURL: i.ImageURL,
+  URL: i.URL, Kind: "highlight"})`. `AddCard`'s existing de-dupe-by-URL (`registry.go`) applies for
+  free if the model calls this more than once in a turn.
 
 ### Availability — deliberately not `visualize`'s pattern
 
 `visualize`'s doc (`docs/plans/visualize-and-image-search.md`) gives it no `category`, reasoning
 that a tool which only renders data *already in the conversation* is safe in chat mode
-(`NoResearch`) even with fetching tools off. `highlight_products` looks like the same shape but
-isn't: it exists specifically to assert "these are real products with real current prices," which
-is only trustworthy immediately downstream of a real `web_search`/`web_read` call. Giving it
-`category: research` in `tools/descriptions/highlight_products.yaml` means `NoResearch` drops it
-together with the tools it depends on, rather than leaving it on the menu as the one remaining way
-to produce a confident-looking price card with no live source behind it. `catalog.go`'s `offered()`
-needs no code change for this — it's a one-line YAML field, same mechanism `image_search.yaml`
-already uses.
+(`NoResearch`) even with fetching tools off. `highlight` looks like the same shape but isn't: every
+item it renders implicitly claims "this is something real I just found," which is only trustworthy
+immediately downstream of a real `web_search`/`web_read` call. Giving it `category: research` in
+`tools/descriptions/highlight.yaml` means `NoResearch` drops it together with the tools it depends
+on, rather than leaving it on the menu as a way to produce a confident-looking card with no live
+source behind it. `catalog.go`'s `offered()` needs no code change for this — it's a one-line YAML
+field, same mechanism `image_search.yaml` already uses.
 
 ## `Card` gets a `Price` field and a third `Kind`
 
@@ -137,11 +148,12 @@ type Card struct {
 	Subtitle string `json:"subtitle,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 	URL      string `json:"url"`
-	Kind         string `json:"kind,omitempty"` // "" (media) | "image" | "product"
+	Kind         string `json:"kind,omitempty"` // "" (media) | "image" | "highlight"
 	FullImageURL string `json:"full_image_url,omitempty"`
-	// Price is set only by highlight_products (Kind "product") — free text,
-	// not a structured amount, per highlight_products.go's doc comment on
-	// why. Empty for every existing caller, unchanged default.
+	// Price is set only by highlight (Kind "highlight") — optional free text,
+	// not a structured amount, per highlight.go's doc comment on why. Empty
+	// for every existing caller and for any non-shopping highlight item,
+	// unchanged default.
 	Price string `json:"price,omitempty"`
 }
 ```
@@ -149,32 +161,33 @@ type Card struct {
 Additive and default-preserving, same posture `Kind`/`FullImageURL` were added with for
 `image_search` — the four existing recommendation tools and `image_search` need zero changes.
 
-## Frontend — `ProductGrid.svelte`, masonry like `image_search`, link-out like the carousel
+## Frontend — `HighlightGrid.svelte`, masonry like `image_search`, link-out like the carousel
 
 `ChatTurnView.svelte`'s card partition (currently two-way: `mediaCards`/`imageCards`,
 ChatTurnView.svelte:47-48) becomes three-way:
 
 ```ts
-let mediaCards = $derived((turn.cards ?? []).filter((c) => c.kind !== 'image' && c.kind !== 'product'));
+let mediaCards = $derived((turn.cards ?? []).filter((c) => c.kind !== 'image' && c.kind !== 'highlight'));
 let imageCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'image'));
-let productCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'product'));
+let highlightCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'highlight'));
 ```
 
-...with a third conditional block rendering `<ProductGrid cards={productCards} />` alongside the
+...with a third conditional block rendering `<HighlightGrid cards={highlightCards} />` alongside the
 existing `RecommendationsCarousel`/`ImageGallery` ones — same "whichever groups are actually
 present" posture already documented at ChatTurnView.svelte:42-46.
 
-`ProductGrid.svelte` (new) is `ImageGallery.svelte`'s masonry (`columns: 2 180px` CSS multi-column,
-not a uniform grid — real product photos vary in aspect ratio same as search-result photos do) with
-two changes from a straight copy:
+`HighlightGrid.svelte` (new) is `ImageGallery.svelte`'s masonry (`columns: 2 180px` CSS
+multi-column, not a uniform grid — real photos vary in aspect ratio same as search-result photos
+do) with two changes from a straight copy:
 
 - Each tile is a real `<a href={card.url} target="_blank" rel="noreferrer">`, not a button that
   opens a lightbox (`RecommendationsCarousel.svelte`'s link-out pattern, not `ImageGallery.svelte`'s
   preview-then-link pattern) — there's nothing to preview full-screen here, the point is to leave
-  for the retailer.
-- A price badge reuses `ImageGallery.svelte`'s `.tile-source` treatment exactly (same
-  `color-mix(in srgb, black 55%, transparent)` pill, same corner) but shows `card.price` instead of
-  `card.subtitle`/source domain, and only renders when `card.price` is set.
+  for the source.
+- A badge reuses `ImageGallery.svelte`'s `.tile-source` treatment exactly (same `color-mix(in srgb,
+  black 55%, transparent)` pill, same corner) but shows `card.price` instead of `card.subtitle`/
+  source domain, and only renders when `card.price` is set — a non-shopping `highlight` call with no
+  price just shows a plain tile.
 - A tile with no `image_url` gets `RecommendationsCarousel.svelte`'s `.card-image-placeholder`
   treatment (a plain surface-2 box) rather than a broken `<img>`.
 
@@ -182,25 +195,29 @@ two changes from a straight copy:
 optional fields — mirrors the Go struct change 1:1, same "keep in sync by hand" posture already
 used for `FocusMode`'s Go/TS pair (`agent/driver.go:149-152`).
 
-## Shopping focus mode
+## Shopper focus mode
 
 This is the steering half — how the model is nudged toward commercial-intent `web_search` queries
-and toward actually calling `highlight_products` with its best few picks, without any new plumbing.
-`FocusMode` is already exactly this mechanism (`agent/driver.go:149-161`'s consts, mirrored in
-`web/src/lib/types.ts:233`'s union and `web/src/lib/focusModes.ts`'s picker list, each keyed into
-`prompts.yaml`'s `agent.focus_modes` map) — adding `"shopping"` is one entry in each of those four
-places, the same shape as every existing mode, not new infrastructure:
+and toward actually calling the generic `highlight` tool for products specifically, without any new
+plumbing. `FocusMode` is already exactly this mechanism (`agent/driver.go:149-161`'s consts,
+mirrored in `web/src/lib/types.ts:233`'s union and `web/src/lib/focusModes.ts`'s picker list, each
+keyed into `prompts.yaml`'s `agent.focus_modes` map) — adding `"shopper"` is one entry in each of
+those four places, the same shape as every existing mode, not new infrastructure. Because
+`highlight` itself is domain-agnostic, this mode is where all the shopping-specific instruction
+actually lives — it's what tells the model "use that tool, for this":
 
-- `agent/driver.go`: `FocusModeShopping = "shopping"`.
-- `prompts/prompts.go`'s `d.Agent.FocusModes["shopping"]`: instructs the model to phrase
-  `web_search` queries with commercial intent (price, reviews, "best X for Y") rather than assuming
-  a `category` value exists for this (per the SearXNG finding above — there isn't one), to prefer
-  checking a couple of *different* retailers rather than only ever landing on one, to `web_read` the
-  most promising 1-3 candidates to confirm real price/photo before presenting anything as a pick
-  (exactly the `/dp`-page path already confirmed live), and to end with one `highlight_products`
-  call naming its top 3-5 choices rather than describing them in prose.
-- `web/src/lib/types.ts`'s `FocusMode` union: add `'shopping'`.
-- `web/src/lib/focusModes.ts`'s `FOCUS_MODES` array: `{ id: 'shopping', label: 'Shopping', description: 'Find and compare real products', icon: ShoppingCart }` (`ShoppingCart` from `@lucide/svelte`, already the icon package in use).
+- `agent/driver.go`: `FocusModeShopper = "shopper"`.
+- `prompts/prompts.go`'s `d.Agent.FocusModes["shopper"]`: instructs the model to phrase `web_search`
+  queries with commercial intent (price, reviews, "best X for Y") rather than assuming a `category`
+  value exists for this (per the SearXNG finding above — there isn't one), to prefer checking a
+  couple of *different* retailers rather than only ever landing on one, to `web_read` the most
+  promising 1-3 candidates to confirm real price/photo before presenting anything as a pick (exactly
+  the `/dp`-page path already confirmed live), and to end by calling `highlight` with its top 3-5
+  choices (title, url, price, photo) rather than describing them in prose — explicit that
+  `highlight` itself has no idea this is a shopping turn, so the price/photo discipline is on the
+  model, not the tool.
+- `web/src/lib/types.ts`'s `FocusMode` union: add `'shopper'`.
+- `web/src/lib/focusModes.ts`'s `FOCUS_MODES` array: `{ id: 'shopper', label: 'Shopper', description: 'Find and compare real products', icon: ShoppingCart }` (`ShoppingCart` from `@lucide/svelte`, already the icon package in use).
 
 No change to `web_search`'s tool schema, no change to `catalog.go`'s gating logic — the mode is pure
 prompt text plus which cards the model chooses to produce at the end, identical in kind to how
@@ -213,9 +230,9 @@ prompt text plus which cards the model chooses to produce at the end, identical 
 - **Brave's `product_cluster` field.** Real, but its field-level shape isn't confirmed and
   confirming it costs a billed call. v1.5 candidate: spend one deliberate spike-test call (with
   sign-off, since it's billed against the shared Brave cap), and if it carries real
-  price/rating/image data, wire it as an optional automatic enrichment before `highlight_products`
-  is even called — the tool's schema doesn't need to change either way, since `price`/`image_url`
-  are already optional per-item fields.
+  price/rating/image data, wire it as an optional automatic enrichment before `highlight` is even
+  called — the tool's schema doesn't need to change either way, since `price`/`image_url` are
+  already optional per-item fields.
 - **Amazon Product Advertising API.** The clean, ToS-compliant, structured path — but requires an
   approved Amazon Associates account with qualifying sales activity to keep API access, which may
   not fit a single-operator personal tool. Worth a real look if commerce volume through this feature
@@ -223,43 +240,51 @@ prompt text plus which cards the model chooses to produce at the end, identical 
 - **A `"shopping"` SearXNG category.** Would require standing up/enabling real shopping engines in
   the self-hosted instance (`compose/searxng/settings.yml`) — a real, separate infra project, not a
   code change here. Not attempted until there's a concrete engine to point at.
-- **Verifying `highlight_products`' URLs are reachable/still in stock before rendering.** Would mean
-  giving the tool its own HTTP client after all, exactly what this plan avoids. v1 accepts the
-  tradeoff: a stale or dead link surfaces as a normal 404 when tapped, no worse than any other
-  citation link already can be.
+- **Verifying `highlight`'s URLs are reachable/still in stock before rendering.** Would mean giving
+  the tool its own HTTP client after all, exactly what this plan avoids. v1 accepts the tradeoff: a
+  stale or dead link surfaces as a normal 404 when tapped, no worse than any other citation link
+  already can be.
 - **A Pulsar Daily "Deals" block.** Same `agent.Run` sub-generation shape as Daily's other blocks
-  (`docs/plans/pulsar-daily.md`) could run a shopping-focused pulse and finalize into
-  `highlight_products` cards for a recurring "today's picks" edition — a natural v2 given Daily's
-  existing narrow-toolset pattern, not designed here.
-- **Structured `price` (amount + currency).** Free text only in v1, per `highlight_products`' tool
-  shape above; add structure only if something ever actually sorts/filters/aggregates on price,
-  which nothing does today.
+  (`docs/plans/pulsar-daily.md`) could run a shopper-focused pulse and finalize into `highlight`
+  cards for a recurring "today's picks" edition — a natural v2 given Daily's existing narrow-toolset
+  pattern, not designed here.
+- **Structured `price` (amount + currency).** Free text only in v1, per `highlight`'s tool shape
+  above; add structure only if something ever actually sorts/filters/aggregates on price, which
+  nothing does today.
+- **Other `highlight` callers** (a future "highlight the best 3 places" or "highlight the top repos"
+  use case) — the whole point of naming it generically is that these need zero tool changes when
+  they show up, just a prompt somewhere telling the model to reach for `highlight`. None are
+  designed here; nothing forces them to exist.
 
 ## Next steps
 
 1. `tools.Card.Price` field (`tools/registry.go`, alongside `Kind`/`FullImageURL`) — additive,
    default-preserving.
-2. `tools/highlight_products.go` — tool def + handler: `minItems`/6-item cap (rejected with a tool
-   error, not truncated, mirroring `visualize`'s cap pattern), required `title`/`url` per item,
-   `ctx.Blocklist.Blocked` check per item, `ctx.AddCard(Card{..., Kind: "product"})`.
-3. `tools/descriptions/highlight_products.yaml` — `category: research` (see "Availability" above
-   for why, deliberately not matching `visualize`'s uncategorized default) + description instructing
-   the model to only pass URLs/prices it actually read this turn.
-4. `tools/catalog.go`'s `catalogOrder` — add `"highlight_products"` (after `"image_search"`, before
+2. `tools/highlight.go` — tool def + handler: `minItems`/5-item cap (rejected with a tool error, not
+   truncated, mirroring `visualize`'s cap pattern), required `title`/`url` per item,
+   `ctx.Blocklist.Blocked` check per item, `ctx.AddCard(Card{..., Kind: "highlight"})`.
+3. `tools/descriptions/highlight.yaml` — `category: research` (see "Availability" above for why,
+   deliberately not matching `visualize`'s uncategorized default) + a domain-agnostic description
+   (no mention of products/shopping — that framing belongs to the shopper focus mode's prompt text,
+   not the tool's own description) instructing the model to only pass URLs/prices it actually read
+   this turn.
+4. `tools/catalog.go`'s `catalogOrder` — add `"highlight"` (after `"image_search"`, before
    `"read_attachment"`, matching the existing research-tool grouping) + a `catalogDefaults` entry.
 5. `web/src/lib/types.ts`'s `Card` interface — add `price?: string;`.
-6. `ProductGrid.svelte` (new) — `ImageGallery.svelte`'s masonry CSS, `RecommendationsCarousel.svelte`'s
-   direct-link-out `<a>` tiles, a price-badge reusing `.tile-source`'s pill styling.
-7. `ChatTurnView.svelte` — three-way card partition (`mediaCards`/`imageCards`/`productCards`,
-   ChatTurnView.svelte:47-48) + the new `<ProductGrid>` conditional block alongside the existing two.
-8. Shopping focus mode: `agent.FocusModeShopping` const (`agent/driver.go:149-161`),
-   `prompts/prompts.go`'s `d.Agent.FocusModes["shopping"]` text, `web/src/lib/types.ts`'s `FocusMode`
+6. `HighlightGrid.svelte` (new) — `ImageGallery.svelte`'s masonry CSS, `RecommendationsCarousel.svelte`'s
+   direct-link-out `<a>` tiles, a badge (shows `card.price` when set) reusing `.tile-source`'s pill
+   styling.
+7. `ChatTurnView.svelte` — three-way card partition (`mediaCards`/`imageCards`/`highlightCards`,
+   ChatTurnView.svelte:47-48) + the new `<HighlightGrid>` conditional block alongside the existing two.
+8. Shopper focus mode: `agent.FocusModeShopper` const (`agent/driver.go:149-161`),
+   `prompts/prompts.go`'s `d.Agent.FocusModes["shopper"]` text (the shopping-specific instruction to
+   reach for `highlight` — see "Shopper focus mode" above), `web/src/lib/types.ts`'s `FocusMode`
    union, `web/src/lib/focusModes.ts`'s `FOCUS_MODES` entry (`ShoppingCart` icon).
 9. Live-verify before calling this done, per `CLAUDE.md`'s "verify on real hardware" culture: a real
-   turn in shopping focus mode, checked against the actual running app — does the model reach for
+   turn in Shopper focus mode, checked against the actual running app — does the model reach for
    commercial-intent `web_search` queries, does `web_read` on a chosen `/dp`-style page still come
-   back clean, does `highlight_products` actually get called with real data instead of prose, does
-   the masonry grid render correctly on a phone-width viewport (this is a phone-first, Tailscale-only
+   back clean, does `highlight` actually get called with real data instead of prose, does the
+   masonry grid render correctly on a phone-width viewport (this is a phone-first, Tailscale-only
    app per `PRODUCT.md`).
 10. Docker two-sided sync checklist (per `CLAUDE.md`) — n/a for this slice: no new hot-editable
     resource directory, no new CLI command, no new settings-panel server-mutating action, no new API
