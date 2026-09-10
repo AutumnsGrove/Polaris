@@ -1,0 +1,12 @@
+name: read_star
+requires: weaver_run
+description: >-
+  read one star's full card.
+api_description: >-
+  Read one star's full card by star_id — title, category, tags, status, confidence, summary, and the full
+  body. Mandatory before update_star or link_stars, never optional: judging a match or a connection from a
+  search_stars title/summary snippet alone isn't careful enough, only reading the full card is.
+
+  If the star's status is "rejected", that's a stop sign — a human already said no to this topic. Don't
+  call create_star for the same topic again, and don't call update_star to bring it back. That stands until
+  they change their mind through the review UI themselves, not because you reconsidered.

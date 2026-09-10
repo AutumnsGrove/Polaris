@@ -172,7 +172,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 				filterInput = filterInput[:maxFilterInputChars]
 			}
 		}
-		if filtered, filterCost, ferr := filterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, filterInput, args.Instructions); ferr == nil {
+		if filtered, filterCost, ferr := FilterExtractedText(ctx.Ctx, ctx.LLM, prompts.Get().Tools.WebReadFilterSystem, filterInput, args.Instructions); ferr == nil {
 			result = filtered
 			ctx.AddCost(filterCost)
 		} else {
@@ -682,7 +682,7 @@ func looksEmpty(text string) bool {
 	return len(strings.TrimSpace(text)) < minViableExtractedChars
 }
 
-// filterExtractedText runs a small, cheap LLM pass over already-extracted
+// FilterExtractedText runs a small, cheap LLM pass over already-extracted
 // text to pull out only what the caller asked for — the "double RAG" step.
 // Reuses the thread's selected model/client rather than spinning up a
 // separate one, since the provider pin (and its prompt-cache pricing) is
@@ -698,7 +698,7 @@ func looksEmpty(text string) bool {
 // matters (this used to be silently dropped here, which meant a thread's
 // displayed cost never reflected an instructions filter pass actually
 // ran).
-func filterExtractedText(ctx context.Context, client llm.ChatClient, systemPrompt, pageText, instructions string) (text string, costUSD float64, err error) {
+func FilterExtractedText(ctx context.Context, client llm.ChatClient, systemPrompt, pageText, instructions string) (text string, costUSD float64, err error) {
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Instruction: %s\n\nPage content:\n%s", instructions, pageText)},

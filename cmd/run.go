@@ -125,6 +125,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 	defer close(pulsarDone)
 	go srv.RunPulsarScheduler(pulsarDone)
 
+	// Same once-a-minute background-poller shape as RunPulsarScheduler
+	// above — see RunConstellationScheduler's doc comment. No-op every
+	// tick unless constellation_config.enabled is set (settings panel or
+	// polaris constellation backfill).
+	constellationDone := make(chan struct{})
+	defer close(constellationDone)
+	go srv.RunConstellationScheduler(constellationDone)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

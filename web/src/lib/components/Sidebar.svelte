@@ -7,7 +7,7 @@
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -234,6 +234,14 @@
 			{#if pulsarDailyState.hasNewEdition}
 				<span class="daily-dot" title="New edition"></span>
 			{/if}
+		</button>
+		<button
+			class="pulsar-entry"
+			class:active={page.url.pathname.startsWith('/constellation')}
+			onclick={() => goto('/constellation')}
+		>
+			<Galaxy size={16} />
+			<span class="pulsar-label">Constellation</span>
 		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />

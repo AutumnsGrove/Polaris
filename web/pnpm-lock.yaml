@@ -15,8 +15,11 @@ importers:
         specifier: ^5.2.11
         version: 5.2.11
       '@lucide/svelte':
-        specifier: ^1.25.0
-        version: 1.25.0(svelte@5.56.6)
+        specifier: ^1.44.0
+        version: 1.44.0(svelte@5.56.6)
+      d3-force:
+        specifier: ^3.0.0
+        version: 3.0.0
       dompurify:
         specifier: ^3.4.12
         version: 3.4.12
@@ -51,6 +54,9 @@ importers:
       '@testing-library/svelte':
         specifier: ^5.4.2
         version: 5.4.2(svelte@5.56.6)(vite@8.1.5(@types/node@26.1.1)(jiti@2.7.0))(vitest@4.1.10(@types/node@26.1.1)(happy-dom@20.11.0)(vite@8.1.5(@types/node@26.1.1)(jiti@2.7.0)))
+      '@types/d3-force':
+        specifier: ^3.0.10
+        version: 3.0.10
       happy-dom:
         specifier: ^20.11.0
         version: 20.11.0
@@ -130,8 +136,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lucide/svelte@1.25.0':
-    resolution: {integrity: sha512-v9m+dD68jxVnqkU3K59mG/RSRFlPGzmKCGSyMfnXcaGv9jODDQMyQkcp1CGvk3Y/cUj9v7f8rw1n//K0B53xGQ==}
+  '@lucide/svelte@1.44.0':
+    resolution: {integrity: sha512-67510ne/YowceSyN9BECQaWfp5Ed446X6xpUE5C0e4rRV0e1jRj1KzIlKJCXcGc21hgr/VBDkqQXY7v4VQDeBw==}
     peerDependencies:
       svelte: ^5
 
@@ -1277,7 +1283,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lucide/svelte@1.25.0(svelte@5.56.6)':
+  '@lucide/svelte@1.44.0(svelte@5.56.6)':
     dependencies:
       svelte: 5.56.6
 

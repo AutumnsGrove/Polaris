@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./CQ4lqvO-.js";import"./xihTtKlq.js";import{t as n}from"./CedZzj6z.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s={name:`globe`,size:24,node:[[`circle`,{cx:`12`,cy:`12`,r:`10`}],[`path`,{d:`M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20`}],[`path`,{d:`M2 12h20`}]]};n(i,t(()=>o,{get icon(){return s}}))}export{i as t};

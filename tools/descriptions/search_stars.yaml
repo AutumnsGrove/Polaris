@@ -1,0 +1,16 @@
+name: search_stars
+requires: weaver_run
+description: >-
+  keyword-search Constellation's existing stars, for dedup-checking and link-discovery.
+api_description: >-
+  Keyword (not semantic) search over Constellation's existing stars, matching title/summary words. Returns up to
+  10 star_id/title/summary/status results, including rejected stars — this does double duty as both the
+  dedup check ("does a star for this topic already exist") and link-discovery ("what existing stars might this
+  relate to"), you decide which question you're asking based on how you use the results.
+
+  A result here is a lead, never enough on its own to decide a match or a link — always call read_star on
+  anything you're actually considering acting on before calling create_star, update_star, or link_stars.
+
+  Always search before create_star. Five separate conversations about the same topic should become one star
+  that grows richer each time, not five near-duplicate stars — the search-first discipline is what catches
+  that.

@@ -145,6 +145,28 @@ type Context struct {
 	ListRecentThreads func(cursor string) (threads []store.ThreadSummary, nextCursor string, err error)
 	ReadThread        func(threadID string) (*store.ThreadReadResult, error)
 
+	// WeaverRun is true only inside a Weaver shooting-star run (see
+	// gateway/constellation_weaver.go) — gates the five weaver_run tools
+	// (tools/search_stars.go, read_star.go, create_star.go, update_star.go,
+	// link_stars.go) so they're never offered on a normal chat/pulse turn,
+	// same "requires:" gating shape as pulsar_daily_items/pulsar_wizard
+	// above. The five WeaverX closures below are only ever wired alongside
+	// this being true.
+	WeaverRun bool
+
+	// WeaverSearchStars/WeaverReadStar/WeaverCreateStar/WeaverUpdateStar/
+	// WeaverLinkStars back Weaver's five tools — narrow closures over
+	// store.Store plus the current shooting_star_runs.id (create_star/
+	// update_star need it to log shooting_star_candidates as a side effect
+	// of the call itself — see docs/plans/constellation.md's "Weaver's
+	// tools"), same narrow-closure pattern as the memory/search_chats
+	// closures above rather than handing Weaver's tools a whole *store.Store.
+	WeaverSearchStars func(query string) ([]store.StarSearchResult, error)
+	WeaverReadStar    func(starID int64) (*store.Star, error)
+	WeaverCreateStar  func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool) (int64, error)
+	WeaverUpdateStar  func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error
+	WeaverLinkStars   func(starIDA, starIDB int64, reasoning string) error
+
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
 	// unauthenticated" — GitHub's REST API works fine without one, just
@@ -375,7 +397,7 @@ type Context struct {
 
 	// ExtraCostUSD accumulates LLM spend a tool handler incurred on its
 	// own — a filter/extraction pass (web_read and read_attachment's
-	// instructions param, see filterExtractedText) — that agent.Run's own
+	// instructions param, see FilterExtractedText) — that agent.Run's own
 	// per-turn ChatCompletionWithTools/ChatCompletionStreaming calls never
 	// see, since that spend happens inside a tool handler's own separate
 	// LLM call, not the main loop. Without this, it's real spend (already
@@ -796,6 +818,8 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
+		"search_stars": searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
+		"update_star": updateStarDef, "link_stars": linkStarsDef,
 	}
 }
 

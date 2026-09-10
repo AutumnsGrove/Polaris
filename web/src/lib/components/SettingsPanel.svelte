@@ -7,6 +7,7 @@
 	import MemorySettings from './MemorySettings.svelte';
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
+	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -20,6 +21,10 @@
 	let showMemory = $state(false);
 	let showMemoryImport = $state(false);
 	let showTools = $state(false);
+	// Not a sibling-panel-state slot like the others above — Constellation
+	// Usage is a wholly separate component/data fetch (see
+	// ConstellationUsageModal), just reached via a shortcut link from here.
+	let showConstellationUsage = $state(false);
 
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
@@ -147,6 +152,13 @@
 						)} / Daily ${appState.settings.usage.cost_by_source.daily.total_cost_usd.toFixed(2)}).
 						Run <code>polaris stats</code> for the full per-tool breakdown.
 					</p>
+					<!-- Constellation's own spend is deliberately not folded into
+					     the totals above — a separate surface, own data fetch, own
+					     panel (see docs/plans/constellation.md's "Cost tracking and
+					     observability"). This is just a nav shortcut into it. -->
+					<button class="constellation-usage-link" onclick={() => (showConstellationUsage = true)}>
+						&rarr; Constellation usage
+					</button>
 				</section>
 			{:else}
 				<section>
@@ -436,6 +448,10 @@
 	</div>
 </div>
 
+{#if showConstellationUsage}
+	<ConstellationUsageModal onClose={() => (showConstellationUsage = false)} />
+{/if}
+
 <style>
 	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —
 	   shared with ComposerMenu.svelte, one popup treatment (including the
@@ -562,6 +578,18 @@
 	.hint code {
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 		font-size: 11px;
+	}
+
+	.constellation-usage-link {
+		display: block;
+		margin-top: var(--space-md);
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		font-size: 12.5px;
+		color: var(--color-accent);
+		cursor: pointer;
 	}
 
 	/* Real segmented-control construction, not a bordered box of buttons:
