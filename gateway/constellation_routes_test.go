@@ -317,18 +317,45 @@ func TestHandleGetConstellationMap_ReturnsStarsAndEdges(t *testing.T) {
 
 func TestReconcileStarContent_ParsesSummaryAndBody(t *testing.T) {
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
-		{Resp: &llm.ChatResponse{Content: "SUMMARY: Now finished, not just researching\nBODY: Full rewritten body text here."}},
+		{Resp: &llm.ChatResponse{Content: "INVALIDATES: false\n\nSUMMARY: Now finished, not just researching\nBODY: Full rewritten body text here."}},
 	}}
 
-	summary, body, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
+	summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
+	}
+	if invalidated {
+		t.Errorf("invalidated = true, want false")
 	}
 	if summary != "Now finished, not just researching" {
 		t.Errorf("summary = %q", summary)
 	}
 	if body != "Full rewritten body text here." {
 		t.Errorf("body = %q", body)
+	}
+}
+
+// TestReconcileStarContent_FlatDenialInvalidates covers the real bug this
+// was written to fix: a correction that denies the star's whole premise
+// ("that wasn't me at all") previously got folded into the star's own
+// body as if it were a normal revision, and the caller then confirmed the
+// star anyway — producing a "confirmed" star whose entire content was the
+// model narrating that the star was wrong. INVALIDATES: true short-
+// circuits before SUMMARY/BODY are read at all.
+func TestReconcileStarContent_FlatDenialInvalidates(t *testing.T) {
+	mock := &llmtest.MockClient{Responses: []llmtest.Response{
+		{Resp: &llm.ChatResponse{Content: "INVALIDATES: true\n\nSUMMARY: should not be read\nBODY: should not be read"}},
+	}}
+
+	summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "yeah that wasn't me at all")
+	if err != nil {
+		t.Fatalf("reconcileStarContent: %v", err)
+	}
+	if !invalidated {
+		t.Fatalf("invalidated = false, want true")
+	}
+	if summary != "" || body != "" {
+		t.Errorf("summary/body = %q/%q, want empty when invalidated", summary, body)
 	}
 }
 

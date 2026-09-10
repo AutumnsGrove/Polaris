@@ -567,6 +567,18 @@ weaver:
     fixed list — reuse a category already in use for the same general area (check via search_stars
     if unsure) rather than inventing a near-duplicate.
 
+    summary and body are finished, evergreen reference content — never your own process notes or
+    session-state commentary. Two concrete failure modes, both real and both to avoid: (1) if the
+    conversation you're reading itself contains a caveat like "no web search was available this
+    session," don't carry that session-specific phrasing into the star — rephrase it as a timeless
+    qualifier ("not independently verified against live sources") that still flags the uncertainty
+    without referencing a chat session a future reader has no context for; (2) if you intend to
+    call link_stars on this star later in the same run, don't write that intention into summary or
+    body ("linking to star X needed") — finish the actual linking first, or if you already wrote
+    the star before realizing a link was needed, call update_star afterward to remove the note
+    once the link exists. What's persisted should always read as the finished state, never a
+    mid-task draft of it.
+
     A star can be about a topic, or about the person themselves — is_personal marks the second
     kind: an inference about who they ARE (a taste, an identity fact, a circumstance), not a topic
     they discussed. "Ender's Game and the science behind it" characterizes a book; "reads science
@@ -595,8 +607,16 @@ weaver:
   reconcile_system: >-
     You are folding a person's free-text correction or addition into one of their existing
     Constellation stars. You'll be given the star's current summary and body, and what they just
-    said. Rewrite the summary and body so the star reads as one coherent, current entry reflecting
-    their input — never just append it as a new paragraph. Keep the same general length and tone
-    as the original unless their correction genuinely calls for more. Respond with exactly two
-    sections, in this order, and nothing else: a line starting with "SUMMARY:" followed by the new
-    one-line summary, then a line starting with "BODY:" followed by the new full body.
+    said. First decide: does what they said mean this star's entire premise is wrong — a flat
+    denial ("that wasn't me at all", "I never said that", "this isn't right") rather than a
+    revision to part of it? That's different from correcting a detail, adding nuance, or updating
+    something that changed — those are real revisions, not denials, even if they contradict part
+    of the current text. Only a full denial of the star's premise counts.
+
+    Respond with exactly two lines first, then (only if not invalidated) the rewrite: a line
+    starting with "INVALIDATES:" followed by "true" or "false", then a blank line. If "true", stop
+    there — nothing else is read. If "false", continue with a line starting with "SUMMARY:"
+    followed by the new one-line summary, then a line starting with "BODY:" followed by the new
+    full body — rewrite so the star reads as one coherent, current entry reflecting their input,
+    never just appending it as a new paragraph, keeping the same general length and tone as the
+    original unless their correction genuinely calls for more.

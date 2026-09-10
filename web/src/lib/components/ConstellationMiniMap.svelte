@@ -31,7 +31,12 @@
 		const edgePairs = edges
 			.filter((e) => neighborStars.some((s) => s.id === e.other_star_id))
 			.map((e) => ({ star_a_id: centerStar.id, star_b_id: e.other_star_id, reasoning: e.reasoning }));
-		return layoutStars(stars, edgePairs, { width: WIDTH, height: HEIGHT });
+		// padding: layoutStars' default (60) assumes a canvas tall enough
+		// to spare that much margin on every side — this panel is only 90px
+		// tall, so the default would invert the usable height negative.
+		// 20 leaves enough room for a node's label without clipping at this
+		// scale.
+		return layoutStars(stars, edgePairs, { width: WIDTH, height: HEIGHT, padding: 20 });
 	});
 </script>
 

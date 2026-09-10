@@ -49,13 +49,20 @@
 		}`
 	);
 
-	const MAP_WIDTH = 800;
-	const MAP_HEIGHT = 900;
+	// Sized to the actual rendered viewport (bind:clientWidth/clientHeight
+	// below), not a fixed constant — a fixed 800x900 canvas meant most of
+	// the graph rendered off-screen, requiring a scroll to find it, which
+	// was most of why the map read as sparse/disconnected: nodes and their
+	// connecting lines were there, just not in the visible viewport.
+	// layoutStars' own bounding-box normalize (see constellationLayout.ts)
+	// guarantees every node fits whatever size is passed in.
+	let mapAreaWidth = $state(360);
+	let mapAreaHeight = $state(620);
 	const mapLayout = $derived.by(() => {
 		if (!constellationState.mapData) return null;
 		return layoutStars(constellationState.mapData.stars, constellationState.mapData.edges, {
-			width: MAP_WIDTH,
-			height: MAP_HEIGHT
+			width: mapAreaWidth,
+			height: mapAreaHeight
 		});
 	});
 	// GET /api/constellation/map deliberately filters to auto/confirmed
@@ -176,8 +183,12 @@
 	{:else if !constellationState.mapData}
 		<p class="empty">Loading the map…</p>
 	{:else if mapLayout && mapLayout.nodes.length > 0}
-		<div class="map-area">
-			<svg class="lines" viewBox="0 0 {MAP_WIDTH} {MAP_HEIGHT}">
+		<div
+			class="map-area"
+			bind:clientWidth={mapAreaWidth}
+			bind:clientHeight={mapAreaHeight}
+		>
+			<svg class="lines" viewBox="0 0 {mapAreaWidth} {mapAreaHeight}">
 				{#each mapLayout.edges as edge (edge.starAId + '-' + edge.starBId)}
 					{@const a = mapLayout.nodeById.get(edge.starAId)}
 					{@const b = mapLayout.nodeById.get(edge.starBId)}
@@ -192,6 +203,11 @@
 					{/if}
 				{/each}
 			</svg>
+			{#each mapLayout.clusterLabels as cluster (cluster.category)}
+				<div class="cluster-label" style="left: {cluster.x}px; top: {cluster.y}px;">
+					{cluster.category}
+				</div>
+			{/each}
 			{#each mapLayout.nodes as node (node.id)}
 				<button
 					class="map-node"
@@ -370,14 +386,17 @@
 		position: relative;
 		width: 100%;
 		height: 100%;
-		overflow: auto;
+		/* No more overflow/scroll — layoutStars' bounding-box normalize
+		   (see constellationLayout.ts) sizes every node to fit exactly
+		   within this container's own clientWidth/clientHeight, so there's
+		   nothing left to scroll to find. */
+		overflow: hidden;
 	}
 	.lines {
 		position: absolute;
-		top: 0;
-		left: 0;
-		width: 800px;
-		height: 900px;
+		inset: 0;
+		width: 100%;
+		height: 100%;
 		pointer-events: none;
 	}
 	.lines line {
@@ -387,6 +406,18 @@
 	}
 	.lines line.personal {
 		stroke: var(--color-personal);
+	}
+	.cluster-label {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-text-dim);
+		opacity: 0.6;
+		pointer-events: none;
+		white-space: nowrap;
 	}
 	.map-node {
 		position: absolute;

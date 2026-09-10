@@ -291,10 +291,29 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 			http.Error(w, "correction is required for refine", http.StatusBadRequest)
 			return
 		}
-		if err := s.reconcileAndSaveStar(r.Context(), id, req.Correction); err != nil {
+		invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction)
+		if err != nil {
 			log.Warn("refining star failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if invalidated {
+			// A flat denial ("that wasn't me at all") isn't a partial
+			// revision — Refine still resolves the review in one step, it
+			// just resolves it as a rejection instead of a confirm, same
+			// outcome Discard would have produced. Recorded as
+			// "discarded" (star_reviews' action enum has no separate
+			// value for this — it's the same real outcome), but with the
+			// actual correction text kept as the reason, unlike a plain
+			// Discard's own empty correction.
+			if err := s.db.SetStarStatus(id, "rejected"); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := s.db.RecordStarReview(id, "discarded", req.Correction); err != nil {
+				log.Warn("recording star review failed", "err", err, "id", id)
+			}
+			break
 		}
 		// Sending a refinement both corrects the star and resolves the
 		// review in one step — there's no separate confirm-after-refine
@@ -343,10 +362,24 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "correction is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.reconcileAndSaveStar(r.Context(), id, req.Correction); err != nil {
+	invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction)
+	if err != nil {
 		log.Warn("editing star failed", "err", err, "id", id)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if invalidated {
+		// Edit star operates on an already-confirmed star, past the review
+		// stage entirely — "rejected" is specifically Inbox-review
+		// semantics (see store.Star's own status doc comment), so a flat
+		// denial here means the same thing the overflow menu's own
+		// Disable action means: a star the person doesn't want, distinct
+		// from Weaver having gotten it wrong. star_reviews still isn't
+		// written (Edit star never writes there, same as before).
+		if err := s.db.SetStarDisabled(id, true); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	star, err := s.db.GetStar(id)
 	if err != nil {
@@ -362,57 +395,78 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 // is_personal is read from the star's current value and passed through
 // unchanged: this path never flips a star between personal/topical, only
 // Weaver's own create_star/update_star judgment does that.
-func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correction string) error {
+//
+// Returns invalidated=true when the correction was a flat denial of the
+// star's whole premise ("that wasn't me at all") rather than a partial
+// revision — the star's content is left untouched in that case (nothing
+// worth persisting), and it's the caller's job to decide what
+// "invalidated" means for its own flow: Refine (handleReviewConstellationStar)
+// rejects the star, Edit star (handleEditConstellationStar) disables it.
+// Previously this always wrote back whatever the model produced and the
+// Refine caller always confirmed the star regardless — live-observed
+// producing a "confirmed" star whose entire body was the model narrating
+// that the star was wrong, since nothing here or in the caller recognized
+// a flat denial as different from a normal revision.
+func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correction string) (invalidated bool, err error) {
 	star, err := s.db.GetStar(id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cfgRow, err := s.db.GetConstellationConfig()
 	if err != nil {
-		return err
+		return false, err
 	}
 	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	summary, body, _, err := reconcileStarContent(reqCtx, client, *star, correction)
+	summary, body, invalidated, _, err := reconcileStarContent(reqCtx, client, *star, correction)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return s.db.UpdateStar(id, summary, body, star.Tags, star.Confidence, star.IsPersonal)
+	if invalidated {
+		return true, nil
+	}
+	return false, s.db.UpdateStar(id, summary, body, star.Tags, star.Confidence, star.IsPersonal)
 }
 
 // reconcileStarContent is the actual LLM call behind reconcileAndSaveStar
 // — a single completion, not a full Weaver agent.Run: no tools, no dedup/
 // link judgment, just folding one piece of free-text human input into an
 // already-identified star's fields (see prompts.yaml's weaver.reconcile_system).
-func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (summary, body string, costUSD float64, err error) {
+func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (summary, body string, invalidated bool, costUSD float64, err error) {
 	task := fmt.Sprintf("Current summary: %s\n\nCurrent body:\n%s\n\nWhat they just said: %s", star.Summary, star.Body, correction)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().Weaver.ReconcileSystem},
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", false, 0, err
 	}
-	summary, body = parseReconcileResponse(resp.Content)
+	summary, body, invalidated = parseReconcileResponse(resp.Content)
+	if invalidated {
+		return "", "", true, resp.CostUSD, nil
+	}
 	if summary == "" {
 		summary = star.Summary
 	}
 	if body == "" {
 		body = star.Body
 	}
-	return summary, body, resp.CostUSD, nil
+	return summary, body, false, resp.CostUSD, nil
 }
 
-// parseReconcileResponse pulls SUMMARY:/BODY: out of the model's response
-// — see prompts.yaml's weaver.reconcile_system for the exact format asked
-// for. Falls back to empty strings (reconcileStarContent then keeps the
-// star's existing values) if the model didn't follow the format, rather
-// than erroring the whole request out over a formatting slip.
-func parseReconcileResponse(content string) (summary, body string) {
+// parseReconcileResponse pulls INVALIDATES:/SUMMARY:/BODY: out of the
+// model's response — see prompts.yaml's weaver.reconcile_system for the
+// exact format asked for. Falls back to empty strings (reconcileStarContent
+// then keeps the star's existing values) if the model didn't follow the
+// format, rather than erroring the whole request out over a formatting
+// slip.
+func parseReconcileResponse(content string) (summary, body string, invalidated bool) {
 	lines := strings.Split(content, "\n")
 	var bodyLines []string
 	inBody := false
 	for _, line := range lines {
 		switch {
+		case strings.HasPrefix(line, "INVALIDATES:"):
+			invalidated = strings.TrimSpace(strings.TrimPrefix(line, "INVALIDATES:")) == "true"
 		case strings.HasPrefix(line, "SUMMARY:"):
 			summary = strings.TrimSpace(strings.TrimPrefix(line, "SUMMARY:"))
 		case strings.HasPrefix(line, "BODY:"):
@@ -422,8 +476,11 @@ func parseReconcileResponse(content string) (summary, body string) {
 			bodyLines = append(bodyLines, line)
 		}
 	}
+	if invalidated {
+		return "", "", true
+	}
 	body = strings.TrimSpace(strings.Join(bodyLines, "\n"))
-	return summary, body
+	return summary, body, false
 }
 
 // constellationDigest is the Library's digest banner — pure counts plus
