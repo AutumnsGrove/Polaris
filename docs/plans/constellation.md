@@ -109,15 +109,22 @@ CREATE TABLE stars (
     -- status: 'auto' (Weaver wrote it directly, high confidence) | 'proposed'
     -- (awaiting review) | 'confirmed' (a formerly-proposed star a human
     -- approved -- kept distinct from 'auto' so "how often is Weaver's own
-    -- confidence judgment right" stays answerable) | 'rejected' (soft state,
-    -- not a delete -- same shape as threads.disabled/memories.disabled: stays
-    -- in trace history, drops out of Library/Inbox/Map reads).
+    -- confidence judgment right" stays answerable) | 'rejected' (a human said
+    -- no -- stays in stars_fts so Weaver's own search_stars can still find it
+    -- and treat it as a closed matter, but drops out of the normal Library/
+    -- Inbox/Map reads into its own dedicated "Rejected" section instead).
     status       TEXT NOT NULL DEFAULT 'proposed',
     confidence   TEXT NOT NULL DEFAULT '',  -- human-readable, shown on Star detail
     -- is_personal: true for a star that characterizes the person themselves
     -- (an inference about who they are), not a topic they discussed -- see
     -- "Personal stars" below for the full routing rules this drives.
     is_personal  INTEGER NOT NULL DEFAULT 0,
+    -- disabled: manual delete/hide, same soft-delete shape as threads.disabled
+    -- -- independent of status. A confirmed star the person just doesn't want
+    -- in their library anymore isn't "rejected" (that means Weaver got it
+    -- wrong); it's disabled, via the star's own overflow menu (see "Reviewing
+    -- and editing a star").
+    disabled     INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -171,7 +178,16 @@ CREATE TABLE shooting_star_runs (
     started_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at           DATETIME,
     summary               TEXT NOT NULL DEFAULT '',  -- Weaver's own closing wrap-up
+    -- error: a human-readable failure reason, or the literal 'max_turns_exceeded'
+    -- when the 25-turn cap (see "Weaver's tools") was hit -- that specific value
+    -- is what ConstellationStats' MaxTurnsCount counts, separate from other
+    -- errors.
     error                 TEXT NOT NULL DEFAULT '',
+    -- needs_retry: set on any failure (including max_turns_exceeded). The
+    -- next poll tick retries this thread unconditionally via the retry gate
+    -- in "Thread eligibility", regardless of the delta gate -- no backoff, no
+    -- retry limit. Cleared the moment a run for this thread succeeds.
+    needs_retry           INTEGER NOT NULL DEFAULT 0,
     -- cost_usd: a cached rollup, SUM(shooting_star_events.cost_usd) for this
     -- run_id -- never its own source of truth, always reconcilable against
     -- the itemized events below.
@@ -243,8 +259,7 @@ and whether it's worth linking. No forced Go-orchestrated stages.
 ### Thread eligibility
 
 A thread isn't "new or already processed" — it's "does it have content Weaver hasn't seen,"
-because threads get revisited weeks later with no archive/close concept to lean on. Two
-independent gates:
+because threads get revisited weeks later with no archive/close concept to lean on. Gates:
 
 - **Idle-timing gate**: a thread is only a poll candidate once it's been quiet for at least
   `poll_interval_minutes` — unrelated to whether it's ever been seen before, just "don't grab a
@@ -254,6 +269,45 @@ independent gates:
   `shooting_star_runs.last_message_id_seen` for that thread (or no prior run at all). A thread
   reopened two weeks later behaves identically to a brand-new thread the first time it goes idle
   again — no special case, `shooting_star_runs` just accumulates another row.
+- **Retry gate**: if that thread's most recent run has `needs_retry = 1` (see "Failure and retry"
+  below), it's eligible regardless of the delta gate — a failed attempt doesn't get to hide behind
+  "no new messages."
+- **`threads.disabled = 1` is excluded outright** — a disabled thread is never fed to Weaver, full
+  stop, not considered at all. If a thread gets disabled *after* Weaver already processed it,
+  nothing retroactively happens to whatever stars it already contributed to — that content already
+  exists independently in Constellation.
+
+**Sequential, never concurrent.** Shooting stars run one at a time, never in parallel — deliberate,
+not a missing optimization. Each run's writes commit to the DB before the next run starts, so run
+N's own `search_stars` retrieval naturally sees whatever run N-1 just wrote, which is what actually
+prevents two threads in the same backlog from independently creating duplicate stars for the same
+emerging topic. Running concurrently would reintroduce exactly that race for no benefit, since
+nothing here needs cross-thread reasoning within one poll — and deliberately no "finishing sweep"
+pass afterward to reconcile duplicates a parallel run might have created; sequential execution
+means that reconciliation step is never needed in the first place.
+
+**Failure and retry.** `shooting_star_runs` gets a `needs_retry INTEGER NOT NULL DEFAULT 0` column.
+Any error during a run — a hard failure or hitting the turn cap (below) — sets it, along with a
+human-readable `error`. The next poll tick retries that thread via the retry gate above,
+unconditionally, for as long as `needs_retry` stays set — there's no backoff or retry limit; a
+thread that keeps failing keeps getting attempted every poll until it succeeds or the underlying
+problem (a bad prompt, a flaky provider) gets fixed. `needs_retry` clears the moment a run for that
+thread finishes successfully.
+
+### Backfill
+
+Turning Constellation on for the first time doesn't mean the library only starts accumulating from
+that moment forward — every thread that predates enabling it is eligible too (none of them have
+`shooting_star_runs` rows yet, so the normal eligibility logic already covers them without any
+special case). What it needs is a way to run through a real backlog (160+ threads on the potato as
+of this writing) without waiting for the once-an-hour poller to trickle through it one tick at a
+time. **A dedicated one-time CLI command** (`polaris constellation backfill`, matching the
+`cmd/*.go` convention), not a UI affordance — this happens once per install, ever, so it doesn't
+earn a permanent place in the settings panel. Processes every eligible thread sequentially, exactly
+the same Weaver pipeline the poller uses, just triggered manually and back-to-back instead of
+gated by idle-timing (a historical thread is definitionally not "mid-conversation"). No fixed
+time estimate — however long a full sequential pass over the real backlog actually takes is the
+answer, not a guess made ahead of running it.
 
 ### Revisiting a thread
 
@@ -312,6 +366,14 @@ for one or two plain sentences summarizing what happened when it's done, and tha
 `shooting_star_runs.summary` — the run's closing wrap-up doubles as both its natural termination
 and its human-readable trace entry.
 
+**Turn cap: 25.** A real conversation thread is very unlikely to need Weaver's loop to run longer
+than that, so this is a backstop, not an expected limit — same idea as `config.MaxAgentTurns` for
+the main chat agent. Hitting it forcibly ends the run with `error = 'max_turns_exceeded'` and sets
+`needs_retry` (see "Failure and retry" above), and is counted separately in Constellation's own
+usage stats (a `MaxTurnsCount`, mirroring the main Usage panel's existing "Ran out of turn budget"
+row) rather than folded into a generic error count — a thread that's genuinely too complex for the
+current prompt is a different signal than a transient API failure, worth telling apart at a glance.
+
 **Deciding "is this the same topic as something existing" happens inside Weaver's own reasoning**
 (via `search_stars`/`read_star`) before it ever calls `create_star` or `update_star` — there's no
 separate "ambiguous match" case. Genuine uncertainty about a match just means reaching for
@@ -338,6 +400,21 @@ So the real bar is **"was this actually discussed with some substance,"** not "i
 enough to matter." Excluded: pure logistics with no topical content, a single throwaway reference
 with nothing said about it, ephemeral/time-bound content with no lasting relevance. Real exchanges
 about real topics clear it — most shooting stars should produce a new or updated star, not zero.
+
+**A `rejected` star is a closed matter, not a candidate.** `search_stars` includes rejected stars
+in its results (they're not excluded from `stars_fts`), and `read_star` surfaces `status:
+'rejected'` — Weaver's prompt is explicit that finding one is a stop sign: don't call `create_star`
+for the same topic again, and don't `update_star` it back to life either. A human explicitly said
+no; that stands until they change their mind through the UI (see "Reviewing and editing a star"),
+not because Weaver reconsidered. Without this, a topic that comes up again in an unrelated future
+thread would just get re-proposed into the Inbox every time, defeating the point of rejecting it.
+
+**Category/tag sprawl is a real, accepted risk for v1** — nothing beyond the prompt instruction
+above ("reuse an existing category, check via `search_stars` if unsure") stops near-duplicate
+groupings ("tech" vs. "technology") from accumulating over time. Deliberately not solving this with
+a mechanism now — try it with prompting first, and revisit with real usage data (a fixed category
+list, a normalization pass, something else) only if it actually gets out of hand, not
+preemptively.
 
 ### System prompt and safety
 
@@ -387,6 +464,13 @@ was picked). On the Map, a personal star's node gets the same tint, with no sepa
 (`is_personal` is orthogonal to `category`, so it sits wherever its topic naturally clusters), and
 a violet-tinted connecting line where it links to a topic star.
 
+**In the Library, personal stars get their own collapsible group, separate from the category
+sections.** Given this is a single-operator tool, interleaving personal stars into the regular
+category sections would have been fine — there's no second person browsing who'd need them kept
+apart — but a dedicated group reads better for continuity: an "About you" collapsible section,
+alongside the regular category sections (themselves also individually collapsible), rather than
+personal stars quietly scattered one-per-category among the rest.
+
 ## Reviewing and editing a star
 
 Two related but distinct interactions, both deliberately reusing the same free-text,
@@ -416,6 +500,21 @@ The Review screen also surfaces `shooting_star_candidates.reasoning` directly as
 needs a look"** block — the same sentence Weaver already logs for the trace tables, put in front
 of the person who actually has to make the call, not just kept for debugging.
 
+**Rejected stars get their own collapsible Library section**, same idea as the "About you" group —
+collapsed by default, since a discarded topic isn't something to browse day to day, but reachable
+without hunting for it. Each card gets a **Restore** button, moving the star back to `confirmed`
+(not back to `proposed` — a human deciding "actually I do want this" is a direct decision, not a
+new Weaver proposal needing re-review). This is also what makes rejecting something low-stakes:
+"no" isn't permanent unless it's left alone.
+
+**A star's own overflow menu** (mirroring the existing per-thread overflow menu) covers manual
+housekeeping that isn't a Weaver-mediated correction at all: renaming the title directly (no LLM
+involved, unlike Edit star — just a plain text field, the same way a thread gets renamed), and
+**Disable** — a star the person no longer wants in their library, distinct from rejecting one
+Weaver got wrong (`stars.disabled`, soft-delete, same shape as `threads.disabled`; independent of
+`status`, so a `confirmed`, entirely correct star can still be disabled if it's just not wanted
+anymore).
+
 **Continue in chat** — a third, older interaction (predates Edit star/Refine): a pinned button on
 Star detail that starts a fresh chat pre-loaded with a reference back to that star (an
 attachment-ID-style reference dropped into the omnibox, not a fully retyped question), for when
@@ -423,7 +522,7 @@ reading a star surfaces a real follow-up question rather than a correction.
 
 ## The UI
 
-`mockups/constellation.html` — eight phone-width screens, "Option D": A's grouped-by-category
+`mockups/constellation.html` — ten phone-width screens, "Option D": A's grouped-by-category
 library structure rendered with C's card polish, B's constellation/reflection-layer visualization
 folded into a compact panel rather than competing for the home view. (Full comparison of the three
 original directions — A "The Index," B "The Constellation," C "The Digest" — and why D combines
@@ -432,14 +531,17 @@ them, lives in mockup review notes; the shipped direction is what's described be
 - **Library** (default/home view) — grouped by category (Technology, Books & Ideas, Science &
   History, ...), an elevated card per star (icon tile, title, one-line summary, tags, chevron). A
   slim "This week" digest banner and an Inbox ("N stars proposed") banner sit above the grouped
-  sections. Auto-vs-proposed stars are visually distinguished (a status badge, a dedicated Inbox
-  banner) rather than shown inline, undifferentiated, in the same list.
+  sections, which are each independently collapsible. An "About you" collapsible group (personal
+  stars) and a collapsed-by-default "Rejected" collapsible group (with a Restore button per card)
+  sit apart from the regular category sections. Auto-vs-proposed stars are visually distinguished
+  (a status badge, a dedicated Inbox banner) rather than shown inline, undifferentiated, in the
+  same list.
 - **Star detail** — title/tags/confidence/status fields, reading-first body prose (serif headings,
   matching the app's typography convention), a **"Linked articles"** block listing the originating
   thread(s) (`star_sources`), and a **"Nearby in the constellation"** sub-section — a compact,
   bounded reflection-layer visualization (a small starfield panel with 2-3 connected nodes) rather
   than a flat "related stars" chip list. "Continue in chat" and the Edit-star trigger are pinned
-  bottom buttons.
+  bottom buttons; an overflow menu (rename, disable) sits in the top bar.
 - **Map** — the full star-map view: topic clusters as star nodes, reflection-layer links as
   connecting lines. A real, full screen, not a bottom sheet — reached via a Library/Map tab bar so
   it's a deliberate, opt-in exploration mode rather than competing with the list for the home view.
@@ -450,7 +552,12 @@ them, lives in mockup review notes; the shipped direction is what's described be
 - **Review star** — one proposed star's reading view plus the "Why this needs a look" block and
   the three-way Approve/Refine/Discard action bar.
 - **Refine** — the two-sided correction sheet, same visual pattern as Edit star.
-- **This week** — the digest banner's tap-through screen (see below).
+- **This week** — the digest banner's tap-through screen.
+- **Constellation settings** — its own settings-panel section, same shape as Pulsar's and Pulsar
+  Daily's own sections: the on/off toggle, poll interval, and the model picker ("Same as chat
+  (default)" plus an explicit override).
+- **Constellation Usage** — the dedicated cost/observability panel described below, reached from
+  Constellation's own `Info` icon (and via a discoverability link from the main Usage panel).
 
 ## The weekly digest
 
@@ -500,6 +607,11 @@ keep in sync" philosophy `GetStats` already uses, pointed at Constellation's own
 - Review action counts (approved/refined/discarded, from `star_reviews`) — the confidence-gate
   tuning signal, finally surfaced somewhere visible instead of "a query someone runs."
 - Links created count.
+- `MaxTurnsCount` — `COUNT(*) FROM shooting_star_runs WHERE error = 'max_turns_exceeded'`, mirroring
+  the main Usage panel's existing "Ran out of turn budget" row. Counted separately from other
+  errors: a thread that's genuinely too complex for the current 25-turn cap is a prompt-tuning
+  signal, not the same thing as a transient API failure.
+- `needs_retry` count — how many shooting stars are currently waiting on a retry, at a glance.
 
 **Route**: `GET /api/constellation/stats` (`gateway/constellation_routes.go`).
 
@@ -530,9 +642,15 @@ order, with what it produced.
   matching `tools/descriptions/*.yaml` files.
 - A new `weaver:` section in `prompts.yaml`, sibling to `pulsar_daily:`.
 - `store/constellation.go` — the schema above, plus `ConstellationStats`/`GetConstellationStats`.
+- `cmd/constellation_backfill.go` (or similar) — the one-time backfill command.
 
 Same package and naming convention as Pulsar and Pulsar Daily throughout — not a separate
 top-level package.
+
+**Scheduler startup**: launched exactly where `RunPulsarScheduler` already is —
+`cmd/run.go` starts it as its own goroutine with its own shutdown-drain channel, same pattern as
+`go backup.RunScheduler(...)` and `go srv.RunPulsarScheduler(pulsarDone)` a few lines above it:
+`go srv.RunConstellationScheduler(constellationDone)`.
 
 ## Deferred to v2
 
@@ -548,5 +666,8 @@ top-level package.
 - Real migrations + Go store methods for the schema above (`store/store.go` conventions).
 - The five tool implementations, their `tools/descriptions/*.yaml` files, and the `weaver:`
   `prompts.yaml` section — all written in prose here, none as real files yet.
-- A CLAUDE.md Docker/bare-metal dual-support checklist pass — likely fine (no-external-cron
-  poller, same shape as Pulsar) but never explicitly verified.
+- A CLAUDE.md Docker/bare-metal dual-support checklist pass, covering both the scheduler (likely
+  fine — no-external-cron, same shape as Pulsar) and the new `polaris constellation backfill` CLI
+  command specifically (does it need the `isDockerComposeInstall`/thin-HTTP-client treatment
+  `cmd/docker_client.go` already establishes for other commands that touch a running install) —
+  neither has been explicitly checked.
