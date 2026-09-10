@@ -740,9 +740,12 @@ subsystem":
 - `star_reviews`/Inbox/Review/Refine all work unmodified — a personal star is just a proposed star
   in the same queue.
 
-**Open, deliberately not decided this pass**: whether a personal star gets a distinct visual
-treatment in the Library/Inbox/Map (a different accent, a badge, something else) — real, wanted
-("I think a personal star does look different"), but picked from an actual side-by-side comparison
-rather than guessed at in prose. See `mockups/vault-personal-star-options.html` (new file, several
-concrete treatments to choose from) — whichever one gets picked folds into `mockups/vault.html`'s
-Library/Inbox/Map cards once chosen, not designed twice.
+**Settled: option E from `mockups/vault-personal-star-options.html`, minus its corner icon** — a
+tinted tile/border (`--color-personal`, a third accent between the existing warm gold and cool
+blue) plus a text badge, nothing else. The icon overlapping the badge read as cluttered once seen
+side by side, which the standalone options file was built specifically to catch before it landed
+in the main mockup. Folded into `mockups/vault.html`: the Library's new "Reads science fiction"
+card (Books & Ideas section) and the Inbox's existing "Might be weighing a move" card (now showing
+both a `badge-personal` and its original `badge-proposed` — status and type are different axes,
+both worth showing). Map's node treatment for a personal star is the one piece of this not done
+yet — noted, not designed.

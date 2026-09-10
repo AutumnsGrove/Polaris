@@ -26,6 +26,11 @@
 	--color-accent-strong: oklch(72% 0.18 74);
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
 	--color-accent-2: oklch(78% 0.06 235);
+	/* --color-personal: "about the person" stars (stars.is_personal) — a third
+	   accent sitting between the warm gold and cool blue above, picked from
+	   mockups/vault-personal-star-options.html's option E (color-shift + badge,
+	   the corner icon dropped — it overlapped the badge and read as cluttered). */
+	--color-personal: oklch(78% 0.1 322);
 
 	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
 	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
@@ -139,6 +144,11 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-library .card-bottom { display: flex; align-items: center; gap: 6px; }
 #screen-library .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
 #screen-library .card-chev { margin-left: auto; color: var(--color-text-dim); }
+/* .personal — stars.is_personal: chosen treatment (vault-personal-star-options.html,
+   option E minus its corner icon) is a tinted tile/border plus a text badge, nothing else. */
+#screen-library .chapter-card.personal { border-color: color-mix(in srgb, var(--color-personal) 32%, var(--color-border)); }
+#screen-library .chapter-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
+#screen-library .badge-personal { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-personal) 18%, transparent); color: var(--color-personal); flex-shrink: 0; }
 #screen-library .tabbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); }
 #screen-library .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
 #screen-library .tab.active { color: var(--color-accent); }
@@ -251,6 +261,13 @@ a { color: var(--color-accent-2); text-decoration: none; }
 #screen-inbox .card-bottom { display: flex; align-items: center; gap: 6px; }
 #screen-inbox .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
 #screen-inbox .card-chev { margin-left: auto; color: var(--color-text-dim); }
+/* .personal — same treatment as #screen-library's, see that comment. Inbox cards already
+   have their own accent-2-tinted border for "proposed" in general, so .personal overrides
+   it rather than stacking two tints. */
+#screen-inbox .proposed-card.personal { border-color: color-mix(in srgb, var(--color-personal) 34%, var(--color-border)); }
+#screen-inbox .proposed-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
+#screen-inbox .badge-personal { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-personal) 18%, transparent); color: var(--color-personal); flex-shrink: 0; }
+#screen-inbox .badge-row { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ---------------- Screen 6 — Review star (approve / refine / discard) ---------------- */
 #screen-review { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
@@ -381,6 +398,17 @@ a { color: var(--color-accent-2); text-decoration: none; }
 									<div class="card-sub">Child psychology and the ethics of command</div>
 									<div class="card-bottom">
 										<span class="tag">sci-fi</span><span class="tag">ethics</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+							<div class="chapter-card personal">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Reads science fiction</span><span class="badge-personal">Personal</span></div>
+									<div class="card-sub">Comes up across Ender's Game and a couple of other book threads &mdash; an ongoing preference, not a one-off</div>
+									<div class="card-bottom">
+										<span class="tag">personal</span><span class="tag">inferred</span>
 										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
 									</div>
 								</div>
@@ -601,10 +629,10 @@ a { color: var(--color-accent-2); text-decoration: none; }
 							</div>
 						</div>
 					</div>
-					<div class="proposed-card">
-						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
+					<div class="proposed-card personal">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
 						<div class="card-main">
-							<div class="card-top"><span class="card-title">Might be weighing a move</span><span class="badge-proposed">Proposed</span></div>
+							<div class="card-top"><span class="card-title">Might be weighing a move</span><span class="badge-row"><span class="badge-personal">Personal</span><span class="badge-proposed">Proposed</span></span></div>
 							<div class="card-reason">Mentioned twice, both times in passing &mdash; flagged as personal/low-confidence rather than written up on its own.</div>
 							<div class="card-bottom">
 								<span class="tag">personal</span><span class="tag">low-confidence</span>
