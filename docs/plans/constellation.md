@@ -20,10 +20,12 @@ longer deferred, and a thirteenth pass wrote the actual tool api_descriptions an
 prompt — correcting an early "default to nothing" calibration borrowed wrongly from `memory.yaml`
 (stars aren't injected into every future turn the way memories are, so that conservatism doesn't
 apply; the real bar is "was this discussed with some substance," and most shooting stars should
-produce something). "Resolved in a brainstorm" and "a schema sketch" still aren't the same as
-"designed and ready to build" — the next real step is turning this into real migrations and code,
-running it against real data, and watching `shooting_star_events`/`star_reviews` to see whether the
-prompting actually holds up.
+produce something) — and a fourteenth pass pulled the first pass's deferred "you" layer into v1 as
+a single `stars.is_personal` flag rather than a separate subsystem, with a deliberately strict
+(and deliberately softenable-later) status-routing rule. "Resolved in a brainstorm" and "a schema
+sketch" still aren't the same as "designed and ready to build" — the next real step is turning this
+into real migrations and code, running it against real data, and watching
+`shooting_star_events`/`star_reviews` to see whether the prompting actually holds up.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -692,3 +694,55 @@ one or two plain sentences summarizing what happened when it's done, and that pl
 `shooting_star_runs.summary`. Confirmed as the right structure: the run's own closing wrap-up
 doubles as both its natural termination and its human-readable trace entry, no separate step
 needed for either.
+
+## The "you" layer, pulled into v1 as a tag, not a subsystem (fourteenth pass)
+
+First pass's deferred "private 'you' layer" (personal inferences about who the person *is* — "part
+of Atlanta's queer community, weighing a move" — stay local, always proposed, never auto-written)
+turns out not to need its own storage or pipeline at all. It's the same `stars` table, the same
+Weaver loop, the same Inbox/Review/Refine flow — just a flag, because a personal star is still
+genuinely a star: it shows on the Map, it can be linked to, it goes through the same review UI.
+
+**Schema**: one new column, `stars.is_personal INTEGER NOT NULL DEFAULT 0`. Nothing else new.
+
+**The dividing line, for Weaver's own prompt**: *is this about a topic, or about the person
+themselves* — not "is this personal-feeling content" in some vaguer sense. "Ender's Game and the
+science behind it" characterizes a book, even though liking it says something about the person.
+"Reads science fiction" characterizes *them*. Same source material, different subject —
+`create_star`/`update_star`'s `is_personal` guidance is written around this exact test, using this
+exact pair as the worked example.
+
+**Status routing — starting strict, on purpose:**
+
+- `create_star` with `is_personal = true` → **always `proposed`**, regardless of
+  `confidence_class`. No exceptions.
+- `update_star` with `is_personal = true` → **any update resets status back to `proposed`**, even
+  a pure reinforcement of an already-confirmed personal star (more sci-fi book threads adding to
+  an already-approved "reads science fiction" star still requires a fresh look). Chosen
+  deliberately over a softer alternative (only a *meaningful revision* re-triggers review, plain
+  reinforcement merges silently into an already-confirmed star) — the softer version needs the
+  model to self-judge "is this the same claim or a different one," exactly the kind of judgment
+  easiest to get subtly wrong on identity-level content. **Explicitly a starting point, not a
+  permanent one** — expected to soften once it's clear in practice whether constant re-affirming
+  is genuinely worth the friction or just annoying; loosening it later is a prompt change, not a
+  schema change, so nothing about starting strict forecloses that.
+- `confidence_class` is still recorded on a personal star (stated directly vs. inferred — shown on
+  the Review screen's confidence line) even though it no longer drives routing once
+  `is_personal = true` overrides it. Informational, not decisional, for that case.
+
+**Everything else needs zero new design**, which is the actual payoff of "just a tag, not a
+subsystem":
+
+- `link_stars` works completely unmodified. A personal star can be the hub several topic stars
+  connect to — "reads science fiction" linked to "Ender's Game and the science behind it" is an
+  ordinary link, same tool, same reasoning field. This is the reflection layer doing exactly what
+  the first pass originally pitched it for.
+- `star_reviews`/Inbox/Review/Refine all work unmodified — a personal star is just a proposed star
+  in the same queue.
+
+**Open, deliberately not decided this pass**: whether a personal star gets a distinct visual
+treatment in the Library/Inbox/Map (a different accent, a badge, something else) — real, wanted
+("I think a personal star does look different"), but picked from an actual side-by-side comparison
+rather than guessed at in prose. See `mockups/vault-personal-star-options.html` (new file, several
+concrete treatments to choose from) — whichever one gets picked folds into `mockups/vault.html`'s
+Library/Inbox/Map cards once chosen, not designed twice.
