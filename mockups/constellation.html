@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Constellation — Option D — mockup</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/asimovian@5/latin-400.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	/* --color-personal: "about the person" stars (stars.is_personal) — a third
+	   accent sitting between the warm gold and cool blue above, picked from
+	   mockups/constellation-personal-star-options.html's option E (color-shift + badge,
+	   the corner icon dropped — it overlapped the badge and read as cluttered). */
+	--color-personal: oklch(78% 0.1 322);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Page chrome around the three phone frames below — this wrapper, the
+   heading, and the frame labels are review-doc scaffolding, not part of
+   Constellation's own UI (same "mockup page vs. the app itself" split as
+   pulsar-daily.html's masthead/board). */
+.page-head {
+	max-width: 1360px;
+	margin: 0 auto;
+	padding: var(--space-2xl) var(--space-xl) 0;
+}
+.page-head .kicker {
+	font-family: 'Asimovian', sans-serif;
+	color: var(--color-accent);
+	font-size: 1.4rem;
+	letter-spacing: 0.02em;
+	margin: 0 0 var(--space-sm);
+}
+.page-head p {
+	color: var(--color-text-dim);
+	max-width: 680px;
+	line-height: 1.6;
+	font-size: 0.9rem;
+	margin: 0 0 var(--space-md);
+}
+
+.frames {
+	max-width: 1360px;
+	margin: 0 auto;
+	padding: var(--space-xl);
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2xl);
+	justify-content: center;
+}
+.frame-group { display: flex; flex-direction: column; align-items: center; gap: var(--space-md); }
+.frame-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); }
+.frame-label .sub { display: block; text-transform: none; letter-spacing: normal; font-weight: 400; margin-top: 2px; font-size: 0.7rem; }
+.phone {
+	width: 390px;
+	height: 844px;
+	border-radius: 34px;
+	overflow: hidden;
+	border: 7px solid oklch(9% 0.012 65);
+	box-shadow: var(--shadow-lg);
+	position: relative;
+}
+
+/* ===== shared leaf styles reused inside every phone (icon buttons, tags,
+   the confidence badge, etc.) — kept per-screen below rather than
+   hoisted, since a couple of them (icon-btn especially) render
+   differently over the starfield map than over a flat surface. ===== */
+
+a { color: var(--color-accent-2); text-decoration: none; }
+
+/* ---------------- Screen 1 — Library ---------------- */
+#screen-library { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-library .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 8px; flex-shrink: 0; }
+#screen-library .brand { font-family: 'Asimovian', sans-serif; font-size: 22px; color: var(--color-accent); letter-spacing: 0.02em; }
+#screen-library .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); }
+#screen-library .scroll { flex: 1; overflow-y: auto; padding: 0 16px 88px; }
+#screen-library .meta-line { padding: 8px 4px 14px; font-size: 12px; color: var(--color-text-dim); }
+#screen-library .banner-stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+#screen-library .banner { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid; }
+#screen-library .banner .icon { flex-shrink: 0; }
+#screen-library .banner .label { font-size: 13px; font-weight: 500; flex: 1; }
+#screen-library .banner .label small { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-dim); margin-top: 1px; }
+#screen-library .banner .chev { color: var(--color-text-dim); flex-shrink: 0; }
+#screen-library .banner.digest { background: linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)), var(--color-surface)); border-color: var(--color-border); }
+#screen-library .banner.digest .icon { color: var(--color-accent); }
+#screen-library .banner.inbox { background: color-mix(in srgb, var(--color-accent-2) 12%, transparent); border-color: color-mix(in srgb, var(--color-accent-2) 30%, transparent); }
+#screen-library .banner.inbox .icon { color: var(--color-accent-2); }
+#screen-library .section { margin-bottom: 22px; }
+#screen-library .section-header { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); padding: 0 4px 10px; }
+#screen-library .card-list { display: flex; flex-direction: column; gap: 8px; }
+#screen-library .star-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+#screen-library .tile { width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); }
+#screen-library .card-main { flex: 1; min-width: 0; }
+#screen-library .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#screen-library .card-title { font-size: 14px; font-weight: 600; }
+#screen-library .card-time { font-size: 11px; color: var(--color-text-dim); flex-shrink: 0; }
+#screen-library .card-sub { font-size: 12px; color: var(--color-text-dim); line-height: 1.4; margin: 3px 0 8px; }
+#screen-library .card-bottom { display: flex; align-items: center; gap: 6px; }
+#screen-library .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-library .card-chev { margin-left: auto; color: var(--color-text-dim); }
+/* .personal — stars.is_personal: chosen treatment (constellation-personal-star-options.html,
+   option E minus its corner icon) is a tinted tile/border plus a text badge, nothing else. */
+#screen-library .star-card.personal { border-color: color-mix(in srgb, var(--color-personal) 32%, var(--color-border)); }
+#screen-library .star-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
+#screen-library .badge-personal { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-personal) 18%, transparent); color: var(--color-personal); flex-shrink: 0; }
+#screen-library .tabbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); }
+#screen-library .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
+#screen-library .tab.active { color: var(--color-accent); }
+#screen-library .tab span { font-size: 11px; font-weight: 500; }
+
+/* ---------------- Screen 2 — Star detail ---------------- */
+#screen-star { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
+#screen-star .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
+#screen-star .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-star .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+#screen-star .star-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 100px; }
+#screen-star .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+#screen-star .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); flex-shrink: 0; }
+#screen-star .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent) 16%, transparent); color: var(--color-accent); }
+#screen-star .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
+#screen-star h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
+#screen-star .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#screen-star .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-star .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
+#screen-star .star-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 20px 0 8px; }
+#screen-star .star-body h2:first-child { margin-top: 0; }
+#screen-star .star-body p { font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+#screen-star .block-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); margin: 24px 0 10px; }
+#screen-star .chip-row { display: flex; flex-direction: column; gap: 8px; }
+#screen-star .source-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-border); font-size: 13px; }
+#screen-star .source-chip .icon-tile { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--color-surface-3); color: var(--color-text-dim); }
+/* "Nearby in the constellation" — Option B's spatial reflection-layer
+   visualization survives here as one bounded sub-section on an
+   otherwise flat reading page, not its own screen (see Screen 3 for
+   where the full map lives). */
+#screen-star .constellation-block { border-radius: var(--radius-lg); background: oklch(13% 0.012 65); border: 1px solid var(--color-border); padding: 16px 14px 14px; position: relative; overflow: hidden; }
+#screen-star .constellation-block::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(1px 1px at 15% 30%, rgba(255,255,255,0.3) 50%, transparent 51%), radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.22) 50%, transparent 51%), radial-gradient(1px 1px at 45% 80%, rgba(255,255,255,0.26) 50%, transparent 51%); background-size: 90px 90px, 110px 110px, 80px 80px; pointer-events: none; }
+#screen-star .constellation-label { font-size: 11px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 14px; position: relative; }
+#screen-star .mini-lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.4; }
+#screen-star .mini-nodes { display: flex; justify-content: space-between; position: relative; z-index: 1; }
+#screen-star .mini-node { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 33%; }
+#screen-star .mini-node .dot { width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
+#screen-star .mini-node.self .dot { background: var(--color-accent); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+#screen-star .mini-node .mini-label { font-size: 11px; text-align: center; }
+#screen-star .mini-node.self .mini-label { font-weight: 600; }
+#screen-star .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 60%, transparent); }
+#screen-star .bottom-actions { display: flex; gap: 10px; }
+#screen-star .continue-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
+#screen-star .edit-btn { flex-shrink: 0; width: 46px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border-strong); color: var(--color-text); cursor: pointer; }
+
+/* ---------------- Screen 4 — Edit star sheet (over a dimmed Screen 2) ---------------- */
+#screen-edit { width: 390px; height: 844px; background: var(--color-bg); position: relative; overflow: hidden; }
+#screen-edit .scrim { position: absolute; inset: 0; background: rgba(8, 5, 2, 0.6); z-index: 10; }
+#screen-edit .sheet { position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; border-radius: 24px 24px 0 0; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-bottom: none; box-shadow: 0 -12px 40px -12px rgba(10, 6, 3, 0.55); padding: 10px 20px 22px; }
+#screen-edit .drag-handle { width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); margin: 0 auto 16px; }
+#screen-edit .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
+#screen-edit .sheet-title { font-family: ui-serif, Georgia, serif; font-size: 19px; font-weight: 500; }
+#screen-edit .sheet-sub { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; }
+#screen-edit .sheet-close { flex-shrink: 0; width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--color-surface-3); display: flex; align-items: center; justify-content: center; color: var(--color-text-dim); }
+#screen-edit .sheet-hint { font-size: 12.5px; line-height: 1.55; color: var(--color-text-dim); margin: 16px 0 18px; }
+#screen-edit .composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 10px 10px 16px; border-radius: 22px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
+#screen-edit .composer-text { flex: 1; font-size: 14px; line-height: 1.5; color: var(--color-text); }
+#screen-edit .composer-text .placeholder-hint { color: var(--color-text-dim); }
+#screen-edit .composer-send { flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); display: flex; align-items: center; justify-content: center; border: none; }
+#screen-edit .sheet-footnote { font-size: 11px; color: var(--color-text-dim); text-align: center; margin-top: 14px; }
+
+/* ---------------- Screen 3 — Map (optional second page) ---------------- */
+#screen-map {
+	width: 390px; height: 844px; position: relative; display: flex; flex-direction: column;
+	background-color: oklch(13% 0.012 65);
+	background-image:
+		radial-gradient(1.5px 1.5px at 10% 20%, rgba(255,255,255,0.4) 50%, transparent 51%),
+		radial-gradient(1px 1px at 70% 12%, rgba(255,255,255,0.28) 50%, transparent 51%),
+		radial-gradient(1.5px 1.5px at 40% 85%, rgba(255,255,255,0.32) 50%, transparent 51%),
+		radial-gradient(1px 1px at 85% 45%, rgba(255,255,255,0.22) 50%, transparent 51%),
+		radial-gradient(1px 1px at 55% 65%, rgba(255,255,255,0.26) 50%, transparent 51%),
+		radial-gradient(1px 1px at 25% 55%, rgba(255,255,255,0.2) 50%, transparent 51%);
+	background-size: 190px 190px, 230px 230px, 170px 170px, 260px 260px, 150px 150px, 210px 210px;
+}
+#screen-map .topbar { position: relative; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 8px; flex-shrink: 0; }
+#screen-map .brand { font-family: 'Asimovian', sans-serif; font-size: 22px; color: var(--color-accent); letter-spacing: 0.02em; }
+#screen-map .topbar-right { display: flex; align-items: center; gap: 8px; }
+#screen-map .unconfirmed-pill { font-size: 11px; font-weight: 500; color: var(--color-accent-2); background: color-mix(in srgb, var(--color-accent-2) 14%, transparent); border: 1px solid color-mix(in srgb, var(--color-accent-2) 30%, transparent); padding: 5px 10px; border-radius: var(--radius-full); }
+#screen-map .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-surface-2) 70%, transparent); border: 1px solid var(--color-border); color: var(--color-text); }
+#screen-map .map-area { position: relative; flex: 1; }
+#screen-map svg.lines { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+#screen-map .lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.35; }
+#screen-map .lines line.personal { stroke: var(--color-personal); }
+#screen-map .cluster-label { position: absolute; z-index: 1; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-dim); opacity: 0.6; }
+#screen-map .node { position: absolute; z-index: 5; display: flex; align-items: center; gap: 7px; transform: translate(-50%, -50%); }
+#screen-map .node .dot { border-radius: var(--radius-full); background: var(--color-accent); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-accent) 45%, transparent); flex-shrink: 0; }
+#screen-map .node .dot.big { width: 13px; height: 13px; }
+#screen-map .node .dot.med { width: 10px; height: 10px; }
+#screen-map .node .dot.small { width: 8px; height: 8px; box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+/* .personal — same star, same map, distinguished only by dot color (no
+   separate cluster: is_personal is orthogonal to category, so a personal
+   star sits wherever its topic naturally clusters). */
+#screen-map .node .dot.personal { background: var(--color-personal); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+#screen-map .node .dot.small.personal { box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-personal) 40%, transparent); }
+#screen-map .node .label { font-size: 12px; font-weight: 500; color: var(--color-text); white-space: nowrap; text-shadow: 0 1px 4px rgba(10,6,3,0.6); }
+#screen-map .tabbar { position: relative; z-index: 20; display: flex; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-bg) 94%, transparent); backdrop-filter: blur(10px); flex-shrink: 0; }
+#screen-map .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 11px 0 12px; color: var(--color-text-dim); }
+#screen-map .tab.active { color: var(--color-accent); }
+#screen-map .tab span { font-size: 11px; font-weight: 500; }
+
+/* ---------------- Screen 5 — Inbox (list of proposed stars) ---------------- */
+#screen-inbox { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-inbox .topbar { display: flex; align-items: center; gap: 12px; padding: 20px 20px 6px; flex-shrink: 0; }
+#screen-inbox .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-inbox .title { font-family: 'Asimovian', sans-serif; font-size: 19px; color: var(--color-accent-2); letter-spacing: 0.01em; }
+#screen-inbox .count { font-size: 12px; color: var(--color-text-dim); margin-left: auto; }
+#screen-inbox .lede { padding: 10px 20px 16px; font-size: 12.5px; line-height: 1.5; color: var(--color-text-dim); }
+#screen-inbox .scroll { flex: 1; overflow-y: auto; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+#screen-inbox .proposed-card { display: flex; gap: 12px; padding: 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid color-mix(in srgb, var(--color-accent-2) 28%, var(--color-border)); }
+#screen-inbox .tile { width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent-2) 15%, transparent); color: var(--color-accent-2); }
+#screen-inbox .card-main { flex: 1; min-width: 0; }
+#screen-inbox .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#screen-inbox .card-title { font-size: 14px; font-weight: 600; }
+#screen-inbox .badge-proposed { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); color: var(--color-accent-2); flex-shrink: 0; }
+#screen-inbox .card-reason { font-size: 12px; color: var(--color-text-dim); line-height: 1.45; margin: 4px 0 8px; font-style: italic; }
+#screen-inbox .card-bottom { display: flex; align-items: center; gap: 6px; }
+#screen-inbox .tag { font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-inbox .card-chev { margin-left: auto; color: var(--color-text-dim); }
+/* .personal — same treatment as #screen-library's, see that comment. Inbox cards already
+   have their own accent-2-tinted border for "proposed" in general, so .personal overrides
+   it rather than stacking two tints. */
+#screen-inbox .proposed-card.personal { border-color: color-mix(in srgb, var(--color-personal) 34%, var(--color-border)); }
+#screen-inbox .proposed-card.personal .tile { background: color-mix(in srgb, var(--color-personal) 16%, transparent); color: var(--color-personal); }
+#screen-inbox .badge-personal { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-personal) 18%, transparent); color: var(--color-personal); flex-shrink: 0; }
+#screen-inbox .badge-row { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ---------------- Screen 6 — Review star (approve / refine / discard) ---------------- */
+#screen-review { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; position: relative; }
+#screen-review .topbar { display: flex; align-items: center; justify-content: space-between; padding: 20px 12px 12px 16px; flex-shrink: 0; }
+#screen-review .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-review .crumb { font-size: 12px; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+#screen-review .review-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 168px; }
+#screen-review .tile-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+#screen-review .tile { width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-accent-2) 15%, transparent); color: var(--color-accent-2); flex-shrink: 0; }
+#screen-review .badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--color-accent-2) 16%, transparent); color: var(--color-accent-2); }
+#screen-review .confidence { font-size: 11px; color: var(--color-text-dim); margin-top: 3px; }
+#screen-review h1 { font-family: ui-serif, Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.2; margin: 0 0 12px; }
+#screen-review .tags-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#screen-review .tag { font-size: 11px; padding: 3px 10px; border-radius: var(--radius-full); background: var(--color-surface-3); color: var(--color-text-dim); }
+#screen-review .meta-row { font-size: 12px; color: var(--color-text-dim); padding-bottom: 18px; border-bottom: 1px solid var(--color-border); margin-bottom: 18px; }
+/* why-block surfaces shooting_star_candidates.reasoning directly — the same
+   sentence Weaver logged internally for the trace tables, shown here so the
+   review decision isn't a guess at what tripped the confidence gate. */
+#screen-review .why-block { border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-accent-2) 9%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-accent-2) 26%, var(--color-border)); padding: 14px 16px; margin: 4px 0 22px; }
+#screen-review .why-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2); margin-bottom: 6px; }
+#screen-review .why-text { font-size: 13px; line-height: 1.55; color: var(--color-text-dim); font-style: italic; }
+#screen-review .review-body h2 { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+#screen-review .review-body p { font-size: 14px; line-height: 1.6; margin: 0; }
+#screen-review .bottom-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 20px 24px; background: linear-gradient(to top, var(--color-bg) 68%, transparent); display: flex; flex-direction: column; gap: 10px; }
+#screen-review .approve-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); font-size: 14px; font-weight: 600; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent); border: none; cursor: pointer; font-family: inherit; }
+#screen-review .secondary-row { display: flex; gap: 10px; }
+#screen-review .refine-btn, #screen-review .discard-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border-strong); color: var(--color-text); font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; }
+#screen-review .discard-btn { color: var(--color-text-dim); }
+
+/* ---------------- Screen 7 — Refine sheet (over a dimmed Screen 6) ---------------- */
+/* Same sheet mechanics as Screen 4's Edit-star sheet, over Review star's
+   backdrop instead of Star detail's — the two-sided ask ("what's right,
+   what's wrong") is what earns this its own frame rather than reusing
+   Screen 4's copy verbatim. */
+#screen-refine { width: 390px; height: 844px; background: var(--color-bg); position: relative; overflow: hidden; }
+#screen-refine .scrim { position: absolute; inset: 0; background: rgba(8, 5, 2, 0.6); z-index: 10; }
+#screen-refine .sheet { position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; border-radius: 24px 24px 0 0; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-bottom: none; box-shadow: 0 -12px 40px -12px rgba(10, 6, 3, 0.55); padding: 10px 20px 22px; }
+#screen-refine .drag-handle { width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); margin: 0 auto 16px; }
+#screen-refine .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
+#screen-refine .sheet-title { font-family: ui-serif, Georgia, serif; font-size: 19px; font-weight: 500; }
+#screen-refine .sheet-sub { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; }
+#screen-refine .sheet-close { flex-shrink: 0; width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--color-surface-3); display: flex; align-items: center; justify-content: center; color: var(--color-text-dim); }
+#screen-refine .sheet-hint { font-size: 12.5px; line-height: 1.55; color: var(--color-text-dim); margin: 16px 0 18px; }
+#screen-refine .composer { display: flex; align-items: flex-end; gap: 8px; padding: 10px 10px 10px 16px; border-radius: 22px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
+#screen-refine .composer-text { flex: 1; font-size: 14px; line-height: 1.5; color: var(--color-text); }
+#screen-refine .composer-text .placeholder-hint { color: var(--color-text-dim); }
+#screen-refine .composer-send { flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-bg); display: flex; align-items: center; justify-content: center; border: none; }
+#screen-refine .sheet-footnote { font-size: 11px; color: var(--color-text-dim); text-align: center; margin-top: 14px; }
+
+/* ---------------- Screen 8 — This week (digest banner tap-through) ---------------- */
+#screen-week { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-week .topbar { display: flex; align-items: center; gap: 12px; padding: 20px 20px 6px; flex-shrink: 0; }
+#screen-week .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-week .title { font-family: 'Asimovian', sans-serif; font-size: 19px; color: var(--color-accent); letter-spacing: 0.01em; }
+#screen-week .lede { padding: 10px 20px 16px; font-size: 12.5px; line-height: 1.5; color: var(--color-text-dim); }
+#screen-week .scroll { flex: 1; overflow-y: auto; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 8px; }
+#screen-week .week-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+#screen-week .type-dot { width: 8px; height: 8px; border-radius: var(--radius-full); flex-shrink: 0; background: var(--color-accent); }
+#screen-week .week-row.updated .type-dot { background: var(--color-text-dim); }
+#screen-week .week-row.linked .type-dot { background: var(--color-accent-2); }
+#screen-week .week-row.personal .type-dot { background: var(--color-personal); }
+#screen-week .week-main { flex: 1; min-width: 0; }
+#screen-week .week-title { font-size: 14px; font-weight: 600; }
+#screen-week .week-type { font-size: 11px; color: var(--color-text-dim); margin-top: 2px; }
+#screen-week .week-time { font-size: 11px; color: var(--color-text-dim); flex-shrink: 0; }
+
+/* ---------------- Screen 9 — Constellation settings ---------------- */
+#screen-settings { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-settings .topbar { display: flex; align-items: center; gap: 12px; padding: 20px 20px 6px; flex-shrink: 0; }
+#screen-settings .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-settings .title { font-family: 'Asimovian', sans-serif; font-size: 19px; color: var(--color-accent); letter-spacing: 0.01em; }
+#screen-settings .scroll { flex: 1; overflow-y: auto; padding: 8px 20px 24px; }
+#screen-settings .settings-group { border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); overflow: hidden; margin-bottom: 20px; }
+#screen-settings .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--color-border); }
+#screen-settings .settings-row:last-child { border-bottom: none; }
+#screen-settings .row-label { font-size: 14px; font-weight: 500; }
+#screen-settings .row-hint { font-size: 11.5px; color: var(--color-text-dim); margin-top: 2px; line-height: 1.4; }
+#screen-settings .row-value { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-dim); flex-shrink: 0; }
+#screen-settings .toggle { width: 42px; height: 25px; border-radius: var(--radius-full); background: var(--color-surface-3); position: relative; flex-shrink: 0; }
+#screen-settings .toggle.on { background: var(--color-accent); }
+#screen-settings .toggle .knob { position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: var(--radius-full); background: var(--color-bg); transition: left 0.15s; }
+#screen-settings .toggle.on .knob { left: 19px; background: var(--color-text); }
+#screen-settings .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); padding: 0 4px 8px; }
+#screen-settings .usage-link { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+#screen-settings .usage-link .icon { color: var(--color-accent); flex-shrink: 0; }
+#screen-settings .usage-link .label { flex: 1; font-size: 14px; font-weight: 500; }
+#screen-settings .usage-link .chev { color: var(--color-text-dim); }
+
+/* ---------------- Screen 10 — Constellation Usage ---------------- */
+#screen-usage { width: 390px; height: 844px; background: var(--color-bg); display: flex; flex-direction: column; }
+#screen-usage .topbar { display: flex; align-items: center; gap: 12px; padding: 20px 20px 6px; flex-shrink: 0; }
+#screen-usage .icon-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text); flex-shrink: 0; }
+#screen-usage .title { font-family: 'Asimovian', sans-serif; font-size: 19px; color: var(--color-accent); letter-spacing: 0.01em; }
+#screen-usage .scroll { flex: 1; overflow-y: auto; padding: 8px 20px 24px; }
+#screen-usage .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); padding: 0 4px 8px; margin-top: 18px; }
+#screen-usage .section-label:first-child { margin-top: 0; }
+#screen-usage .stat-group { border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); overflow: hidden; }
+#screen-usage .stat-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--color-border); font-size: 13px; }
+#screen-usage .stat-row:last-child { border-bottom: none; }
+#screen-usage .stat-row .label { color: var(--color-text-dim); }
+#screen-usage .stat-row .value { font-weight: 600; text-align: right; }
+#screen-usage .stat-row.warn .value { color: var(--color-accent-2); }
+#screen-usage .stat-row.attention .label { color: var(--color-accent-2); }
+#screen-usage .big-cost { text-align: center; padding: 18px 0 6px; }
+#screen-usage .big-cost .amount { font-family: 'Asimovian', sans-serif; font-size: 32px; color: var(--color-accent); }
+#screen-usage .big-cost .caption { font-size: 12px; color: var(--color-text-dim); margin-top: 4px; }
+#screen-usage .separate-note { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-lg); background: var(--color-surface-2); border: 1px solid var(--color-border); font-size: 11.5px; line-height: 1.5; color: var(--color-text-dim); margin: 18px 0 4px; }
+#screen-usage .separate-note .icon { color: var(--color-text-dim); flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<h1 class="kicker">Constellation — Option D (selected direction)</h1>
+	<p>
+		Combines Option A's grouped-by-category library structure with Option C's elevated card
+		treatment for the day-to-day browsing screen, keeps the "Linked articles" sources list, and
+		folds Option B's constellation into a compact "Nearby in the constellation" sub-section on
+		the star page. The full star map survives as its own screen, reached through a
+		Library / Map tab bar rather than competing with the list for the home view.
+	</p>
+</div>
+
+<div class="frames">
+
+	<div class="frame-group">
+		<div class="frame-label">1 — Library<span class="sub">default view · grouped by category</span></div>
+		<div class="phone">
+			<div id="screen-library">
+				<div class="topbar">
+					<div class="brand">Constellation</div>
+					<div class="icon-btn" aria-label="Search">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+					</div>
+				</div>
+
+				<div class="scroll">
+					<div class="meta-line">42 stars &middot; drawn from 160 threads</div>
+
+					<div class="banner-stack">
+						<div class="banner digest">
+							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"></path></svg></span>
+							<span class="label">This week: 4 new, 1 link surfaced<small>Ender's Game &rarr; child psychology</small></span>
+							<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+						</div>
+						<div class="banner inbox">
+							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg></span>
+							<span class="label">2 stars proposed<small>Awaiting your review in the Inbox</small></span>
+							<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Technology</div>
+						<div class="card-list">
+							<div class="star-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Cloudflare Workers</span><span class="card-time">2d</span></div>
+									<div class="card-sub">Edge runtime, Durable Objects, KV vs D1 tradeoffs</div>
+									<div class="card-bottom">
+										<span class="tag">infra</span><span class="tag">edge</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+							<div class="star-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">SQLite at the edge</span><span class="card-time">5d</span></div>
+									<div class="card-sub">Litestream, embedded replicas, when not to bother</div>
+									<div class="card-bottom">
+										<span class="tag">infra</span><span class="tag">databases</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Books &amp; Ideas</div>
+						<div class="card-list">
+							<div class="star-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Ender's Game &mdash; themes</span><span class="card-time">1w</span></div>
+									<div class="card-sub">Child psychology and the ethics of command</div>
+									<div class="card-bottom">
+										<span class="tag">sci-fi</span><span class="tag">ethics</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+							<div class="star-card personal">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Reads science fiction</span><span class="badge-personal">Personal</span></div>
+									<div class="card-sub">Comes up across Ender's Game and a couple of other book threads &mdash; an ongoing preference, not a one-off</div>
+									<div class="card-bottom">
+										<span class="tag">personal</span><span class="tag">inferred</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-header">Science &amp; History</div>
+						<div class="card-list">
+							<div class="star-card">
+								<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"></path><line x1="2" y1="12" x2="22" y2="12"></line></svg></div>
+								<div class="card-main">
+									<div class="card-top"><span class="card-title">Surveyor 1</span><span class="card-time">2w</span></div>
+									<div class="card-sub">First US soft lunar landing, June 1966</div>
+									<div class="card-bottom">
+										<span class="tag">spaceflight</span><span class="tag">history</span>
+										<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="tabbar">
+					<div class="tab active">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+						<span>Library</span>
+					</div>
+					<div class="tab">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 9 22 9.5 16.5 14 18 21.5 12 17.5 6 21.5 7.5 14 2 9.5 9 9 12 2"></polygon></svg>
+						<span>Map</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">2 — Star detail<span class="sub">"Linked articles" + "Nearby in the constellation"</span></div>
+		<div class="phone">
+			<div id="screen-star">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="crumb">Technology</div>
+					<div class="icon-btn" aria-label="More">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+					</div>
+				</div>
+
+				<div class="star-scroll">
+					<div class="tile-row">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div>
+							<span class="badge">Auto</span>
+							<div class="confidence">High confidence</div>
+						</div>
+					</div>
+
+					<h1>Cloudflare Workers</h1>
+					<div class="tags-row"><span class="tag">infra</span><span class="tag">edge</span><span class="tag">serverless</span></div>
+					<div class="meta-row">Updated 2 days ago &middot; first noted Aug 14</div>
+
+					<div class="star-body">
+						<h2>What it is</h2>
+						<p>A V8-isolate runtime at Cloudflare's edge &mdash; no cold-start container, code runs within milliseconds of a request landing at the nearest PoP. Comes up whenever the tradeoff against a long-running process is being weighed.</p>
+						<h2>Durable Objects vs KV vs D1</h2>
+						<p>Durable Objects for single-writer coordinated state, KV for eventually-consistent read-heavy config, D1 (SQLite) when relational queries matter more than global read latency.</p>
+					</div>
+
+					<div class="block-label">Linked articles</div>
+					<div class="chip-row">
+						<div class="source-chip">
+							<span class="icon-tile"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
+							"Docker CLI parity" &mdash; Aug 14
+						</div>
+						<div class="source-chip">
+							<span class="icon-tile"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></span>
+							"D1 vs KV tradeoffs" &mdash; 2 days ago
+						</div>
+					</div>
+
+					<div class="block-label">Nearby in the constellation</div>
+					<div class="constellation-block">
+						<div class="constellation-label">3 related stars</div>
+						<svg class="mini-lines" viewBox="0 0 320 20" style="position: absolute; top: 44px; left: 14px; width: calc(100% - 28px); height: 20px;">
+							<line x1="53" y1="6" x2="160" y2="6"></line>
+							<line x1="160" y1="6" x2="267" y2="6"></line>
+						</svg>
+						<div class="mini-nodes">
+							<div class="mini-node self"><span class="dot"></span><span class="mini-label">Cloudflare<br>Workers</span></div>
+							<div class="mini-node"><span class="dot"></span><span class="mini-label">SQLite at<br>the edge</span></div>
+							<div class="mini-node"><span class="dot"></span><span class="mini-label">Docker CLI<br>parity</span></div>
+						</div>
+					</div>
+				</div>
+
+				<div class="bottom-bar">
+					<div class="bottom-actions">
+						<button class="continue-btn">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+							Continue in chat
+						</button>
+						<div class="edit-btn" aria-label="Edit star">
+							<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">3 — Map<span class="sub">optional second page, via the tab bar</span></div>
+		<div class="phone">
+			<div id="screen-map">
+				<div class="topbar">
+					<div class="brand">Constellation</div>
+					<div class="topbar-right">
+						<span class="unconfirmed-pill">2 unconfirmed</span>
+						<div class="icon-btn" aria-label="Search">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+						</div>
+					</div>
+				</div>
+
+				<div class="map-area">
+					<svg class="lines" viewBox="0 0 390 674">
+						<line x1="255" y1="200" x2="285" y2="245"></line>
+						<line x1="285" y1="245" x2="262" y2="310"></line>
+						<line x1="255" y1="200" x2="325" y2="222" class="personal"></line>
+						<line x1="140" y1="425" x2="210" y2="460"></line>
+					</svg>
+
+					<div class="cluster-label" style="left: 40px; top: 24px;">Technology</div>
+					<div class="node" style="left: 90px; top: 68px;"><span class="dot big"></span><span class="label">Cloudflare Workers</span></div>
+					<div class="node" style="left: 150px; top: 118px;"><span class="dot med"></span><span class="label">SQLite at the edge</span></div>
+
+					<div class="cluster-label" style="left: 208px; top: 172px;">Books &amp; Ideas</div>
+					<div class="node" style="left: 255px; top: 200px;"><span class="dot big"></span><span class="label">Ender's Game</span></div>
+					<div class="node" style="left: 285px; top: 245px;"><span class="dot small"></span><span class="label">Child psychology</span></div>
+					<div class="node" style="left: 262px; top: 310px;"><span class="dot small"></span><span class="label">Ethics of command</span></div>
+					<div class="node" style="left: 325px; top: 222px;"><span class="dot small personal"></span><span class="label">Reads sci-fi</span></div>
+
+					<div class="cluster-label" style="left: 90px; top: 385px;">Science &amp; History</div>
+					<div class="node" style="left: 140px; top: 425px;"><span class="dot med"></span><span class="label">Surveyor 1</span></div>
+					<div class="node" style="left: 210px; top: 460px;"><span class="dot small"></span><span class="label">Apollo program</span></div>
+				</div>
+
+				<div class="tabbar">
+					<div class="tab">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+						<span>Library</span>
+					</div>
+					<div class="tab active">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 9 22 9.5 16.5 14 18 21.5 12 17.5 6 21.5 7.5 14 2 9.5 9 9 12 2"></polygon></svg>
+						<span>Map</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">4 — Edit star<span class="sub">free-text sheet, triggered from the pencil button in frame 2 &mdash; not a text editor</span></div>
+		<div class="phone">
+			<div id="screen-edit">
+				<div class="scrim"></div>
+				<div class="sheet">
+					<div class="drag-handle"></div>
+					<div class="sheet-head">
+						<div>
+							<div class="sheet-title">Edit star</div>
+							<div class="sheet-sub">Cloudflare Workers</div>
+						</div>
+						<div class="sheet-close">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+						</div>
+					</div>
+					<div class="sheet-hint">
+						Tell it what's wrong or what to add, in your own words &mdash; Weaver folds it
+						into this star. No fields to fill in.
+					</div>
+					<div class="composer">
+						<div class="composer-text"><span class="placeholder-hint">e.g. &ldquo;actually we moved off this a while back &mdash; wasn't the right fit after all&rdquo;</span></div>
+						<button class="composer-send" aria-label="Send">
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+						</button>
+					</div>
+					<div class="sheet-footnote">Reads like a note to Constellation, not a form.</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">5 — Inbox<span class="sub">proposed stars awaiting review, reached from the Library banner</span></div>
+		<div class="phone">
+			<div id="screen-inbox">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="title">Inbox</div>
+					<div class="count">2 proposed</div>
+				</div>
+				<div class="lede">Weaver wasn't confident enough to save these on its own &mdash; a quick look settles them.</div>
+				<div class="scroll">
+					<div class="proposed-card">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div class="card-main">
+							<div class="card-top"><span class="card-title">Into cozy mysteries lately</span><span class="badge-proposed">Proposed</span></div>
+							<div class="card-reason">Came up as a comfort read across two unrelated threads &mdash; not sure yet if it's a real preference or just what was asked about that week.</div>
+							<div class="card-bottom">
+								<span class="tag">books</span><span class="tag">inferred</span>
+								<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+							</div>
+						</div>
+					</div>
+					<div class="proposed-card personal">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+						<div class="card-main">
+							<div class="card-top"><span class="card-title">Might be weighing a move</span><span class="badge-row"><span class="badge-personal">Personal</span><span class="badge-proposed">Proposed</span></span></div>
+							<div class="card-reason">Mentioned twice, both times in passing &mdash; flagged as personal/low-confidence rather than written up on its own.</div>
+							<div class="card-bottom">
+								<span class="tag">personal</span><span class="tag">low-confidence</span>
+								<span class="card-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">6 — Review star<span class="sub">approve / refine / discard, plus Weaver's own "why"</span></div>
+		<div class="phone">
+			<div id="screen-review">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="crumb">Inbox</div>
+					<div style="width: 36px;"></div>
+				</div>
+
+				<div class="review-scroll">
+					<div class="tile-row">
+						<div class="tile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+						<div>
+							<span class="badge">Proposed</span>
+							<div class="confidence">Low confidence &mdash; inferred, not stated directly</div>
+						</div>
+					</div>
+
+					<h1>Into cozy mysteries lately</h1>
+					<div class="tags-row"><span class="tag">books</span><span class="tag">inferred</span></div>
+					<div class="meta-row">First noted today &middot; from 2 threads</div>
+
+					<div class="why-block">
+						<div class="why-label">Why this needs a look</div>
+						<div class="why-text">&ldquo;Mentioned enjoying the pacing and small-town setting across two different book conversations &mdash; grouping them as a preference rather than two one-off mentions, but neither thread actually confirmed this is an ongoing interest.&rdquo;</div>
+					</div>
+
+					<div class="review-body">
+						<h2>What Weaver drafted</h2>
+						<p>Comes up as a comfort read across a couple of unrelated conversations &mdash; small towns, amateur sleuths, low-stakes plots. Not yet confirmed as a genuine ongoing interest versus a one-off ask.</p>
+					</div>
+				</div>
+
+				<div class="bottom-bar">
+					<button class="approve-btn">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+						Approve
+					</button>
+					<div class="secondary-row">
+						<button class="refine-btn">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+							Refine
+						</button>
+						<button class="discard-btn">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							Discard
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">7 — Refine<span class="sub">the middle option &mdash; "what you got right, what was wrong," same sheet pattern as Edit star</span></div>
+		<div class="phone">
+			<div id="screen-refine">
+				<div class="scrim"></div>
+				<div class="sheet">
+					<div class="drag-handle"></div>
+					<div class="sheet-head">
+						<div>
+							<div class="sheet-title">Refine star</div>
+							<div class="sheet-sub">Into cozy mysteries lately</div>
+						</div>
+						<div class="sheet-close">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+						</div>
+					</div>
+					<div class="sheet-hint">
+						Tell it what it got right and what's off &mdash; Weaver reworks the star from
+						there instead of starting over.
+					</div>
+					<div class="composer">
+						<div class="composer-text"><span class="placeholder-hint">e.g. &ldquo;yeah, been on a real kick lately&rdquo; or &ldquo;not really, I was just asking one for a friend&rdquo;</span></div>
+						<button class="composer-send" aria-label="Send">
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+						</button>
+					</div>
+					<div class="sheet-footnote">Sending this also settles the review &mdash; no separate approve step after.</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">8 — This week<span class="sub">digest banner tap-through &mdash; everything actually made in the last 7 days</span></div>
+		<div class="phone">
+			<div id="screen-week">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="title">This week</div>
+				</div>
+				<div class="lede">Everything created, updated, or linked in the last 7 days &mdash; the same activity the Library banner is counting.</div>
+				<div class="scroll">
+					<div class="week-row personal">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">Reads science fiction</div>
+							<div class="week-type">New &middot; Personal</div>
+						</div>
+						<span class="week-time">2d</span>
+					</div>
+					<div class="week-row linked">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">Ender's Game &harr; Reads science fiction</div>
+							<div class="week-type">Linked</div>
+						</div>
+						<span class="week-time">2d</span>
+					</div>
+					<div class="week-row">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">Into cozy mysteries lately</div>
+							<div class="week-type">New &middot; Proposed</div>
+						</div>
+						<span class="week-time">3d</span>
+					</div>
+					<div class="week-row updated">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">Cloudflare Workers</div>
+							<div class="week-type">Updated</div>
+						</div>
+						<span class="week-time">5d</span>
+					</div>
+					<div class="week-row">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">SQLite at the edge</div>
+							<div class="week-type">New</div>
+						</div>
+						<span class="week-time">4d</span>
+					</div>
+					<div class="week-row">
+						<span class="type-dot"></span>
+						<div class="week-main">
+							<div class="week-title">Surveyor 1</div>
+							<div class="week-type">New</div>
+						</div>
+						<span class="week-time">6d</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">9 — Constellation settings<span class="sub">on/off, poll interval, model picker &mdash; same shape as Pulsar/Daily's own sections</span></div>
+		<div class="phone">
+			<div id="screen-settings">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="title">Constellation</div>
+				</div>
+				<div class="scroll">
+					<div class="settings-group">
+						<div class="settings-row">
+							<div>
+								<div class="row-label">Enabled</div>
+								<div class="row-hint">Weaver checks for new threads and builds your library automatically.</div>
+							</div>
+							<div class="toggle on"><div class="knob"></div></div>
+						</div>
+						<div class="settings-row">
+							<div class="row-label">Check every</div>
+							<div class="row-value">60 min <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+						</div>
+						<div class="settings-row">
+							<div class="row-label">Model</div>
+							<div class="row-value">Same as chat <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+						</div>
+					</div>
+
+					<div class="section-label">History</div>
+					<div class="settings-group">
+						<div class="usage-link">
+							<span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span>
+							<span class="label">Constellation usage</span>
+							<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="frame-group">
+		<div class="frame-label">10 — Constellation Usage<span class="sub">fully separate from Polaris's own Usage panel &mdash; own icon, own data, one link between them</span></div>
+		<div class="phone">
+			<div id="screen-usage">
+				<div class="topbar">
+					<div class="icon-btn" aria-label="Back">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+					</div>
+					<div class="title">Constellation Usage</div>
+				</div>
+				<div class="scroll">
+					<div class="big-cost">
+						<div class="amount">$0.34</div>
+						<div class="caption">last 30 days &middot; $1.12 all-time</div>
+					</div>
+
+					<div class="section-label">Activity</div>
+					<div class="stat-group">
+						<div class="stat-row"><span class="label">Shooting stars run</span><span class="value">37</span></div>
+						<div class="stat-row"><span class="label">Stars &mdash; auto / confirmed</span><span class="value">14 / 6</span></div>
+						<div class="stat-row"><span class="label">Stars &mdash; proposed / rejected</span><span class="value">2 / 3</span></div>
+						<div class="stat-row"><span class="label">Links created</span><span class="value">9</span></div>
+					</div>
+
+					<div class="section-label">Tool calls</div>
+					<div class="stat-group">
+						<div class="stat-row"><span class="label">search_stars</span><span class="value">142</span></div>
+						<div class="stat-row"><span class="label">read_star</span><span class="value">88</span></div>
+						<div class="stat-row"><span class="label">create_star</span><span class="value">16</span></div>
+						<div class="stat-row"><span class="label">update_star</span><span class="value">6</span></div>
+						<div class="stat-row"><span class="label">link_stars</span><span class="value">9</span></div>
+					</div>
+
+					<div class="section-label">Review &amp; health</div>
+					<div class="stat-group">
+						<div class="stat-row"><span class="label">Approved / Refined / Discarded</span><span class="value">4 / 2 / 3</span></div>
+						<div class="stat-row warn"><span class="label">Ran out of turns (25 cap)</span><span class="value">1</span></div>
+						<div class="stat-row attention"><span class="label">Waiting on retry</span><span class="value">1</span></div>
+					</div>
+
+					<div class="separate-note">
+						<span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></span>
+						Separate from Polaris's own usage &mdash; this cost never appears in the main Usage panel's total, and vice versa.
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+</div>
+</body>
+</html>
