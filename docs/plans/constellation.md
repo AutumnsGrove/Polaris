@@ -10,11 +10,14 @@ see below, mockup at `mockups/vault.html`, not yet renamed to match), a seventh 
 feature's real name and vocabulary via issue #45 and opened the "Edit star" question, an eighth
 pass closed that question (free-text, LLM-reconciled, no field editor), a ninth pass sketched the
 actual DB schema and dropped the category-scoped-rollout idea in favor of a global on/off plus full
-observability, and a tenth pass designed the Inbox review flow (approve/refine/discard on a
-proposed star) plus the `star_reviews` table that backs it. "Resolved in a brainstorm" and "a
-schema sketch" still aren't the same as "designed and ready to build" — the next real step is
-turning the schema sketch into real migrations and a first Weaver implementation, not writing that
-code straight from this doc without a design pass on the extraction/merge pipeline itself.
+observability, a tenth pass designed the Inbox review flow (approve/refine/discard on a
+proposed star) plus the `star_reviews` table that backs it, and an eleventh pass designed the
+Weaver extraction/merge pipeline itself — eligibility, the first-pass-vs-revisit split, and reusing
+`filterExtractedText` (already built for `web_read`/`search_chats`) as the "double RAG" step on
+revisits. "Resolved in a brainstorm" and "a schema sketch" still aren't the same as "designed and
+ready to build" — the next real step is turning this into real migrations and code, not writing
+that code straight from this doc without first designing the reflection-layer linking mechanism
+(in progress — see the open question below) and running it against real data.
 
 ## Naming (settled — seventh pass, issue #45)
 
@@ -435,3 +438,70 @@ maintenance edits to stars nothing was ever unsure about wouldn't add signal to 
 question, so it's left out. This is the day-one observability answer for whether the confidence
 gate (and the extraction prompt behind it) will need tuning — no dashboard needed yet, just a
 query someone runs against `star_reviews`/`shooting_star_candidates` once there's real data.
+
+## How Weaver actually works (eleventh pass)
+
+First real design pass on the extraction/merge pipeline itself, not just its schema. Grounded in
+three patterns already proven in this codebase rather than invented fresh:
+`gateway/pulsar_daily.go`'s `dailyDiffJudge` (a forced-tool-call, given prior state and new state,
+returns a structured decision), `store.ReadThread` (`store/store.go:1213` — already reconstructs a
+thread's full effective transcript, reused as-is), and `tools/web_read.go`'s `filterExtractedText`
+(a second, cheap LLM call that extracts only what an instruction asks for from already-fetched
+content — its own doc comment literally calls it "the double RAG step," and `search_chats`' `read`
+action already applies it to a past thread via `prompts.Tools.ThreadReadFilterSystem`).
+
+**Eligibility is two independent gates, not one.** The original "not yet processed" framing broke
+the moment revisiting an old thread became a real case (you go back to threads from weeks ago and
+keep chatting in them — there's no archive/close concept to lean on instead). So:
+
+- **Idle-timing gate**: a thread is only a poll candidate once it's been quiet for at least
+  `poll_interval_minutes` — unrelated to whether it's ever been seen before, just "don't grab a
+  conversation mid-thought."
+- **Delta gate**: has this *specific* thread produced messages Weaver hasn't seen. `messages.id`
+  is a global autoincrement, so `MAX(id) WHERE thread_id = ?` is a clean high-water mark.
+  `shooting_star_runs` gets one new column: `last_message_id_seen INTEGER NOT NULL` (the thread's
+  message high-water mark at the moment that run happened). Eligibility: current max > the most
+  recent run's `last_message_id_seen` for that thread (or no prior run at all). A thread reopened
+  two weeks later behaves identically to a brand-new thread the first time it goes idle again — no
+  special case, `shooting_star_runs` just accumulates another row, which is exactly the trace
+  history wanted anyway.
+- **Correction to the ninth pass**: `star_sources` was justified partly as the idempotency check
+  ("has thread X already contributed"). That reasoning doesn't survive revisits —
+  `shooting_star_runs.last_message_id_seen` does that job now. `star_sources` goes back to purely
+  backing the "Linked articles" UI list: one row per `(star_id, thread_id)`, **upserted** (refresh
+  `linked_at`) rather than duplicated on a repeat contribution — `UNIQUE(star_id, thread_id)`.
+
+**Stage 1 — Extraction, and it's genuinely different on a first pass vs. a revisit:**
+
+- **First-ever pass on a thread**: no prior notes exist, so there's nothing to filter *for* —
+  "what's worth remembering here" is an open-ended question. Stage 1 gets the thread's raw content
+  (`store.ReadThread`) directly, no filter pass. **The double-RAG mechanism only unlocks starting
+  on the second (or n+1th) pass** — a first pass never gets it, by design, not as a missing
+  feature.
+- **A revisit** (prior notes exist — whatever `stars`/`shooting_star_candidates` rows this thread
+  already produced): fetch only the delta (`messages WHERE id > last_message_id_seen` — the old
+  turns never get re-read, ever, no matter how many times the thread gets revisited over its
+  lifetime), then run `filterExtractedText` on that delta with an instruction built from the prior
+  notes: *"Check for updates on: [prior star titles + one-line summaries]. Flag anything that
+  updates, corrects, or adds to those, plus anything genuinely new."* That's the real second model
+  run — cheap relative to a full re-read, and it's the existing `filterExtractedText`, not new
+  code. The *condensed result*, not the raw delta, is what Stage 1's extraction call actually
+  reads.
+- Either way, Stage 1 itself is one forced-tool-call (`record_star_candidates`, same
+  `dailyDiffJudge`-style "always call the tool, never plain text, log-and-degrade-to-empty on a
+  skip" shape as `parseDailyVerdict`) proposing 0-N candidates: `title`, `summary`, `category`
+  (free text, the model's own words — no fixed list, keeping "let topics emerge" true at the field
+  level too, not just the config level), `confidence_class` (`obvious` | `fuzzy`). This call is
+  what writes the `shooting_star_runs` row.
+
+**Stage 2 — Resolve**, per candidate, sequential (unchanged from the ninth pass's sketch): FTS5
+prefilter over `stars_fts` → top ~5 existing stars → one forced-tool-call, `dailyDiffJudge`-shaped,
+that decides **and** drafts in the same call (`new_star` | `merged` | `ambiguous`, plus the actual
+title/category/summary/body/tags/reasoning). Status routing: `obvious` + not `ambiguous` → `auto`;
+everything else (`fuzzy`, or `ambiguous` regardless of confidence) → `proposed`, per the third
+pass's "ambiguous is treated the same as fuzzy." Writes/merges the `stars` row, upserts
+`star_sources`, inserts one `shooting_star_candidates` row.
+
+**Where this would live**: `gateway/constellation_scheduler.go` (poller, same once-a-minute ticker
+shape as `pulsar_scheduler.go`) and `gateway/constellation_weaver.go` (the two stages) — same
+package and naming convention as Pulsar and Pulsar Daily, not a separate top-level package.
