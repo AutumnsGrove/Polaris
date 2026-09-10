@@ -89,14 +89,14 @@ func TestDefs_ReturnsAllTwelveToolsWhenAllKeysConfigured(t *testing.T) {
 	for _, want := range []string{
 		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies",
-		"visualize", "image_search",
+		"visualize", "image_search", "highlight",
 	} {
 		if !names[want] {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 16 {
-		t.Errorf("got %d tool defs, want exactly 16", len(defs))
+	if len(defs) != 17 {
+		t.Errorf("got %d tool defs, want exactly 17", len(defs))
 	}
 }
 
@@ -115,14 +115,14 @@ func TestDefs_ExcludesMusicAndMoviesWithoutKeys(t *testing.T) {
 	for _, want := range []string{
 		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "books", "visualize",
-		"image_search",
+		"image_search", "highlight",
 	} {
 		if !names[want] {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 14 {
-		t.Errorf("got %d tool defs, want exactly 14", len(defs))
+	if len(defs) != 15 {
+		t.Errorf("got %d tool defs, want exactly 15", len(defs))
 	}
 }
 
@@ -133,7 +133,7 @@ func TestDefs_OrderIsStable(t *testing.T) {
 	want := []string{
 		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies",
-		"visualize", "image_search",
+		"visualize", "image_search", "highlight",
 	}
 	for i := 0; i < 2; i++ {
 		defs := Defs(ctx)

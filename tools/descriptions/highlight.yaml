@@ -1,0 +1,11 @@
+name: highlight
+category: research
+description: >-
+  turn a handful of items you actually found this turn into cards instead of a paragraph — products,
+  places, repos, anything where "here are the best few" beats prose.
+api_description: >-
+  Render 1-5 items you actually found this turn as cards instead of describing them in prose — a
+  title, a url, and optionally a short free-text price/badge and an image. Every item's title/url/
+  price must come from a web_search result or a page you actually read (web_read) this very turn —
+  never from memory or training data. Not for anything else: this tool renders whatever you give it
+  without checking it's real.

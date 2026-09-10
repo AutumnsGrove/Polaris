@@ -188,6 +188,16 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 		result = windowText(text, args.Offset)
 	}
 
+	if imageURL != "" {
+		// Citation.ImageURL below only ever reaches the frontend's source-list
+		// thumbnail — nothing puts it back in front of the model itself. A real
+		// gap found live building Shopping Mode: the Shopper focus mode tells
+		// the model to web_read a candidate page and reuse its real photo in a
+		// highlight call, but with no line here, the model had no way to ever
+		// see an image URL to copy — Citations aren't part of what a tool call
+		// returns to the model, only what the frontend renders after the fact.
+		result += fmt.Sprintf("\n\n[Page image: %s]", imageURL)
+	}
 	log.Info("web_read", "url", args.URL, "title", title, "extracted_chars", len(result), "instructions", args.Instructions)
 	ctx.AddCitation(Citation{Title: title, URL: args.URL, SiteName: siteName, ImageURL: imageURL})
 	ctx.Emit("tool_result", map[string]interface{}{

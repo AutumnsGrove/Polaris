@@ -628,12 +628,19 @@ type Card struct {
 	// omitted means "media" — today's carousel behavior, unchanged for
 	// every existing caller (music/movies/books never set this field).
 	// image_search is the only "image" caller — see its doc comment.
-	Kind string `json:"kind,omitempty"` // "" (media, default) | "image"
+	// highlight is the only "highlight" caller — see highlight.go.
+	Kind string `json:"kind,omitempty"` // "" (media, default) | "image" | "highlight"
 	// FullImageURL is a higher-resolution image than ImageURL's deliberately
 	// small thumbnail — set only by image_search (Kind "image"), for a
 	// lightbox/full-screen preview to use instead of upscaling the
 	// thumbnail. Empty falls back to ImageURL on the frontend.
 	FullImageURL string `json:"full_image_url,omitempty"`
+	// Price is set only by highlight (Kind "highlight") — optional free
+	// text ("$129.99", "£45", "~$40, limited stock"), not a structured
+	// amount+currency pair, since nothing downstream sorts or computes on
+	// it — see highlight.go's doc comment. Empty for every other caller
+	// and for any non-shopping highlight item.
+	Price string `json:"price,omitempty"`
 }
 
 // AddCard appends a card unless its URL is already present, same
@@ -785,7 +792,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
-		"image_search": imageSearchDef, "read_attachment": readAttachmentDef,
+		"image_search": imageSearchDef, "highlight": highlightDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,

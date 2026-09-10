@@ -158,6 +158,7 @@ const (
 	FocusModeSocratic        = "socratic"
 	FocusModeResearcher      = "researcher"
 	FocusModeSafari          = "safari"
+	FocusModeShopper         = "shopper"
 )
 
 // loadSystemPrompt reads prompt.md fresh every call — edit the file,

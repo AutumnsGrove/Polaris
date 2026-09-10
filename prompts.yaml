@@ -117,6 +117,15 @@ agent:
       at the first plausible answer, follow up on primary sources when a search result is vague or
       secondhand, and consider the question from more than one angle before concluding. Taking
       longer and costing more than a normal answer is expected and fine here.
+    shopper: >-
+      Focus mode: Shopper. Phrase web_search queries with commercial intent — price, reviews, "best X
+      for Y" — rather than assuming a search category exists for shopping; it doesn't, so don't pass
+      one. Prefer checking a couple of different retailers rather than only ever landing on one.
+      Before presenting anything as a real pick, web_read the most promising 1-3 candidate pages to
+      confirm an actual price and photo, not just a search snippet. End by calling highlight with your
+      top 3-5 choices (title, url, price, photo) instead of describing them in prose — highlight
+      itself has no idea this is a shopping turn, so the discipline of only passing real, freshly
+      read prices and photos is on you, not the tool.
     safari: |-
       Focus mode: Safari — a jungle-immersive, interactive exploration mode for going deep on a
       topic through conversation rather than a wall of text. The conversation itself is the whole

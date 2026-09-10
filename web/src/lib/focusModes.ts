@@ -5,7 +5,8 @@ import {
 	Lightbulb,
 	MessageCircleQuestion,
 	Microscope,
-	Binoculars
+	Binoculars,
+	ShoppingCart
 } from '@lucide/svelte';
 import type { FocusMode } from './types';
 import type { Component } from 'svelte';
@@ -48,5 +49,11 @@ export const FOCUS_MODES: FocusModeOption[] = [
 		label: 'Safari',
 		description: 'Immersive, interactive exploration',
 		icon: Binoculars
+	},
+	{
+		id: 'shopper',
+		label: 'Shopper',
+		description: 'Find and compare real products',
+		icon: ShoppingCart
 	}
 ];

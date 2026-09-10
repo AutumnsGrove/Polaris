@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
-	"image_search", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items",
 }
 
@@ -185,6 +185,11 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
 	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
 		APIDescription: "Find real photos for a query and attach them as a gallery."},
+	"highlight": {Name: "highlight", Category: "research",
+		Description: "turn a handful of items you actually found this turn into cards instead of a paragraph.",
+		APIDescription: "Render 1-5 items you actually found this turn as cards instead of describing them in prose " +
+			"— a title, a url, and optionally a short free-text price/badge and an image. Every item must come " +
+			"from a web_search result or a page you actually read this turn, never from memory."},
 	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
 		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",

@@ -22,13 +22,19 @@ export interface Card {
 	url: string;
 	// Selects which frontend treatment renders this card — omitted means
 	// "media" (RecommendationsCarousel, today's behavior). image_search is
-	// the only "image" producer — see ImageGallery.svelte.
-	kind?: 'image';
+	// the only "image" producer — see ImageGallery.svelte. highlight is the
+	// only "highlight" producer — see HighlightGrid.svelte.
+	kind?: 'image' | 'highlight';
 	// A higher-resolution image than image_url's deliberately small
 	// thumbnail, for ImageGallery's lightbox to use instead of upscaling
 	// the thumbnail — set only by image_search. Falls back to image_url
 	// when absent.
 	full_image_url?: string;
+	// Optional free-text price/badge ("$129.99", "~$40, limited stock") —
+	// set only by highlight (kind 'highlight'). Not a structured amount,
+	// since nothing downstream sorts or computes on it — see
+	// tools/registry.go's Card.Price doc comment.
+	price?: string;
 }
 
 // A structured chart — see tools/registry.go's ChartSpec doc comment.
@@ -238,7 +244,8 @@ export type FocusMode =
 	| 'first_principles'
 	| 'socratic'
 	| 'researcher'
-	| 'safari';
+	| 'safari'
+	| 'shopper';
 
 // The response from POST /api/upload (see gateway/attachments.go's
 // UploadResponse) — id is what rides along in the next ClientMessage.

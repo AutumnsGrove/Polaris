@@ -4,6 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
 	import ImageGallery from './ImageGallery.svelte';
+	import HighlightGrid from './HighlightGrid.svelte';
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
@@ -44,8 +45,9 @@
 	// an image_search call renders one RecommendationsCarousel block and
 	// one ImageGallery block, whichever are actually present. See
 	// registry.go's Card.Kind doc comment.
-	let mediaCards = $derived((turn.cards ?? []).filter((c) => c.kind !== 'image'));
+	let mediaCards = $derived((turn.cards ?? []).filter((c) => c.kind !== 'image' && c.kind !== 'highlight'));
 	let imageCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'image'));
+	let highlightCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'highlight'));
 
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
@@ -254,6 +256,10 @@
 
 			{#if imageCards.length}
 				<ImageGallery cards={imageCards} />
+			{/if}
+
+			{#if highlightCards.length}
+				<HighlightGrid cards={highlightCards} />
 			{/if}
 
 			{#if turn.chart}
