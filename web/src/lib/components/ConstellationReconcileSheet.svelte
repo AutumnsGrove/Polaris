@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, Send } from '@lucide/svelte';
+	import { X, Send, Loader2 } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
 
@@ -36,7 +36,7 @@
 			title: 'Refine star',
 			hint: "Tell it what it got right and what's off — Weaver reworks the star from there instead of starting over.",
 			placeholder: 'e.g. "yeah, been on a real kick lately" or "not really, I was just asking one for a friend"',
-			footnote: "Sending this also settles the review — no separate approve step after."
+			footnote: "Stays in review after this — you'll see the revision and can refine again or approve/discard."
 		}
 	};
 	// $derived, not a plain const off mode — mode is a prop, so a plain
@@ -93,7 +93,11 @@
 				disabled={sending || !text.trim()}
 				aria-label="Send"
 			>
-				<Send size={15} />
+				{#if sending}
+					<Loader2 size={15} class="spin" />
+				{:else}
+					<Send size={15} />
+				{/if}
 			</button>
 		</div>
 
@@ -156,6 +160,17 @@
 	.composer-send:disabled {
 		opacity: 0.5;
 		cursor: default;
+	}
+	:global(.spin) {
+		animation: spin 1s linear infinite;
+	}
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	.error-text {
 		margin: var(--space-sm) 0 0;

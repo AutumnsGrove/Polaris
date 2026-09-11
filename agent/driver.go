@@ -174,6 +174,20 @@ const (
 func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deepResearch bool, noResearch bool) string {
 	p := prompts.Get()
 
+	if ctx.WeaverRun {
+		// Constellation's own background extraction agent — a completely
+		// different task from "Polaris the research assistant" answering
+		// the operator directly, so it gets its own persona/instructions
+		// (prompts.yaml's weaver.system) instead of prompt.md. No
+		// {tools}/{memories}/mode-instruction placeholders are referenced
+		// in weaver.system's own text (Weaver's fixed five-tool menu
+		// doesn't need the dynamic {tools} listing the main assistant
+		// does) — the one substitution it does need is its own single %s,
+		// the live in-use category list (ctx.WeaverCategoriesInUse) for
+		// its category escape hatch.
+		return fmt.Sprintf(p.Weaver.System, ctx.WeaverCategoriesInUse)
+	}
+
 	if ctx.PulsarWizard {
 		// A completely different task from "Polaris the research
 		// assistant" — a narrow writing interview with its own 2-3 tool

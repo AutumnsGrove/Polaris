@@ -563,20 +563,48 @@ weaver:
     The bar for writing a star is "was this actually discussed with some substance" — not "is this
     dramatic enough to matter." Most real exchanges about real topics should produce a new or
     updated star; excluded is pure logistics, a single throwaway reference with nothing said about
-    it, and ephemeral/time-bound content with no lasting relevance. category is free text with no
-    fixed list — reuse a category already in use for the same general area (check via search_stars
-    if unsure) rather than inventing a near-duplicate.
+    it, and ephemeral/time-bound content with no lasting relevance. A distinct failure mode worth
+    naming separately: reporting the person's current progress or status partway through an
+    ongoing thing — which chapter of a story, which level of a game, what page of a book, what day
+    of a plan — is not itself substance worth a star even when described in real detail. It reads
+    as stale the moment they move past that point. If the same conversation also contains a real,
+    standing fact about the topic (how something works, how it was received, what actually
+    happened, a lasting preference), capture that instead — never the "here's where I currently
+    am" framing on its own.
+
+    category must be one of: technology, software engineering, ai & machine learning, science,
+    space & astronomy, nature & environment, history, politics & world affairs, literature,
+    writing & language, music, film & tv, video games, art & design, hobbies & crafts, food &
+    drink, travel, sports & recreation, outdoor & fitness, health & wellness, career & work,
+    business & economy, philosophy & ideas, religion & spirituality, culture & society, internet &
+    social media, relationships & family, home & diy, automotive, fashion & style, finance &
+    shopping, education & learning — pick whichever this star's actual subject falls under. This
+    applies to personal/identity stars too: is_personal already marks the
+    personal-vs-topical distinction, so category should still describe what domain the star is
+    about, not a separate catch-all ("reads science fiction" is category=literature,
+    is_personal=true — never category=personal). Only invent a category outside this list if the
+    star's subject genuinely fits none of them, and even then keep it as broad as the listed ones
+    rather than a narrow one-off; check what's already in use first so you extend the library
+    rather than fragment it — categories currently in use beyond the fixed list: %s
 
     summary and body are finished, evergreen reference content — never your own process notes or
-    session-state commentary. Two concrete failure modes, both real and both to avoid: (1) if the
-    conversation you're reading itself contains a caveat like "no web search was available this
-    session," don't carry that session-specific phrasing into the star — rephrase it as a timeless
-    qualifier ("not independently verified against live sources") that still flags the uncertainty
-    without referencing a chat session a future reader has no context for; (2) if you intend to
-    call link_stars on this star later in the same run, don't write that intention into summary or
-    body ("linking to star X needed") — finish the actual linking first, or if you already wrote
-    the star before realizing a link was needed, call update_star afterward to remove the note
-    once the link exists. What's persisted should always read as the finished state, never a
+    session-state commentary. Default to short: a couple of sentences to a couple of short
+    paragraphs, reporting what the conversation actually covered — not an exhaustive treatment of
+    the topic drawing on what you separately know about it. A long body is only justified when the
+    conversation itself covered that much ground; length should track the conversation's own
+    substance, never independent elaboration for its own sake. Three concrete failure modes, all
+    real and all to avoid: (1) if the conversation you're reading itself contains a caveat like "no
+    web search was available this session," don't carry that session-specific phrasing into the
+    star — rephrase it as a timeless qualifier ("not independently verified against live sources")
+    that still flags the uncertainty without referencing a chat session a future reader has no
+    context for; (2) if you intend to call link_stars on this star later in the same run, don't
+    write that intention into summary or body ("linking to star X needed") — finish the actual
+    linking first, or if you already wrote the star before realizing a link was needed, call
+    update_star afterward to remove the note once the link exists; (3) if a star's prose needs to
+    reference another star's content, describe it in plain language the way a person would talk
+    about a related topic ("as covered in their existing Brent Faiyaz taste profile"), never by its
+    raw star ID ("per star 5") — the reader of this library never sees star numbers and shouldn't
+    be able to tell they exist. What's persisted should always read as the finished state, never a
     mid-task draft of it.
 
     A star can be about a topic, or about the person themselves — is_personal marks the second

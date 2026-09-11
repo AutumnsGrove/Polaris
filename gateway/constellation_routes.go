@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"polaris/llm"
 	"polaris/prompts"
@@ -146,6 +147,28 @@ type constellationStarDetail struct {
 	// recent row — see store.Store.LatestCandidateReasoning's doc comment.
 	// "" for a star with no candidate row (shouldn't normally happen).
 	Reasoning string `json:"reasoning"`
+	// FirstDiscussedAt is the earliest source thread's own created_at —
+	// when the topic was actually first talked about, as opposed to
+	// Star.CreatedAt (when this row was inserted, i.e. whenever Weaver's
+	// run happened to process it, which for a backlog run can be weeks
+	// after the real conversation). nil only for a star with no sources at
+	// all, which shouldn't normally happen. The UI's "first noted" label
+	// should read this, not Star.CreatedAt.
+	FirstDiscussedAt *time.Time `json:"first_discussed_at"`
+}
+
+// earliestSourceDate finds the oldest ThreadCreatedAt across a star's
+// sources — see constellationStarDetail.FirstDiscussedAt's doc comment for
+// why this, and not Star.CreatedAt, is "when was this actually discussed."
+func earliestSourceDate(sources []store.StarSource) *time.Time {
+	var earliest *time.Time
+	for i := range sources {
+		t := sources[i].ThreadCreatedAt
+		if earliest == nil || t.Before(*earliest) {
+			earliest = &t
+		}
+	}
+	return earliest
 }
 
 func (s *Server) handleGetConstellationStar(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +211,7 @@ func (s *Server) handleGetConstellationStar(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, constellationStarDetail{Star: *star, Sources: sources, Edges: edges, Reasoning: reasoning})
+	writeJSON(w, constellationStarDetail{Star: *star, Sources: sources, Edges: edges, Reasoning: reasoning, FirstDiscussedAt: earliestSourceDate(sources)})
 }
 
 // constellationStarPatchRequest covers the star's own overflow menu —
@@ -327,10 +350,19 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 			}
 			break
 		}
-		// Sending a refinement both corrects the star and resolves the
-		// review in one step — there's no separate confirm-after-refine
-		// tap (see the plan doc's "Refine").
-		if err := s.db.SetStarStatusAndRecordReview(id, "confirmed", "refined", req.Correction); err != nil {
+		// Refine corrects the star but deliberately does NOT resolve the
+		// review — reconcileAndSaveStar's UpdateStar call already reset
+		// status back to "proposed" (its own doc comment: resets status on
+		// any content change), so the star simply stays in the review
+		// queue with its revised content. RecordStarReview just logs the
+		// action for history, same star_reviews row shape approve/discard
+		// write, without touching status the way
+		// SetStarStatusAndRecordReview would. This lets the person see
+		// the revision and keep refining (or approve/discard) rather than
+		// the star silently leaving the queue the moment they send one
+		// correction — previously it auto-confirmed here, which is what
+		// made Refine feel like it skipped straight to "accepted."
+		if err := s.db.RecordStarReview(id, "refined", req.Correction); err != nil {
 			log.Warn("recording refine failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -178,12 +178,20 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 // per-tool-call trace the plan doc's "Full observability from day one"
 // principle asks for.
 func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID string) *tools.Context {
+	categories, err := db.DistinctCategories()
+	if err != nil {
+		// Not fatal — the escape hatch just falls back to guessing blind,
+		// same as before this existed.
+		categories = nil
+	}
+
 	return &tools.Context{
-		Ctx:       reqCtx,
-		LLM:       client,
-		Emit:      func(string, map[string]interface{}) {},
-		WeaverRun: true,
-		MaxTurns:  weaverMaxTurns,
+		Ctx:                   reqCtx,
+		LLM:                   client,
+		Emit:                  func(string, map[string]interface{}) {},
+		WeaverRun:             true,
+		MaxTurns:              weaverMaxTurns,
+		WeaverCategoriesInUse: strings.Join(categories, ", "),
 
 		WeaverSearchStars: func(query string) ([]store.StarSearchResult, error) {
 			results, err := db.SearchStars(query, 10)

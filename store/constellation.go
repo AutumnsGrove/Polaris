@@ -263,6 +263,29 @@ func (s *Store) ListStars(filter StarFilter) ([]Star, error) {
 	return stars, rows.Err()
 }
 
+// DistinctCategories returns every category value currently in use across
+// non-disabled stars, alphabetically — Weaver's escape hatch for a category
+// outside its fixed list needs this to actually reuse an already-established
+// overflow category instead of guessing blind (search_stars' own results
+// don't carry category, see its doc comment).
+func (s *Store) DistinctCategories() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT category FROM stars WHERE disabled = 0 ORDER BY category`)
+	if err != nil {
+		return nil, fmt.Errorf("distinct categories: %w", err)
+	}
+	defer rows.Close()
+
+	var categories []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, fmt.Errorf("distinct categories: %w", err)
+		}
+		categories = append(categories, category)
+	}
+	return categories, rows.Err()
+}
+
 func placeholders(n int) string {
 	out := ""
 	for i := 0; i < n; i++ {
@@ -364,15 +387,27 @@ func (s *Store) LinkStarSource(starID int64, threadID string) error {
 	return nil
 }
 
-// StarSource is one thread that contributed to a star.
+// StarSource is one thread that contributed to a star. LinkedAt is
+// bookkeeping (when this star_sources row was written/refreshed, i.e. when
+// Weaver actually processed it — often long after the fact for a backlog
+// run); ThreadCreatedAt is the real-world date the conversation happened,
+// which is what the UI should show a person as "when was this discussed" —
+// conflating the two made a month-old thread processed overnight display as
+// if it had just happened.
 type StarSource struct {
-	ThreadID string    `json:"thread_id"`
-	LinkedAt time.Time `json:"linked_at"`
+	ThreadID        string    `json:"thread_id"`
+	LinkedAt        time.Time `json:"linked_at"`
+	ThreadCreatedAt time.Time `json:"thread_created_at"`
 }
 
 // StarSources lists the threads backing a star's "Linked articles" block.
 func (s *Store) StarSources(starID int64) ([]StarSource, error) {
-	rows, err := s.db.Query(`SELECT thread_id, linked_at FROM star_sources WHERE star_id = ? ORDER BY linked_at DESC`, starID)
+	rows, err := s.db.Query(
+		`SELECT star_sources.thread_id, star_sources.linked_at, threads.created_at
+		 FROM star_sources JOIN threads ON threads.id = star_sources.thread_id
+		 WHERE star_sources.star_id = ? ORDER BY star_sources.linked_at DESC`,
+		starID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("star sources: %w", err)
 	}
@@ -381,7 +416,7 @@ func (s *Store) StarSources(starID int64) ([]StarSource, error) {
 	var out []StarSource
 	for rows.Next() {
 		var src StarSource
-		if err := rows.Scan(&src.ThreadID, &src.LinkedAt); err != nil {
+		if err := rows.Scan(&src.ThreadID, &src.LinkedAt, &src.ThreadCreatedAt); err != nil {
 			return nil, fmt.Errorf("star sources: %w", err)
 		}
 		out = append(out, src)

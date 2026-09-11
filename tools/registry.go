@@ -167,6 +167,15 @@ type Context struct {
 	WeaverUpdateStar  func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error
 	WeaverLinkStars   func(starIDA, starIDB int64, reasoning string) error
 
+	// WeaverCategoriesInUse lists every category value already in the
+	// library (store.Store's DistinctCategories, comma-joined) — substituted
+	// into weaver.system's own escape-hatch instruction so a category
+	// outside the fixed list can actually be checked against what already
+	// exists instead of guessed blind (search_stars' results carry no
+	// category field). Empty on a from-scratch library, which is fine —
+	// the escape hatch just has nothing to reuse yet.
+	WeaverCategoriesInUse string
+
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
 	// unauthenticated" — GitHub's REST API works fine without one, just

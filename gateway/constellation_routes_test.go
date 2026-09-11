@@ -211,6 +211,44 @@ func TestHandleReviewConstellationStar_Discard(t *testing.T) {
 	}
 }
 
+// TestHandleReviewConstellationStar_RefineStaysInReview covers the real bug
+// this was written to fix: Refine used to resolve the review in the same
+// step as correcting the star (SetStarStatusAndRecordReview(..., "confirmed",
+// ...) unconditionally), so the person never actually saw the revision
+// before it left the Inbox queue — it just looked like Refine silently
+// auto-accepted. reconcileAndSaveStar's UpdateStar call already resets
+// status back to "proposed" on any content change; the fix was for the
+// refine case to stop stomping that back to "confirmed" and just log the
+// review action instead (RecordStarReview), leaving the star in review with
+// its new content so it can be approved, discarded, or refined again.
+func TestHandleReviewConstellationStar_RefineStaysInReview(t *testing.T) {
+	srv := fakeLLMServer(t, "reconcile", "INVALIDATES: false\n\nSUMMARY: Refined summary\nBODY: Refined body text.")
+	h := newTestHarness(t, srv.URL)
+	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Summary: "old summary", Body: "old body", Status: "proposed"})
+
+	body, _ := json.Marshal(map[string]string{"action": "refine", "correction": "actually it's more nuanced than that"})
+	req, _ := http.NewRequest(http.MethodPost, h.url("/api/constellation/stars/"+itoa(id)+"/review"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	star, err := h.db.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if star.Status != "proposed" {
+		t.Errorf("Status = %q, want proposed (refine must NOT auto-confirm — the person hasn't approved it yet)", star.Status)
+	}
+	if star.Summary != "Refined summary" || star.Body != "Refined body text." {
+		t.Errorf("content not updated by refine: summary=%q body=%q", star.Summary, star.Body)
+	}
+}
+
 func TestHandleRestoreConstellationStar(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Status: "proposed"})

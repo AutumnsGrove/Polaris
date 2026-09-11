@@ -167,7 +167,10 @@
 			{/each}
 		</div>
 		<div class="meta-row">
-			Updated {formatDate(detail.star.updated_at)} &middot; first noted {formatDate(detail.star.created_at)}
+			Updated {formatDate(detail.star.updated_at)}
+			{#if detail.first_discussed_at}
+				&middot; first noted {formatDate(detail.first_discussed_at)}
+			{/if}
 		</div>
 
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -179,7 +182,9 @@
 				{#each detail.sources as source (source.thread_id)}
 					<button class="source-chip" onclick={() => goto(`/t/${source.thread_id}`)}>
 						<span class="icon-tile"><Link2 size={13} /></span>
-						"{constellationState.resolveSourceTitle(source.thread_id)}" &mdash; {formatDate(source.linked_at)}
+						"{constellationState.resolveSourceTitle(source.thread_id)}" &mdash; {formatDate(
+							source.thread_created_at
+						)}
 					</button>
 				{/each}
 			</div>

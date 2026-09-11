@@ -52,7 +52,15 @@
 	async function submitRefine(text: string) {
 		if (!detail) return { error: 'Star not loaded.' };
 		const result = await constellationState.reviewStar(detail.star.id, 'refine', text);
-		if (!result.error) await goto('/constellation/inbox');
+		// Refine deliberately stays on this screen instead of navigating back
+		// to the inbox list (unlike approve/discard in act() above) — the
+		// whole point is to let the person see what changed and keep
+		// refining or decide to approve/discard from here, not get swept
+		// back to the list before they've even seen the revision. Refetches
+		// directly rather than calling load(), which would flip `loading`
+		// back to true and flash the whole view to "Loading…" for what
+		// should read as an in-place update.
+		if (!result.error) detail = await constellationState.loadStarDetail(detail.star.id);
 		return { error: result.error };
 	}
 </script>

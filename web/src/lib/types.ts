@@ -617,6 +617,11 @@ export interface Star {
 export interface StarSource {
 	thread_id: string;
 	linked_at: string;
+	// The source thread's own created_at — the real date the conversation
+	// happened, unlike linked_at (when this star_sources row was written,
+	// which for a backlog run can be weeks after the fact). Display this,
+	// not linked_at, as "when was this discussed."
+	thread_created_at: string;
 }
 
 // Mirrors store.StarEdge — one linked star as seen from a specific star's
@@ -644,6 +649,12 @@ export interface ConstellationStarDetail {
 	// "" if none exists. Backs the Review screen's "Why this needs a look"
 	// block (see gateway/constellation_routes.go's constellationStarDetail).
 	reasoning: string;
+	// The earliest source thread's created_at — when the topic was
+	// actually first discussed, unlike star.created_at (when this row was
+	// inserted, i.e. whenever Weaver's run happened to process it). Null
+	// only for a star with no sources at all, which shouldn't normally
+	// happen. Use this for "first noted," not star.created_at.
+	first_discussed_at: string | null;
 }
 
 // Mirrors store.ConstellationStats — GET /api/constellation/stats.
