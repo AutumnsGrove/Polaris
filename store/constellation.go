@@ -351,6 +351,50 @@ func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error)
 	return results, rows.Err()
 }
 
+// SearchLibraryStars backs the Library's search box — deliberately not
+// SearchStars reused directly: that one includes rejected stars on purpose
+// (it doubles as Weaver's own "was this already said no to" check), which
+// would be confusing surfaced to a person searching their own library. Only
+// auto/confirmed, non-disabled stars are eligible, same set the
+// library/about_you sections themselves show. Returns full Star rows (the
+// same shape ListStars does), not a slimmer result type, so the frontend
+// can render a hit with the exact same StarCard component the rest of the
+// Library uses instead of a second, inconsistent-looking result row.
+func (s *Store) SearchLibraryStars(query string, limit int) ([]Star, error) {
+	rows, err := s.db.Query(
+		`SELECT s.id, s.title, s.category, s.summary, s.body, s.tags, s.status, s.confidence, s.is_personal, s.disabled, s.created_at, s.updated_at
+		 FROM stars_fts
+		 JOIN stars s ON s.id = stars_fts.rowid
+		 WHERE stars_fts MATCH ? AND s.disabled = 0 AND s.status IN ('auto', 'confirmed')
+		 ORDER BY rank
+		 LIMIT ?`, orFTSQuery(query), limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search library stars: %w", err)
+	}
+	defer rows.Close()
+
+	var results []Star
+	for rows.Next() {
+		var star Star
+		var tagsJSON string
+		var isPersonal, disabled int
+		if err := rows.Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("search library stars: %w", err)
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
+			return nil, fmt.Errorf("search library stars: decode tags: %w", err)
+		}
+		star.IsPersonal = isPersonal != 0
+		star.Disabled = disabled != 0
+		results = append(results, star)
+	}
+	if results == nil {
+		results = []Star{}
+	}
+	return results, rows.Err()
+}
+
 // orFTSQuery turns a free-text query into an FTS5 query string that
 // matches a row containing ANY of the individual words, not (FTS5's
 // default) every single one of them. Each word is double-quoted so
@@ -975,8 +1019,13 @@ func (s *Store) GetConstellationDigest() (*ConstellationDigest, error) {
 // (approve/discard) — those are resolutions of something already made,
 // not new material themselves (see the plan doc's "The weekly digest").
 type ConstellationWeekItem struct {
-	Kind      string    `json:"kind"` // "new" | "updated" | "linked"
-	Title     string    `json:"title"`
+	Kind  string `json:"kind"` // "new" | "updated" | "linked"
+	Title string `json:"title"`
+	// StarID is what a tap on this row opens — the star Title belongs to
+	// (the first side of the link, for "linked"). Previously missing
+	// entirely, which is why "This week" rows couldn't be tapped through
+	// to the actual star at all.
+	StarID    int64     `json:"star_id"`
 	Detail    string    `json:"detail,omitempty"` // second star's title, for "linked"
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -989,14 +1038,14 @@ type ConstellationWeekItem struct {
 func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 	var items []ConstellationWeekItem
 
-	newRows, err := s.db.Query(`SELECT title, created_at FROM stars WHERE disabled = 0 AND created_at >= datetime('now', '-7 days')`)
+	newRows, err := s.db.Query(`SELECT id, title, created_at FROM stars WHERE disabled = 0 AND created_at >= datetime('now', '-7 days')`)
 	if err != nil {
 		return nil, fmt.Errorf("constellation week feed: new stars: %w", err)
 	}
 	for newRows.Next() {
 		var it ConstellationWeekItem
 		it.Kind = "new"
-		if err := newRows.Scan(&it.Title, &it.Timestamp); err != nil {
+		if err := newRows.Scan(&it.StarID, &it.Title, &it.Timestamp); err != nil {
 			newRows.Close()
 			return nil, fmt.Errorf("constellation week feed: new stars: %w", err)
 		}
@@ -1008,7 +1057,7 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 	}
 
 	updatedRows, err := s.db.Query(`
-		SELECT title, updated_at FROM stars
+		SELECT id, title, updated_at FROM stars
 		WHERE disabled = 0 AND updated_at >= datetime('now', '-7 days') AND created_at < datetime('now', '-7 days')`)
 	if err != nil {
 		return nil, fmt.Errorf("constellation week feed: updated stars: %w", err)
@@ -1016,7 +1065,7 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 	for updatedRows.Next() {
 		var it ConstellationWeekItem
 		it.Kind = "updated"
-		if err := updatedRows.Scan(&it.Title, &it.Timestamp); err != nil {
+		if err := updatedRows.Scan(&it.StarID, &it.Title, &it.Timestamp); err != nil {
 			updatedRows.Close()
 			return nil, fmt.Errorf("constellation week feed: updated stars: %w", err)
 		}
@@ -1028,7 +1077,7 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 	}
 
 	linkRows, err := s.db.Query(`
-		SELECT sa.title, sb.title, e.created_at FROM star_edges e
+		SELECT sa.id, sa.title, sb.title, e.created_at FROM star_edges e
 		JOIN stars sa ON sa.id = e.star_a_id
 		JOIN stars sb ON sb.id = e.star_b_id
 		WHERE e.created_at >= datetime('now', '-7 days')`)
@@ -1038,7 +1087,7 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 	for linkRows.Next() {
 		var it ConstellationWeekItem
 		it.Kind = "linked"
-		if err := linkRows.Scan(&it.Title, &it.Detail, &it.Timestamp); err != nil {
+		if err := linkRows.Scan(&it.StarID, &it.Title, &it.Detail, &it.Timestamp); err != nil {
 			linkRows.Close()
 			return nil, fmt.Errorf("constellation week feed: links: %w", err)
 		}

@@ -44,14 +44,19 @@
 	{:else}
 		<div class="week-list">
 			{#each constellationState.weekItems as item, i (i)}
-				<div class="week-row" class:updated={item.kind === 'updated'} class:linked={item.kind === 'linked'}>
+				<button
+					class="week-row"
+					class:updated={item.kind === 'updated'}
+					class:linked={item.kind === 'linked'}
+					onclick={() => goto(`/constellation/star/${item.star_id}`)}
+				>
 					<span class="type-dot"></span>
 					<div class="week-main">
 						<div class="week-title">{item.title}{item.detail ? ` ↔ ${item.detail}` : ''}</div>
 						<div class="week-type">{typeLabel(item.kind)}</div>
 					</div>
 					<span class="week-time">{relative(item.timestamp)}</span>
-				</div>
+				</button>
 			{/each}
 		</div>
 	{/if}
@@ -98,11 +103,24 @@
 	.week-row {
 		display: flex;
 		align-items: center;
+		width: 100%;
 		gap: var(--space-md);
 		padding: var(--space-md);
 		border-radius: var(--radius-lg);
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition:
+			transform 0.15s ease,
+			border-color 0.15s ease;
+	}
+	.week-row:hover,
+	.week-row:focus-visible {
+		transform: translateY(-1px);
+		border-color: var(--color-border-strong);
 	}
 	.type-dot {
 		width: 8px;

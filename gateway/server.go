@@ -436,6 +436,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PUT /api/constellation/config", s.handleUpdateConstellationConfig)
 	s.mux.HandleFunc("GET /api/constellation/stats", s.handleGetConstellationStats)
 	s.mux.HandleFunc("GET /api/constellation/stars", s.handleListConstellationStars)
+	s.mux.HandleFunc("GET /api/constellation/stars/search", s.handleSearchConstellationStars)
 	s.mux.HandleFunc("GET /api/constellation/stars/{id}", s.handleGetConstellationStar)
 	s.mux.HandleFunc("PATCH /api/constellation/stars/{id}", s.handlePatchConstellationStar)
 	s.mux.HandleFunc("POST /api/constellation/stars/{id}/restore", s.handleRestoreConstellationStar)

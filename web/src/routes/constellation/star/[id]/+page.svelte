@@ -7,17 +7,8 @@
 	import DOMPurify from 'dompurify';
 	import ConstellationMiniMap from '$lib/components/ConstellationMiniMap.svelte';
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
-	import {
-		ArrowLeft,
-		MoreVertical,
-		BookOpen,
-		Cpu,
-		Globe2,
-		User,
-		MessageCircle,
-		Pencil,
-		Link2
-	} from '@lucide/svelte';
+	import { ArrowLeft, MoreVertical, MessageCircle, Pencil, Link2 } from '@lucide/svelte';
+	import { iconForCategory } from '$lib/categoryIcons';
 	import type { ConstellationStarDetail, Star, StarEdge } from '$lib/types';
 
 	const starId = $derived(Number(page.params.id));
@@ -51,14 +42,7 @@
 		void load(starId);
 	});
 
-	const iconFor = (category: string) => {
-		const c = category.toLowerCase();
-		if (c.includes('tech')) return Cpu;
-		if (c.includes('book') || c.includes('idea')) return BookOpen;
-		if (c.includes('science') || c.includes('history') || c.includes('space')) return Globe2;
-		return BookOpen;
-	};
-	const Icon = $derived(detail ? (detail.star.is_personal ? User : iconFor(detail.star.category)) : BookOpen);
+	const Icon = $derived(iconForCategory(detail?.star.category ?? ''));
 
 	function renderBody(body: string): string {
 		return DOMPurify.sanitize(marked.parse(body || '') as string);

@@ -687,6 +687,9 @@ export interface ConstellationDigest {
 export interface ConstellationWeekItem {
 	kind: 'new' | 'updated' | 'linked';
 	title: string;
+	// The star Title belongs to (the first side of the link, for "linked")
+	// — what tapping this row opens.
+	star_id: number;
 	detail?: string;
 	timestamp: string;
 }

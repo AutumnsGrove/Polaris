@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { BookOpen, Cpu, Globe2, User, ChevronRight } from '@lucide/svelte';
+	import { ChevronRight } from '@lucide/svelte';
 	import type { Star } from '$lib/types';
+	import { iconForCategory } from '$lib/categoryIcons';
 
 	let {
 		star,
@@ -15,19 +16,11 @@
 		onclick: () => void;
 	} = $props();
 
-	// categoryIcon: category is free text with no fixed list (Weaver's own
-	// choice, per the plan doc), so this is a small keyword heuristic with
-	// a generic fallback — same shape as /daily's blockIcons lookup, not a
-	// real enum mapping. is_personal overrides this entirely (a User icon
-	// regardless of category), matching the mockup's personal tile.
-	const iconFor = (category: string) => {
-		const c = category.toLowerCase();
-		if (c.includes('tech')) return Cpu;
-		if (c.includes('book') || c.includes('idea')) return BookOpen;
-		if (c.includes('science') || c.includes('history') || c.includes('space')) return Globe2;
-		return BookOpen;
-	};
-	const Icon = $derived(star.is_personal ? User : iconFor(star.category));
+	// Always the category's own themed icon, even for a personal star —
+	// category now describes the star's subject domain either way (see
+	// weaver.system's category rules), and the "Personal" badge below
+	// already marks the is_personal distinction on its own.
+	const Icon = $derived(iconForCategory(star.category));
 
 	const relativeTime = $derived(formatRelative(star.updated_at));
 

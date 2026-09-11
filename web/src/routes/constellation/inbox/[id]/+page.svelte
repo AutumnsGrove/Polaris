@@ -3,7 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { constellationState } from '$lib/constellation.svelte';
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
-	import { ArrowLeft, BookOpen, Cpu, Globe2, User, Check, Pencil, X } from '@lucide/svelte';
+	import { ArrowLeft, Check, Pencil, X } from '@lucide/svelte';
+	import { iconForCategory } from '$lib/categoryIcons';
 	import type { ConstellationStarDetail } from '$lib/types';
 
 	const starId = $derived(Number(page.params.id));
@@ -23,14 +24,7 @@
 		void load(starId);
 	});
 
-	const iconFor = (category: string) => {
-		const c = category.toLowerCase();
-		if (c.includes('tech')) return Cpu;
-		if (c.includes('book') || c.includes('idea')) return BookOpen;
-		if (c.includes('science') || c.includes('history') || c.includes('space')) return Globe2;
-		return BookOpen;
-	};
-	const Icon = $derived(detail ? (detail.star.is_personal ? User : iconFor(detail.star.category)) : BookOpen);
+	const Icon = $derived(iconForCategory(detail?.star.category ?? ''));
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

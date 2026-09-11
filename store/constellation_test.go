@@ -224,6 +224,36 @@ func TestSearchStars_FTS(t *testing.T) {
 	}
 }
 
+func TestSearchLibraryStars_ExcludesRejectedAndDisabled(t *testing.T) {
+	s := openTestStore(t)
+
+	visible, _ := s.CreateStar(Star{Title: "Cloudflare Workers", Category: "technology", Summary: "Edge compute platform", Status: "auto"})
+
+	rejected, _ := s.CreateStar(Star{Title: "Cloudflare pages rejected", Category: "technology", Summary: "Something declined about Cloudflare", Status: "proposed"})
+	if err := s.SetStarStatus(rejected, "rejected"); err != nil {
+		t.Fatalf("SetStarStatus: %v", err)
+	}
+
+	disabled, _ := s.CreateStar(Star{Title: "Cloudflare disabled topic", Category: "technology", Summary: "Cloudflare but disabled", Status: "confirmed"})
+	if err := s.SetStarDisabled(disabled, true); err != nil {
+		t.Fatalf("SetStarDisabled: %v", err)
+	}
+
+	results, err := s.SearchLibraryStars("Cloudflare", 10)
+	if err != nil {
+		t.Fatalf("SearchLibraryStars: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != visible {
+		t.Errorf("SearchLibraryStars(Cloudflare) = %+v, want just the one visible star (not the rejected or disabled ones)", results)
+	}
+	if results[0].Category != "technology" {
+		t.Errorf("Category = %q, want technology", results[0].Category)
+	}
+	if results[0].Tags == nil {
+		t.Error("Tags should never be nil, even for a star created with no tags")
+	}
+}
+
 func TestStarSources_UpsertNotDuplicate(t *testing.T) {
 	s := openTestStore(t)
 	threadID := seedThread(t, s)
@@ -405,6 +435,51 @@ func TestStarReview_Recorded(t *testing.T) {
 	}
 	if got.Status != "confirmed" {
 		t.Errorf("Status = %q, want confirmed after approve", got.Status)
+	}
+}
+
+// TestGetConstellationWeekFeed_IncludesStarID covers a real bug: none of
+// the three feed queries (new/updated/linked) ever selected a star's id,
+// only its title — the "This week" page's rows had no way to navigate
+// anywhere at all when tapped, since ConstellationWeekItem carried nothing
+// to link to.
+func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
+	s := openTestStore(t)
+
+	newID, _ := s.CreateStar(Star{Title: "Brand new", Category: "technology", Status: "auto"})
+
+	updatedID, _ := s.CreateStar(Star{Title: "Will be updated", Category: "technology", Status: "auto"})
+	if _, err := s.db.Exec(`UPDATE stars SET created_at = datetime('now', '-30 days') WHERE id = ?`, updatedID); err != nil {
+		t.Fatalf("backdating created_at: %v", err)
+	}
+	if err := s.UpdateStar(updatedID, "new summary", "new body", nil, "", false); err != nil {
+		t.Fatalf("UpdateStar: %v", err)
+	}
+
+	linkA, _ := s.CreateStar(Star{Title: "Link side A", Category: "technology", Status: "auto"})
+	linkB, _ := s.CreateStar(Star{Title: "Link side B", Category: "technology", Status: "auto"})
+	if err := s.LinkStars(linkA, linkB, "related"); err != nil {
+		t.Fatalf("LinkStars: %v", err)
+	}
+
+	items, err := s.GetConstellationWeekFeed()
+	if err != nil {
+		t.Fatalf("GetConstellationWeekFeed: %v", err)
+	}
+
+	byTitle := map[string]ConstellationWeekItem{}
+	for _, it := range items {
+		byTitle[it.Title] = it
+	}
+
+	if got := byTitle["Brand new"]; got.StarID != newID {
+		t.Errorf("new item StarID = %d, want %d", got.StarID, newID)
+	}
+	if got := byTitle["Will be updated"]; got.StarID != updatedID {
+		t.Errorf("updated item StarID = %d, want %d", got.StarID, updatedID)
+	}
+	if got := byTitle["Link side A"]; got.StarID != linkA {
+		t.Errorf("linked item StarID = %d, want %d", got.StarID, linkA)
 	}
 }
 

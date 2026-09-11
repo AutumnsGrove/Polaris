@@ -16,7 +16,8 @@
 		Inbox as InboxIcon,
 		Rows3,
 		Map as MapIcon,
-		Maximize2
+		Maximize2,
+		X
 	} from '@lucide/svelte';
 	import type { Star } from '$lib/types';
 
@@ -26,6 +27,49 @@
 	onMount(() => {
 		void constellationState.loadLibrary();
 	});
+
+	// Search: a debounced fetch against SearchLibraryStars, not a client-side
+	// filter over already-loaded stars — FTS5 relevance ranking over the
+	// full body text finds things a substring match over just title/summary
+	// wouldn't, and this way it works the same regardless of how many stars
+	// are actually loaded into libraryStars/aboutYouStars right now.
+	let searchOpen = $state(false);
+	let searchQuery = $state('');
+	let searchResults = $state<Star[] | null>(null);
+	let searchLoading = $state(false);
+	let searchInputEl = $state<HTMLInputElement | null>(null);
+	let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+
+	function openSearch() {
+		searchOpen = true;
+		requestAnimationFrame(() => searchInputEl?.focus());
+	}
+	function closeSearch() {
+		searchOpen = false;
+		searchQuery = '';
+		searchResults = null;
+		clearTimeout(searchDebounce);
+	}
+	function onSearchInput() {
+		clearTimeout(searchDebounce);
+		const query = searchQuery.trim();
+		if (!query) {
+			searchResults = null;
+			searchLoading = false;
+			return;
+		}
+		searchLoading = true;
+		searchDebounce = setTimeout(async () => {
+			const results = await constellationState.searchStars(query);
+			// Stale-response guard: if the box was cleared or changed again
+			// while this request was in flight, don't clobber that with an
+			// answer to a query that's no longer current.
+			if (searchQuery.trim() === query) {
+				searchResults = results;
+				searchLoading = false;
+			}
+		}, 250);
+	}
 
 	// Map data is loaded lazily on first switch to that tab rather than on
 	// every Library load — it's a separate, heavier fetch (every star +
@@ -165,7 +209,7 @@
 		{/if}
 	</div>
 	<div class="header-right">
-		<button class="icon-btn" title="Search" aria-label="Search" disabled>
+		<button class="icon-btn" title="Search" aria-label="Search" onclick={openSearch}>
 			<Search size={18} />
 		</button>
 		<button class="icon-btn" onclick={() => (showSettings = true)} title="Constellation settings">
@@ -174,8 +218,43 @@
 	</div>
 </header>
 
+{#if searchOpen}
+	<div class="search-bar-wrap">
+		<div class="thread-search">
+			<Search size={14} class="icon-search" aria-hidden="true" />
+			<input
+				bind:this={searchInputEl}
+				bind:value={searchQuery}
+				oninput={onSearchInput}
+				type="text"
+				placeholder="Search your library"
+				spellcheck="false"
+				onkeydown={(e) => e.key === 'Escape' && closeSearch()}
+			/>
+			<button class="icon-btn clear-btn" onclick={closeSearch} aria-label="Close search">
+				<X size={13} />
+			</button>
+		</div>
+	</div>
+{/if}
+
 <div class="content" class:map-content={view === 'map'}>
-	{#if view === 'library'}
+	{#if searchOpen && searchQuery.trim()}
+		{#if searchLoading}
+			<p class="empty">Searching…</p>
+		{:else if searchResults && searchResults.length > 0}
+			<p class="meta-line">
+				{searchResults.length} result{searchResults.length === 1 ? '' : 's'}
+			</p>
+			<div class="card-list">
+				{#each searchResults as star (star.id)}
+					<StarCard {star} onclick={() => goto(`/constellation/star/${star.id}`)} />
+				{/each}
+			</div>
+		{:else}
+			<p class="empty">No stars match "{searchQuery.trim()}".</p>
+		{/if}
+	{:else if view === 'library'}
 		{#if !constellationState.libraryLoaded}
 			<p class="empty">Loading your library…</p>
 		{:else if constellationState.libraryStars.length === 0 && constellationState.aboutYouStars.length === 0}
@@ -293,7 +372,12 @@
 						style="left: {cluster.x}px; top: {cluster.y}px; width: {cluster.radius *
 							2}px; height: {cluster.radius * 2}px;"
 					></div>
-					<div class="cluster-label" style="left: {cluster.x}px; top: {cluster.y - cluster.radius - 8}px;">
+					<div
+						class="cluster-label"
+						style="left: {cluster.x}px; top: {cluster.y -
+							cluster.radius -
+							8}px; transform: translate(-50%, -50%) scale({1 / zoomTransform.k});"
+					>
 						{cluster.category}
 					</div>
 				{/each}
@@ -386,6 +470,50 @@
 		padding: 4px var(--space-sm);
 		border-radius: var(--radius-full);
 		white-space: nowrap;
+	}
+
+	/* Same box treatment as Sidebar.svelte's .thread-search ("Search past
+	   chats") — one shared visual language for "search" across the app
+	   rather than a second, differently-styled bar just for Constellation. */
+	.search-bar-wrap {
+		padding: var(--space-sm) var(--space-lg) 0;
+	}
+	.thread-search {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		transition: border-color 0.15s var(--ease-out-expo);
+	}
+	.thread-search:focus-within {
+		border-color: var(--color-accent);
+	}
+	.thread-search :global(.icon-search) {
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+	}
+	.thread-search input {
+		flex: 1;
+		min-width: 0;
+		border: none;
+		background: transparent;
+		font: inherit;
+		font-size: 13px;
+		color: var(--color-text);
+	}
+	.thread-search input:focus {
+		outline: none;
+	}
+	.thread-search input::placeholder {
+		color: var(--color-text-dim);
+	}
+	.clear-btn {
+		flex-shrink: 0;
+		width: 20px;
+		height: 20px;
 	}
 
 	.content {
@@ -541,14 +669,17 @@
 		border-radius: 50%;
 		background: radial-gradient(
 			circle,
-			color-mix(in srgb, var(--color-accent-2) 20%, transparent),
-			transparent 72%
+			color-mix(in srgb, var(--color-accent-2) 10%, transparent),
+			transparent 55%
 		);
 		pointer-events: none;
 	}
 	.cluster-label {
 		position: absolute;
-		transform: translate(-50%, -50%);
+		/* transform (translate + counter-zoom scale) is set inline — see the
+		   template — since it depends on the live zoom level, not something
+		   plain CSS can express. */
+		transform-origin: center;
 		font-size: 10px;
 		font-weight: 600;
 		letter-spacing: 0.1em;

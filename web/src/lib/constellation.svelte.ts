@@ -93,6 +93,19 @@ export class ConstellationState {
 		}
 	}
 
+	// searchStars backs the Library's search box — a plain fetch, not
+	// state stored on this class, since results are ephemeral to whatever
+	// the search box currently shows rather than something other views
+	// need to react to (unlike libraryStars/aboutYouStars etc).
+	async searchStars(query: string): Promise<Star[]> {
+		try {
+			const res = await fetch(`/api/constellation/stars/search?q=${encodeURIComponent(query)}`);
+			return res.ok ? ((await res.json()) as Star[]) : [];
+		} catch {
+			return [];
+		}
+	}
+
 	async loadWeek() {
 		try {
 			const res = await fetch('/api/constellation/week');
