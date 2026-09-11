@@ -33,6 +33,16 @@
 	const HUB_X = 20;
 	const NEIGHBOR_X = 54;
 	const RIGHT_PAD = 14;
+	// Half of .node .dot's own width (8px) — the connecting line's x2 is
+	// drawn at NEIGHBOR_X, meant to land on the neighbor dot's *center*.
+	// .node itself only centers vertically (translateY(-50%) — its width
+	// varies with the title's length, so there's no fixed box to center
+	// horizontally around); its `left` is a plain box edge. Shifting that
+	// edge left by the dot's own radius puts the dot (the row's first,
+	// non-shrinking flex child, flush against the box's left edge) exactly
+	// on NEIGHBOR_X instead of ~4px to its right, which is what made the
+	// line look like it stopped short of the dot instead of touching it.
+	const NEIGHBOR_DOT_RADIUS = 4;
 
 	// neighborStars already carries the caller's own order/bound (the first
 	// 3 edges — see star/[id]/+page.svelte's load()); this just drops any
@@ -45,7 +55,9 @@
 	let canvasWidth = $state(280);
 	const canvasHeight = $derived(rows.length === 0 ? 0 : TOP_PAD * 2 + Math.max(0, rows.length - 1) * ROW_HEIGHT);
 	const hubY = $derived(canvasHeight / 2);
-	const labelMaxWidth = $derived(Math.max(80, canvasWidth - NEIGHBOR_X - RIGHT_PAD));
+	const labelMaxWidth = $derived(
+		Math.max(80, canvasWidth - (NEIGHBOR_X - NEIGHBOR_DOT_RADIUS) - RIGHT_PAD)
+	);
 </script>
 
 {#if rows.length > 0}
@@ -62,7 +74,8 @@
 				<button
 					class="node"
 					class:personal={star.is_personal}
-					style="left: {NEIGHBOR_X}px; top: {TOP_PAD + i * ROW_HEIGHT}px; max-width: {labelMaxWidth}px;"
+					style="left: {NEIGHBOR_X - NEIGHBOR_DOT_RADIUS}px; top: {TOP_PAD +
+						i * ROW_HEIGHT}px; max-width: {labelMaxWidth}px;"
 					onclick={() => goto(`/constellation/star/${star.id}`)}
 				>
 					<span class="dot"></span>
@@ -124,8 +137,14 @@
 		gap: 7px;
 		background: none;
 		border: none;
+		/* Vertical padding alone enlarges the tap target — translateY(-50%)
+		   re-centers on this element's own (padded) height, so the dot
+		   stays exactly on its row's y. A matching negative margin (as
+		   .map-node above briefly had) would NOT cancel out here: for an
+		   absolutely positioned element, `top` places the *margin* edge,
+		   so a negative margin pulls the dot away from that y by the same
+		   amount — confirmed live as a 4px "too high" drift on every row. */
 		padding: 4px 4px 4px 0;
-		margin: -4px 0;
 		cursor: pointer;
 		font: inherit;
 		text-align: left;

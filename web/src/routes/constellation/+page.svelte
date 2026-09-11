@@ -564,8 +564,17 @@
 		display: flex;
 		background: none;
 		border: none;
+		/* padding alone enlarges the tap target — translate(-50%, -50%)
+		   centers on this element's own border box, padding included, so
+		   the visible dot stays exactly on (node.x, node.y) with no extra
+		   margin needed. A matching negative margin (added in an earlier
+		   pass to avoid "wasting" layout space) does NOT cancel out here
+		   the way it would in normal flow: for an absolutely positioned
+		   element, left/top place the *margin* edge, so a negative margin
+		   pulls the actual dot away from (node.x, node.y) by that same
+		   amount — an 8px up-left drift confirmed live (dots landing 8px
+		   off from where the connecting lines terminate). */
 		padding: 8px;
-		margin: -8px;
 		cursor: pointer;
 		font: inherit;
 	}
