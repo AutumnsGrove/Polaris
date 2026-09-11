@@ -669,6 +669,47 @@ func TestEligibleConstellationThreads_Gates(t *testing.T) {
 	}
 }
 
+// TestEligibleConstellationThreads_ResolvesForkedThreadToRoot covers a real
+// bug found by inspecting a production database: editing/regenerating a
+// message forks a hidden variant thread (fork_root_id set, its own title
+// always "" — see ForkThread's doc comment), and this function used to
+// return that raw variant id directly. Weaver then linked stars to it via
+// star_sources, and since a variant is never independently addressable
+// (GetThread can't open one, nothing lists it), every such star's "source"
+// permanently showed as a broken/untitled thread in the UI. This must
+// return the stable root id instead — same join-through-root fix
+// SearchMessages already uses for the identical class of problem.
+func TestEligibleConstellationThreads_ResolvesForkedThreadToRoot(t *testing.T) {
+	s := openTestStore(t)
+
+	root := seedThread(t, s)
+	forkID, err := s.ForkThread(root, root, 1)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if _, err := s.AddMessage(forkID, "assistant", "edited reply", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := s.SetActiveVariant(root, forkID); err != nil {
+		t.Fatalf("SetActiveVariant: %v", err)
+	}
+	// Idle-gate: back-date the variant's messages (its own row, not root's
+	// — the whole point is root's own messages table is stale/irrelevant
+	// once a variant becomes active).
+	if _, err := s.db.Exec(`UPDATE messages SET created_at = datetime('now', '-2 hours') WHERE thread_id = ?`, forkID); err != nil {
+		t.Fatalf("backdating message: %v", err)
+	}
+
+	got, err := s.EligibleConstellationThreads(60)
+	if err != nil {
+		t.Fatalf("EligibleConstellationThreads: %v", err)
+	}
+
+	if len(got) != 1 || got[0] != root {
+		t.Errorf("EligibleConstellationThreads = %v, want exactly [%q] (the root, not the hidden fork %q)", got, root, forkID)
+	}
+}
+
 // seedThread inserts a minimal thread row plus one message, so
 // foreign-key-referencing tests (star_sources, shooting_star_runs) have a
 // valid thread_id to point at, and eligibility-gate tests

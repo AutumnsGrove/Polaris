@@ -1120,23 +1120,39 @@ func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, er
 //     downstream content-adjacent surface talking to itself, and letting a
 //     pulse thread back in as a shooting-star candidate would eventually
 //     feed Weaver's output back into Weaver.
+//
+// Joins through root the same way SearchMessages does, and for the same
+// reason (see that function's doc comment) — an edited/regenerated
+// thread's real, current content lives in a hidden variant (fork_root_id
+// set), not the root's own messages rows, but a variant's own id is never
+// independently addressable (GetThread can't open it, its title is always
+// "" — ForkThread never sets one) and isn't stable across further edits.
+// Returning t.id here instead of root.id, as this used to, is exactly what
+// made every star pulled from an edited thread link back to an id with no
+// real title: it's a hidden implementation detail, not the conversation a
+// person actually has open in their sidebar. root.id is what
+// star_sources/shooting_star_runs should always track; t (whichever of
+// root or its currently-active variant EffectiveThreadID(root) would
+// resolve to) is only consulted here for its live message content/timing.
 func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string, error) {
 	rows, err := s.db.Query(`
-		SELECT t.id
+		SELECT root.id
 		FROM threads t
-		WHERE t.disabled = 0
-		  AND t.source != 'pulsar'
+		JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
+		WHERE root.disabled = 0
+		  AND root.source != 'pulsar'
+		  AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		  AND (SELECT MAX(m.created_at) FROM messages m WHERE m.thread_id = t.id) <= datetime('now', '-' || ? || ' minutes')
 		  AND (
 		    (SELECT r.needs_retry FROM shooting_star_runs r
-		      WHERE r.thread_id = t.id ORDER BY r.id DESC LIMIT 1) = 1
-		    OR NOT EXISTS (SELECT 1 FROM shooting_star_runs r2 WHERE r2.thread_id = t.id)
+		      WHERE r.thread_id = root.id ORDER BY r.id DESC LIMIT 1) = 1
+		    OR NOT EXISTS (SELECT 1 FROM shooting_star_runs r2 WHERE r2.thread_id = root.id)
 		    OR (SELECT MAX(m2.id) FROM messages m2 WHERE m2.thread_id = t.id) > (
 		      SELECT r3.last_message_id_seen FROM shooting_star_runs r3
-		      WHERE r3.thread_id = t.id ORDER BY r3.id DESC LIMIT 1
+		      WHERE r3.thread_id = root.id ORDER BY r3.id DESC LIMIT 1
 		    )
 		  )
-		ORDER BY t.id`,
+		ORDER BY root.id`,
 		pollIntervalMinutes,
 	)
 	if err != nil {

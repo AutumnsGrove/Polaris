@@ -40,7 +40,22 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 
-	msgs, err := db.GetMessages(threadID)
+	// threadID is always a root id (EligibleConstellationThreads' own doc
+	// comment on why) but the actual current content of an edited/
+	// regenerated thread lives in whichever hidden variant
+	// active_variant_id points at, same EffectiveThreadID resolution every
+	// other read path (loadHistory, GetThreadEvents, handleRegenerateTitle)
+	// already does. Everything else in this function — run tracking,
+	// star_sources — deliberately keeps using threadID (the root), not
+	// this: a variant's own id isn't independently addressable and its
+	// title is always "", so linking a star to it is exactly the bug this
+	// whole resolution exists to avoid.
+	effectiveID, err := db.EffectiveThreadID(threadID)
+	if err != nil {
+		return fmt.Errorf("shooting star: %w", err)
+	}
+
+	msgs, err := db.GetMessages(effectiveID)
 	if err != nil {
 		return fmt.Errorf("shooting star: %w", err)
 	}
@@ -56,7 +71,7 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 
-	task, err := weaverTaskText(reqCtx, db, client, threadID, lastRun, msgs, runID)
+	task, err := weaverTaskText(reqCtx, db, client, threadID, effectiveID, lastRun, msgs, runID)
 	if err != nil {
 		_ = db.FinishShootingStarRun(runID, "", err.Error(), true)
 		return fmt.Errorf("shooting star: %w", err)
@@ -113,13 +128,17 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 // "Revisiting a thread"). Returns "" if this is a revisit with no actual
 // new content in the delta (shouldn't happen given the scheduler's own
 // delta gate, but stays defensive rather than assuming the caller always
-// gates correctly).
-func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
+// gates correctly). threadID (root, for StarsByThread — star_sources is
+// always keyed by root) and effectiveID (root's currently-active variant,
+// for reading actual message content — see RunShootingStar's own doc
+// comment on why these two can differ) are deliberately separate params,
+// not one id used for both.
+func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, effectiveID string, lastRun *store.ShootingStarRun, msgs []store.Message, runID int64) (string, error) {
 	if lastRun == nil {
 		// First-ever pass on this thread: no prior notes exist, so
 		// there's nothing to filter for — Weaver gets the thread's raw
 		// content directly, no filter pass.
-		read, err := db.ReadThread(threadID)
+		read, err := db.ReadThread(effectiveID)
 		if err != nil {
 			return "", err
 		}
