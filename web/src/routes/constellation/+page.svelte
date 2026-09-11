@@ -14,7 +14,7 @@
 		Settings,
 		Sparkles,
 		Inbox as InboxIcon,
-		Rows3,
+		Library,
 		Map as MapIcon,
 		Maximize2,
 		X
@@ -368,11 +368,6 @@
 				</svg>
 				{#each mapLayout.clusterLabels as cluster (cluster.category)}
 					<div
-						class="cluster-halo"
-						style="left: {cluster.x}px; top: {cluster.y}px; width: {cluster.radius *
-							2}px; height: {cluster.radius * 2}px;"
-					></div>
-					<div
 						class="cluster-label"
 						style="left: {cluster.x}px; top: {cluster.y -
 							cluster.radius -
@@ -416,7 +411,7 @@
 
 <div class="tabbar">
 	<button class="tab" class:active={view === 'library'} onclick={() => (view = 'library')}>
-		<Rows3 size={18} />
+		<Library size={18} />
 		<span>Library</span>
 	</button>
 	<button class="tab" class:active={view === 'map'} onclick={() => (view = 'map')}>
@@ -657,22 +652,6 @@
 	}
 	.lines line.personal {
 		stroke: var(--color-personal);
-	}
-	/* cluster-halo: a quiet, uniform glow behind every category — not a
-	   per-category color scheme (the app has no such palette; accent-2 is
-	   already "informational chrome" everywhere else) — so distinguishing
-	   categories is still the label's job, this just makes the grouping
-	   visible before you've read a single word. */
-	.cluster-halo {
-		position: absolute;
-		transform: translate(-50%, -50%);
-		border-radius: 50%;
-		background: radial-gradient(
-			circle,
-			color-mix(in srgb, var(--color-accent-2) 10%, transparent),
-			transparent 55%
-		);
-		pointer-events: none;
 	}
 	.cluster-label {
 		position: absolute;
