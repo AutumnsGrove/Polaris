@@ -620,6 +620,21 @@ func (s *Store) LastShootingStarRun(threadID string) (*ShootingStarRun, error) {
 	return &run, nil
 }
 
+// HasInFlightShootingStarRun reports whether any shooting_star_run is
+// currently mid-flight (started_at set, finished_at still NULL) — the
+// signal the Docker update watcher needs to avoid recreating the container
+// out from under a running Weaver pass (see issue #57: a live update once
+// landed exactly mid-batch, caught only because the batch happened to
+// finish just before the container actually got recreated).
+func (s *Store) HasInFlightShootingStarRun() (bool, error) {
+	var busy bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM shooting_star_runs WHERE finished_at IS NULL)`).Scan(&busy)
+	if err != nil {
+		return false, fmt.Errorf("has in-flight shooting star run: %w", err)
+	}
+	return busy, nil
+}
+
 // RecordShootingStarCandidate logs one topic candidate Weaver proposed
 // within a run — called as a side effect of create_star/update_star, not a
 // separate logging step.

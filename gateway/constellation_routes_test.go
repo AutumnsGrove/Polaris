@@ -12,6 +12,45 @@ import (
 	"polaris/store"
 )
 
+func TestHandleConstellationBusy_ReflectsInFlightRun(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	getBusy := func() bool {
+		resp, err := http.Get(h.url("/api/constellation/busy"))
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Busy bool `json:"busy"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		return body.Busy
+	}
+
+	if getBusy() {
+		t.Error("busy = true with no runs at all, want false")
+	}
+
+	threadID := seedWeaverThread(t, h.db, "hello")
+	runID, err := h.db.StartShootingStarRun(threadID, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	if !getBusy() {
+		t.Error("busy = false with a started, unfinished run, want true")
+	}
+
+	if err := h.db.FinishShootingStarRun(runID, "done", "", false); err != nil {
+		t.Fatalf("FinishShootingStarRun: %v", err)
+	}
+	if getBusy() {
+		t.Error("busy = true after the run finished, want false")
+	}
+}
+
 func TestHandleGetConstellationConfig_CreatesDefaultsOnFirstRead(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

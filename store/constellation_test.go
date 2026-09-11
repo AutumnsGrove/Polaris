@@ -443,6 +443,44 @@ func TestStarReview_Recorded(t *testing.T) {
 // only its title — the "This week" page's rows had no way to navigate
 // anywhere at all when tapped, since ConstellationWeekItem carried nothing
 // to link to.
+func TestHasInFlightShootingStarRun(t *testing.T) {
+	s := openTestStore(t)
+
+	busy, err := s.HasInFlightShootingStarRun()
+	if err != nil {
+		t.Fatalf("HasInFlightShootingStarRun: %v", err)
+	}
+	if busy {
+		t.Error("busy = true with no runs at all, want false")
+	}
+
+	threadID := seedThread(t, s)
+	runID, err := s.StartShootingStarRun(threadID, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+
+	busy, err = s.HasInFlightShootingStarRun()
+	if err != nil {
+		t.Fatalf("HasInFlightShootingStarRun: %v", err)
+	}
+	if !busy {
+		t.Error("busy = false with a started, unfinished run, want true")
+	}
+
+	if err := s.FinishShootingStarRun(runID, "done", "", false); err != nil {
+		t.Fatalf("FinishShootingStarRun: %v", err)
+	}
+
+	busy, err = s.HasInFlightShootingStarRun()
+	if err != nil {
+		t.Fatalf("HasInFlightShootingStarRun: %v", err)
+	}
+	if busy {
+		t.Error("busy = true after the only run finished, want false")
+	}
+}
+
 func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	s := openTestStore(t)
 

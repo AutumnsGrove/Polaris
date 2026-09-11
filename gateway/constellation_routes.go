@@ -135,6 +135,24 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 	writeJSON(w, stars)
 }
 
+// handleConstellationBusy backs the Docker update watcher's pre-restart
+// wait (compose/watcher/update.sh) — an unauthenticated read of whether a
+// shooting-star run is currently mid-flight, polled from the host over the
+// container's own already-exposed port rather than needing DB access from
+// outside the container (see issue #57). Deliberately scoped to
+// Constellation's own runs only for now, not a general "is anything busy"
+// check — see the issue's open questions on whether in-flight chat turns
+// or Pulsar Daily should ever factor in here too.
+func (s *Server) handleConstellationBusy(w http.ResponseWriter, r *http.Request) {
+	busy, err := s.db.HasInFlightShootingStarRun()
+	if err != nil {
+		log.Warn("checking constellation busy state failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]bool{"busy": busy})
+}
+
 // handleSearchConstellationStars backs the Library's search box —
 // SearchLibraryStars, not SearchStars (Weaver's own internal lead, which
 // deliberately includes rejected stars — see its doc comment for why

@@ -235,6 +235,35 @@ if ! timeout 300 docker compose pull polaris 2>&1 | tee "$CMD_LOG"; then
 	exit 1
 fi
 
+# Wait for any in-flight Constellation shooting-star run to finish before
+# recreating the container out from under it — issue #57, caught live: an
+# update landed exactly mid-batch, only harmless because the batch
+# happened to finish in the few seconds before the recreate actually ran.
+# Polled over the container's own already-exposed port (gateway/
+# constellation_routes.go's handleConstellationBusy) rather than needing
+# DB access from the host. WAIT_MAX_SECONDS caps this at 5 minutes so a
+# run that's genuinely stuck (or the endpoint being unreachable for any
+# reason) can never block an update forever — curl failing counts as "not
+# busy" and proceeds immediately, same reasoning as not blocking on an
+# unreachable healthcheck below.
+WAIT_MAX_SECONDS=300
+WAIT_INTERVAL=5
+waited=0
+while true; do
+	BUSY_RESPONSE="$(curl -s --max-time 5 http://127.0.0.1:8899/api/constellation/busy 2>/dev/null || true)"
+	case "$BUSY_RESPONSE" in
+	*'"busy":true'*) ;;
+	*) break ;;
+	esac
+	if [ "$waited" -ge "$WAIT_MAX_SECONDS" ]; then
+		echo "a Constellation run is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
+		break
+	fi
+	echo "a Constellation run is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
+	sleep "$WAIT_INTERVAL"
+	waited=$((waited + WAIT_INTERVAL))
+done
+
 # --force-recreate: without it, `docker compose up -d` is a no-op
 # whenever the desired image/config already matches what's running —
 # exactly the case handleDockerRestart (gateway/docker_update.go)
