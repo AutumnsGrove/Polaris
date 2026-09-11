@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Constellation map — readability options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&display=swap" rel="stylesheet" />
+<style>
+:root {
+	/* Lifted straight from Polaris's own app.css tokens — this doc is a
+	   review of real in-app screens, so fidelity to the actual palette is
+	   the point, not a fresh identity. */
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-personal: oklch(78% 0.1 322);
+	--color-danger: oklch(65% 0.19 25);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	padding-block: var(--space-3xl) var(--space-3xl);
+}
+
+.wrap {
+	max-width: 1120px;
+	margin: 0 auto;
+	padding-inline: var(--space-xl);
+}
+
+/* ---------- Header ---------- */
+header.intro {
+	max-width: 720px;
+	margin-bottom: var(--space-3xl);
+}
+.eyebrow {
+	font-family: 'Asimovian', serif;
+	color: var(--color-accent);
+	font-size: 0.95rem;
+	letter-spacing: 0.04em;
+	margin: 0 0 var(--space-sm);
+}
+h1 {
+	font-size: 1.9rem;
+	line-height: 1.2;
+	margin: 0 0 var(--space-md);
+	text-wrap: balance;
+	font-weight: 600;
+}
+header.intro p {
+	color: var(--color-text-dim);
+	font-size: 0.95rem;
+	line-height: 1.65;
+	margin: 0 0 var(--space-md);
+	max-width: 62ch;
+}
+header.intro p strong { color: var(--color-text); font-weight: 600; }
+
+.diagnosis {
+	display: flex;
+	gap: var(--space-md);
+	flex-wrap: wrap;
+	margin-top: var(--space-lg);
+}
+.diag-chip {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-sm);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	padding: var(--space-sm) var(--space-md);
+	font-size: 0.82rem;
+	color: var(--color-text-dim);
+}
+.diag-chip b { color: var(--color-danger); font-size: 1rem; }
+
+/* ---------- Section scaffolding ---------- */
+section.group {
+	margin-bottom: var(--space-3xl);
+}
+.group-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-md);
+	border-bottom: 1px solid var(--color-border);
+	padding-bottom: var(--space-md);
+	margin-bottom: var(--space-xl);
+	flex-wrap: wrap;
+}
+.group-head h2 {
+	font-size: 1.2rem;
+	margin: 0;
+	font-weight: 600;
+}
+.group-head span {
+	font-size: 0.8rem;
+	color: var(--color-text-dim);
+}
+
+.cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+	gap: var(--space-xl);
+	align-items: start;
+}
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	overflow: hidden;
+	box-shadow: var(--shadow-sm);
+	display: flex;
+	flex-direction: column;
+}
+.card.baseline { border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border)); }
+.card.recommended { border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border)); box-shadow: var(--shadow-md); }
+
+.card-head {
+	padding: var(--space-md) var(--space-lg) 0;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-sm);
+}
+.card-title {
+	font-size: 0.95rem;
+	font-weight: 600;
+}
+.tag {
+	font-size: 0.66rem;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	padding: 3px var(--space-sm);
+	border-radius: var(--radius-full);
+	white-space: nowrap;
+}
+.tag.effort-low { color: oklch(72% 0.11 150); background: color-mix(in srgb, oklch(72% 0.11 150) 16%, transparent); }
+.tag.effort-med { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 16%, transparent); }
+.tag.effort-high { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 16%, transparent); }
+.tag.baseline-tag { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 16%, transparent); }
+
+/* ---------- Phone frame ---------- */
+.frame-holder {
+	display: flex;
+	justify-content: center;
+	padding: var(--space-lg);
+}
+.frame {
+	position: relative;
+	width: 236px;
+	height: 340px;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-xl);
+	overflow: hidden;
+	box-shadow: var(--shadow-well, inset 0 1px 3px rgba(10,6,3,0.35));
+}
+.frame::before {
+	content: '';
+	position: absolute;
+	top: 8px; left: 50%;
+	transform: translateX(-50%);
+	width: 44px; height: 4px;
+	border-radius: var(--radius-full);
+	background: var(--color-surface-3);
+	z-index: 5;
+}
+
+.star {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	display: flex;
+	align-items: center;
+	gap: 5px;
+}
+.star .dot {
+	width: 7px; height: 7px;
+	border-radius: var(--radius-full);
+	background: var(--color-accent);
+	box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+	flex-shrink: 0;
+}
+.star.personal .dot { background: var(--color-personal); box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+.star.blue .dot { background: var(--color-accent-2); box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
+.star .lbl {
+	font-size: 8.5px;
+	line-height: 1.15;
+	color: var(--color-text);
+	white-space: nowrap;
+	text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+}
+
+svg.lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+svg.lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.3; }
+
+/* Baseline reconstruction: labels deliberately overlapping, matching the
+   real screenshot's failure mode — no collision avoidance for text. */
+.frame.chaos .star .lbl {
+	font-size: 9px;
+	white-space: normal;
+	max-width: 140px;
+}
+.frame.chaos .star .dot { width: 6px; height: 6px; }
+
+/* Option: tap to reveal */
+.frame .selected-chip {
+	position: absolute;
+	transform: translate(-50%, calc(-100% - 10px));
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-sm);
+	padding: 3px 8px;
+	font-size: 9px;
+	white-space: nowrap;
+	box-shadow: var(--shadow-sm);
+	z-index: 4;
+}
+.frame .selected-ring {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	width: 18px; height: 18px;
+	border-radius: var(--radius-full);
+	border: 1.5px solid var(--color-accent);
+	opacity: 0.7;
+}
+.frame .tap-hint {
+	position: absolute;
+	bottom: 10px; left: 0; right: 0;
+	text-align: center;
+	font-size: 8px;
+	color: var(--color-text-dim);
+	letter-spacing: 0.03em;
+}
+
+/* Option: category orbitals */
+.halo {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	border-radius: 50%;
+}
+.halo-label {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	font-size: 7.5px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-dim);
+	white-space: nowrap;
+}
+.orbit-dot {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	width: 6px; height: 6px;
+	border-radius: var(--radius-full);
+	background: var(--color-accent);
+	box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+.orbit-dot.blue { background: var(--color-accent-2); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); }
+.orbit-dot.personal { background: var(--color-personal); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+
+/* Option: pan & zoom */
+.frame.zoom::after {
+	content: '';
+	position: absolute; inset: 0;
+	background: radial-gradient(circle at 50% 55%, transparent 55%, var(--color-bg) 96%);
+	pointer-events: none;
+}
+.zoom-chip {
+	position: absolute;
+	top: 22px; right: 10px;
+	display: flex;
+	gap: 4px;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-full);
+	padding: 3px 6px;
+	font-size: 8px;
+	color: var(--color-text-dim);
+	z-index: 6;
+}
+.pan-hint {
+	position: absolute;
+	bottom: 10px; left: 0; right: 0;
+	text-align: center;
+	font-size: 8px;
+	color: var(--color-text-dim);
+}
+
+/* ---------- Mini-map cards (wider, shorter frame) ---------- */
+.mini-frame {
+	width: 236px;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-md);
+}
+.mini-frame .mini-label {
+	font-size: 9px;
+	font-weight: 600;
+	color: var(--color-text-dim);
+	margin-bottom: var(--space-sm);
+}
+
+/* Baseline mini-map: cramped canvas, overlapping stacked labels */
+.mini-canvas-chaos {
+	position: relative;
+	width: 208px; height: 76px;
+}
+
+/* Option A: vertical relation list */
+.rel-list { display: flex; flex-direction: column; }
+.rel-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--color-border);
+}
+.rel-row:last-child { border-bottom: none; }
+.rel-row .dot { width: 7px; height: 7px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); flex-shrink: 0; }
+.rel-row.hub .dot { width: 8px; height: 8px; background: var(--color-accent); box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+.rel-row.personal .dot { background: var(--color-personal); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+.rel-row .txt {
+	font-size: 10.5px;
+	line-height: 1.25;
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.rel-row.hub .txt { font-weight: 600; }
+.rel-row .chev { margin-left: auto; color: var(--color-text-dim); font-size: 11px; flex-shrink: 0; }
+
+/* Option B: fixed radial rows */
+.arc-canvas {
+	position: relative;
+	width: 208px;
+	height: 118px;
+}
+.arc-canvas svg.lines line { stroke: var(--color-accent-2); stroke-width: 1; opacity: 0.35; }
+.arc-node {
+	position: absolute;
+	transform: translateY(-50%);
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.arc-node .dot { width: 7px; height: 7px; border-radius: var(--radius-full); background: var(--color-accent-2); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent); flex-shrink: 0; }
+.arc-node.hub .dot { width: 9px; height: 9px; background: var(--color-accent); box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+.arc-node.personal .dot { background: var(--color-personal); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-personal) 45%, transparent); }
+.arc-node .lbl { font-size: 9.5px; color: var(--color-text); white-space: nowrap; }
+.arc-node.hub .lbl { font-weight: 600; }
+
+.card-body {
+	padding: var(--space-lg);
+	padding-top: var(--space-sm);
+}
+.card-body p {
+	font-size: 0.82rem;
+	line-height: 1.6;
+	color: var(--color-text-dim);
+	margin: 0;
+}
+.card-body p + p { margin-top: var(--space-sm); }
+.card-body strong { color: var(--color-text); }
+
+/* ---------- Recommendation footer ---------- */
+.recommend {
+	background: linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 12%, transparent), var(--color-surface));
+	border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+	border-radius: var(--radius-lg);
+	padding: var(--space-xl);
+}
+.recommend h3 {
+	margin: 0 0 var(--space-sm);
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+.recommend p {
+	margin: 0 0 var(--space-md);
+	color: var(--color-text-dim);
+	font-size: 0.88rem;
+	line-height: 1.65;
+	max-width: 68ch;
+}
+.recommend p:last-child { margin-bottom: 0; }
+.recommend strong { color: var(--color-text); }
+
+@media (max-width: 480px) {
+	h1 { font-size: 1.5rem; }
+	.frame, .mini-frame { width: 100%; max-width: 236px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+	<header class="intro">
+		<p class="eyebrow">Design review</p>
+		<h1>The Constellation map has stopped being a map</h1>
+		<p>
+			Both the full <strong>Map</strong> tab and the "Nearby in the constellation" mini-map on
+			each star screen render every node's full title as always-on text, positioned only by a
+			force simulation that keeps <em>dot centers</em> apart (26px on the full map, 20px in the
+			mini-map) — it has no idea how wide a title's text actually is. Once a library holds more
+			than a handful of stars, or a star has 2+ related neighbors, labels overlap into the
+			unreadable block seen on-device. The fix isn't a tuning knob on the existing layout — it's
+			picking a different way to show <strong>which star is where</strong> without stacking every
+			title on top of the next one.
+		</p>
+		<div class="diagnosis">
+			<div class="diag-chip"><b>0px</b> of collision margin reserved for label text width</div>
+			<div class="diag-chip"><b>90px</b> tall mini-map canvas, no ceiling on neighbor count</div>
+			<div class="diag-chip"><b>360×620</b> viewport crammed with 40+ always-on labels</div>
+		</div>
+	</header>
+
+	<section class="group">
+		<div class="group-head">
+			<h2>The full Map</h2>
+			<span>/constellation → Map tab</span>
+		</div>
+		<div class="cards">
+
+			<div class="card baseline">
+				<div class="card-head">
+					<span class="card-title">Today</span>
+					<span class="tag baseline-tag">Illegible</span>
+				</div>
+				<div class="frame-holder">
+					<div class="frame chaos">
+						<svg class="lines" viewBox="0 0 236 340">
+							<line x1="60" y1="90" x2="100" y2="130"></line>
+							<line x1="100" y1="130" x2="150" y2="110"></line>
+							<line x1="80" y1="180" x2="130" y2="200"></line>
+							<line x1="130" y1="200" x2="170" y2="230"></line>
+						</svg>
+						<div class="star" style="left:60px; top:90px;"><span class="dot"></span><span class="lbl">DuckDB embedded analytical SQL engine</span></div>
+						<div class="star blue" style="left:100px; top:100px;"><span class="dot"></span><span class="lbl">Kagi Search API pricing vs Brave Search</span></div>
+						<div class="star" style="left:150px; top:112px;"><span class="dot"></span><span class="lbl">Carl Sagan — planetary scientist</span></div>
+						<div class="star" style="left:70px; top:135px;"><span class="dot"></span><span class="lbl">Marshaling/unmarshaling between Go &amp; JS</span></div>
+						<div class="star personal" style="left:130px; top:150px;"><span class="dot"></span><span class="lbl">AI-assisted software engineering workflows</span></div>
+						<div class="star" style="left:90px; top:178px;"><span class="dot"></span><span class="lbl">Murakami's signature tropes and style</span></div>
+						<div class="star blue" style="left:150px; top:190px;"><span class="dot"></span><span class="lbl">After Dark (Murakami) — book overview</span></div>
+						<div class="star" style="left:60px; top:215px;"><span class="dot"></span><span class="lbl">The sandwich and the Earl of Sandwich myth</span></div>
+						<div class="star personal" style="left:120px; top:225px;"><span class="dot"></span><span class="lbl">Hobby Lobby cuneiform smuggling scandal</span></div>
+						<div class="star" style="left:170px; top:240px;"><span class="dot"></span><span class="lbl">Assassin's Creed Odyssey</span></div>
+						<div class="star" style="left:75px; top:255px;"><span class="dot"></span><span class="lbl">Love hotel etiquette in Japan</span></div>
+						<div class="star personal" style="left:140px; top:262px;"><span class="dot"></span><span class="lbl">Vincent Pastore's role on The Sopranos</span></div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> force-directed dots with the title rendered next to every one, always. Collision only guards dot centers, so text bounding boxes freely overlap.</p>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="card-head">
+					<span class="card-title">1 · Tap to reveal</span>
+					<span class="tag effort-low">Low effort</span>
+				</div>
+				<div class="frame-holder">
+					<div class="frame">
+						<svg class="lines" viewBox="0 0 236 340">
+							<line x1="60" y1="90" x2="118" y2="150"></line>
+							<line x1="118" y1="150" x2="170" y2="120"></line>
+							<line x1="80" y1="190" x2="118" y2="150"></line>
+							<line x1="118" y1="150" x2="150" y2="220"></line>
+							<line x1="150" y1="220" x2="100" y2="260"></line>
+						</svg>
+						<div class="star" style="left:60px; top:90px;"><span class="dot"></span></div>
+						<div class="star blue" style="left:170px; top:120px;"><span class="dot"></span></div>
+						<div class="star" style="left:80px; top:190px;"><span class="dot"></span></div>
+						<div class="star personal" style="left:150px; top:220px;"><span class="dot"></span></div>
+						<div class="star" style="left:100px; top:260px;"><span class="dot"></span></div>
+						<div class="star" style="left:190px; top:250px;"><span class="dot"></span></div>
+						<div class="star blue" style="left:50px; top:150px;"><span class="dot"></span></div>
+						<div class="selected-ring" style="left:118px; top:150px;"></div>
+						<div class="star" style="left:118px; top:150px;"><span class="dot"></span></div>
+						<div class="selected-chip" style="left:118px; top:150px;">Marshaling in Go &amp; JS</div>
+						<div class="tap-hint">Tap a star to see its name</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> dots and connecting lines only, by default. Tapping one star lifts a single label chip above it; everything else stays quiet.</p>
+					<p><strong>Tradeoff:</strong> matches the "night sky" feel most directly, but browsing titles takes one tap per star instead of a glance.</p>
+				</div>
+			</div>
+
+			<div class="card recommended">
+				<div class="card-head">
+					<span class="card-title">2 · Category orbitals</span>
+					<span class="tag effort-med">Medium effort</span>
+				</div>
+				<div class="frame-holder">
+					<div class="frame">
+						<div class="halo" style="left:70px; top:100px; width:110px; height:110px; background: radial-gradient(circle, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 70%);"></div>
+						<div class="halo" style="left:165px; top:230px; width:110px; height:110px; background: radial-gradient(circle, color-mix(in srgb, var(--color-accent-2) 10%, transparent), transparent 70%);"></div>
+						<div class="halo" style="left:55px; top:255px; width:90px; height:90px; background: radial-gradient(circle, color-mix(in srgb, var(--color-personal) 10%, transparent), transparent 70%);"></div>
+						<div class="halo-label" style="left:70px; top:55px;">Tech &amp; tools</div>
+						<div class="halo-label" style="left:165px; top:180px;">Science &amp; media</div>
+						<div class="halo-label" style="left:55px; top:308px;">Personal</div>
+						<div class="orbit-dot" style="left:50px; top:85px;"></div>
+						<div class="orbit-dot" style="left:88px; top:78px;"></div>
+						<div class="orbit-dot" style="left:70px; top:118px;"></div>
+						<div class="orbit-dot" style="left:100px; top:130px;"></div>
+						<div class="orbit-dot blue" style="left:150px; top:210px;"></div>
+						<div class="orbit-dot blue" style="left:185px; top:225px;"></div>
+						<div class="orbit-dot blue" style="left:165px; top:255px;"></div>
+						<div class="orbit-dot blue" style="left:140px; top:248px;"></div>
+						<div class="orbit-dot personal" style="left:40px; top:245px;"></div>
+						<div class="orbit-dot personal" style="left:68px; top:270px;"></div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> only category names are ever rendered as text — member stars are plain glowing dots inside their category's halo. No per-star label exists to collide with another.</p>
+					<p><strong>Tradeoff:</strong> reads instantly at any density; a star's own title still needs a tap (or the Library list) to read — same cost as option 1, paid for a much steadier map.</p>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="card-head">
+					<span class="card-title">3 · Pan &amp; zoom</span>
+					<span class="tag effort-high">High effort</span>
+				</div>
+				<div class="frame-holder">
+					<div class="frame zoom">
+						<svg class="lines" viewBox="0 0 236 340">
+							<line x1="70" y1="140" x2="118" y2="170"></line>
+							<line x1="118" y1="170" x2="150" y2="140"></line>
+							<line x1="118" y1="170" x2="100" y2="210"></line>
+						</svg>
+						<div class="star" style="left:70px; top:140px;"><span class="dot"></span><span class="lbl">DuckDB SQL engine</span></div>
+						<div class="star blue" style="left:150px; top:140px;"><span class="dot"></span><span class="lbl">Kagi vs Brave Search</span></div>
+						<div class="star" style="left:118px; top:170px;"><span class="dot"></span><span class="lbl">Go &amp; JS marshaling</span></div>
+						<div class="star personal" style="left:100px; top:210px;"><span class="dot"></span><span class="lbl">AI dev workflows</span></div>
+						<div class="zoom-chip">− Fit +</div>
+						<div class="pan-hint">Pinch to zoom · drag to pan</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> labels stay always-on, but the canvas can exceed the viewport — the user controls density by zooming into a cluster instead of the app fitting everything into 360×620.</p>
+					<p><strong>Tradeoff:</strong> keeps the full "everything visible" spirit, but needs real touch-gesture handling (pinch/drag/inertia), and a "fit all" affordance so no one gets lost off-canvas.</p>
+				</div>
+			</div>
+
+		</div>
+	</section>
+
+	<section class="group">
+		<div class="group-head">
+			<h2>The mini-map (star detail → "Nearby in the constellation")</h2>
+			<span>/constellation/star/[id]</span>
+		</div>
+		<div class="cards">
+
+			<div class="card baseline">
+				<div class="card-head">
+					<span class="card-title">Today</span>
+					<span class="tag baseline-tag">Illegible</span>
+				</div>
+				<div class="frame-holder">
+					<div class="mini-frame">
+						<div class="mini-label">4 related stars</div>
+						<div class="mini-canvas-chaos">
+							<div class="star" style="left:70px; top:20px;"><span class="dot"></span><span class="lbl">Pursuing CompTIA A+ certification</span></div>
+							<div class="star blue" style="left:120px; top:30px;"><span class="dot"></span><span class="lbl">Core 1 exam — Sept 15, 2026</span></div>
+							<div class="star personal" style="left:60px; top:45px;"><span class="dot"></span><span class="lbl">"Make the Call" game idea</span></div>
+							<div class="star" style="left:130px; top:55px;"><span class="dot"></span><span class="lbl">A-1 sysadmin Svelte grid tool</span></div>
+						</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> the same force layout as the full map, squeezed into a 320×90 panel — four titles stacked directly on top of each other with no room to separate.</p>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="card-head">
+					<span class="card-title">A · Relation list</span>
+					<span class="tag effort-low">Low effort</span>
+				</div>
+				<div class="frame-holder">
+					<div class="mini-frame">
+						<div class="mini-label">4 related stars</div>
+						<div class="rel-list">
+							<div class="rel-row hub"><span class="dot"></span><span class="txt">"Make the Call" game idea</span></div>
+							<div class="rel-row"><span class="dot"></span><span class="txt">Pursuing CompTIA A+ certification</span><span class="chev">›</span></div>
+							<div class="rel-row"><span class="dot"></span><span class="txt">Core 1 exam — Sept 15, 2026</span><span class="chev">›</span></div>
+							<div class="rel-row"><span class="dot"></span><span class="txt">A-1 sysadmin Svelte grid tool</span><span class="chev">›</span></div>
+						</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> drops the force canvas entirely — the center star sits in a bold "hub" row, each neighbor gets its own full-width row with a truncating single line and a chevron to open it.</p>
+					<p><strong>Tradeoff:</strong> completely legible at any neighbor count, but reads as a plain list rather than a diagram — the spatial "constellation" feel is gone here.</p>
+				</div>
+			</div>
+
+			<div class="card recommended">
+				<div class="card-head">
+					<span class="card-title">B · Fixed radial rows</span>
+					<span class="tag effort-low">Low effort</span>
+				</div>
+				<div class="frame-holder">
+					<div class="mini-frame">
+						<div class="mini-label">4 related stars</div>
+						<div class="arc-canvas">
+							<svg class="lines" viewBox="0 0 208 118">
+								<line x1="24" y1="59" x2="60" y2="14"></line>
+								<line x1="24" y1="59" x2="60" y2="46"></line>
+								<line x1="24" y1="59" x2="60" y2="72"></line>
+								<line x1="24" y1="59" x2="60" y2="104"></line>
+							</svg>
+							<div class="arc-node hub" style="left:24px; top:59px;"><span class="dot"></span><span class="lbl">"Make the Call"</span></div>
+							<div class="arc-node" style="left:60px; top:14px;"><span class="dot"></span><span class="lbl">CompTIA A+ certification</span></div>
+							<div class="arc-node blue" style="left:60px; top:46px;"><span class="dot"></span><span class="lbl">Core 1 exam, Sept 15</span></div>
+							<div class="arc-node" style="left:60px; top:72px;"><span class="dot"></span><span class="lbl">A-1 sysadmin grid tool</span></div>
+							<div class="arc-node personal" style="left:60px; top:104px;"><span class="dot"></span><span class="lbl">Svelte tooling notes</span></div>
+						</div>
+					</div>
+				</div>
+				<div class="card-body">
+					<p><strong>Mechanism:</strong> same idea as the list, drawn as a diagram — the center star anchors the left edge, neighbors are placed one per fixed row height (never simulated), each label sitting beside its own dot on its own line.</p>
+					<p><strong>Tradeoff:</strong> keeps the fan-out, connected-stars visual the feature is named for, at the same engineering cost as the plain list — no physics to fight.</p>
+				</div>
+			</div>
+
+		</div>
+	</section>
+
+	<div class="recommend">
+		<h3>Recommended pairing</h3>
+		<p>
+			<strong>Category orbitals (2)</strong> for the full map — it's the only option that scales
+			structurally as the library grows past a few dozen stars, not just at today's size — paired
+			with <strong>tap-to-reveal</strong> for reading an individual star's name once a cluster is
+			narrowed down. For the mini-map, <strong>fixed radial rows (B)</strong> costs the same as the
+			plain list but keeps the "nearby in the constellation" diagram actually looking like one.
+		</p>
+		<p>Say which combination to build — full map and mini-map choices are independent of each other.</p>
+	</div>
+
+</div>
+</body>
+</html>

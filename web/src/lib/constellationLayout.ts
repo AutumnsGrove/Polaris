@@ -22,6 +22,11 @@ const LINK_DISTANCE = 70;
 const CHARGE_STRENGTH = -90;
 const COLLIDE_RADIUS = 26;
 const CLUSTER_STRENGTH = 0.12;
+// Minimum halo radius (a lone star in its own category still reads as a
+// cluster) and the margin added beyond the farthest member, so a dot right
+// at the edge doesn't render flush against the glow's boundary.
+const MIN_CLUSTER_RADIUS = 34;
+const CLUSTER_HALO_PAD = 22;
 
 export interface LayoutNode {
 	id: number;
@@ -40,6 +45,11 @@ export interface ClusterLabel {
 	category: string;
 	x: number;
 	y: number;
+	// radius: how far this category's halo glow extends — the centroid-to-
+	// farthest-member distance plus a fixed pad, not a fixed constant, so a
+	// tightly-packed category doesn't get an oversized halo and a spread-out
+	// one doesn't get clipped. See CLUSTER_HALO_PAD below.
+	radius: number;
 }
 
 export interface LayoutResult {
@@ -176,10 +186,14 @@ export function layoutStars(
 		for (const cat of categories) {
 			const inCat = nodes.filter((n) => n.star.category === cat);
 			if (inCat.length === 0) continue;
+			const cx2 = inCat.reduce((sum, n) => sum + n.x, 0) / inCat.length;
+			const cy2 = inCat.reduce((sum, n) => sum + n.y, 0) / inCat.length;
+			const farthest = Math.max(...inCat.map((n) => Math.hypot(n.x - cx2, n.y - cy2)));
 			clusterLabels.push({
 				category: cat,
-				x: inCat.reduce((sum, n) => sum + n.x, 0) / inCat.length,
-				y: inCat.reduce((sum, n) => sum + n.y, 0) / inCat.length
+				x: cx2,
+				y: cy2,
+				radius: Math.max(MIN_CLUSTER_RADIUS, farthest + CLUSTER_HALO_PAD)
 			});
 		}
 	}

@@ -1,12 +1,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { select } from 'd3-selection';
+	import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 	import { appState } from '$lib/state.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
-	import { layoutStars } from '$lib/constellationLayout';
+	import { layoutStars, type LayoutNode } from '$lib/constellationLayout';
 	import StarCard from '$lib/components/StarCard.svelte';
 	import ConstellationSettingsModal from '$lib/components/ConstellationSettingsModal.svelte';
-	import { PanelLeft, Search, Settings, Sparkles, Inbox as InboxIcon, Rows3, Map as MapIcon } from '@lucide/svelte';
+	import {
+		PanelLeft,
+		Search,
+		Settings,
+		Sparkles,
+		Inbox as InboxIcon,
+		Rows3,
+		Map as MapIcon,
+		Maximize2
+	} from '@lucide/svelte';
 	import type { Star } from '$lib/types';
 
 	let view = $state<'library' | 'map'>('library');
@@ -73,6 +84,68 @@
 	// count from stats instead (loaded by loadLibrary, already fetched by
 	// the time this tab is reachable).
 	const unconfirmedCount = $derived(constellationState.stats?.star_counts_by_status['proposed'] ?? 0);
+
+	// --- Map interaction: tap-to-reveal + pan/zoom ---------------------
+	//
+	// Showing every star's title at once was the original bug (see
+	// constellationLayout.ts's collision force, which only ever kept dot
+	// *centers* apart — never aware of label text width). The fix isn't a
+	// denser layout, it's not rendering all the text at once: stars are
+	// plain dots by default, and tapping one lifts a single floating label
+	// above it. Tapping the same star again (or its label) opens it;
+	// tapping anything else — empty space, or a different star — moves or
+	// clears the selection instead.
+	let selectedStarId = $state<number | null>(null);
+	const selectedNode = $derived.by((): LayoutNode | null => {
+		if (selectedStarId === null || !mapLayout) return null;
+		return mapLayout.nodeById.get(selectedStarId) ?? null;
+	});
+
+	function handleStarClick(node: LayoutNode, event: MouseEvent) {
+		event.stopPropagation();
+		if (selectedStarId === node.id) {
+			goto(`/constellation/star/${node.id}`);
+		} else {
+			selectedStarId = node.id;
+		}
+	}
+
+	// Pan/zoom is layered on top of the same fixed layout rather than
+	// re-flowing it — zooming in doesn't recompute positions, it just
+	// magnifies the existing spacing, which is exactly what makes a dense
+	// cluster easier to aim at on a phone. scaleExtent's floor of 1 is
+	// deliberate: layoutStars already normalizes every node to fit
+	// [0, width] x [0, height] at scale 1, so zooming out further would
+	// only ever add empty margin, never reveal more of the graph.
+	const ZOOM_SCALE_MIN = 1;
+	const ZOOM_SCALE_MAX = 4;
+	let mapAreaEl = $state<HTMLDivElement | null>(null);
+	let zoomTransform = $state<ZoomTransform>(zoomIdentity);
+	const zoomBehavior: ZoomBehavior<HTMLDivElement, unknown> = zoom<HTMLDivElement, unknown>()
+		.scaleExtent([ZOOM_SCALE_MIN, ZOOM_SCALE_MAX])
+		.on('zoom', (event) => {
+			zoomTransform = event.transform;
+		});
+	const isZoomedOrPanned = $derived(zoomTransform.k !== 1 || zoomTransform.x !== 0 || zoomTransform.y !== 0);
+
+	function resetZoom() {
+		if (!mapAreaEl) return;
+		select(mapAreaEl).call(zoomBehavior.transform, zoomIdentity);
+	}
+
+	// Re-bind (and re-extent) whenever the map container mounts or resizes
+	// — mapAreaEl is only non-null while the Map tab's {#if} block is
+	// actually rendered, so switching back to Library and returning here
+	// re-runs this rather than leaving a stale listener on a detached node.
+	$effect(() => {
+		if (!mapAreaEl) return;
+		const bounds: [[number, number], [number, number]] = [
+			[0, 0],
+			[mapAreaWidth, mapAreaHeight]
+		];
+		zoomBehavior.extent(bounds).translateExtent(bounds);
+		select(mapAreaEl).call(zoomBehavior);
+	});
 </script>
 
 <svelte:head>
@@ -86,7 +159,7 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<h1 class="page-title">Constellation</h1>
+		<h1 class="page-title"><span class="wordmark">Constellation</span></h1>
 		{#if view === 'map' && unconfirmedCount > 0}
 			<span class="unconfirmed-pill">{unconfirmedCount} unconfirmed</span>
 		{/if}
@@ -183,43 +256,75 @@
 	{:else if !constellationState.mapData}
 		<p class="empty">Loading the map…</p>
 	{:else if mapLayout && mapLayout.nodes.length > 0}
+		<!-- Background tap-to-deselect, same as elsewhere in the app (see
+		     ThreadMenu.svelte) — this is a dismiss surface behind real
+		     interactive controls (the star buttons), not itself a control. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="map-area"
+			bind:this={mapAreaEl}
 			bind:clientWidth={mapAreaWidth}
 			bind:clientHeight={mapAreaHeight}
+			onclick={() => (selectedStarId = null)}
 		>
-			<svg class="lines" viewBox="0 0 {mapAreaWidth} {mapAreaHeight}">
-				{#each mapLayout.edges as edge (edge.starAId + '-' + edge.starBId)}
-					{@const a = mapLayout.nodeById.get(edge.starAId)}
-					{@const b = mapLayout.nodeById.get(edge.starBId)}
-					{#if a && b}
-						<line
-							x1={a.x}
-							y1={a.y}
-							x2={b.x}
-							y2={b.y}
-							class:personal={a.star.is_personal || b.star.is_personal}
-						/>
-					{/if}
+			<div
+				class="zoom-canvas"
+				style="transform: translate({zoomTransform.x}px, {zoomTransform.y}px) scale({zoomTransform.k});"
+			>
+				<svg class="lines" viewBox="0 0 {mapAreaWidth} {mapAreaHeight}">
+					{#each mapLayout.edges as edge (edge.starAId + '-' + edge.starBId)}
+						{@const a = mapLayout.nodeById.get(edge.starAId)}
+						{@const b = mapLayout.nodeById.get(edge.starBId)}
+						{#if a && b}
+							<line
+								x1={a.x}
+								y1={a.y}
+								x2={b.x}
+								y2={b.y}
+								class:personal={a.star.is_personal || b.star.is_personal}
+							/>
+						{/if}
+					{/each}
+				</svg>
+				{#each mapLayout.clusterLabels as cluster (cluster.category)}
+					<div
+						class="cluster-halo"
+						style="left: {cluster.x}px; top: {cluster.y}px; width: {cluster.radius *
+							2}px; height: {cluster.radius * 2}px;"
+					></div>
+					<div class="cluster-label" style="left: {cluster.x}px; top: {cluster.y - cluster.radius - 8}px;">
+						{cluster.category}
+					</div>
 				{/each}
-			</svg>
-			{#each mapLayout.clusterLabels as cluster (cluster.category)}
-				<div class="cluster-label" style="left: {cluster.x}px; top: {cluster.y}px;">
-					{cluster.category}
-				</div>
-			{/each}
-			{#each mapLayout.nodes as node (node.id)}
-				<button
-					class="map-node"
-					class:personal={node.star.is_personal}
-					style="left: {node.x}px; top: {node.y}px;"
-					onclick={() => goto(`/constellation/star/${node.id}`)}
-				>
-					<span class="dot"></span>
-					<span class="label">{node.star.title}</span>
-				</button>
-			{/each}
+				{#each mapLayout.nodes as node (node.id)}
+					<button
+						class="map-node"
+						class:personal={node.star.is_personal}
+						class:selected={node.id === selectedStarId}
+						style="left: {node.x}px; top: {node.y}px;"
+						onclick={(event) => handleStarClick(node, event)}
+						aria-label={node.star.title}
+					>
+						<span class="dot"></span>
+					</button>
+				{/each}
+				{#if selectedNode}
+					<button
+						class="star-label-chip"
+						style="left: {selectedNode.x}px; top: {selectedNode.y}px;"
+						onclick={(event) => handleStarClick(selectedNode, event)}
+					>
+						{selectedNode.star.title}
+					</button>
+				{/if}
+			</div>
 		</div>
+		<button class="fit-btn" class:visible={isZoomedOrPanned} onclick={resetZoom} title="Reset view">
+			<Maximize2 size={14} />
+			Fit
+		</button>
+		<p class="map-hint">Pinch or scroll to zoom · drag to pan · tap a star to see its name</p>
 	{:else}
 		<p class="empty">Nothing to map yet.</p>
 	{/if}
@@ -262,9 +367,15 @@
 	}
 	.page-title {
 		margin: 0;
-		font-family: var(--font-serif);
 		font-size: 20px;
-		font-weight: 700;
+	}
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — this
+	   page's title renders the literal word "Constellation" as a name, same
+	   as "Polaris"/"Pulsar" get elsewhere in the app. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 	.unconfirmed-pill {
 		font-size: 11px;
@@ -386,11 +497,23 @@
 		position: relative;
 		width: 100%;
 		height: 100%;
-		/* No more overflow/scroll — layoutStars' bounding-box normalize
-		   (see constellationLayout.ts) sizes every node to fit exactly
-		   within this container's own clientWidth/clientHeight, so there's
-		   nothing left to scroll to find. */
 		overflow: hidden;
+		/* Stops the browser's own touch scrolling/pull-to-refresh from
+		   fighting d3-zoom's own pan/pinch handling on the same element. */
+		touch-action: none;
+	}
+	/* zoom-canvas carries the pan/zoom transform d3-zoom reports — every
+	   coordinate inside it (lines, halos, dots, the label chip) is still in
+	   layoutStars' original [0, width] x [0, height] space; this is a plain
+	   CSS transform on top, not a re-layout. transform-origin stays at the
+	   canvas's own (0,0) to match the translate/scale math d3-zoom emits
+	   (it reports translate-then-scale from the origin, not from center). */
+	.zoom-canvas {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		transform-origin: 0 0;
 	}
 	.lines {
 		position: absolute;
@@ -407,6 +530,22 @@
 	.lines line.personal {
 		stroke: var(--color-personal);
 	}
+	/* cluster-halo: a quiet, uniform glow behind every category — not a
+	   per-category color scheme (the app has no such palette; accent-2 is
+	   already "informational chrome" everywhere else) — so distinguishing
+	   categories is still the label's job, this just makes the grouping
+	   visible before you've read a single word. */
+	.cluster-halo {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		border-radius: 50%;
+		background: radial-gradient(
+			circle,
+			color-mix(in srgb, var(--color-accent-2) 20%, transparent),
+			transparent 72%
+		);
+		pointer-events: none;
+	}
 	.cluster-label {
 		position: absolute;
 		transform: translate(-50%, -50%);
@@ -415,7 +554,7 @@
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 		color: var(--color-text-dim);
-		opacity: 0.6;
+		opacity: 0.7;
 		pointer-events: none;
 		white-space: nowrap;
 	}
@@ -423,11 +562,19 @@
 		position: absolute;
 		transform: translate(-50%, -50%);
 		display: flex;
-		align-items: center;
-		gap: 7px;
 		background: none;
 		border: none;
-		padding: 4px;
+		/* padding alone enlarges the tap target — translate(-50%, -50%)
+		   centers on this element's own border box, padding included, so
+		   the visible dot stays exactly on (node.x, node.y) with no extra
+		   margin needed. A matching negative margin (added in an earlier
+		   pass to avoid "wasting" layout space) does NOT cancel out here
+		   the way it would in normal flow: for an absolutely positioned
+		   element, left/top place the *margin* edge, so a negative margin
+		   pulls the actual dot away from (node.x, node.y) by that same
+		   amount — an 8px up-left drift confirmed live (dots landing 8px
+		   off from where the connecting lines terminate). */
+		padding: 8px;
 		cursor: pointer;
 		font: inherit;
 	}
@@ -443,11 +590,73 @@
 		background: var(--color-personal);
 		box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-personal) 45%, transparent);
 	}
-	.map-node .label {
+	.map-node.selected .dot {
+		box-shadow:
+			0 0 0 3px var(--color-bg),
+			0 0 0 5px var(--color-accent);
+	}
+	.map-node.personal.selected .dot {
+		box-shadow:
+			0 0 0 3px var(--color-bg),
+			0 0 0 5px var(--color-personal);
+	}
+	/* star-label-chip: the one title the map ever shows text for at a time
+	   — see handleStarClick's doc comment. Tapping it (same as tapping the
+	   dot again) opens the star. */
+	.star-label-chip {
+		position: absolute;
+		transform: translate(-50%, calc(-100% - 14px));
+		max-width: 180px;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-sm);
+		padding: 6px var(--space-sm);
+		font: inherit;
 		font-size: 12px;
 		font-weight: 500;
+		line-height: 1.3;
 		color: var(--color-text);
-		white-space: nowrap;
+		text-align: center;
+		box-shadow: var(--shadow-md);
+		cursor: pointer;
+		z-index: 2;
+	}
+	.fit-btn {
+		position: absolute;
+		top: var(--space-md);
+		right: var(--space-md);
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-full);
+		padding: 6px var(--space-md) 6px var(--space-sm);
+		font: inherit;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--color-text-dim);
+		box-shadow: var(--shadow-sm);
+		cursor: pointer;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.15s ease;
+	}
+	.fit-btn.visible {
+		opacity: 1;
+		pointer-events: auto;
+	}
+	.map-hint {
+		position: absolute;
+		bottom: var(--space-md);
+		left: 0;
+		right: 0;
+		margin: 0;
+		text-align: center;
+		font-size: 10.5px;
+		color: var(--color-text-dim);
+		opacity: 0.75;
+		pointer-events: none;
 		text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 	}
 
