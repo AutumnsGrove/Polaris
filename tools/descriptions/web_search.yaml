@@ -4,4 +4,6 @@ description: >-
   search the web via a private SearXNG instance.
 api_description: >-
   Search the web via SearXNG for current information, facts, or sources. Returns titles, URLs,
-  and snippets.
+  and snippets. Pass domains when the user names a specific site to search (e.g. "search
+  wordpress.com's docs for X") instead of typing a site: prefix into query yourself — that's
+  handled consistently for you regardless of which backend actually answers the search.

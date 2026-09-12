@@ -679,3 +679,132 @@ func TestHandleWebSearch_NilBudgetIsUnaffected(t *testing.T) {
 		t.Errorf("result = %q, want a normal formatted result with nil ResearchBudget", result)
 	}
 }
+
+// TestHandleWebSearch_SingleDomainAddsSiteFilterToSearXNGQuery covers
+// issue #43 — a single domains entry should reach SearXNG as a site:
+// prefix on the actual query text, not just something the model happens
+// to type itself.
+func TestHandleWebSearch_SingleDomainAddsSiteFilterToSearXNGQuery(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": gotQuery,
+			"results": []map[string]interface{}{
+				{"title": "WP Docs", "url": "https://wordpress.com/docs/x", "content": "...", "score": 1.0},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"latest docs","domains":["wordpress.com"]}`, ctx, "test-call")
+	if gotQuery != "site:wordpress.com latest docs" {
+		t.Errorf("SearXNG received query = %q, want a site:wordpress.com prefix", gotQuery)
+	}
+	if result == "" || result == "no results found" {
+		t.Fatalf("result = %q, want formatted results", result)
+	}
+}
+
+// TestHandleWebSearch_MultipleDomainsOrTogether covers the multi-domain
+// case, which needs parens + OR rather than repeating the single-domain
+// prefix shape.
+func TestHandleWebSearch_MultipleDomainsOrTogether(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": gotQuery, "results": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	handleWebSearch(`{"query":"pricing","domains":["wordpress.com","wix.com"]}`, ctx, "test-call")
+	if gotQuery != "(site:wordpress.com OR site:wix.com) pricing" {
+		t.Errorf("SearXNG received query = %q, want an OR'd site: filter for both domains", gotQuery)
+	}
+}
+
+// TestHandleWebSearch_DomainNormalizedFromFullURL covers a model passing a
+// full URL instead of the bare domain it was asked for — normalizeDomain
+// should recover a usable site: filter rather than building a malformed
+// one that matches nothing.
+func TestHandleWebSearch_DomainNormalizedFromFullURL(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": gotQuery, "results": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	handleWebSearch(`{"query":"docs","domains":["https://www.wordpress.com/path"]}`, ctx, "test-call")
+	if gotQuery != "site:wordpress.com docs" {
+		t.Errorf("SearXNG received query = %q, want the URL normalized down to a bare domain", gotQuery)
+	}
+}
+
+// TestHandleWebSearch_TooManyDomainsIsAToolError mirrors highlight's own
+// reject-don't-truncate pattern for exceeding a small item cap.
+func TestHandleWebSearch_TooManyDomainsIsAToolError(t *testing.T) {
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebSearch(`{"query":"x","domains":["a.com","b.com","c.com","d.com","e.com","f.com"]}`, ctx, "test-call")
+	if !strings.Contains(result, "error:") || !strings.Contains(result, "too many domains") {
+		t.Errorf("result = %q, want a too-many-domains tool error", result)
+	}
+}
+
+// TestHandleWebSearch_DegradedFallsBackToTavilyWithDomains covers domains
+// reaching Tavily's own include_domains field (not a site:-mangled query
+// string) once SearXNG has confirmed itself degraded.
+func TestHandleWebSearch_DegradedFallsBackToTavilyWithDomains(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+
+	var gotBody map[string]interface{}
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"query": "cold brew",
+			"results": []map[string]interface{}{
+				{"title": "Cold Brew Green Tea", "url": "https://example.com/cold-brew", "content": "Steep overnight.", "score": 0.9},
+			},
+		})
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(searxngSrv.URL, nil),
+		Tavily:  tavily.NewClientForTest("test-key", tavilySrv.URL),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	handleWebSearch(`{"query":"cold brew","domains":["example.com"]}`, ctx, "test-call")
+
+	if gotBody["query"] != "cold brew" {
+		t.Errorf("tavily request query = %v, want the plain unmangled query", gotBody["query"])
+	}
+	domains, _ := gotBody["include_domains"].([]interface{})
+	if len(domains) != 1 || domains[0] != "example.com" {
+		t.Errorf("tavily request include_domains = %v, want [example.com]", gotBody["include_domains"])
+	}
+}

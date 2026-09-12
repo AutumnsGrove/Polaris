@@ -137,9 +137,10 @@ type SearchResponse struct {
 }
 
 type searchRequest struct {
-	Query       string `json:"query"`
-	MaxResults  int    `json:"max_results,omitempty"`
-	SearchDepth string `json:"search_depth"`
+	Query          string   `json:"query"`
+	MaxResults     int      `json:"max_results,omitempty"`
+	SearchDepth    string   `json:"search_depth"`
+	IncludeDomains []string `json:"include_domains,omitempty"`
 }
 
 // Search runs a query against Tavily's own Search API — a different
@@ -148,13 +149,17 @@ type searchRequest struct {
 // as a fallback when SearXNG itself reports it's degraded. Always
 // "basic" search depth (1 credit) rather than "advanced" (2) — this is
 // damage control for a scarce monthly budget, not a case where the
-// higher-quality tier is worth doubling the cost.
-func (c *Client) Search(ctx context.Context, query string, maxResults int) (*SearchResponse, error) {
+// higher-quality tier is worth doubling the cost. domains is optional
+// (nil/empty for an unrestricted search) and maps straight to Tavily's own
+// documented include_domains field — see tools/web_search.go's
+// tavilyFallback for why this goes through a native field instead of the
+// site: query-text trick used for SearXNG/Brave/Parallel.
+func (c *Client) Search(ctx context.Context, query string, maxResults int, domains []string) (*SearchResponse, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 
-	payload, err := json.Marshal(searchRequest{Query: query, MaxResults: maxResults, SearchDepth: "basic"})
+	payload, err := json.Marshal(searchRequest{Query: query, MaxResults: maxResults, SearchDepth: "basic", IncludeDomains: domains})
 	if err != nil {
 		return nil, err
 	}
