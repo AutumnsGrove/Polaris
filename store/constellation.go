@@ -161,12 +161,21 @@ func (s *Store) GetStar(id int64) (*Star, error) {
 
 // UpdateStar merges into an existing star (rewrite to read as one coherent,
 // current entry, never append — Weaver's own job, this just persists it).
+// title == "" means "leave the title as-is" — the Weaver background tool
+// (tools/update_star.go) has no title field in its own schema at all and
+// always passes "", while the Edit/Refine correction sheet
+// (reconcileAndSaveStar) supplies whatever reconcileStarContent resolved,
+// which is only ever non-empty when the correction actually changed what
+// the star is about (see weaver.reconcile_system's TITLE: instructions) —
+// before this, a correction that invalidated the original title (e.g. "it's
+// fantasy, not sci-fi") could rewrite summary/body to match while the title
+// silently kept describing the old, now-wrong premise.
 // Content updates never touch status (personal or not) — see CreateStar's
 // doc comment: the old isPersonal-forces-'proposed' gate was retired once
 // the library pivoted to personal-only extraction, since forcing every
 // single update back through human review defeated the point of trusting
 // Weaver's personal-star writing, which real usage showed was reliable.
-func (s *Store) UpdateStar(id int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
+func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
 	if tags == nil {
 		// See CreateStar's identical guard — json.Marshal(nil) encodes
 		// "null", not the "[]" every reader of this column expects.
@@ -176,8 +185,8 @@ func (s *Store) UpdateStar(id int64, summary, body string, tags []string, confid
 	if err != nil {
 		return fmt.Errorf("update star: encode tags: %w", err)
 	}
-	query := `UPDATE stars SET summary = ?, body = ?, tags = ?, confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-	args := []any{summary, body, string(tagsJSON), confidenceClass, id}
+	query := `UPDATE stars SET title = CASE WHEN ? <> '' THEN ? ELSE title END, summary = ?, body = ?, tags = ?, confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	args := []any{title, title, summary, body, string(tagsJSON), confidenceClass, id}
 	if _, err := s.db.Exec(query, args...); err != nil {
 		return fmt.Errorf("update star: %w", err)
 	}

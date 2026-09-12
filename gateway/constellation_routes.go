@@ -496,7 +496,7 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 		return false, err
 	}
 	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, client, *star, correction)
+	title, summary, body, invalidated, costUSD, err := reconcileStarContent(reqCtx, client, *star, correction)
 	if err != nil {
 		return false, err
 	}
@@ -510,25 +510,28 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 	if invalidated {
 		return true, nil
 	}
-	return false, s.db.UpdateStar(id, summary, body, star.Tags, star.Confidence, star.IsPersonal)
+	return false, s.db.UpdateStar(id, title, summary, body, star.Tags, star.Confidence, star.IsPersonal)
 }
 
 // reconcileStarContent is the actual LLM call behind reconcileAndSaveStar
 // — a single completion, not a full Weaver agent.Run: no tools, no dedup/
 // link judgment, just folding one piece of free-text human input into an
 // already-identified star's fields (see prompts.yaml's weaver.reconcile_system).
-func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (summary, body string, invalidated bool, costUSD float64, err error) {
-	task := fmt.Sprintf("Current summary: %s\n\nCurrent body:\n%s\n\nWhat they just said: %s", star.Summary, star.Body, correction)
+// title is "" unless the correction actually changed what the star is
+// about — see parseReconcileResponse's TITLE: handling — so a correction
+// that only adds nuance to an already-accurate title never touches it.
+func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star store.Star, correction string) (title, summary, body string, invalidated bool, costUSD float64, err error) {
+	task := fmt.Sprintf("Current title: %s\n\nCurrent summary: %s\n\nCurrent body:\n%s\n\nWhat they just said: %s", star.Title, star.Summary, star.Body, correction)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: prompts.Get().Weaver.ReconcileSystem},
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
-		return "", "", false, 0, err
+		return "", "", "", false, 0, err
 	}
-	summary, body, invalidated = parseReconcileResponse(resp.Content)
+	title, summary, body, invalidated = parseReconcileResponse(resp.Content)
 	if invalidated {
-		return "", "", true, resp.CostUSD, nil
+		return "", "", "", true, resp.CostUSD, nil
 	}
 	if summary == "" {
 		summary = star.Summary
@@ -536,16 +539,20 @@ func reconcileStarContent(reqCtx context.Context, client llm.ChatClient, star st
 	if body == "" {
 		body = star.Body
 	}
-	return summary, body, false, resp.CostUSD, nil
+	return title, summary, body, false, resp.CostUSD, nil
 }
 
-// parseReconcileResponse pulls INVALIDATES:/SUMMARY:/BODY: out of the
+// parseReconcileResponse pulls INVALIDATES:/TITLE:/SUMMARY:/BODY: out of the
 // model's response — see prompts.yaml's weaver.reconcile_system for the
 // exact format asked for. Falls back to empty strings (reconcileStarContent
 // then keeps the star's existing values) if the model didn't follow the
 // format, rather than erroring the whole request out over a formatting
-// slip.
-func parseReconcileResponse(content string) (summary, body string, invalidated bool) {
+// slip. An empty TITLE: line is the normal case (most corrections don't
+// change what a star is fundamentally about) and is left empty rather than
+// echoing the current title back, so store.UpdateStar's "" == "leave as-is"
+// contract does the right thing without this function needing the star's
+// current title at all.
+func parseReconcileResponse(content string) (title, summary, body string, invalidated bool) {
 	lines := strings.Split(content, "\n")
 	var bodyLines []string
 	inBody := false
@@ -553,7 +560,10 @@ func parseReconcileResponse(content string) (summary, body string, invalidated b
 		switch {
 		case strings.HasPrefix(line, "INVALIDATES:"):
 			invalidated = strings.TrimSpace(strings.TrimPrefix(line, "INVALIDATES:")) == "true"
+		case strings.HasPrefix(line, "TITLE:"):
+			title = strings.TrimSpace(strings.TrimPrefix(line, "TITLE:"))
 		case strings.HasPrefix(line, "SUMMARY:"):
+			inBody = false
 			summary = strings.TrimSpace(strings.TrimPrefix(line, "SUMMARY:"))
 		case strings.HasPrefix(line, "BODY:"):
 			inBody = true
@@ -563,10 +573,10 @@ func parseReconcileResponse(content string) (summary, body string, invalidated b
 		}
 	}
 	if invalidated {
-		return "", "", true
+		return "", "", "", true
 	}
 	body = strings.TrimSpace(strings.Join(bodyLines, "\n"))
-	return summary, body, false
+	return title, summary, body, false
 }
 
 // constellationDigest is the Library's digest banner — pure counts plus

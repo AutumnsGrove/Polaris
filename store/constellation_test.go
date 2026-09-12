@@ -78,7 +78,7 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 		t.Errorf("GetStar defaults = %+v, want status=auto, is_personal=false", got)
 	}
 
-	if err := s.UpdateStar(id, "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", false); err != nil {
+	if err := s.UpdateStar(id, "", "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", false); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -91,6 +91,40 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 
 	if _, err := s.GetStar(999999); err != ErrStarNotFound {
 		t.Fatalf("GetStar(missing) = %v, want ErrStarNotFound", err)
+	}
+}
+
+func TestStar_UpdateStarTitle(t *testing.T) {
+	s := openTestStore(t)
+	id, err := s.CreateStar(Star{Title: "Reads science fiction", Category: "literature", Summary: "s", Status: "auto"})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+
+	// "" leaves the title untouched — the Weaver background tool's own
+	// contract (it has no title field at all).
+	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", false); err != nil {
+		t.Fatalf("UpdateStar: %v", err)
+	}
+	got, err := s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if got.Title != "Reads science fiction" {
+		t.Errorf("Title after empty-title update = %q, want unchanged", got.Title)
+	}
+
+	// A non-empty title actually retitles the star — the Edit/Refine
+	// correction sheet's path when a correction changes the star's premise.
+	if err := s.UpdateStar(id, "Reads fantasy novels", "actually fantasy, not sci-fi", "b", nil, "obvious", false); err != nil {
+		t.Fatalf("UpdateStar: %v", err)
+	}
+	got, err = s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if got.Title != "Reads fantasy novels" {
+		t.Errorf("Title after non-empty-title update = %q, want the new title", got.Title)
 	}
 }
 
@@ -109,7 +143,7 @@ func TestStar_NilTagsEncodeAsEmptyArrayNotNull(t *testing.T) {
 		t.Errorf("raw tags column = %q, want \"[]\" (nil Tags must not encode as JSON null)", tagsJSON)
 	}
 
-	if err := s.UpdateStar(id, "summary", "body", nil, "obvious", false); err != nil {
+	if err := s.UpdateStar(id, "", "summary", "body", nil, "obvious", false); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	if err := s.db.QueryRow(`SELECT tags FROM stars WHERE id = ?`, id).Scan(&tagsJSON); err != nil {
@@ -143,7 +177,7 @@ func TestStar_PersonalCreateAndUpdateDoNotForceProposed(t *testing.T) {
 	if err := s.SetStarStatus(id, "confirmed"); err != nil {
 		t.Fatalf("SetStarStatus: %v", err)
 	}
-	if err := s.UpdateStar(id, "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, true); err != nil {
+	if err := s.UpdateStar(id, "", "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, true); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -490,7 +524,7 @@ func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE stars SET created_at = datetime('now', '-30 days') WHERE id = ?`, updatedID); err != nil {
 		t.Fatalf("backdating created_at: %v", err)
 	}
-	if err := s.UpdateStar(updatedID, "new summary", "new body", nil, "", false); err != nil {
+	if err := s.UpdateStar(updatedID, "", "new summary", "new body", nil, "", false); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 

@@ -243,7 +243,10 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 			return id, nil
 		},
 		WeaverUpdateStar: func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
-			err := db.UpdateStar(starID, summary, body, tags, confidenceClass, isPersonal)
+			// "" for title: update_star's own tool schema has no title field
+			// (Weaver never retitles an existing star this way) — see
+			// store.UpdateStar's doc comment on the "" == "leave as-is" contract.
+			err := db.UpdateStar(starID, "", summary, body, tags, confidenceClass, isPersonal)
 			if err != nil {
 				return err
 			}

@@ -426,18 +426,41 @@ func TestReconcileStarContent_ParsesSummaryAndBody(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "INVALIDATES: false\n\nSUMMARY: Now finished, not just researching\nBODY: Full rewritten body text here."}},
 	}}
 
-	summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "actually I finished this one")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
 	}
 	if invalidated {
 		t.Errorf("invalidated = true, want false")
 	}
+	if title != "" {
+		t.Errorf("title = %q, want empty (blank TITLE: line means unchanged)", title)
+	}
 	if summary != "Now finished, not just researching" {
 		t.Errorf("summary = %q", summary)
 	}
 	if body != "Full rewritten body text here." {
 		t.Errorf("body = %q", body)
+	}
+}
+
+func TestReconcileStarContent_ParsesTitleWhenPremiseChanges(t *testing.T) {
+	mock := &llmtest.MockClient{Responses: []llmtest.Response{
+		{Resp: &llm.ChatResponse{Content: "INVALIDATES: false\n\nTITLE: Reads fantasy novels\nSUMMARY: Enjoys fantasy, not sci-fi as previously recorded\nBODY: Full rewritten body text here."}},
+	}}
+
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "Reads science fiction", Summary: "old summary", Body: "old body"}, "actually it's fantasy, not sci-fi")
+	if err != nil {
+		t.Fatalf("reconcileStarContent: %v", err)
+	}
+	if invalidated {
+		t.Errorf("invalidated = true, want false")
+	}
+	if title != "Reads fantasy novels" {
+		t.Errorf("title = %q, want the model's new title", title)
+	}
+	if summary == "" || body == "" {
+		t.Errorf("summary/body = %q/%q, want non-empty", summary, body)
 	}
 }
 
@@ -453,15 +476,15 @@ func TestReconcileStarContent_FlatDenialInvalidates(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "INVALIDATES: true\n\nSUMMARY: should not be read\nBODY: should not be read"}},
 	}}
 
-	summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "yeah that wasn't me at all")
+	title, summary, body, invalidated, _, err := reconcileStarContent(context.Background(), mock, store.Star{Title: "X", Summary: "old summary", Body: "old body"}, "yeah that wasn't me at all")
 	if err != nil {
 		t.Fatalf("reconcileStarContent: %v", err)
 	}
 	if !invalidated {
 		t.Fatalf("invalidated = false, want true")
 	}
-	if summary != "" || body != "" {
-		t.Errorf("summary/body = %q/%q, want empty when invalidated", summary, body)
+	if title != "" || summary != "" || body != "" {
+		t.Errorf("title/summary/body = %q/%q/%q, want empty when invalidated", title, summary, body)
 	}
 }
 
