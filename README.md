@@ -13,6 +13,49 @@ Ask it something. It decides for itself whether it needs to search the web, read
 look up a nearby place, check the weather, or just answer directly — then streams the answer back
 with citations.
 
+## Beyond chat: Pulsar, Pulsar Daily, and Constellation
+
+Three background systems that go beyond "ask a question, get an answer" — each runs on its own
+schedule, makes zero AI calls when there's genuinely nothing to do, and turns into something you
+read rather than something you type into.
+
+**Pulsar** (`/pulsar`, the sidebar's Orbit icon) is a saved prompt that fires on a schedule instead
+of when you type it — daily, weekly, or monthly — running through the exact same turn pipeline as
+a normal message, just tagged as its own kind of thread. The thing that makes a recurring routine
+actually worth having, rather than the same stale digest every time: each firing ("pulse") is told
+what it reported last time and asked to state only what's new or changed, not restate settled
+facts — so a weekly "Guild Wars 3 news" routine reports the actual update, not the same still-true
+summary run after run. A "Help me write this" wizard turns a vague idea ("something about my
+GitHub notifications") into a properly tuned prompt through a short back-and-forth interview —
+itself an ephemeral chat that's never saved, only the prompt it produces. Missed a scheduled fire
+because the box was off? It catches up the moment Polaris is back, not silently until the next
+scheduled run.
+
+**Pulsar Daily** (`/daily`, the sidebar's Sunrise icon) is one "morning newspaper" edition a day
+instead of a pile of separate routines to remember to check: a full week's weather range (not just
+today), word of the day, on-this-day, a quote, picture of the day, top headlines, trending news,
+local news, sports, plus any general-purpose blocks you define yourself. Behind that single page,
+each section is its own small, independent generation — not one big request trying to cover
+everything at once — and a second pass diffs each one against yesterday's edition: a block that
+hasn't genuinely moved gets quietly dropped instead of restating itself, so a quiet news day
+produces a shorter page instead of padded filler. A Top Story is elected from whichever block
+changed the most since yesterday and gets deeper elaboration. Generates on its own schedule, or on
+demand via Settings' "Generate now."
+
+**Constellation** (`/constellation`, the sidebar's Library icon) is an auto-generated personal
+library, not a chat feature at all — a background agent ("Weaver") periodically reads your recent
+threads and extracts durable facts about *you*: your tastes, habits, identity, circumstances, and
+how you actually use Polaris, each one becoming a "star" — a short, evergreen card, never a
+transcript of the conversation it came from. Ask about the same thing across five unrelated
+threads and it collapses into one star that grows richer each time, not five scattered notes.
+Stars are organized into a browsable Library grouped by category (each with its own color) and a
+literal star-map view showing how they connect to each other — a taste in a genre links to a
+specific book you read, a hobby links to the specific way you engage with it. Deliberately narrow
+and cheap to run: Weaver gets its own isolated tool set (never `web_search` or anything that costs
+real money per call), ticks on an interval rather than live-per-message, and makes zero AI calls
+when nothing new has happened since its last check — reprocessing the entire backlog of over 160
+threads costs well under a dollar.
+
 - **Web search** via your own SearXNG instance (no API key, no per-query cost) — but SearXNG's
   underlying engines do rate-limit/CAPTCHA a self-hosted instance under real usage, silently
   returning zero results instead of an error. `web_search` detects that (a full outage, not just an
@@ -26,21 +69,6 @@ with citations.
   Block/Lower/Raise/Pin rankings), or end a query with `?` for a fast, sourced answer instead of
   full results. Same fallback chain as `web_search` above, plus its own Brave-specific virtual
   pagination (one real 20-result Brave fetch covers two 10-result Atlas pages)
-- **Pulsar** (`/pulsar`, the sidebar's Orbit icon) — recurring routines: a saved prompt that fires
-  daily/weekly/monthly and runs through the exact same turn pipeline as a normal message, tagged as
-  its own kind of thread. Each firing ("pulse") knows what it reported last time and is told not to
-  repeat settled facts, only what's new or changed since then — so a weekly "Guild Wars 3 news"
-  routine doesn't just restate the same still-true update every run. A "Help me write this" wizard
-  (an ephemeral, non-persisted chat — nothing about it is saved beyond the prompt you accept) turns
-  a vague idea into a tuned prompt via a short back-and-forth interview. Missed a scheduled fire
-  because the box was off? It catches up the moment Polaris is back, not silently until next time
-- **Pulsar Daily** (`/daily`, the sidebar's Sunrise icon) — one "morning newspaper" edition a day
-  instead of N separate routines to remember to check: weather (a full week's range chart, not just
-  today), word of the day, on this day, a quote, picture of the day, top headlines, trending, local
-  news, sports, plus any general-purpose blocks you define yourself. A Top Story is elected from
-  whichever block changed most since yesterday's edition; blocks that haven't genuinely moved get
-  quietly dropped rather than repeating themselves, so a quiet day produces a shorter page instead
-  of padded filler. Generates on its own schedule, or on demand via Settings' "Generate now"
 - **Page reading** — fetches a URL and extracts clean text for free; optionally give it an
   instruction ("just the prices") and it runs a small second LLM pass to pull out only that.
   Handles PDFs directly (no extra setup), and falls back to archive.org for dead links/paywalls,
