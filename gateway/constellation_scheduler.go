@@ -22,6 +22,11 @@ import (
 // routine's own schedule.
 const constellationSchedulerInterval = time.Minute
 
+// backfillStaleAfter bounds how long constellation_config.backfill_started_at
+// is honored before runConstellationTick starts ignoring it — see that
+// check's own comment for why this needs a self-healing timeout at all.
+const backfillStaleAfter = 4 * time.Hour
+
 // RunConstellationScheduler runs until done is closed — see
 // RunPulsarScheduler's doc comment for the same shutdown-drain shape.
 func (s *Server) RunConstellationScheduler(done <-chan struct{}) {
@@ -66,6 +71,17 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 		return
 	}
 	if !cfgRow.Enabled {
+		return
+	}
+	// A manual `constellation backfill` run is independently computing its
+	// own "which threads are eligible" list right now — skip this whole
+	// tick rather than race it (see BackfillConstellation's doc comment for
+	// the real duplicate-processing bug this fixes). backfillStaleAfter
+	// bounds how long a crashed/killed backfill (which never reaches its
+	// own defer) can wedge the scheduler off — comfortably past
+	// cmd/docker_client.go's own 2-hour timeout on a full-backlog run, so a
+	// backfill that's still genuinely running never gets treated as stale.
+	if cfgRow.BackfillStartedAt != nil && time.Since(*cfgRow.BackfillStartedAt) < backfillStaleAfter {
 		return
 	}
 

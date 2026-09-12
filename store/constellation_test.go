@@ -49,6 +49,40 @@ func TestConstellationConfig_DefaultsThenUpdate(t *testing.T) {
 	}
 }
 
+func TestConstellationConfig_BackfillStartedRoundTrips(t *testing.T) {
+	s := openTestStore(t)
+
+	c, err := s.GetConstellationConfig()
+	if err != nil {
+		t.Fatalf("GetConstellationConfig: %v", err)
+	}
+	if c.BackfillStartedAt != nil {
+		t.Errorf("BackfillStartedAt should default to nil, got %+v", c.BackfillStartedAt)
+	}
+
+	if err := s.SetConstellationBackfillStarted(); err != nil {
+		t.Fatalf("SetConstellationBackfillStarted: %v", err)
+	}
+	c, err = s.GetConstellationConfig()
+	if err != nil {
+		t.Fatalf("GetConstellationConfig (after SetConstellationBackfillStarted): %v", err)
+	}
+	if c.BackfillStartedAt == nil {
+		t.Fatal("BackfillStartedAt should be set after SetConstellationBackfillStarted")
+	}
+
+	if err := s.ClearConstellationBackfillStarted(); err != nil {
+		t.Fatalf("ClearConstellationBackfillStarted: %v", err)
+	}
+	c, err = s.GetConstellationConfig()
+	if err != nil {
+		t.Fatalf("GetConstellationConfig (after ClearConstellationBackfillStarted): %v", err)
+	}
+	if c.BackfillStartedAt != nil {
+		t.Errorf("BackfillStartedAt should be nil after ClearConstellationBackfillStarted, got %+v", c.BackfillStartedAt)
+	}
+}
+
 func TestStar_CreateGetUpdate(t *testing.T) {
 	s := openTestStore(t)
 

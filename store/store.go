@@ -573,6 +573,21 @@ CREATE TABLE IF NOT EXISTS constellation_config (
 	-- resolves to" -- same empty-means-inherit pattern
 	-- pulsar_daily_config.weather_location uses.
 	model                 TEXT NOT NULL DEFAULT '',
+	-- backfill_started_at: NULL means no backfill is running. Set at the
+	-- start of BackfillConstellation, cleared when it finishes -- the live
+	-- per-minute scheduler (runConstellationTick) checks this and skips its
+	-- own tick entirely while it's set, so a manual "constellation backfill"
+	-- run and the ordinary poller can't both pick up the same thread. A DB
+	-- column, not an in-process flag/mutex, specifically because backfill
+	-- and the scheduler are NOT always the same OS process: under Docker
+	-- both run inside the container's own server, but bare-metal's
+	-- "constellation backfill" is a separate short-lived CLI process
+	-- against the same SQLite file (see CLAUDE.md's dual-deployment
+	-- section) -- only something both processes can see by reading the
+	-- database itself actually closes the race. Treated as stale (ignored)
+	-- past backfillStaleAfter so a crashed/killed backfill can't wedge the
+	-- scheduler off forever -- see runConstellationTick's own check.
+	backfill_started_at   DATETIME,
 	created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -809,6 +824,10 @@ var migrations = []string{
 	// existed, rather than silently going dark until someone opens
 	// settings and notices.
 	`ALTER TABLE pulsar_daily_config ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`,
+	// backfill_started_at — see the schema comment above. Appended at the
+	// end per this file's own established rule (positional user_version
+	// tracking, never insert mid-list).
+	`ALTER TABLE constellation_config ADD COLUMN backfill_started_at DATETIME`,
 }
 
 func Open(path string) (*Store, error) {

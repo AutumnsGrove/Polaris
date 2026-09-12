@@ -25,8 +25,12 @@ type ConstellationConfig struct {
 	// Model: empty means "use whatever config.DefaultModel currently
 	// resolves to" — same empty-means-inherit pattern
 	// PulsarDailyConfig.WeatherLocation uses.
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
+	Model string `json:"model"`
+	// BackfillStartedAt: nil means no backfill is currently running — see
+	// the schema comment on this column in store.go's `schema` const for
+	// why this is a DB column and not an in-process flag.
+	BackfillStartedAt *time.Time `json:"backfill_started_at"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // GetConstellationConfig returns the singleton config row, inserting the
@@ -38,13 +42,37 @@ func (s *Store) GetConstellationConfig() (*ConstellationConfig, error) {
 	}
 	var c ConstellationConfig
 	err := s.db.QueryRow(
-		`SELECT enabled, poll_interval_minutes, last_checked_at, model, created_at
+		`SELECT enabled, poll_interval_minutes, last_checked_at, model, backfill_started_at, created_at
 		 FROM constellation_config WHERE id = 1`,
-	).Scan(&c.Enabled, &c.PollIntervalMinutes, &c.LastCheckedAt, &c.Model, &c.CreatedAt)
+	).Scan(&c.Enabled, &c.PollIntervalMinutes, &c.LastCheckedAt, &c.Model, &c.BackfillStartedAt, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get constellation config: %w", err)
 	}
 	return &c, nil
+}
+
+// SetConstellationBackfillStarted marks a backfill as in progress — called
+// once at the very start of BackfillConstellation, before it reads the
+// eligible-threads list, so the window where the live scheduler could still
+// race it is as small as possible.
+func (s *Store) SetConstellationBackfillStarted() error {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO constellation_config (id) VALUES (1)`); err != nil {
+		return fmt.Errorf("set constellation backfill started: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE constellation_config SET backfill_started_at = CURRENT_TIMESTAMP WHERE id = 1`); err != nil {
+		return fmt.Errorf("set constellation backfill started: %w", err)
+	}
+	return nil
+}
+
+// ClearConstellationBackfillStarted marks a backfill as finished — called
+// via defer in BackfillConstellation so it clears on every exit path,
+// success or error, not just the happy path.
+func (s *Store) ClearConstellationBackfillStarted() error {
+	if _, err := s.db.Exec(`UPDATE constellation_config SET backfill_started_at = NULL WHERE id = 1`); err != nil {
+		return fmt.Errorf("clear constellation backfill started: %w", err)
+	}
+	return nil
 }
 
 // UpdateConstellationConfig writes the settings-panel-editable fields.
