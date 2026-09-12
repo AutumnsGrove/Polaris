@@ -90,13 +90,15 @@ the same "this is retrieved content, not instructions" caveat as `web_search`/`w
 consistency matters more here than a special case for "this text happens to trace back to the
 user eventually."
 
+**Gating: always available, confirmed.** Not gated behind Research/Deep Research the way
+`spawn_researchers` is — reading your own prior knowledge library costs no external API spend and
+no real-world data freshness risk, so it belongs with `memory`'s always-on availability rather than
+with the research tools that cost real money/time per call. Offered in `tools/catalog.go`'s base
+toolset unconditionally, same as `memory`.
+
 ## Open items for implementation
 
 - `tools/stars.go` + `tools/descriptions/stars.yaml` — not written yet.
 - Confirm `SearchStars`/a new `SearchLibraryStars`-shaped filter cleanly supports the
   `is_personal = false` exclusion without a schema change (it should — `is_personal` is already an
   indexed-enough column per the existing `ListStars` filter shape at `store/constellation.go:221`).
-- Decide whether this tool is offered in plain chat mode or gated behind Research/Deep
-  Research — leaning toward always-available (unlike `spawn_researchers`), since reading your own
-  prior knowledge library is closer to `memory`'s always-on availability than to a research tool
-  that costs real API spend per call.

@@ -83,10 +83,21 @@ var generateReportDef = llm.ToolDef{
 }
 ```
 
-Gated the same way `spawn_researchers` is gated (`requires: deep_research` in
-`tools/descriptions/generate_report.yaml`) — a report worth generating is, by construction, worth
-the research-quality bar Deep Research already exists for; offering it in plain chat mode would
-let the model produce a "report" built on a single shallow search pass.
+**Gating: available in plain chat too, not `requires: deep_research`** — reconsidered from the
+first pass, which would have hard-gated this behind Deep Research the same way `spawn_researchers`
+is. Decided against that: someone asking for "a report on X" in plain chat shouldn't be told the
+tool doesn't exist until they flip a toggle they may not know is relevant. Instead, `generate_report`
+is offered everywhere, and *which tier it runs* depends on `angles` and the composer's Deep
+Research state exactly as the "Reuses Tier 2's fan-out" section above already describes — Deep
+Research on lets the orchestrator use `spawn_researchers` for real fan-out, Deep Research off runs
+synthesis-only over whatever's already been found in-turn.
+
+That narrower plain-chat report is real but genuinely thinner, so it needs a visible label, not a
+document indistinguishable from a fanned-out one — the synthesis pass tags its own output with
+which tier produced it, and the rendered report card shows a small badge (`Quick report` vs. `Deep
+Research report`) next to the source count, so it's never ambiguous which depth the user is
+looking at. `mockups/report-generator.html` should get this badge added when the mockup is next
+touched — not yet reflected there.
 
 ## Open items for implementation
 

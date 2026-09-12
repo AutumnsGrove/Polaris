@@ -170,6 +170,28 @@ body {
 .report-card .meta {
 	color: var(--color-text-dim);
 	font-size: 0.76rem;
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+}
+.tier-badge {
+	display: inline-flex;
+	align-items: center;
+	font-size: 0.68rem;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	padding: 2px 8px;
+	border-radius: var(--radius-full);
+	border: 1px solid var(--color-border-strong);
+}
+.tier-badge.quick {
+	color: var(--color-text-dim);
+	background: var(--color-surface-2);
+}
+.tier-badge.deep {
+	color: var(--color-accent);
+	background: var(--color-accent-soft);
+	border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
 }
 .download-chip {
 	flex-shrink: 0;
@@ -264,7 +286,7 @@ body {
 					<div class="report-head">
 						<div>
 							<h2>Self-Hosted vs. Commercial LLM Assistants for Privacy</h2>
-							<div class="meta">Report · 17 sources · generated just now</div>
+							<div class="meta"><span class="tier-badge deep">Deep Research report</span> 17 sources · generated just now</div>
 						</div>
 						<div class="download-chip">
 							<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
@@ -287,6 +309,37 @@ body {
 							<li><a href="#">[3] The Real Cost of Running Your Own LLM — Hacker News discussion</a></li>
 							<li><a href="#">[4] Maintaining a Home Server Long-Term — r/selfhosted</a></li>
 							<li><a href="#">[5] Uptime Expectations for Personal Infra — blog.example.com</a></li>
+						</ol>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div>
+		<div class="frame-label">Quick report (plain chat, no Deep Research)</div>
+		<div class="frame">
+			<div class="thread">
+				<div class="report-card">
+					<div class="report-head">
+						<div>
+							<h2>Best Lightweight Note-Taking Apps</h2>
+							<div class="meta"><span class="tier-badge quick">Quick report</span> 4 sources · generated just now</div>
+						</div>
+						<div class="download-chip">
+							<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+							report.md
+						</div>
+					</div>
+					<div class="report-body">
+						<h3>Overview</h3>
+						<p>Synthesized from this turn's own searches only — no parallel research fan-out. Fine for a quick comparison; turn on Deep Research for a more thorough pass across independent sources.<span class="cite">[1][2]</span></p>
+					</div>
+					<div class="sources">
+						<h4>Sources</h4>
+						<ol>
+							<li><a href="#">[1] Best Note Apps 2026 — The Verge</a></li>
+							<li><a href="#">[2] Obsidian vs. Notion vs. Bear — a comparison</a></li>
 						</ol>
 					</div>
 				</div>
