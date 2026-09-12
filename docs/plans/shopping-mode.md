@@ -253,24 +253,27 @@ prompt text plus which cards the model chooses to produce at the end, identical 
   nothing does today.
 - **Other `highlight` callers** — the whole point of naming it generically is that these need zero
   tool changes when they show up, just a prompt somewhere telling the model to reach for
-  `highlight`. Candidates that came up discussing this doc, none designed or committed to here:
-  - **Places** — `nearby_search`/Foursquare already returns real photos per place; the `price`
-    field could hold distance or a `$$` range instead of a dollar amount, the same "it's just free
-    text" property that makes it work for shopping in the first place.
-  - **GitHub repos** — `github_repo`/`github_activity` already fetch stats; `price` could hold a
-    star count (`"★ 4.2k"`).
+  `highlight`. Tracked in issue #49; status per caller:
+  - **Places** — done (`tools/descriptions/nearby_search.yaml`'s `api_description`). Correction to
+    this doc's original note: Foursquare's base place-search response has **no photo field**
+    (confirmed against `places.Place`'s struct — fetching one would need a separate per-place
+    `/photos` API call, out of scope for this pass), so the shipped instruction leaves `image_url`
+    unset and uses `price` for distance/category only.
+  - **GitHub repos** — done (`tools/descriptions/github_repo.yaml`'s `api_description`), `price`
+    holds a star count (`"★ 4.2k"`) when comparing more than one repo.
   - **Travel** — flights/hotels found via `web_search`, same "compare a handful of real options"
-    shape as shopping.
+    shape as shopping. Not yet built.
   - **Listings in general** — job postings, real estate, event tickets: title + link + optional
-    short badge + often a photo.
+    short badge + often a photo. Not yet built.
   - **A Researcher-focus-mode source grid** — the strongest few sources on a topic as a visual grid
     instead of citations buried in prose, when the user's comparing options rather than reading a
-    synthesized answer.
+    synthesized answer. Not yet built.
   - **Pulsar Daily blocks** beyond the already-noted "Deals" idea — e.g. "New releases this week" —
     since it's surfacing search-found items, not computing similarity, it doesn't need
-    music/books/movies' recommendation-engine machinery at all.
-  Nothing here forces any of these to exist; listed so the next time one comes up, it's a prompt
-  change reaching for an existing tool, not a "should this be its own tool" conversation again.
+    music/books/movies' recommendation-engine machinery at all. Not yet built.
+  Nothing here forces the rest of these to exist; listed so the next time one comes up, it's a
+  prompt change reaching for an existing tool, not a "should this be its own tool" conversation
+  again.
 
 ## Next steps
 
