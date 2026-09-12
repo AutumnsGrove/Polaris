@@ -24,6 +24,54 @@ import (
 // principle to get exactly right.
 const parallelMonthlyCap = 4900
 
+// webSearchMaxDomains caps the domains list the same way highlightMaxItems
+// caps highlight's items — a small, deliberate ceiling the model gets back
+// as a correctable tool error, not a silent truncation. Five matches
+// highlight's own item cap; there's no real use case for restricting a
+// single search to more sites than that.
+const webSearchMaxDomains = 5
+
+// withSiteFilter prepends a site:-scoped prefix to query for backends that
+// have no dedicated domain-restriction parameter of their own (SearXNG,
+// Brave, Parallel) — the same trick GPT Luna was already observed
+// constructing unprompted (see issue #43), just applied consistently in Go
+// rather than left to whichever model happens to know the convention.
+// SearXNG's underlying general-category engines (Brave, Google CSE,
+// DuckDuckGo, Startpage) and Brave's own Search API both document support
+// for the site: operator in free-text queries. Parallel's support for it
+// is unconfirmed as of this writing (its API is newer and less
+// documented) — this is the best available option absent a dedicated
+// parameter, but worth a live check the next time Parallel actually fires
+// with a domains-scoped query in production.
+func withSiteFilter(query string, domains []string) string {
+	if len(domains) == 0 {
+		return query
+	}
+	if len(domains) == 1 {
+		return fmt.Sprintf("site:%s %s", domains[0], query)
+	}
+	parts := make([]string, len(domains))
+	for i, d := range domains {
+		parts[i] = "site:" + d
+	}
+	return fmt.Sprintf("(%s) %s", strings.Join(parts, " OR "), query)
+}
+
+// normalizeDomain strips a scheme/path/www prefix a model might pass by
+// mistake (it was told to pass bare domains, but nothing stops it handing
+// over a full URL) so withSiteFilter always builds a real site: operator
+// rather than a malformed one that silently matches nothing.
+func normalizeDomain(d string) string {
+	d = strings.TrimSpace(d)
+	d = strings.TrimPrefix(d, "https://")
+	d = strings.TrimPrefix(d, "http://")
+	d = strings.TrimPrefix(d, "www.")
+	if slash := strings.IndexByte(d, '/'); slash >= 0 {
+		d = d[:slash]
+	}
+	return d
+}
+
 var webSearchDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
@@ -57,6 +105,16 @@ var webSearchDef = llm.ToolDef{
 						"independent queries, so issue them in the same turn to run concurrently) rather than " +
 						"calling page 1 repeatedly.",
 				},
+				"domains": map[string]interface{}{
+					"type":     "array",
+					"maxItems": webSearchMaxDomains,
+					"items":    map[string]interface{}{"type": "string"},
+					"description": fmt.Sprintf("Optional: restrict this search to one or more specific sites/domains "+
+						"(e.g. [\"wordpress.com\"]), instead of the open web. Bare domains only (\"wordpress.com\", "+
+						"not \"https://wordpress.com/docs\"). Use this whenever the user names a specific site to "+
+						"search rather than relying on a site: prefix in query, which isn't reliably honored across "+
+						"every backend this tool can fall back to. Max %d domains.", webSearchMaxDomains),
+				},
 			},
 			"required": []string{"query"},
 		},
@@ -67,10 +125,11 @@ func init() { Register("web_search", handleWebSearch) }
 
 func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
-		Query      string `json:"query"`
-		MaxResults int    `json:"max_results"`
-		Category   string `json:"category"`
-		Page       int    `json:"page"`
+		Query      string   `json:"query"`
+		MaxResults int      `json:"max_results"`
+		Category   string   `json:"category"`
+		Page       int      `json:"page"`
+		Domains    []string `json:"domains"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "web_search", nil, "error: "+err.Error(), callID)
@@ -87,10 +146,25 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	if args.Page <= 0 || args.Page > 5 {
 		args.Page = 1
 	}
+	if len(args.Domains) > webSearchMaxDomains {
+		msg := fmt.Sprintf("error: too many domains (%d) — web_search supports at most %d. Pick the strongest "+
+			"candidates and call again with fewer.", len(args.Domains), webSearchMaxDomains)
+		return emitToolError(ctx, "web_search", map[string]interface{}{"query": args.Query, "domains": args.Domains}, msg, callID)
+	}
+	domains := make([]string, 0, len(args.Domains))
+	for _, d := range args.Domains {
+		if nd := normalizeDomain(d); nd != "" {
+			domains = append(domains, nd)
+		}
+	}
+	siteQuery := withSiteFilter(args.Query, domains)
 
 	callArgs := map[string]interface{}{"query": args.Query}
 	if args.Page > 1 {
 		callArgs["page"] = args.Page
+	}
+	if len(domains) > 0 {
+		callArgs["domains"] = domains
 	}
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool":    "web_search",
@@ -120,9 +194,9 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 		return result
 	}
 
-	dedupKey := searchDedupKey("searxng", args.Query, args.Category, args.Page, args.MaxResults)
+	dedupKey := searchDedupKey("searxng", siteQuery, args.Category, args.Page, args.MaxResults)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*search.SearchResponse, error) {
-		r, e := ctx.SearXNG.Search(ctx.Ctx, args.Query, args.MaxResults, args.Category, args.Page)
+		r, e := ctx.SearXNG.Search(ctx.Ctx, siteQuery, args.MaxResults, args.Category, args.Page)
 		if e == nil && ctx.ResearchBudget != nil {
 			// Recorded inside fn, not after dedupedCall returns:
 			// singleflight.Do's shared return value is true for EVERY
@@ -168,7 +242,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveFallback(ctx, args.Query, "Brave (SearXNG degraded)", callID); ok {
+			} else if formatted, ok := braveFallback(ctx, siteQuery, "Brave (SearXNG degraded)", callID); ok {
 				return formatted
 			}
 		}
@@ -177,12 +251,12 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_search: checking parallel usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= parallelMonthlyCap {
 				log.Warn("web_search: parallel monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", parallelMonthlyCap)
-			} else if formatted, ok := parallelFallback(ctx, args.Query, callID); ok {
+			} else if formatted, ok := parallelFallback(ctx, siteQuery, callID); ok {
 				return formatted
 			}
 		}
 		if ctx.Tavily != nil {
-			if formatted, ok := tavilyFallback(ctx, args.Query, callID); ok {
+			if formatted, ok := tavilyFallback(ctx, args.Query, domains, callID); ok {
 				return formatted
 			}
 		}
@@ -385,10 +459,16 @@ func parallelFallback(ctx *Context, query string, callID string) (formatted stri
 // or an empty result so the caller falls through to the plain "degraded"
 // message instead — this is a best-effort rescue, not something worth its
 // own error path back to the model.
-func tavilyFallback(ctx *Context, query string, callID string) (formatted string, ok bool) {
-	dedupKey := searchDedupKey("tavily", query, "", 1, 5)
+// domains is passed through to Tavily's own dedicated include_domains
+// request field rather than folded into query via withSiteFilter — Tavily
+// runs its own index/crawl (not a metasearch proxy over engines that
+// happen to honor a site: operator), and it documents include_domains as
+// a first-class parameter, so that's the correct mechanism here rather
+// than the query-text trick used for SearXNG/Brave/Parallel above.
+func tavilyFallback(ctx *Context, query string, domains []string, callID string) (formatted string, ok bool) {
+	dedupKey := searchDedupKey("tavily", query+"|"+strings.Join(domains, ","), "", 1, 5)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*tavily.SearchResponse, error) {
-		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5)
+		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5, domains)
 		if e == nil && ctx.ResearchBudget != nil {
 			ctx.ResearchBudget.RecordCall(true)
 		}

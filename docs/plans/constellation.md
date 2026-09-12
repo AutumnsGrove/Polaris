@@ -1,10 +1,16 @@
 # Constellation
 
-**Status: fully designed, not yet implemented.** Schema, Weaver's architecture and prompts, the
-review UI, personal-star handling, cost auditability, and every mockup screen are settled. No
-application code has been written — the mockups (`mockups/constellation.html`,
-`mockups/constellation-personal-star-options.html`) are the one deliberate exception; everything
-else here is design and prose, meant to be read as a spec before implementation starts.
+**Status: implemented and shipped.** Schema, Weaver's five tools, the scheduler, backfill CLI,
+review UI, personal-star handling, and cost auditability are all real code — see `store/constellation.go`,
+`gateway/constellation_*.go`, `tools/{search,read,create,update,link}_star*.go`,
+`cmd/constellation_backfill.go`, and `web/src/lib/constellation*`/`web/src/routes/constellation`.
+All Constellation/Weaver/star tests pass (`go test ./gateway/... ./store/... ./tools/...`), the
+scheduler follows the same drain-channel shutdown shape as `RunPulsarScheduler` with no CWD-relative
+resource reads, and the backfill CLI's `isDockerComposeInstall` gate (proxying to the container's
+`/api/constellation/backfill` under Docker) already matches this repo's established dual-deployment
+pattern (see CLAUDE.md). This doc is kept as the design record; treat the code as authoritative
+where the two disagree. Remaining/deferred work lives in separate issues — see #56 (a `stars` tool
+for the *main* assistant, not just Weaver's own internal `search_stars`) and "Deferred to v2" below.
 
 This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends and Recent
 Queries" thread on the potato, 2026-09-09/10) after using `search_chats` to ask "what do I

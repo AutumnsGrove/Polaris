@@ -5,4 +5,7 @@ description: >-
 api_description: >-
   Find real-world places near a location — restaurants, coffee shops, pharmacies, parks, etc.
   Returns structured results (distance, category, map link) when Foursquare is configured,
-  otherwise falls back to a web search for the same query.
+  otherwise falls back to a web search for the same query. When the user is choosing among a
+  handful of options rather than asking about just one place, call highlight with your top picks
+  (title, url, and price holding the distance or a category instead of a dollar amount) instead of
+  listing them in prose — these results have no photo available, so leave image_url unset.

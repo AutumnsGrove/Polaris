@@ -120,6 +120,45 @@ var Registry = []config.ModelConfig{
 		ResearchWorker: true,
 	},
 	{
+		// Additive alongside "deepseek" above, not a replacement — per a
+		// live GET /api/v1/models/deepseek/deepseek-v4.1-flash/endpoints
+		// survey on 2026-09-12 (released 2026-09-10). Genuinely
+		// multimodal per architecture.input_modalities (["text","image"]),
+		// unlike the V4 Flash/Pro entries above.
+		//
+		// Unlike deepseek-pro/deepseek above, the official "deepseek" tag
+		// is the primary route here, not excluded — re-checked the
+		// reasoning rather than copying the sibling entries' exclusion.
+		// Its pricing.overrides only double the rate (to $0.30/$1.20 per M,
+		// matching the third-party fp8 tier below) during a narrow weekday
+		// window (01:00-04:00 and 06:00-10:00 UTC, ~21% of the week);
+		// the other ~79% of the time, incl. all weekend, it's $0.15/$0.60
+		// with $0.003/M cache reads — cheaper than every third-party
+		// endpoint in the survey at every hour, not just off-peak. That's
+		// the opposite of deepseek-pro/deepseek's official route, whose
+		// list price loses to third-party even off-peak — a genuinely
+		// different pricing shape per model, not a fixed platform rule, so
+		// don't copy this endpoint's inclusion/exclusion onto other models
+		// without re-running the survey.
+		// Fireworks is the fallback: flat (no time-of-day pricing),
+		// $0.22/$0.66 per M, 98.98% uptime, 943,718-token max completion —
+		// beats every fp8 third-party provider in the survey (GMICloud,
+		// Novita, etc., all $0.30/$1.20) on price while staying reliable,
+		// so it's a better second rung than reusing deepseek-pro's known-
+		// good fp8 providers here.
+		ID:          "deepseek-v41-flash",
+		Name:        "DeepSeek V4.1 Flash",
+		Model:       "deepseek/deepseek-v4.1-flash",
+		Provider:    []string{"deepseek", "fireworks"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal: true,
+	},
+	{
 		ID:          "luna",
 		Name:        "ChatGPT Luna",
 		Model:       "openai/gpt-5.6-luna",

@@ -10,4 +10,6 @@ api_description: >-
   first/most recent commit dates, total commit count, open issue count, and open pull request
   count — plus the README. Prefer this over web_search/web_read for questions about a specific
   GitHub repo's stats, since those can't reliably pull numeric stats like star count off a
-  rendered page.
+  rendered page. When comparing more than one repo (e.g. "React vs. Vue vs. Svelte"), call this
+  once per repo, then call highlight with your findings (title, url, and price holding a star
+  count like "★ 4.2k") instead of listing them in prose.
