@@ -50,12 +50,62 @@
 	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
 	--color-accent-2: oklch(78% 0.06 235);
 	--color-accent-2-strong: oklch(68% 0.09 235);
-	/* Constellation's third accent — "about the person" stars
-	   (stars.is_personal), sitting between the warm gold accent and cool
-	   blue accent-2. Picked in mockups/constellation-personal-star-options.html
-	   (option E: color-shift + text badge, no icon — an icon+badge combo
-	   read as cluttered once compared side by side). */
+	/* Constellation's violet accent — now specifically "category outside the
+	   fixed list" (Weaver's rare escape hatch, see weaver.system's category
+	   rules and categoryIcons.ts's Sparkles fallback), not "personal star":
+	   every star is personal now that Weaver only extracts personal facts
+	   (see prompts.yaml), so is_personal stopped being a useful visual
+	   distinction and category color took over that job instead (below).
+	   Originally picked in mockups/constellation-personal-star-options.html
+	   (option E: color-shift + text badge, no icon). */
 	--color-personal: oklch(78% 0.1 322);
+	/* One bespoke hue per fixed category — 32 of them, evenly spaced 10.3deg
+	   apart around the wheel (330deg / 32, not the full 360, so the whole
+	   set sits at least 15deg clear of --color-personal's violet at hue 322
+	   — that band stays exclusively "outside the fixed list"). Same
+	   L/C for every hue (78%/0.15 dark) so none reads as duller or more
+	   "disabled" than its neighbors — the earlier design (7 shared hues,
+	   shading each family's members via color-mix toward white/black) made
+	   every mixed-toward-black step look muted/washed out, which is
+	   specifically what this replaces. This deliberately isn't run through
+	   the dataviz skill's categorical validator: that validator caps out
+	   around 8 hues (colorblind confusion is unavoidable at 32, no matter
+	   the spacing), which is fine here because color is never the only
+	   identity channel — every star also always shows its category name and
+	   a themed icon (categoryIcons.ts) alongside its color. See
+	   web/src/lib/categoryColors.ts for the category->token mapping. */
+	--color-cat-technology: oklch(78% 0.15 337);
+	--color-cat-software-engineering: oklch(78% 0.15 347.3);
+	--color-cat-ai-machine-learning: oklch(78% 0.15 357.6);
+	--color-cat-science: oklch(78% 0.15 7.9);
+	--color-cat-space-astronomy: oklch(78% 0.15 18.2);
+	--color-cat-nature-environment: oklch(78% 0.15 28.6);
+	--color-cat-travel: oklch(78% 0.15 38.9);
+	--color-cat-outdoor-fitness: oklch(78% 0.15 49.2);
+	--color-cat-history: oklch(78% 0.15 59.5);
+	--color-cat-politics-world-affairs: oklch(78% 0.15 69.8);
+	--color-cat-culture-society: oklch(78% 0.15 80.1);
+	--color-cat-religion-spirituality: oklch(78% 0.15 90.4);
+	--color-cat-philosophy-ideas: oklch(78% 0.15 100.8);
+	--color-cat-internet-social-media: oklch(78% 0.15 111.1);
+	--color-cat-literature: oklch(78% 0.15 121.4);
+	--color-cat-writing-language: oklch(78% 0.15 131.7);
+	--color-cat-music: oklch(78% 0.15 142);
+	--color-cat-film-tv: oklch(78% 0.15 152.3);
+	--color-cat-video-games: oklch(78% 0.15 162.6);
+	--color-cat-art-design: oklch(78% 0.15 172.9);
+	--color-cat-fashion-style: oklch(78% 0.15 183.2);
+	--color-cat-hobbies-crafts: oklch(78% 0.15 193.6);
+	--color-cat-food-drink: oklch(78% 0.15 203.9);
+	--color-cat-sports-recreation: oklch(78% 0.15 214.2);
+	--color-cat-career-work: oklch(78% 0.15 224.5);
+	--color-cat-business-economy: oklch(78% 0.15 234.8);
+	--color-cat-home-diy: oklch(78% 0.15 245.1);
+	--color-cat-automotive: oklch(78% 0.15 255.4);
+	--color-cat-finance-shopping: oklch(78% 0.15 265.8);
+	--color-cat-education-learning: oklch(78% 0.15 276.1);
+	--color-cat-health-wellness: oklch(78% 0.15 286.4);
+	--color-cat-relationships-family: oklch(78% 0.15 296.7);
 	--color-danger: oklch(65% 0.19 25);
 	--color-danger-bg: oklch(28% 0.05 25);
 
@@ -203,9 +253,46 @@
 	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 20%, transparent);
 	--color-accent-2: oklch(48% 0.1 240);
 	--color-accent-2-strong: oklch(40% 0.11 240);
-	/* Same darken+chroma-boost treatment as accent-2 above, so the personal
-	   accent holds contrast against the warm-paper light background. */
+	/* Same darken+chroma-boost treatment as accent-2 above, so the
+	   out-of-list-category accent holds contrast against the warm-paper
+	   light background. */
 	--color-personal: oklch(52% 0.13 322);
+	/* Same 32 hues as the dark block, darkened/re-chromed to hold contrast
+	   against the warm-paper light background (same treatment as
+	   --color-accent/--color-personal above) — hue angles identical, only
+	   L/C shift between the two theme blocks. */
+	--color-cat-technology: oklch(52% 0.16 337);
+	--color-cat-software-engineering: oklch(52% 0.16 347.3);
+	--color-cat-ai-machine-learning: oklch(52% 0.16 357.6);
+	--color-cat-science: oklch(52% 0.16 7.9);
+	--color-cat-space-astronomy: oklch(52% 0.16 18.2);
+	--color-cat-nature-environment: oklch(52% 0.16 28.6);
+	--color-cat-travel: oklch(52% 0.16 38.9);
+	--color-cat-outdoor-fitness: oklch(52% 0.16 49.2);
+	--color-cat-history: oklch(52% 0.16 59.5);
+	--color-cat-politics-world-affairs: oklch(52% 0.16 69.8);
+	--color-cat-culture-society: oklch(52% 0.16 80.1);
+	--color-cat-religion-spirituality: oklch(52% 0.16 90.4);
+	--color-cat-philosophy-ideas: oklch(52% 0.16 100.8);
+	--color-cat-internet-social-media: oklch(52% 0.16 111.1);
+	--color-cat-literature: oklch(52% 0.16 121.4);
+	--color-cat-writing-language: oklch(52% 0.16 131.7);
+	--color-cat-music: oklch(52% 0.16 142);
+	--color-cat-film-tv: oklch(52% 0.16 152.3);
+	--color-cat-video-games: oklch(52% 0.16 162.6);
+	--color-cat-art-design: oklch(52% 0.16 172.9);
+	--color-cat-fashion-style: oklch(52% 0.16 183.2);
+	--color-cat-hobbies-crafts: oklch(52% 0.16 193.6);
+	--color-cat-food-drink: oklch(52% 0.16 203.9);
+	--color-cat-sports-recreation: oklch(52% 0.16 214.2);
+	--color-cat-career-work: oklch(52% 0.16 224.5);
+	--color-cat-business-economy: oklch(52% 0.16 234.8);
+	--color-cat-home-diy: oklch(52% 0.16 245.1);
+	--color-cat-automotive: oklch(52% 0.16 255.4);
+	--color-cat-finance-shopping: oklch(52% 0.16 265.8);
+	--color-cat-education-learning: oklch(52% 0.16 276.1);
+	--color-cat-health-wellness: oklch(52% 0.16 286.4);
+	--color-cat-relationships-family: oklch(52% 0.16 296.7);
 	--color-danger: oklch(52% 0.19 25);
 	--color-danger-bg: oklch(93% 0.04 25);
 

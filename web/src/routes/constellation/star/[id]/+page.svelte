@@ -9,6 +9,7 @@
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
 	import { ArrowLeft, MoreVertical, MessageCircle, Pencil, Link2 } from '@lucide/svelte';
 	import { iconForCategory } from '$lib/categoryIcons';
+	import { colorForCategory } from '$lib/categoryColors';
 	import type { ConstellationStarDetail, Star, StarEdge } from '$lib/types';
 
 	const starId = $derived(Number(page.params.id));
@@ -43,6 +44,7 @@
 	});
 
 	const Icon = $derived(iconForCategory(detail?.star.category ?? ''));
+	const starColor = $derived(colorForCategory(detail?.star.category ?? ''));
 
 	function renderBody(body: string): string {
 		return DOMPurify.sanitize(marked.parse(body || '') as string);
@@ -118,7 +120,7 @@
 		<p class="empty">Couldn't find that star.</p>
 	{:else}
 		<div class="tile-row">
-			<div class="tile" class:personal={detail.star.is_personal}>
+			<div class="tile" style="--star-color: {starColor}">
 				<Icon size={18} />
 			</div>
 			<div>
@@ -276,13 +278,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: var(--color-accent-soft);
-		color: var(--color-accent);
+		background: color-mix(in srgb, var(--star-color) 16%, transparent);
+		color: var(--star-color);
 		flex-shrink: 0;
-	}
-	.tile.personal {
-		background: color-mix(in srgb, var(--color-personal) 16%, transparent);
-		color: var(--color-personal);
 	}
 	.badge {
 		display: inline-flex;

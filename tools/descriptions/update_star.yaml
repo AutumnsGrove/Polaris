@@ -7,7 +7,5 @@ api_description: >-
   summary/body so the star reads as one coherent, current entry — never just append the new content onto the
   old.
 
-  is_personal works the same as in create_star: true means this star is an inference about who the person IS,
-  not a topic. Any update to a personal star resets its status back to "proposed", even a pure reinforcement
-  of something already confirmed — that's deliberate, not a bug: identity-level content gets a human look
-  every time it changes, not just the first time.
+  is_personal works the same as in create_star: this library is personal-only, so it should be true on
+  essentially every call — a fact about who the person IS, not a topic explainer.

@@ -3,19 +3,20 @@ requires: weaver_run
 description: >-
   write a new star.
 api_description: >-
-  Write a new star for a topic genuinely, substantively discussed in this thread — call search_stars first
-  and prefer update_star if a matching star already exists. category is free text (no fixed list) — reuse a
-  category already in use for the same general area rather than inventing a near-duplicate ("technology", not
-  a new "tech").
+  Write a new star capturing something genuinely learned about the person themselves in this thread — call
+  search_stars first and prefer update_star if a matching star already exists. category is free text (no fixed
+  list) — reuse a category already in use for the same general area rather than inventing a near-duplicate
+  ("technology", not a new "tech").
 
-  confidence_class is "obvious" for a fact/topic actually, substantively discussed, or "fuzzy" for real but
-  genuine uncertainty about it. is_personal marks a star as an inference about who the person IS (a taste, an
-  identity fact, a circumstance) rather than about a topic they discussed — "reads science fiction" is
-  personal, "Ender's Game and the science behind it" is not, even though liking the book says something about
-  them. Setting is_personal=true always starts the star as "proposed" regardless of confidence_class, no
-  exceptions — an inference about someone is a claim that deserves a human look before it's treated as
-  settled.
+  This library is personal-only: every star should be a fact about who the person IS — a taste, an identity
+  fact, a circumstance, a habit, how they use or want Polaris to behave — never a standalone topic explainer.
+  "Reads science fiction" is a star; "Ender's Game and the science behind it" is not, even though liking the
+  book says something about them. is_personal should be true on essentially every call.
 
-  The bar is "was this actually discussed with some substance" — not "is this dramatic enough to matter."
-  Most real exchanges about real topics should produce a star. Excluded: pure logistics, a single throwaway
-  reference with nothing said about it, ephemeral/time-bound content with no lasting relevance.
+  confidence_class is "obvious" for a fact/preference actually, substantively discussed, or "fuzzy" for real
+  but genuine uncertainty about it.
+
+  The bar is "did this conversation actually earn a fact about who they are" — not "was a topic discussed with
+  some substance." Excluded: pure topic/logistics discussion with nothing revealed about the person, a single
+  throwaway reference, ephemeral/time-bound content, and reporting where they currently are in something
+  ongoing (which chapter, which level, what day of a plan) with no lasting fact attached.

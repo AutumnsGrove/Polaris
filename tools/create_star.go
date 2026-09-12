@@ -36,7 +36,7 @@ var createStarDef = llm.ToolDef{
 				},
 				"is_personal": map[string]interface{}{
 					"type":        "boolean",
-					"description": "True only if this is an inference about who the person IS, not a topic they discussed. Always starts the star as proposed, regardless of confidence_class.",
+					"description": "True only if this is an inference about who the person IS, not a topic they discussed. Should be true for essentially every star this agent creates.",
 				},
 			},
 			"required": []string{"title", "category", "summary", "confidence_class"},
@@ -83,11 +83,7 @@ func handleCreateStar(argsJSON string, ctx *Context, callID string) string {
 		return emitToolError(ctx, "create_star", callArgs, "error: "+err.Error(), callID)
 	}
 
-	status := "auto"
-	if args.IsPersonal {
-		status = "proposed"
-	}
-	result := fmt.Sprintf("created star_id=%d, status=%s", id, status)
+	result := fmt.Sprintf("created star_id=%d, status=auto", id)
 
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "create_star", "result": result, "call_id": callID})
 	return result

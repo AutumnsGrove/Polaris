@@ -444,18 +444,21 @@ feel personal" in some vaguer sense. "Ender's Game and the science behind it" ch
 book, even though liking it says something about the person. "Reads science fiction" characterizes
 *them*. Same source material, different subject.
 
-**Status routing — deliberately strict to start:**
-- `create_star` with `is_personal = true` → **always `proposed`**, regardless of
-  `confidence_class`. No exceptions.
-- `update_star` with `is_personal = true` → **any update resets status back to `proposed`**, even
-  a pure reinforcement of an already-confirmed personal star. Chosen over a softer alternative
-  (only a meaningful revision re-triggers review) because the softer version needs the model to
-  self-judge "is this the same claim or a different one" — exactly the kind of judgment easiest to
-  get subtly wrong on identity-level content. This is a starting point, not permanent — expected to
-  soften once it's clear whether constant re-affirming is worth the friction; loosening it later
-  is a prompt change, not a schema change.
-- `confidence_class` is still recorded on a personal star (stated directly vs. inferred, shown on
-  the Star detail screen) even though it no longer drives routing once `is_personal` overrides it.
+**Status routing — softened after real usage (2026-09-12):** the original design forced every
+personal `create_star`/`update_star` through `proposed`, deliberately strict to start (see below).
+Live review over the first ~280-star backfill showed Weaver's personal-star writing was
+consistently accurate — the friction wasn't earning its keep — and the library itself pivoted to
+**personal-only extraction** (Weaver no longer writes topical/reference stars at all, only facts
+about the person), which would have meant literally every star hitting the gate. So:
+- `create_star`/`update_star` no longer force `status = 'proposed'` for `is_personal = true` —
+  personal stars are created/updated exactly like any other star (`status` as requested by the
+  caller, normally `'auto'`), same as this section originally said would happen "once it's clear
+  whether constant re-affirming is worth the friction."
+- `confidence_class` is still recorded on every personal star (stated directly vs. inferred, shown
+  on the Star detail screen); it just no longer needed a separate "it doesn't drive routing"
+  caveat, since nothing does anymore.
+- The Inbox/Review/Refine flow (below) still exists for the rare star a human wants to hand-correct
+  or reject — it just isn't the default path for new personal stars anymore.
 
 Everything else needs zero new design: `link_stars` works completely unmodified (a personal star
 can be the hub several topic stars connect to — "reads science fiction" linked to "Ender's Game

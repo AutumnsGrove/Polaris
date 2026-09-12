@@ -51,11 +51,7 @@ func (f *fakeStarStore) wireInto(ctx *Context, runID int64) {
 	ctx.WeaverCreateStar = func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool) (int64, error) {
 		f.nextID++
 		id := f.nextID
-		status := "auto"
-		if isPersonal {
-			status = "proposed"
-		}
-		f.stars[id] = store.Star{ID: id, Title: title, Category: category, Summary: summary, Body: body, Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: status}
+		f.stars[id] = store.Star{ID: id, Title: title, Category: category, Summary: summary, Body: body, Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: "auto"}
 		f.candidate = &struct {
 			runID           int64
 			title           string
@@ -72,9 +68,6 @@ func (f *fakeStarStore) wireInto(ctx *Context, runID int64) {
 			return store.ErrStarNotFound
 		}
 		s.Summary, s.Body, s.Tags, s.Confidence = summary, body, tags, confidenceClass
-		if isPersonal {
-			s.Status = "proposed"
-		}
 		f.stars[starID] = s
 		return nil
 	}
@@ -153,13 +146,13 @@ func TestCreateStar_WritesAndReturnsID(t *testing.T) {
 	}
 }
 
-func TestCreateStar_PersonalAlwaysProposed(t *testing.T) {
+func TestCreateStar_PersonalGoesStraightToAuto(t *testing.T) {
 	f := newFakeStarStore()
 	ctx := newWeaverTestContext(f)
 
-	handleCreateStar(`{"title":"Reads science fiction","category":"identity","summary":"Enjoys sci-fi","confidence_class":"obvious","is_personal":true}`, ctx, "call1")
-	if f.stars[1].Status != "proposed" {
-		t.Errorf("personal star Status = %q, want proposed regardless of confidence_class", f.stars[1].Status)
+	handleCreateStar(`{"title":"Reads science fiction","category":"literature","summary":"Enjoys sci-fi","confidence_class":"obvious","is_personal":true}`, ctx, "call1")
+	if f.stars[1].Status != "auto" {
+		t.Errorf("personal star Status = %q, want auto (no forced review gate)", f.stars[1].Status)
 	}
 }
 
@@ -187,14 +180,14 @@ func TestUpdateStar_MergesContent(t *testing.T) {
 	}
 }
 
-func TestUpdateStar_PersonalResetsToProposed(t *testing.T) {
+func TestUpdateStar_PersonalDoesNotResetStatus(t *testing.T) {
 	f := newFakeStarStore()
 	f.stars[1] = store.Star{ID: 1, Title: "Reads science fiction", Status: "confirmed", IsPersonal: true}
 	ctx := newWeaverTestContext(f)
 
 	handleUpdateStar(`{"star_id":1,"summary":"still true","is_personal":true}`, ctx, "call1")
-	if f.stars[1].Status != "proposed" {
-		t.Errorf("Status after updating a personal star = %q, want proposed even for a pure reinforcement", f.stars[1].Status)
+	if f.stars[1].Status != "confirmed" {
+		t.Errorf("Status after updating a personal star = %q, want confirmed unchanged (no forced review gate)", f.stars[1].Status)
 	}
 }
 

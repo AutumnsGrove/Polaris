@@ -34,7 +34,7 @@ var updateStarDef = llm.ToolDef{
 				},
 				"is_personal": map[string]interface{}{
 					"type":        "boolean",
-					"description": "True only if this star is an inference about who the person IS. Any update to a personal star resets its status back to proposed, even a pure reinforcement.",
+					"description": "True only if this star is an inference about who the person IS. Should be true for essentially every star this agent updates.",
 				},
 			},
 			"required": []string{"star_id", "summary"},
@@ -79,9 +79,6 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	result := "star updated"
-	if args.IsPersonal {
-		result = "star updated, status reset to proposed (personal star)"
-	}
 
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "update_star", "result": result, "call_id": callID})
 	return result

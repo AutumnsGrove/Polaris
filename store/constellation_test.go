@@ -120,11 +120,11 @@ func TestStar_NilTagsEncodeAsEmptyArrayNotNull(t *testing.T) {
 	}
 }
 
-func TestStar_PersonalCreateAndUpdateForceProposed(t *testing.T) {
+func TestStar_PersonalCreateAndUpdateDoNotForceProposed(t *testing.T) {
 	s := openTestStore(t)
 
 	id, err := s.CreateStar(Star{
-		Title: "Reads science fiction", Category: "identity", Summary: "Enjoys sci-fi",
+		Title: "Reads science fiction", Category: "literature", Summary: "Enjoys sci-fi",
 		Status: "auto", IsPersonal: true,
 	})
 	if err != nil {
@@ -134,12 +134,12 @@ func TestStar_PersonalCreateAndUpdateForceProposed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStar: %v", err)
 	}
-	if got.Status != "proposed" {
-		t.Errorf("personal star Status = %q, want proposed regardless of requested status", got.Status)
+	if got.Status != "auto" {
+		t.Errorf("personal star Status = %q, want auto (matching the requested status, no forced review gate)", got.Status)
 	}
 
-	// Confirm it, then update it — even a pure reinforcement must reset
-	// status back to proposed for a personal star.
+	// Confirm it, then update it — a personal update must not silently
+	// bounce a confirmed star back into the review queue.
 	if err := s.SetStarStatus(id, "confirmed"); err != nil {
 		t.Fatalf("SetStarStatus: %v", err)
 	}
@@ -150,8 +150,8 @@ func TestStar_PersonalCreateAndUpdateForceProposed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStar (after update): %v", err)
 	}
-	if got.Status != "proposed" {
-		t.Errorf("updating a personal star Status = %q, want proposed again after update", got.Status)
+	if got.Status != "confirmed" {
+		t.Errorf("updating a personal star Status = %q, want confirmed unchanged", got.Status)
 	}
 }
 

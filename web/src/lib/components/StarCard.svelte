@@ -2,6 +2,7 @@
 	import { ChevronRight } from '@lucide/svelte';
 	import type { Star } from '$lib/types';
 	import { iconForCategory } from '$lib/categoryIcons';
+	import { colorForCategory } from '$lib/categoryColors';
 
 	let {
 		star,
@@ -16,11 +17,13 @@
 		onclick: () => void;
 	} = $props();
 
-	// Always the category's own themed icon, even for a personal star —
-	// category now describes the star's subject domain either way (see
-	// weaver.system's category rules), and the "Personal" badge below
-	// already marks the is_personal distinction on its own.
 	const Icon = $derived(iconForCategory(star.category));
+	// No more is_personal-driven styling or badge — every star is personal
+	// now (see prompts.yaml's weaver.system), so that flag stopped being a
+	// useful visual distinction. Color now signals category instead, via
+	// categoryColors.ts — a category outside the fixed list still falls back
+	// to the same violet the old "Personal" treatment used.
+	const starColor = $derived(colorForCategory(star.category));
 
 	const relativeTime = $derived(formatRelative(star.updated_at));
 
@@ -38,7 +41,7 @@
 
 <div
 	class="star-card"
-	class:personal={star.is_personal}
+	style="--star-color: {starColor}"
 	{onclick}
 	onkeydown={(e) => e.key === 'Enter' && onclick()}
 	role="button"
@@ -50,9 +53,7 @@
 	<div class="card-main">
 		<div class="card-top">
 			<span class="card-title">{star.title}</span>
-			{#if star.is_personal}
-				<span class="badge-personal">Personal</span>
-			{:else if !reason}
+			{#if !reason}
 				<span class="card-time">{relativeTime}</span>
 			{/if}
 		</div>
@@ -73,7 +74,9 @@
 		padding: var(--space-md);
 		border-radius: var(--radius-lg);
 		background: var(--color-surface);
-		border: 1px solid var(--color-border);
+		/* --star-color is set inline per-card from categoryColors.ts, so
+		   every card's border tints toward its own category's color. */
+		border: 1px solid color-mix(in srgb, var(--star-color) 32%, var(--color-border));
 		cursor: pointer;
 		text-align: left;
 		transition:
@@ -94,15 +97,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: var(--color-accent-soft);
-		color: var(--color-accent);
-	}
-	.star-card.personal .tile {
-		background: color-mix(in srgb, var(--color-personal) 16%, transparent);
-		color: var(--color-personal);
-	}
-	.star-card.personal {
-		border-color: color-mix(in srgb, var(--color-personal) 32%, var(--color-border));
+		background: color-mix(in srgb, var(--star-color) 16%, transparent);
+		color: var(--star-color);
 	}
 
 	.card-main {
@@ -125,15 +121,6 @@
 	.card-time {
 		font-size: 11px;
 		color: var(--color-text-dim);
-		flex-shrink: 0;
-	}
-	.badge-personal {
-		font-size: 10px;
-		font-weight: 600;
-		padding: 2px var(--space-sm);
-		border-radius: var(--radius-full);
-		background: color-mix(in srgb, var(--color-personal) 18%, transparent);
-		color: var(--color-personal);
 		flex-shrink: 0;
 	}
 	.card-sub {

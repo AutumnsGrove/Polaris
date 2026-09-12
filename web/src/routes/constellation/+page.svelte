@@ -6,6 +6,7 @@
 	import { appState } from '$lib/state.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
 	import { layoutStars, type LayoutNode } from '$lib/constellationLayout';
+	import { colorForCategory } from '$lib/categoryColors';
 	import StarCard from '$lib/components/StarCard.svelte';
 	import ConstellationSettingsModal from '$lib/components/ConstellationSettingsModal.svelte';
 	import {
@@ -83,9 +84,18 @@
 		}
 	});
 
+	// Personal and topical stars are grouped into the same per-category
+	// sections — each StarCard now colors itself by category (see
+	// categoryColors.ts), not by is_personal, so a category section can
+	// freely mix both without losing anything. A dedicated flat "About you"
+	// bucket made sense when personal stars were a small minority of the
+	// library; it stopped scaling once Weaver became personal-only
+	// extraction and every star became is_personal — at that point a single
+	// undifferentiated bucket is strictly worse than the category sections
+	// topical stars always got.
 	const byCategory = $derived.by(() => {
 		const groups = new Map<string, Star[]>();
-		for (const star of constellationState.libraryStars) {
+		for (const star of [...constellationState.libraryStars, ...constellationState.aboutYouStars]) {
 			const list = groups.get(star.category) ?? [];
 			list.push(star);
 			groups.set(star.category, list);
@@ -302,17 +312,6 @@
 				</details>
 			{/each}
 
-			{#if constellationState.aboutYouStars.length > 0}
-				<details class="section" open>
-					<summary class="section-header">About you</summary>
-					<div class="card-list">
-						{#each constellationState.aboutYouStars as star (star.id)}
-							<StarCard {star} onclick={() => goto(`/constellation/star/${star.id}`)} />
-						{/each}
-					</div>
-				</details>
-			{/if}
-
 			{#if constellationState.rejectedStars.length > 0}
 				<details class="section">
 					<summary class="section-header">Rejected</summary>
@@ -361,7 +360,7 @@
 								y1={a.y}
 								x2={b.x}
 								y2={b.y}
-								class:personal={a.star.is_personal || b.star.is_personal}
+								style="--star-color: {colorForCategory(a.star.category)}"
 							/>
 						{/if}
 					{/each}
@@ -379,9 +378,10 @@
 				{#each mapLayout.nodes as node (node.id)}
 					<button
 						class="map-node"
-						class:personal={node.star.is_personal}
 						class:selected={node.id === selectedStarId}
-						style="left: {node.x}px; top: {node.y}px;"
+						style="left: {node.x}px; top: {node.y}px; --star-color: {colorForCategory(
+							node.star.category
+						)}"
 						onclick={(event) => handleStarClick(node, event)}
 						aria-label={node.star.title}
 					>
@@ -646,12 +646,9 @@
 		pointer-events: none;
 	}
 	.lines line {
-		stroke: var(--color-accent-2);
+		stroke: var(--star-color);
 		stroke-width: 1;
 		opacity: 0.35;
-	}
-	.lines line.personal {
-		stroke: var(--color-personal);
 	}
 	.cluster-label {
 		position: absolute;
@@ -692,23 +689,14 @@
 		width: 11px;
 		height: 11px;
 		border-radius: var(--radius-full);
-		background: var(--color-accent);
-		box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
+		background: var(--star-color);
+		box-shadow: 0 0 10px 2px color-mix(in srgb, var(--star-color) 45%, transparent);
 		flex-shrink: 0;
-	}
-	.map-node.personal .dot {
-		background: var(--color-personal);
-		box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-personal) 45%, transparent);
 	}
 	.map-node.selected .dot {
 		box-shadow:
 			0 0 0 3px var(--color-bg),
-			0 0 0 5px var(--color-accent);
-	}
-	.map-node.personal.selected .dot {
-		box-shadow:
-			0 0 0 3px var(--color-bg),
-			0 0 0 5px var(--color-personal);
+			0 0 0 5px var(--star-color);
 	}
 	/* star-label-chip: the one title the map ever shows text for at a time
 	   — see handleStarClick's doc comment. Tapping it (same as tapping the

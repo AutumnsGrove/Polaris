@@ -97,9 +97,14 @@ type Star struct {
 	Reasoning string `json:"reasoning,omitempty"`
 }
 
-// CreateStar writes a new stars row. A personal star always starts
-// 'proposed' regardless of the requested Status — see the plan doc's
-// "Personal stars" status-routing rules, "no exceptions".
+// CreateStar writes a new stars row, using whatever Status the caller
+// requests. Personal stars no longer get a forced 'proposed' override —
+// see the plan doc's "Personal stars" section: that gate was a deliberate
+// starting-point restriction, expected to soften once real usage showed
+// whether the extra review friction was worth it. It wasn't (Weaver-written
+// personal stars proved reliably well-written in practice), and the library
+// pivoted to personal-only extraction, so treating every star as needing
+// human review defeated the point of trusting it.
 func (s *Store) CreateStar(star Star) (int64, error) {
 	if star.Tags == nil {
 		// json.Marshal(nil slice) encodes "null", not "[]" — every reader
@@ -114,9 +119,6 @@ func (s *Store) CreateStar(star Star) (int64, error) {
 	}
 	status := star.Status
 	if status == "" {
-		status = "proposed"
-	}
-	if star.IsPersonal {
 		status = "proposed"
 	}
 	res, err := s.db.Exec(
@@ -159,10 +161,11 @@ func (s *Store) GetStar(id int64) (*Star, error) {
 
 // UpdateStar merges into an existing star (rewrite to read as one coherent,
 // current entry, never append — Weaver's own job, this just persists it).
-// isPersonal resets status back to 'proposed' on any update, even a pure
-// reinforcement — see the plan doc's "Personal stars" for why this is
-// deliberately strict rather than trying to self-judge "is this the same
-// claim or a different one".
+// Content updates never touch status (personal or not) — see CreateStar's
+// doc comment: the old isPersonal-forces-'proposed' gate was retired once
+// the library pivoted to personal-only extraction, since forcing every
+// single update back through human review defeated the point of trusting
+// Weaver's personal-star writing, which real usage showed was reliable.
 func (s *Store) UpdateStar(id int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
 	if tags == nil {
 		// See CreateStar's identical guard — json.Marshal(nil) encodes
@@ -175,9 +178,6 @@ func (s *Store) UpdateStar(id int64, summary, body string, tags []string, confid
 	}
 	query := `UPDATE stars SET summary = ?, body = ?, tags = ?, confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
 	args := []any{summary, body, string(tagsJSON), confidenceClass, id}
-	if isPersonal {
-		query = `UPDATE stars SET summary = ?, body = ?, tags = ?, confidence = ?, status = 'proposed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-	}
 	if _, err := s.db.Exec(query, args...); err != nil {
 		return fmt.Errorf("update star: %w", err)
 	}

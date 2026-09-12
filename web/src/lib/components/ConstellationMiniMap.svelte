@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { Star, StarEdge } from '$lib/types';
+	import { colorForCategory } from '$lib/categoryColors';
 
 	// ConstellationMiniMap is the Star detail screen's "Nearby in the
 	// constellation" panel. Deliberately NOT the full Map's force-directed
@@ -73,9 +74,10 @@
 			{#each rows as star, i (star.id)}
 				<button
 					class="node"
-					class:personal={star.is_personal}
 					style="left: {NEIGHBOR_X - NEIGHBOR_DOT_RADIUS}px; top: {TOP_PAD +
-						i * ROW_HEIGHT}px; max-width: {labelMaxWidth}px;"
+						i * ROW_HEIGHT}px; max-width: {labelMaxWidth}px; --star-color: {colorForCategory(
+						star.category
+					)}"
 					onclick={() => goto(`/constellation/star/${star.id}`)}
 				>
 					<span class="dot"></span>
@@ -154,13 +156,9 @@
 		width: 8px;
 		height: 8px;
 		border-radius: var(--radius-full);
-		background: var(--color-accent-2);
-		box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-accent-2) 45%, transparent);
+		background: var(--star-color);
+		box-shadow: 0 0 7px 1px color-mix(in srgb, var(--star-color) 45%, transparent);
 		flex-shrink: 0;
-	}
-	.node.personal .dot {
-		background: var(--color-personal);
-		box-shadow: 0 0 7px 1px color-mix(in srgb, var(--color-personal) 45%, transparent);
 	}
 	.node .label {
 		flex: 1;
