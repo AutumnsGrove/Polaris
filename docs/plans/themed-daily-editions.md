@@ -3,7 +3,8 @@
 **Status: designed, not yet implemented.** Answers issue #37's design questions (how a
 day-specific template is configured, scheduled, and rendered) with concrete decisions against the
 real Stage A-D pipeline in `gateway/pulsar_daily.go`. A mockup of the alternate layout lives at
-`mockups/daily-special-edition.html`.
+`mockups/daily-special-edition.html`. Confirmed in a live discussion: single special day for v1
+(not a list), and a hybrid topic-source model — see "Topic source: hybrid" below.
 
 ## Scope for v1: one special day, not a general templating system
 
@@ -16,18 +17,47 @@ follows the same restraint CLAUDE.md's own conventions favor elsewhere in this c
 
 ## Configured
 
-Three new fields on `store.PulsarDailyConfig` (`store/pulsar_daily.go:20`), same shape as the
+Five new fields on `store.PulsarDailyConfig` (`store/pulsar_daily.go:20`), same shape as the
 existing `WeatherLocation`/`CustomBlocks` fields:
 
 ```go
 SpecialEditionEnabled bool          `json:"special_edition_enabled"`
 SpecialEditionWeekday time.Weekday  `json:"special_edition_weekday"` // 0=Sunday..6=Saturday; meaningless if !Enabled
 SpecialEditionTopic   string        `json:"special_edition_topic"`   // free-text deep-dive steer, same "no fixed key" shape as PulsarDailyCustomBlock.Instructions
+// StaleNote/StaleSuggestion are set by flag_topic_staleness (see "Topic
+// source: hybrid" below) — a Weaver-review-style suggestion sitting
+// beside the topic, not inside it. Both nil/empty in the normal case.
+SpecialEditionStaleNote       *string `json:"special_edition_stale_note,omitempty"`
+SpecialEditionStaleSuggestion *string `json:"special_edition_stale_suggestion,omitempty"`
 ```
 
 Settings surface: one new section in `PulsarDailyConfigModal.svelte`, alongside the existing
 enabled-blocks/custom-blocks editor — a toggle, a weekday picker, and a text area for the topic
-steer. No new route or standalone settings page.
+steer. When `StaleNote` is set, the same section shows a dismissible suggestion banner (the note
+plus the suggested replacement, with "Use this topic" / "Keep current topic" actions) rather than
+a second, separate UI surface. No new route or standalone settings page.
+
+## Topic source: hybrid — fixed by default, model can flag staleness
+
+Considered three shapes for where the weekly topic comes from: fully fixed (you write it once,
+never changes), fully model-chosen (you just enable the feature, the model picks something new
+each week), or a rotating list you maintain. Landed on a fourth, hybrid option instead: **the
+topic stays fixed and under your control** (predictable, and there's somewhere to steer it if the
+model picks something dull), **but the model can flag when it's run dry** rather than silently
+producing a thinner and thinner deep-dive on an exhausted topic — direction stays yours, the model
+just surfaces when it's worth reconsidering.
+
+Mechanically: `runSpecialDailyPipeline`'s agent run gets one additional optional tool,
+`flag_topic_staleness` (`reason`, `suggested_replacement`) — same "force structured output through
+a tool call instead of parseable prose" pattern this codebase already uses for
+`finalize_daily_items.go`/`finalize_pulsar_prompt.go`, so a staleness flag never leaks into the
+actual rendered feature content the way an inline aside would. Called only when the model judges
+the topic genuinely exhausted (e.g. "this is the fourth week straight covering the same narrow
+angle with nothing new to add"), not as a routine check-in every week. A call writes
+`SpecialEditionStaleNote`/`SpecialEditionStaleSuggestion`, surfaced as the settings-panel banner
+above; it does **not** auto-switch the topic — that would hand direction to the model despite the
+whole point of keeping this fixed-by-default. The fields clear once the banner's dismissed or a
+new topic is saved.
 
 ## Scheduled
 
@@ -59,6 +89,9 @@ already use for research (`dailyBlockResearch`'s narrow-toolset `agent.Run`), ju
 - **`cfgRow.SpecialEditionTopic` verbatim as the task**, same "no fixed key, entire task is
   user-authored text" shape `dailyBlockCustom` already uses for `CustomBlocks` — no new prompt
   template needed, just a longer-leash agent run over the same free-text-instruction mechanism.
+- **`flag_topic_staleness` offered alongside the normal toolset**, restricted to this run the same
+  way Weaver's five tools are restricted to `weaver_run` (`tools/registry.go`'s `requires` gating)
+  — see "Topic source: hybrid" above.
 - **No Stage B/C** (Top Story election/elaboration) — there's only one piece of content; it *is*
   the day's story, nothing to rank it against.
 - **No diff-judge against literal "yesterday"** — comparing a Sunday special to Saturday's
@@ -84,11 +117,14 @@ not just its presentation.
 
 ## Open items for implementation
 
-- Real migration: `special_edition_enabled`/`special_edition_weekday`/`special_edition_topic`
-  columns on the daily-config table, `kind` column (with a backfill default of `"standard"` for
-  every existing row) on `pulsar_daily_editions`.
+- Real migration: `special_edition_enabled`/`special_edition_weekday`/`special_edition_topic`/
+  `special_edition_stale_note`/`special_edition_stale_suggestion` columns on the daily-config
+  table, `kind` column (with a backfill default of `"standard"` for every existing row) on
+  `pulsar_daily_editions`.
 - `runSpecialDailyPipeline`'s own function, plus its prompt tuning (how much steering beyond the
-  raw topic text it needs) — not written yet.
+  raw topic text it needs, and how conservative `flag_topic_staleness`' calling criteria should be
+  — a tool that fires too eagerly is just noise in the settings panel) — not written yet.
+- `tools/flag_topic_staleness.go` + `tools/descriptions/flag_topic_staleness.yaml` — not written.
 - The "compare against last special edition, not yesterday" anti-repeat logic — explicitly
   deferred above, not required for a v1 ship.
 - `SpecialEditionView.svelte` — new component, not started.
