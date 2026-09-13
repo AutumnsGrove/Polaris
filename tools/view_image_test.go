@@ -4,8 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"polaris/search"
 )
 
 // fakeImageServer serves a tiny fixed byte payload with an image Content-Type
@@ -43,6 +46,37 @@ func TestHandleViewImage_CardIndexOutOfRange(t *testing.T) {
 	result := handleViewImage(`{"card_index":5}`, ctx, "call-1")
 	if !strings.Contains(result, "out of range") {
 		t.Errorf("result = %q, want an out-of-range error", result)
+	}
+}
+
+func TestHandleViewImage_BlockedSourceRejectedWithoutFetching(t *testing.T) {
+	fetched := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetched = true
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("fake-png-bytes"))
+	}))
+	t.Cleanup(srv.Close)
+
+	parsedURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parsing test server URL: %v", err)
+	}
+	bl, err := search.LoadBlocklist(writeBlocklistFile(t, parsedURL.Hostname()+"\n"))
+	if err != nil {
+		t.Fatalf("LoadBlocklist returned error: %v", err)
+	}
+
+	ctx := newTestContext()
+	ctx.Blocklist = bl
+	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+
+	result := handleViewImage(`{"card_index":1}`, ctx, "call-1")
+	if !strings.Contains(result, "blocked") {
+		t.Errorf("result = %q, want a blocked-source error", result)
+	}
+	if fetched {
+		t.Error("handleViewImage fetched a blocklisted image URL instead of rejecting it up front")
 	}
 }
 

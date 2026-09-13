@@ -141,6 +141,17 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
 			fmt.Sprintf("error: card %d has no image to view", args.CardIndex), callID)
 	}
+	if ctx.Blocklist.Blocked(imageURL) {
+		// Same check web_read.go applies before fetching any model-directed
+		// URL — a card's image can come from anywhere a search engine
+		// indexed, including a source the operator has explicitly
+		// blocklisted, and view_image fetching it anyway (then describing
+		// it or inserting it straight into the live conversation in "see"
+		// mode) would silently bypass that policy for this one path while
+		// web_read still enforces it for the same domain.
+		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
+			"error: this image's source is blocked and cannot be viewed", callID)
+	}
 
 	data, mimeType, err := fetchImageBytes(ctx.Ctx, imageURL)
 	if err != nil {
