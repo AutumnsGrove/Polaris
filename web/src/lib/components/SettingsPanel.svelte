@@ -89,37 +89,63 @@
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 			</div>
 
-			{#if appState.settings.usage}
-				<section>
-					<h3>Last 30 days</h3>
-					<div class="row">
-						<span>Cost</span>
-						<span>${appState.settings.usage.period_cost_usd.toFixed(2)}</span>
-					</div>
-					<div class="row cost-by-source-row">
-						<span>Polaris / Pulsar / Daily</span>
-						<span
-							>${appState.settings.usage.cost_by_source.polaris.period_cost_usd.toFixed(2)} / ${appState.settings.usage.cost_by_source.pulsar.period_cost_usd.toFixed(
+			<!-- Same usage-big-cost/usage-section-label/usage-stat-group/
+			     usage-stat-row visual language as ConstellationUsageModal —
+			     shared in app.css so both panels look the same even though
+			     every number here is Polaris's own, not Constellation's. -->
+			{#if !appState.settings.usageLoaded}
+				<p class="usage-empty">Loading…</p>
+			{:else if appState.settings.usageError || !appState.settings.usage}
+				<p class="usage-empty">Couldn't load usage stats — check your connection and try again.</p>
+			{:else}
+				{@const usage = appState.settings.usage}
+				<div class="usage-big-cost">
+					<div class="amount">${usage.period_cost_usd.toFixed(2)}</div>
+					<div class="caption">last 30 days &middot; ${usage.total_cost_usd.toFixed(2)} all-time</div>
+				</div>
+
+				<div class="usage-section-label">Cost by source</div>
+				<div class="usage-stat-group">
+					<div class="usage-stat-row">
+						<span class="label">Polaris</span>
+						<span class="value"
+							>${usage.cost_by_source.polaris.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.polaris.total_cost_usd.toFixed(
 								2
-							)} / ${appState.settings.usage.cost_by_source.daily.period_cost_usd.toFixed(2)}</span
+							)}</span
 						>
 					</div>
-					<div class="row">
-						<span>Threads / turns</span>
-						<span>{appState.settings.usage.thread_count} / {appState.settings.usage.turn_count}</span>
+					<div class="usage-stat-row">
+						<span class="label">Pulsar</span>
+						<span class="value"
+							>${usage.cost_by_source.pulsar.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.pulsar.total_cost_usd.toFixed(
+								2
+							)}</span
+						>
 					</div>
-					<div class="row">
-						<span>Tool calls</span>
-						<span>{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
+					<div class="usage-stat-row">
+						<span class="label">Daily</span>
+						<span class="value"
+							>${usage.cost_by_source.daily.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.daily.total_cost_usd.toFixed(
+								2
+							)}</span
+						>
 					</div>
-					<div class="row">
-						<span>Ran out of turn budget</span>
-						<span>{appState.settings.usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
+				</div>
+
+				<div class="usage-section-label">Activity</div>
+				<div class="usage-stat-group">
+					<div class="usage-stat-row">
+						<span class="label">Threads / turns</span>
+						<span class="value">{usage.thread_count} / {usage.turn_count}</span>
+					</div>
+					<div class="usage-stat-row">
+						<span class="label">Tool calls</span>
+						<span class="value">{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
 					</div>
 					{#if searchProviderCounts.length > 0}
-						<div class="row">
-							<span>web_search providers</span>
-							<span
+						<div class="usage-stat-row">
+							<span class="label">web_search providers</span>
+							<span class="value"
 								>{searchProviderCounts
 									.map(([provider, count]) => `${providerLabels[provider] ?? provider}: ${count}`)
 									.join(', ')}</span
@@ -127,43 +153,41 @@
 						</div>
 					{/if}
 					{#if chartKindCounts.length > 0}
-						<div class="row">
-							<span>visualize chart kinds</span>
-							<span>{chartKindCounts.map(([kind, count]) => `${kind}: ${count}`).join(', ')}</span>
+						<div class="usage-stat-row">
+							<span class="label">visualize chart kinds</span>
+							<span class="value">{chartKindCounts.map(([kind, count]) => `${kind}: ${count}`).join(', ')}</span>
 						</div>
 					{/if}
-					<div class="row">
-						<span>Check-in nudges</span>
-						<span>{appState.settings.usage.check_in_count}</span>
+				</div>
+
+				<div class="usage-section-label">Health</div>
+				<div class="usage-stat-group">
+					<div class="usage-stat-row warn">
+						<span class="label">Ran out of turn budget</span>
+						<span class="value">{usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
 					</div>
-					<div class="row">
-						<span>Stale-streak warnings</span>
-						<span>{appState.settings.usage.stale_streak_count}</span>
+					<div class="usage-stat-row">
+						<span class="label">Check-in nudges</span>
+						<span class="value">{usage.check_in_count}</span>
 					</div>
-					<div class="row">
-						<span>Auto-compactions</span>
-						<span>{appState.settings.usage.compaction_count}</span>
+					<div class="usage-stat-row">
+						<span class="label">Stale-streak warnings</span>
+						<span class="value">{usage.stale_streak_count}</span>
 					</div>
-					<p class="hint">
-						All-time cost: ${appState.settings.usage.total_cost_usd.toFixed(2)} (Polaris ${appState.settings.usage.cost_by_source.polaris.total_cost_usd.toFixed(
-							2
-						)} / Pulsar ${appState.settings.usage.cost_by_source.pulsar.total_cost_usd.toFixed(
-							2
-						)} / Daily ${appState.settings.usage.cost_by_source.daily.total_cost_usd.toFixed(2)}).
-						Run <code>polaris stats</code> for the full per-tool breakdown.
-					</p>
-					<!-- Constellation's own spend is deliberately not folded into
-					     the totals above — a separate surface, own data fetch, own
-					     panel (see docs/plans/constellation.md's "Cost tracking and
-					     observability"). This is just a nav shortcut into it. -->
-					<button class="constellation-usage-link" onclick={() => (showConstellationUsage = true)}>
-						&rarr; Constellation usage
-					</button>
-				</section>
-			{:else}
-				<section>
-					<p class="hint">Loading…</p>
-				</section>
+					<div class="usage-stat-row">
+						<span class="label">Auto-compactions</span>
+						<span class="value">{usage.compaction_count}</span>
+					</div>
+				</div>
+
+				<p class="hint">Run <code>polaris stats</code> for the full per-tool breakdown.</p>
+				<!-- Constellation's own spend is deliberately not folded into
+				     the totals above — a separate surface, own data fetch, own
+				     panel (see docs/plans/constellation.md's "Cost tracking and
+				     observability"). This is just a nav shortcut into it. -->
+				<button class="constellation-usage-link" onclick={() => (showConstellationUsage = true)}>
+					&rarr; Constellation usage
+				</button>
 			{/if}
 		{:else if showMemoryImport}
 			<div class="modal-panel-header">
@@ -456,7 +480,9 @@
 	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —
 	   shared with ComposerMenu.svelte, one popup treatment (including the
 	   mobile bottom-sheet behavior) for the whole app instead of two
-	   copies to keep in sync by hand. */
+	   copies to keep in sync by hand. Same for .usage-big-cost/
+	   .usage-section-label/.usage-stat-group/.usage-stat-row, shared with
+	   ConstellationUsageModal.svelte's own Usage section. */
 
 	/* Whitespace does the separating instead of a rule line — a wider gap
 	   between sections reads as more considered than a hairline, and pairs
@@ -498,12 +524,11 @@
 		font-size: 14px;
 	}
 
-	/* Reads as a sub-breakdown of the "Cost" row directly above it, not a
-	   separate metric of its own. */
-	.cost-by-source-row {
-		margin-top: calc(-1 * var(--space-sm) + 2px);
-		font-size: 12px;
+	.usage-empty {
+		text-align: center;
+		font-size: 13.5px;
 		color: var(--color-text-dim);
+		padding: var(--space-2xl) 0;
 	}
 
 	/* Dims the rest of a section (everything below its own on/off row)

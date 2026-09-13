@@ -622,6 +622,84 @@ a {
 	letter-spacing: -0.005em;
 }
 
+/* usage-* — the shared visual language for a "usage stats" section: a big
+   headline cost figure, then grouped stat rows in bordered boxes. Extracted
+   from ConstellationUsageModal.svelte so the main Settings panel's own
+   Usage section (SettingsPanel.svelte) can look the same way, even though
+   each pulls entirely different numbers — same reasoning .modal-backdrop/
+   .modal-panel above already follow, one visual treatment kept in one
+   place instead of two copies to keep in sync by hand. Namespaced (rather
+   than plain .section-label/.stat-row) so it can't collide with an
+   unrelated component's own identically-named scoped styles. */
+.usage-big-cost {
+	text-align: center;
+	padding: var(--space-lg) 0 var(--space-xs);
+}
+
+.usage-big-cost .amount {
+	font-family: var(--font-wordmark);
+	font-size: 32px;
+	color: var(--color-accent);
+}
+
+.usage-big-cost .caption {
+	font-size: 12px;
+	color: var(--color-text-dim);
+	margin-top: var(--space-xs);
+}
+
+.usage-section-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-dim);
+	padding: 0 var(--space-xs) var(--space-sm);
+	margin-top: var(--space-lg);
+}
+
+.usage-section-label:first-of-type {
+	margin-top: 0;
+}
+
+.usage-stat-group {
+	border-radius: var(--radius-lg);
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	overflow: hidden;
+}
+
+.usage-stat-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-md);
+	padding: var(--space-sm) var(--space-lg);
+	border-bottom: 1px solid var(--color-border);
+	font-size: 13px;
+}
+
+.usage-stat-row:last-child {
+	border-bottom: none;
+}
+
+.usage-stat-row .label {
+	color: var(--color-text-dim);
+}
+
+.usage-stat-row .value {
+	font-weight: 600;
+	text-align: right;
+}
+
+.usage-stat-row.warn .value {
+	color: var(--color-accent-2);
+}
+
+.usage-stat-row.attention .label {
+	color: var(--color-accent-2);
+}
+
 @media (max-width: 768px) {
 	.modal-backdrop {
 		align-items: flex-end;

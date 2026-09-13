@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./CQ4lqvO-.js";import"./xihTtKlq.js";import{t as n}from"./C0S_i8R3.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s={name:`panel-left`,size:24,node:[[`rect`,{width:`18`,height:`18`,x:`3`,y:`3`,rx:`2`}],[`path`,{d:`M9 3v18`}]],aliases:[`sidebar`]};n(i,t(()=>o,{get icon(){return s}}))}export{i as t};
