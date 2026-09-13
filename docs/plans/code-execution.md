@@ -152,6 +152,14 @@ set allowed. One-time build cost for the broader set: **~8 minutes** on the pota
 resolving + downloading prebuilt aarch64 wheels for all eight packages) — paid once when the image
 is built/rebuilt, not per execution.
 
+**Two more formats worth accounting for, surfaced by the fetch-tool design** (see
+`docs/plans/fetch-and-workspace-tools.md`): SQLite databases need no addition at all — Python's
+`sqlite3` is stdlib, always present regardless of the package set decided above. Parquet needs
+**`pyarrow`** added to the image — not yet in the measured eight-package set, but the same "free
+until imported" logic applies, so it should be added alongside the others rather than treated as a
+separate decision. ("Datasette" isn't a distinct file format worth its own handling — a Datasette
+export is SQLite or JSON underneath, both already covered.)
+
 ## Deployment scope: Docker-only feature
 
 Bare-metal installs have no container boundary at all for arbitrary code — running generated code
@@ -181,10 +189,60 @@ clear "code execution requires a Docker install" message instead of running anyt
   machinery (`gateway`'s attachments dir + `store.Store.SetMessageAttachment`) rather than a new
   storage path — save the returned image bytes as an attachment on the current message, render it
   the same way a user-uploaded image renders today.
-- **Concurrency**: one execution at a time. There's no memory headroom on this box for concurrent
-  sandbox containers regardless of which library set the real test allows — a second `code_exec`
-  call while one is in flight should queue or return a "busy" tool error rather than attempt to run
-  alongside the first.
+- **Concurrency**: one *execution* at a time, globally, regardless of thread — there's no memory
+  headroom on this box for two scripts actually running simultaneously, whichever threads they
+  belong to. This is unrelated to (and doesn't block) the per-thread workspace persistence below —
+  it only limits how many scripts can be *running* at once, not how many threads can *have* a
+  workspace. A second `code_exec` call while one is in flight should queue or return a "busy" tool
+  error rather than attempt to run alongside the first.
+
+## File persistence: per-thread workspace, ephemeral containers (settled 2026-09-13)
+
+Revised after discussing this doc directly: the container-per-execution model above is right for
+*compute* (each `code_exec` call gets a fresh, thrown-away container — nothing about a Python
+process's imports or variables needs to survive between calls, matching how Claude.ai's own code
+interpreter behaves: a script that needs Pillow re-imports it fresh every time), but it's wrong for
+*files* if left unqualified. The motivating case: turn 1 downloads a dataset and answers one
+question about it; turn 10 asks a follow-up. Throwing the container away after turn 1 would mean
+turn 10 has to re-download the same file — a real regression from how Claude.ai/ChatGPT's own code
+interpreters behave, where a chat's files persist for the life of that chat.
+
+**The resolved design**: every `code_exec` call stays a plain, fresh `docker run --rm` container
+(no change from the design above) — but it's *always* bind-mounted to the same persistent,
+host-side directory for that thread: `<workspace_root>/<thread_id>/`, next to `cfg.Attachments.Dir`
+in the existing data layout (same UUID-per-entity convention already used there). A file fetched or
+generated on turn 1 is just a file sitting in that directory; turn 10's call mounts the identical
+directory and finds it already there. No re-download, no lost work, and no new container-lifecycle
+machinery to build — persistence lives entirely in the directory, not in keeping any container
+object alive. The tradeoff accepted deliberately: every call still pays the ~2s container-start
+cost measured earlier, even for a thread that's been active for the last five minutes. **Future,
+if that latency is ever actually a problem in practice**: a warmer path exists (keep one container
+per actively-in-use thread running, `docker exec` into it instead of `docker run`-ing a new one,
+stopping it after some idle window) — not built now, since it adds real lifecycle bookkeeping for a
+latency cost nobody has reported minding yet.
+
+**Uploaded attachments join the same workspace.** This supersedes `AttachmentData`'s current
+behavior (see `tools/read_attachment.go`'s doc comment): today an uploaded PDF's bytes live only in
+memory for the single turn it was uploaded on, never touching disk, gone the moment that turn ends.
+Once a durable per-thread workspace exists for fetched files anyway, keeping uploads as the one
+exception that *doesn't* persist stops being a deliberate safety choice and starts being an
+inconsistency — an uploaded PDF should land in the same `<workspace_root>/<thread_id>/` directory
+a fetched one would, so `read_attachment` can page through it on turn 10 exactly like a fetched
+file, not just the turn it arrived on. See `docs/plans/fetch-and-workspace-tools.md` for how this
+changes `read_attachment`'s own gating.
+
+**Storage growth, and why it isn't an urgent problem**: the potato has 205GB free (measured
+2026-09-13) against workspace files that are realistically small (datasets, a PDF, a generated
+chart) — there's no pressure to build a cleanup mechanism now. **If storage ever does become a real
+concern**, the cheap fix is a periodic sweep that deletes a thread's workspace directory after some
+long inactivity window (30 days was the number discussed) — deliberately *not* paired with any
+proactive "your files were cleared" notice injected into the thread. The simpler version: do
+nothing special at flush time, and let the natural tool-error path handle it — `code_exec` or
+`read_attachment` trying to reach a file that's gone just returns an ordinary "file not found, it
+may have expired after a period of inactivity — re-fetch if needed" error, the same shape every
+other tool failure in this codebase already surfaces to the model. No last-active-timestamp
+tracking, no special first-message-after-flush detection required. Not building either version
+now — noting it here so it isn't forgotten if disk usage ever actually needs attention.
 
 ## Follow-on: #44, code-generated charts
 
