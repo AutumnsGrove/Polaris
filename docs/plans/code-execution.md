@@ -15,11 +15,11 @@ untrusted/generated code or spins up a second heavyweight runtime — every exis
 to a well-scoped external API (SearXNG, Brave, GitHub, Foursquare, ...). Arbitrary code execution
 is a different risk *and* resource tier from anything already running here.
 
-**I have not been able to live-verify any of this against the actual potato** — this session has
-no SSH access to it. Per CLAUDE.md's "verify on real hardware, not just review" culture, treat
-every claim below about what runs acceptably on this hardware as a hypothesis to confirm with a
-real `ssh potato-remote` + resource-monitoring pass before writing implementation code, not as
-settled fact. Where I'm not confident, I've said so rather than asserting it.
+**Update 2026-09-13: live-verified against the real potato** via `ssh potato-remote` — see
+"Blocking next step: RESOLVED" below for the actual measured numbers (real free RAM, real peak
+RSS for the full numpy/pandas/matplotlib workload, real OOM floor). The rest of this doc's
+security/mechanism reasoning was already sound without hardware access; only the memory question
+below needed a live box, and it's now answered rather than hypothesized.
 
 ## What changed from the first draft
 
@@ -53,48 +53,68 @@ Compared three self-hosted shapes plus the hosted-API fallback:
 | **gVisor / Firecracker** | Strong isolation without Piston's privileged-container tradeoff (gVisor intercepts syscalls in userspace; Firecracker is a real VM boundary). | Depends on either KVM (`/dev/kvm` — unconfirmed on this board's Armbian setup) or gVisor's ptrace platform, which adds real per-syscall overhead on an already-weak quad-core A53. Both add real memory overhead of their own (a sentry process, or a full guest kernel per VM) on top of whatever the executed Python process itself needs. | **Not pursued for the potato specifically** — worth revisiting only if this ever runs on materially different hardware, or if a live check finds KVM is actually available and the memory math still works. |
 | **Hosted API** (E2B, Modal) | Zero local memory/CPU footprint — execution happens entirely on someone else's infrastructure. Both have genuinely free tiers plausibly sufficient for personal-scale use: E2B's Hobby tier is a one-time $100 usage credit (no card required, ~$0.05/hour for a 1 vCPU sandbox after that — likely to last a very long time at occasional-use volume); Modal's free tier is $30/month in compute credits, recurring. | An external dependency and, eventually, a real (if small) recurring cost once free credit is exhausted — the thing this exploration was trying to avoid by default. | **Documented as the explicit fallback**, not the default — see below. |
 
-## Blocking next step: measure real memory on the potato before finalizing anything else
+## Blocking next step: RESOLVED — measured live on the real potato (2026-09-13)
 
-This can't be resolved from specs or general library-size estimates — it needs a real number from
-the actual box. The concrete test:
+Live-verified via `ssh potato-remote`, per CLAUDE.md's "verify on real hardware" rule, rather than
+left as a hypothesis. Real numbers, not estimates:
 
-```bash
-ssh potato-remote
-docker run --rm -m 256m python:3.11-slim python3 -c "
-import numpy, pandas, matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-plt.plot([1,2],[1,2]); plt.savefig('/tmp/x.png')
-print('ok')
-" &
-docker stats --no-stream
-```
+- **Actual free RAM right now**: `free -h` shows 370MB truly free, 966MB "available" (includes
+  reclaimable page cache) out of 1.9GB total — a materially better starting point than the
+  ~300MB-free figure the first draft worked from (that number came from a verbal report, not a
+  live read).
+- **Built a real image**: `python:3.11-slim` (aarch64) + `pip install numpy pandas matplotlib`
+  (numpy 2.4.6, pandas 3.0.5, matplotlib 3.11.2 — all had prebuilt aarch64 wheels, no source
+  compilation needed on the weak quad-core A53). Image: 127MB compressed content, 577MB unpacked
+  on disk. Disk is a non-issue — 205GB free on the potato's eMMC.
+- **Ran the exact scenario the doc worried about** (import numpy+pandas+matplotlib, build a
+  DataFrame, `savefig` a line chart) at shrinking `--memory` ceilings: succeeded all the way down
+  to **80MB**; **64MB OOM-killed** (exit 137). Confirmed with real cgroup v2 accounting
+  (`/sys/fs/cgroup/memory.peak` read from inside the container before exit, not an estimate):
+  **peak RSS ~74MB** for the simple case.
+- **Stress-tested with a heavier realistic workload** — 50,000-row DataFrame, `groupby`, NumPy
+  RNG, a two-series line chart at 100dpi: **peak RSS ~82MB**. Even a materially bigger job than
+  anything a chat-driven chart request would generate stayed under 85MB.
 
-(Adjust `-m` and watch whether the process gets OOM-killed at various ceilings — 256m, 200m, 150m —
-to find the real floor, and check `docker stats`' peak RSS for the container while it runs.) This
-single test resolves the two things nothing else in this doc can:
+**This resolves the question the first draft couldn't answer from specs alone: the full library
+set fits with enormous headroom**, not a tight squeeze. ~80MB peak against 370MB truly-free (and
+966MB available) leaves 4-12x margin — comfortable even running alongside Polaris itself, SearXNG,
+the Constellation scheduler, and backups without any of them needing to shrink first.
 
-- Whether pandas + numpy + matplotlib together fit in a fraction of ~300MB free RAM at all.
-- If not, whether trimming to numpy + pandas only (no matplotlib, deferring #44) gets it under the
-  ceiling instead.
+**Library set for v1, now decided**: **option 1, the full set** (numpy, pandas, matplotlib) —
+matches Claude's own code-execution tool's baseline package set and ships #42 and #44 together.
+No fallback to numpy-only or stdlib-only is needed; the memory math was never actually the
+constraint it looked like on paper.
 
-Until this runs, **the library set for v1 is deliberately left undecided** rather than guessed —
-three real candidates, in order of preference if the test allows it:
+**A concrete `--memory` ceiling recommendation, informed by the measured floor**: cap the sandbox
+container at **256MB** — over 3x the measured 82MB peak for a realistic workload (room for a
+one-off heavier DataFrame or a busier plot without living dangerously close to the true ~74-82MB
+floor), while still capping *far* below the ~370MB truly-free budget so a runaway/misbehaving
+script can't come close to starving the host. `--pids-limit` and a wall-clock timeout in the Go
+wrapper remain the other two legs of the resource-limit stool per "Other open questions" below.
 
-1. Full set (numpy, pandas, matplotlib) — matches Claude's own code-execution tool's baseline
-   (Python 3.11, 1GB RAM, 5GB storage, preinstalled pandas/numpy/matplotlib — see sources). Ships
-   #42 and #44 together.
-2. numpy + pandas only, matplotlib (and #44) deferred until more headroom is measured or freed.
-3. Stdlib only if even numpy+pandas doesn't comfortably fit — basic computation/data munging,
-   revisit once there's more memory to work with.
+**The hosted-API fallback (E2B/Modal) is no longer needed on capacity grounds** — it was only ever
+justified by the memory math, and the memory math no longer supports it. Self-hosted plain Docker
+is fully unblocked as the v1 implementation. (Re-priced Modal/E2B anyway per the "cheap first"
+priority — see the new pricing note below, since the fallback is still worth knowing precisely
+even though it's not being invoked.)
 
-If the real test shows even option 3 is too tight alongside everything else already running
-(Polaris itself, SearXNG, the Constellation scheduler, backups), **E2B's Hobby tier or Modal's
-monthly credits are the documented fallback** — not because the isolation argument favors them
-(it doesn't, per the table above), but purely because they remove the memory question entirely by
-running elsewhere. That's a materially different reason than the first draft's "arbitrary code
-needs strong isolation" — worth being honest that this is a capacity decision, not a security one,
-if it ends up being the one that's needed.
+### Repricing the hosted fallback, since cost was the actual open question here
+
+Re-researched 2026 pricing for the documented fallbacks (not needed for v1, but worth having
+current numbers on file rather than the first draft's slightly dated figures):
+
+| Platform | Free tier | Card upfront? | Realistic cost at personal-scale (10-30 execs/day) |
+|---|---|---|---|
+| **Modal.com** | $30/month *recurring* credit, no card | No | ~$0/month — dedicated `modal.Sandbox` API, $0.00003942/core-s + $0.00000672/GiB-s bills in cents at this volume |
+| **E2B.dev** | $100 one-time credit **+ 100 sandbox-hours/mo** baseline, no card | No | ~$0/month — 100 free hrs/mo vastly exceeds a handful of few-second runs |
+| **Daytona** | $200 one-time credit + 5GB storage, no card | No | ~$0/month, same order as E2B |
+| Fly.io Machines | No real free tier since 2024 | Yes | ~$2-5/month floor even scaled to zero — worse than self-hosting |
+| Cloudflare Sandbox/Containers | None; Workers Paid plan required | Yes | $5/month flat floor regardless of usage |
+
+If self-hosting ever needs to be abandoned (hardware failure, a future memory-hungrier workload),
+**Modal is the better-fit fallback of the two originally documented** — its credit recurs monthly
+rather than being a one-time grant, and it has a sandbox-specific API rather than only a general
+compute product. Not acted on now since it isn't needed.
 
 ## Deployment scope: Docker-only feature
 
@@ -140,9 +160,9 @@ Rides whatever #42 ships rather than being its own sandboxing decision — becom
   budget is tight or the feature is disabled entirely under bare-metal) and already handles common
   cases well. Revisit once code execution is live and has real usage data — a decision this doc
   deliberately isn't making yet.
-- **Directly gated by the memory test above**: if the real hardware check lands on library option
-  2 or 3 (no matplotlib), #44 is blocked until more headroom exists, not silently descoped —
-  worth its own explicit status update once the test runs, not a silent drop.
+- **Directly gated by the memory test above — now unblocked.** The real hardware check landed on
+  library option 1 (full set, matplotlib included) with wide margin, so #44 is no longer blocked
+  on capacity and can ship alongside #42 rather than being deferred.
 
 ## Sources consulted
 
