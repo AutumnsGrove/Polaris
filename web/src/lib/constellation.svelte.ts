@@ -35,13 +35,27 @@ export class ConstellationState {
 	weekItems = $state<ConstellationWeekItem[]>([]);
 	mapData = $state<ConstellationMap | null>(null);
 
-	// libraryLoaded/inboxLoaded distinguish "still fetching" from "fetched,
-	// genuinely empty" — same reasoning as PulsarDailyState.editionState's
-	// distinct states, so an empty library isn't shown as a loading
-	// spinner forever, and a still-loading one doesn't flash an empty state
-	// first.
+	// libraryLoaded/inboxLoaded/mapLoaded/statsLoaded/configLoaded
+	// distinguish "still fetching" from "fetched, genuinely empty" — same
+	// reasoning as PulsarDailyState.editionState's distinct states, so an
+	// empty section isn't shown as a loading spinner forever, and a
+	// still-loading one doesn't flash an empty state first. The *Error
+	// flags additionally distinguish "fetched, genuinely empty/nothing
+	// there" from "the fetch itself failed" — without them, a network
+	// failure silently rendered identically to a real empty state (no
+	// error, no retry affordance), which is what previously made the Map
+	// tab and the Usage modal get stuck on "Loading…" forever whenever
+	// their fetch failed instead of showing a distinct, actionable error.
 	libraryLoaded = $state(false);
+	libraryError = $state(false);
 	inboxLoaded = $state(false);
+	inboxError = $state(false);
+	mapLoaded = $state(false);
+	mapError = $state(false);
+	statsLoaded = $state(false);
+	statsError = $state(false);
+	configLoaded = $state(false);
+	configError = $state(false);
 
 	// loadLibrary fetches everything the Library screen (screen 1) needs
 	// in one go: the three non-inbox sections, the digest banner, and
@@ -49,6 +63,7 @@ export class ConstellationState {
 	// Promise.all rather than sequential awaits.
 	async loadLibrary() {
 		this.libraryLoaded = false;
+		this.libraryError = false;
 		try {
 			const [library, aboutYou, rejected, digest, stats] = await Promise.all([
 				fetchSection('library'),
@@ -65,8 +80,10 @@ export class ConstellationState {
 		} catch {
 			// Network failure (offline/DNS/TLS) — leave whatever was
 			// previously loaded in place rather than clearing it out from
-			// under the user; the screen already has a libraryLoaded flag
-			// to distinguish "never loaded" from "failed to refresh".
+			// under the user; libraryError lets the screen show a distinct
+			// "couldn't refresh" state instead of rendering this the same
+			// as a genuinely empty library.
+			this.libraryError = true;
 		} finally {
 			this.libraryLoaded = true;
 		}
@@ -74,10 +91,12 @@ export class ConstellationState {
 
 	async loadInbox() {
 		this.inboxLoaded = false;
+		this.inboxError = false;
 		try {
 			this.inboxStars = await fetchSection('inbox');
 		} catch {
 			this.inboxStars = [];
+			this.inboxError = true;
 		} finally {
 			this.inboxLoaded = true;
 		}
@@ -116,28 +135,42 @@ export class ConstellationState {
 	}
 
 	async loadMap() {
+		this.mapLoaded = false;
+		this.mapError = false;
 		try {
 			const res = await fetch('/api/constellation/map');
-			this.mapData = res.ok ? ((await res.json()) as ConstellationMap) : null;
+			if (!res.ok) throw new Error('map fetch failed');
+			this.mapData = (await res.json()) as ConstellationMap;
 		} catch {
-			this.mapData = null;
+			this.mapError = true;
+		} finally {
+			this.mapLoaded = true;
 		}
 	}
 
 	async loadConfig() {
+		this.configLoaded = false;
+		this.configError = false;
 		try {
 			const res = await fetch('/api/constellation/config');
-			this.config = res.ok ? ((await res.json()) as ConstellationConfig) : null;
+			if (!res.ok) throw new Error('config fetch failed');
+			this.config = (await res.json()) as ConstellationConfig;
 		} catch {
-			this.config = null;
+			this.configError = true;
+		} finally {
+			this.configLoaded = true;
 		}
 	}
 
 	async loadStats(periodDays?: number) {
+		this.statsLoaded = false;
+		this.statsError = false;
 		try {
 			this.stats = await fetchStats(periodDays);
 		} catch {
-			this.stats = null;
+			this.statsError = true;
+		} finally {
+			this.statsLoaded = true;
 		}
 	}
 

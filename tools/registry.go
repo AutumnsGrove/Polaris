@@ -163,9 +163,21 @@ type Context struct {
 	// closures above rather than handing Weaver's tools a whole *store.Store.
 	WeaverSearchStars func(query string) ([]store.StarSearchResult, error)
 	WeaverReadStar    func(starID int64) (*store.Star, error)
-	WeaverCreateStar  func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool) (int64, error)
-	WeaverUpdateStar  func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error
-	WeaverLinkStars   func(starIDA, starIDB int64, reasoning string) error
+	// reasoning on WeaverCreateStar/WeaverUpdateStar is logged into
+	// shooting_star_candidates.reasoning — the Review screen's "Why this
+	// needs a look" block (see docs/plans/constellation.md's "Reviewing a
+	// proposed star") reads exactly this field, previously always logged
+	// as "" because neither tool's schema had anywhere for the model to
+	// put it.
+	WeaverCreateStar func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error)
+	// WeaverUpdateStar's isPersonal is a *bool, unlike WeaverCreateStar's
+	// plain bool: update_star's tool schema doesn't require is_personal, so
+	// a model call that omits it must leave the star's existing value
+	// alone rather than silently flipping it to false (see
+	// store.UpdateStar's doc comment on the same "" == "leave as-is"
+	// contract for body/tags/confidenceClass).
+	WeaverUpdateStar func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error
+	WeaverLinkStars  func(starIDA, starIDB int64, reasoning string) error
 
 	// WeaverCategoriesInUse lists every category value already in the
 	// library (store.Store's DistinctCategories, comma-joined) — substituted

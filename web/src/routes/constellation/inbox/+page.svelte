@@ -29,6 +29,8 @@
 <div class="content">
 	{#if !constellationState.inboxLoaded}
 		<p class="empty">Loading…</p>
+	{:else if constellationState.inboxError && constellationState.inboxStars.length === 0}
+		<p class="empty">Couldn't load the inbox — check your connection and try again.</p>
 	{:else if constellationState.inboxStars.length === 0}
 		<p class="empty">Nothing waiting on review right now.</p>
 	{:else}

@@ -80,7 +80,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 	if err := db.UpdateConstellationConfig(true, 0, ""); err != nil {
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
-	if err := db.SetConstellationBackfillStarted(); err != nil {
+	if err := db.SetConstellationBackfillStarted(backfillStaleAfter); err != nil {
 		t.Fatalf("SetConstellationBackfillStarted: %v", err)
 	}
 

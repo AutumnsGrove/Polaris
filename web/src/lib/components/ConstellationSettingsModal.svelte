@@ -60,6 +60,13 @@
 			<button class="icon-btn" onclick={onClose} title="Close"><X size={18} /></button>
 		</div>
 
+		{#if constellationState.configError && !constellationState.config}
+			<p class="error-text">
+				Couldn't load current settings — the toggles below may not reflect what's actually saved.
+				Try closing and reopening this panel.
+			</p>
+		{/if}
+
 		<div class="settings-group">
 			<div class="settings-row">
 				<div>

@@ -73,7 +73,7 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 
 	task, err := weaverTaskText(reqCtx, db, client, threadID, effectiveID, lastRun, msgs, runID)
 	if err != nil {
-		_ = db.FinishShootingStarRun(runID, "", err.Error(), true)
+		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
 		return fmt.Errorf("shooting star: %w", err)
 	}
 	if task == "" {
@@ -81,14 +81,14 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		// (see gateway/constellation_scheduler.go) should already exclude
 		// this, but stay a harmless no-op rather than starting an empty
 		// run against Weaver.
-		_ = db.FinishShootingStarRun(runID, "nothing new since the last pass", "", false)
+		warnOnErr("finishing no-op shooting star run", db.FinishShootingStarRun(runID, "nothing new since the last pass", "", false))
 		return nil
 	}
 
 	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		_ = db.FinishShootingStarRun(runID, "", err.Error(), true)
+		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
 		return fmt.Errorf("shooting star: %w", err)
 	}
 
@@ -101,7 +101,7 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 	// SUM(shooting_star_events.cost_usd) rollup. Logged before either exit
 	// branch below — hitting the turn cap still means real, billed
 	// completion calls happened on the way there, not a $0 no-op.
-	_ = db.RecordShootingStarEvent(runID, "final_answer", "", strings.TrimSpace(result.Answer), result.CostUSD)
+	warnOnErr("recording final_answer event", db.RecordShootingStarEvent(runID, "final_answer", "", strings.TrimSpace(result.Answer), result.CostUSD))
 
 	if result.TurnCount > weaverMaxTurns {
 		// agent.Run forces a wrap-up answer rather than erroring when it
@@ -113,7 +113,7 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		// forced wrap-up here means Weaver didn't get to finish its own
 		// extraction/linking judgment, not that it produced a good-enough
 		// answer under time pressure.
-		_ = db.FinishShootingStarRun(runID, "", "max_turns_exceeded", true)
+		warnOnErr("finishing turn-capped shooting star run", db.FinishShootingStarRun(runID, "", "max_turns_exceeded", true))
 		return fmt.Errorf("shooting star: hit turn cap (%d turns)", weaverMaxTurns)
 	}
 
@@ -121,6 +121,23 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return fmt.Errorf("shooting star: %w", err)
 	}
 	return nil
+}
+
+// RunShootingStarRecovered wraps RunShootingStar with a panic recovery —
+// same reasoning as gateway/pulsar_scheduler.go's firePulseRecovered: both
+// the scheduler's tick and BackfillConstellation call this from their own
+// top-level goroutine/call stack, outside any net/http recover, so an
+// unrecovered panic anywhere in Weaver's loop (agent.Run, any of the five
+// tool handlers) would otherwise take down the whole Polaris process
+// instead of just failing that one shooting star.
+func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID string) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Error("panic running shooting star", "thread_id", threadID, "panic", rec)
+			err = fmt.Errorf("shooting star: panic: %v", rec)
+		}
+	}()
+	return RunShootingStar(reqCtx, db, client, threadID)
 }
 
 // weaverTaskText assembles Weaver's starting task text — the one piece of
@@ -184,8 +201,20 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		// callers make when the filter pass itself errors.
 		return deltaText, nil
 	}
-	_ = db.RecordShootingStarEvent(runID, "filter_pass", instruction, filtered, filterCost)
+	warnOnErr("recording filter_pass event", db.RecordShootingStarEvent(runID, "filter_pass", instruction, filtered, filterCost))
 	return filtered, nil
+}
+
+// warnOnErr logs a failed observability/side-effect write rather than
+// silently discarding it (the previous `_ = db.RecordX(...)` shape) — a
+// dropped shooting_star_candidates/shooting_star_events/star_sources row
+// leaves the run looking clean in every trace table even though something
+// didn't actually get recorded, directly undercutting the plan doc's "Full
+// observability from day one" principle.
+func warnOnErr(op string, err error) {
+	if err != nil {
+		log.Warn("constellation weaver: "+op+" failed", "err", err)
+	}
 }
 
 // newWeaverToolContext builds the tools.Context for one shooting star —
@@ -204,18 +233,60 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		categories = nil
 	}
 
+	// seenStars is a defense-in-depth backstop against prompt injection:
+	// thread content (which can include text originally fetched from the
+	// open web by web_search/web_read during a normal chat turn) is the
+	// only input to Weaver's reasoning, and its only defense against
+	// steering a destructive write is the prose framing in weaver.system.
+	// The plan doc's own "Weaver's tools" section already states read_star
+	// is "Mandatory before update_star or link_stars, never optional" —
+	// this just makes that an enforced invariant instead of a prompt
+	// instruction a sufficiently-adversarial thread could talk Weaver out
+	// of: update_star/link_stars may only target a star_id this exact run
+	// has already surfaced via search_stars/read_star (or just created
+	// itself), never one that appears in a tool call with no prior lookup
+	// in this run at all.
+	seenStars := map[int64]bool{}
+	markSeen := func(id int64) { seenStars[id] = true }
+	requireSeen := func(id int64) error {
+		if !seenStars[id] {
+			return fmt.Errorf("star_id %d hasn't been looked up in this run yet — call search_stars/read_star on it first", id)
+		}
+		return nil
+	}
+
 	return &tools.Context{
-		Ctx:                   reqCtx,
-		LLM:                   client,
-		Emit:                  func(string, map[string]interface{}) {},
-		WeaverRun:             true,
-		MaxTurns:              weaverMaxTurns,
+		Ctx:       reqCtx,
+		LLM:       client,
+		WeaverRun: true,
+		MaxTurns:  weaverMaxTurns,
+		// Emit only ever sees a "tool_result" whose result starts with
+		// "error:" here — every successful call is already logged by its
+		// own WeaverX closure below. Before this, a tool call that failed
+		// validation before ever reaching a WeaverX closure (a bad star_id,
+		// star_id_a == star_id_b, a missing required field) left zero trace
+		// anywhere: emitToolError (tools/registry.go) only calls ctx.Emit,
+		// which was a no-op for Weaver.
+		Emit: func(event string, data map[string]interface{}) {
+			if event != "tool_result" {
+				return
+			}
+			resultText, _ := data["result"].(string)
+			if !strings.HasPrefix(resultText, "error:") {
+				return
+			}
+			tool, _ := data["tool"].(string)
+			warnOnErr("recording tool validation failure", db.RecordShootingStarEvent(runID, tool, "", resultText, 0))
+		},
 		WeaverCategoriesInUse: strings.Join(categories, ", "),
 
 		WeaverSearchStars: func(query string) ([]store.StarSearchResult, error) {
 			results, err := db.SearchStars(query, 10)
+			for _, r := range results {
+				markSeen(r.ID)
+			}
 			args, _ := json.Marshal(map[string]string{"query": query})
-			_ = db.RecordShootingStarEvent(runID, "search_stars", string(args), fmt.Sprintf("%d results", len(results)), 0)
+			warnOnErr("recording search_stars event", db.RecordShootingStarEvent(runID, "search_stars", string(args), fmt.Sprintf("%d results", len(results)), 0))
 			return results, err
 		},
 		WeaverReadStar: func(starID int64) (*store.Star, error) {
@@ -223,12 +294,13 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 			args, _ := json.Marshal(map[string]int64{"star_id": starID})
 			resultText := "not found"
 			if err == nil {
+				markSeen(starID)
 				resultText = star.Title
 			}
-			_ = db.RecordShootingStarEvent(runID, "read_star", string(args), resultText, 0)
+			warnOnErr("recording read_star event", db.RecordShootingStarEvent(runID, "read_star", string(args), resultText, 0))
 			return star, err
 		},
-		WeaverCreateStar: func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool) (int64, error) {
+		WeaverCreateStar: func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error) {
 			id, err := db.CreateStar(store.Star{
 				Title: title, Category: category, Summary: summary, Body: body,
 				Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: "auto",
@@ -236,30 +308,47 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 			if err != nil {
 				return 0, err
 			}
-			_ = db.LinkStarSource(id, threadID)
-			_ = db.RecordShootingStarCandidate(runID, title, confidenceClass, "new_star", "", &id)
+			markSeen(id)
+			warnOnErr("linking star source", db.LinkStarSource(id, threadID))
+			warnOnErr("recording shooting star candidate", db.RecordShootingStarCandidate(runID, title, confidenceClass, "new_star", reasoning, &id))
 			args, _ := json.Marshal(map[string]interface{}{"title": title, "category": category, "is_personal": isPersonal})
-			_ = db.RecordShootingStarEvent(runID, "create_star", string(args), fmt.Sprintf("star_id=%d", id), 0)
+			warnOnErr("recording create_star event", db.RecordShootingStarEvent(runID, "create_star", string(args), fmt.Sprintf("star_id=%d", id), 0))
 			return id, nil
 		},
-		WeaverUpdateStar: func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
+		WeaverUpdateStar: func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
+			if err := requireSeen(starID); err != nil {
+				return err
+			}
 			// "" for title: update_star's own tool schema has no title field
 			// (Weaver never retitles an existing star this way) — see
 			// store.UpdateStar's doc comment on the "" == "leave as-is" contract.
-			err := db.UpdateStar(starID, "", summary, body, tags, confidenceClass, isPersonal)
-			if err != nil {
+			if err := db.UpdateStar(starID, "", summary, body, tags, confidenceClass, isPersonal); err != nil {
 				return err
 			}
-			_ = db.LinkStarSource(starID, threadID)
-			_ = db.RecordShootingStarCandidate(runID, "", confidenceClass, "merged", "", &starID)
+			warnOnErr("linking star source", db.LinkStarSource(starID, threadID))
+			warnOnErr("recording shooting star candidate", db.RecordShootingStarCandidate(runID, "", confidenceClass, "merged", reasoning, &starID))
 			args, _ := json.Marshal(map[string]interface{}{"star_id": starID, "is_personal": isPersonal})
-			_ = db.RecordShootingStarEvent(runID, "update_star", string(args), "updated", 0)
+			warnOnErr("recording update_star event", db.RecordShootingStarEvent(runID, "update_star", string(args), "updated", 0))
 			return nil
 		},
 		WeaverLinkStars: func(starIDA, starIDB int64, reasoning string) error {
+			if err := requireSeen(starIDA); err != nil {
+				return err
+			}
+			if err := requireSeen(starIDB); err != nil {
+				return err
+			}
 			err := db.LinkStars(starIDA, starIDB, reasoning)
 			args, _ := json.Marshal(map[string]interface{}{"star_id_a": starIDA, "star_id_b": starIDB, "reasoning": reasoning})
-			_ = db.RecordShootingStarEvent(runID, "link_stars", string(args), "linked", 0)
+			// Logged after checking err, with the real outcome — previously
+			// this unconditionally logged "linked" even when db.LinkStars
+			// failed (e.g. a bad id tripping the FK constraint), leaving a
+			// false-positive row in shooting_star_events.
+			result := "linked"
+			if err != nil {
+				result = "error: " + err.Error()
+			}
+			warnOnErr("recording link_stars event", db.RecordShootingStarEvent(runID, "link_stars", string(args), result, 0))
 			return err
 		},
 	}

@@ -17,6 +17,10 @@ import (
 // ErrStarNotFound is returned by GetStar when no row matches the given id.
 var ErrStarNotFound = errors.New("star not found")
 
+// ErrBackfillAlreadyRunning is returned by SetConstellationBackfillStarted
+// when a backfill is already in progress — see that function's doc comment.
+var ErrBackfillAlreadyRunning = errors.New("constellation backfill already running")
+
 // ConstellationConfig is Constellation's singleton settings row.
 type ConstellationConfig struct {
 	Enabled             bool       `json:"enabled"`
@@ -55,12 +59,40 @@ func (s *Store) GetConstellationConfig() (*ConstellationConfig, error) {
 // once at the very start of BackfillConstellation, before it reads the
 // eligible-threads list, so the window where the live scheduler could still
 // race it is as small as possible.
-func (s *Store) SetConstellationBackfillStarted() error {
+//
+// A real compare-and-set (WHERE backfill_started_at IS NULL or stale,
+// checking RowsAffected) rather than a blind UPDATE — a blind UPDATE let
+// two concurrent BackfillConstellation calls (a double-click, a retried
+// request after a timeout, or a bare-metal CLI run racing an HTTP-triggered
+// one) both "win" and proceed to independently compute the eligible-threads
+// list and run Weaver concurrently over overlapping threads, reproducing
+// the exact class of live-observed duplicate-processing bug
+// (BackfillConstellation's own doc comment) that this column exists to
+// prevent, just via a different trigger than the one it was first fixed
+// for. staleAfter mirrors runConstellationTick's own backfillStaleAfter
+// allowance — without it, a backfill that crashed before reaching its own
+// defer (ClearConstellationBackfillStarted) would wedge every future
+// backfill attempt behind ErrBackfillAlreadyRunning forever, not just the
+// scheduler's tick.
+func (s *Store) SetConstellationBackfillStarted(staleAfter time.Duration) error {
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO constellation_config (id) VALUES (1)`); err != nil {
 		return fmt.Errorf("set constellation backfill started: %w", err)
 	}
-	if _, err := s.db.Exec(`UPDATE constellation_config SET backfill_started_at = CURRENT_TIMESTAMP WHERE id = 1`); err != nil {
+	res, err := s.db.Exec(
+		`UPDATE constellation_config
+		 SET backfill_started_at = CURRENT_TIMESTAMP
+		 WHERE id = 1 AND (backfill_started_at IS NULL OR backfill_started_at <= datetime('now', printf('-%d seconds', ?)))`,
+		int(staleAfter.Seconds()),
+	)
+	if err != nil {
 		return fmt.Errorf("set constellation backfill started: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set constellation backfill started: %w", err)
+	}
+	if n == 0 {
+		return ErrBackfillAlreadyRunning
 	}
 	return nil
 }
@@ -198,25 +230,72 @@ func (s *Store) GetStar(id int64) (*Star, error) {
 // before this, a correction that invalidated the original title (e.g. "it's
 // fantasy, not sci-fi") could rewrite summary/body to match while the title
 // silently kept describing the old, now-wrong premise.
+//
+// body and confidenceClass share title's own "" == "leave as-is" contract —
+// update_star's tool schema (tools/update_star.go) only requires star_id
+// and summary, so a model call that omits body/confidence_class (a
+// plausible "just fixing the summary, no need to resend the body" call)
+// used to unconditionally blank those columns out via the unconditional
+// `body = ?, confidence = ?` this function ran before. tags similarly
+// treats a nil slice as "leave as-is" (distinct from a non-nil empty slice,
+// which really does mean "clear every tag" — json.Unmarshal only produces
+// nil when the JSON key was absent, not when it was `[]`) and isPersonal is
+// a *bool for the same reason (a plain bool has no way to represent "the
+// model didn't say" separately from "the model said false").
+//
 // Content updates never touch status (personal or not) — see CreateStar's
 // doc comment: the old isPersonal-forces-'proposed' gate was retired once
 // the library pivoted to personal-only extraction, since forcing every
 // single update back through human review defeated the point of trusting
 // Weaver's personal-star writing, which real usage showed was reliable.
-func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
-	if tags == nil {
-		// See CreateStar's identical guard — json.Marshal(nil) encodes
-		// "null", not the "[]" every reader of this column expects.
-		tags = []string{}
+//
+// Returns ErrStarNotFound if id doesn't match any row — previously a
+// no-op UPDATE against a stale/hallucinated star_id silently "succeeded",
+// so a caller (Weaver's update_star tool included) had no way to tell a
+// real merge from one that touched nothing at all.
+func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool) error {
+	var tagsArg any
+	if tags != nil {
+		tagsJSON, err := json.Marshal(tags)
+		if err != nil {
+			return fmt.Errorf("update star: encode tags: %w", err)
+		}
+		tagsArg = string(tagsJSON)
 	}
-	tagsJSON, err := json.Marshal(tags)
+	var personalArg any
+	if isPersonal != nil {
+		personalArg = *isPersonal
+	}
+
+	query := `UPDATE stars SET
+		title = CASE WHEN ? <> '' THEN ? ELSE title END,
+		summary = ?,
+		body = CASE WHEN ? <> '' THEN ? ELSE body END,
+		tags = CASE WHEN ? IS NOT NULL THEN ? ELSE tags END,
+		confidence = CASE WHEN ? <> '' THEN ? ELSE confidence END,
+		is_personal = CASE WHEN ? IS NOT NULL THEN ? ELSE is_personal END,
+		content_updated_at = CURRENT_TIMESTAMP,
+		updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?`
+	args := []any{
+		title, title,
+		summary,
+		body, body,
+		tagsArg, tagsArg,
+		confidenceClass, confidenceClass,
+		personalArg, personalArg,
+		id,
+	}
+	res, err := s.db.Exec(query, args...)
 	if err != nil {
-		return fmt.Errorf("update star: encode tags: %w", err)
-	}
-	query := `UPDATE stars SET title = CASE WHEN ? <> '' THEN ? ELSE title END, summary = ?, body = ?, tags = ?, confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-	args := []any{title, title, summary, body, string(tagsJSON), confidenceClass, id}
-	if _, err := s.db.Exec(query, args...); err != nil {
 		return fmt.Errorf("update star: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update star: %w", err)
+	}
+	if n == 0 {
+		return ErrStarNotFound
 	}
 	return nil
 }
@@ -365,10 +444,16 @@ type StarSearchResult struct {
 // getting a false "nothing found" back.
 func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error) {
 	rows, err := s.db.Query(
+		// disabled = 0: a star the person explicitly hid via the overflow
+		// menu's Disable action shouldn't stay a live lead for Weaver to
+		// find, read, update, or link to — that would silently revive
+		// content they asked to be removed from their library. Rejected
+		// stars stay included on purpose (see below); disabled is a
+		// different, unconditional "not for Weaver" signal.
 		`SELECT s.id, s.title, s.summary, s.status
 		 FROM stars_fts
 		 JOIN stars s ON s.id = stars_fts.rowid
-		 WHERE stars_fts MATCH ?
+		 WHERE stars_fts MATCH ? AND s.disabled = 0
 		 ORDER BY rank
 		 LIMIT ?`, orFTSQuery(query), limit,
 	)
@@ -699,8 +784,12 @@ func (s *Store) RecordShootingStarCandidate(runID int64, title, confidenceClass,
 func (s *Store) LatestCandidateReasoning(starID int64) (string, error) {
 	var reasoning string
 	err := s.db.QueryRow(
+		// id DESC, not created_at DESC — created_at only has second
+		// resolution, so two candidates recorded within the same second
+		// would otherwise tie arbitrarily. See LatestCandidateReasoningBulk's
+		// identical, already-fixed concern.
 		`SELECT reasoning FROM shooting_star_candidates
-		 WHERE resulting_star_id = ? ORDER BY created_at DESC LIMIT 1`,
+		 WHERE resulting_star_id = ? ORDER BY id DESC LIMIT 1`,
 		starID,
 	).Scan(&reasoning)
 	if err == sql.ErrNoRows {
@@ -875,16 +964,26 @@ func (s *Store) GetConstellationStats(periodDays int) (*ConstellationStats, erro
 	}
 	stats.TotalCostUSD += reconcileTotal
 
+	// periodDays is a Go int, never attacker-shaped, so the old
+	// fmt.Sprintf-built WHERE clause wasn't actually exploitable — but
+	// binding it as a real parameter (via printf's own '-%d days' inside
+	// SQLite, since datetime()'s modifier can't itself be a bound string
+	// built from a numeric arg without one more layer) matches every other
+	// query in this file's fully-parameterized convention instead of being
+	// the one exception a future edit could copy-paste into an actually
+	// unsafe shape.
 	periodFilter := "1=1"
+	periodArgs := []any{}
 	if periodDays > 0 {
-		periodFilter = fmt.Sprintf("created_at >= datetime('now', '-%d days')", periodDays)
+		periodFilter = "created_at >= datetime('now', printf('-%d days', ?))"
+		periodArgs = []any{periodDays}
 	}
 
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events WHERE ` + periodFilter).Scan(&stats.PeriodCostUSD); err != nil {
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events WHERE `+periodFilter, periodArgs...).Scan(&stats.PeriodCostUSD); err != nil {
 		return nil, fmt.Errorf("constellation stats: period cost: %w", err)
 	}
 	var reconcilePeriod float64
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events WHERE ` + periodFilter).Scan(&reconcilePeriod); err != nil {
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events WHERE `+periodFilter, periodArgs...).Scan(&reconcilePeriod); err != nil {
 		return nil, fmt.Errorf("constellation stats: period reconcile cost: %w", err)
 	}
 	stats.PeriodCostUSD += reconcilePeriod
@@ -1032,7 +1131,15 @@ func (s *Store) GetConstellationDigest() (*ConstellationDigest, error) {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM stars WHERE disabled = 0 AND created_at >= datetime('now', '-7 days')`).Scan(&d.NewCount); err != nil {
 		return nil, fmt.Errorf("constellation digest: new count: %w", err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM star_edges WHERE created_at >= datetime('now', '-7 days')`).Scan(&d.LinksCount); err != nil {
+	// Joined to stars on both sides so a link touching a since-disabled star
+	// doesn't still surface that star's title in the count/highlight — the
+	// "new" count above already excludes disabled=1 stars the same way.
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM star_edges e
+		 JOIN stars sa ON sa.id = e.star_a_id
+		 JOIN stars sb ON sb.id = e.star_b_id
+		 WHERE e.created_at >= datetime('now', '-7 days') AND sa.disabled = 0 AND sb.disabled = 0`,
+	).Scan(&d.LinksCount); err != nil {
 		return nil, fmt.Errorf("constellation digest: links count: %w", err)
 	}
 
@@ -1041,7 +1148,7 @@ func (s *Store) GetConstellationDigest() (*ConstellationDigest, error) {
 		`SELECT sa.title, sb.title FROM star_edges e
 		 JOIN stars sa ON sa.id = e.star_a_id
 		 JOIN stars sb ON sb.id = e.star_b_id
-		 WHERE e.created_at >= datetime('now', '-7 days')
+		 WHERE e.created_at >= datetime('now', '-7 days') AND sa.disabled = 0 AND sb.disabled = 0
 		 ORDER BY e.id DESC LIMIT 1`,
 	).Scan(&titleA, &titleB)
 	switch {
@@ -1108,9 +1215,15 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 		return nil, fmt.Errorf("constellation week feed: new stars: %w", err)
 	}
 
+	// content_updated_at, not updated_at — updated_at is bumped by every
+	// mutator (rename, disable, a review action's status change), not just
+	// a real content merge, which used to make e.g. approving a 10-day-old
+	// proposed star show up here as "updated" — exactly the review-action
+	// pollution the plan doc's "The weekly digest" says this feed must
+	// exclude.
 	updatedRows, err := s.db.Query(`
-		SELECT id, title, updated_at FROM stars
-		WHERE disabled = 0 AND updated_at >= datetime('now', '-7 days') AND created_at < datetime('now', '-7 days')`)
+		SELECT id, title, content_updated_at FROM stars
+		WHERE disabled = 0 AND content_updated_at >= datetime('now', '-7 days') AND created_at < datetime('now', '-7 days')`)
 	if err != nil {
 		return nil, fmt.Errorf("constellation week feed: updated stars: %w", err)
 	}
@@ -1132,7 +1245,7 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 		SELECT sa.id, sa.title, sb.title, e.created_at FROM star_edges e
 		JOIN stars sa ON sa.id = e.star_a_id
 		JOIN stars sb ON sb.id = e.star_b_id
-		WHERE e.created_at >= datetime('now', '-7 days')`)
+		WHERE e.created_at >= datetime('now', '-7 days') AND sa.disabled = 0 AND sb.disabled = 0`)
 	if err != nil {
 		return nil, fmt.Errorf("constellation week feed: links: %w", err)
 	}

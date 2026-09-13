@@ -7,6 +7,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 
 	"polaris/llm"
 	"polaris/store"
@@ -30,8 +31,20 @@ import (
 // backfill). A DB column rather than an in-process mutex/flag specifically
 // because backfill and the scheduler aren't always the same OS process —
 // see the column's schema comment in store.go.
+//
+// SetConstellationBackfillStarted is a real compare-and-set: a second,
+// concurrent BackfillConstellation call (a double-click, a retried request
+// after a client-side timeout, or a bare-metal CLI run racing an
+// HTTP-triggered one) gets store.ErrBackfillAlreadyRunning back instead of
+// silently racing the first one over the same eligible-threads list — the
+// same class of bug the flag was originally introduced for, just from a
+// different trigger. HasInFlightShootingStarRun is checked too, as a
+// best-effort guard against the mirror case (a scheduler tick already
+// mid-loop over several threads when a backfill starts) — not a perfect
+// lock (there's an inherent gap between this check and the first thread
+// actually starting), but it closes the obvious window cheaply.
 func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.ChatClient, limit int) (processed int, err error) {
-	if err := db.SetConstellationBackfillStarted(); err != nil {
+	if err := db.SetConstellationBackfillStarted(backfillStaleAfter); err != nil {
 		return 0, err
 	}
 	defer func() {
@@ -40,12 +53,18 @@ func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.C
 		}
 	}()
 
+	if busy, err := db.HasInFlightShootingStarRun(); err != nil {
+		log.Warn("constellation backfill: checking in-flight run failed", "err", err)
+	} else if busy {
+		return 0, fmt.Errorf("constellation backfill: a shooting star is already in flight (a scheduler tick may be mid-run) — try again shortly")
+	}
+
 	ids, err := db.EligibleConstellationThreadsForBackfill(limit)
 	if err != nil {
 		return 0, err
 	}
 	for _, threadID := range ids {
-		if err := RunShootingStar(reqCtx, db, client, threadID); err != nil {
+		if err := RunShootingStarRecovered(reqCtx, db, client, threadID); err != nil {
 			log.Warn("constellation backfill: shooting star failed", "thread_id", threadID, "err", err)
 			continue
 		}

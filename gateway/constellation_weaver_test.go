@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -182,6 +183,57 @@ func TestRunShootingStar_HitsTurnCap_SetsNeedsRetryAndError(t *testing.T) {
 	}
 	if run == nil || !run.NeedsRetry || run.Error != "max_turns_exceeded" {
 		t.Fatalf("LastShootingStarRun = %+v, want needs_retry=true, error=max_turns_exceeded", run)
+	}
+}
+
+// TestRunShootingStar_LinkStarsRejectsUnseenStarID is a defense-in-depth
+// regression test for the star_id provenance check in
+// newWeaverToolContext: update_star/link_stars may only target a star_id
+// this exact run has already surfaced via search_stars/read_star (or just
+// created itself), never one that appears out of nowhere in a tool call.
+// The plan doc's own "Weaver's tools" section already states read_star is
+// "Mandatory before update_star or link_stars, never optional" — this
+// backstops that as an enforced invariant rather than only a prompt
+// instruction a sufficiently-adversarial thread's content could talk
+// Weaver out of (see newWeaverToolContext's own doc comment on why this
+// matters more than it might look for a single-operator tool: the thread
+// content Weaver reads can itself contain text originally fetched from the
+// open web by a normal chat turn's web_search/web_read).
+func TestRunShootingStar_LinkStarsRejectsUnseenStarID(t *testing.T) {
+	db := openTestStoreForConstellation(t)
+	threadID := seedWeaverThread(t, db, "Tell me more about Rust's borrow checker.")
+
+	// A pre-existing star from some unrelated earlier run — never searched
+	// or read during *this* run, so id=1.
+	existingID, err := db.CreateStar(store.Star{Title: "Existing star", Category: "technology", Summary: "s", Status: "auto"})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+
+	mock := &llmtest.MockClient{Responses: []llmtest.Response{
+		// create_star's own closure marks its new id (2) as seen, but
+		// existingID (1) was never looked up in this run at all.
+		{Resp: createStarToolCall("Rust", "technology", "Systems language", "obvious")},
+		{Resp: &llm.ChatResponse{ToolCalls: []llm.ToolCall{{
+			ID: "call_link", Type: "function",
+			Function: llm.FunctionCall{
+				Name:      "link_stars",
+				Arguments: fmt.Sprintf(`{"star_id_a":%d,"star_id_b":2,"reasoning":"both about programming"}`, existingID),
+			},
+		}}}},
+		{Resp: &llm.ChatResponse{Content: "done"}},
+	}}
+
+	if err := RunShootingStar(context.Background(), db, mock, threadID); err != nil {
+		t.Fatalf("RunShootingStar: %v", err)
+	}
+
+	edges, err := db.StarEdges(existingID)
+	if err != nil {
+		t.Fatalf("StarEdges: %v", err)
+	}
+	if len(edges) != 0 {
+		t.Errorf("StarEdges(existingID) = %+v, want no edge — link_stars must reject a star_id never looked up this run", edges)
 	}
 }
 

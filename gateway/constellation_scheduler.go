@@ -100,7 +100,21 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 		// for the same emerging topic — see the plan doc's "Sequential,
 		// never concurrent."
 		for _, threadID := range threadIDs {
-			if err := RunShootingStar(reqCtx, db, client, threadID); err != nil {
+			// Re-checked before every thread, not just once at the top of
+			// the tick: a tick can process several threads back-to-back
+			// (each a real, possibly-slow agent.Run), and a backfill could
+			// start partway through that loop. Bailing out here narrows
+			// that race window from "the whole tick" down to "the thread
+			// currently in flight" — see BackfillConstellation's own doc
+			// comment for the live-observed bug this whole flag exists to
+			// prevent.
+			if cur, err := db.GetConstellationConfig(); err != nil {
+				log.Warn("constellation: re-checking backfill state mid-tick failed", "err", err)
+			} else if cur.BackfillStartedAt != nil && time.Since(*cur.BackfillStartedAt) < backfillStaleAfter {
+				log.Warn("constellation: backfill started mid-tick, stopping early", "threads_remaining", len(threadIDs))
+				break
+			}
+			if err := RunShootingStarRecovered(reqCtx, db, client, threadID); err != nil {
 				log.Warn("constellation: shooting star failed", "thread_id", threadID, "err", err)
 			}
 		}

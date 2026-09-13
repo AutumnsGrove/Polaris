@@ -208,6 +208,31 @@ func earliestSourceDate(sources []store.StarSource) *time.Time {
 	return earliest
 }
 
+// getStarOrNotFound looks up a star, writing a clean 404 (or a 500 for any
+// other failure) and returning ok=false when it doesn't resolve — shared by
+// every handler that needs to confirm a star exists (and, for the ones that
+// check status below, is in the right state) before acting on it. Several
+// of these handlers used to skip the store.ErrStarNotFound check entirely:
+// a stale/garbage id from the frontend either fell through to a generic 500
+// (restore, the review/edit handlers' final re-fetch), or — worse, for
+// approve/discard/refine — reached SetStarStatusAndRecordReview's INSERT
+// INTO star_reviews, which fails on the table's own foreign key constraint
+// for a nonexistent star_id and surfaced that raw SQLite error text
+// straight to the client.
+func (s *Server) getStarOrNotFound(w http.ResponseWriter, id int64) (*store.Star, bool) {
+	star, err := s.db.GetStar(id)
+	if err == store.ErrStarNotFound {
+		http.Error(w, "star not found", http.StatusNotFound)
+		return nil, false
+	}
+	if err != nil {
+		log.Warn("getting constellation star failed", "err", err, "id", id)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	return star, true
+}
+
 func (s *Server) handleGetConstellationStar(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -309,6 +334,14 @@ func (s *Server) handleRestoreConstellationStar(w http.ResponseWriter, r *http.R
 		http.Error(w, "invalid star id", http.StatusBadRequest)
 		return
 	}
+	star, ok := s.getStarOrNotFound(w, id)
+	if !ok {
+		return
+	}
+	if star.Status != "rejected" {
+		http.Error(w, "only a rejected star can be restored", http.StatusConflict)
+		return
+	}
 	// Restore moves a rejected star straight to 'confirmed', not back to
 	// 'proposed' — a human deciding "actually I do want this" is a direct
 	// decision, not a new Weaver proposal needing re-review (see the plan
@@ -318,10 +351,8 @@ func (s *Server) handleRestoreConstellationStar(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	star, err := s.db.GetStar(id)
-	if err != nil {
-		log.Warn("loading just-restored star failed", "err", err, "id", id)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	star, ok = s.getStarOrNotFound(w, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, star)
@@ -344,6 +375,22 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 	var req constellationReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	star, ok := s.getStarOrNotFound(w, id)
+	if !ok {
+		return
+	}
+	// The Review screen (approve/discard/refine) only ever operates on a
+	// star awaiting review — see the plan doc's "Reviewing a proposed
+	// star". Without this check, a double-tapped Approve (the second tap
+	// racing the first request) or a stale/garbage id could silently
+	// re-confirm an already-confirmed star, re-reject an already-rejected
+	// one, or run a Refine reconciliation pass against a star that was
+	// never actually in the Inbox.
+	if star.Status != "proposed" {
+		http.Error(w, "star is not awaiting review", http.StatusConflict)
 		return
 	}
 
@@ -409,9 +456,8 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	star, err := s.db.GetStar(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	star, ok = s.getStarOrNotFound(w, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, star)
@@ -441,6 +487,21 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "correction is required", http.StatusBadRequest)
 		return
 	}
+	star, ok := s.getStarOrNotFound(w, id)
+	if !ok {
+		return
+	}
+	// Edit star is scoped to an already-confirmed/auto star past the
+	// review stage — a "proposed" star belongs in the Inbox's Refine flow
+	// instead, and a "rejected" one only has Restore available (see the
+	// plan doc's "Reviewing and editing a star"). Without this, Edit could
+	// be called on a rejected star and silently rewrite its content while
+	// it sits hidden in the Rejected section — a mutation outside every
+	// flow the UI actually exposes for that state.
+	if star.Status == "rejected" {
+		http.Error(w, "cannot edit a rejected star — restore it first", http.StatusConflict)
+		return
+	}
 	invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction)
 	if err != nil {
 		log.Warn("editing star failed", "err", err, "id", id)
@@ -460,9 +521,8 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	star, err := s.db.GetStar(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	star, ok = s.getStarOrNotFound(w, id)
+	if !ok {
 		return
 	}
 	writeJSON(w, star)
@@ -510,7 +570,7 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 	if invalidated {
 		return true, nil
 	}
-	return false, s.db.UpdateStar(id, title, summary, body, star.Tags, star.Confidence, star.IsPersonal)
+	return false, s.db.UpdateStar(id, title, summary, body, star.Tags, star.Confidence, &star.IsPersonal)
 }
 
 // reconcileStarContent is the actual LLM call behind reconcileAndSaveStar
@@ -649,6 +709,10 @@ func (s *Server) handleConstellationBackfill(w http.ResponseWriter, r *http.Requ
 	}
 	client := WeaverClient(s.liveConfig(), cfgRow.Model)
 	processed, err := BackfillConstellation(r.Context(), s.db, client, limit)
+	if err == store.ErrBackfillAlreadyRunning {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if err != nil {
 		log.Warn("constellation backfill failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

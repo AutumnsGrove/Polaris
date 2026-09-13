@@ -25,8 +25,10 @@
 			<button class="icon-btn" onclick={onClose} title="Close"><X size={18} /></button>
 		</div>
 
-		{#if !s}
+		{#if !constellationState.statsLoaded}
 			<p class="empty">Loading…</p>
+		{:else if constellationState.statsError || !s}
+			<p class="empty">Couldn't load usage stats — check your connection and try again.</p>
 		{:else}
 			<div class="big-cost">
 				<div class="amount">${s.period_cost_usd.toFixed(2)}</div>

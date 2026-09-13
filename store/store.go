@@ -606,7 +606,15 @@ CREATE TABLE IF NOT EXISTS stars (
 	is_personal  INTEGER NOT NULL DEFAULT 0,
 	disabled     INTEGER NOT NULL DEFAULT 0,
 	created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	-- content_updated_at: bumped only by a real content merge (Store.UpdateStar),
+	-- unlike updated_at (bumped by every mutator -- rename, disable, status
+	-- change, content merge). GetConstellationWeekFeed's "updated" bucket
+	-- needs this distinction: keying off updated_at meant approving/renaming/
+	-- disabling a star made it show up as "updated" in "This week", which the
+	-- plan doc's "The weekly digest" explicitly says review actions must not
+	-- do ("resolutions of something already made, not new material").
+	content_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- stars_fts is an external-content FTS5 index over stars, same
@@ -690,6 +698,12 @@ CREATE TABLE IF NOT EXISTS shooting_star_candidates (
 	resulting_star_id  INTEGER REFERENCES stars(id),
 	created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- LatestCandidateReasoningBulk (called once per Inbox page load, for every
+-- proposed star) filters/IN's on resulting_star_id with no supporting index
+-- otherwise -- a full table scan that only grows as every create_star/
+-- update_star call ever made adds another row here.
+CREATE INDEX IF NOT EXISTS idx_shooting_star_candidates_star ON shooting_star_candidates(resulting_star_id);
 
 -- shooting_star_events is a generic trace of every tool call and
 -- completion turn in a run, not just the writes -- the cost-auditability
@@ -828,6 +842,12 @@ var migrations = []string{
 	// end per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE constellation_config ADD COLUMN backfill_started_at DATETIME`,
+	// content_updated_at — see the schema comment above. CURRENT_TIMESTAMP
+	// is one of the few non-constant defaults SQLite allows in ALTER TABLE
+	// ADD COLUMN; existing stars all get "now" rather than backdated to
+	// their own updated_at, which is fine — GetConstellationWeekFeed only
+	// cares about content changes going forward, not reclassifying history.
+	`ALTER TABLE stars ADD COLUMN content_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`,
 }
 
 func Open(path string) (*Store, error) {
