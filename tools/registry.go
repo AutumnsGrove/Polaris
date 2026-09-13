@@ -235,6 +235,28 @@ type Context struct {
 	// enter the agent loop. Nil means "nothing blocked".
 	Blocklist *search.Blocklist
 
+	// Multimodal reports whether this thread's own selected model (ctx.LLM)
+	// is itself vision-capable — see config.ModelConfig.Multimodal. Gates
+	// view_image's "see" mode (tools/view_image.go): only offered in that
+	// tool's mode enum when this is true, since inserting a real image into
+	// the conversation (see llm.ChatMessage.ImageURLs) only means anything
+	// for a model that can actually look at it. A false value doesn't mean
+	// view_image is unavailable — "describe" mode still works via
+	// DescribeImage below, same fallback-to-a-configured-vision-model
+	// behavior resolveAttachment already has for uploaded images.
+	Multimodal bool
+
+	// DescribeImage, when non-nil, asks a vision-capable model (this
+	// thread's own, if Multimodal above, else a configured fallback — see
+	// gateway's visionClient) to describe an image and return the text —
+	// the "describe" half of view_image's mode parameter. instructions
+	// mirrors web_read's own optional focus parameter; empty means "a full
+	// literal description". nil only when no multimodal model is
+	// configured at all (neither this thread's model nor any fallback),
+	// matching Brave/Parallel/Tavily's same nil-means-unavailable shape
+	// elsewhere on this struct.
+	DescribeImage func(ctx context.Context, imageBase64, mimeType, instructions string) (description string, costUSD float64, err error)
+
 	// DefaultLocation is the static fallback geocoded by nearby_search/
 	// weather when a query omits an explicit location and RequestLocation
 	// (below) is nil, returns nothing, or isn't set at all — config.yaml's
@@ -466,6 +488,23 @@ type Context struct {
 	// dispatch reason WizardFinal's mutex exists.
 	dailyItemsFinalMu sync.Mutex
 	DailyItemsFinal   *DailyItemsFinal
+
+	// PendingImageMessages accumulates synthetic "user" messages carrying a
+	// real image (view_image's "see" mode — see llm.ChatMessage.ImageURLs)
+	// from this batch of tool calls, for agent.Run to append to the
+	// conversation AFTER every "tool" role result message in the batch —
+	// never interleaved between them. That ordering isn't a style choice:
+	// the OpenAI-compatible wire protocol requires one assistant message
+	// carrying every tool call from a turn, immediately followed by ALL of
+	// that batch's tool-result messages with nothing else in between (see
+	// agent/driver.go's dispatch loop comment — DeepSeek 400s with
+	// "insufficient tool messages following tool_calls message" otherwise).
+	// An accumulator, not first-write-wins like PendingQuestion/WizardFinal
+	// above: more than one view_image "see" call could land in the same
+	// batch. pendingImageMu guards it for the same concurrent-dispatch
+	// reason Citations/Cards need their own mutexes.
+	pendingImageMu       sync.Mutex
+	PendingImageMessages []llm.ChatMessage
 }
 
 // WizardFinal is the tuned prompt the model drafted once it decided the
@@ -723,6 +762,29 @@ func (c *Context) AddCost(usd float64) {
 	c.ExtraCostUSD += usd
 }
 
+// AddPendingImageMessage records a synthetic image-carrying message from a
+// view_image "see" call — see PendingImageMessages' doc comment for why
+// this must be flushed only after a tool-call batch's own result messages,
+// never immediately. Safe to call concurrently, same reasoning as
+// AddCitation/AddCard.
+func (c *Context) AddPendingImageMessage(msg llm.ChatMessage) {
+	c.pendingImageMu.Lock()
+	defer c.pendingImageMu.Unlock()
+	c.PendingImageMessages = append(c.PendingImageMessages, msg)
+}
+
+// FlushPendingImageMessages returns every pending image message gathered
+// since the last flush and clears the accumulator — agent.Run calls this
+// once per tool-call batch, after appending that batch's own tool-result
+// messages, never before or interleaved with them.
+func (c *Context) FlushPendingImageMessages() []llm.ChatMessage {
+	c.pendingImageMu.Lock()
+	defer c.pendingImageMu.Unlock()
+	out := c.PendingImageMessages
+	c.PendingImageMessages = nil
+	return out
+}
+
 // ChartSpec is a structured chart a tool wants rendered instead of (or
 // alongside) its prose answer — either attached deterministically by a
 // tool whose own response is already a time series (Tier 1, e.g. weather),
@@ -835,7 +897,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
-		"image_search": imageSearchDef, "highlight": highlightDef, "read_attachment": readAttachmentDef,
+		"image_search": imageSearchDef, "view_image": viewImageDef, "highlight": highlightDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,

@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
-	"image_search", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "view_image", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
 
@@ -198,6 +198,10 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
 	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
 		APIDescription: "Find real photos for a query and attach them as a gallery."},
+	"view_image": {Name: "view_image", Description: "actually look at a specific image from a prior image_search result.",
+		APIDescription: "View a specific image from a prior image_search result by its numbered position (card_index). " +
+			"mode: \"describe\" (default) returns a thorough text description. mode: \"see\" (only offered to a " +
+			"multimodal model) inserts the actual image as your next message so you can genuinely look at it."},
 	"highlight": {Name: "highlight", Category: "research",
 		Description: "turn a handful of items you actually found this turn into cards instead of a paragraph.",
 		APIDescription: "Render 1-5 items you actually found this turn as cards instead of describing them in prose " +

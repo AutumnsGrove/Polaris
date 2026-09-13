@@ -110,6 +110,70 @@ type ChatMessage struct {
 	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+
+	// ImageURLs carries real image content — set only by view_image's "see"
+	// mode (tools/view_image.go), for a synthetic "user" message appended
+	// after a tool-result batch so a multimodal model can actually look at
+	// something instead of only reading a text description of it (see
+	// docs/plans/view-image.md). Each entry is a data: URL (base64-encoded
+	// bytes already fetched server-side), the same content-block shape
+	// vision.go's DescribeImage already sends successfully — never a plain
+	// https:// URL, so this never depends on the model provider's own
+	// infrastructure being able to reach wherever the image came from.
+	// nil/empty for every other message, which is why MarshalJSON below
+	// only ever changes wire shape when this is actually populated —
+	// every other one of this struct's 29+ existing call sites keeps
+	// emitting a plain string content field, unchanged.
+	ImageURLs []string `json:"-"`
+}
+
+// contentBlock is one entry of the array form of OpenAI/OpenRouter's
+// "content" field — used only when ImageURLs is non-empty; see
+// ChatMessage.ImageURLs' doc comment for why the plain-string form stays
+// the default for every other message.
+type contentBlock struct {
+	Type     string             `json:"type"`
+	Text     string             `json:"text,omitempty"`
+	ImageURL *contentBlockImage `json:"image_url,omitempty"`
+}
+
+type contentBlockImage struct {
+	URL string `json:"url"`
+}
+
+// MarshalJSON emits the ordinary plain-string "content" field unchanged
+// unless ImageURLs is set, in which case "content" becomes an array (one
+// text block, if Content is non-empty, followed by one image_url block per
+// entry in ImageURLs) — the shape a vision-capable model expects for real
+// image input, per OpenRouter's chat-completions format. chatMessageAlias
+// avoids infinite recursion (a plain type alias, not ChatMessage itself,
+// so encoding/json's default struct marshaling runs instead of calling
+// back into this method).
+func (m ChatMessage) MarshalJSON() ([]byte, error) {
+	type chatMessageAlias struct {
+		Role       string     `json:"role"`
+		ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
+		Content    string     `json:"content"`
+	}
+	if len(m.ImageURLs) == 0 {
+		return json.Marshal(chatMessageAlias{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, Content: m.Content})
+	}
+
+	type chatMessageArrayContent struct {
+		Role       string         `json:"role"`
+		ToolCalls  []ToolCall     `json:"tool_calls,omitempty"`
+		ToolCallID string         `json:"tool_call_id,omitempty"`
+		Content    []contentBlock `json:"content"`
+	}
+	var blocks []contentBlock
+	if m.Content != "" {
+		blocks = append(blocks, contentBlock{Type: "text", Text: m.Content})
+	}
+	for _, url := range m.ImageURLs {
+		blocks = append(blocks, contentBlock{Type: "image_url", ImageURL: &contentBlockImage{URL: url}})
+	}
+	return json.Marshal(chatMessageArrayContent{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, Content: blocks})
 }
 
 type ToolCall struct {

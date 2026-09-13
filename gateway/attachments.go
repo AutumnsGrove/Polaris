@@ -352,32 +352,17 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 		return fmt.Sprintf("%s\n\n[Attached file: %s]\n%s%s", msg.Content, filename, text, note), data, 0, nil
 
 	case strings.HasPrefix(msg.AttachmentContentType, "image/"):
-		visionModel := selectedModel
-		if !visionModel.Multimodal {
-			var ok bool
-			visionModel, ok = cfg.MultimodalModel()
-			if !ok {
-				return msg.Content, nil, 0, fmt.Errorf("no multimodal model configured to describe images")
-			}
+		client, ok := visionClient(cfg, selectedModel)
+		if !ok {
+			return msg.Content, nil, 0, fmt.Errorf("no multimodal model configured to describe images")
 		}
-		// Deliberately NOT pinned to visionModel.Provider the way the main
-		// chat client pins its provider — that pin exists for prompt-cache
-		// consistency across an ongoing conversation, which doesn't apply
-		// to this single one-off call, and it actively hurts here: found
-		// live that the pinned "xiaomi/fp8" endpoint 404s with "No
-		// endpoints found that support image input" even though the model
-		// itself is vision-capable — some provider-specific deployments of
-		// a multimodal model quietly drop vision support. Leaving provider
-		// routing open lets OpenRouter pick whichever endpoint actually
-		// handles image input for this model.
-		client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens)
 		if emit != nil {
 			emit("tool_call", map[string]interface{}{
 				"tool": "describe_image",
 				"args": map[string]interface{}{"filename": filename},
 			})
 		}
-		description, cost, err := client.DescribeImage(ctx, base64.StdEncoding.EncodeToString(data), msg.AttachmentContentType)
+		description, cost, err := client.DescribeImage(ctx, base64.StdEncoding.EncodeToString(data), msg.AttachmentContentType, "")
 		if err != nil {
 			if emit != nil {
 				emit("tool_result", map[string]interface{}{"tool": "describe_image", "result": "error: " + err.Error()})
@@ -397,6 +382,36 @@ func resolveAttachment(ctx context.Context, cfg *config.Config, selectedModel co
 		// a matching case here.
 		return msg.Content, nil, 0, fmt.Errorf("no extraction pipeline for content type %q", msg.AttachmentContentType)
 	}
+}
+
+// visionClient picks which model actually describes/sees an image: the
+// thread's own selected model if it's multimodal itself, otherwise
+// cfg.MultimodalModel()'s configured fallback. Shared by resolveAttachment
+// (upload-time description) and tools/view_image.go (on-demand describe/see
+// calls) so both paths pick the same model the same way, rather than two
+// copies of this logic drifting apart. ok is false only when neither the
+// selected model nor any configured fallback is multimodal — there's
+// nothing this can do about that, the caller decides how to fail.
+//
+// Deliberately NOT pinned to visionModel.Provider the way the main chat
+// client pins its provider — that pin exists for prompt-cache consistency
+// across an ongoing conversation, which doesn't apply to this single
+// one-off call, and it actively hurts here: found live that the pinned
+// "xiaomi/fp8" endpoint 404s with "No endpoints found that support image
+// input" even though the model itself is vision-capable — some
+// provider-specific deployments of a multimodal model quietly drop vision
+// support. Leaving provider routing open lets OpenRouter pick whichever
+// endpoint actually handles image input for this model.
+func visionClient(cfg *config.Config, selectedModel config.ModelConfig) (client *llm.Client, ok bool) {
+	visionModel := selectedModel
+	if !visionModel.Multimodal {
+		var found bool
+		visionModel, found = cfg.MultimodalModel()
+		if !found {
+			return nil, false
+		}
+	}
+	return llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, visionModel.Model, visionModel.Temperature, visionModel.MaxTokens), true
 }
 
 // removeAttachmentFile deletes an uploaded attachment's file from disk once

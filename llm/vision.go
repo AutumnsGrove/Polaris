@@ -58,21 +58,32 @@ type visionResponse struct {
 // multimodal-attachment pipeline: a model that isn't itself multimodal
 // still needs some way to "see" an attached photo, so a capable model
 // describes it first and that description is folded into the main
-// model's context as plain text (see gateway's resolveAttachment).
+// model's context as plain text (see gateway's resolveAttachment). Also
+// the "describe" half of view_image's describe/see mode (tools/view_image.go)
+// — the "see" half instead inserts a real image content block into the
+// live conversation (see llm.ChatMessage.ImageURLs), never calling this.
 //
 // The prompt itself (vision.describe_image in prompts.yaml) asks for a
 // thorough, literal description rather than an interpretation — the
 // result becomes the ONLY thing the main model (which never sees the
 // actual image) has to work with, so vague output there directly limits
-// what questions about the image can be answered downstream.
-func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType string) (description string, costUSD float64, err error) {
+// what questions about the image can be answered downstream. instructions,
+// when non-empty (view_image's optional describe-mode parameter, same
+// shape as web_read's own "instructions"), is appended as an explicit
+// focus rather than replacing the base prompt — resolveAttachment's
+// upload-time call always passes "".
+func (c *Client) DescribeImage(ctx context.Context, imageBase64, mimeType, instructions string) (description string, costUSD float64, err error) {
+	prompt := prompts.Get().Vision.DescribeImage
+	if instructions != "" {
+		prompt = fmt.Sprintf("%s\n\nFocus specifically on: %s", prompt, instructions)
+	}
 	reqBody := visionRequest{
 		Model: c.model,
 		Messages: []visionMessage{
 			{
 				Role: "user",
 				Content: []visionContentBlock{
-					{Type: "text", Text: prompts.Get().Vision.DescribeImage},
+					{Type: "text", Text: prompt},
 					{Type: "image_url", ImageURL: &visionImageURL{URL: fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64)}},
 				},
 			},

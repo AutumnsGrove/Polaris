@@ -227,6 +227,7 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	prompt = applyToolsPlaceholder(prompt, ctx)
 	prompt = applyMemoriesPlaceholder(prompt, ctx)
 	prompt = applyCustomInstructionsPlaceholder(prompt, ctx)
+	prompt = applyMultimodalPlaceholder(prompt, ctx)
 	if voiceMode {
 		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
@@ -255,6 +256,21 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 // rendered tool list is identical.
 func applyToolsPlaceholder(prompt string, ctx *tools.Context) string {
 	return strings.ReplaceAll(prompt, "{tools}", tools.ToolsPrompt(ctx))
+}
+
+// applyMultimodalPlaceholder replaces every "{multimodal}" occurrence with
+// a sentence telling the model directly whether it's vision-capable this
+// turn (ctx.Multimodal), and which view_image mode to reach for as a
+// result — so it doesn't have to guess or discover the answer by having a
+// "see" call rejected. Two fixed sentences (prompts.yaml's
+// agent.multimodal_true/multimodal_false) rather than one templated
+// string, since the actual guidance differs, not just a yes/no fact.
+func applyMultimodalPlaceholder(prompt string, ctx *tools.Context) string {
+	text := prompts.Get().Agent.MultimodalFalse
+	if ctx.Multimodal {
+		text = prompts.Get().Agent.MultimodalTrue
+	}
+	return strings.ReplaceAll(prompt, "{multimodal}", text)
 }
 
 // applyMemoriesPlaceholder replaces every "{memories}" occurrence with the
@@ -526,6 +542,12 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		for _, r := range results {
 			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
 		}
+		// Any view_image "see" calls in this batch queued a real image
+		// message via ctx.AddPendingImageMessage — flushed only now, after
+		// every tool-result message above, never interleaved with them, for
+		// the same wire-protocol reason nudges aren't interleaved either
+		// (see the comment above this block).
+		messages = append(messages, ctx.FlushPendingImageMessages()...)
 
 		// finalize_pulsar_prompt was called — end the turn the same way
 		// PendingQuestion does below, checked first: it means "actually

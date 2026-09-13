@@ -461,6 +461,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		SearchThreads:          s.db.SearchMessages,
 		ListRecentThreads:      s.db.ListThreadsPage,
 		ReadThread:             s.db.ReadThread,
+		Multimodal:             modelCfg.Multimodal,
+	}
+	// visionClient mirrors resolveAttachment's own model-selection logic
+	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
+	// fallback) — nil only when neither exists, matching every other
+	// optional dependency on tools.Context (Brave/Parallel/Tavily) that's
+	// left nil rather than wired when unavailable.
+	if visionCl, ok := visionClient(cfg, modelCfg); ok {
+		agentCtx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
+			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
+		}
 	}
 	// Left nil (not wired above) when the operator has turned memory off —
 	// see MemoryEnabledFromStore's doc comment for why leaving these nil

@@ -23,7 +23,7 @@ func TestDescribeImage_ReturnsDescriptionAndCost(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(srv.URL, "test-key", "xiaomi/mimo-v2.5", 0.4, 1000)
-	desc, cost, err := client.DescribeImage(context.Background(), "ZmFrZS1pbWFnZS1ieXRlcw==", "image/jpeg")
+	desc, cost, err := client.DescribeImage(context.Background(), "ZmFrZS1pbWFnZS1ieXRlcw==", "image/jpeg", "")
 	if err != nil {
 		t.Fatalf("DescribeImage returned error: %v", err)
 	}
@@ -52,6 +52,28 @@ func TestDescribeImage_ReturnsDescriptionAndCost(t *testing.T) {
 	}
 }
 
+func TestDescribeImage_InstructionsAppendedAsFocus(t *testing.T) {
+	var captured visionRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := make([]byte, r.ContentLength)
+		r.Body.Read(body)
+		json.Unmarshal(body, &captured)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"the sleeve fabric looks like velvet"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "xiaomi/mimo-v2.5", 0.4, 1000)
+	if _, _, err := client.DescribeImage(context.Background(), "ZmFrZQ==", "image/png", "the fabric texture of the sleeves"); err != nil {
+		t.Fatalf("DescribeImage returned error: %v", err)
+	}
+
+	textBlock := captured.Messages[0].Content[0]
+	if !strings.Contains(textBlock.Text, "the fabric texture of the sleeves") {
+		t.Errorf("text block = %q, want it to include the given instructions as a focus", textBlock.Text)
+	}
+}
+
 func TestDescribeImage_NonOKStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -60,7 +82,7 @@ func TestDescribeImage_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(srv.URL, "test-key", "xiaomi/mimo-v2.5", 0.4, 1000)
-	_, _, err := client.DescribeImage(context.Background(), "ZmFrZQ==", "image/png")
+	_, _, err := client.DescribeImage(context.Background(), "ZmFrZQ==", "image/png", "")
 	if err == nil {
 		t.Fatal("expected an error for a 502 response")
 	}
@@ -74,7 +96,7 @@ func TestDescribeImage_EmptyChoicesIsError(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(srv.URL, "test-key", "xiaomi/mimo-v2.5", 0.4, 1000)
-	_, _, err := client.DescribeImage(context.Background(), "ZmFrZQ==", "image/png")
+	_, _, err := client.DescribeImage(context.Background(), "ZmFrZQ==", "image/png", "")
 	if err == nil {
 		t.Fatal("expected an error when the model returns no choices")
 	}

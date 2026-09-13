@@ -43,6 +43,15 @@ type Set struct {
 		StaleStreakWarning      string            `yaml:"stale_streak_warning"`
 		EmptyAnswerRetry        string            `yaml:"empty_answer_retry"`
 		QuerySimilarityWarning  string            `yaml:"query_similarity_warning"`
+		// MultimodalTrue/MultimodalFalse fill the {multimodal} placeholder
+		// (see agent/driver.go's applyMultimodalPlaceholder) — told to the
+		// model directly rather than left for it to discover by trial and
+		// error via a view_image "see" call that either works or gets
+		// rejected. Two fixed strings rather than one templated sentence:
+		// the actual guidance differs (which mode to reach for), not just a
+		// yes/no fact slotted into an otherwise-identical sentence.
+		MultimodalTrue  string `yaml:"multimodal_true"`
+		MultimodalFalse string `yaml:"multimodal_false"`
 	} `yaml:"agent"`
 
 	Turn struct {
@@ -145,6 +154,8 @@ func buildDefaults() Set {
 	d.Agent.FallbackSystemPrompt = `You are Polaris, a private, self-hosted research assistant. You have these tools:
 
 {tools}
+
+{multimodal}
 
 You can call multiple tools in the same turn when they're genuinely independent of each other's
 results (they run concurrently) — don't batch when a later call depends on an earlier one's result.
@@ -302,6 +313,14 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"other — rephrasing the same question won't surface anything new. Either answer now with what " +
 		"you've gathered, or try a genuinely different angle: a different tool, a specific named source, " +
 		"or a completely different set of search terms — not another variation of a query you've already tried."
+
+	d.Agent.MultimodalTrue = "You are a multimodal (vision-capable) model. When you need to genuinely look at " +
+		"an image from image_search results — compare visual details, judge whether something looks right — " +
+		"use view_image's \"see\" mode to have it shown to you directly, rather than only reading a text " +
+		"description via \"describe\" mode."
+	d.Agent.MultimodalFalse = "You are not a multimodal model — you cannot see images directly. Use " +
+		"view_image's \"describe\" mode (the only mode available to you) to get a text description of an " +
+		"image from image_search results; \"see\" mode will be rejected."
 
 	d.Turn.SuggestionsSystem = "You write short follow-up-question suggestions for a Q&A search app's " +
 		"UI. You never continue, restate, or add commentary to the previous answer — your only output " +
@@ -700,6 +719,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.EmptyAnswerRetry == "" {
 		s.Agent.EmptyAnswerRetry = defaults.Agent.EmptyAnswerRetry
+	}
+	if s.Agent.MultimodalTrue == "" {
+		s.Agent.MultimodalTrue = defaults.Agent.MultimodalTrue
+	}
+	if s.Agent.MultimodalFalse == "" {
+		s.Agent.MultimodalFalse = defaults.Agent.MultimodalFalse
 	}
 	if s.Agent.QuerySimilarityWarning == "" {
 		s.Agent.QuerySimilarityWarning = defaults.Agent.QuerySimilarityWarning

@@ -1,0 +1,14 @@
+name: view_image
+description: >-
+  actually look at a specific image from a prior image_search result, instead of only knowing a
+  gallery exists. "describe" mode (always available) returns a thorough text description.
+  "see" mode shows you the image directly — only available to a multimodal model — for when you
+  genuinely need to judge something visually rather than just confirm a fact a description
+  would already answer.
+api_description: >-
+  View a specific image from a prior image_search result by its numbered position (card_index).
+  mode: "describe" (default, always available) returns a thorough text description, optionally
+  focused via "instructions". mode: "see" (only offered when you are a multimodal model) inserts
+  the actual image into this conversation as your next message, so you can genuinely look at it
+  rather than read about it — use "see" when a routine description wouldn't be enough (comparing
+  visual details, judging whether something looks right), not for every image reflexively.

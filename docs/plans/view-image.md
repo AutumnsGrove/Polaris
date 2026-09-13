@@ -1,6 +1,9 @@
 # view_image: letting the model actually look at an image
 
-**Status: planning only — filed against issue #60. No application code written yet.**
+**Status: shipped (2026-09-13) for `image_search` card results.** `path` (a workspace file — a
+fetched image, a `code_exec`-generated chart) is accepted in the tool's schema but always rejected
+with a clear "not yet supported" error until `docs/plans/fetch-and-workspace-tools.md`'s workspace
+exists. Filed against issue #60.
 
 This doc covers a gap distinct from (but related to) `docs/plans/fetch-and-workspace-tools.md`:
 once an image exists somewhere reachable (an `image_search` result, a fetched file, a `code_exec`-
@@ -72,6 +75,24 @@ This also directly answers the motivating case for building this at all: a multi
 reviewing its own `code_exec`-generated chart gets the actual pixels this way, not a text
 description of them — "does this chart look right" only means something if the model can actually
 look.
+
+**Implementation note**: the OpenAI-compatible wire protocol requires every "tool" role result
+message in a batch to land back-to-back immediately after the assistant's tool-calls message, with
+nothing else interleaved (confirmed the hard way elsewhere in this codebase — DeepSeek 400s
+otherwise). A `see` call's synthetic image message can't be inserted right after its own tool
+result for this reason; it has to be queued (`tools.Context.AddPendingImageMessage`) and flushed
+once, after the *entire* batch's tool-result messages, the same way `agent/driver.go` already
+defers "nudge" messages past a multi-call batch.
+
+**`mode`'s multimodal gating happens in the handler, not the schema.** `catalog.go`'s `Requires`
+mechanism only gates whole-tool availability, not one parameter's enum value — building
+per-parameter conditional schemas for this one case wasn't worth it for v1. `"see"` stays valid
+JSON Schema regardless of the model's capability; `handleViewImage` rejects it with a clear error
+pointing back at `"describe"` if the thread's model isn't multimodal. Paired with a new
+`{multimodal}` prompt placeholder (`prompt.md`, filled by `agent/driver.go`'s
+`applyMultimodalPlaceholder`) that tells the model directly, every turn, whether it's vision-capable
+and which mode to reach for — so in practice the model shouldn't need to hit that rejection to find
+out.
 
 ### Two costs worth naming, not two blockers
 

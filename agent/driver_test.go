@@ -84,6 +84,24 @@ func TestLoadSystemPrompt_AppliesCustomInstructions(t *testing.T) {
 	}
 }
 
+func TestLoadSystemPrompt_AppliesMultimodalPlaceholder(t *testing.T) {
+	notMultimodal := loadSystemPrompt(&tools.Context{Multimodal: false}, false, "", false, false)
+	if strings.Contains(notMultimodal, "{multimodal}") {
+		t.Error("{multimodal} literal token should always be replaced")
+	}
+	if !strings.Contains(notMultimodal, "you cannot see images directly") {
+		t.Errorf("prompt = %q, want the non-multimodal guidance", notMultimodal)
+	}
+
+	multimodal := loadSystemPrompt(&tools.Context{Multimodal: true}, false, "", false, false)
+	if !strings.Contains(multimodal, "vision-capable") {
+		t.Errorf("prompt = %q, want the multimodal guidance", multimodal)
+	}
+	if multimodal == notMultimodal {
+		t.Error("a multimodal vs. non-multimodal context should produce different {multimodal} text")
+	}
+}
+
 func TestLoadSystemPrompt_UnknownFocusModeIsNoOp(t *testing.T) {
 	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
 	unknown := loadSystemPrompt(&tools.Context{}, false, "not_a_real_mode", false, false)

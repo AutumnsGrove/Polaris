@@ -113,6 +113,7 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 		return "no images found"
 	}
 
+	startIndex := len(ctx.CardsSnapshot())
 	for _, r := range resp.Results {
 		if r.Thumbnail == "" {
 			continue
@@ -121,7 +122,7 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 			Title: r.Title, Subtitle: hostnameOf(r.URL), ImageURL: r.Thumbnail, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "SearXNG", args.Query, callID)
+	return finishImageSearch(ctx, "SearXNG", args.Query, startIndex, callID)
 }
 
 // braveImageFallback tries Brave's Image Search API once SearXNG has
@@ -150,6 +151,7 @@ func braveImageFallback(ctx *Context, query string, count int, callID string) (r
 		return "", false
 	}
 
+	startIndex := len(ctx.CardsSnapshot())
 	for _, r := range resp.Results {
 		if r.ImageSrc == "" {
 			continue
@@ -162,19 +164,38 @@ func braveImageFallback(ctx *Context, query string, count int, callID string) (r
 			Title: r.Title, Subtitle: source, ImageURL: r.ImageSrc, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query, callID), true
+	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query, startIndex, callID), true
 }
 
-func finishImageSearch(ctx *Context, provider, query string, callID string) string {
+// finishImageSearch reports how many images this call added, and — the
+// part that used to be missing entirely — which numbered positions they
+// landed at in this turn's card gallery, so the model can actually
+// reference one via view_image's card_index parameter (tools/view_image.go)
+// instead of only being told images exist without any way to point at a
+// specific one. Indices are 1-based, absolute positions in
+// ctx.CardsSnapshot() (not a separate "image-only" numbering space) since
+// that's the exact slice view_image indexes into — startIndex is the
+// snapshot length taken by the caller before this call's own AddCard loop
+// ran, so [startIndex, len(cards)) is exactly the range this call added,
+// even if earlier tool calls this turn already added other cards.
+func finishImageSearch(ctx *Context, provider, query string, startIndex int, callID string) string {
 	cards := ctx.CardsSnapshot()
 	imageCount := 0
-	for _, c := range cards {
+	for _, c := range cards[startIndex:] {
 		if c.Kind == "image" {
 			imageCount++
 		}
 	}
-	result := fmt.Sprintf("[via %s] found %d image(s) for %q — they're now attached to this turn's answer, "+
-		"no need to describe them individually in prose.", provider, imageCount, query)
+
+	indexHint := "no images were added"
+	if imageCount == 1 {
+		indexHint = fmt.Sprintf("call it image %d with view_image if you need to actually look at it or describe it", startIndex+1)
+	} else if imageCount > 1 {
+		indexHint = fmt.Sprintf("call them images %d-%d with view_image if you need to actually look at or describe any of them",
+			startIndex+1, len(cards))
+	}
+	result := fmt.Sprintf("[via %s] found %d image(s) for %q — they're attached to this turn's answer as a gallery, "+
+		"no need to describe them individually in prose unless asked; %s.", provider, imageCount, query, indexHint)
 	log.Info("image_search", "provider", provider, "query", query, "results", imageCount)
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":    "image_search",
