@@ -27,11 +27,21 @@ const constellationSchedulerInterval = time.Minute
 // check's own comment for why this needs a self-healing timeout at all.
 const backfillStaleAfter = 4 * time.Hour
 
+// shootingStarStaleAfter bounds how long a shooting_star_runs row can sit
+// with finished_at IS NULL before the sweep below (store.Store.
+// MarkStaleShootingStarRunsFailed) treats it as abandoned rather than
+// genuinely still running — comfortably longer than any real shooting star
+// should ever take (the 25-turn cap plus real completion-call latency), so
+// this never fires on a merely slow run. A var, not a const, so a test can
+// shrink it (save/restore around the call) to exercise the sweep without
+// needing to backdate a row's started_at from outside the store package.
+var shootingStarStaleAfter = 30 * time.Minute
+
 // RunConstellationScheduler runs until done is closed — see
 // RunPulsarScheduler's doc comment for the same shutdown-drain shape.
 func (s *Server) RunConstellationScheduler(done <-chan struct{}) {
 	runOnce := func() {
-		runConstellationTick(context.Background(), s.db, s.liveConfig())
+		runConstellationTick(context.Background(), s.db, s.liveConfig(), s.shootingStarTurnGate())
 	}
 
 	runOnce()
@@ -64,7 +74,19 @@ func WeaverClient(cfg *config.Config, modelID string) llm.ChatClient {
 // nothing is eligible this tick, this makes zero AI calls — a hard
 // requirement (see the plan doc's design principles, specifically the
 // her-go "dream sequence" failure mode this guards against).
-func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.Config) {
+func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.Config, gate turnGate) {
+	// Ahead of the Enabled check below — a run can be orphaned (crash, OOM,
+	// SIGKILL) whether or not Constellation is still enabled by the time
+	// the next tick runs, and self-healing it costs nothing (a single
+	// bounded UPDATE, no AI calls), so there's no reason to gate it behind
+	// the same "zero AI calls when disabled" principle that governs
+	// everything below.
+	if n, err := db.MarkStaleShootingStarRunsFailed(shootingStarStaleAfter); err != nil {
+		log.Warn("constellation: sweeping stale shooting star runs failed", "err", err)
+	} else if n > 0 {
+		log.Warn("constellation: marked stale shooting star run(s) as needing retry", "count", n)
+	}
+
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
 		log.Warn("constellation: loading config failed", "err", err)
@@ -114,7 +136,20 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 				log.Warn("constellation: backfill started mid-tick, stopping early", "threads_remaining", len(threadIDs))
 				break
 			}
-			if err := RunShootingStarRecovered(reqCtx, db, client, threadID); err != nil {
+			// Registers this shooting star with the server's shutdown-drain
+			// tracking (see turnGate's doc comment) before it starts, and
+			// stops the tick outright — rather than skipping just this one
+			// thread and trying the next — the moment a restart is
+			// underway: shuttingDown never goes back to false, so every
+			// later thread in this same slice would fail the same check
+			// anyway.
+			if !gate.tryStart() {
+				log.Warn("constellation: server is restarting, stopping tick early", "threads_remaining", len(threadIDs))
+				break
+			}
+			err := RunShootingStarRecovered(reqCtx, db, client, threadID)
+			gate.finish()
+			if err != nil {
 				log.Warn("constellation: shooting star failed", "thread_id", threadID, "err", err)
 			}
 		}

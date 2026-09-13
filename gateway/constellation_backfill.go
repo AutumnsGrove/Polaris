@@ -43,7 +43,25 @@ import (
 // mid-loop over several threads when a backfill starts) — not a perfect
 // lock (there's an inherent gap between this check and the first thread
 // actually starting), but it closes the obvious window cheaply.
-func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.ChatClient, limit int) (processed int, err error) {
+//
+// gate registers each shooting star with the caller's shutdown-drain
+// tracking, if it has one — see turnGate's doc comment. The bare-metal
+// CLI's own direct invocation (cmd/constellation_backfill.go) passes
+// NoopTurnGate since it isn't part of the long-running `polaris run`
+// process at all; the Docker-mode HTTP handler (handleConstellationBackfill)
+// passes the real server's gate since it runs inside that process.
+func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.ChatClient, limit int, gate turnGate) (processed int, err error) {
+	// Ahead of everything else below — a stale row from a previous
+	// crashed run would otherwise wedge HasInFlightShootingStarRun's check
+	// just below at busy=true forever, blocking every future backfill
+	// attempt for no real reason (see MarkStaleShootingStarRunsFailed's
+	// own doc comment).
+	if n, werr := db.MarkStaleShootingStarRunsFailed(shootingStarStaleAfter); werr != nil {
+		log.Warn("constellation backfill: sweeping stale shooting star runs failed", "err", werr)
+	} else if n > 0 {
+		log.Warn("constellation backfill: marked stale shooting star run(s) as needing retry", "count", n)
+	}
+
 	if err := db.SetConstellationBackfillStarted(backfillStaleAfter); err != nil {
 		return 0, err
 	}
@@ -64,7 +82,15 @@ func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.C
 		return 0, err
 	}
 	for _, threadID := range ids {
-		if err := RunShootingStarRecovered(reqCtx, db, client, threadID); err != nil {
+		// See runConstellationTick's identical check for why this stops
+		// the whole loop rather than skipping just this one thread.
+		if !gate.tryStart() {
+			log.Warn("constellation backfill: server is restarting, stopping early", "processed", processed, "remaining", len(ids)-processed)
+			break
+		}
+		err := RunShootingStarRecovered(reqCtx, db, client, threadID)
+		gate.finish()
+		if err != nil {
 			log.Warn("constellation backfill: shooting star failed", "thread_id", threadID, "err", err)
 			continue
 		}

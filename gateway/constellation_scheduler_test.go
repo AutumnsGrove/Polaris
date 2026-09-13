@@ -23,7 +23,7 @@ func TestRunConstellationTick_DisabledMakesNoChanges(t *testing.T) {
 	// defaults to 0) — never call UpdateConstellationConfig, this tests
 	// the true first-read default.
 
-	runConstellationTick(context.Background(), db, testConstellationConfig())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -53,7 +53,7 @@ func TestRunConstellationTick_NothingEligible_StillRecordsLastChecked(t *testing
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 
-	runConstellationTick(context.Background(), db, testConstellationConfig())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -84,7 +84,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 		t.Fatalf("SetConstellationBackfillStarted: %v", err)
 	}
 
-	runConstellationTick(context.Background(), db, testConstellationConfig())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
 
 	cfgRow, err := db.GetConstellationConfig()
 	if err != nil {
@@ -105,12 +105,70 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 	if err := db.ClearConstellationBackfillStarted(); err != nil {
 		t.Fatalf("ClearConstellationBackfillStarted: %v", err)
 	}
-	runConstellationTick(context.Background(), db, testConstellationConfig())
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
 	cfgRow, err = db.GetConstellationConfig()
 	if err != nil {
 		t.Fatalf("GetConstellationConfig (after clearing): %v", err)
 	}
 	if cfgRow.LastCheckedAt == nil {
 		t.Error("LastCheckedAt should be set once the backfill flag is cleared and a normal tick runs")
+	}
+}
+
+// TestRunConstellationTick_StopsWhenGateRefuses covers the shutdown-drain
+// integration (see turnGate's doc comment): once a restart begins,
+// TryStartTurn starts refusing new turns, and the tick must stop dispatching
+// further shooting stars rather than ignoring that signal — the same
+// behavior BackfillConstellation's own gate check gets.
+func TestRunConstellationTick_StopsWhenGateRefuses(t *testing.T) {
+	db := openTestStoreForConstellation(t)
+	threadID := seedWeaverThread(t, db, "hello")
+	if err := db.UpdateConstellationConfig(true, 0, ""); err != nil {
+		t.Fatalf("UpdateConstellationConfig: %v", err)
+	}
+
+	gate := turnGate{tryStart: func() bool { return false }, finish: func() {}}
+	runConstellationTick(context.Background(), db, testConstellationConfig(), gate)
+
+	run, err := db.LastShootingStarRun(threadID)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun: %v", err)
+	}
+	if run != nil {
+		t.Errorf("a tick whose gate refused every thread still ran a shooting star: %+v", run)
+	}
+}
+
+// TestRunConstellationTick_SweepsStaleRuns covers the self-healing
+// integration with store.MarkStaleShootingStarRunsFailed: a run orphaned by
+// a crashed/killed process must get closed out and marked needs_retry on
+// the very next tick, even one that's otherwise a no-op (Constellation
+// disabled, nothing eligible) — see that function's own doc comment for why
+// this can't wait behind the Enabled check.
+func TestRunConstellationTick_SweepsStaleRuns(t *testing.T) {
+	db := openTestStoreForConstellation(t)
+	threadID := seedWeaverThread(t, db, "hello")
+	// Constellation stays disabled — the sweep must still run.
+
+	if _, err := db.StartShootingStarRun(threadID, 1); err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+
+	// Shrink the staleness threshold to "immediately stale" rather than
+	// backdating started_at directly — store.Store's underlying *sql.DB
+	// isn't reachable from this package, and this exercises the same
+	// sweep call either way. Restored so it can't leak into another test.
+	oldStaleAfter := shootingStarStaleAfter
+	shootingStarStaleAfter = 0
+	defer func() { shootingStarStaleAfter = oldStaleAfter }()
+
+	runConstellationTick(context.Background(), db, testConstellationConfig(), NoopTurnGate())
+
+	run, err := db.LastShootingStarRun(threadID)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun: %v", err)
+	}
+	if run.FinishedAt == nil || !run.NeedsRetry {
+		t.Errorf("stale run wasn't swept even though Constellation is disabled: %+v", run)
 	}
 }

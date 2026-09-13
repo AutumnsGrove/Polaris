@@ -300,6 +300,26 @@ thread that keeps failing keeps getting attempted every poll until it succeeds o
 problem (a bad prompt, a flaky provider) gets fixed. `needs_retry` clears the moment a run for that
 thread finishes successfully.
 
+**Shutdown drain.** Each shooting star registers with the gateway server's own shutdown-drain
+tracking (`TryStartTurn`/`FinishTurn` in `gateway/server.go`) exactly the way a Pulsar pulse already
+does — see `gateway/constellation_weaver.go`'s `turnGate`. Without this, an ordinary `polaris
+restart`/`polaris update` could kill a shooting star mid-write instead of waiting (up to the same
+grace period a live chat turn gets) for it to finish cleanly first. This only applies to the two
+callers that actually run inside the long-lived `polaris run` process — the scheduler's own tick and
+the Docker-mode HTTP backfill handler; the bare-metal CLI's own `polaris constellation backfill`
+invocation is a separate, one-shot process with no drain to register against, so it passes a no-op
+gate instead.
+
+**Stale-run sweep.** A shooting star that's still "in flight" (`finished_at IS NULL`) 30 minutes
+after it started — comfortably longer than any real run should take — is presumed to belong to a
+process that crashed, ran out of memory, or was force-killed (bypassing the drain above entirely,
+e.g. a `docker compose up --force-recreate` that didn't wait), and gets closed out as a failure
+needing retry by `store.Store.MarkStaleShootingStarRunsFailed`. Run once per scheduler tick
+(regardless of whether Constellation is currently enabled) and once at the start of every backfill,
+so a thread orphaned this way self-heals within a minute or two instead of being permanently stuck
+(the delta gate would otherwise never re-offer it, and `HasInFlightShootingStarRun` — the Docker
+update watcher's own busy check — would report `busy: true` forever).
+
 ### Backfill
 
 Turning Constellation on for the first time doesn't mean the library only starts accumulating from

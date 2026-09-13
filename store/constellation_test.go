@@ -645,6 +645,83 @@ func TestHasInFlightShootingStarRun(t *testing.T) {
 	}
 }
 
+// TestMarkStaleShootingStarRunsFailed covers the self-healing sweep for a
+// run whose process died mid-flight (crash/OOM/SIGKILL) before it ever
+// reached its own FinishShootingStarRun call — without this, such a row
+// sits at finished_at IS NULL forever, permanently wedging both
+// HasInFlightShootingStarRun (reports busy=true forever) and
+// EligibleConstellationThreads (the thread never becomes eligible again
+// unless new messages happen to arrive).
+func TestMarkStaleShootingStarRunsFailed(t *testing.T) {
+	s := openTestStore(t)
+
+	freshThread := seedThread(t, s)
+	freshRunID, err := s.StartShootingStarRun(freshThread, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun (fresh): %v", err)
+	}
+
+	staleThread := seedThread(t, s)
+	staleRunID, err := s.StartShootingStarRun(staleThread, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun (stale): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE shooting_star_runs SET started_at = datetime('now', '-2 hours') WHERE id = ?`, staleRunID); err != nil {
+		t.Fatalf("backdating started_at: %v", err)
+	}
+
+	n, err := s.MarkStaleShootingStarRunsFailed(time.Hour)
+	if err != nil {
+		t.Fatalf("MarkStaleShootingStarRunsFailed: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("MarkStaleShootingStarRunsFailed count = %d, want 1 (only the 2-hour-old run)", n)
+	}
+
+	staleRun, err := s.LastShootingStarRun(staleThread)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun (stale): %v", err)
+	}
+	if staleRun.FinishedAt == nil {
+		t.Error("stale run FinishedAt is nil, want it closed out")
+	}
+	if !staleRun.NeedsRetry {
+		t.Error("stale run NeedsRetry = false, want true (so the thread becomes eligible again)")
+	}
+	if staleRun.Error == "" {
+		t.Error("stale run Error is empty, want a human-readable reason")
+	}
+
+	freshRun, err := s.LastShootingStarRun(freshThread)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun (fresh): %v", err)
+	}
+	if freshRun.FinishedAt != nil {
+		t.Error("fresh (recently-started) run was closed out, want it left alone")
+	}
+
+	busy, err := s.HasInFlightShootingStarRun()
+	if err != nil {
+		t.Fatalf("HasInFlightShootingStarRun: %v", err)
+	}
+	if !busy {
+		t.Error("busy = false, want true (the fresh run is still legitimately in flight)")
+	}
+
+	// Finish the fresh run too, then confirm a second sweep is a no-op —
+	// nothing left to mark.
+	if err := s.FinishShootingStarRun(freshRunID, "done", "", false); err != nil {
+		t.Fatalf("FinishShootingStarRun: %v", err)
+	}
+	n, err = s.MarkStaleShootingStarRunsFailed(time.Hour)
+	if err != nil {
+		t.Fatalf("MarkStaleShootingStarRunsFailed (second sweep): %v", err)
+	}
+	if n != 0 {
+		t.Errorf("second sweep count = %d, want 0", n)
+	}
+}
+
 func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	s := openTestStore(t)
 

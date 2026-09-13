@@ -757,6 +757,40 @@ func (s *Store) HasInFlightShootingStarRun() (bool, error) {
 	return busy, nil
 }
 
+// MarkStaleShootingStarRunsFailed closes out every shooting_star_runs row
+// that's been "in flight" (finished_at IS NULL) for longer than staleAfter
+// — the self-healing counterpart to RunShootingStar's own normal
+// FinishShootingStarRun call, for the one case that call can never reach:
+// the whole process dying mid-run (a crash, OOM, or SIGKILL that skips
+// even RunShootingStarRecovered's panic recovery, since that only catches
+// a panic within the one goroutine, not the process disappearing out from
+// under it). Without this, such a row sits at finished_at IS NULL forever:
+// EligibleConstellationThreads' delta gate never re-offers that thread
+// (last_message_id_seen already matches the pre-crash high-water mark,
+// and needs_retry is still 0) unless new messages happen to arrive later,
+// and HasInFlightShootingStarRun (the Docker update watcher's own busy
+// check, see its own doc comment referencing issue #57) reports busy=true
+// forever too. Called once per scheduler tick and at the start of every
+// backfill — cheap (a single bounded UPDATE, no new table), and safe to
+// call as often as needed since a run that's actually still healthy never
+// matches the staleAfter cutoff.
+func (s *Store) MarkStaleShootingStarRunsFailed(staleAfter time.Duration) (int, error) {
+	res, err := s.db.Exec(
+		`UPDATE shooting_star_runs
+		 SET finished_at = CURRENT_TIMESTAMP, error = 'stale: run never finished (process likely crashed or was killed)', needs_retry = 1
+		 WHERE finished_at IS NULL AND started_at <= datetime('now', printf('-%d seconds', ?))`,
+		int(staleAfter.Seconds()),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("mark stale shooting star runs failed: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("mark stale shooting star runs failed: %w", err)
+	}
+	return int(n), nil
+}
+
 // RecordShootingStarCandidate logs one topic candidate Weaver proposed
 // within a run — called as a side effect of create_star/update_star, not a
 // separate logging step.

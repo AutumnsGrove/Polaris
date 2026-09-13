@@ -140,6 +140,43 @@ func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client ll
 	return RunShootingStar(reqCtx, db, client, threadID)
 }
 
+// turnGate lets a shooting star register with the server's shutdown-drain
+// tracking (see server.go's TryStartTurn/FinishTurn) so an in-flight
+// Weaver run isn't silently killed mid-write by an ordinary `polaris
+// restart`/`polaris update` — the exact same registration firePulse
+// (pulsar_scheduler.go) already does for a Pulsar pulse, and for the same
+// reason: this runs as a background turn with no live WebSocket/HTTP
+// client ever attached, so without it a restart's drain window
+// (WaitForActiveTurns) has no way to know a shooting star is in flight at
+// all and the process just exits out from under it mid-DB-write.
+//
+// A plain struct of two funcs, not *Server itself — BackfillConstellation
+// must also work from the bare-metal CLI's own `polaris constellation
+// backfill` invocation (cmd/constellation_backfill.go), a separate,
+// one-shot OS process with no *Server/drain concept to register against
+// at all. That path uses NoopTurnGate instead.
+type turnGate struct {
+	tryStart func() bool
+	finish   func()
+}
+
+// NoopTurnGate always allows a shooting star to proceed and never gates it
+// on shutdown — for callers with no *Server to register against (the
+// bare-metal CLI's own `polaris constellation backfill` process, which
+// isn't part of the long-running `polaris run` server at all).
+func NoopTurnGate() turnGate {
+	return turnGate{tryStart: func() bool { return true }, finish: func() {}}
+}
+
+// shootingStarTurnGate registers a shooting star with this server's own
+// shutdown-drain tracking — for the two callers that actually run inside
+// the long-lived `polaris run` process: the scheduler's own tick
+// (RunConstellationScheduler) and the Docker-mode HTTP backfill handler
+// (handleConstellationBackfill).
+func (s *Server) shootingStarTurnGate() turnGate {
+	return turnGate{tryStart: s.TryStartTurn, finish: s.FinishTurn}
+}
+
 // weaverTaskText assembles Weaver's starting task text — the one piece of
 // Go-orchestrated logic before the loop starts (see the plan doc's
 // "Revisiting a thread"). Returns "" if this is a revisit with no actual

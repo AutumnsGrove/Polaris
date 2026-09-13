@@ -76,7 +76,15 @@ func runConstellationBackfill(cmd *cobra.Command, args []string) error {
 		fmt.Println("backfilling every eligible thread — this may take a while for a large backlog...")
 	}
 
-	processed, err := gateway.BackfillConstellation(context.Background(), db, client, constellationBackfillLimit)
+	// NoopTurnGate: this CLI invocation is a separate, one-shot process,
+	// not part of the long-running `polaris run` server — there's no
+	// *Server/shutdown-drain to register against here at all. Killing this
+	// process directly (Ctrl-C, closing the terminal) is a different,
+	// separate concern from `polaris restart`'s own graceful drain; a
+	// crashed/killed run here still gets picked back up by
+	// MarkStaleShootingStarRunsFailed's sweep on the next scheduler tick
+	// or backfill attempt.
+	processed, err := gateway.BackfillConstellation(context.Background(), db, client, constellationBackfillLimit, gateway.NoopTurnGate())
 	if err != nil {
 		return err
 	}
