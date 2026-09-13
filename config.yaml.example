@@ -101,6 +101,18 @@ logging:
 attachments:
   dir: "./attachments"   # uploaded PDFs/images from the composer's "+" menu
 
+# code_exec: the sandboxed Python tool — Docker-only (see
+# docs/plans/code-execution.md's "Deployment scope"). Bare-metal has no
+# container boundary for arbitrary code, so code_exec is never offered
+# here regardless of what's set below; nothing to configure on this path.
+# code_exec:
+#   workspace_dir: "./workspaces"
+#   host_workspace_dir: ""   # required for Docker; see compose/polaris/config.yaml.example
+#   signal_dir: "./code-exec-signal"
+#   memory_limit_mb: 384
+#   pids_limit: 64
+#   timeout_seconds: 30
+
 service:
   label: "polaris"
 

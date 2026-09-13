@@ -101,6 +101,20 @@ logging:
 attachments:
   dir: "/data/attachments"
 
+code_exec:
+  workspace_dir: "/data/workspaces"
+  # Must be the real absolute path on the DOCKER HOST, not this
+  # container's own /data/workspaces above — the host-side sandbox
+  # runner (compose/watcher/codeexec.sh) runs outside any container and
+  # bind-mounts this path directly into the ephemeral sandbox container
+  # it launches (see docs/plans/code-execution.md's "How Polaris's own
+  # container reaches Docker"). install.sh's Docker path substitutes
+  # @INSTALL_DIR@ with the real install path automatically; if editing
+  # this by hand instead, point it at wherever docker-compose.yml's
+  # ./workspaces volume actually resolves to on disk.
+  host_workspace_dir: "@INSTALL_DIR@/workspaces"
+  signal_dir: "/data/code-exec-signal"
+
 service:
   label: "polaris"
 

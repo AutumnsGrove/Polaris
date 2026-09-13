@@ -18,6 +18,9 @@ dev/searxng/data/
 compose/polaris/config.yaml
 .env
 update-signal/
+code-exec-signal/
+workspaces/
+.codeexec-watcher.lock
 
 # web/build/ is intentionally committed — the potato is a Le Potato SBC,
 # too weak to run pnpm install + vite build in any reasonable time on

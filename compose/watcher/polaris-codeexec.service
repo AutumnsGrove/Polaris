@@ -1,0 +1,22 @@
+[Unit]
+Description=Polaris code_exec sandbox runner (one-shot)
+
+[Service]
+Type=oneshot
+# Same "invoking user, in the docker group, deliberately not root"
+# reasoning as polaris-update.service — this script only ever runs one
+# fixed, reviewable `docker run` invocation against a request file
+# Polaris itself wrote, plus python3 for JSON handling. See
+# codeexec.sh's own header comment for why the Docker socket never
+# reaches the polaris container itself.
+User=@USER@
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/compose/watcher/codeexec.sh
+
+# A code_exec call is on the critical path of a live chat turn a user
+# is actively waiting on (unlike update.sh's background pull) — bounded
+# well above the sandbox's own configured wall-clock timeout
+# (config.Config.CodeExec.TimeoutSeconds, 30s default) plus its
+# --kill-after grace and container start/stop overhead, but still a
+# hard ceiling so a wedged docker daemon can't hang this unit forever.
+TimeoutStartSec=120

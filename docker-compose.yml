@@ -115,6 +115,24 @@ services:
       # gateway/docker_update.go); the watcher reads it and writes
       # update-signal/result back.
       - ./update-signal:/data/update-signal
+      # Same plain-host-bind-mount reasoning as update-signal above, for
+      # code_exec's own host-side handoff (see tools/code_exec.go,
+      # compose/watcher/codeexec.sh) — the host-side sandbox runner
+      # needs direct filesystem access from outside any container.
+      - ./code-exec-signal:/data/code-exec-signal
+      # The per-thread workspace root code_exec reads/writes files
+      # under (see docs/plans/code-execution.md's "File persistence").
+      # Also a plain host bind mount, not the polaris-data named volume:
+      # compose/watcher/codeexec.sh needs the real host path to bind-
+      # mount into the ephemeral sandbox container it launches — a named
+      # volume's mountpoint isn't something a script outside Docker's
+      # own volume management can address directly. This is why
+      # compose/polaris/config.yaml.example's code_exec.host_workspace_dir
+      # exists as a separate setting from workspace_dir above (this
+      # mount's target): the two describe the same directory from two
+      # different vantage points (inside this container vs. on the
+      # real host), and only the host script needs the latter.
+      - ./workspaces:/data/workspaces
 
 volumes:
   polaris-data:

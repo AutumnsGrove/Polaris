@@ -1,0 +1,16 @@
+name: code_exec
+category: compute
+description: >-
+  run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/
+  pillow/sympy/seaborn/pyarrow preinstalled, nothing else can be added. Files written to the
+  workspace persist across calls within the same thread, so a dataset fetched or built on an
+  earlier turn is still there. Docker-only — never offered on a bare-metal install (see
+  docs/plans/code-execution.md's "Deployment scope").
+api_description: >-
+  Run Python code in a sandboxed environment for calculations, data analysis, or file processing.
+  numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, and pyarrow are
+  preinstalled — no other packages can be installed, and there is no network access from inside the
+  sandbox at all. Files written to the current directory persist across calls within this
+  conversation. Returns stdout, stderr, and the exit code. A resource or time limit hit is reported
+  back as a normal result, not a crash — simplify the code or reduce the data size and try again.
+requires: docker_only

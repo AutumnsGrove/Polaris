@@ -462,6 +462,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		ListRecentThreads:      s.db.ListThreadsPage,
 		ReadThread:             s.db.ReadThread,
 		Multimodal:             modelCfg.Multimodal,
+		ThreadID:               storageThreadID,
 	}
 	// visionClient mirrors resolveAttachment's own model-selection logic
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
@@ -472,6 +473,23 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.DescribeImage = func(imgCtx context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
 			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
 		}
+	}
+	// Left false/empty (not wired above) unless this is genuinely a
+	// Docker deployment with HostWorkspaceDir actually configured — see
+	// config.Config.CodeExec's doc comment on why that field has no safe
+	// default. A bare-metal process, or a Docker one that hasn't set
+	// host_workspace_dir yet, gets CodeExecEnabled=false, which
+	// catalog.go's "docker_only" Requires case turns into code_exec
+	// simply not being offered — the same "explicit refuse" outcome
+	// cmd/install.go uses for the CLI side of this same deployment split.
+	if deploymentMode() == "docker" && cfg.CodeExec.HostWorkspaceDir != "" {
+		agentCtx.CodeExecEnabled = true
+		agentCtx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir
+		agentCtx.CodeExecHostWorkspaceDir = cfg.CodeExec.HostWorkspaceDir
+		agentCtx.CodeExecSignalDir = cfg.CodeExec.SignalDir
+		agentCtx.CodeExecMemoryLimitMB = cfg.CodeExec.MemoryLimitMB
+		agentCtx.CodeExecPidsLimit = cfg.CodeExec.PidsLimit
+		agentCtx.CodeExecTimeoutSeconds = cfg.CodeExec.TimeoutSeconds
 	}
 	// Left nil (not wired above) when the operator has turned memory off —
 	// see MemoryEnabledFromStore's doc comment for why leaving these nil

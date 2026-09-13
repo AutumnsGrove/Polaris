@@ -233,6 +233,51 @@ type Config struct {
 		Dir string `yaml:"dir"`
 	} `yaml:"attachments"`
 
+	// CodeExec configures the code_exec tool's sandboxed Python
+	// execution — Docker-only (see docs/plans/code-execution.md's
+	// "Deployment scope"). Every field here is unused on a bare-metal
+	// install; code_exec simply isn't offered there (catalog.go's
+	// "docker_only" Requires case).
+	CodeExec struct {
+		// WorkspaceDir is this container's own view of the per-thread
+		// workspace root (e.g. "/data/workspaces") — code_exec joins the
+		// current thread's ID onto this for its own file reads/writes.
+		WorkspaceDir string `yaml:"workspace_dir"`
+
+		// HostWorkspaceDir is the real path of the *same* directory on
+		// the Docker host's filesystem — required for code_exec to be
+		// offered at all (see gateway/turn.go's wiring, which leaves
+		// CodeExecEnabled false when this is empty even under Docker).
+		// Can't just reuse WorkspaceDir's value: the host-side sandbox
+		// runner (compose/watcher/codeexec.sh) runs outside any
+		// container, in a different mount namespace entirely, and needs
+		// a path that resolves on the real host to bind-mount into the
+		// ephemeral sandbox container it launches — see
+		// docs/plans/code-execution.md's "How Polaris's own container
+		// reaches Docker" for the full reasoning. install.sh's Docker
+		// path fills this in automatically; no safe default exists here
+		// since only the host knows its own absolute path.
+		HostWorkspaceDir string `yaml:"host_workspace_dir"`
+
+		// SignalDir is the bind-mounted directory code_exec uses to hand
+		// a request off to the host-side sandbox runner and read its
+		// result back — same request/result-file handoff shape as
+		// update-signal/ (see gateway/docker_update.go).
+		SignalDir string `yaml:"signal_dir"`
+
+		// MemoryLimitMB/PidsLimit/TimeoutSeconds are the resource
+		// ceilings compose/watcher/codeexec.sh passes to `docker run`
+		// for the sandbox container. Defaults below match
+		// docs/plans/code-execution.md's measured numbers: real peak RSS
+		// for the full numpy/pandas/matplotlib/scipy/scikit-learn/
+		// pillow/sympy/seaborn/pyarrow package set landed at ~150-260MB
+		// on the potato, so 384MB keeps a real margin without being
+		// wasteful against the ~370MB truly-free budget measured there.
+		MemoryLimitMB  int `yaml:"memory_limit_mb"`
+		PidsLimit      int `yaml:"pids_limit"`
+		TimeoutSeconds int `yaml:"timeout_seconds"`
+	} `yaml:"code_exec"`
+
 	Service struct {
 		Label string `yaml:"label"`
 	} `yaml:"service"`
@@ -398,6 +443,26 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.Attachments.Dir == "" {
 		cfg.Attachments.Dir = "./attachments"
 	}
+	if cfg.CodeExec.WorkspaceDir == "" {
+		cfg.CodeExec.WorkspaceDir = "./workspaces"
+	}
+	if cfg.CodeExec.SignalDir == "" {
+		cfg.CodeExec.SignalDir = "./code-exec-signal"
+	}
+	if cfg.CodeExec.MemoryLimitMB <= 0 {
+		cfg.CodeExec.MemoryLimitMB = 384
+	}
+	if cfg.CodeExec.PidsLimit <= 0 {
+		cfg.CodeExec.PidsLimit = 64
+	}
+	if cfg.CodeExec.TimeoutSeconds <= 0 {
+		cfg.CodeExec.TimeoutSeconds = 30
+	}
+	// CodeExec.HostWorkspaceDir has no default — see its doc comment.
+	// Left empty (bare-metal, or a hand-edited Docker config that hasn't
+	// set it) means code_exec's "docker_only" Requires case reports
+	// unavailable, the same fail-closed behavior an unrecognized
+	// Requires value gets elsewhere in catalog.go.
 	if cfg.Service.Label == "" {
 		cfg.Service.Label = "polaris"
 	}

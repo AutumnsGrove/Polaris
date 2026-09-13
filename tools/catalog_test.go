@@ -46,6 +46,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	ctx.PulsarWizard = true
 	ctx.PulsarDailyItems = true
+	ctx.CodeExecEnabled = true
 	prompt := ToolsPrompt(ctx)
 
 	// weaver_run tools are deliberately excluded here, not asserted

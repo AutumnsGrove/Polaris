@@ -235,6 +235,20 @@ if ! timeout 300 docker compose pull polaris 2>&1 | tee "$CMD_LOG"; then
 	exit 1
 fi
 
+# Also refresh the code_exec sandbox image (ghcr.io/autumnsgrove/
+# polaris-sandbox — see docker/sandbox/Dockerfile,
+# .github/workflows/docker-publish-sandbox.yml) on every Polaris update,
+# not just at install time — otherwise a package-set change there would
+# only ever reach hosts that happen to run a manual `docker pull` of it.
+# Best-effort and non-fatal: this image isn't part of docker-compose.yml
+# (compose/watcher/codeexec.sh runs it directly, not as a compose
+# service), so a pull failure here has no running container to roll
+# back and shouldn't fail the Polaris update itself over an unrelated
+# image. A stale sandbox image just means code_exec keeps running
+# whatever package set it already has until the next successful pull.
+timeout 300 docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest 2>&1 | tee "$CMD_LOG" || \
+	echo "code_exec sandbox image pull failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
+
 # Wait for any in-flight Constellation shooting-star run to finish before
 # recreating the container out from under it — issue #57, caught live: an
 # update landed exactly mid-batch, only harmless because the batch

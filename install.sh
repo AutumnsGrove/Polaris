@@ -422,6 +422,18 @@ else
 		cp compose/polaris/config.yaml.example compose/polaris/config.yaml
 		info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
 		COMPOSE_CONFIG_WAS_FRESH=1
+
+		# code_exec.host_workspace_dir must be a real absolute path on
+		# THIS host (see config.Config.CodeExec's doc comment on why it
+		# can't just reuse workspace_dir's container-side value) —
+		# @INSTALL_DIR@ is a template placeholder, same convention as the
+		# systemd unit files below, substituted with the actual install
+		# path now that it's known.
+		if [ "$OS" = "Darwin" ]; then
+			sed -i '' "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
+		else
+			sed -i "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
+		fi
 	fi
 
 	# 777, not the default 755: this is bind-mounted into the polaris
@@ -440,6 +452,25 @@ else
 	# cross-UID-namespace shared directory, not a real exposure.
 	mkdir -p update-signal
 	chmod 777 update-signal
+
+	# Same cross-UID-namespace bind-mount problem as update-signal above,
+	# for code_exec's own host-side handoff (see tools/code_exec.go,
+	# compose/watcher/codeexec.sh) — polaris (uid 100 in the container)
+	# writes request files here, and the host-side watcher (running as
+	# whatever user ran this script) reads them and writes results back.
+	mkdir -p code-exec-signal
+	chmod 777 code-exec-signal
+
+	# workspaces/ has a THIRD uid in the mix beyond the two above: the
+	# code_exec sandbox container itself runs as uid 1000 ("sandbox",
+	# see docker/sandbox/Dockerfile) when it writes generated files
+	# (e.g. a matplotlib chart) into its bind-mounted workspace
+	# directory. 777 for the same "nothing sensitive lives here, and a
+	# real cross-UID-namespace write otherwise fails outright" reasoning
+	# as update-signal above — this directory only ever holds files a
+	# thread's own conversation already generated or fetched.
+	mkdir -p workspaces
+	chmod 777 workspaces
 
 	# Same cross-UID-namespace bind-mount problem as update-signal above,
 	# for the same reason: domain_rankings.yaml is bind-mounted
@@ -597,22 +628,47 @@ if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
 		WATCHER_TMP="$(mktemp -d)"
 		trap 'rm -rf "$WATCHER_TMP"' EXIT
 
-		for unit in polaris-update.service polaris-update.path polaris-update.timer; do
+		for unit in polaris-update.service polaris-update.path polaris-update.timer \
+			polaris-codeexec.service polaris-codeexec.path; do
 			sed -e "s|@INSTALL_DIR@|$INSTALL_DIR|g" -e "s|@USER@|$USER|g" \
 				"$WATCHER_SRC/$unit" >"$WATCHER_TMP/$unit"
 			sudo cp "$WATCHER_TMP/$unit" "/etc/systemd/system/$unit"
 		done
-		info "Installed polaris-update.service/.path/.timer to /etc/systemd/system/."
+		info "Installed polaris-update.service/.path/.timer and"
+		info "polaris-codeexec.service/.path to /etc/systemd/system/."
 
 		sudo systemctl daemon-reload
 		# Enabling --now the .path and .timer is safe at install time even
-		# with nothing pending: .path's PathExists condition is false until
-		# a real update is requested (see that unit's comment), and
-		# .timer's first tick is 5 minutes out (OnBootSec) — neither runs
-		# polaris-update.service itself right now.
-		sudo systemctl enable --now polaris-update.path polaris-update.timer
+		# with nothing pending: .path's PathExists/DirectoryNotEmpty
+		# condition is false/unmet until a real update or code_exec call
+		# is requested (see each unit's own comment), and .timer's first
+		# tick is 5 minutes out (OnBootSec) — none of this runs the
+		# corresponding .service right now. No .timer backstop for
+		# codeexec: unlike an update (checked at most a few times a day),
+		# a missed inotify event here would just make a live chat turn's
+		# code_exec call wait out its own configured timeout and report a
+		# clear error — a periodic re-check adds no value on that
+		# timescale (see polaris-codeexec.path's own comment).
+		sudo systemctl enable --now polaris-update.path polaris-update.timer polaris-codeexec.path
 		info "Enabled polaris-update.path (instant trigger) and polaris-update.timer"
-		info "(hourly backstop)."
+		info "(hourly backstop), plus polaris-codeexec.path for the code_exec tool."
+	fi
+
+	if command -v docker >/dev/null 2>&1; then
+		step "Pulling the code_exec sandbox image"
+		# Built in CI, not on this host — see docker/sandbox/Dockerfile's
+		# header comment for why (the potato is far too weak to pay an
+		# ~8-minute pip-install cost live). Pulled explicitly here rather
+		# than left for the first code_exec call to trigger implicitly:
+		# an implicit first-use pull could itself blow past
+		# config.Config.CodeExec.TimeoutSeconds and surface as a
+		# confusing "your code timed out" error instead of a clear
+		# install-time message.
+		if ! docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest; then
+			warn "Couldn't pull the code_exec sandbox image — the code_exec tool won't"
+			warn "work until this succeeds. Re-run manually once ready:"
+			warn "  docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest"
+		fi
 	fi
 fi
 

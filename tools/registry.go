@@ -418,6 +418,60 @@ type Context struct {
 	// being genuinely unset.
 	CustomInstructions string
 
+	// ThreadID is the current thread's ID (gateway/turn.go's
+	// storageThreadID) — code_exec joins it onto CodeExecWorkspaceDir/
+	// CodeExecHostWorkspaceDir to name the thread's persistent workspace
+	// directory (see docs/plans/code-execution.md's "File persistence").
+	// Empty wherever there's no real thread to key a workspace off of
+	// (the benchmark harness's isolated runs, sub-agent turns) — those
+	// callers also never set CodeExecEnabled, so this being empty is
+	// never reached by code_exec's own handler.
+	ThreadID string
+
+	// CodeExecEnabled gates the code_exec tool (catalog.go's
+	// "docker_only" Requires case) — true only when gateway's
+	// deploymentMode() reports "docker" AND
+	// config.Config.CodeExec.HostWorkspaceDir is actually set (see
+	// gateway/turn.go's wiring). Bare-metal has no container boundary
+	// for arbitrary code, so this stays false there unconditionally
+	// rather than running generated code as a direct host subprocess —
+	// see docs/plans/code-execution.md's "Deployment scope".
+	CodeExecEnabled bool
+
+	// CodeExecWorkspaceDir is this container's own view of the
+	// per-thread workspace root (config.Config.CodeExec.WorkspaceDir,
+	// e.g. "/data/workspaces") — code_exec joins ThreadID onto this for
+	// its own file reads/writes. Meaningless to the host-side sandbox
+	// runner; see CodeExecHostWorkspaceDir for the path that actually
+	// matters to it.
+	CodeExecWorkspaceDir string
+
+	// CodeExecHostWorkspaceDir is the real Docker-host filesystem path
+	// backing the same directory CodeExecWorkspaceDir names from inside
+	// this container (config.Config.CodeExec.HostWorkspaceDir) — written
+	// into the sandbox request file so the host-side runner
+	// (compose/watcher/codeexec.sh), which runs outside any container,
+	// knows what to bind-mount into the ephemeral sandbox container. See
+	// docs/plans/code-execution.md's "How Polaris's own container
+	// reaches Docker" for why the two paths can't be the same string.
+	CodeExecHostWorkspaceDir string
+
+	// CodeExecSignalDir is the bind-mounted directory code_exec uses to
+	// hand a request off to the host-side sandbox runner and read its
+	// result back — same request/result-file handoff shape as
+	// gateway/docker_update.go's update-signal/, chosen specifically so
+	// this container never gets Docker socket access itself (see
+	// docs/plans/code-execution.md).
+	CodeExecSignalDir string
+
+	// CodeExecMemoryLimitMB/CodeExecPidsLimit/CodeExecTimeoutSeconds are
+	// the resource ceilings passed through to the host-side script's
+	// `docker run` invocation for the sandbox container — see
+	// config.Config.CodeExec's doc comment for the measured defaults.
+	CodeExecMemoryLimitMB  int
+	CodeExecPidsLimit      int
+	CodeExecTimeoutSeconds int
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/
@@ -896,12 +950,12 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
-		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef, "code_exec": codeExecDef,
 		"image_search": imageSearchDef, "view_image": viewImageDef, "highlight": highlightDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
-		"search_stars": searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
+		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
 		"update_star": updateStarDef, "link_stars": linkStarsDef,
 	}
 }

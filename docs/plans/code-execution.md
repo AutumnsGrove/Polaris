@@ -160,6 +160,47 @@ until imported" logic applies, so it should be added alongside the others rather
 separate decision. ("Datasette" isn't a distinct file format worth its own handling — a Datasette
 export is SQLite or JSON underneath, both already covered.)
 
+## How Polaris's own container reaches Docker to launch the sandbox (settled 2026-09-13)
+
+The sandbox mechanism above (plain locked-down `docker run`) doesn't by itself say how the
+*Polaris process* — running inside its own container — gets to invoke `docker run` at all.
+Considered two options directly:
+
+1. **Mount `/var/run/docker.sock` into the Polaris container** (docker-outside-of-docker) so it can
+   shell out to `docker run` for sandbox containers as siblings. Simplest to build, but breaks the
+   project's own established principle (see CLAUDE.md's update/restart section and
+   `docker-compose.yml`'s comment on `update-signal/`): the container is deliberately never given
+   control over Docker, specifically because socket access is root-equivalent on the host. Doing
+   this for `code_exec` would mean an unrelated bug in Polaris itself (a Go dependency CVE, a
+   memory-safety issue, anything) escalates straight to full host root — a materially bigger blast
+   radius than the sandbox's own escape surface, and the opposite direction from the "proportionate
+   risk" reasoning this whole doc otherwise argues from.
+2. **A host-side signal-file handoff, mirroring `update-signal/` exactly** — Polaris writes a
+   request file (code, workspace path, resource limits) to a plain bind-mounted directory; a
+   systemd path-unit on the host (not in any container) fires a oneshot script the instant the file
+   appears, runs the actual `docker run` sandbox invocation, and writes a result file back. Polaris
+   polls for the result file and reads it. No new persistent daemon, no socket — reuses the exact
+   host-watcher pattern this codebase already has live and debugged for updates.
+
+**Decision: option 2.** This is the security model for `code_exec` overall, not just an
+implementation detail — the model never gets a lever that reaches Docker control directly, only a
+narrow, fixed-shape request (code + resource limits) that a host-side script interprets the same
+way every time. Since `code_exec` is already limited to one execution at a time globally (see
+"Concurrency" above), a single fixed request/result file pair needs no queueing — Polaris's own
+package-level mutex already serializes calls before a request file is ever written, so two threads
+calling `code_exec` "simultaneously" never race on the handoff files themselves.
+
+**Future addition, not built now — a pre-execution classifier**: the reason a signal-file handoff
+(rather than raw docker.sock access) matters isn't just today's threat model — it's that it leaves
+room to add a real inspection layer later without any architecture change. Because the request file
+is a fixed, structured shape (not "here's a live shell"), a future revision could insert a
+classification/filtering pass between "model wrote this code" and "host script actually runs it" —
+flagging or rejecting generated code that tries destructive operations (deleting files outside the
+workspace, unexpected network calls despite `--network none`, `os.system`/`subprocess` escapes,
+etc.) before it ever reaches the sandbox, as defense-in-depth on top of (not instead of) the
+container boundary itself. Not designed or built in this pass — noted here so the door stays open
+and the signal-file decision above isn't read as "we don't need to think about this."
+
 ## Deployment scope: Docker-only feature
 
 Bare-metal installs have no container boundary at all for arbitrary code — running generated code

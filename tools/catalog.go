@@ -18,7 +18,7 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize",
+	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize", "code_exec",
 	"image_search", "view_image", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
@@ -128,6 +128,16 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// three search_chats closures together (see gateway/turn.go,
 		// cmd/search.go) or none at all (cmd/benchmark.go).
 		return ctx.SearchThreads != nil
+	case "docker_only":
+		// code_exec requires a real container boundary for arbitrary
+		// code — bare-metal has no equivalent and explicitly refuses
+		// rather than running generated code as a direct host
+		// subprocess, same "explicit refuse" pattern cmd/install.go uses
+		// (see docs/plans/code-execution.md's "Deployment scope").
+		// ctx.CodeExecEnabled is derived from gateway's deploymentMode()
+		// == "docker", not a user preference, so there's no bare-metal
+		// fallback to offer instead.
+		return ctx.CodeExecEnabled
 	case "deep_research":
 		// Both conditions checked, not just one: DeepResearch alone
 		// doesn't imply the closure was ever wired (a config/call path
@@ -196,6 +206,14 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"visualize": {Name: "visualize", Description: "render structured data you've already synthesized as a chart instead of prose.",
 		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
+	"code_exec": {Name: "code_exec", Requires: "docker_only", Category: "compute",
+		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow preinstalled. Docker-only.",
+		APIDescription: "Run Python code in a sandboxed environment for calculations, data analysis, or file processing. " +
+			"numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, and pyarrow are preinstalled — no " +
+			"other packages can be installed, and there is no network access from inside the sandbox at all. Files " +
+			"written to the current directory persist across calls within this conversation. Returns stdout, stderr, " +
+			"and the exit code. A resource or time limit hit is reported back as a normal result, not a crash — " +
+			"simplify the code or reduce the data size and try again."},
 	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
 		APIDescription: "Find real photos for a query and attach them as a gallery."},
 	"view_image": {Name: "view_image", Description: "actually look at a specific image from a prior image_search result.",
@@ -332,12 +350,41 @@ type ToolInfo struct {
 // human-readable description — gateway/settings.go's handleGetSettings
 // surfaces this so the frontend doesn't hardcode tool names/descriptions
 // that otherwise only live in tools/descriptions/*.yaml.
-func ToggleableTools() []ToolInfo {
+//
+// Two Requires values are excluded here even though they're not in
+// nonToggleable above, for the same underlying reason: nonToggleable is
+// for tools the model always needs regardless of user preference
+// (reasoning/interaction primitives), while these two are excluded
+// because the toggle itself would be structurally inert, not because the
+// tool is mandatory.
+//
+//   - "weaver_run" (search_stars/read_star/create_star/update_star/
+//     link_stars) — unconditionally excluded. These are never offered to
+//     the main assistant in any deployment mode or configuration; only a
+//     Weaver shooting-star run's own restricted tool menu ever reaches
+//     them (see offered()'s WeaverRun exclusion clause above). A settings
+//     toggle for them would do nothing the operator could ever observe.
+//   - "docker_only" (code_exec) — excluded only when dockerModeAvailable
+//     is false. Unlike a missing API key (music/movies/books' Requires
+//     conditions), which stays visible so the operator knows the tool
+//     exists and can add a key later, a bare-metal install can never
+//     satisfy this without switching deployment models entirely — so the
+//     "maybe later" framing that justifies keeping API-key-gated tools
+//     visible doesn't apply here.
+func ToggleableTools(dockerModeAvailable bool) []ToolInfo {
 	catalog := loadCatalog()
 	out := make([]ToolInfo, 0, len(catalogOrder))
 	for _, name := range catalogOrder {
 		if nonToggleable[name] {
 			continue
+		}
+		switch catalog[name].Requires {
+		case "weaver_run":
+			continue
+		case "docker_only":
+			if !dockerModeAvailable {
+				continue
+			}
 		}
 		out = append(out, ToolInfo{Name: name, Description: catalog[name].Description})
 	}

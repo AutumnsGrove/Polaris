@@ -1,0 +1,16 @@
+[Unit]
+Description=Trigger the Polaris code_exec sandbox runner when a request is pending
+
+[Path]
+# DirectoryNotEmpty, not PathExists on a fixed filename like
+# polaris-update.path uses — code_exec's request files are named
+# requested-<uuid>.json (see tools/code_exec.go), not a single fixed
+# path, since in principle more than one could exist even though
+# Polaris's own package-level mutex means there's normally only ever
+# one at a time. Fires the instant code-exec-signal/ transitions from
+# empty to non-empty.
+DirectoryNotEmpty=@INSTALL_DIR@/code-exec-signal
+Unit=polaris-codeexec.service
+
+[Install]
+WantedBy=multi-user.target

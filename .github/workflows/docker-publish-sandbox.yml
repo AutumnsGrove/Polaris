@@ -1,0 +1,62 @@
+name: Build and publish code_exec sandbox image
+
+# Publishes ghcr.io/autumnsgrove/polaris-sandbox — the code_exec tool's
+# execution image (docker/sandbox/Dockerfile), a completely separate
+# artifact from ghcr.io/autumnsgrove/polaris itself (see
+# docker-publish.yml). Built in CI rather than on the Docker host, same
+# reasoning as the main image: the potato's aarch64 quad-core A53 is far
+# too weak to pay this build's cost live (pip resolving/compiling
+# numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/
+# pyarrow measured at ~8 minutes even off-device — see
+# docs/plans/code-execution.md's "Package set, revisited"), and there's
+# no reason to repeat that work on every install/update when prebuilt
+# aarch64 wheels already exist for every package in this set.
+#
+# paths: only docker/sandbox/** — unlike docker-publish.yml, this image
+# has nothing to do with Polaris's own source and shouldn't rebuild (or
+# republish a new "latest" digest) on every unrelated commit to main.
+# The package set is expected to change rarely; compose/watcher's
+# codeexec.sh always pulls whatever :latest currently resolves to at
+# install/update time, not a version pinned per-commit the way the main
+# image is.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/sandbox/**"
+      - ".github/workflows/docker-publish-sandbox.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-publish-sandbox
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/sandbox
+          # arm64 is what actually matters (the potato); amd64 covers
+          # local dev — same reasoning as docker-publish.yml.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/autumnsgrove/polaris-sandbox:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

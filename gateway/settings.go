@@ -182,8 +182,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		// toggleable_tools is static catalog data (name + description), not
 		// a per-user setting — sent alongside so the settings panel can
 		// render checkboxes without hardcoding tool names/descriptions that
-		// only otherwise live in tools/descriptions/*.yaml.
-		"toggleable_tools":    tools.ToggleableTools(),
+		// only otherwise live in tools/descriptions/*.yaml. Filtered by the
+		// CURRENT deployment mode (unlike handlePutSettings's validator
+		// below) — a bare-metal install never sees a code_exec toggle at
+		// all, since it can never do anything there.
+		"toggleable_tools":    tools.ToggleableTools(deploymentMode() == "docker"),
 		"memory_enabled":      MemoryEnabledFromStore(s.db),
 		"custom_instructions": all[settingCustomInstructions],
 	})
@@ -262,8 +265,18 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		s.db.LogEvent("", "info", "settings", "voice input mode changed", map[string]interface{}{"voice_input_mode": *req.VoiceInputMode}, "")
 	}
 	if req.DisabledTools != nil {
+		// dockerModeAvailable: true unconditionally here, unlike
+		// handleGetSettings's display list below — this only validates
+		// that a submitted name is a real, ever-toggleable tool, not that
+		// it's currently relevant. Filtering by the CURRENT deployment
+		// mode here would reject re-saving an unrelated setting on a
+		// request that happens to still carry "code_exec" in
+		// disabled_tools from before a Docker-to-bare-metal switch, even
+		// though that entry has always been harmless dead weight (see
+		// offered()'s DisabledTools check, which runs unconditionally
+		// before the docker_only gate ever gets a say).
 		valid := make(map[string]bool)
-		for _, t := range tools.ToggleableTools() {
+		for _, t := range tools.ToggleableTools(true) {
 			valid[t.Name] = true
 		}
 		for _, name := range *req.DisabledTools {
