@@ -21,10 +21,22 @@
 	let showMenu = $state(false);
 	let renaming = $state(false);
 	let renameValue = $state('');
+	let menuRootEl = $state<HTMLDivElement | null>(null);
+
+	// loadSeq guards against a stale response clobbering a newer one — this
+	// component instance is reused across param changes (see the $effect
+	// below), so clicking through two mini-map neighbors quickly can leave
+	// two loadStarDetail calls in flight at once; if the older one resolves
+	// after the newer one, only the request whose sequence number is still
+	// current is allowed to write into `detail`.
+	let loadSeq = 0;
 
 	async function load(id: number) {
+		const seq = ++loadSeq;
 		loading = true;
-		detail = await constellationState.loadStarDetail(id);
+		const result = await constellationState.loadStarDetail(id);
+		if (seq !== loadSeq) return;
+		detail = result;
 		loading = false;
 		if (!detail) return;
 		// Neighbor stars for the mini-map — bounded to the first 3 edges,
@@ -32,6 +44,7 @@
 		// 3-node preview (see ConstellationMiniMap's own doc comment).
 		const toFetch = detail.edges.slice(0, 3);
 		const results = await Promise.all(toFetch.map((e) => constellationState.loadStarDetail(e.other_star_id)));
+		if (seq !== loadSeq) return;
 		neighborStars = results.filter((r): r is ConstellationStarDetail => r !== null).map((r) => r.star);
 	}
 
@@ -42,6 +55,13 @@
 	$effect(() => {
 		void load(starId);
 	});
+
+	// Click-outside-to-close, same pattern as ThreadMenu.svelte's
+	// handleWindowClick — without it, the overflow menu never closed on an
+	// outside tap at all.
+	function handleWindowClick(e: MouseEvent) {
+		if (showMenu && menuRootEl && !menuRootEl.contains(e.target as Node)) showMenu = false;
+	}
 
 	const Icon = $derived(iconForCategory(detail?.star.category ?? ''));
 	const starColor = $derived(colorForCategory(detail?.star.category ?? ''));
@@ -79,14 +99,26 @@
 	async function saveRename() {
 		if (!detail || !renameValue.trim()) return;
 		const result = await constellationState.patchStar(detail.star.id, { title: renameValue.trim() });
-		if (result.star) detail = { ...detail, star: result.star };
-		renaming = false;
+		if (result.star) {
+			detail = { ...detail, star: result.star };
+			renaming = false;
+		} else {
+			// Left open (not closed) on failure — same reasoning as
+			// ThreadMenu.svelte's regenerateTitle — so the person can see
+			// what they typed and retry instead of the form just vanishing
+			// with no explanation and the title silently reverting.
+			appState.showToast(result.error || "Couldn't rename that star");
+		}
 	}
 
 	async function toggleDisabled() {
 		if (!detail) return;
 		const result = await constellationState.patchStar(detail.star.id, { disabled: !detail.star.disabled });
-		if (result.star) detail = { ...detail, star: result.star };
+		if (result.star) {
+			detail = { ...detail, star: result.star };
+		} else {
+			appState.showToast(result.error || "Couldn't update that star");
+		}
 		showMenu = false;
 	}
 </script>
@@ -95,19 +127,31 @@
 	<title>{detail?.star.title ?? 'Star'} — Constellation</title>
 </svelte:head>
 
+<svelte:window onclick={handleWindowClick} />
+
 <header class="header">
 	<button class="icon-btn" onclick={() => goto('/constellation')} aria-label="Back">
 		<ArrowLeft size={18} />
 	</button>
 	<span class="crumb">{detail?.star.category ?? ''}</span>
-	<div class="menu-wrap">
-		<button class="icon-btn" onclick={() => (showMenu = !showMenu)} aria-label="More">
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="menu-wrap" bind:this={menuRootEl} onclick={(e) => e.stopPropagation()}>
+		<button
+			class="icon-btn"
+			onclick={() => (showMenu = !showMenu)}
+			aria-label="More"
+			aria-haspopup="menu"
+			aria-expanded={showMenu}
+		>
 			<MoreVertical size={16} />
 		</button>
 		{#if showMenu}
-			<div class="menu">
-				<button onclick={startRename}>Rename</button>
-				<button onclick={toggleDisabled}>{detail?.star.disabled ? 'Enable' : 'Disable'}</button>
+			<div class="menu" role="menu">
+				<button onclick={startRename} role="menuitem">Rename</button>
+				<button onclick={toggleDisabled} role="menuitem"
+					>{detail?.star.disabled ? 'Enable' : 'Disable'}</button
+				>
 			</div>
 		{/if}
 	</div>
@@ -235,7 +279,7 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 140px;
-		z-index: var(--z-dropdown, 20);
+		z-index: var(--z-dropdown);
 		overflow: hidden;
 	}
 	.menu button {
@@ -392,7 +436,7 @@
 	.icon-tile {
 		width: 26px;
 		height: 26px;
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		flex-shrink: 0;
 		display: flex;
 		align-items: center;

@@ -136,7 +136,7 @@
 		transform: translate(0, -50%);
 		display: flex;
 		align-items: center;
-		gap: 7px;
+		gap: var(--space-sm);
 		background: none;
 		border: none;
 		/* Vertical padding alone enlarges the tap target — translateY(-50%)
@@ -146,7 +146,7 @@
 		   absolutely positioned element, `top` places the *margin* edge,
 		   so a negative margin pulls the dot away from that y by the same
 		   amount — confirmed live as a 4px "too high" drift on every row. */
-		padding: 4px 4px 4px 0;
+		padding: var(--space-xs) var(--space-xs) var(--space-xs) 0;
 		cursor: pointer;
 		font: inherit;
 		text-align: left;

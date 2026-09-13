@@ -43,7 +43,12 @@
 	class="star-card"
 	style="--star-color: {starColor}"
 	{onclick}
-	onkeydown={(e) => e.key === 'Enter' && onclick()}
+	onkeydown={(e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			onclick();
+		}
+	}}
 	role="button"
 	tabindex="0"
 >

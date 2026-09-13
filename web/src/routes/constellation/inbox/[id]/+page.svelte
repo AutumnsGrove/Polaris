@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { constellationState } from '$lib/constellation.svelte';
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
+	import { marked } from '$lib/markdown';
+	import DOMPurify from 'dompurify';
 	import { ArrowLeft, Check, Pencil, X } from '@lucide/svelte';
 	import { iconForCategory } from '$lib/categoryIcons';
 	import { colorForCategory } from '$lib/categoryColors';
@@ -16,9 +18,17 @@
 	let acting = $state(false);
 	let error = $state('');
 
+	// loadSeq guards against a stale response clobbering a newer one — same
+	// reasoning as the Star detail page's own guard: this component
+	// instance can be reused across param changes.
+	let loadSeq = 0;
+
 	async function load(id: number) {
+		const seq = ++loadSeq;
 		loading = true;
-		detail = await constellationState.loadStarDetail(id);
+		const result = await constellationState.loadStarDetail(id);
+		if (seq !== loadSeq) return;
+		detail = result;
 		loading = false;
 	}
 	$effect(() => {
@@ -30,6 +40,13 @@
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	// Same sanitized-Markdown rendering as the Star detail page — the
+	// screen where a human is supposed to judge Weaver's draft used to show
+	// literal "##"/"**" Markdown syntax instead of rendered prose.
+	function renderBody(body: string): string {
+		return DOMPurify.sanitize(marked.parse(body || '') as string);
 	}
 
 	async function act(action: 'approve' | 'discard') {
@@ -113,7 +130,8 @@
 
 		<div class="review-body">
 			<h2>What Weaver drafted</h2>
-			<p>{detail.star.body || detail.star.summary}</p>
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+			{@html renderBody(detail.star.body || detail.star.summary)}
 		</div>
 
 		{#if error}
@@ -271,10 +289,24 @@
 		font-weight: 500;
 		margin: 0 0 var(--space-sm);
 	}
-	.review-body p {
+	/* :global — the drafted body renders through {@html} (see renderBody),
+	   so these headings/paragraphs are injected markup Svelte's scoped CSS
+	   can't see at compile time, same reasoning as the Star detail page's
+	   own .star-body :global(...) rules. */
+	.review-body :global(h1),
+	.review-body :global(h3) {
+		font-family: var(--font-serif);
+		font-size: 15px;
+		font-weight: 500;
+		margin: var(--space-md) 0 var(--space-sm);
+	}
+	.review-body :global(p) {
 		font-size: 14px;
 		line-height: 1.6;
-		margin: 0;
+		margin: 0 0 var(--space-sm);
+	}
+	.review-body :global(p:last-child) {
+		margin-bottom: 0;
 	}
 	.error-text {
 		margin-top: var(--space-lg);

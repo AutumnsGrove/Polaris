@@ -38,6 +38,10 @@ var createStarDef = llm.ToolDef{
 					"type":        "boolean",
 					"description": "True only if this is an inference about who the person IS, not a topic they discussed. Should be true for essentially every star this agent creates.",
 				},
+				"reasoning": map[string]interface{}{
+					"type":        "string",
+					"description": "One sentence: why this belongs in the library. Shown to the person reviewing this star as \"Why this needs a look\" — a vague reason is itself a signal this probably shouldn't be a star.",
+				},
 			},
 			"required": []string{"title", "category", "summary", "confidence_class"},
 		},
@@ -55,6 +59,7 @@ func handleCreateStar(argsJSON string, ctx *Context, callID string) string {
 		Tags            []string `json:"tags"`
 		ConfidenceClass string   `json:"confidence_class"`
 		IsPersonal      bool     `json:"is_personal"`
+		Reasoning       string   `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "create_star", nil, "error: "+err.Error(), callID)
@@ -78,7 +83,7 @@ func handleCreateStar(argsJSON string, ctx *Context, callID string) string {
 	}
 	ctx.Emit("tool_call", map[string]interface{}{"tool": "create_star", "args": callArgs, "call_id": callID})
 
-	id, err := ctx.WeaverCreateStar(args.Title, args.Category, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal)
+	id, err := ctx.WeaverCreateStar(args.Title, args.Category, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal, strings.TrimSpace(args.Reasoning))
 	if err != nil {
 		return emitToolError(ctx, "create_star", callArgs, "error: "+err.Error(), callID)
 	}

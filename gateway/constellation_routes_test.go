@@ -309,6 +309,123 @@ func TestHandleRestoreConstellationStar(t *testing.T) {
 	}
 }
 
+func TestHandleRestoreConstellationStar_NotFound(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	resp, err := http.Post(h.url("/api/constellation/stars/999999/restore"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestHandleRestoreConstellationStar_RejectsNonRejectedStar(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Status: "confirmed"})
+
+	resp, err := http.Post(h.url("/api/constellation/stars/"+itoa(id)+"/restore"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("status = %d, want 409 (only a rejected star can be restored)", resp.StatusCode)
+	}
+	star, err := h.db.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if star.Status != "confirmed" {
+		t.Errorf("Status = %q, want left unchanged", star.Status)
+	}
+}
+
+func TestHandleReviewConstellationStar_NotFound(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	body, _ := json.Marshal(map[string]string{"action": "approve"})
+	req, _ := http.NewRequest(http.MethodPost, h.url("/api/constellation/stars/999999/review"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestHandleReviewConstellationStar_RejectsAlreadyResolvedStar covers the
+// double-tap case: approving a star that's already confirmed (e.g. a second
+// tap racing the first request, or a stale Inbox list) used to silently
+// re-run SetStarStatusAndRecordReview and write a second, spurious
+// star_reviews row instead of refusing.
+func TestHandleReviewConstellationStar_RejectsAlreadyResolvedStar(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Status: "confirmed"})
+
+	body, _ := json.Marshal(map[string]string{"action": "approve"})
+	req, _ := http.NewRequest(http.MethodPost, h.url("/api/constellation/stars/"+itoa(id)+"/review"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("status = %d, want 409 (star is not awaiting review)", resp.StatusCode)
+	}
+}
+
+// TestHandleEditConstellationStar_RejectsRejectedStar covers the gap where
+// Edit star (meant for an already-confirmed/auto star past the review
+// stage) had no precondition at all — it could previously be called
+// against a rejected star and silently rewrite its content while it sat
+// hidden in the Library's Rejected section, a mutation outside every flow
+// the UI actually exposes for that state.
+func TestHandleEditConstellationStar_RejectsRejectedStar(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Summary: "s", Status: "proposed"})
+	if err := h.db.SetStarStatus(id, "rejected"); err != nil {
+		t.Fatalf("SetStarStatus: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"correction": "actually this is wrong"})
+	req, _ := http.NewRequest(http.MethodPost, h.url("/api/constellation/stars/"+itoa(id)+"/edit"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("status = %d, want 409 (cannot edit a rejected star)", resp.StatusCode)
+	}
+}
+
+func TestHandleEditConstellationStar_UpdatesConfirmedStar(t *testing.T) {
+	srv := fakeLLMServer(t, "reconcile", "INVALIDATES: false\n\nSUMMARY: Edited summary\nBODY: Edited body text.")
+	h := newTestHarness(t, srv.URL)
+	id, _ := h.db.CreateStar(store.Star{Title: "X", Category: "technology", Summary: "old summary", Body: "old body", Status: "confirmed"})
+
+	body, _ := json.Marshal(map[string]string{"correction": "actually I finished this one"})
+	req, _ := http.NewRequest(http.MethodPost, h.url("/api/constellation/stars/"+itoa(id)+"/edit"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	star, err := h.db.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if star.Summary != "Edited summary" || star.Body != "Edited body text." {
+		t.Errorf("content not updated by edit: summary=%q body=%q", star.Summary, star.Body)
+	}
+}
+
 func TestHandleRenameConstellationStar(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	id, _ := h.db.CreateStar(store.Star{Title: "Old title", Category: "technology", Status: "auto"})

@@ -2,9 +2,12 @@ package store
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+func boolPtr(b bool) *bool { return &b }
 
 func TestConstellationConfig_DefaultsThenUpdate(t *testing.T) {
 	s := openTestStore(t)
@@ -60,7 +63,7 @@ func TestConstellationConfig_BackfillStartedRoundTrips(t *testing.T) {
 		t.Errorf("BackfillStartedAt should default to nil, got %+v", c.BackfillStartedAt)
 	}
 
-	if err := s.SetConstellationBackfillStarted(); err != nil {
+	if err := s.SetConstellationBackfillStarted(time.Hour); err != nil {
 		t.Fatalf("SetConstellationBackfillStarted: %v", err)
 	}
 	c, err = s.GetConstellationConfig()
@@ -69,6 +72,24 @@ func TestConstellationConfig_BackfillStartedRoundTrips(t *testing.T) {
 	}
 	if c.BackfillStartedAt == nil {
 		t.Fatal("BackfillStartedAt should be set after SetConstellationBackfillStarted")
+	}
+
+	// A second concurrent call must not silently "win" too — this is the
+	// compare-and-set that prevents two overlapping backfills from
+	// independently computing the eligible-threads list and racing each
+	// other (see the function's own doc comment).
+	if err := s.SetConstellationBackfillStarted(time.Hour); err != ErrBackfillAlreadyRunning {
+		t.Errorf("second SetConstellationBackfillStarted while already running = %v, want ErrBackfillAlreadyRunning", err)
+	}
+
+	// A stale flag (older than staleAfter) must not block forever — a
+	// crashed backfill that never reached its own defer shouldn't wedge
+	// every future attempt.
+	if _, err := s.db.Exec(`UPDATE constellation_config SET backfill_started_at = datetime('now', '-2 hours') WHERE id = 1`); err != nil {
+		t.Fatalf("backdating backfill_started_at: %v", err)
+	}
+	if err := s.SetConstellationBackfillStarted(time.Hour); err != nil {
+		t.Errorf("SetConstellationBackfillStarted with a stale flag = %v, want nil (stale flags must be reclaimable)", err)
 	}
 
 	if err := s.ClearConstellationBackfillStarted(); err != nil {
@@ -112,7 +133,7 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 		t.Errorf("GetStar defaults = %+v, want status=auto, is_personal=false", got)
 	}
 
-	if err := s.UpdateStar(id, "", "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", false); err != nil {
+	if err := s.UpdateStar(id, "", "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -126,6 +147,74 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 	if _, err := s.GetStar(999999); err != ErrStarNotFound {
 		t.Fatalf("GetStar(missing) = %v, want ErrStarNotFound", err)
 	}
+	if err := s.UpdateStar(999999, "", "x", "x", nil, "", nil); err != ErrStarNotFound {
+		t.Fatalf("UpdateStar(missing id) = %v, want ErrStarNotFound", err)
+	}
+}
+
+func TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone(t *testing.T) {
+	s := openTestStore(t)
+	id, err := s.CreateStar(Star{
+		Title: "Cloudflare Workers", Category: "technology", Summary: "s",
+		Body: "original body", Tags: []string{"edge"}, Confidence: "obvious",
+		Status: "auto", IsPersonal: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+
+	// "" for body/confidenceClass, nil for tags/isPersonal — matching what
+	// a real update_star tool call that only meant to touch the summary
+	// (body/tags/confidence_class/is_personal are all optional in that
+	// tool's schema) actually looks like once JSON-unmarshaled. Every one
+	// of these must be left exactly as they were, not blanked out.
+	if err := s.UpdateStar(id, "", "just a summary fix", "", nil, "", nil); err != nil {
+		t.Fatalf("UpdateStar: %v", err)
+	}
+	got, err := s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if got.Summary != "just a summary fix" {
+		t.Errorf("Summary = %q, want the new summary", got.Summary)
+	}
+	if got.Body != "original body" {
+		t.Errorf("Body = %q, want it left unchanged (omitted in the call)", got.Body)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "edge" {
+		t.Errorf("Tags = %+v, want left unchanged (nil in the call)", got.Tags)
+	}
+	if got.Confidence != "obvious" {
+		t.Errorf("Confidence = %q, want left unchanged (\"\" in the call)", got.Confidence)
+	}
+	if !got.IsPersonal {
+		t.Error("IsPersonal = false, want left unchanged (nil in the call)")
+	}
+
+	// An explicit, non-nil empty tags slice really does mean "clear every
+	// tag" — distinct from nil, which means "the caller didn't say".
+	if err := s.UpdateStar(id, "", "summary", "", []string{}, "", nil); err != nil {
+		t.Fatalf("UpdateStar (explicit empty tags): %v", err)
+	}
+	got, err = s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if len(got.Tags) != 0 {
+		t.Errorf("Tags after explicit []string{} = %+v, want cleared", got.Tags)
+	}
+
+	// An explicit false really does flip is_personal, distinct from nil.
+	if err := s.UpdateStar(id, "", "summary", "", nil, "", boolPtr(false)); err != nil {
+		t.Fatalf("UpdateStar (explicit is_personal=false): %v", err)
+	}
+	got, err = s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar: %v", err)
+	}
+	if got.IsPersonal {
+		t.Error("IsPersonal after explicit false = true, want false")
+	}
 }
 
 func TestStar_UpdateStarTitle(t *testing.T) {
@@ -137,7 +226,7 @@ func TestStar_UpdateStarTitle(t *testing.T) {
 
 	// "" leaves the title untouched — the Weaver background tool's own
 	// contract (it has no title field at all).
-	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", false); err != nil {
+	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err := s.GetStar(id)
@@ -150,7 +239,7 @@ func TestStar_UpdateStarTitle(t *testing.T) {
 
 	// A non-empty title actually retitles the star — the Edit/Refine
 	// correction sheet's path when a correction changes the star's premise.
-	if err := s.UpdateStar(id, "Reads fantasy novels", "actually fantasy, not sci-fi", "b", nil, "obvious", false); err != nil {
+	if err := s.UpdateStar(id, "Reads fantasy novels", "actually fantasy, not sci-fi", "b", nil, "obvious", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -177,7 +266,11 @@ func TestStar_NilTagsEncodeAsEmptyArrayNotNull(t *testing.T) {
 		t.Errorf("raw tags column = %q, want \"[]\" (nil Tags must not encode as JSON null)", tagsJSON)
 	}
 
-	if err := s.UpdateStar(id, "", "summary", "body", nil, "obvious", false); err != nil {
+	// nil tags on UpdateStar means "leave as-is" (see its doc comment), so
+	// this stays "[]" because that's what it already was, not because
+	// UpdateStar re-encodes nil itself — TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone
+	// is what actually exercises that "leave as-is" contract.
+	if err := s.UpdateStar(id, "", "summary", "body", nil, "obvious", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	if err := s.db.QueryRow(`SELECT tags FROM stars WHERE id = ?`, id).Scan(&tagsJSON); err != nil {
@@ -211,7 +304,7 @@ func TestStar_PersonalCreateAndUpdateDoNotForceProposed(t *testing.T) {
 	if err := s.SetStarStatus(id, "confirmed"); err != nil {
 		t.Fatalf("SetStarStatus: %v", err)
 	}
-	if err := s.UpdateStar(id, "", "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, true); err != nil {
+	if err := s.UpdateStar(id, "", "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, boolPtr(true)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -220,6 +313,9 @@ func TestStar_PersonalCreateAndUpdateDoNotForceProposed(t *testing.T) {
 	}
 	if got.Status != "confirmed" {
 		t.Errorf("updating a personal star Status = %q, want confirmed unchanged", got.Status)
+	}
+	if !got.IsPersonal {
+		t.Error("IsPersonal after update = false, want true (update_star must actually persist is_personal)")
 	}
 }
 
@@ -549,6 +645,83 @@ func TestHasInFlightShootingStarRun(t *testing.T) {
 	}
 }
 
+// TestMarkStaleShootingStarRunsFailed covers the self-healing sweep for a
+// run whose process died mid-flight (crash/OOM/SIGKILL) before it ever
+// reached its own FinishShootingStarRun call — without this, such a row
+// sits at finished_at IS NULL forever, permanently wedging both
+// HasInFlightShootingStarRun (reports busy=true forever) and
+// EligibleConstellationThreads (the thread never becomes eligible again
+// unless new messages happen to arrive).
+func TestMarkStaleShootingStarRunsFailed(t *testing.T) {
+	s := openTestStore(t)
+
+	freshThread := seedThread(t, s)
+	freshRunID, err := s.StartShootingStarRun(freshThread, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun (fresh): %v", err)
+	}
+
+	staleThread := seedThread(t, s)
+	staleRunID, err := s.StartShootingStarRun(staleThread, 1)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun (stale): %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE shooting_star_runs SET started_at = datetime('now', '-2 hours') WHERE id = ?`, staleRunID); err != nil {
+		t.Fatalf("backdating started_at: %v", err)
+	}
+
+	n, err := s.MarkStaleShootingStarRunsFailed(time.Hour)
+	if err != nil {
+		t.Fatalf("MarkStaleShootingStarRunsFailed: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("MarkStaleShootingStarRunsFailed count = %d, want 1 (only the 2-hour-old run)", n)
+	}
+
+	staleRun, err := s.LastShootingStarRun(staleThread)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun (stale): %v", err)
+	}
+	if staleRun.FinishedAt == nil {
+		t.Error("stale run FinishedAt is nil, want it closed out")
+	}
+	if !staleRun.NeedsRetry {
+		t.Error("stale run NeedsRetry = false, want true (so the thread becomes eligible again)")
+	}
+	if staleRun.Error == "" {
+		t.Error("stale run Error is empty, want a human-readable reason")
+	}
+
+	freshRun, err := s.LastShootingStarRun(freshThread)
+	if err != nil {
+		t.Fatalf("LastShootingStarRun (fresh): %v", err)
+	}
+	if freshRun.FinishedAt != nil {
+		t.Error("fresh (recently-started) run was closed out, want it left alone")
+	}
+
+	busy, err := s.HasInFlightShootingStarRun()
+	if err != nil {
+		t.Fatalf("HasInFlightShootingStarRun: %v", err)
+	}
+	if !busy {
+		t.Error("busy = false, want true (the fresh run is still legitimately in flight)")
+	}
+
+	// Finish the fresh run too, then confirm a second sweep is a no-op —
+	// nothing left to mark.
+	if err := s.FinishShootingStarRun(freshRunID, "done", "", false); err != nil {
+		t.Fatalf("FinishShootingStarRun: %v", err)
+	}
+	n, err = s.MarkStaleShootingStarRunsFailed(time.Hour)
+	if err != nil {
+		t.Fatalf("MarkStaleShootingStarRunsFailed (second sweep): %v", err)
+	}
+	if n != 0 {
+		t.Errorf("second sweep count = %d, want 0", n)
+	}
+}
+
 func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	s := openTestStore(t)
 
@@ -558,7 +731,7 @@ func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE stars SET created_at = datetime('now', '-30 days') WHERE id = ?`, updatedID); err != nil {
 		t.Fatalf("backdating created_at: %v", err)
 	}
-	if err := s.UpdateStar(updatedID, "", "new summary", "new body", nil, "", false); err != nil {
+	if err := s.UpdateStar(updatedID, "", "new summary", "new body", nil, "", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 

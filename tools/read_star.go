@@ -56,8 +56,19 @@ func handleReadStar(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "star_id=%d\ntitle: %s\ncategory: %s\nstatus: %s\nconfidence: %s\nis_personal: %v\ntags: %s\n\nsummary: %s\n\nbody:\n%s",
-		star.ID, star.Title, star.Category, star.Status, star.Confidence, star.IsPersonal, strings.Join(star.Tags, ", "), star.Summary, star.Body)
+	fmt.Fprintf(&b, "star_id=%d\ntitle: %s\ncategory: %s\nstatus: %s\nconfidence: %s\nis_personal: %v\ndisabled: %v\ntags: %s\n\nsummary: %s\n\nbody:\n%s",
+		star.ID, star.Title, star.Category, star.Status, star.Confidence, star.IsPersonal, star.Disabled, strings.Join(star.Tags, ", "), star.Summary, star.Body)
+	if star.Disabled {
+		// disabled is a person explicitly removing this star from their
+		// library via the overflow menu's Disable action — distinct from
+		// status='rejected', but the same "don't quietly resurrect this"
+		// signal SearchStars already backs out of by excluding disabled
+		// stars from its own results. A star reached here anyway (a stale
+		// search result cached earlier in this same run, or a link
+		// discovered elsewhere) should be treated the same way Weaver
+		// already treats a rejected one.
+		b.WriteString("\n\nNOTE: this star is disabled — the person removed it from their library. Treat it like a rejected star: don't update it or link to it.")
+	}
 	result := b.String()
 
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "read_star", "result": result, "call_id": callID})

@@ -36,6 +36,10 @@ var updateStarDef = llm.ToolDef{
 					"type":        "boolean",
 					"description": "True only if this star is an inference about who the person IS. Should be true for essentially every star this agent updates.",
 				},
+				"reasoning": map[string]interface{}{
+					"type":        "string",
+					"description": "One sentence: why this update was made. Shown to the person reviewing this star as \"Why this needs a look\" — a vague reason is itself a signal this probably shouldn't be a star.",
+				},
 			},
 			"required": []string{"star_id", "summary"},
 		},
@@ -51,7 +55,11 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 		Body            string   `json:"body"`
 		Tags            []string `json:"tags"`
 		ConfidenceClass string   `json:"confidence_class"`
-		IsPersonal      bool     `json:"is_personal"`
+		// IsPersonal is a *bool, not bool: omitted in the JSON call means
+		// "leave the star's existing is_personal as-is" (store.UpdateStar's
+		// contract), distinct from the model explicitly stating false.
+		IsPersonal *bool  `json:"is_personal"`
+		Reasoning  string `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "update_star", nil, "error: "+err.Error(), callID)
@@ -70,7 +78,7 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	}
 	ctx.Emit("tool_call", map[string]interface{}{"tool": "update_star", "args": callArgs, "call_id": callID})
 
-	if err := ctx.WeaverUpdateStar(args.StarID, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal); err != nil {
+	if err := ctx.WeaverUpdateStar(args.StarID, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal, strings.TrimSpace(args.Reasoning)); err != nil {
 		errText := "error: " + err.Error()
 		if err == store.ErrStarNotFound {
 			errText = "error: no star with that id — call search_stars/read_star to find the right one first"

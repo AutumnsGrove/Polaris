@@ -48,7 +48,7 @@ func (f *fakeStarStore) wireInto(ctx *Context, runID int64) {
 		}
 		return &s, nil
 	}
-	ctx.WeaverCreateStar = func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool) (int64, error) {
+	ctx.WeaverCreateStar = func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error) {
 		f.nextID++
 		id := f.nextID
 		f.stars[id] = store.Star{ID: id, Title: title, Category: category, Summary: summary, Body: body, Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: "auto"}
@@ -59,15 +59,18 @@ func (f *fakeStarStore) wireInto(ctx *Context, runID int64) {
 			decision        string
 			reasoning       string
 			starID          *int64
-		}{runID, title, confidenceClass, "new_star", "", &id}
+		}{runID, title, confidenceClass, "new_star", reasoning, &id}
 		return id, nil
 	}
-	ctx.WeaverUpdateStar = func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal bool) error {
+	ctx.WeaverUpdateStar = func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
 		s, ok := f.stars[starID]
 		if !ok {
 			return store.ErrStarNotFound
 		}
 		s.Summary, s.Body, s.Tags, s.Confidence = summary, body, tags, confidenceClass
+		if isPersonal != nil {
+			s.IsPersonal = *isPersonal
+		}
 		f.stars[starID] = s
 		return nil
 	}

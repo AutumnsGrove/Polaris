@@ -143,10 +143,15 @@ export class SettingsState {
 	updateKind = $state<UpdateKind>('update');
 
 	// Usage/tuning snapshot for the settings panel's Usage section — null
-	// until loadUsage() resolves (or forever, on a fetch failure; the
-	// panel just doesn't render that section then). Trailing-30-day scope
-	// matches the CLI's `polaris stats` default.
+	// until loadUsage() resolves. Trailing-30-day scope matches the CLI's
+	// `polaris stats` default. usageLoaded/usageError distinguish "still
+	// fetching" and "fetch failed" from a real null — same reasoning
+	// ConstellationState's statsLoaded/statsError follow (see
+	// constellation.svelte.ts) — a failed fetch used to leave the section
+	// silently absent forever instead of a distinct, actionable error.
 	usage = $state<UsageStats | null>(null);
+	usageLoaded = $state(false);
+	usageError = $state(false);
 
 	// Memory settings section — see MemorySettings.svelte. memoriesLoaded
 	// mirrors `loaded` above: null/empty is a real, valid state ("nothing
@@ -538,14 +543,16 @@ export class SettingsState {
 	// time the panel happened to be open would be a stale, misleading
 	// snapshot for a "should I tune maxAgentTurns" decision.
 	async loadUsage() {
+		this.usageLoaded = false;
+		this.usageError = false;
 		try {
 			const res = await fetch('/api/stats?days=30');
-			if (!res.ok) return;
+			if (!res.ok) throw new Error('usage fetch failed');
 			this.usage = await res.json();
 		} catch {
-			// Best-effort — same rationale as checkUpdateStatus: a network
-			// hiccup here shouldn't surface as an error, the section just
-			// stays hidden.
+			this.usageError = true;
+		} finally {
+			this.usageLoaded = true;
 		}
 	}
 

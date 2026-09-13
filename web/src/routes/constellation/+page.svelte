@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { select } from 'd3-selection';
 	import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
@@ -28,6 +28,7 @@
 	onMount(() => {
 		void constellationState.loadLibrary();
 	});
+	onDestroy(() => clearTimeout(searchDebounce));
 
 	// Search: a debounced fetch against SearchLibraryStars, not a client-side
 	// filter over already-loaded stars — FTS5 relevance ranking over the
@@ -267,6 +268,8 @@
 	{:else if view === 'library'}
 		{#if !constellationState.libraryLoaded}
 			<p class="empty">Loading your library…</p>
+		{:else if constellationState.libraryError && constellationState.libraryStars.length === 0 && constellationState.aboutYouStars.length === 0}
+			<p class="empty">Couldn't load your library — check your connection and try again.</p>
 		{:else if constellationState.libraryStars.length === 0 && constellationState.aboutYouStars.length === 0}
 			<p class="empty">
 				No stars yet. Constellation builds itself from threads you've already had — check back
@@ -321,7 +324,10 @@
 								<StarCard {star} onclick={() => goto(`/constellation/star/${star.id}`)} />
 								<button
 									class="btn restore-btn"
-									onclick={() => constellationState.restoreStar(star.id)}
+									onclick={async () => {
+										const result = await constellationState.restoreStar(star.id);
+										if (result.error) appState.showToast(result.error);
+									}}
 								>
 									Restore
 								</button>
@@ -331,8 +337,10 @@
 				</details>
 			{/if}
 		{/if}
-	{:else if !constellationState.mapData}
+	{:else if !constellationState.mapLoaded}
 		<p class="empty">Loading the map…</p>
+	{:else if constellationState.mapError}
+		<p class="empty">Couldn't load the map — check your connection and try again.</p>
 	{:else if mapLayout && mapLayout.nodes.length > 0}
 		<!-- Background tap-to-deselect, same as elsewhere in the app (see
 		     ThreadMenu.svelte) — this is a dismiss surface behind real
@@ -462,7 +470,7 @@
 		color: var(--color-accent-2);
 		background: color-mix(in srgb, var(--color-accent-2) 14%, transparent);
 		border: 1px solid color-mix(in srgb, var(--color-accent-2) 30%, transparent);
-		padding: 4px var(--space-sm);
+		padding: var(--space-xs) var(--space-sm);
 		border-radius: var(--radius-full);
 		white-space: nowrap;
 	}
@@ -681,7 +689,7 @@
 		   pulls the actual dot away from (node.x, node.y) by that same
 		   amount — an 8px up-left drift confirmed live (dots landing 8px
 		   off from where the connecting lines terminate). */
-		padding: 8px;
+		padding: var(--space-sm);
 		cursor: pointer;
 		font: inherit;
 	}

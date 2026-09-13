@@ -43,7 +43,7 @@
 		<p class="empty">Nothing yet this week.</p>
 	{:else}
 		<div class="week-list">
-			{#each constellationState.weekItems as item, i (i)}
+			{#each constellationState.weekItems as item, i (item.kind + '-' + item.star_id + '-' + item.timestamp + '-' + i)}
 				<button
 					class="week-row"
 					class:updated={item.kind === 'updated'}
