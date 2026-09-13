@@ -169,6 +169,56 @@ func writeUpdateSignal(target string) error {
 	return nil
 }
 
+// dockerWatcherResult mirrors compose/watcher/update.sh's write_result —
+// the host-side watcher's own account of what actually happened to the
+// most recently requested update/restart, including the real failure
+// detail (a bad migration, a failed healthcheck, ...) that this process
+// can never capture on its own: a failed Docker update always ends with
+// this very container getting recreated (either onto the new image, or
+// rolled back onto the old one), so the process that called
+// updateStatus.finish(true, ...) right after handing off to the watcher
+// is gone by the time the real outcome is known — nothing ever restarts
+// it into knowing. Read fresh from disk on every status poll instead of
+// cached, since nothing in this process is ever notified when the
+// watcher finishes.
+type dockerWatcherResult struct {
+	Status     string `json:"status"`
+	Detail     string `json:"detail"`
+	Target     string `json:"target"`
+	FinishedAt string `json:"finished_at"`
+}
+
+// dockerUpdateRequestPending reports whether update-signal/requested
+// still exists — i.e. the watcher hasn't finished this run yet (or
+// hasn't started). While true, update-signal/result (if present at all)
+// describes a previous, unrelated attempt, not this one, and must not be
+// surfaced as this run's outcome; update.sh only ever removes this file
+// as the very last step of the run it belongs to, immediately before or
+// after writing that run's own result, so "gone" reliably means "the
+// result file, if any, now reflects this exact request" — the update
+// watcher's flock (see that script's doc comment) guarantees only one
+// run is ever touching either file at a time.
+func dockerUpdateRequestPending() bool {
+	_, err := os.Stat(filepath.Join(dockerUpdateSignalDir, "requested"))
+	return err == nil
+}
+
+// readDockerWatcherResult reads and parses update-signal/result, or nil
+// if it doesn't exist yet (no update has ever run) or isn't valid JSON
+// (a partial write — write_result already guards against that with a
+// temp-file-then-rename, so this is defensive, not expected).
+func readDockerWatcherResult() *dockerWatcherResult {
+	data, err := os.ReadFile(filepath.Join(dockerUpdateSignalDir, "result"))
+	if err != nil {
+		return nil
+	}
+	var res dockerWatcherResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		return nil
+	}
+	return &res
+}
+
 // resolveLatestDigest queries GHCR's OCI Distribution API for repo:tag's
 // current manifest digest ("sha256:..."), without needing docker CLI or
 // socket access — a plain two-step HTTPS exchange (an anonymous pull

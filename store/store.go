@@ -842,12 +842,22 @@ var migrations = []string{
 	// end per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE constellation_config ADD COLUMN backfill_started_at DATETIME`,
-	// content_updated_at — see the schema comment above. CURRENT_TIMESTAMP
-	// is one of the few non-constant defaults SQLite allows in ALTER TABLE
-	// ADD COLUMN; existing stars all get "now" rather than backdated to
-	// their own updated_at, which is fine — GetConstellationWeekFeed only
-	// cares about content changes going forward, not reclassifying history.
-	`ALTER TABLE stars ADD COLUMN content_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+	// content_updated_at — see the schema comment above. SQLite's ALTER
+	// TABLE ADD COLUMN, unlike CREATE TABLE, rejects a NOT NULL column
+	// whose default isn't a real constant — CURRENT_TIMESTAMP doesn't
+	// qualify, so a single-statement version of this (as originally
+	// written) fails with "Cannot add a column with non-constant default"
+	// on every real, populated database, confirmed live against the
+	// potato. Add with a constant placeholder default first, then
+	// backfill — existing stars all get "now" rather than backdated to
+	// their own updated_at, which is fine, GetConstellationWeekFeed only
+	// cares about content changes going forward, not reclassifying
+	// history. On a fresh database the column already exists (added by
+	// CREATE TABLE, where this restriction doesn't apply), so the ALTER
+	// hits applyMigrations' tolerated "duplicate column" skip and the
+	// UPDATE never runs there — harmless, since CREATE TABLE's own
+	// default already populated it correctly.
+	`ALTER TABLE stars ADD COLUMN content_updated_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00'; UPDATE stars SET content_updated_at = CURRENT_TIMESTAMP`,
 }
 
 func Open(path string) (*Store, error) {

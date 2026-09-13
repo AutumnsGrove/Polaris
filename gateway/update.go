@@ -327,5 +327,25 @@ func (s *Server) beginAsyncRestart(w http.ResponseWriter, mgr procmgr.Manager, r
 // either one, so it can resume showing progress instead of assuming idle
 // and inviting a second, overlapping click.
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.updateStatus.snapshot())
+	snap := s.updateStatus.snapshot()
+	// Docker mode's in-process updateStatus only ever records "the signal
+	// file was written" (see handleDockerUpdate/handleDockerRestart) — the
+	// real outcome is decided later, on the host, by a process this one
+	// never hears back from directly. Layer the host watcher's own result
+	// file on top so a client polling this endpoint (waitForServerAndReload)
+	// can learn the actual reason an update failed — e.g. a bad SQL
+	// migration — instead of just timing out after two minutes waiting for
+	// a version bump that a rolled-back update will never produce.
+	if deploymentMode() == "docker" {
+		pending := dockerUpdateRequestPending()
+		snap["docker_pending"] = pending
+		if !pending {
+			if res := readDockerWatcherResult(); res != nil {
+				snap["docker_watcher_status"] = res.Status
+				snap["docker_watcher_detail"] = res.Detail
+				snap["docker_watcher_finished_at"] = res.FinishedAt
+			}
+		}
+	}
+	writeJSON(w, snap)
 }

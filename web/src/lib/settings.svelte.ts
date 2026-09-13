@@ -449,6 +449,21 @@ export class SettingsState {
 						this.updateLog += `\n\n${this.restartFailedPrefix()}${status.restart_error}`;
 						return;
 					}
+					// Docker mode: the host-side watcher (compose/watcher/
+					// update.sh) has finished this request and rolled back —
+					// docker_pending === false means update-signal/result now
+					// reflects this exact attempt, not a stale earlier one
+					// (see gateway/docker_update.go's dockerUpdateRequestPending
+					// doc comment). Surfacing this here means a bad migration
+					// or a failed healthcheck shows up immediately with its
+					// real cause instead of this loop spinning for the full 2
+					// minutes waiting for a version bump a rollback will never
+					// produce.
+					if (status.docker_pending === false && status.docker_watcher_status === 'failed') {
+						this.updateState = 'error';
+						this.updateLog += `\n\n${status.docker_watcher_detail ?? 'the update watcher reported a failure with no further detail'}`;
+						return;
+					}
 				}
 			} catch {
 				// Best-effort — fall through to the version poll below.
