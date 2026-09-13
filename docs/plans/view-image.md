@@ -1,9 +1,11 @@
 # view_image: letting the model actually look at an image
 
-**Status: shipped (2026-09-13) for `image_search` card results.** `path` (a workspace file — a
-fetched image, a `code_exec`-generated chart) is accepted in the tool's schema but always rejected
-with a clear "not yet supported" error until `docs/plans/fetch-and-workspace-tools.md`'s workspace
-exists. Filed against issue #60.
+**Status: shipped (2026-09-13) for both sources.** `card_index` (an `image_search` result) and
+`path` (a file in the thread's `code_exec` workspace — currently only code_exec itself writes
+there; `fetch_url`, once `docs/plans/fetch-and-workspace-tools.md` ships, will be the second
+writer) are mutually exclusive, exactly one required. `path` is resolved via
+`ctx.CodeExecWorkspaceDir`/`ctx.ThreadID` with a `filepath.Rel` traversal check. Filed against
+issue #60.
 
 This doc covers a gap distinct from (but related to) `docs/plans/fetch-and-workspace-tools.md`:
 once an image exists somewhere reachable (an `image_search` result, a fetched file, a `code_exec`-

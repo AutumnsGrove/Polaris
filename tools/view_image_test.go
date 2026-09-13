@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,19 +26,76 @@ func fakeImageServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func TestHandleViewImage_MissingCardIndex(t *testing.T) {
+func TestHandleViewImage_NeitherCardIndexNorPath(t *testing.T) {
 	ctx := newTestContext()
 	result := handleViewImage(`{}`, ctx, "call-1")
-	if !strings.Contains(result, "card_index is required") {
-		t.Errorf("result = %q, want a card_index-required error", result)
+	if !strings.Contains(result, "pass exactly one of card_index or path") {
+		t.Errorf("result = %q, want an exactly-one-of error", result)
 	}
 }
 
-func TestHandleViewImage_PathNotYetSupported(t *testing.T) {
+func TestHandleViewImage_BothCardIndexAndPath(t *testing.T) {
 	ctx := newTestContext()
-	result := handleViewImage(`{"card_index":1,"path":"dataset.csv"}`, ctx, "call-1")
-	if !strings.Contains(result, "isn't supported yet") {
-		t.Errorf("result = %q, want a not-yet-supported error for path", result)
+	result := handleViewImage(`{"card_index":1,"path":"chart.png"}`, ctx, "call-1")
+	if !strings.Contains(result, "pass exactly one of card_index or path") {
+		t.Errorf("result = %q, want an exactly-one-of error", result)
+	}
+}
+
+func TestHandleViewImage_PathNoWorkspaceConfigured(t *testing.T) {
+	ctx := newTestContext() // CodeExecWorkspaceDir/ThreadID left unset
+	result := handleViewImage(`{"path":"chart.png"}`, ctx, "call-1")
+	if !strings.Contains(result, "no code-execution workspace configured") {
+		t.Errorf("result = %q, want a no-workspace-configured error", result)
+	}
+}
+
+func TestHandleViewImage_PathFileNotFound(t *testing.T) {
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = t.TempDir()
+	ctx.ThreadID = "thread-1"
+	result := handleViewImage(`{"path":"missing.png"}`, ctx, "call-1")
+	if !strings.Contains(result, `no file "missing.png" in this conversation's workspace`) {
+		t.Errorf("result = %q, want a file-not-found error", result)
+	}
+}
+
+func TestHandleViewImage_PathEscapesWorkspace(t *testing.T) {
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = t.TempDir()
+	ctx.ThreadID = "thread-1"
+	result := handleViewImage(`{"path":"../../etc/passwd"}`, ctx, "call-1")
+	if !strings.Contains(result, "escapes the workspace directory") {
+		t.Errorf("result = %q, want a path-escape error", result)
+	}
+}
+
+func TestHandleViewImage_PathDescribeMode(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	threadDir := filepath.Join(workspaceRoot, "thread-1")
+	if err := os.MkdirAll(threadDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(threadDir, "chart.png"), []byte("\x89PNG\r\n\x1a\n-fake-"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = workspaceRoot
+	ctx.ThreadID = "thread-1"
+	ctx.DescribeImage = func(_ context.Context, imageBase64, mimeType, _ string) (string, float64, error) {
+		if mimeType != "image/png" {
+			t.Errorf("mimeType = %q, want image/png", mimeType)
+		}
+		if imageBase64 == "" {
+			t.Error("imageBase64 was empty")
+		}
+		return "a bar chart", 0, nil
+	}
+
+	result := handleViewImage(`{"path":"chart.png"}`, ctx, "call-1")
+	if result != "a bar chart" {
+		t.Errorf("result = %q, want the description text", result)
 	}
 }
 

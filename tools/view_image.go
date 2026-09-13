@@ -25,12 +25,14 @@
 // an index is strictly less for the model to juggle, and it structurally
 // can't reference anything that didn't come from a genuine search result.
 //
-// path is reserved for a future input source — an image already sitting in
-// a thread's code-exec workspace (a fetched file, a generated chart) — see
-// docs/plans/fetch-and-workspace-tools.md. That workspace doesn't exist
-// yet (depends on issue #42 shipping), so path is accepted in the schema
-// now (avoiding a breaking parameter-shape change later) but always
-// rejected with a clear "not yet supported" error until it does.
+// path is the second image source, now that code_exec's per-thread
+// workspace exists (issue #42 shipped): a file already sitting in
+// <CodeExecWorkspaceDir>/<ThreadID>/<path> — a code_exec-generated chart,
+// or (once fetch-and-workspace-tools.md's fetch_url ships) a fetched file.
+// Resolved the same defensive way as any other user-influenced path join
+// in this codebase: filepath.Join then a filepath.Rel check that the
+// result didn't escape the thread's own workspace root via "..".
+// card_index and path are mutually exclusive — exactly one is required.
 package tools
 
 import (
@@ -40,6 +42,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"polaris/llm"
 )
@@ -56,7 +61,14 @@ var viewImageDef = llm.ToolDef{
 				"card_index": map[string]interface{}{
 					"type": "integer",
 					"description": "Which image to view, by its number from a prior image_search result " +
-						"(e.g. \"images 4-6\" means pass 4, 5, or 6). 1-indexed.",
+						"(e.g. \"images 4-6\" means pass 4, 5, or 6). 1-indexed. Mutually exclusive with path — " +
+						"pass exactly one of the two.",
+				},
+				"path": map[string]interface{}{
+					"type": "string",
+					"description": "Path (relative to this conversation's workspace) to an image file already " +
+						"there — e.g. a chart code_exec just generated. Mutually exclusive with card_index — " +
+						"pass exactly one of the two.",
 				},
 				"mode": map[string]interface{}{
 					"type": "string",
@@ -73,7 +85,6 @@ var viewImageDef = llm.ToolDef{
 						"texture and color of the sleeves\") instead of a full general description.",
 				},
 			},
-			"required": []string{"card_index"},
 		},
 	},
 }
@@ -98,19 +109,14 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "view_image",
-		"args": map[string]interface{}{"card_index": args.CardIndex, "path": args.Path, "mode": args.Mode, "instructions": args.Instructions},
+		"tool":    "view_image",
+		"args":    map[string]interface{}{"card_index": args.CardIndex, "path": args.Path, "mode": args.Mode, "instructions": args.Instructions},
 		"call_id": callID,
 	})
 
-	if args.Path != "" {
-		return emitToolError(ctx, "view_image", map[string]interface{}{"path": args.Path},
-			"error: viewing a workspace file isn't supported yet (code execution hasn't shipped) — "+
-				"use card_index to view an image_search result instead", callID)
-	}
-	if args.CardIndex < 1 {
-		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-			"error: card_index is required and must be 1 or greater", callID)
+	if (args.CardIndex >= 1) == (args.Path != "") {
+		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex, "path": args.Path},
+			"error: pass exactly one of card_index or path", callID)
 	}
 
 	mode := args.Mode
@@ -127,50 +133,68 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 				"use mode: \"describe\" instead", callID)
 	}
 
-	cards := ctx.CardsSnapshot()
-	if args.CardIndex > len(cards) {
-		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-			fmt.Sprintf("error: card_index %d is out of range — only %d card(s) exist this turn", args.CardIndex, len(cards)), callID)
-	}
-	card := cards[args.CardIndex-1]
-	imageURL := card.FullImageURL
-	if imageURL == "" {
-		imageURL = card.ImageURL
-	}
-	if imageURL == "" {
-		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-			fmt.Sprintf("error: card %d has no image to view", args.CardIndex), callID)
-	}
-	if ctx.Blocklist.Blocked(imageURL) {
-		// Same check web_read.go applies before fetching any model-directed
-		// URL — a card's image can come from anywhere a search engine
-		// indexed, including a source the operator has explicitly
-		// blocklisted, and view_image fetching it anyway (then describing
-		// it or inserting it straight into the live conversation in "see"
-		// mode) would silently bypass that policy for this one path while
-		// web_read still enforces it for the same domain.
-		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-			"error: this image's source is blocked and cannot be viewed", callID)
-	}
+	var data []byte
+	var mimeType string
+	var source string // for the "see" caption and logs, e.g. `card 3 ("sunset")` or `workspace file "chart.png"`
 
-	data, mimeType, err := fetchImageBytes(ctx.Ctx, imageURL)
-	if err != nil {
-		result := "error: fetching image: " + err.Error()
-		log.Warn("view_image: fetch failed", "url", imageURL, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
-		return result
+	if args.Path != "" {
+		var err error
+		data, mimeType, err = readWorkspaceImageBytes(ctx, args.Path)
+		if err != nil {
+			result := "error: " + err.Error()
+			log.Warn("view_image: workspace read failed", "path", args.Path, "err", err)
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
+			return result
+		}
+		source = fmt.Sprintf("workspace file %q", args.Path)
+	} else {
+		cards := ctx.CardsSnapshot()
+		if args.CardIndex > len(cards) {
+			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
+				fmt.Sprintf("error: card_index %d is out of range — only %d card(s) exist this turn", args.CardIndex, len(cards)), callID)
+		}
+		card := cards[args.CardIndex-1]
+		imageURL := card.FullImageURL
+		if imageURL == "" {
+			imageURL = card.ImageURL
+		}
+		if imageURL == "" {
+			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
+				fmt.Sprintf("error: card %d has no image to view", args.CardIndex), callID)
+		}
+		if ctx.Blocklist.Blocked(imageURL) {
+			// Same check web_read.go applies before fetching any model-directed
+			// URL — a card's image can come from anywhere a search engine
+			// indexed, including a source the operator has explicitly
+			// blocklisted, and view_image fetching it anyway (then describing
+			// it or inserting it straight into the live conversation in "see"
+			// mode) would silently bypass that policy for this one path while
+			// web_read still enforces it for the same domain.
+			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
+				"error: this image's source is blocked and cannot be viewed", callID)
+		}
+
+		var err error
+		data, mimeType, err = fetchImageBytes(ctx.Ctx, imageURL)
+		if err != nil {
+			result := "error: fetching image: " + err.Error()
+			log.Warn("view_image: fetch failed", "url", imageURL, "err", err)
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
+			return result
+		}
+		source = fmt.Sprintf("card %d (%q)", args.CardIndex, card.Title)
 	}
 	imageBase64 := base64.StdEncoding.EncodeToString(data)
 
 	if mode == "see" {
-		caption := fmt.Sprintf("Here's the image from card %d (%q).", args.CardIndex, card.Title)
+		caption := fmt.Sprintf("Here's the image from %s.", source)
 		ctx.AddPendingImageMessage(llm.ChatMessage{
 			Role:      "user",
 			Content:   caption,
 			ImageURLs: []string{fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64)},
 		})
-		result := fmt.Sprintf("now viewing card %d directly — it'll appear as your next message", args.CardIndex)
-		log.Info("view_image", "mode", "see", "card_index", args.CardIndex)
+		result := fmt.Sprintf("now viewing %s directly — it'll appear as your next message", source)
+		log.Info("view_image", "mode", "see", "source", source)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
 		return result
 	}
@@ -183,12 +207,12 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 	description, cost, err := ctx.DescribeImage(ctx.Ctx, imageBase64, mimeType, args.Instructions)
 	if err != nil {
 		result := "error: describing image: " + err.Error()
-		log.Warn("view_image: describe failed", "card_index", args.CardIndex, "err", err)
+		log.Warn("view_image: describe failed", "source", source, "err", err)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
 		return result
 	}
 	ctx.AddCost(cost)
-	log.Info("view_image", "mode", "describe", "card_index", args.CardIndex)
+	log.Info("view_image", "mode", "describe", "source", source)
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": description, "call_id": callID})
 	return description
 }
@@ -229,5 +253,46 @@ func fetchImageBytes(ctx context.Context, rawURL string) (data []byte, mimeType 
 	if mimeType == "" || mimeType == "application/octet-stream" {
 		mimeType = http.DetectContentType(data)
 	}
+	return data, mimeType, nil
+}
+
+// readWorkspaceImageBytes reads an image file out of the current thread's
+// code_exec workspace (<CodeExecWorkspaceDir>/<ThreadID>/<relPath>) — the
+// same per-thread directory code_exec.go creates and writes into, and the
+// same one a future fetch_url (docs/plans/fetch-and-workspace-tools.md)
+// will write into too. relPath is model-supplied, so it's resolved with
+// filepath.Join then checked via filepath.Rel that the result didn't
+// escape the thread's own workspace root via ".." — the standard defense
+// against a path-traversal read of an unrelated thread's files or the
+// host filesystem beyond the workspace root.
+func readWorkspaceImageBytes(ctx *Context, relPath string) (data []byte, mimeType string, err error) {
+	if ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
+		return nil, "", fmt.Errorf("this deployment has no code-execution workspace configured")
+	}
+	base := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)
+	target := filepath.Join(base, relPath)
+	rel, err := filepath.Rel(base, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, "", fmt.Errorf("path escapes the workspace directory")
+	}
+
+	f, err := os.Open(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", fmt.Errorf("no file %q in this conversation's workspace", relPath)
+		}
+		return nil, "", fmt.Errorf("opening workspace file: %w", err)
+	}
+	defer f.Close()
+
+	data, err = io.ReadAll(io.LimitReader(f, maxViewImageBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading workspace file: %w", err)
+	}
+	if len(data) > maxViewImageBytes {
+		return nil, "", fmt.Errorf("image exceeds %d byte limit", maxViewImageBytes)
+	}
+
+	mimeType = http.DetectContentType(data)
 	return data, mimeType, nil
 }
