@@ -116,6 +116,42 @@ If self-hosting ever needs to be abandoned (hardware failure, a future memory-hu
 rather than being a one-time grant, and it has a sandbox-specific API rather than only a general
 compute product. Not acted on now since it isn't needed.
 
+### Package set, revisited: a broader "kitchen sink" set is affordable too (measured 2026-09-13)
+
+Once the minimal set (numpy/pandas/matplotlib) was confirmed to fit with wide margin, the natural
+follow-up question is whether the v1 set should be more generous — Python only pays import cost
+(parse, C-extension load, RSS growth) for modules a script actually `import`s, so packages sitting
+unused in `site-packages` cost disk, not RAM. Disk is a non-issue here (205GB free on the potato's
+eMMC). Live-tested a broader candidate set closer to ChatGPT Code Interpreter's own package list
+(this doc's sources): **numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn**,
+with a script that actually imports and lightly exercises every one of them (not just import-and-
+exit) — `scipy.stats.linregress`, `sklearn.linear_model.LinearRegression`, a `PIL.Image` draw+save,
+a `sympy.integrate`, and a `seaborn.lineplot` savefig, all in the same process.
+
+Results (real cgroup v2 `memory.peak`, same methodology as the minimal-set test):
+
+| Memory ceiling | Result | Peak RSS |
+|---|---|---|
+| 512m / 384m / 300m / 256m | all succeeded | 200-263MB (run-to-run variance, no clear ceiling dependence) |
+| 220m / 190m / 170m | all succeeded | 178-199MB |
+| 150m | **OOM-killed** (exit 137) | — |
+
+**Real floor is ~150-170MB** for the full eight-package set — noticeably higher than the minimal
+set's ~74-82MB, as expected: `scikit-learn` pulls in its own `scipy`+`joblib`+`threadpoolctl`
+stack, and `seaborn` layers on top of `matplotlib`+`pandas`+`scipy` again. Still comfortably inside
+the ~370MB truly-free budget, but eating a much bigger fraction of it than the minimal set did —
+this is a real tradeoff, not a free lunch: **broader packages are free until imported, but a
+generated script that imports several of the heavy ones at once (scipy+sklearn+seaborn together)
+will approach 200-260MB**, not the ~80MB the minimal set guaranteed.
+
+**Recommendation**: ship the broader eight-package set (it's what makes something like Pillow
+actually useful — see the fetch-tool discussion this informed), but raise the container `--memory`
+ceiling recommendation from 256MB to **384MB** to keep a real safety margin (roughly 1.5-2x the
+measured heavy-path peak, rather than sitting right at it) rather than the 3x+ margin the minimal
+set allowed. One-time build cost for the broader set: **~8 minutes** on the potato's A53 (pip
+resolving + downloading prebuilt aarch64 wheels for all eight packages) — paid once when the image
+is built/rebuilt, not per execution.
+
 ## Deployment scope: Docker-only feature
 
 Bare-metal installs have no container boundary at all for arbitrary code — running generated code
@@ -128,10 +164,14 @@ clear "code execution requires a Docker install" message instead of running anyt
 
 ## Other open questions, answered
 
-- **Network access from executed code**: none. Nothing this issue asks for (data analysis, chart
-  generation) needs outbound network from inside the sandbox, and removing it removes an entire
-  exfiltration/SSRF concern for free. A real use case for in-sandbox network access later would be
-  a deliberate, separately-reviewed addition, not a default.
+- **Network access from executed code**: none, for v1. Nothing this issue asks for (data analysis,
+  chart generation) needs outbound network from inside the sandbox, and removing it removes an
+  entire exfiltration/SSRF concern for free. A real use case surfaced discussing this doc — Pillow
+  is close to useless without some way to get a web-found image into the sandbox — but the answer
+  isn't "give the sandbox a network"; it's a host-side, tool-mediated fetch (the fetch happens
+  through the existing metered `web_search` pipeline, outside the sandbox, and only the resulting
+  file is handed in) so the sandbox itself stays `--network none` permanently. Scoped out to its
+  own design discussion — see #60.
 - **Resource/time limits**: `docker run` flags (`--memory`, `--cpus`, `--pids-limit`) as the hard
   ceiling, plus a wall-clock timeout in the Go wrapper that kills the container if it overruns. A
   limit hit is a normal tool error back to the model ("your code didn't finish / used too much
