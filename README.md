@@ -214,6 +214,14 @@ app" is one file you can scp around if you ever needed to.
 - Required for the `movies` tool: a free [TMDB API key](https://www.themoviedb.org/settings/api)
   (self-service signup, no approval wait) — like `lastfm`, there's no unauthenticated fallback, so
   `movies` is unavailable without one
+- Required for the `youtube_transcript` tool: [yt-dlp](https://github.com/yt-dlp/yt-dlp) on
+  `PATH` (Docker installs already have it — see the Dockerfile). YouTube now blocks the
+  unauthenticated direct-HTTP approach this tool used to use (a signed `200 OK` with zero bytes
+  back, not an error to react to), so it shells out to yt-dlp instead, which stays actively
+  maintained against exactly that kind of anti-bot change. Bare-metal: `pip install yt-dlp` (no
+  need for the apt/Alpine package — that one drags in ffmpeg for video/audio merging this tool
+  never does, +276MB for nothing this needs). Without it, `youtube_transcript` returns a clear
+  "yt-dlp is not installed" error instead of failing cryptically — every other tool works fine.
 - Optional: a local [Ollama](https://ollama.com) instance serving `nomic-embed-text`, for a
   research-loop signal that nudges the model when consecutive `web_search` queries embed as
   near-duplicates of each other — catches a rephrasing loop that a plain "found nothing new" check

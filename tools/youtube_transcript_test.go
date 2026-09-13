@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -40,43 +40,41 @@ func TestExtractYouTubeID_Invalid(t *testing.T) {
 	}
 }
 
-func TestPickCaptionTrack_PrefersHumanEnglishOverASR(t *testing.T) {
-	tracks := []captionTrack{
-		{LanguageCode: "en", Kind: "asr", BaseURL: "asr"},
-		{LanguageCode: "en", Kind: "", BaseURL: "human"},
-		{LanguageCode: "fr", Kind: "", BaseURL: "french"},
+func TestPickYtDlpLanguage_PrefersHumanEnglishOverASR(t *testing.T) {
+	info := &ytDlpInfo{
+		Subtitles:         map[string][]ytDlpSubFormat{"en": {{Ext: "json3"}}},
+		AutomaticCaptions: map[string][]ytDlpSubFormat{"en": {{Ext: "json3"}}},
 	}
-	got := pickCaptionTrack(tracks)
-	if got == nil || got.BaseURL != "human" {
-		t.Errorf("pickCaptionTrack = %+v, want the human-uploaded English track", got)
-	}
-}
-
-func TestPickCaptionTrack_FallsBackToASREnglish(t *testing.T) {
-	tracks := []captionTrack{
-		{LanguageCode: "fr", Kind: "", BaseURL: "french"},
-		{LanguageCode: "en", Kind: "asr", BaseURL: "asr"},
-	}
-	got := pickCaptionTrack(tracks)
-	if got == nil || got.BaseURL != "asr" {
-		t.Errorf("pickCaptionTrack = %+v, want the ASR English track", got)
+	lang, isAuto, ok := pickYtDlpLanguage(info)
+	if !ok || lang != "en" || isAuto {
+		t.Errorf("pickYtDlpLanguage = (%q, %v, %v), want (\"en\", false, true)", lang, isAuto, ok)
 	}
 }
 
-func TestPickCaptionTrack_FallsBackToFirstAvailable(t *testing.T) {
-	tracks := []captionTrack{
-		{LanguageCode: "de", Kind: "", BaseURL: "german"},
-		{LanguageCode: "fr", Kind: "", BaseURL: "french"},
+func TestPickYtDlpLanguage_FallsBackToASREnglish(t *testing.T) {
+	info := &ytDlpInfo{
+		Subtitles:         map[string][]ytDlpSubFormat{"fr": {{Ext: "json3"}}},
+		AutomaticCaptions: map[string][]ytDlpSubFormat{"en": {{Ext: "json3"}}},
 	}
-	got := pickCaptionTrack(tracks)
-	if got == nil || got.BaseURL != "german" {
-		t.Errorf("pickCaptionTrack = %+v, want the first track when no English is available", got)
+	lang, isAuto, ok := pickYtDlpLanguage(info)
+	if !ok || lang != "en" || !isAuto {
+		t.Errorf("pickYtDlpLanguage = (%q, %v, %v), want (\"en\", true, true)", lang, isAuto, ok)
 	}
 }
 
-func TestPickCaptionTrack_NoTracks(t *testing.T) {
-	if got := pickCaptionTrack(nil); got != nil {
-		t.Errorf("pickCaptionTrack(nil) = %+v, want nil", got)
+func TestPickYtDlpLanguage_FallsBackToFirstAvailable(t *testing.T) {
+	info := &ytDlpInfo{
+		Subtitles: map[string][]ytDlpSubFormat{"de": {{Ext: "json3"}}, "fr": {{Ext: "json3"}}},
+	}
+	lang, isAuto, ok := pickYtDlpLanguage(info)
+	if !ok || lang != "de" || isAuto {
+		t.Errorf("pickYtDlpLanguage = (%q, %v, %v), want the alphabetically-first manual track (\"de\", false, true)", lang, isAuto, ok)
+	}
+}
+
+func TestPickYtDlpLanguage_NoTracks(t *testing.T) {
+	if _, _, ok := pickYtDlpLanguage(&ytDlpInfo{}); ok {
+		t.Error("pickYtDlpLanguage on an empty info = ok, want not ok")
 	}
 }
 
@@ -97,46 +95,57 @@ func TestParseJSON3Transcript_Empty(t *testing.T) {
 	}
 }
 
-// fakeYouTube serves a watch page embedding ytInitialPlayerResponse — its
-// single caption track's baseUrl points back at this same server's
-// /timedtext handler — plus the timedtext endpoint itself, enough to
-// exercise fetchYouTubeTranscript end to end without touching the real
-// youtube.com. withCaptions=false serves an empty caption track list, for
-// exercising the no-captions-available path.
-func fakeYouTube(t *testing.T, withCaptions bool) *httptest.Server {
+// writeFakeYtDlp writes a shell script standing in for the real yt-dlp
+// binary and points ytDlpPath at it for the duration of the test — same
+// idea as the old httptest-server stub, but at the process-exec boundary
+// instead of HTTP, since fetchYouTubeTranscript now shells out rather
+// than making its own requests. script receives yt-dlp's own argv (via
+// "$@") and must handle both invocations this package makes: `-j
+// --skip-download <url>` (info) and `--sub-langs ... -o <path> <url>`
+// (the actual subtitle download).
+func writeFakeYtDlp(t *testing.T, script string) {
 	t.Helper()
-	mux := http.NewServeMux()
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	mux.HandleFunc("/watch", func(w http.ResponseWriter, r *http.Request) {
-		captions := "[]"
-		if withCaptions {
-			captions = fmt.Sprintf(`[{"baseUrl":"%s/timedtext","languageCode":"en","kind":""}]`, srv.URL)
-		}
-		page := fmt.Sprintf(`<html><body><script>var ytInitialPlayerResponse = `+
-			`{"videoDetails":{"title":"Test Video"},"captions":{"playerCaptionsTracklistRenderer":`+
-			`{"captionTracks":%s}}};var ytcfg = {};</script></body></html>`, captions)
-		w.Write([]byte(page))
-	})
-	mux.HandleFunc("/timedtext", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"events":[{"segs":[{"utf8":"This is the transcript."}]}]}`))
-	})
-
-	return srv
+	dir := t.TempDir()
+	path := filepath.Join(dir, "yt-dlp")
+	if runtime.GOOS == "windows" {
+		t.Skip("fake yt-dlp shell script stub isn't set up for windows")
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatalf("writing fake yt-dlp: %v", err)
+	}
+	original := ytDlpPath
+	ytDlpPath = path
+	t.Cleanup(func() { ytDlpPath = original })
 }
 
-func withYouTubeWatchBaseURL(t *testing.T, base string) {
-	t.Helper()
-	original := youtubeWatchBaseURL
-	youtubeWatchBaseURL = base
-	t.Cleanup(func() { youtubeWatchBaseURL = original })
-}
+// fakeYtDlpScript recognizes the two invocation shapes fetchYouTubeTranscript
+// makes by checking for "-j" (the info call) vs. "-o" (the subtitle-download
+// call, whose destination template is the argument right after "-o").
+const fakeYtDlpScript = `
+for arg in "$@"; do
+	if [ "$arg" = "-j" ]; then
+		echo '{"title":"Test Video","subtitles":{},"automatic_captions":{"en":[{"ext":"json3"}]}}'
+		exit 0
+	fi
+done
+prev=""
+for arg in "$@"; do
+	if [ "$prev" = "-o" ]; then
+		# yt-dlp's own -o template is "<dir>/%(id)s" — the real binary
+		# substitutes the id; this stub just writes straight into that
+		# same directory under a fixed name, since there's only ever one
+		# video id in play in these tests.
+		dir=$(dirname "$arg")
+		echo '{"events":[{"segs":[{"utf8":"This is the transcript."}]}]}' > "$dir/dQw4w9WgXcQ.en.json3"
+		exit 0
+	fi
+	prev="$arg"
+done
+exit 1
+`
 
 func TestFetchYouTubeTranscript_Success(t *testing.T) {
-	srv := fakeYouTube(t, true)
-	withYouTubeWatchBaseURL(t, srv.URL+"/watch?v=")
+	writeFakeYtDlp(t, fakeYtDlpScript)
 
 	title, transcript, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
 	if err != nil {
@@ -151,12 +160,30 @@ func TestFetchYouTubeTranscript_Success(t *testing.T) {
 }
 
 func TestFetchYouTubeTranscript_NoCaptions(t *testing.T) {
-	srv := fakeYouTube(t, false)
-	withYouTubeWatchBaseURL(t, srv.URL+"/watch?v=")
+	writeFakeYtDlp(t, `
+for arg in "$@"; do
+	if [ "$arg" = "-j" ]; then
+		echo '{"title":"Test Video","subtitles":{},"automatic_captions":{}}'
+		exit 0
+	fi
+done
+exit 1
+`)
 
 	_, _, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
 	if err == nil {
 		t.Error("expected an error for a video with no caption tracks")
+	}
+}
+
+func TestFetchYouTubeTranscript_YtDlpMissing(t *testing.T) {
+	original := ytDlpPath
+	ytDlpPath = filepath.Join(t.TempDir(), "no-such-binary")
+	t.Cleanup(func() { ytDlpPath = original })
+
+	_, _, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
+	if err == nil || !strings.Contains(err.Error(), "yt-dlp is not installed") {
+		t.Errorf("err = %v, want a clear yt-dlp-not-installed error", err)
 	}
 }
 
@@ -177,8 +204,7 @@ func TestHandleYouTubeTranscript_InvalidURL(t *testing.T) {
 }
 
 func TestHandleYouTubeTranscript_Success(t *testing.T) {
-	srv := fakeYouTube(t, true)
-	withYouTubeWatchBaseURL(t, srv.URL+"/watch?v=")
+	writeFakeYtDlp(t, fakeYtDlpScript)
 
 	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
 	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ"}`, ctx, "test-call")

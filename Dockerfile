@@ -88,7 +88,24 @@ FROM alpine:3.20
 # TMDB, Last.fm, Foursquare, GitHub, Wikipedia, arXiv...) is outbound
 # HTTPS, so this is not optional the way it might be in a purely
 # internal service.
-RUN apk add --no-cache ca-certificates && \
+#
+# yt-dlp: the youtube_transcript tool's only external binary dependency
+# (see tools/youtube_transcript.go's package doc comment). Installed via
+# pip, not Alpine's own `yt-dlp` package — that package drags in ffmpeg
+# plus its full library chain (libavdevice, v4l-utils, libpulse, ...) as
+# a hard dependency, +276MB, entirely for video/audio merging this tool
+# never does (--skip-download, captions only, nothing downloaded ever
+# gets muxed). Confirmed live: pip's yt-dlp has no such dependency, and
+# --no-cache-dir plus deleting pip's own metadata/bytecode after install
+# keeps this to python3's own footprint (~80MB, unavoidable — yt-dlp is
+# a Python script) plus a few MB for the package itself, not python3 +
+# ffmpeg + friends. Worth keeping an eye on if this ever needs to grow
+# (a future tool wanting actual video/audio would need ffmpeg back).
+RUN apk add --no-cache ca-certificates python3 py3-pip && \
+    pip install --break-system-packages --no-cache-dir yt-dlp && \
+    find /usr/lib/python3* -name '__pycache__' -exec rm -rf {} + && \
+    rm -rf /root/.cache /usr/lib/python3*/site-packages/pip* && \
+    apk del py3-pip && \
     addgroup -S polaris && adduser -S polaris -G polaris
 
 WORKDIR /app
