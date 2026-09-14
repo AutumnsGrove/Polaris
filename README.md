@@ -40,6 +40,8 @@ short, evergreen "stars," collapsing repeated mentions into one growing card ins
 notes. Browsable by category, plus a star-map view of how stars connect to each other. Runs
 cheaply on an interval, never live-per-message.
 
+---
+
 ## Features
 
 - **Web search** via your own SearXNG instance — no API key, no per-query cost. Falls back through
@@ -59,6 +61,8 @@ cheaply on an interval, never live-per-message.
   source, for a cleaner citation than a general web search.
 - **GitHub repo stats** — stars, forks, license, commit history, and open issue/PR counts from
   GitHub's API, plus the README. No token required (one just raises the rate limit).
+- **GitHub activity** — recent releases and their notes, a specific pull request's detail, recent
+  issue activity, or commits since a date, alongside the repo-stats lookup above.
 - **Dictionary** — definitions, part of speech, and an example sentence from Wiktionary, with a
   second source as fallback.
 - **Music recommendations** — "find me songs/albums like this" grounded in Last.fm's similarity
@@ -72,6 +76,22 @@ cheaply on an interval, never live-per-message.
   geolocation for "near me" questions when available (see [SETUP.md](SETUP.md#configuration)).
 - **Voice** — hold a button to record a memo (transcribed via Voxtral), and hear replies read
   aloud in a real voice (Kokoro-82M), streamed sentence by sentence as they're ready.
+- **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
+  (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
+  and file processing, and can pull in a URL you've already been shown as a citation to work with
+  real data. Docker installs only — see [SETUP.md](SETUP.md#requirements).
+- **Calculator** — evaluates arithmetic exactly (ratios, percentages, date-interval math) instead
+  of doing the math in free text, removing a whole class of LLM arithmetic mistakes.
+- **Charts** — renders data it's synthesized (search results, calculations) as a line/bar/timeline/
+  meter chart instead of a wall of prose or a table.
+- **Image search & viewing** — finds real photos for a query as a gallery, and can look directly
+  at a specific image (a result, or a chart it just generated) when a text description isn't enough.
+- **Highlight cards** — turns a handful of items actually found this turn (products, places,
+  repos) into cards instead of a paragraph.
+- **PDF paging** — search or page through an attached PDF beyond its initial preview, with an
+  optional instruction to extract just what's needed from a page.
+- **Search your own chats** — finds and rereads a past conversation ("what did we decide about
+  X") instead of starting over from scratch.
 - **Memory** — remembers durable facts and preferences across threads, saved unprompted from an
   explicit correction or stated preference. The Settings Memory panel lists, edits, or forgets
   anything, including via a plain-English instruction ("forget the one about my old job").
