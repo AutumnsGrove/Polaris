@@ -1,5 +1,12 @@
 # Visualize & Image Search — v1 plan
 
+**Status: `visualize` was removed entirely on 2026-09-14** (see issue #44) once code_exec's
+general-purpose matplotlib plotting, themed to match the app's UI, proved clearly better across
+every chart kind `visualize` supported and several it never could (scatter+regression, histograms)
+— a live side-by-side comparison is recorded on that issue. `image_search` below is unaffected and
+still current. The rest of this doc is left as-is as a historical record of `visualize`'s original
+design reasoning.
+
 Two small, related additions: `visualize`, a tool that renders structured data as a chart instead
 of prose, and `image_search`, a tool that returns real photos for a query instead of describing
 them. Both came out of the same conversation (see the six concept renders reviewed before this

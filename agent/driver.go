@@ -228,6 +228,7 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	prompt = applyMemoriesPlaceholder(prompt, ctx)
 	prompt = applyCustomInstructionsPlaceholder(prompt, ctx)
 	prompt = applyMultimodalPlaceholder(prompt, ctx)
+	prompt = applyCodeExecThemePlaceholder(prompt, ctx)
 	if voiceMode {
 		prompt += "\n\n" + p.Agent.VoiceModeInstruction
 	}
@@ -293,6 +294,14 @@ func applyMemoriesPlaceholder(prompt string, ctx *tools.Context) string {
 // for an unwired memory store.
 func applyCustomInstructionsPlaceholder(prompt string, ctx *tools.Context) string {
 	return strings.ReplaceAll(prompt, "{custom_instructions}", ctx.CustomInstructions)
+}
+
+// applyCodeExecThemePlaceholder replaces every "{code_exec_theme}"
+// occurrence with tools.CodeExecThemePrompt(ctx) — "" when code_exec
+// isn't offered this turn, same collapse-to-nothing convention
+// applyMemoriesPlaceholder uses for an unwired memory store.
+func applyCodeExecThemePlaceholder(prompt string, ctx *tools.Context) string {
+	return strings.ReplaceAll(prompt, "{code_exec_theme}", tools.CodeExecThemePrompt(ctx))
 }
 
 // deepResearchTurnMultiplier/deepResearchCheckInMultiplier scale up the

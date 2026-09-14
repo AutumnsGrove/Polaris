@@ -21,9 +21,10 @@
 		AlertTriangle,
 		Newspaper
 	} from '@lucide/svelte';
-	import type { PulsarDailyBlock } from '$lib/types';
+	import type { PulsarDailyBlock, Card } from '$lib/types';
 	import PulsarDailyConfigModal from '$lib/components/PulsarDailyConfigModal.svelte';
 	import ChartCard from '$lib/components/ChartCard.svelte';
+	import ImageLightbox from '$lib/components/ImageLightbox.svelte';
 
 	// blockIcons: a Lucide icon component per block key, matching the
 	// mockup's visual language — no per-kind structured layout (weather
@@ -52,6 +53,26 @@
 	let latestDate = $state('');
 	let expandingKey = $state('');
 	let showConfig = $state(false);
+	// Set when a card's own image is tapped — opens it large instead of
+	// navigating into a chat thread, which is what tapping the image used
+	// to do back when the whole card was one giant <button>. null means
+	// closed.
+	let lightboxCard = $state<Card | null>(null);
+
+	function openImageLightbox(block: PulsarDailyBlock) {
+		if (!block.image_url) return;
+		// url deliberately left empty — a locally-generated code_exec chart
+		// (or a Picture of the Day photo not attributed to a specific page)
+		// has no real "source" to open, and ImageLightbox skips its caption
+		// pill entirely when url is empty rather than rendering a dead link
+		// or covering a chart's own axis labels along the bottom edge.
+		lightboxCard = {
+			title: block.title,
+			image_url: block.image_url,
+			full_image_url: block.image_url,
+			url: ''
+		};
+	}
 
 	// Masonry column assignment — see the .board style comment for why this
 	// is JS-driven rather than CSS multi-column. columnCount mirrors the
@@ -386,19 +407,26 @@
 					{/each}
 				</div>
 			{:else}
-				<button
-					class="card"
-					class:top-story={block.is_top_story}
-					disabled={expandingKey === block.key}
-					tabindex={measuring ? -1 : 0}
-					aria-hidden={measuring}
-					onclick={() => !measuring && expand(block)}
-				>
+				<!-- Not a <button> itself, unlike before — the whole card used to
+				     be one giant clickable button, which meant tapping its image
+				     (e.g. a code_exec chart) navigated into a chat thread instead
+				     of just showing the image bigger. Now the image is its own
+				     lightbox-triggering button and "Continue in chat" is the only
+				     thing that expands, so those are two separate actions instead
+				     of one tap doing whichever the user didn't mean. -->
+				<div class="card" class:top-story={block.is_top_story} aria-hidden={measuring}>
 					{#if block.is_top_story}
 						<span class="kicker-label">Top Story</span>
 						<h3 class="headline">{block.title}</h3>
 						{#if block.image_url}
-							<img src={block.image_url} alt={block.title} />
+							<button
+								class="card-image-button"
+								tabindex={measuring ? -1 : 0}
+								onclick={() => openImageLightbox(block)}
+								aria-label="View image"
+							>
+								<img src={block.image_url} alt={block.title} />
+							</button>
 						{/if}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						<div class="card-body">{@html renderContent(block.content)}</div>
@@ -409,8 +437,15 @@
 							</div>
 							<div class="card-title">{block.title}</div>
 						</div>
-						{#if block.key === 'picture_of_day' && block.image_url}
-							<img src={block.image_url} alt={block.title} />
+						{#if block.image_url}
+							<button
+								class="card-image-button"
+								tabindex={measuring ? -1 : 0}
+								onclick={() => openImageLightbox(block)}
+								aria-label="View image"
+							>
+								<img src={block.image_url} alt={block.title} />
+							</button>
 						{/if}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						<div class="card-body">{@html renderContent(block.content)}</div>
@@ -425,10 +460,15 @@
 							<ChartCard chart={block.chart} />
 						{/if}
 					{/if}
-					<div class="expand-hint">
+					<button
+						class="expand-hint"
+						disabled={expandingKey === block.key}
+						tabindex={measuring ? -1 : 0}
+						onclick={() => !measuring && expand(block)}
+					>
 						{expandingKey === block.key ? 'Opening…' : 'Continue in chat →'}
-					</div>
-				</button>
+					</button>
+				</div>
 			{/if}
 		{/snippet}
 
@@ -464,6 +504,10 @@
 
 {#if showConfig}
 	<PulsarDailyConfigModal onClose={() => (showConfig = false)} />
+{/if}
+
+{#if lightboxCard}
+	<ImageLightbox card={lightboxCard} onClose={() => (lightboxCard = null)} />
 {/if}
 
 <style>
@@ -641,25 +685,6 @@
 		text-align: left;
 		font: inherit;
 		color: inherit;
-		cursor: pointer;
-		transition:
-			transform 0.15s ease,
-			box-shadow 0.15s ease,
-			border-color 0.15s ease;
-	}
-	.card:hover,
-	.card:focus-visible {
-		transform: translateY(-2px);
-		border-color: var(--color-border-strong);
-		box-shadow: var(--shadow-md), var(--shadow-glass-edge);
-	}
-	.card:disabled {
-		cursor: default;
-		opacity: 0.7;
-	}
-	.card:hover .expand-hint,
-	.card:focus-visible .expand-hint {
-		opacity: 1;
 	}
 
 	/* items-card is a plain container, not itself clickable (each row
@@ -778,6 +803,26 @@
 		margin-bottom: var(--space-sm);
 		display: block;
 	}
+	/* The one genuinely clickable thing inside the card besides
+	   .expand-hint — its own affordance (View image) instead of the whole
+	   card's old catch-all click behavior, so tapping the image shows it
+	   bigger instead of navigating away. */
+	.card-image-button {
+		display: block;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 0;
+		cursor: pointer;
+	}
+	.card-image-button:hover img,
+	.card-image-button:focus-visible img {
+		opacity: 0.85;
+	}
+	.card-image-button img {
+		transition: opacity 0.15s ease;
+	}
 
 	/* Top Story — per the plan doc, "special" means more substance, not a
 	   highlight border. No accent frame, just more room and a bigger
@@ -804,23 +849,47 @@
 		font-size: 14px;
 	}
 
+	/* Now a real <button> (see the card markup's comment on why the whole
+	   card stopped being one) — its own click/hover/focus/disabled
+	   affordance instead of inheriting .card's, reset from browser button
+	   defaults the same way .item-row/.card-image-button are. */
 	.expand-hint {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
 		margin-top: var(--space-md);
 		font-size: 11.5px;
 		color: var(--color-accent-2);
 		opacity: 0.55;
+		cursor: pointer;
 		transition: opacity 0.15s ease;
+	}
+	.expand-hint:hover,
+	.expand-hint:focus-visible {
+		opacity: 1;
+	}
+	.expand-hint:disabled {
+		cursor: default;
+		opacity: 0.7;
 	}
 	.top-story .expand-hint {
 		opacity: 1;
+		width: fit-content;
 		margin-top: var(--space-lg);
 		font-size: 13px;
 		font-weight: 500;
 		color: var(--color-bg);
 		background: var(--color-accent);
-		width: fit-content;
 		padding: var(--space-sm) var(--space-lg);
 		border-radius: var(--radius-full);
+	}
+	.top-story .expand-hint:hover,
+	.top-story .expand-hint:focus-visible {
+		background: var(--color-accent-strong);
 	}
 
 	.unchanged-note {

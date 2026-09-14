@@ -18,7 +18,7 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize", "code_exec", "fetch_url",
+	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
 	"image_search", "view_image", "show", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
@@ -204,8 +204,6 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Find real book recommendations grounded in readers' curated lists and shared subject/genre data."},
 	"movies": {Name: "movies", Requires: "tmdb_api_key", Category: "research", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
-	"visualize": {Name: "visualize", Description: "render structured data you've already synthesized as a chart instead of prose.",
-		APIDescription: "Render data you've synthesized as a chart (line, bar, timeline, or meter) instead of prose or a table."},
 	"code_exec": {Name: "code_exec", Requires: "docker_only", Category: "compute",
 		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow preinstalled. Docker-only.",
 		APIDescription: "Run Python code in a sandboxed environment for calculations, data analysis, or file processing. " +

@@ -97,6 +97,8 @@ for a dark one) — this app's dark theme default label color is light, and a li
 without an explicit dark `color:` renders as light text on a light background, unreadable, even
 though mermaid treats it as a successful render with no error to catch.
 
+{code_exec_theme}
+
 ## Know when to stop researching
 
 Verifying a fact and confirming it beyond reasonable doubt are different goals — the first is your

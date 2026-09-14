@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
@@ -116,11 +118,13 @@ const dailyMinBlockCount = 4
 const dailySportsNoGamesMarker = "NO_GAMES_TODAY"
 
 // dailyResearchDisabledTools locks a research block's agent.Run down to
-// web_search/web_read/visualize/image_search/think — a different cut
-// than pulsar_wizard.go's NoResearch (which excludes research entirely):
-// a Daily research block needs web_search itself, just not the rest of
-// the full chat catalog (dictionary, weather, recommendations, memory,
-// ...) that has nothing to do with writing one short digest card.
+// web_search/web_read/image_search/think, plus code_exec/show/fetch_url/
+// view_image when Docker's available (see newDailyToolContext) — a
+// different cut than pulsar_wizard.go's NoResearch (which excludes
+// research entirely): a Daily research block needs web_search itself,
+// just not the rest of the full chat catalog (dictionary, weather,
+// recommendations, memory, ...) that has nothing to do with writing one
+// short digest card.
 var dailyResearchDisabledTools = map[string]bool{
 	"calculator":         true,
 	"nearby_search":      true,
@@ -274,11 +278,11 @@ func dailyResearchTaskFor(key, location, sportsTeams, customInstruction string) 
 // the diff-judge/gist/trace paths); when it doesn't (or wantsItems is
 // false), items is nil and content is the model's plain-prose answer,
 // exactly as before this existed.
-func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, chart *tools.ChartSpec, cost float64, err error) {
+func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, task, location string, wantsItems bool) (content string, items []store.PulsarDailyBlockItem, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, wantsItems)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		return "", nil, nil, 0, err
+		return "", nil, nil, "", 0, err
 	}
 	if result.DailyItemsFinal != nil {
 		items = make([]store.PulsarDailyBlockItem, 0, len(result.DailyItemsFinal.Items))
@@ -286,7 +290,11 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 			items = append(items, store.PulsarDailyBlockItem{Title: it.Title, Summary: it.Summary, Source: it.Source, URL: it.URL})
 		}
 	}
-	return strings.TrimSpace(result.Answer), items, agentCtx.ChartSnapshot(), result.CostUSD, nil
+	// imageURL reuses the same field Picture of the Day populates — a
+	// code_exec-generated chart shown via `show` is just an image to a
+	// Daily block, same as a photo (see ShowSnapshot's doc comment).
+	showURL, _ := agentCtx.ShowSnapshot()
+	return strings.TrimSpace(result.Answer), items, agentCtx.ChartSnapshot(), showURL, result.CostUSD, nil
 }
 
 // generateDailyElaboration is Stage C's deeper pass on the elected Top
@@ -296,20 +304,23 @@ func (s *Server) generateDailyResearchBlock(reqCtx context.Context, cfg *config.
 // prompt ("more paragraphs, additional context") produced a real,
 // observed 17KB Top Story card from a single elected item — this is meant
 // to read as one deeper digest card, not a full feature article.
-func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (string, *tools.ChartSpec, float64, error) {
+func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Config, writerClient llm.ChatClient, title, quickContent, location string) (content string, chart *tools.ChartSpec, imageURL string, cost float64, err error) {
 	task := fmt.Sprintf("This is today's lead story for a personal daily digest, titled %q. Here's the "+
 		"quick version already written: %s\n\nWrite a deeper but still concise version — 3-4 short "+
 		"paragraphs, not a full feature article. Add real additional context or background research (not "+
-		"padding), and a pulled quote if one genuinely fits. Use visualize if the story has genuinely "+
-		"chart-worthy quantitative data, or image_search if a relevant image would help. Don't just "+
-		"restate the quick version — add to it, but keep it tight.", title, quickContent)
+		"padding), and a pulled quote if one genuinely fits. If code_exec is available and the story has "+
+		"genuinely chart-worthy quantitative data, use it to build a matplotlib chart themed to this app "+
+		"(see the system prompt's chart-styling guidance) and call show to display it — or use image_search "+
+		"if a relevant photo would help instead. Don't just restate the quick version — add to it, but keep "+
+		"it tight.", title, quickContent)
 
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, "", 0, err
 	}
-	return strings.TrimSpace(result.Answer), agentCtx.ChartSnapshot(), result.CostUSD, nil
+	showURL, _ := agentCtx.ShowSnapshot()
+	return strings.TrimSpace(result.Answer), agentCtx.ChartSnapshot(), showURL, result.CostUSD, nil
 }
 
 // newDailyToolContext builds the tools.Context one research/elaboration
@@ -326,7 +337,7 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 // item, and never for weather/picture's direct tools.Dispatch calls
 // (which never construct an agent.Run tool menu at all).
 func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClient, cfg *config.Config, location string, wantsItems bool) *tools.Context {
-	return &tools.Context{
+	ctx := &tools.Context{
 		PulsarDailyItems: wantsItems,
 		// Ctx is normally set by agent.Run itself (see its doc comment on
 		// Context.Ctx) — but Weather and Picture of the Day's image_search
@@ -356,7 +367,35 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 		LLM:             client,
 		Emit:            func(string, map[string]interface{}) {},
 		MaxTurns:        cfg.MaxAgentTurns,
+		// ThreadID is a fresh UUID per block, not a real chat thread — a
+		// Daily block is one-shot (no later call ever revisits it, unlike
+		// a chat thread's workspace persisting turn to turn), but
+		// code_exec/show both key their workspace directory and served
+		// URL off ThreadID (tools/code_exec.go, tools/show.go), and
+		// code_exec's "isn't fully configured" guard rejects an empty
+		// one outright. See CodeExecEnabled below for why code_exec is
+		// even reachable here at all.
+		ThreadID: uuid.NewString(),
 	}
+	// Same gate gateway/turn.go's main chat path uses — code_exec (and by
+	// extension show/fetch_url/view_image, all gated on the same
+	// "docker_only" Requires case) let a Daily research/elaboration block
+	// generate and display its own matplotlib chart instead of being
+	// limited to weather's Tier-1 "range" chart, once the visualize tool
+	// (never wired here to begin with) was removed — see issue #44.
+	// Bare-metal or an unconfigured Docker install just doesn't offer
+	// these, same as normal chat.
+	if deploymentMode() == "docker" && cfg.CodeExec.HostWorkspaceDir != "" {
+		ctx.CodeExecEnabled = true
+		ctx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir
+		ctx.CodeExecHostWorkspaceDir = cfg.CodeExec.HostWorkspaceDir
+		ctx.CodeExecSignalDir = cfg.CodeExec.SignalDir
+		ctx.CodeExecMemoryLimitMB = cfg.CodeExec.MemoryLimitMB
+		ctx.CodeExecPidsLimit = cfg.CodeExec.PidsLimit
+		ctx.CodeExecTimeoutSeconds = cfg.CodeExec.TimeoutSeconds
+		ctx.UITheme = ThemeFromStore(s.db)
+	}
+	return ctx
 }
 
 // generateDailyPictureBlock picks a short image-search query via the
@@ -833,17 +872,18 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			if len(r.items) > 0 {
 				elabTitle, elabQuick = r.items[0].Title, r.items[0].Summary
 			}
-			elaborated, elabChart, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
+			elaborated, elabChart, elabImageURL, elabCost, err := s.generateDailyElaboration(reqCtx, cfg, writerClient, elabTitle, elabQuick, location)
 			totalCost += elabCost
 			content := elabQuick
+			topStoryImageURL := r.imageURL
 			if err != nil {
 				log.Warn("pulsar daily: stage C elaboration failed, using the quick version", "block", r.spec.Key, "err", err)
 			} else {
 				content = elaborated
-				// Stage C's own visualize call (if any) supersedes whatever
-				// Stage A produced — the elaboration is the deeper, later
-				// pass on the same story, so its chart is the more
-				// considered one when both exist.
+				// Stage C's own code_exec/show call (if any) supersedes
+				// whatever Stage A produced — the elaboration is the deeper,
+				// later pass on the same story, so its chart/image is the
+				// more considered one when both exist.
 				if elabChart != nil {
 					chartJSON = nil
 					if b, err := json.Marshal(elabChart); err != nil {
@@ -851,6 +891,9 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 					} else {
 						chartJSON = b
 					}
+				}
+				if elabImageURL != "" {
+					topStoryImageURL = elabImageURL
 				}
 			}
 			// topStoryBlockKey is a fixed literal, not r.spec.Key, only
@@ -865,7 +908,7 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 			if len(r.items) > 0 {
 				topStoryBlockKey = "top_story"
 			}
-			topStory = &store.PulsarDailyBlock{Key: topStoryBlockKey, Title: elabTitle, Content: content, Gist: r.gist, IsTopStory: true, Chart: chartJSON}
+			topStory = &store.PulsarDailyBlock{Key: topStoryBlockKey, Title: elabTitle, Content: content, Gist: r.gist, IsTopStory: true, Chart: chartJSON, ImageURL: topStoryImageURL}
 			if err := s.db.UpdateDailyBlockTraceOutcome(today, r.spec.Key, true, true, topStoryReasoning, content, elabCost); err != nil {
 				log.Warn("pulsar daily: recording top story trace outcome failed", "block", r.spec.Key, "err", err)
 			}
@@ -1013,10 +1056,10 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		var task string
 		task, err = dailyResearchTaskFor(spec.Key, location, sportsTeams, custom)
 		if err == nil {
-			content, items, chart, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
+			content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, task, location, dailyBlockWantsItems(spec))
 		}
 	case dailyBlockCustom:
-		content, items, chart, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
+		content, items, chart, imageURL, cost, err = s.generateDailyResearchBlock(reqCtx, cfg, writerClient, spec.CustomTask+dailyItemsInstruction, location, dailyBlockWantsItems(spec))
 	}
 
 	// traceErr carries a hard-failure's error text into the trace row
@@ -1066,7 +1109,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		// No prior content to diff against — treat as notable rather
 		// than skipping the diff-judge call silently, per the plan
 		// doc's "First-ever day" note.
-		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost, items: items}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "notable", costUSD: cost, chart: chart, imageURL: imageURL, items: items}
 		writeTrace(g, "")
 		return g
 	}
@@ -1074,7 +1117,7 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 	verdict, verdictCost, err := dailyDiffJudge(reqCtx, architectClient, spec.Title, yesterdayBlock.Content, content)
 	if err != nil {
 		log.Warn("pulsar daily: diff-judge failed, treating block as normal", "block", spec.Key, "err", err)
-		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost, items: items}
+		g := &dailyGeneratedBlock{content: content, gist: content, verdict: "normal", costUSD: cost, chart: chart, imageURL: imageURL, items: items}
 		writeTrace(g, "")
 		return g
 	}
@@ -1084,6 +1127,8 @@ func (s *Server) generateOneDailyBlock(reqCtx context.Context, today string, cfg
 		verdict:       verdict.Verdict,
 		diffReasoning: verdict.Reasoning,
 		costUSD:       cost + verdictCost,
+		chart:         chart,
+		imageURL:      imageURL,
 		items:         items,
 	}
 	writeTrace(g, "")

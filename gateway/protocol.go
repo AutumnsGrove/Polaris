@@ -207,9 +207,10 @@ type ServerEvent struct {
 	// its own visual block instead of a text source list.
 	Cards []tools.Card `json:"cards,omitempty"`
 	// Chart is a tool_result/done event's structured chart, if this turn
-	// produced one (see tools.ChartSpec) — either attached deterministically
-	// by a Tier-1 tool (weather) or built by the model via the visualize
-	// tool. At most one per turn, unlike Cards.
+	// produced one (see tools.ChartSpec) — attached deterministically by
+	// weather.go's Tier-1 "range" kind (the model-facing visualize tool
+	// that used to also populate this was removed, see issue #44). At
+	// most one per turn, unlike Cards.
 	Chart *tools.ChartSpec `json:"chart,omitempty"`
 	// URL/Caption are show's own tool_result payload — a workspace-file
 	// route the frontend renders as a large inline embed (see

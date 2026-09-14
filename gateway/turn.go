@@ -496,6 +496,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.CodeExecMemoryLimitMB = cfg.CodeExec.MemoryLimitMB
 		agentCtx.CodeExecPidsLimit = cfg.CodeExec.PidsLimit
 		agentCtx.CodeExecTimeoutSeconds = cfg.CodeExec.TimeoutSeconds
+		agentCtx.UITheme = ThemeFromStore(s.db)
 	}
 	// Left nil (not wired above) when the operator has turned memory off —
 	// see MemoryEnabledFromStore's doc comment for why leaving these nil
@@ -859,15 +860,6 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		data := map[string]interface{}{
 			"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID,
 			"url": evt.URL, "caption": evt.Caption,
-		}
-		// chart_kind is only meaningful for visualize's own tool_result —
-		// store.Store.GetStats reads it back to report which kinds the
-		// model actually reaches for (see ChartKindCounts's doc comment).
-		// Weather's own Tier-1 auto-chart also sets evt.Chart on its
-		// tool_result, deliberately excluded here since that kind is
-		// never a model decision.
-		if evt.Tool == "visualize" && evt.Chart != nil {
-			data["chart_kind"] = evt.Chart.Kind
 		}
 		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", data, turnID)
 	case "agent_nudge":

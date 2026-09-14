@@ -83,6 +83,12 @@ func handleShow(argsJSON string, ctx *Context, callID string) string {
 	url := fmt.Sprintf("/api/workspace/%s/%s", ctx.ThreadID, args.Path)
 	result := fmt.Sprintf("now showing %q inline in the conversation", args.Path)
 	log.Info("show", "path", args.Path, "thread_id", ctx.ThreadID)
+	// SetShow alongside Emit, not instead of it — a live chat client reads
+	// this off the streamed event, but Pulsar Daily's tool contexts use a
+	// no-op Emit (see gateway/pulsar_daily.go's newDailyToolContext) and
+	// need to read it back after agent.Run returns instead. See
+	// Context.ShowSnapshot's doc comment.
+	ctx.SetShow(url, args.Caption)
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool": "show", "result": result, "call_id": callID,
 		"url": url, "caption": args.Caption, "path": args.Path,

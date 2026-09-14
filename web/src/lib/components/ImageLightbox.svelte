@@ -5,6 +5,11 @@
 	// Full-screen preview for an ImageGallery tile — tapping a thumbnail
 	// opens this instead of navigating away, so "see it bigger" and "open
 	// the source" are two separate actions instead of one link doing both.
+	// card.url empty (e.g. the Daily page's own code_exec-chart lightbox,
+	// which has no real "source" to open) skips the caption pill entirely
+	// rather than rendering a dead link — it overlays the image's bottom
+	// edge, which is fine for a photo but would cover real content
+	// (axis labels) on a chart image.
 	// Reuses the app's existing .modal-backdrop/.modal-backdrop-close
 	// (dim + blur + click-to-dismiss, see app.css) for the scrim, but not
 	// .modal-panel — that's styled for a form/settings card, not an image
@@ -26,10 +31,12 @@
 		<button class="lightbox-close" onclick={onClose} aria-label="Close preview">
 			<X size={20} />
 		</button>
-		<a class="lightbox-source" href={card.url} target="_blank" rel="noreferrer">
-			<ExternalLink size={13} />
-			<span>{card.subtitle || card.title}</span>
-		</a>
+		{#if card.url}
+			<a class="lightbox-source" href={card.url} target="_blank" rel="noreferrer">
+				<ExternalLink size={13} />
+				<span>{card.subtitle || card.title}</span>
+			</a>
+		{/if}
 	</div>
 </div>
 

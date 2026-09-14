@@ -52,6 +52,20 @@ type Set struct {
 		// yes/no fact slotted into an otherwise-identical sentence.
 		MultimodalTrue  string `yaml:"multimodal_true"`
 		MultimodalFalse string `yaml:"multimodal_false"`
+		// CodeExecThemeDark/CodeExecThemeLight fill the {code_exec_theme}
+		// placeholder (see agent/driver.go's applyCodeExecThemePlaceholder
+		// and tools.CodeExecThemePrompt) with the UI's exact current hex
+		// palette — matplotlib's own default (white background, default
+		// blue) reads jarringly mismatched against either theme, and the
+		// model has no other way to know the running instance's colors.
+		// Two fixed strings with the palette baked in, not one templated
+		// sentence with color values substituted — same reasoning as
+		// MultimodalTrue/False: the guidance differs by which literal hex
+		// codes to use, not just a label. Doesn't auto-flip if the user
+		// switches theme mid-conversation; reflects whatever GetSetting
+		// ("theme") returned at turn start (see ThemeFromStore).
+		CodeExecThemeDark  string `yaml:"code_exec_theme_dark"`
+		CodeExecThemeLight string `yaml:"code_exec_theme_light"`
 	} `yaml:"agent"`
 
 	Turn struct {
@@ -181,7 +195,9 @@ Don't call tools for questions you can already answer confidently (general knowl
 Always tag fenced code blocks with their language (` + "```go, ```python" + `, ...) — untagged blocks render uncolored.
 A ` + "```mermaid" + ` fenced code block renders inline as a diagram — use it only when a real diagram clarifies
 what you've said, not for anything a list or table would show just as well. Quote any node label with
-parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to parse entirely.`
+parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to parse entirely.
+
+{code_exec_theme}`
 
 	d.Agent.VoiceModeInstruction = "Voice mode is active: this answer will be read aloud, not just displayed. " +
 		"Keep it brief and conversational (1-3 sentences when possible), and avoid markdown formatting, " +
@@ -313,6 +329,26 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"other — rephrasing the same question won't surface anything new. Either answer now with what " +
 		"you've gathered, or try a genuinely different angle: a different tool, a specific named source, " +
 		"or a completely different set of search terms — not another variation of a query you've already tried."
+
+	d.Agent.CodeExecThemeDark = "The UI is currently in dark mode. matplotlib's own defaults (white " +
+		"figure background, default blue lines/bars) read jarringly mismatched against it — style every " +
+		"chart to match instead of leaving them: figure and axes background #0f0a06 outer / #18130d " +
+		"plot area (fig.patch.set_facecolor / ax.set_facecolor), text/ticks/axis labels/spines #ece7e1, " +
+		"gridlines #928b83 at low alpha, and #ffb407 (this app's accent) for the primary series/bars/" +
+		"markers. For a chart with several distinct series, use the accent for the most important one " +
+		"and pick harmonious complementary colors for the rest (#92bed9 is the app's own secondary " +
+		"accent) rather than forcing every series to the same color at the cost of legibility. This " +
+		"doesn't auto-update if the mode changes later — it reflects only what's active right now."
+
+	d.Agent.CodeExecThemeLight = "The UI is currently in light mode. matplotlib's own defaults (a flat " +
+		"white background, default blue lines/bars) don't match its warm-paper look — style every " +
+		"chart to match instead of leaving them: figure and axes background #f8f4ef outer / #fdfbf9 " +
+		"plot area (fig.patch.set_facecolor / ax.set_facecolor), text/ticks/axis labels/spines #251e18, " +
+		"gridlines #60564e at low alpha, and #ac5400 (this app's accent) for the primary series/bars/" +
+		"markers. For a chart with several distinct series, use the accent for the most important one " +
+		"and pick harmonious complementary colors for the rest (#176490 is the app's own secondary " +
+		"accent) rather than forcing every series to the same color at the cost of legibility. This " +
+		"doesn't auto-update if the mode changes later — it reflects only what's active right now."
 
 	d.Agent.MultimodalTrue = "You are a multimodal (vision-capable) model. When you need to genuinely look at " +
 		"an image from image_search results — compare visual details, judge whether something looks right — " +
@@ -728,6 +764,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.QuerySimilarityWarning == "" {
 		s.Agent.QuerySimilarityWarning = defaults.Agent.QuerySimilarityWarning
+	}
+	if s.Agent.CodeExecThemeDark == "" {
+		s.Agent.CodeExecThemeDark = defaults.Agent.CodeExecThemeDark
+	}
+	if s.Agent.CodeExecThemeLight == "" {
+		s.Agent.CodeExecThemeLight = defaults.Agent.CodeExecThemeLight
 	}
 	if s.Agent.FocusModes == nil {
 		s.Agent.FocusModes = defaults.Agent.FocusModes

@@ -472,6 +472,15 @@ type Context struct {
 	CodeExecPidsLimit      int
 	CodeExecTimeoutSeconds int
 
+	// UITheme is the settings panel's current "dark"/"light" toggle (see
+	// gateway/settings.go's ThemeFromStore) — only wired when
+	// CodeExecEnabled, to fill CodeExecThemePrompt's chart-styling
+	// guidance with the UI's real colors instead of matplotlib's
+	// defaults. Empty means "not wired" (bare-metal, tests), which
+	// CodeExecThemePrompt treats as "dark" rather than emitting nothing,
+	// since dark is this app's own default theme.
+	UITheme string
+
 	Emit func(eventType string, payload map[string]interface{})
 
 	// Citations accumulates every {title, url} surfaced by search/read/
@@ -505,14 +514,22 @@ type Context struct {
 	ExtraCostUSD float64
 
 	// Chart holds this turn's chart, if any tool produced one (see
-	// ChartSpec). Unlike Citations/Cards this is last-write-wins, not an
-	// accumulator — a turn produces at most one chart, so a second
-	// SetChart call (e.g. Tier-1 weather auto-chart plus a Tier-2
-	// visualize call in the same turn) simply overwrites the first rather
-	// than needing dedup logic. chartMu guards it for the same
-	// concurrent-dispatch reason Citations/Cards need their own mutexes.
+	// ChartSpec) — today, only weather.go's deterministic "range" chart
+	// (the standalone visualize tool that once also called SetChart was
+	// removed in favor of code_exec's general-purpose plotting, see
+	// issue #44). Unlike Citations/Cards this is last-write-wins, not an
+	// accumulator, in case that ever changes again. chartMu guards it for
+	// the same concurrent-dispatch reason Citations/Cards need their own
+	// mutexes.
 	chartMu sync.Mutex
 	Chart   *ChartSpec
+
+	// showMuLock/showURL/showCaption back SetShow/ShowSnapshot — see
+	// ShowSnapshot's doc comment below for why this exists alongside
+	// show.go's normal ctx.Emit-driven path.
+	showMuLock  sync.Mutex
+	showURL     string
+	showCaption string
 
 	// PendingQuestion, once set, tells agent.Run to end the turn right
 	// after this batch of tool calls instead of looping back to the
@@ -840,18 +857,29 @@ func (c *Context) FlushPendingImageMessages() []llm.ChatMessage {
 }
 
 // ChartSpec is a structured chart a tool wants rendered instead of (or
-// alongside) its prose answer — either attached deterministically by a
-// tool whose own response is already a time series (Tier 1, e.g. weather),
-// or built by the model itself via the visualize tool (Tier 2). See
-// docs/plans/visualize-and-image-search.md.
+// alongside) its prose answer — attached deterministically by a tool
+// whose own response is already a time series (weather.go's "range"
+// kind). The model-facing visualize tool that used to build one of
+// these directly (Tier 2, per docs/plans/visualize-and-image-search.md)
+// was removed once code_exec's general-purpose matplotlib plotting made
+// it redundant — see issue #44. "range" survives because it's Tier 1
+// (deterministic, no tool call, no code_exec/Docker dependency), not a
+// model decision.
 type ChartSpec struct {
-	Kind   string        `json:"kind"` // "line" | "bar" | "timeline" | "meter" | "range"
+	// Kind is always "range" today — weather.go's setWeatherChart is the
+	// only caller left. "line"/"bar"/"timeline"/"meter" were the removed
+	// visualize tool's own kinds (see this struct's doc comment); Series/
+	// Events/Value below are now only ever populated the "range"/(unused)
+	// way, kept as-is rather than collapsed since a future Tier-1 tool
+	// could plausibly want "line" or "bar" the same deterministic way
+	// weather wants "range".
+	Kind   string        `json:"kind"`
 	Title  string        `json:"title"`
 	XLabel string        `json:"x_label,omitempty"`
 	YLabel string        `json:"y_label,omitempty"`
-	Series []ChartSeries `json:"series,omitempty"` // line, bar, range
-	Events []ChartEvent  `json:"events,omitempty"` // timeline
-	Value  *ChartValue   `json:"value,omitempty"`  // meter
+	Series []ChartSeries `json:"series,omitempty"` // range
+	Events []ChartEvent  `json:"events,omitempty"` // unused since visualize's removal
+	Value  *ChartValue   `json:"value,omitempty"`  // unused since visualize's removal
 	// Icons is "range"'s own field — one icon key per row, same order/
 	// count as Series[0]'s points. Only ever set by weather.go's
 	// setWeatherChart, from Open-Meteo's WMO weather code (see
@@ -903,6 +931,34 @@ func (c *Context) ChartSnapshot() *ChartSpec {
 	return c.Chart
 }
 
+// showMu/showURL/showCaption back SetShow/ShowSnapshot — show.go's
+// handleShow already emits a tool_result with the resolved workspace URL
+// for a live chat's Emit-driven stream, but Pulsar Daily's tool contexts
+// use a no-op Emit (see newDailyToolContext), so a Daily research/
+// elaboration block has no other way to learn that its agent.Run called
+// show and get back the URL/caption to attach as the block's own
+// ImageURL. Same last-write-wins, snapshot-after-the-fact shape as
+// Chart/SetChart/ChartSnapshot above, for the same reason: at most one
+// artifact worth surfacing per block, read once after the run finishes.
+
+// SetShow records the most recent show call's resolved URL/caption —
+// called from show.go's handleShow alongside its normal ctx.Emit, not
+// instead of it. Safe to call concurrently.
+func (c *Context) SetShow(url, caption string) {
+	c.showMuLock.Lock()
+	defer c.showMuLock.Unlock()
+	c.showURL = url
+	c.showCaption = caption
+}
+
+// ShowSnapshot returns the most recent show call's URL/caption, or ""
+// for both if show was never called this run.
+func (c *Context) ShowSnapshot() (url, caption string) {
+	c.showMuLock.Lock()
+	defer c.showMuLock.Unlock()
+	return c.showURL, c.showCaption
+}
+
 type HandlerFunc func(argsJSON string, ctx *Context, callID string) string
 
 var registry = map[string]HandlerFunc{}
@@ -950,7 +1006,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
-		"music": musicDef, "books": booksDef, "movies": moviesDef, "visualize": visualizeDef, "code_exec": codeExecDef, "fetch_url": fetchURLDef,
+		"music": musicDef, "books": booksDef, "movies": moviesDef, "code_exec": codeExecDef, "fetch_url": fetchURLDef,
 		"image_search": imageSearchDef, "view_image": viewImageDef, "show": showDef, "highlight": highlightDef, "read_attachment": readAttachmentDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,

@@ -38,14 +38,13 @@ export interface UsageStats {
 	// see store.Stats.SearchProviderCounts' doc comment for why this
 	// isn't the same thing as a billing/usage-cap count.
 	search_provider_counts: Record<string, number>;
-	// How many times the model called visualize with each chart kind —
-	// see store.Stats.ChartKindCounts' doc comment for why weather's own
-	// auto-attached chart isn't counted here.
-	chart_kind_counts: Record<string, number>;
 	check_in_count: number;
 	stale_streak_count: number;
 	max_turns_wrapup_count: number;
 	compaction_count: number;
+	// Total wall-clock time code_exec has spent running sandboxed scripts —
+	// see store.Stats.CodeExecWallTimeMS' doc comment.
+	code_exec_wall_time_ms: number;
 }
 
 // Mirrors store.Memory (store/memory.go) — the full row, content included,

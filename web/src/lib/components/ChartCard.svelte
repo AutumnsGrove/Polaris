@@ -1,4 +1,13 @@
 <script lang="ts">
+	// The 'line'/'bar'/'timeline'/'meter' branches below are unreachable
+	// dead code as of the visualize tool's removal (see issue #44) — only
+	// weather.go's deterministic 'range' kind still calls ctx.SetChart,
+	// so chart.kind is always 'range' now. Left in rather than pruned:
+	// 'line'/'bar''s scaling (yMin/topPad/bottomPad/leftPad below) is
+	// interleaved with 'range''s own rendering, and separating them
+	// cleanly is a real refactor of its own, not a quick deletion — not
+	// worth the risk to the still-live weather chart in the same pass
+	// that removed the model-facing tool.
 	import type { ChartSpec } from '$lib/types';
 	import { Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudSnow, CloudLightning } from '@lucide/svelte';
 

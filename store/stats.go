@@ -67,16 +67,13 @@ type Stats struct {
 	// the day" rather than "how much have I spent".
 	SearchProviderCounts map[string]int `json:"search_provider_counts"`
 
-	// ChartKindCounts is how many times the model called visualize with
-	// each kind ("line"/"bar"/"timeline"/"meter") — the evidence for
-	// whether the tool's v1 kind set (see tools/visualize.go) actually
-	// matches what the model reaches for in practice. Scoped to visualize
-	// specifically, not weather's Tier-1 auto-attached chart: that one's
-	// kind is always "line" and never a model decision, so counting it
-	// here would answer a different question ("how often is weather
-	// asked for multiple days") than "which chart kinds does the model
-	// choose".
-	ChartKindCounts map[string]int `json:"chart_kind_counts"`
+	// CodeExecWallTimeMS is total wall-clock time code_exec has actually
+	// spent running sandboxed scripts (sum of each call's "tool call
+	// finished" timestamp minus its "tool call started" timestamp) —
+	// replaces the removed visualize-chart-kind-counts stat (see issue
+	// #44) as the settings panel's "how much is this actually being
+	// used" number for the tool that took its place.
+	CodeExecWallTimeMS int64 `json:"code_exec_wall_time_ms"`
 }
 
 // SourceCost is one bucket's period/all-time cost — see
@@ -104,7 +101,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		ToolCallCounts:       map[string]int{},
 		ToolErrorCounts:      map[string]int{},
 		SearchProviderCounts: map[string]int{},
-		ChartKindCounts:      map[string]int{},
 	}
 
 	var since string
@@ -309,41 +305,59 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	}
 	providerRows.Close()
 
-	// chart_kind lives inside the JSON data blob, same reasoning as
-	// provider above — only visualize's own finished-call events ever
-	// carry it, and only on success (a rejected/capped call never reaches
-	// ctx.SetChart, so its tool_result has no chart at all — see
-	// tools/visualize.go's handleVisualize).
-	chartKindQuery := `SELECT data FROM events WHERE source = 'tool.visualize' AND message = 'tool call finished'`
-	chartKindArgs := []interface{}{}
+	// CodeExecWallTimeMS: call_id (inside the JSON data blob, same as
+	// provider above) pairs a "tool call started" row with its matching
+	// "tool call finished" row (see tools/code_exec.go's handleCodeExec,
+	// which emits both under that call_id) — wall time per call is
+	// finished.created_at minus started.created_at. An unmatched call_id
+	// (a period filter's `since` cutoff splitting a pair across the
+	// boundary, or a server restart mid-call) contributes nothing rather
+	// than guessing; a small undercount is an acceptable tradeoff for a
+	// "how much has this actually run" number, silently wrong data isn't.
+	codeExecQuery := `SELECT message, data, created_at FROM events WHERE source = 'tool.code_exec' AND message IN ('tool call started', 'tool call finished')`
+	codeExecArgs := []interface{}{}
 	if since != "" {
-		chartKindQuery += ` AND created_at >= ?`
-		chartKindArgs = append(chartKindArgs, since)
+		codeExecQuery += ` AND created_at >= ?`
+		codeExecArgs = append(codeExecArgs, since)
 	}
-	chartKindRows, err := s.db.Query(chartKindQuery, chartKindArgs...)
+	codeExecRows, err := s.db.Query(codeExecQuery, codeExecArgs...)
 	if err != nil {
 		return nil, err
 	}
-	for chartKindRows.Next() {
-		var dataJSON string
-		if err := chartKindRows.Scan(&dataJSON); err != nil {
-			chartKindRows.Close()
+	codeExecStarted := map[string]time.Time{}
+	for codeExecRows.Next() {
+		var message, dataJSON, createdAtStr string
+		if err := codeExecRows.Scan(&message, &dataJSON, &createdAtStr); err != nil {
+			codeExecRows.Close()
 			return nil, err
 		}
 		var d struct {
-			ChartKind string `json:"chart_kind"`
+			CallID string `json:"call_id"`
 		}
-		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil {
+		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil || d.CallID == "" {
 			continue
 		}
-		if d.ChartKind != "" {
-			stats.ChartKindCounts[d.ChartKind]++
+		// created_at is written by SQLite's own CURRENT_TIMESTAMP default —
+		// same "YYYY-MM-DD HH:MM:SS" UTC format `since` above is formatted
+		// in, so both sides of the subtraction agree.
+		createdAt, parseErr := time.Parse("2006-01-02 15:04:05", createdAtStr)
+		if parseErr != nil {
+			continue
+		}
+		switch message {
+		case "tool call started":
+			codeExecStarted[d.CallID] = createdAt
+		case "tool call finished":
+			if start, ok := codeExecStarted[d.CallID]; ok {
+				stats.CodeExecWallTimeMS += createdAt.Sub(start).Milliseconds()
+				delete(codeExecStarted, d.CallID)
+			}
 		}
 	}
-	if err := chartKindRows.Err(); err != nil {
+	if err := codeExecRows.Err(); err != nil {
 		return nil, err
 	}
-	chartKindRows.Close()
+	codeExecRows.Close()
 
 	// Nudge kind lives inside the JSON data blob, not a column — cheap
 	// enough to unmarshal per-row at this data volume rather than reach

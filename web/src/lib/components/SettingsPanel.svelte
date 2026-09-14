@@ -68,11 +68,6 @@
 			? Object.entries(appState.settings.usage.search_provider_counts).sort((a, b) => b[1] - a[1])
 			: []
 	);
-	let chartKindCounts = $derived(
-		appState.settings.usage
-			? Object.entries(appState.settings.usage.chart_kind_counts).sort((a, b) => b[1] - a[1])
-			: []
-	);
 </script>
 
 <div class="modal-backdrop" role="presentation">
@@ -152,10 +147,10 @@
 							>
 						</div>
 					{/if}
-					{#if chartKindCounts.length > 0}
+					{#if appState.settings.usage && appState.settings.usage.code_exec_wall_time_ms > 0}
 						<div class="usage-stat-row">
-							<span class="label">visualize chart kinds</span>
-							<span class="value">{chartKindCounts.map(([kind, count]) => `${kind}: ${count}`).join(', ')}</span>
+							<span class="label">code_exec wall time</span>
+							<span class="value">{(appState.settings.usage.code_exec_wall_time_ms / 1000).toFixed(1)}s</span>
 						</div>
 					{/if}
 				</div>

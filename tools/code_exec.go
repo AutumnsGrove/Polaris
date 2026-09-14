@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"polaris/llm"
+	"polaris/prompts"
 )
 
 // codeExecGlobalLock serializes every code_exec call across the whole
@@ -238,4 +239,22 @@ func formatCodeExecResult(r codeExecResult) string {
 		return fmt.Sprintf("your code used too much memory and was stopped — reduce the data size or simplify the computation.\nstdout so far:\n%s\nstderr so far:\n%s", r.Stdout, r.Stderr)
 	}
 	return fmt.Sprintf("exit code: %d\nstdout:\n%s\nstderr:\n%s", r.ExitCode, r.Stdout, r.Stderr)
+}
+
+// CodeExecThemePrompt fills the {code_exec_theme} placeholder (see
+// agent/driver.go's applyCodeExecThemePlaceholder) with chart-styling
+// guidance matching the UI's actual current theme, or "" when code_exec
+// isn't offered at all — same "collapse to nothing rather than a
+// dangling heading" convention as MemoryIndexPrompt. ctx.UITheme empty
+// (not wired — bare-metal, tests, an unwired benchmark Context) is
+// treated as "dark" rather than "light", matching this app's own
+// default theme (see gateway/settings.go's ThemeFromStore).
+func CodeExecThemePrompt(ctx *Context) string {
+	if !ctx.CodeExecEnabled {
+		return ""
+	}
+	if ctx.UITheme == "light" {
+		return prompts.Get().Agent.CodeExecThemeLight
+	}
+	return prompts.Get().Agent.CodeExecThemeDark
 }

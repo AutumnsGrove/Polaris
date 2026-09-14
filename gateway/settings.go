@@ -129,6 +129,23 @@ func CustomInstructionsFromStore(db *store.Store) string {
 	return val
 }
 
+// ThemeFromStore reads the theme setting for tools.Context.UITheme (see
+// tools.CodeExecThemePrompt) — same "default rather than fail" reasoning
+// as MemoryEnabledFromStore/CustomInstructionsFromStore above. A nil db, a
+// read error, or an unset value all default to "dark", matching this
+// app's own default theme (see handleGetSettings' identical fallback for
+// the settings panel itself).
+func ThemeFromStore(db *store.Store) string {
+	if db == nil {
+		return "dark"
+	}
+	val, err := db.GetSetting(settingTheme)
+	if err != nil || val == "" {
+		return "dark"
+	}
+	return val
+}
+
 // validVoiceInputModes gates handlePutSettings — see settingVoiceInputMode.
 var validVoiceInputModes = map[string]bool{"hold": true, "toggle": true}
 

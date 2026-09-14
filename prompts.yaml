@@ -49,6 +49,8 @@ agent:
     `style` fill needs an explicit `color:` on the same line too, or the text is unreadable against it in
     this app's dark theme.
 
+    {code_exec_theme}
+
   # Appended (after a blank line) to the system prompt when this answer is
   # likely to be read aloud.
   voice_mode_instruction: >-
@@ -251,6 +253,37 @@ agent:
     You are not a multimodal model — you cannot see images directly. Use view_image's "describe"
     mode (the only mode available to you) to get a text description of an image from image_search
     results; "see" mode will be rejected.
+
+  # Fill the {code_exec_theme} placeholder (see agent/driver.go's
+  # applyCodeExecThemePlaceholder and tools.CodeExecThemePrompt) with the
+  # UI's exact current hex palette (from web/src/app.css's :root tokens) —
+  # matplotlib's own defaults (white background, default blue) read
+  # jarringly mismatched against either theme, and the model has no other
+  # way to know the running instance's colors. Two fixed strings with the
+  # palette baked in, not one templated sentence: same reasoning as
+  # multimodal_true/false above. Doesn't auto-flip if the user switches
+  # theme mid-conversation — reflects only what GetSetting("theme")
+  # returned at turn start.
+  code_exec_theme_dark: >-
+    The UI is currently in dark mode. matplotlib's own defaults (white figure background, default
+    blue lines/bars) read jarringly mismatched against it — style every chart to match instead of
+    leaving them: figure and axes background #0f0a06 outer / #18130d plot area
+    (fig.patch.set_facecolor / ax.set_facecolor), text/ticks/axis labels/spines #ece7e1, gridlines
+    #928b83 at low alpha, and #ffb407 (this app's accent) for the primary series/bars/markers. For
+    a chart with several distinct series, use the accent for the most important one and pick
+    harmonious complementary colors for the rest (#92bed9 is the app's own secondary accent) rather
+    than forcing every series to the same color at the cost of legibility. This doesn't auto-update
+    if the mode changes later — it reflects only what's active right now.
+  code_exec_theme_light: >-
+    The UI is currently in light mode. matplotlib's own defaults (a flat white background, default
+    blue lines/bars) don't match its warm-paper look — style every chart to match instead of
+    leaving them: figure and axes background #f8f4ef outer / #fdfbf9 plot area
+    (fig.patch.set_facecolor / ax.set_facecolor), text/ticks/axis labels/spines #251e18, gridlines
+    #60564e at low alpha, and #ac5400 (this app's accent) for the primary series/bars/markers. For
+    a chart with several distinct series, use the accent for the most important one and pick
+    harmonious complementary colors for the rest (#176490 is the app's own secondary accent)
+    rather than forcing every series to the same color at the cost of legibility. This doesn't
+    auto-update if the mode changes later — it reflects only what's active right now.
 
 # One-off, non-streamed LLM calls made from gateway/turn.go around a normal
 # turn — see that file's generateSuggestions/generateTitle/compactThread.

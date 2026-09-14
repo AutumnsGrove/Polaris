@@ -303,8 +303,8 @@ func TestSweepExpiredWizardSessions(t *testing.T) {
 }
 
 // TestRunWizardTurn_DisablesNonInterviewTools confirms the tool menu the
-// interview actually gets — calculator/memory/read_attachment/visualize
-// disabled, ask_user_question and finalize_pulsar_prompt available — by
+// interview actually gets — calculator/memory/read_attachment disabled,
+// ask_user_question and finalize_pulsar_prompt available — by
 // inspecting the request the fake model server actually received, the
 // same technique CLAUDE.md recommends for asserting what a turn really
 // sent (dev/fakeopenrouter's own /_control/calls).
@@ -329,7 +329,7 @@ func TestRunWizardTurn_DisablesNonInterviewTools(t *testing.T) {
 	if capturedBody == "" {
 		t.Fatal("the fake model server never received a request")
 	}
-	for _, disabled := range []string{"calculator", "memory", "read_attachment", "visualize", "web_search", "image_search"} {
+	for _, disabled := range []string{"calculator", "memory", "read_attachment", "web_search", "image_search"} {
 		if strings.Contains(capturedBody, `"name":"`+disabled+`"`) {
 			t.Errorf("request body offered disallowed tool %q to the wizard model: %s", disabled, capturedBody)
 		}

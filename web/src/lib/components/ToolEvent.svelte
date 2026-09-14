@@ -29,7 +29,6 @@
 		Music,
 		Book,
 		Film,
-		ChartSpline,
 		SquareTerminal,
 		CloudDownload,
 		Images,
@@ -238,8 +237,6 @@
 				<Book size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'movies'}
 				<Film size={13} color="var(--color-accent-2)" />
-			{:else if item.tool === 'visualize'}
-				<ChartSpline size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'code_exec'}
 				<SquareTerminal size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'fetch_url'}

@@ -53,12 +53,11 @@ with citations.
   aloud in a real voice (Kokoro-82M), streamed sentence by sentence as they're ready.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
   (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
-  and file processing, and can pull in a URL you've already been shown as a citation to work with
-  real data. Docker installs only — see [SETUP.md](SETUP.md#requirements).
+  file processing, and charts styled to match the app's own theme, and can pull in a URL you've
+  already been shown as a citation to work with real data. Docker installs only — see
+  [SETUP.md](SETUP.md#requirements).
 - **Calculator** — evaluates arithmetic exactly (ratios, percentages, date-interval math) instead
   of doing the math in free text, removing a whole class of LLM arithmetic mistakes.
-- **Charts** — renders data it's synthesized (search results, calculations) as a line/bar/timeline/
-  meter chart instead of a wall of prose or a table.
 - **Image search & viewing** — finds real photos for a query as a gallery, and can look directly
   at a specific image (a result, or a chart it just generated) when a text description isn't enough.
 - **Highlight cards** — turns a handful of items actually found this turn (products, places,

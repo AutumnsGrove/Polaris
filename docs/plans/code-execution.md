@@ -294,11 +294,13 @@ Rides whatever #42 ships rather than being its own sandboxing decision — becom
   `savefig`), not structured `ChartSpec` JSON — it needs its own path in the chat UI, not
   `ChartCard.svelte`'s existing renderer. Simplest version: render it exactly like an image
   attachment (see "how results come back" above) — no new frontend component for a first version.
-- **Does this replace `visualize`?** Not on day one. `visualize`'s fixed `ChartSpec` shape
-  (`tools/visualize.go`) is cheap (no sandbox dependency, works even when code execution's memory
-  budget is tight or the feature is disabled entirely under bare-metal) and already handles common
-  cases well. Revisit once code execution is live and has real usage data — a decision this doc
-  deliberately isn't making yet.
+- **Does this replace `visualize`?** Not on day one — but revisited once code execution was live
+  and had real usage data, per this bullet's own instruction: **yes, as of 2026-09-14** (see issue
+  #44). A live side-by-side comparison across every chart kind `visualize` supported, plus two it
+  never could (scatter+regression, histograms), came out clearly in code_exec's favor once its
+  matplotlib output was themed to match the app's UI — `visualize` was removed entirely, not kept
+  as a cheap fallback. weather.go's own deterministic "range" chart is unaffected — it's Tier 1
+  (no tool call, no Docker dependency) and was never `visualize`'s concern to begin with.
 - **Directly gated by the memory test above — now unblocked.** The real hardware check landed on
   library option 1 (full set, matplotlib included) with wide margin, so #44 is no longer blocked
   on capacity and can ship alongside #42 rather than being deferred.

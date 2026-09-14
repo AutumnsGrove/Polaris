@@ -209,10 +209,14 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	// "research"-category tool, and PulsarWizard is what makes
 	// finalize_pulsar_prompt appear at all (see catalog.go's
 	// "pulsar_wizard" Requires case) — but NoResearch alone would still
-	// leave calculator/memory/read_attachment/visualize on the menu, which
-	// a prompt-writing interview has no use for. image_search needs no
+	// leave calculator/memory/read_attachment on the menu, which a
+	// prompt-writing interview has no use for. image_search needs no
 	// entry here — it's category: research, so NoResearch above already
-	// excludes it the same way it does in plain chat mode.
+	// excludes it the same way it does in plain chat mode. code_exec (and
+	// visualize before its removal, see issue #44) was never reachable
+	// here regardless — this wizard's tool context never wires
+	// CodeExecEnabled, so catalog.go's "docker_only" gate already keeps
+	// it off the menu without needing an entry here.
 	disabled := DisabledToolsFromStore(s.db)
 	if disabled == nil {
 		disabled = map[string]bool{}
@@ -220,7 +224,6 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	disabled["calculator"] = true
 	disabled["memory"] = true
 	disabled["read_attachment"] = true
-	disabled["visualize"] = true
 
 	agentCtx := &tools.Context{
 		NoResearch:                   true,

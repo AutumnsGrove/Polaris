@@ -105,6 +105,7 @@ func printStats(s *store.Stats) {
 	fmt.Printf("threads: %d, turns: %d (%s)\n", s.ThreadCount, s.TurnCount, period)
 	fmt.Printf("avg turn duration: %.1fs\n", float64(s.AvgTurnDurationMs)/1000)
 	fmt.Printf("auto-compactions: %d (%s)\n", s.CompactionCount, period)
+	fmt.Printf("code_exec wall time: %.1fs (%s)\n", float64(s.CodeExecWallTimeMS)/1000, period)
 
 	fmt.Printf("\ntool calls (%s):\n", period)
 	if len(s.ToolCallCounts) == 0 {
@@ -143,26 +144,6 @@ func printStats(s *store.Stats) {
 			count := s.SearchProviderCounts[p]
 			pct := float64(count) / float64(total) * 100
 			fmt.Printf("  %-10s %5d searches   %5.1f%%\n", p, count, pct)
-		}
-	}
-
-	fmt.Printf("\nvisualize chart kinds (%s):\n", period)
-	if len(s.ChartKindCounts) == 0 {
-		fmt.Println("  none")
-	} else {
-		total := 0
-		for _, c := range s.ChartKindCounts {
-			total += c
-		}
-		kinds := make([]string, 0, len(s.ChartKindCounts))
-		for k := range s.ChartKindCounts {
-			kinds = append(kinds, k)
-		}
-		sort.Strings(kinds)
-		for _, k := range kinds {
-			count := s.ChartKindCounts[k]
-			pct := float64(count) / float64(total) * 100
-			fmt.Printf("  %-10s %5d charts    %5.1f%%\n", k, count, pct)
 		}
 	}
 

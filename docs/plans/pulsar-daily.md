@@ -5,6 +5,15 @@ far and gets expanded as more of it firms up. Not ready to build from yet.** See
 `mockups/pulsar-daily.html` for the current visual mockup (open it in a browser; resize the
 window to see the mobile behavior).
 
+**2026-09-14 update:** every `visualize` mention below is now `code_exec` (+`show` to display the
+result) — `visualize` itself was removed entirely (see issue #44 and
+`docs/plans/visualize-and-image-search.md`'s status note). `newDailyToolContext`
+(`gateway/pulsar_daily.go`) wires `code_exec`/`show`/`fetch_url`/`view_image` the same way
+`gateway/turn.go` does for normal chat, gated on the same Docker/`host_workspace_dir` check, with a
+fresh per-block UUID standing in for `ThreadID` (Daily blocks are one-shot, not a persisted
+conversation). weather's own deterministic "range" chart is untouched by any of this — it never
+went through `visualize` to begin with.
+
 ## Why this exists
 
 Pulsar routines (`docs/plans/pulsar-routines.md`) already prove the "recurring, agent-driven,
