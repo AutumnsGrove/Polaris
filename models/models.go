@@ -191,15 +191,37 @@ var Registry = []config.ModelConfig{
 		},
 	},
 	{
-		// Text-only (no image input) — NOT marked multimodal, matching
-		// mimo-pro above, so Config.MultimodalModel doesn't accidentally
-		// pick this for image-description duty. The ":free" slug routes
-		// through OpenRouter's no-cost provider pool; cost shows as $0.
-		ID:          "nemotron-ultra",
-		Name:        "NemoTron Ultra (Free)",
-		Model:       "nvidia/nemotron-3-ultra-550b-a55b:free",
-		Provider:    []string{"nvidia"},
+		// Replaces nemotron-ultra (2026-09-14): that model's single free
+		// provider (Nvidia direct) was failing 2 of 3 concurrent requests
+		// with 502 "Service temporarily overloaded" in live testing, and
+		// even successful calls took 45-90s for a one-line reply (matches
+		// OpenRouter's own endpoint metadata: p50 latency ~47s).
+		// thinkingmachines/inkling:free was fast and multimodal too, but
+		// its free tier 403s on every request regardless of caller
+		// (`"failed_routing_step": "Gate Free Endpoints by Agentic
+		// Harness"`) unless the app is on OpenRouter's own allowlist of
+		// recognized coding-agent tools — no header combination gets past
+		// it, since the gate checks app identity at OpenRouter's routing
+		// layer, not request contents. google/gemma-4-26b-a4b-it:free
+		// worked but is served via Google AI Studio's BYOK quota
+		// (`is_byok: true` on every response) rather than a pooled
+		// OpenRouter allowance. This model live-tested clean on a pooled
+		// allowance (`is_byok: false`): 5/5 concurrent requests under
+		// 1.25s, plain text, tool calls, and reasoning all confirmed
+		// working via direct OpenRouter API calls. Genuinely multimodal
+		// per live endpoint metadata (input_modalities includes
+		// image+video) — the free-tier model a non-paying user can
+		// actually attach images to.
+		ID:          "ling-flash-vl",
+		Name:        "Ling 3.0 Flash VL (Free)",
+		Model:       "inclusionai/ling-3.0-flash-vl:free",
+		Provider:    []string{"novita/bf16"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal: true,
 	},
 }
