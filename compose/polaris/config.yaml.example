@@ -114,6 +114,11 @@ code_exec:
   # ./workspaces volume actually resolves to on disk.
   host_workspace_dir: "@INSTALL_DIR@/workspaces"
   signal_dir: "/data/code-exec-signal"
+  # Defaults to 120s (config/config.go) if omitted — raised from an
+  # initial 30s after live production evidence: a weak quad-core SBC
+  # running real numpy/matplotlib workloads genuinely needs the extra
+  # headroom. Uncomment to tune further for slower/faster hardware.
+  # timeout_seconds: 120
 
 service:
   label: "polaris"

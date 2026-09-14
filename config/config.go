@@ -273,6 +273,11 @@ type Config struct {
 		// pillow/sympy/seaborn/pyarrow package set landed at ~150-260MB
 		// on the potato, so 384MB keeps a real margin without being
 		// wasteful against the ~370MB truly-free budget measured there.
+		// TimeoutSeconds' 120s default (raised from an initial 30s) came
+		// from live evidence, not a guess: the potato's own quad-core
+		// A53 genuinely needs the headroom for real numpy/matplotlib
+		// workloads — production logs showed real code_exec calls
+		// hitting the 30s wall and getting killed mid-run.
 		MemoryLimitMB  int `yaml:"memory_limit_mb"`
 		PidsLimit      int `yaml:"pids_limit"`
 		TimeoutSeconds int `yaml:"timeout_seconds"`
@@ -456,7 +461,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		cfg.CodeExec.PidsLimit = 64
 	}
 	if cfg.CodeExec.TimeoutSeconds <= 0 {
-		cfg.CodeExec.TimeoutSeconds = 30
+		cfg.CodeExec.TimeoutSeconds = 120
 	}
 	// CodeExec.HostWorkspaceDir has no default — see its doc comment.
 	// Left empty (bare-metal, or a hand-edited Docker config that hasn't
