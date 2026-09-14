@@ -15,7 +15,27 @@
 		BookOpen,
 		Image,
 		MessageCircleQuestion,
-		Users
+		Users,
+		NotebookText,
+		Lightbulb,
+		Calculator,
+		FileSearch,
+		MapPin,
+		Captions,
+		FolderGit,
+		GitCommit,
+		BookA,
+		Music,
+		Book,
+		Film,
+		ChartSpline,
+		SquareTerminal,
+		CloudDownload,
+		Images,
+		ScanEye,
+		Highlighter,
+		Paperclip,
+		History
 	} from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
@@ -176,11 +196,49 @@
 			{:else if item.tool === 'describe_image'}
 				<Image size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'memory'}
-				<Brain size={13} color="var(--color-accent-2)" />
+				<NotebookText size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'ask_user_question'}
 				<MessageCircleQuestion size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'spawn_researchers'}
 				<Users size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'think'}
+				<Lightbulb size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'calculator'}
+				<Calculator size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'web_read'}
+				<FileSearch size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'nearby_search'}
+				<MapPin size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'youtube_transcript'}
+				<Captions size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'github_repo'}
+				<FolderGit size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'github_activity'}
+				<GitCommit size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'dictionary'}
+				<BookA size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'music'}
+				<Music size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'books'}
+				<Book size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'movies'}
+				<Film size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'visualize'}
+				<ChartSpline size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'code_exec'}
+				<SquareTerminal size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'fetch_url'}
+				<CloudDownload size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'image_search'}
+				<Images size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'view_image'}
+				<ScanEye size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'highlight'}
+				<Highlighter size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'read_attachment'}
+				<Paperclip size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'search_chats'}
+				<History size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}
