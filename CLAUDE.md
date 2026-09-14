@@ -227,6 +227,19 @@ Relevant code beyond the two `gateway/pulsar_scheduler.go`/`pulsar_wizard.go` fi
 `store/pulsar_daily.go`. README's Pulsar/Pulsar Daily bullets are the user-facing description;
 this section is only the "where the code lives" pointer.
 
+## Keeping README.md / SETUP.md / DEVELOPMENT.md in sync
+
+Docs are split three ways (as of the 2026-09 restructuring): `README.md` is a short pitch + a
+trimmed feature list + license, `SETUP.md` is the all-in-one install/config/backup reference, and
+`DEVELOPMENT.md` covers architecture, frontend dev, the CLI, and deployment internals. When a
+change adds or meaningfully changes a user-facing tool or feature, update `README.md`'s Features
+list — one or two lines, what it does, not why it's built that way (no fallback-chain internals,
+no historical bugs, no design-tradeoff narrative; that belongs in code comments or `docs/plans/`).
+If the change adds a new requirement (an API key, a Docker-only gate, a config field), add it to
+`SETUP.md`'s Requirements section too. If it changes the architecture diagram, the CLI, or how the
+app is built/deployed, that's `DEVELOPMENT.md`. Don't let any of the three creep back into a
+500-line wall — that's the exact problem this split fixed.
+
 ## Conventions worth knowing before editing Go here
 
 - `uv`/Python-specific instructions some global CLAUDE.md files carry do **not** apply — this is a
