@@ -1,7 +1,16 @@
 # Fetch tool, persistent workspace, and read_attachment's extension
 
-**Status: planning only — filed against issue #60, depends on #42 shipping first (the workspace
-this writes into doesn't exist until code execution does). No application code written yet.**
+**Status: `fetch_url` shipped and live-verified (2026-09-14)** — `tools/fetch_url.go`,
+`tools/descriptions/fetch_url.yaml`, wired into `catalog.go` under the same `docker_only` gate as
+`code_exec`. Both provenance paths from the design below are implemented: a `url` checked against
+`ctx.CitationsSnapshot()`, and a `card_index` resolved against `ctx.CardsSnapshot()` (mirroring
+`view_image`'s own card_index handling) — no free-typed URL ever reaches the fetch. Content-type/
+magic-byte allowlist and a 20MB size cap are enforced before anything touches disk (see
+`fetchURLContentAllowed`/`fetchURLBytes`). Live-verified end to end against a real running
+`polaris` (Docker mode) + real SearXNG + `dev/fakeopenrouter`: `image_search` → `fetch_url` (by
+`card_index`) → `show` rendered a real fetched photo inline, workspace file written with the exact
+fetched bytes. `read_attachment`'s extension (offering it whenever the workspace holds a PDF, not
+just this turn's upload) is **not yet implemented** — still open, tracked separately.
 
 This doc covers the "get untrusted external content safely to the model" half of the code-execution
 work: how a file actually gets from the web into somewhere `code_exec` or `read_attachment` can use

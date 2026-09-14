@@ -99,7 +99,14 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 					for (let i = timeline.length - 1; i >= 0; i--) {
 						const item = timeline[i];
 						if (item.kind === 'tool' && item.callId === data.call_id && !item.done) {
-							timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
+							timeline[i] = {
+								...item,
+								result: data.result,
+								citations: data.citations,
+								url: data.url,
+								caption: data.caption,
+								done: true
+							};
 							matched = true;
 							break;
 						}
@@ -109,7 +116,14 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 					for (let i = timeline.length - 1; i >= 0; i--) {
 						const item = timeline[i];
 						if (item.kind === 'tool' && item.tool === tool && !item.done) {
-							timeline[i] = { ...item, result: data.result, citations: data.citations, done: true };
+							timeline[i] = {
+								...item,
+								result: data.result,
+								citations: data.citations,
+								url: data.url,
+								caption: data.caption,
+								done: true
+							};
 							break;
 						}
 					}
@@ -1146,7 +1160,15 @@ export class AppState {
 					for (let i = items.length - 1; i >= 0; i--) {
 						const item = items[i];
 						if (item.kind === 'tool' && item.callId === e.call_id && !item.done) {
-							items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
+							items[i] = {
+								...item,
+								result: e.result,
+								provider: e.provider,
+								citations: e.citations,
+								url: e.url,
+								caption: e.caption,
+								done: true
+							};
 							matched = true;
 							break;
 						}
@@ -1156,7 +1178,15 @@ export class AppState {
 					for (let i = items.length - 1; i >= 0; i--) {
 						const item = items[i];
 						if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
-							items[i] = { ...item, result: e.result, provider: e.provider, citations: e.citations, done: true };
+							items[i] = {
+								...item,
+								result: e.result,
+								provider: e.provider,
+								citations: e.citations,
+								url: e.url,
+								caption: e.caption,
+								done: true
+							};
 							break;
 						}
 					}

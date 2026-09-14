@@ -18,8 +18,8 @@ import (
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
-	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize", "code_exec",
-	"image_search", "view_image", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
+	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "visualize", "code_exec", "fetch_url",
+	"image_search", "view_image", "show", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
 
@@ -214,12 +214,21 @@ var catalogDefaults = map[string]catalogEntry{
 			"written to the current directory persist across calls within this conversation. Returns stdout, stderr, " +
 			"and the exit code. A resource or time limit hit is reported back as a normal result, not a crash — " +
 			"simplify the code or reduce the data size and try again."},
+	"fetch_url": {Name: "fetch_url", Requires: "docker_only", Category: "compute",
+		Description: "download a URL you've already been shown into your code_exec workspace so code_exec can process it.",
+		APIDescription: "Fetch a URL you've already been shown as a citation this conversation, or an image_search result " +
+			"by card_index, and save it into your workspace under the filename you choose — so code_exec can load a real " +
+			"image, CSV, JSON, Parquet, or SQLite file instead of only synthesizing data from scratch."},
 	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
 		APIDescription: "Find real photos for a query and attach them as a gallery."},
 	"view_image": {Name: "view_image", Description: "actually look at a specific image from a prior image_search result.",
 		APIDescription: "View a specific image from a prior image_search result by its numbered position (card_index). " +
 			"mode: \"describe\" (default) returns a thorough text description. mode: \"see\" (only offered to a " +
 			"multimodal model) inserts the actual image as your next message so you can genuinely look at it."},
+	"show": {Name: "show", Requires: "docker_only", Description: "display a workspace artifact (e.g. a code_exec chart) large and inline, right where you produced it.",
+		APIDescription: "Display an image already in your workspace (e.g. a code_exec-generated chart) large and inline " +
+			"in the conversation, right at this point in your reply, with an optional caption. Purely a display action — " +
+			"it doesn't let you see the image yourself; use view_image for that."},
 	"highlight": {Name: "highlight", Category: "research",
 		Description: "turn a handful of items you actually found this turn into cards instead of a paragraph.",
 		APIDescription: "Render 1-5 items you actually found this turn as cards instead of describing them in prose " +

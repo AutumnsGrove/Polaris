@@ -1,6 +1,17 @@
 # show: a big, inline artifact viewer — one step above highlight
 
-**Status: designed, not built.** Filed against issue #44 (code-generated chart rendering), which
+**Status: shipped and live-verified (2026-09-14).** `tools/show.go` (path-only, uncapped-calls, as
+designed below), `gateway/workspace.go`'s `GET /api/workspace/{thread_id}/{filename}` route (new
+plumbing, path-traversal-checked the same way `view_image`'s `resolveWorkspaceFilePath` is —
+factored out of `readWorkspaceImageBytes` and shared by both tools), and a `ToolEvent.svelte`
+branch rendering a real inline `<img>` sized above `ImageGallery`'s own tiles, reusing
+`ImageLightbox.svelte` unchanged for tap-to-expand exactly as planned. Live-verified against a real
+running `polaris` (Docker mode, real sandbox image) + `dev/fakeopenrouter`: a `code_exec`-generated
+matplotlib chart rendered inline via `show` immediately after the call, and separately a
+`fetch_url`-fetched photo did the same — both confirmed to survive a hard page reload
+(`buildTimelineFromEvents` correctly threads the new `url`/`caption` fields through from persisted
+events, not just the live WebSocket stream). Filed against issue #44 (code-generated chart
+rendering), which
 this supersedes the rendering-path recommendation of — that issue originally suggested riding the
 existing attachment-image path with no new mechanism; the handoff doc after `code_exec` shipped
 proposed reusing `highlight`'s card machinery instead; this doc supersedes *that* in favor of a

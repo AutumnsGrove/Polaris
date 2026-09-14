@@ -211,6 +211,12 @@ type ServerEvent struct {
 	// by a Tier-1 tool (weather) or built by the model via the visualize
 	// tool. At most one per turn, unlike Cards.
 	Chart *tools.ChartSpec `json:"chart,omitempty"`
+	// URL/Caption are show's own tool_result payload — a workspace-file
+	// route the frontend renders as a large inline embed (see
+	// tools/show.go and gateway/workspace.go), plus its optional
+	// model-supplied caption. Empty for every other tool.
+	URL     string `json:"url,omitempty"`
+	Caption string `json:"caption,omitempty"`
 	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
 	// legitimate value for both (a stopped turn that never reached an LLM
 	// call costs exactly $0), and omitempty would drop the field from the

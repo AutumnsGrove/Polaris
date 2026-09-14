@@ -136,6 +136,12 @@ export type ServerEvent =
 			citations?: Citation[];
 			cards?: Card[];
 			chart?: ChartSpec;
+			// show's own payload — a workspace-file route to render as a
+			// large inline embed, plus its optional caption. See
+			// tools/show.go and gateway/workspace.go. Empty for every
+			// other tool.
+			url?: string;
+			caption?: string;
 			call_id?: string;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
@@ -489,6 +495,9 @@ export type TimelineItem =
 			// web_search's fallback-source key, see ServerEvent's tool_result case.
 			provider?: string;
 			citations?: Citation[];
+			// show's own payload — see ServerEvent's tool_result case.
+			url?: string;
+			caption?: string;
 			done: boolean;
 			// Mirrors ServerEvent's call_id — lets handleEvent's tool_result
 			// case match this exact call instead of falling back to a
