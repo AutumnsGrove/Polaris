@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
+	import hljs from '$lib/highlightjs';
 	import type { TimelineItem, Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
 	import {
@@ -131,6 +132,20 @@
 	let commentaryHtml = $derived(
 		item.kind === 'commentary' ? DOMPurify.sanitize(marked.parse(item.content) as string) : ''
 	);
+
+	// The exact Python source a code_exec call ran — tools/code_exec.go's
+	// handleCodeExec already emits it as a "tool_call" event's args.code,
+	// same as web_search's query, but this component only ever rendered
+	// item.result (stdout/stderr/exit code) for a generic tool chip, so
+	// the actual executed code was invisible even though the server was
+	// never hiding it. hljs.highlight() already HTML-escapes its input
+	// (see markdown.ts's code renderer, which trusts it the same way
+	// without a separate DOMPurify pass), so this is safe for @html.
+	let codeHtml = $derived(
+		item.kind === 'tool' && item.tool === 'code_exec' && typeof item.args?.code === 'string'
+			? hljs.highlight(item.args.code, { language: 'python' }).value
+			: ''
+	);
 </script>
 
 {#if item.kind === 'thinking'}
@@ -252,6 +267,10 @@
 		{#if open && item.result}
 			{#if item.tool === 'web_search' && item.provider}
 				<div class="provider-badge">Provided by {providerLabels[item.provider] ?? item.provider}</div>
+			{/if}
+			{#if item.tool === 'code_exec' && codeHtml}
+				<div class="provider-badge">Code</div>
+				<pre class="tool-code"><code class="hljs language-python">{@html codeHtml}</code></pre>
 			{/if}
 			<pre class="tool-result">{item.result}</pre>
 		{/if}
@@ -375,6 +394,24 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-accent-2);
+	}
+
+	/* Same recessed background as .tool-result, directly above it in the
+	   same expanded panel — distinguished by holding hljs's own token
+	   colors instead of plain dim text, since this is source code, not
+	   a stdout/stderr transcript. */
+	.tool-code {
+		white-space: pre-wrap;
+		word-break: break-word;
+		background: color-mix(in srgb, black 12%, transparent);
+		box-shadow: var(--shadow-well);
+		padding: var(--space-sm) var(--space-md);
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		line-height: 1.5;
+		max-height: 320px;
+		overflow-y: auto;
 	}
 
 	.tool-result {
