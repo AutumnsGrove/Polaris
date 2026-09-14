@@ -126,8 +126,27 @@ func handleCodeExec(argsJSON string, ctx *Context, callID string) string {
 	codeExecGlobalLock.Lock()
 	defer codeExecGlobalLock.Unlock()
 
-	if err := os.MkdirAll(filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID), 0o755); err != nil {
+	// 0o777 + an explicit Chmod, not just MkdirAll's requested mode: this
+	// container creates the directory as its own non-root uid (100), but
+	// the host-side codeexec.sh script that next needs to write the .py
+	// file into it runs as a completely different host uid — the exact
+	// same cross-UID-namespace bind-mount problem install.sh's 777
+	// chmods on the top-level workspaces/ dir already document, just
+	// missed here for the per-thread subdirectory this code creates at
+	// runtime. MkdirAll alone isn't enough: the process umask (0022 by
+	// default) silently strips the write bit back down to 0755 even when
+	// 0o777 is the requested mode — confirmed live on the potato, where
+	// codeexec.sh failed with a permission error writing into a
+	// freshly-created 0755 directory owned by uid 100. Chmod forces the
+	// mode regardless of umask.
+	workspaceDir := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)
+	if err := os.MkdirAll(workspaceDir, 0o777); err != nil {
 		result := "error: couldn't prepare the workspace directory: " + err.Error()
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "code_exec", "result": result, "call_id": callID})
+		return result
+	}
+	if err := os.Chmod(workspaceDir, 0o777); err != nil {
+		result := "error: couldn't set workspace directory permissions: " + err.Error()
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "code_exec", "result": result, "call_id": callID})
 		return result
 	}
