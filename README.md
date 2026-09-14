@@ -17,31 +17,6 @@ Ask it something. It decides for itself whether it needs to search the web, read
 look up a nearby place, check the weather, or just answer directly — then streams the answer back
 with citations.
 
-## Beyond chat: Pulsar, Pulsar Daily, and Constellation
-
-Three background systems that go beyond "ask a question, get an answer" — each runs on its own
-schedule and turns into something you read rather than something you type into.
-
-**Pulsar** (`/pulsar`) — a saved prompt that fires on a schedule (daily/weekly/monthly) instead of
-on demand, running through the same turn pipeline as a normal message. Each firing reports only
-what's new since last time, not a repeat of settled facts. A "help me write this" wizard turns a
-vague idea into a tuned prompt through a short interview. Catches up on any fire it missed while
-Polaris was offline.
-
-**Pulsar Daily** (`/daily`) — one daily "morning newspaper" edition: a week's weather range, word
-of the day, on-this-day, a quote, picture of the day, headlines, trending/local/sports news, plus
-any custom blocks you define. Each section generates independently, and a second pass drops
-anything unchanged since yesterday so a quiet news day makes a shorter page. A Top Story gets
-deeper elaboration. Generates on schedule or on demand via Settings.
-
-**Constellation** (`/constellation`) — an auto-generated personal library, not a chat feature: a
-background agent ("Weaver") reads your recent threads and extracts durable facts about *you* into
-short, evergreen "stars," collapsing repeated mentions into one growing card instead of scattered
-notes. Browsable by category, plus a star-map view of how stars connect to each other. Runs
-cheaply on an interval, never live-per-message.
-
----
-
 ## Features
 
 - **Web search** via your own SearXNG instance — no API key, no per-query cost. Falls back through
@@ -109,6 +84,31 @@ cheaply on an interval, never live-per-message.
 - **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed.
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's
   homescreen as a standalone app, since [mobile is the primary surface](PRODUCT.md).
+
+## Beyond chat: Pulsar, Pulsar Daily, and Constellation
+
+Three background systems that go beyond "ask a question, get an answer" — each runs on its own
+schedule and turns into something you read rather than something you type into.
+
+**Pulsar** (`/pulsar`) — a saved prompt that fires on a schedule (daily/weekly/monthly) instead of
+on demand, running through the same turn pipeline as a normal message. Each firing reports only
+what's new since last time, not a repeat of settled facts. A "help me write this" wizard turns a
+vague idea into a tuned prompt through a short interview. Catches up on any fire it missed while
+Polaris was offline.
+
+**Pulsar Daily** (`/daily`) — one daily "morning newspaper" edition: a week's weather range, word
+of the day, on-this-day, a quote, picture of the day, headlines, trending/local/sports news, plus
+any custom blocks you define. Each section generates independently, and a second pass drops
+anything unchanged since yesterday so a quiet news day makes a shorter page. A Top Story gets
+deeper elaboration. Generates on schedule or on demand via Settings.
+
+**Constellation** (`/constellation`) — an auto-generated personal library, not a chat feature: a
+background agent ("Weaver") reads your recent threads and extracts durable facts about *you* into
+short, evergreen "stars," collapsing repeated mentions into one growing card instead of scattered
+notes. Browsable by category, plus a star-map view of how stars connect to each other. Runs
+cheaply on an interval, never live-per-message.
+
+---
 
 ## Why not just use \[existing tool\]?
 
