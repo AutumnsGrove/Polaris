@@ -256,31 +256,46 @@ func fetchImageBytes(ctx context.Context, rawURL string) (data []byte, mimeType 
 	return data, mimeType, nil
 }
 
-// readWorkspaceImageBytes reads an image file out of the current thread's
-// code_exec workspace (<CodeExecWorkspaceDir>/<ThreadID>/<relPath>) — the
-// same per-thread directory code_exec.go creates and writes into, and the
-// same one a future fetch_url (docs/plans/fetch-and-workspace-tools.md)
-// will write into too. relPath is model-supplied, so it's resolved with
+// resolveWorkspaceFilePath validates relPath against ctx's per-thread
+// code_exec workspace (<CodeExecWorkspaceDir>/<ThreadID>/<relPath>) and
+// returns its real absolute path on disk — shared by view_image's "path"
+// source and show.go, the two tools that read a workspace file by
+// model-supplied relative path (a future fetch_url,
+// docs/plans/fetch-and-workspace-tools.md, writes into this same
+// directory). relPath is model-supplied, so it's resolved with
 // filepath.Join then checked via filepath.Rel that the result didn't
 // escape the thread's own workspace root via ".." — the standard defense
 // against a path-traversal read of an unrelated thread's files or the
 // host filesystem beyond the workspace root.
-func readWorkspaceImageBytes(ctx *Context, relPath string) (data []byte, mimeType string, err error) {
+func resolveWorkspaceFilePath(ctx *Context, relPath string) (string, error) {
 	if ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
-		return nil, "", fmt.Errorf("this deployment has no code-execution workspace configured")
+		return "", fmt.Errorf("this deployment has no code-execution workspace configured")
 	}
 	base := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)
 	target := filepath.Join(base, relPath)
 	rel, err := filepath.Rel(base, target)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, "", fmt.Errorf("path escapes the workspace directory")
+		return "", fmt.Errorf("path escapes the workspace directory")
+	}
+	if _, err := os.Stat(target); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("no file %q in this conversation's workspace", relPath)
+		}
+		return "", fmt.Errorf("opening workspace file: %w", err)
+	}
+	return target, nil
+}
+
+// readWorkspaceImageBytes reads an image file out of the current thread's
+// code_exec workspace via resolveWorkspaceFilePath above.
+func readWorkspaceImageBytes(ctx *Context, relPath string) (data []byte, mimeType string, err error) {
+	target, err := resolveWorkspaceFilePath(ctx, relPath)
+	if err != nil {
+		return nil, "", err
 	}
 
 	f, err := os.Open(target)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("no file %q in this conversation's workspace", relPath)
-		}
 		return nil, "", fmt.Errorf("opening workspace file: %w", err)
 	}
 	defer f.Close()

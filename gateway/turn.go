@@ -333,6 +333,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["chart"].(*tools.ChartSpec); ok {
 			evt.Chart = v
 		}
+		if v, ok := payload["url"].(string); ok {
+			evt.URL = v
+		}
+		if v, ok := payload["caption"].(string); ok {
+			evt.Caption = v
+		}
 		if eventType == "reasoning" {
 			reasoningBuf.WriteString(evt.Content)
 		} else {
@@ -850,7 +856,10 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		data := map[string]interface{}{"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID}
+		data := map[string]interface{}{
+			"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID,
+			"url": evt.URL, "caption": evt.Caption,
+		}
 		// chart_kind is only meaningful for visualize's own tool_result —
 		// store.Store.GetStats reads it back to report which kinds the
 		// model actually reaches for (see ChartKindCounts's doc comment).

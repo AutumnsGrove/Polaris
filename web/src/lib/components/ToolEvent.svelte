@@ -2,7 +2,8 @@
 	import { untrack } from 'svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
-	import type { TimelineItem } from '$lib/types';
+	import type { TimelineItem, Card } from '$lib/types';
+	import ImageLightbox from './ImageLightbox.svelte';
 	import {
 		Search,
 		FileText,
@@ -18,6 +19,22 @@
 	} from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
+
+	// show renders as a large inline embed rather than the generic
+	// collapsible chip every other tool gets — see docs/plans/show.md:
+	// the whole point is displaying the artifact right where the call
+	// happened, not tucking it behind a toggle. Own local state since
+	// each ToolEvent instance is exactly one timeline item.
+	let showLightboxOpen = $state(false);
+	function showCard(showItem: Extract<TimelineItem, { kind: 'tool' }>): Card {
+		return {
+			title: showItem.caption || (showItem.args?.path as string) || 'Artifact',
+			subtitle: showItem.caption,
+			image_url: showItem.url ?? '',
+			full_image_url: showItem.url,
+			url: showItem.url ?? ''
+		};
+	}
 	// Tool calls start collapsed (their result is secondary detail) but a
 	// reasoning block starts open — the whole point is watching it happen
 	// live, so the user can tell "still thinking" apart from "stuck". Read
@@ -124,6 +141,27 @@
 		</button>
 		{#if open}
 			<pre class="tool-result">{item.summary}</pre>
+		{/if}
+	</div>
+{:else if item.tool === 'show'}
+	<div class="show-artifact">
+		{#if !item.done}
+			<div class="show-loading">
+				<Loader2 size={14} color="var(--color-text-dim)" class="spin" />
+				<span>Preparing artifact…</span>
+			</div>
+		{:else if item.url}
+			<button class="show-image-button" onclick={() => (showLightboxOpen = true)}>
+				<img class="show-image" src={item.url} alt={item.caption || 'artifact'} />
+			</button>
+			{#if item.caption}
+				<div class="show-caption">{item.caption}</div>
+			{/if}
+			{#if showLightboxOpen}
+				<ImageLightbox card={showCard(item)} onClose={() => (showLightboxOpen = false)} />
+			{/if}
+		{:else}
+			<div class="show-error">{item.result}</div>
 		{/if}
 	</div>
 {:else}
@@ -297,6 +335,56 @@
 		line-height: 1.5;
 		max-height: 240px;
 		overflow-y: auto;
+	}
+
+	/* show is deliberately bigger than ImageGallery's own tiles (480px
+	   max-width) — see docs/plans/show.md: "one step above highlight" in
+	   scale, not just placement. */
+	.show-artifact {
+		margin-bottom: var(--space-sm);
+	}
+
+	.show-loading {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
+		border-radius: var(--radius-sm);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.show-image-button {
+		display: block;
+		border: none;
+		background: none;
+		padding: 0;
+		cursor: pointer;
+		max-width: min(100%, 600px);
+	}
+
+	.show-image {
+		display: block;
+		width: 100%;
+		height: auto;
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-well);
+	}
+
+	.show-caption {
+		margin-top: var(--space-xs);
+		font-size: 12px;
+		color: var(--color-text-dim);
+		max-width: min(100%, 600px);
+	}
+
+	.show-error {
+		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
+		border-radius: var(--radius-sm);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 12px;
+		color: var(--color-text-dim);
 	}
 
 	:global(.spin) {
