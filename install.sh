@@ -1,41 +1,26 @@
 #!/usr/bin/env bash
 #
-# Polaris one-shot installer.
+# Polaris one-shot installer (Docker install).
 #
 #   curl -fsSL https://raw.githubusercontent.com/AutumnsGrove/Polaris/main/install.sh | bash
 #
-# Two install modes, chosen via POLARIS_INSTALL_MODE (default
-# "bare-metal", matching this script's original behavior):
+# Clones the repo, ensures Docker + the Compose plugin are present,
+# copies .env.example/compose/polaris/config.yaml.example to their real
+# counterparts, and (Linux only) installs the host update watcher's
+# systemd units (see compose/watcher/) so the settings panel's "Update
+# Polaris" button works. Does NOT run `docker compose up` itself — you
+# still need to fill in a real API key first.
 #
-#   bare-metal (default) — clones the repo, builds the polaris binary
-#     with the local Go toolchain, brings up a standalone SearXNG dev
-#     container via Docker (installing Docker itself if it's missing),
-#     copies config.yaml.example to config.yaml, and opens it for you
-#     to drop in an OpenRouter key.
+# Safe to re-run — every step checks what's already there before doing
+# anything.
 #
-#   docker — clones the repo, ensures Docker + the Compose plugin are
-#     present, copies .env.example/compose/polaris/config.yaml.example
-#     to their real counterparts, and (Linux only) installs the host
-#     update watcher's systemd units (see compose/watcher/) so the
-#     settings panel's "Update Polaris" button works. Does NOT run
-#     `docker compose up` itself — same "go fill in the config first"
-#     philosophy as the bare-metal path below.
-#
-#     POLARIS_INSTALL_MODE=docker curl -fsSL .../install.sh | bash
-#
-# Safe to re-run in either mode — every step checks what's already
-# there before doing anything.
-#
-# What neither mode does: start the Polaris server itself. The config
+# What this does NOT do: start the Polaris server itself. The config
 # needs a real API key first, so the last step is always "go fill this
 # in", not "silently start a half-configured server in the background."
 set -euo pipefail
 
 REPO_URL="https://github.com/AutumnsGrove/Polaris.git"
 INSTALL_DIR="${POLARIS_INSTALL_DIR:-$HOME/Polaris}"
-SEARXNG_PORT="${POLARIS_SEARXNG_PORT:-18888}"
-SEARXNG_CONTAINER="${POLARIS_SEARXNG_CONTAINER:-searxng-dev}"
-INSTALL_MODE="${POLARIS_INSTALL_MODE:-bare-metal}"
 
 # Set to 1 after a fresh Docker Engine install on Linux, where the
 # current shell session doesn't have the new `docker` group membership
@@ -100,16 +85,6 @@ with_timeout() {
 	fi
 }
 
-# ---- -1. install mode check ---------------------------------------------
-
-case "$INSTALL_MODE" in
-	bare-metal | docker) ;;
-	*)
-		warn "Unknown POLARIS_INSTALL_MODE: \"$INSTALL_MODE\" (expected \"bare-metal\" or \"docker\")"
-		exit 1
-		;;
-esac
-
 # ---- 0. platform check --------------------------------------------------
 
 OS="$(uname -s)"
@@ -122,7 +97,7 @@ case "$OS" in
 		;;
 esac
 
-# ---- 1. prerequisites: git, (go for bare-metal only) ---------------------
+# ---- 1. prerequisites: git ------------------------------------------------
 
 step "Checking prerequisites"
 
@@ -136,17 +111,7 @@ if ! command -v git >/dev/null 2>&1; then
 	exit 1
 fi
 info "git: $(git --version)"
-
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	if ! command -v go >/dev/null 2>&1; then
-		warn "Go is required and wasn't found."
-		warn "Install it from https://go.dev/dl/ and re-run this script."
-		exit 1
-	fi
-	info "go: $(go version)"
-else
-	info "Docker mode — no local Go toolchain needed (the image builds its own)."
-fi
+info "No local Go toolchain needed — the image builds its own."
 
 # ---- 2. clone or update the repo ---------------------------------------
 
@@ -182,40 +147,14 @@ fi
 
 cd "$INSTALL_DIR"
 
-# Auto-rebuilds web/build/ on every commit (see README) — a no-op for
-# anyone who's just running Polaris, but harmless either way and needed
-# if this checkout is ever committed to.
-git config core.hooksPath .githooks
-
-# ---- 3. build the binary (bare-metal only) -------------------------------
-
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	step "Building the polaris binary"
-
-	go build -o polaris .
-	info "Built ./polaris"
-fi
-
-# ---- 3b. put the CLI on PATH ---------------------------------------------
+# ---- 3. put the CLI on PATH, if a binary was built by hand ---------------
 #
-# Symlinks the binary into /usr/local/bin so `polaris` resolves from
-# anywhere — including non-interactive SSH sessions (`ssh host 'polaris
-# update'`). That exact gap was found live on the potato: its login shell
-# had ~/.local/bin on PATH (via .profile) but the non-interactive SSH PATH
-# didn't, so `polaris update` failed with "command not found" over SSH
-# while working fine in a login shell. /usr/local/bin is on the default
-# PATH of both macOS and Linux for interactive AND non-interactive
-# sessions — no shell-startup-file edits needed (and those wouldn't apply
-# to non-interactive shells anyway). The symlink target is the absolute
-# $INSTALL_DIR/polaris; because the binary is rebuilt in place
-# (`go build -o polaris .` never moves the file), the link stays valid
-# across rebuilds and can harmlessly be re-pointed if INSTALL_DIR ever
-# changes between runs.
-#
-# Docker mode doesn't build a host CLI binary (see step 3), so there's
-# nothing to link unless one was built by hand — the step then just says
-# so, and re-adding the binary later (followed by a harmless re-run) will
-# pick the link up.
+# This installer doesn't build a host CLI binary — the CLI is a thin
+# client hitting the running container's own REST API (see
+# cmd/docker_client.go), so there's nothing to build until you want
+# `polaris update`/`polaris restart` etc. available over SSH without
+# `docker compose exec`. If one exists already (built by hand), link it.
+
 if [ -f "$INSTALL_DIR/polaris" ]; then
 	step "Putting polaris on your PATH"
 
@@ -250,17 +189,14 @@ if [ -f "$INSTALL_DIR/polaris" ]; then
 			fi
 		fi
 	fi
-elif [ "$INSTALL_MODE" = "docker" ]; then
-	info "No host CLI binary at $INSTALL_DIR/polaris in Docker mode — nothing to link."
-	info "If you want 'polaris update' over SSH, build it by hand:"
+else
+	info "No host CLI binary at $INSTALL_DIR/polaris — nothing to link."
+	info "If you want 'polaris update'/'polaris restart' etc. over SSH, build it by hand:"
 	info "  cd $INSTALL_DIR && go build -o polaris ."
 	info "Then re-run this installer (safe: it just links the binary then)."
 fi
 
 # ---- 4. Docker ------------------------------------------------------------
-#
-# Needed in both modes: bare-metal uses it for the standalone SearXNG
-# dev container below; docker mode uses it for the whole compose stack.
 
 step "Setting up Docker"
 
@@ -323,8 +259,8 @@ else
 		# fall straight through to "Docker daemon is up" — if the service
 		# failed to actually start (masked unit, resource issue, whatever),
 		# the first real symptom was an unrelated-looking failure several
-		# steps later (docker compose version, or the searxng container
-		# setup) instead of a clear message about the actual problem.
+		# steps later (docker compose version) instead of a clear message
+		# about the actual problem.
 		for _ in $(seq 1 30); do
 			docker_cmd info >/dev/null 2>&1 && break
 			sleep 2
@@ -339,148 +275,106 @@ else
 fi
 info "Docker daemon is up."
 
-if [ "$INSTALL_MODE" = "docker" ]; then
-	if ! docker_cmd compose version >/dev/null 2>&1; then
-		warn "docker compose (the v2 plugin) wasn't found even though Docker is installed."
-		warn "Docker Desktop and the get.docker.com script both bundle it — if this is a"
-		warn "custom Docker install, add the compose plugin and re-run."
-		exit 1
-	fi
-	info "docker compose: $(docker_cmd compose version --short 2>/dev/null || echo present)"
+if ! docker_cmd compose version >/dev/null 2>&1; then
+	warn "docker compose (the v2 plugin) wasn't found even though Docker is installed."
+	warn "Docker Desktop and the get.docker.com script both bundle it — if this is a"
+	warn "custom Docker install, add the compose plugin and re-run."
+	exit 1
 fi
-
-# ---- 4b. standalone SearXNG dev container (bare-metal only) --------------
-#
-# Docker mode doesn't need this — docker-compose.yml brings up its own
-# searxng service with JSON output already enabled (see
-# compose/searxng/settings.yml), no separate container to manage.
-
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	step "Setting up SearXNG (local web search backend)"
-
-	# Reuse an existing container (start it if stopped) rather than always
-	# recreating — a fresh `docker run` with the same --name would just fail
-	# with "container already exists" on a second run of this script.
-	if docker_cmd ps -a --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
-		if docker_cmd ps --format '{{.Names}}' | grep -qx "$SEARXNG_CONTAINER"; then
-			info "$SEARXNG_CONTAINER is already running."
-		else
-			info "$SEARXNG_CONTAINER exists but isn't running — starting it."
-			docker_cmd start "$SEARXNG_CONTAINER"
-		fi
-	else
-		info "Creating the $SEARXNG_CONTAINER container on port $SEARXNG_PORT."
-		docker_cmd run -d --name "$SEARXNG_CONTAINER" -p "$SEARXNG_PORT:8080" \
-			-v "$INSTALL_DIR/dev/searxng/settings.yml:/etc/searxng/settings.yml:ro" \
-			searxng/searxng:latest
-	fi
-fi
+info "docker compose: $(docker_cmd compose version --short 2>/dev/null || echo present)"
 
 # ---- 5. config -------------------------------------------------------------
 
-CONFIG_WAS_FRESH=0
 COMPOSE_CONFIG_WAS_FRESH=0
 
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	step "Setting up config.yaml"
+step "Setting up .env and compose/polaris/config.yaml"
 
-	if [ -f config.yaml ]; then
-		info "config.yaml already exists — leaving it alone."
-	else
-		cp config.yaml.example config.yaml
-		info "Copied config.yaml.example to config.yaml."
-		CONFIG_WAS_FRESH=1
-	fi
+if [ -f .env ]; then
+	info ".env already exists — leaving it alone."
 else
-	step "Setting up .env and compose/polaris/config.yaml"
-
-	if [ -f .env ]; then
-		info ".env already exists — leaving it alone."
-	else
-		cp .env.example .env
-		if command -v openssl >/dev/null 2>&1; then
-			SEARXNG_SECRET="$(openssl rand -hex 32)"
-			# macOS's BSD sed needs -i '' (empty extension arg); GNU sed on
-			# Linux takes -i with no argument at all — this ternary picks
-			# the right invocation per platform rather than assuming one.
-			if [ "$OS" = "Darwin" ]; then
-				sed -i '' "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
-			else
-				sed -i "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
-			fi
-			info "Copied .env.example to .env and generated a random SEARXNG_SECRET."
-		else
-			warn "openssl not found — copied .env.example to .env, but you'll need to"
-			warn "fill in SEARXNG_SECRET yourself (openssl rand -hex 32, or any random string)."
-		fi
-	fi
-
-	mkdir -p compose/polaris
-	if [ -f compose/polaris/config.yaml ]; then
-		info "compose/polaris/config.yaml already exists — leaving it alone."
-	else
-		cp compose/polaris/config.yaml.example compose/polaris/config.yaml
-		info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
-		COMPOSE_CONFIG_WAS_FRESH=1
-
-		# code_exec.host_workspace_dir must be a real absolute path on
-		# THIS host (see config.Config.CodeExec's doc comment on why it
-		# can't just reuse workspace_dir's container-side value) —
-		# @INSTALL_DIR@ is a template placeholder, same convention as the
-		# systemd unit files below, substituted with the actual install
-		# path now that it's known.
+	cp .env.example .env
+	if command -v openssl >/dev/null 2>&1; then
+		SEARXNG_SECRET="$(openssl rand -hex 32)"
+		# macOS's BSD sed needs -i '' (empty extension arg); GNU sed on
+		# Linux takes -i with no argument at all — this ternary picks
+		# the right invocation per platform rather than assuming one.
 		if [ "$OS" = "Darwin" ]; then
-			sed -i '' "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
+			sed -i '' "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
 		else
-			sed -i "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
+			sed -i "s/^SEARXNG_SECRET=.*/SEARXNG_SECRET=$SEARXNG_SECRET/" .env
 		fi
+		info "Copied .env.example to .env and generated a random SEARXNG_SECRET."
+	else
+		warn "openssl not found — copied .env.example to .env, but you'll need to"
+		warn "fill in SEARXNG_SECRET yourself (openssl rand -hex 32, or any random string)."
 	fi
+fi
 
-	# 777, not the default 755: this is bind-mounted into the polaris
-	# container at /data/update-signal (docker-compose.yml), which writes
-	# to it as the image's non-root polaris user (uid 100) — a numeric
-	# uid that essentially never matches whatever host user runs this
-	# script. Docker bind mounts don't remap ownership, so without this
-	# the container's write (update-signal/requested — see
-	# gateway/docker_update.go's writeUpdateSignal) fails outright with
-	# a permission error. Found live, testing the real update flow
-	# against a real container: not a hypothetical edge case. The
-	# watcher script (running as the host user, not uid 100) needs
-	# write access here too, for the same reason. Nothing sensitive
-	# ever lives in this directory (an image reference string, a small
-	# status JSON) — world-writable is the pragmatic fix for a
-	# cross-UID-namespace shared directory, not a real exposure.
-	mkdir -p update-signal
-	chmod 777 update-signal
+mkdir -p compose/polaris
+if [ -f compose/polaris/config.yaml ]; then
+	info "compose/polaris/config.yaml already exists — leaving it alone."
+else
+	cp compose/polaris/config.yaml.example compose/polaris/config.yaml
+	info "Copied compose/polaris/config.yaml.example to compose/polaris/config.yaml."
+	COMPOSE_CONFIG_WAS_FRESH=1
 
-	# Same cross-UID-namespace bind-mount problem as update-signal above,
-	# for code_exec's own host-side handoff (see tools/code_exec.go,
-	# compose/watcher/codeexec.sh) — polaris (uid 100 in the container)
-	# writes request files here, and the host-side watcher (running as
-	# whatever user ran this script) reads them and writes results back.
-	mkdir -p code-exec-signal
-	chmod 777 code-exec-signal
-
-	# workspaces/ has a THIRD uid in the mix beyond the two above: the
-	# code_exec sandbox container itself runs as uid 1000 ("sandbox",
-	# see docker/sandbox/Dockerfile) when it writes generated files
-	# (e.g. a matplotlib chart) into its bind-mounted workspace
-	# directory. 777 for the same "nothing sensitive lives here, and a
-	# real cross-UID-namespace write otherwise fails outright" reasoning
-	# as update-signal above — this directory only ever holds files a
-	# thread's own conversation already generated or fetched.
-	mkdir -p workspaces
-	chmod 777 workspaces
-
-	# Same cross-UID-namespace bind-mount problem as update-signal above,
-	# for the same reason: domain_rankings.yaml is bind-mounted
-	# read-write (docker-compose.yml) so the ranking popover UI can write
-	# it as the image's non-root polaris user, whose uid won't match
-	# whatever host user owns the file by default. 666, not 777 — this
-	# is a plain file, not a directory that needs the execute bit.
-	if [ -f domain_rankings.yaml ]; then
-		chmod 666 domain_rankings.yaml
+	# code_exec.host_workspace_dir must be a real absolute path on
+	# THIS host (see config.Config.CodeExec's doc comment on why it
+	# can't just reuse workspace_dir's container-side value) —
+	# @INSTALL_DIR@ is a template placeholder, same convention as the
+	# systemd unit files below, substituted with the actual install
+	# path now that it's known.
+	if [ "$OS" = "Darwin" ]; then
+		sed -i '' "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
+	else
+		sed -i "s|@INSTALL_DIR@|$INSTALL_DIR|" compose/polaris/config.yaml
 	fi
+fi
+
+# 777, not the default 755: this is bind-mounted into the polaris
+# container at /data/update-signal (docker-compose.yml), which writes
+# to it as the image's non-root polaris user (uid 100) — a numeric
+# uid that essentially never matches whatever host user runs this
+# script. Docker bind mounts don't remap ownership, so without this
+# the container's write (update-signal/requested — see
+# gateway/docker_update.go's writeUpdateSignal) fails outright with
+# a permission error. Found live, testing the real update flow
+# against a real container: not a hypothetical edge case. The
+# watcher script (running as the host user, not uid 100) needs
+# write access here too, for the same reason. Nothing sensitive
+# ever lives in this directory (an image reference string, a small
+# status JSON) — world-writable is the pragmatic fix for a
+# cross-UID-namespace shared directory, not a real exposure.
+mkdir -p update-signal
+chmod 777 update-signal
+
+# Same cross-UID-namespace bind-mount problem as update-signal above,
+# for code_exec's own host-side handoff (see tools/code_exec.go,
+# compose/watcher/codeexec.sh) — polaris (uid 100 in the container)
+# writes request files here, and the host-side watcher (running as
+# whatever user ran this script) reads them and writes results back.
+mkdir -p code-exec-signal
+chmod 777 code-exec-signal
+
+# workspaces/ has a THIRD uid in the mix beyond the two above: the
+# code_exec sandbox container itself runs as uid 1000 ("sandbox",
+# see docker/sandbox/Dockerfile) when it writes generated files
+# (e.g. a matplotlib chart) into its bind-mounted workspace
+# directory. 777 for the same "nothing sensitive lives here, and a
+# real cross-UID-namespace write otherwise fails outright" reasoning
+# as update-signal above — this directory only ever holds files a
+# thread's own conversation already generated or fetched.
+mkdir -p workspaces
+chmod 777 workspaces
+
+# Same cross-UID-namespace bind-mount problem as update-signal above,
+# for the same reason: domain_rankings.yaml is bind-mounted
+# read-write (docker-compose.yml) so the ranking popover UI can write
+# it as the image's non-root polaris user, whose uid won't match
+# whatever host user owns the file by default. 666, not 777 — this
+# is a plain file, not a directory that needs the execute bit.
+if [ -f domain_rankings.yaml ]; then
+	chmod 666 domain_rankings.yaml
 fi
 
 # ---- 5b. optional: Ollama for the query-similarity research signal --------
@@ -489,11 +383,10 @@ fi
 # queries embed as near-duplicates of each other, catching a rephrasing
 # loop that a plain "found nothing new" citation check can miss (see
 # README's Requirements section and agent/query_similarity.go). Declining
-# just leaves that one signal disabled; nothing else is affected. Both
-# example config files default to assuming Ollama IS set up (see their
-# own ollama.base_url comments) — this step blanks that back out below
-# when the answer is no, rather than leaving a dangling URL that fails
-# every turn.
+# just leaves that one signal disabled; nothing else is affected. The
+# example config assumes Ollama IS set up (see its own ollama.base_url
+# comment) — this step blanks that back out below when the answer is no,
+# rather than leaving a dangling URL that fails every turn.
 
 step "Optional: Ollama for the query-similarity research signal"
 OLLAMA_BASE_URL=""
@@ -551,7 +444,7 @@ if [ -n "$OLLAMA_BASE_URL" ]; then
 		fi
 	fi
 
-	if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
+	if [ "$OS" = "Linux" ]; then
 		# Docker on Linux specifically needs Ollama reachable from the
 		# container, not just localhost — its default 127.0.0.1-only bind
 		# REFUSES a connection arriving via the Docker bridge gateway
@@ -577,7 +470,7 @@ if [ -n "$OLLAMA_BASE_URL" ]; then
 			info "disabled under Docker until this is revisited."
 			OLLAMA_BASE_URL=""
 		fi
-	elif [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Darwin" ]; then
+	else
 		# Docker Desktop's host.docker.internal is a userland proxy that
 		# reaches loopback-bound services fine — unlike Linux Docker
 		# Engine's real bridge-gateway routing, no rebind needed here.
@@ -586,29 +479,21 @@ if [ -n "$OLLAMA_BASE_URL" ]; then
 fi
 
 # Only touch a config file this run FRESHLY created (see step 5 above) —
-# a pre-existing config.yaml/compose config might carry the operator's
-# own edits, and re-running this script must never clobber those, same
-# as every other config step here leaves an existing file alone.
-if [ "$INSTALL_MODE" = "bare-metal" ] && [ "$CONFIG_WAS_FRESH" = 1 ] && [ -z "$OLLAMA_BASE_URL" ]; then
+# a pre-existing compose config might carry the operator's own edits,
+# and re-running this script must never clobber those, same as every
+# other config step here leaves an existing file alone.
+if [ "$COMPOSE_CONFIG_WAS_FRESH" = 1 ] && [ -z "$OLLAMA_BASE_URL" ]; then
 	if [ "$OS" = "Darwin" ]; then
-		sed -i '' 's|base_url: "http://localhost:11434"|base_url: ""|' config.yaml
+		sed -i '' 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
 	else
-		sed -i 's|base_url: "http://localhost:11434"|base_url: ""|' config.yaml
+		sed -i 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
 	fi
-elif [ "$INSTALL_MODE" = "docker" ] && [ "$COMPOSE_CONFIG_WAS_FRESH" = 1 ]; then
-	if [ -z "$OLLAMA_BASE_URL" ]; then
-		if [ "$OS" = "Darwin" ]; then
-			sed -i '' 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
-		else
-			sed -i 's|base_url: "http://host.docker.internal:11434"|base_url: ""|' compose/polaris/config.yaml
-		fi
-	fi
-	# else: OLLAMA_BASE_URL already equals the example's own default
-	# ("http://host.docker.internal:11434") in every success path above,
-	# so there's nothing to write — the copied file is already correct.
 fi
+# else: OLLAMA_BASE_URL already equals the example's own default
+# ("http://host.docker.internal:11434") in every success path above,
+# so there's nothing to write — the copied file is already correct.
 
-# ---- 6. host update watcher (docker mode, Linux only) ---------------------
+# ---- 6. host update watcher (Linux only) -----------------------------------
 #
 # macOS has no systemd — and isn't the target production deployment
 # anyway (see README's "why not just use X": this is built to run on a
@@ -616,7 +501,7 @@ fi
 # fine; "Update Polaris" in the settings panel just won't be wired up,
 # same as it wasn't before this step existed.
 
-if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
+if [ "$OS" = "Linux" ]; then
 	step "Installing the host update watcher"
 
 	if ! command -v systemctl >/dev/null 2>&1; then
@@ -673,21 +558,17 @@ if [ "$INSTALL_MODE" = "docker" ] && [ "$OS" = "Linux" ]; then
 fi
 
 # ---- 7. open config for editing --------------------------------------------
+#
+# Only .env needs a fresh install's attention — every field in
+# compose/polaris/config.yaml already has a sane default or gets
+# filled in from .env via ${VAR} (see that file's own comments), so
+# there's nothing actionable in it to open unprompted. It's there to
+# edit later (model choice, voice settings, etc.), not on install.
 
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	step "Opening config.yaml for you to add your OpenRouter API key"
-	EDIT_PATHS=("$INSTALL_DIR/config.yaml")
-else
-	# Only .env needs a fresh install's attention — every field in
-	# compose/polaris/config.yaml already has a sane default or gets
-	# filled in from .env via ${VAR} (see that file's own comments), so
-	# there's nothing actionable in it to open unprompted. It's there to
-	# edit later (model choice, voice settings, etc.), not on install.
-	step "Opening .env for you to add your OpenRouter API key"
-	info "(compose/polaris/config.yaml is also there if you want to tune model/voice"
-	info "defaults later — nothing in it needs editing to get started.)"
-	EDIT_PATHS=("$INSTALL_DIR/.env")
-fi
+step "Opening .env for you to add your OpenRouter API key"
+info "(compose/polaris/config.yaml is also there if you want to tune model/voice"
+info "defaults later — nothing in it needs editing to get started.)"
+EDIT_PATHS=("$INSTALL_DIR/.env")
 
 if [ "$OS" = "Darwin" ]; then
 	# Deliberately `open -e`, not a bare `open` — a bare `open` defers to
@@ -710,25 +591,10 @@ fi
 # ---- done -------------------------------------------------------------------
 
 step "Done"
-if [ "$INSTALL_MODE" = "bare-metal" ]; then
-	info "Polaris is built and SearXNG is running at http://localhost:$SEARXNG_PORT"
-	info ""
-	info "Next steps:"
-	info "  1. In config.yaml, set openrouter.api_key to your real key"
-	info "     (get one at https://openrouter.ai/keys)"
-	if [ -L /usr/local/bin/polaris ]; then
-		info "  2. polaris run"
-	else
-		info "  2. $INSTALL_DIR/polaris run   (or 'polaris run' once the PATH"
-		info "     link above is made)"
-	fi
-	info "  3. Open http://localhost:8899"
-else
-	info "Polaris's Docker install is set up in $INSTALL_DIR."
-	info ""
-	info "Next steps:"
-	info "  1. In .env, set OPENROUTER_API_KEY to your real key"
-	info "     (get one at https://openrouter.ai/keys)"
-	info "  2. cd $INSTALL_DIR && docker compose up -d"
-	info "  3. Open http://localhost:8899"
-fi
+info "Polaris's Docker install is set up in $INSTALL_DIR."
+info ""
+info "Next steps:"
+info "  1. In .env, set OPENROUTER_API_KEY to your real key"
+info "     (get one at https://openrouter.ai/keys)"
+info "  2. cd $INSTALL_DIR && docker compose up -d"
+info "  3. Open http://localhost:8899"
