@@ -11,8 +11,25 @@
 	// the sidebar is collapsed, where there's no row to hover at all).
 	// Cost/context also live here now, not as always-on header chrome —
 	// they're useful to check, not useful to stare at constantly.
-	let { threadId, threadTitle, favorite }: { threadId: string; threadTitle: string; favorite: boolean } =
+	let {
+		threadId,
+		threadTitle,
+		favorite,
+		createdAt,
+		updatedAt
+	}: { threadId: string; threadTitle: string; favorite: boolean; createdAt?: string; updatedAt?: string } =
 		$props();
+
+	// updated_at also bumps on a rename (see store.go's SetThreadTitle), not
+	// just a new message — but that's a rare touch compared to actual
+	// conversation turns, so it's still the closest thing to "when did this
+	// last see activity" without adding a dedicated last-message column.
+	function formatDate(iso: string | undefined): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '—';
+		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
 
 	function toggleFavorite() {
 		void appState.favoriteThread(threadId, !favorite);
@@ -158,6 +175,12 @@
 					<span>Thread cost</span>
 					<span class="info-value">${appState.totalCost.toFixed(4)}</span>
 				</div>
+				<div class="info-row dates">
+					<span>Started {formatDate(createdAt)}</span>
+				</div>
+				<div class="info-row dates">
+					<span>Last message {formatDate(updatedAt)}</span>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -285,6 +308,17 @@
 	.info-row.hot .info-value {
 		color: var(--color-danger);
 		font-weight: 600;
+	}
+
+	/* No icon (unlike Context/Thread cost above) — these two are a quiet
+	   footnote, not another stat to scan, so italics carries that
+	   distinction instead of adding two more icons to the row. */
+	.info-row.dates {
+		padding-top: 0;
+		padding-bottom: 2px;
+		font-size: 11.5px;
+		font-style: italic;
+		opacity: 0.75;
 	}
 
 	.confirm {

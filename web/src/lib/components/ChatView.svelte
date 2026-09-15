@@ -422,6 +422,8 @@
 				threadId={appState.currentThreadId}
 				threadTitle={currentThreadTitle}
 				favorite={currentThread?.favorite ?? false}
+				createdAt={currentThread?.created_at}
+				updatedAt={currentThread?.updated_at}
 			/>
 		{/if}
 	</div>
