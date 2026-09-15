@@ -10,7 +10,9 @@ rather than left as a stale "still deciding" issue — see "Tracking" below.
 Second, dependent doc: `docs/plans/workspace-store-unification.md` — unifying attachments and
 code_exec's per-thread workspace into one storage mechanism only becomes clean once every
 deployment is guaranteed to have a workspace directory, which this doc is the prerequisite for.
-Not designed here; referenced only as the motivating "why now."
+That doc's full design is now decided (2026-09-15) — it's referenced here as the motivating "why
+now," and its dev-loop testability requirement folds back into this doc's own "Dev loop" section
+below, since the two are no longer independent asks.
 
 ## Why now (what changed since #61)
 
@@ -73,6 +75,14 @@ Confirmed by grep — every file that currently branches on `isDockerComposeInst
   `cmd/stats.go`, `cmd/update.go` — each currently branches "thin HTTP client to the container" vs.
   "direct local call." Only the Docker branch survives; the thin-client pattern becomes
   unconditional, not removed (it's still how a host-side CLI reaches a running container).
+  **Decided**: this is a real, accepted behavior change for bare-metal dev, not an oversight — these
+  commands go from "read `config.yaml`/`polaris.db` directly, cold, no server required" to "ask
+  whatever Polaris server is listening on `localhost:8899`," which means a dev instance must
+  actually be running (`go run .`) before `polaris stats`/`polaris backup`/etc. will work locally.
+  Acceptable trade for deleting the duplicate code path. `runDockerModeCall`/`runDockerStats`-style
+  helpers should give a clear, specific error when the connection fails — e.g. "no local Polaris
+  server is reachable at localhost:8899; start one with `go run .` first" — rather than a bare
+  connection-refused error, so the missing-server case is never confusing.
 - **`gateway/update.go`'s `deploymentMode() == "bare-metal"` branch**, and `gateway/version.go`,
   `gateway/turn.go`, `gateway/settings.go`, `gateway/pulsar_daily.go` wherever they read
   `deploymentMode()` to branch behavior — each collapses to its Docker-only branch.
@@ -104,6 +114,12 @@ Confirmed by grep — every file that currently branches on `isDockerComposeInst
   independent of this decision; still applies.
 
 ## Dev loop: code_exec must still be fully testable, without containerizing Polaris
+
+**Decided: this is required, not an open nice-to-have.** Confirmed directly with the owner —
+`docs/plans/workspace-store-unification.md`'s design (file uploads becoming workspace files,
+folding into `code_exec`'s storage) means the dev-loop wiring below now blocks testing *ordinary
+file upload*, not just `code_exec` itself. It must be a fully figured-out, concrete setup before
+any bare-metal deletion lands, not something worked out ad hoc later.
 
 Not new infrastructure to build (no dev compose file, no `air`/`reflex` rebuild-on-save tooling) —
 the real requirement is narrower: **code_exec's sandbox must be exercisable from a bare-metal dev
