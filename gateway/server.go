@@ -124,6 +124,13 @@ type Server struct {
 	// tick decides today's edition is due would otherwise start two
 	// concurrent pipelines with nothing to stop it.
 	dailyGenerationRunning atomic.Bool
+
+	// devMode is staticFS == nil (see New's doc comment) — true exactly
+	// when `polaris run --dev` is splitting the frontend (vite's own dev
+	// server) and backend (this process) across two ports instead of the
+	// production single-origin embed. Only consulted by csrfProtect, to
+	// trust requests proxied from vite's own known dev origin.
+	devMode bool
 }
 
 // New builds the server. cfgPath is kept around so liveConfig can re-read
@@ -157,12 +164,22 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 		turnSends:       make(map[int64]func(ServerEvent)),
 		inFlightThreads: make(map[string]int),
 		wizardSessions:  make(map[string]*wizardSession),
+		devMode:         staticFS == nil,
 	}
 	s.routes(staticFS)
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return csrfProtect(s.mux) }
+func (s *Server) Handler() http.Handler { return csrfProtect(s.mux, s.devMode) }
+
+// viteDevServerOrigin is the fixed host:port vite.config.ts pins the
+// frontend dev server to (see that file's own comment on why 45173
+// specifically was chosen) — the one other origin a legitimate browser
+// request can carry while running `polaris run --dev`, since that's the
+// address the developer's browser actually loads the page from while
+// vite's own proxy config forwards /api and /ws to this backend on its
+// separate port. Only trusted when devMode is true.
+const viteDevServerOrigin = "localhost:45173"
 
 // csrfProtect rejects a cross-origin state-changing request by comparing
 // the browser-supplied Origin header against the request's own Host.
@@ -183,11 +200,23 @@ func (s *Server) Handler() http.Handler { return csrfProtect(s.mux) }
 // same-origin-browser check, not authentication, and non-browser callers
 // (cmd/docker_client.go's HTTP client, curl, a future automation script)
 // never send one.
-func csrfProtect(next http.Handler) http.Handler {
+//
+// devMode narrowly trusts viteDevServerOrigin on top of the normal
+// Origin==Host check — production's single-origin embed never needs this
+// and must keep rejecting any other mismatch outright. Without it, every
+// mutating route 403s under `polaris run --dev` + `pnpm run dev`: the
+// browser's true Origin is vite's port, but this backend's own Host is
+// whatever port it actually listens on, which the Origin==Host check
+// (correctly, for production) treats as cross-origin. A real gap found
+// live testing issue #71's multi-attachment upload — POST /api/upload
+// silently 403ing looked identical to the attachment vanishing client-side.
+func csrfProtect(next http.Handler, devMode bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if origin := r.Header.Get("Origin"); origin != "" {
-				if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+				u, err := url.Parse(origin)
+				trusted := err == nil && (u.Host == r.Host || (devMode && u.Host == viteDevServerOrigin))
+				if !trusted {
 					http.Error(w, "cross-origin request rejected", http.StatusForbidden)
 					return
 				}
