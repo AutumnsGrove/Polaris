@@ -3,8 +3,6 @@ package cmd
 import (
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -187,24 +185,5 @@ func TestRunDockerAtlasSearch_ServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "searxng unreachable") {
 		t.Errorf("error = %q, want the server's response body included", err.Error())
-	}
-}
-
-// TestRunInstall_RefusesUnderDocker confirms `polaris install` doesn't
-// silently write a systemd/launchd unit for the orphaned host-side
-// binary when the current directory is actually a Docker install.
-func TestRunInstall_RefusesUnderDocker(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
-		t.Fatalf("writing docker-compose.yml: %v", err)
-	}
-	t.Chdir(dir)
-
-	err := runInstall(nil, nil)
-	if err == nil {
-		t.Fatal("runInstall() error = nil, want a refusal under a Docker install")
-	}
-	if !strings.Contains(err.Error(), "Docker install") {
-		t.Errorf("error = %q, want it to explain this is a Docker install", err.Error())
 	}
 }

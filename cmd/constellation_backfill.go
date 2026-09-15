@@ -6,19 +6,12 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"polaris/config"
-	"polaris/gateway"
-	"polaris/models"
-	"polaris/store"
 )
 
 var constellationBackfillLimit int
@@ -36,63 +29,17 @@ var constellationBackfillCmd = &cobra.Command{
 }
 
 func init() {
-	constellationBackfillCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install proxies through the running container instead)")
 	constellationBackfillCmd.Flags().IntVarP(&constellationBackfillLimit, "n", "n", 0, "process only the N most recently active eligible threads, instead of the full backlog — useful for testing before committing to a full run")
 	constellationCmd.AddCommand(constellationBackfillCmd)
 	rootCmd.AddCommand(constellationCmd)
 }
 
+// runConstellationBackfill proxies through the running container's own
+// REST endpoint — the CLI binary outside the container has no access to
+// the container's polaris.db (a named Docker volume, not a plain host
+// file — see CLAUDE.md).
 func runConstellationBackfill(cmd *cobra.Command, args []string) error {
-	// Docker mode: the CLI binary outside the container has no access to
-	// the container's polaris.db (a named Docker volume, not a plain host
-	// file — see CLAUDE.md) or its config.yaml env passthrough, so this
-	// proxies through the running container's own REST endpoint instead
-	// of trying to open state it can't reach. Same isDockerComposeInstall
-	// gate cmd/search.go and cmd/stats.go already use.
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		return runDockerConstellationBackfill(constellationBackfillLimit)
-	}
-
-	cfg, err := config.Load(configPath, models.Registry)
-	if err != nil {
-		log.Warn("loading config failed", "path", configPath, "err", err)
-		return err
-	}
-	db, err := store.Open(cfg.Database.Path)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	cfgRow, err := db.GetConstellationConfig()
-	if err != nil {
-		return err
-	}
-	client := gateway.WeaverClient(cfg, cfgRow.Model)
-
-	if constellationBackfillLimit > 0 {
-		fmt.Printf("backfilling up to %d threads...\n", constellationBackfillLimit)
-	} else {
-		fmt.Println("backfilling every eligible thread — this may take a while for a large backlog...")
-	}
-
-	// NoopTurnGate: this CLI invocation is a separate, one-shot process,
-	// not part of the long-running `polaris run` server — there's no
-	// *Server/shutdown-drain to register against here at all. Killing this
-	// process directly (Ctrl-C, closing the terminal) is a different,
-	// separate concern from `polaris restart`'s own graceful drain; a
-	// crashed/killed run here still gets picked back up by
-	// MarkStaleShootingStarRunsFailed's sweep on the next scheduler tick
-	// or backfill attempt.
-	processed, err := gateway.BackfillConstellation(context.Background(), db, client, constellationBackfillLimit, gateway.NoopTurnGate())
-	if err != nil {
-		return err
-	}
-	fmt.Printf("done — processed %d thread(s)\n", processed)
-	return nil
-}
-
-func runDockerConstellationBackfill(limit int) error {
+	limit := constellationBackfillLimit
 	url := fmt.Sprintf("%s/api/constellation/backfill?limit=%d", dockerLocalBaseURL(), limit)
 	// A full backlog run (160+ threads on the potato as of the plan doc's
 	// writing) can genuinely take a long time — same generous-timeout

@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
 
-	"polaris/config"
-	"polaris/models"
 	"polaris/store"
 )
 
@@ -23,49 +20,18 @@ var statsCmd = &cobra.Command{
 }
 
 func init() {
-	statsCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install fetches this from the running container instead)")
 	statsCmd.Flags().IntVar(&statsDays, "days", 30, "trailing days to scope period stats to (0 = all time)")
 	rootCmd.AddCommand(statsCmd)
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
-	// Docker mode: there's no local config.yaml/polaris.db this process
-	// can correctly read at all — the real ones live inside the
-	// container's own volume (/data/config.yaml, /data/polaris.db).
-	// Reading ./config.yaml here would either fail outright, or worse,
-	// silently succeed against a *stale* pre-migration copy left over
-	// on disk and report convincing-looking but wrong numbers with no
-	// error at all. Fetch the real stats from the running container's
-	// own /api/stats instead — the exact same data the settings panel's
-	// usage section shows.
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		return runDockerStats(statsDays)
-	}
-
-	cfg, err := config.Load(configPath, models.Registry)
-	if err != nil {
-		return err
-	}
-
-	db, err := store.Open(cfg.Database.Path)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	s, err := db.GetStats(statsDays)
-	if err != nil {
-		return err
-	}
-
-	printStats(s)
-	return nil
+	return runDockerStats(statsDays)
 }
 
-// runDockerStats fetches the same stats runStats prints, but from the
-// running container's /api/stats instead of a local config/db — see
-// runStats's doc comment on why that's the only correct source under
-// Docker.
+// runDockerStats fetches stats from the running container's own
+// /api/stats — the real config.yaml/polaris.db live inside the
+// container's volume, not on the host this CLI runs on, so this is the
+// only correct source.
 func runDockerStats(days int) error {
 	url := fmt.Sprintf("%s/api/stats?days=%d", dockerLocalBaseURL(), days)
 	resp, err := http.Get(url)
@@ -87,11 +53,6 @@ func runDockerStats(days int) error {
 	return nil
 }
 
-// printStats is runStats/runDockerStats's shared formatting tail —
-// identical output regardless of whether the stats came from a local
-// store.Store.GetStats call or the same data fetched over HTTP from a
-// running container, so bare-metal and Docker report in exactly the
-// same shape.
 func printStats(s *store.Stats) {
 	period := "all time"
 	if s.PeriodDays > 0 {

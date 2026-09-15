@@ -1,27 +1,32 @@
 package cmd
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestIsDockerComposeInstall(t *testing.T) {
-	dir := t.TempDir()
-	if isDockerComposeInstall(dir) {
-		t.Error("got true for a directory with no docker-compose.yml, want false")
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
 	}
+	os.Stdout = w
+	fn()
+	w.Close()
+	os.Stdout = old
 
-	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
-		t.Fatalf("writing docker-compose.yml: %v", err)
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured stdout: %v", err)
 	}
-	if !isDockerComposeInstall(dir) {
-		t.Error("got false for a directory with docker-compose.yml, want true")
-	}
+	return string(out)
 }
 
 // fakeLocalPolarisServer starts an httptest server bound to

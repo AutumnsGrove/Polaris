@@ -2,29 +2,15 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"polaris/agent"
-	"polaris/brave"
-	"polaris/config"
-	"polaris/embed"
 	"polaris/gateway"
-	"polaris/llm"
-	"polaris/models"
-	"polaris/parallel"
-	"polaris/places"
-	"polaris/search"
-	"polaris/store"
-	"polaris/tavily"
-	"polaris/tools"
 )
 
 var searchModel string
@@ -37,172 +23,18 @@ var searchCmd = &cobra.Command{
 }
 
 func init() {
-	searchCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install queries the running container instead)")
 	searchCmd.Flags().StringVarP(&searchModel, "model", "m", "", "model id (defaults to default_model)")
 	rootCmd.AddCommand(searchCmd)
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
-	query := strings.Join(args, " ")
-
-	// Docker mode: same reasoning as runStats — ./config.yaml doesn't
-	// correctly describe a Docker install (missing, or worse, stale).
-	// Route the query through the running container's own /api/ask
-	// instead, the exact same synchronous endpoint any other
-	// programmatic caller uses.
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		return runDockerSearch(query, searchModel)
-	}
-
-	cfg, err := config.Load(configPath, models.Registry)
-	if err != nil {
-		log.Warn("loading config failed", "path", configPath, "err", err)
-		return err
-	}
-
-	modelCfg := cfg.ModelByID(searchModel)
-	// AllowFallbacks(true): an escape valve for every provider in
-	// modelCfg.Provider being down at once — see gateway/turn.go's main
-	// client construction for the live incident (2026-09-06) that
-	// motivated this across every LLM client in the app, this CLI path
-	// included.
-	trueVal := true
-	client := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, modelCfg.MaxTokens).
-		WithProvider(&llm.ProviderRouting{Order: modelCfg.Provider, AllowFallbacks: &trueVal})
-	if rc := modelCfg.Reasoning; rc != nil && rc.Enabled {
-		trueVal := true
-		client = client.WithReasoning(&llm.ReasoningParams{Enabled: &trueVal, Effort: rc.Effort, MaxTokens: rc.MaxTokens})
-	}
-
-	blocklist, err := search.LoadBlocklist(cfg.BlockedSourcesFile)
-	if err != nil {
-		log.Warn("loading source blocklist failed, continuing with no blocked sources", "path", cfg.BlockedSourcesFile, "err", err)
-		blocklist = nil
-	}
-
-	searxng := search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile)
-	foursquare := places.NewFoursquareClient(cfg.Foursquare.APIKey)
-	tavilyClient := tavily.NewClient(cfg.Tavily.APIKey)
-	braveClient := brave.NewClient(cfg.Brave.APIKey)
-	parallelClient := parallel.NewClient(cfg.Parallel.APIKey)
-	embedClient := embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel)
-
-	// Opened even for this one-shot CLI command specifically so
-	// web_search's Brave/Parallel monthly-usage caps (see
-	// tools/web_search.go) are checked against the *same* running total
-	// the web UI/assistant use, not a separate count that would let this
-	// path silently spend past the real cap — cmd/stats.go opens the
-	// same DB the same way for the same "one-shot CLI command still
-	// needs real state" reason.
-	db, err := store.Open(cfg.Database.Path)
-	if err != nil {
-		log.Warn("opening database failed, Brave/Parallel usage caps can't be enforced — disabling those fallbacks for this run", "path", cfg.Database.Path, "err", err)
-		braveClient = nil
-		parallelClient = nil
-	} else {
-		defer db.Close()
-	}
-
-	fmt.Printf("model: %s\n\n", modelCfg.Name)
-
-	emit := func(eventType string, payload map[string]interface{}) {
-		switch eventType {
-		case "thinking":
-			fmt.Printf("\033[2m(thinking) %v\033[0m\n", payload["content"])
-		case "reasoning":
-			fmt.Printf("\033[2m%v\033[0m", payload["content"])
-		case "tool_call":
-			tool, _ := payload["tool"].(string)
-			toolArgs, _ := payload["args"].(map[string]interface{})
-			switch tool {
-			case "web_search":
-				fmt.Printf("searching: %v\n", toolArgs["query"])
-			case "web_read":
-				fmt.Printf("reading: %v\n", toolArgs["url"])
-			case "nearby_search":
-				fmt.Printf("finding nearby: %v near %v\n", toolArgs["query"], toolArgs["location"])
-			}
-		case "token":
-			fmt.Print(payload["content"])
-		}
-	}
-
-	agentCtx := &tools.Context{
-		SearXNG:         searxng,
-		Blocklist:       blocklist,
-		Foursquare:      foursquare,
-		Tavily:          tavilyClient,
-		Brave:           braveClient,
-		Parallel:        parallelClient,
-		Embed:           embedClient,
-		GitHubToken:     cfg.GitHub.Token,
-		LastFMAPIKey:    cfg.LastFM.APIKey,
-		HardcoverAPIKey: cfg.Hardcover.APIKey,
-		TMDBAPIKey:      cfg.TMDB.APIKey,
-		DefaultLocation: cfg.DefaultLocation,
-		LLM:             client,
-		Emit:            emit,
-		MaxTurns:        cfg.MaxAgentTurns,
-	}
-	// Only set once db is known-good (see the store.Open error handling
-	// above, which also nils out braveClient/parallelClient on failure) —
-	// handleWebSearch requires both Context.Brave/Parallel and their
-	// matching closures non-nil before ever calling out, so leaving them
-	// nil here is enough to keep this path safe without a nil-db guard
-	// inside the closures themselves.
-	if db != nil {
-		agentCtx.BraveUsageThisMonth = func() (int, error) { return db.GetAPIUsage("brave") }
-		agentCtx.IncrementBraveUsage = func() error { _, err := db.IncrementAPIUsage("brave"); return err }
-		agentCtx.ParallelUsageThisMonth = func() (int, error) { return db.GetAPIUsage("parallel") }
-		agentCtx.IncrementParallelUsage = func() error { _, err := db.IncrementAPIUsage("parallel"); return err }
-		// Left nil (not wired) when the operator has turned memory off from
-		// the settings panel — see gateway.MemoryEnabledFromStore's doc
-		// comment for why nil closures, not a separate gate, are what
-		// actually removes both the memory tool and the {memories} prompt
-		// section.
-		if gateway.MemoryEnabledFromStore(db) {
-			agentCtx.ListMemories = db.ListMemories
-			agentCtx.GetMemory = db.GetMemory
-			agentCtx.WriteMemory = db.CreateMemory
-			agentCtx.EditMemory = db.UpdateMemory
-			agentCtx.ForgetMemory = db.DeleteMemory
-		}
-		// Honors the settings panel's per-tool disable list here too — this
-		// is exactly the class of gap CLAUDE.md flags for this file's
-		// Brave/Parallel/Tavily wiring: a live-only setting that quietly
-		// only applied to the web UI/websocket path until someone actually
-		// ran `polaris search` and checked what it had access to.
-		agentCtx.DisabledTools = gateway.DisabledToolsFromStore(db)
-		agentCtx.CustomInstructions = gateway.CustomInstructionsFromStore(db)
-		agentCtx.SearchThreads = db.SearchMessages
-		agentCtx.ListRecentThreads = db.ListThreadsPage
-		agentCtx.ReadThread = db.ReadThread
-	}
-
-	result, err := agent.Run(context.Background(), agentCtx, nil, query)
-	if err != nil {
-		log.Warn("agent run failed", "query", query, "err", err)
-		return fmt.Errorf("agent run failed: %w", err)
-	}
-
-	fmt.Println()
-	if len(result.Citations) > 0 {
-		fmt.Println("\nSources:")
-		for _, c := range result.Citations {
-			fmt.Printf("  - %s (%s)\n", c.Title, c.URL)
-		}
-	}
-	fmt.Printf("\ncost: $%.5f\n", result.CostUSD)
-	return nil
+	return runDockerSearch(strings.Join(args, " "), searchModel)
 }
 
-// runDockerSearch is runSearch's Docker-mode implementation: POST the
-// query to the running container's own /api/ask (the same synchronous,
-// non-streaming endpoint any programmatic caller uses — see
-// gateway/ask.go's doc comment) instead of building a local agent.Run
-// call against a config/SearXNG/store this process can't correctly see
-// under Docker. No live "thinking"/tool-call progress lines here,
-// unlike the bare-metal path above — /api/ask blocks until the whole
+// runDockerSearch POSTs the query to the running container's own
+// /api/ask (the same synchronous, non-streaming endpoint any
+// programmatic caller uses — see gateway/ask.go's doc comment). No live
+// "thinking"/tool-call progress lines — /api/ask blocks until the whole
 // turn finishes, so there's genuinely nothing to print until then.
 func runDockerSearch(query, model string) error {
 	reqBody, err := json.Marshal(gateway.AskRequest{Content: query, Model: model, Source: "cli"})

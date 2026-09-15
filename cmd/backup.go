@@ -63,11 +63,13 @@ never discarded — it's copied alongside itself first as
 
 The server must not be running while this happens: swapping the database
 file out from under a live connection risks corrupting whichever write
-it's mid-way through. Bare-metal refuses if it detects polaris still
-answering on its configured port; under Docker (detected the same way
-every other command here does, from docker-compose.yml's presence) this
-can't be checked the same way, so it refuses outright and prints the
-exact commands to run instead.`,
+it's mid-way through. Under Docker, run this inside a fresh one-off
+container sharing the same data volume, with the real service stopped
+first:
+
+  docker compose stop polaris
+  docker compose run --rm --no-deps polaris backup restore <name> --config /data/config.yaml --yes
+  docker compose up -d polaris`,
 	Args: cobra.ExactArgs(1),
 	RunE: runBackupRestore,
 }
@@ -76,88 +78,30 @@ func init() {
 	rootCmd.AddCommand(backupCmd)
 	backupCmd.AddCommand(backupCreateCmd, backupListCmd, backupRestoreCmd, backupRestoreRemoteCmd)
 
-	backupCmd.PersistentFlags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (bare-metal only — a Docker install reaches the running container instead, except for restore)")
+	backupCmd.PersistentFlags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (only meaningful for restore/restore-remote, run inside a one-off container via `docker compose run` — see their --help)")
 	backupRestoreCmd.Flags().BoolVarP(&backupRestoreYes, "yes", "y", false, "skip the confirmation prompt")
 	backupRestoreRemoteCmd.Flags().BoolVarP(&backupRestoreYes, "yes", "y", false, "skip the confirmation prompt")
 	backupListCmd.Flags().BoolVar(&backupListRemote, "remote", false, "list what's actually in R2 instead of the local backups/ folder")
 }
 
 func runBackupCreate(cmd *cobra.Command, args []string) error {
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		return runDockerBackupCreate()
-	}
-
-	cfg, err := config.Load(configPath, models.Registry)
-	if err != nil {
-		return err
-	}
-	info, err := backup.Create(cfg.Database.Path, cfg.Backup.Dir)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("created backup %s (%s)\n", info.Name, humanSize(info.SizeBytes))
-
-	if err := backup.Mirror(info, cfg.R2Client()); err != nil {
-		// Non-fatal: the local backup already succeeded and is what
-		// actually matters for this command's exit status — R2 is an
-		// off-device copy of it, not a replacement for it.
-		fmt.Printf("warning: mirroring to r2 failed: %v\n", err)
-	} else if cfg.R2Client() != nil {
-		fmt.Println("mirrored to r2")
-	}
-	return nil
+	return runDockerBackupCreate()
 }
 
 func runBackupList(cmd *cobra.Command, args []string) error {
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		if backupListRemote {
-			return runDockerBackupListRemote()
-		}
-		return runDockerBackupList()
-	}
-
-	cfg, err := config.Load(configPath, models.Registry)
-	if err != nil {
-		return err
-	}
-
 	if backupListRemote {
-		client := cfg.R2Client()
-		if client == nil {
-			return fmt.Errorf("r2 is not configured — set r2.* in %s first (see config.yaml.example)", configPath)
-		}
-		objects, err := client.List(cmd.Context())
-		if err != nil {
-			return err
-		}
-		printRemoteBackupList(objects)
-		return nil
+		return runDockerBackupListRemote()
 	}
-
-	infos, err := backup.List(cfg.Backup.Dir)
-	if err != nil {
-		return err
-	}
-	printBackupList(infos)
-	return nil
+	return runDockerBackupList()
 }
 
 func runBackupRestoreRemote(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	// Same reasoning as runBackupRestore's Docker branch: this CLI has no
-	// direct filesystem access to the container's data volume from the
-	// host, so it can't swap the database file in place itself. Unlike
-	// plain restore, restore-remote *could* in principle run for real
-	// inside the one-off container dockerRestoreInstructionsRemote
-	// describes below — it has both R2 config (bind-mounted) and direct
-	// volume access — so the printed instructions point at that instead
-	// of just refusing outright.
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		fmt.Println(dockerRestoreInstructionsRemote(name))
-		return nil
-	}
-
+	// Runs against a local config.yaml/database path — under Docker this
+	// is invoked inside a fresh one-off container sharing the real data
+	// volume and bind-mounted config.yaml (see backupRestoreRemoteCmd's
+	// Long description).
 	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
 		return err
@@ -204,18 +148,12 @@ func runBackupRestoreRemote(cmd *cobra.Command, args []string) error {
 func runBackupRestore(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	// Docker mode: this CLI runs on the host, outside any container, and
-	// has no direct filesystem access to the polaris-data volume the
-	// real database lives in — there's no live-API-based restore either
-	// (see backup.Restore's doc comment on why swapping the file under a
-	// running connection is unsafe), so unlike create/list this can't be
-	// automated as a plain HTTP call. Print the exact manual sequence
-	// instead of doing something halfway.
-	if repoPath, err := os.Getwd(); err == nil && isDockerComposeInstall(repoPath) {
-		fmt.Println(dockerRestoreInstructions(name))
-		return nil
-	}
-
+	// No live-API-based restore: swapping the database file out from
+	// under a running connection is unsafe (see backup.Restore's doc
+	// comment), so this always runs against a local config.yaml/database
+	// path directly — under Docker, invoked inside a fresh one-off
+	// container sharing the real data volume and bind-mounted
+	// config.yaml (see backupRestoreCmd's Long description).
 	cfg, err := config.Load(configPath, models.Registry)
 	if err != nil {
 		return err
@@ -269,49 +207,6 @@ func serverAppearsRunning(port int) bool {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
-}
-
-// dockerRestoreInstructions prints the manual sequence for restoring
-// under Docker: stop the running service, restore inside a fresh
-// one-off container that mounts the exact same data volume (so it has
-// direct file access without ever giving the *running* container
-// control over Docker — see docker-compose.yml's comment on why that
-// boundary matters), then bring the service back up.
-func dockerRestoreInstructions(name string) string {
-	return fmt.Sprintf(`This is a Docker install — restoring needs the polaris container stopped
-first, so nothing else has the database open while the file is swapped:
-
-  docker compose stop polaris
-  docker compose run --rm --no-deps polaris backup restore %s --config /data/config.yaml --yes
-  docker compose up -d polaris
-
-The middle command runs this exact restore logic inside a fresh, one-off
-container sharing the same data volume — it has no server listening on
-its own port, so the usual bare-metal healthz safety check is skipped
-there too; that's why stopping the real service first (the first line)
-is what actually matters, not the check.`, name)
-}
-
-// dockerRestoreInstructionsRemote mirrors dockerRestoreInstructions, but
-// for restore-remote: the one-off container it describes runs with the
-// same bind-mounted config.yaml (see docker-compose.yml) as the real
-// service, so it has R2 credentials and direct volume access — unlike
-// plain restore, this actually can run for real there, not just print
-// what to do.
-func dockerRestoreInstructionsRemote(name string) string {
-	return fmt.Sprintf(`This is a Docker install — restoring from R2 needs the polaris container
-stopped first, so nothing else has the database open while the file is
-swapped:
-
-  docker compose stop polaris
-  docker compose run --rm --no-deps polaris backup restore-remote %s --config /data/config.yaml --yes
-  docker compose up -d polaris
-
-The middle command runs this exact restore-remote logic inside a fresh,
-one-off container sharing the same data volume and the same bind-mounted
-config.yaml — it has R2 credentials and direct filesystem access despite
-running on the host, same as the plain restore command described in
-"polaris backup restore --help".`, name)
 }
 
 func runDockerBackupCreate() error {

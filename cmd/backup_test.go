@@ -85,19 +85,6 @@ func TestRunDockerBackupCreate_ServerError(t *testing.T) {
 	}
 }
 
-func TestDockerRestoreInstructions_NamesTheBackupAndTheFullSequence(t *testing.T) {
-	out := dockerRestoreInstructions("polaris-20260101-030000.db")
-	for _, want := range []string{
-		"docker compose stop polaris",
-		"docker compose run --rm --no-deps polaris backup restore polaris-20260101-030000.db",
-		"docker compose up -d polaris",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("instructions = %q, want it to contain %q", out, want)
-		}
-	}
-}
-
 func TestHumanSize(t *testing.T) {
 	cases := []struct {
 		in   int64

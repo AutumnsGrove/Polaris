@@ -5,23 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 )
-
-// isDockerComposeInstall reports whether repoPath (updater.RepoPath's
-// CWD, the same directory bare-metal's own update/restart logic
-// already assumes it's running from) is a Docker Compose install —
-// docker-compose.yml existing there is the one signal a process
-// running on the host, outside any container, can actually observe.
-// gateway.deploymentMode's POLARIS_DEPLOYMENT env var check answers a
-// different question ("is THIS process running inside the container")
-// and is never set in a host-side SSH session regardless of which way
-// the install actually runs, so it can't be reused here.
-func isDockerComposeInstall(repoPath string) bool {
-	_, err := os.Stat(filepath.Join(repoPath, "docker-compose.yml"))
-	return err == nil
-}
 
 // dockerLocalBaseURL is where the Docker deployment's own polaris
 // process listens on the host — docker-compose.yml publishes
