@@ -184,28 +184,33 @@
 
 {#if turn.role === 'user'}
 	<div class="row row-user" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
-		{#if turn.attachmentFilename && !editing}
-			{#if turn.workspaceFileId && appState.currentThreadId}
-				<!-- workspaceFileId is only known once the server round-trips a
-					reload (see buildTurnsFromMessages) — a just-sent message shows
-					the plain cosmetic chip below until then, same as before this
-					unification. Uploads now persist for the thread's life instead
-					of being deleted after one read, so this is a real download,
-					not just a label. -->
-				<a
-					class="attachment-chip attachment-chip-link"
-					href={`/api/workspace/${appState.currentThreadId}/${turn.workspaceFileId}`}
-					download={turn.attachmentFilename}
-				>
-					<Paperclip size={12} />
-					<span>{turn.attachmentFilename}</span>
-				</a>
-			{:else}
-				<div class="attachment-chip">
-					<Paperclip size={12} />
-					<span>{turn.attachmentFilename}</span>
-				</div>
-			{/if}
+		{#if turn.attachments?.length && !editing}
+			<div class="attachment-chips">
+				{#each turn.attachments as attachment, i (attachment.filename + i)}
+					{#if attachment.workspace_file_id && appState.currentThreadId}
+						<!-- workspace_file_id is only known once the server
+							round-trips a reload (see buildTurnsFromMessages) — a
+							just-sent message shows the plain cosmetic chip below
+							until then, same as before this unification. Uploads now
+							persist for the thread's life instead of being deleted
+							after one read, so this is a real download, not just a
+							label. -->
+						<a
+							class="attachment-chip attachment-chip-link"
+							href={`/api/workspace/${appState.currentThreadId}/${attachment.workspace_file_id}`}
+							download={attachment.filename}
+						>
+							<Paperclip size={12} />
+							<span>{attachment.filename}</span>
+						</a>
+					{:else}
+						<div class="attachment-chip">
+							<Paperclip size={12} />
+							<span>{attachment.filename}</span>
+						</div>
+					{/if}
+				{/each}
+			</div>
 		{/if}
 		<div class="user-block" class:editing>
 			{#if editing}
@@ -402,6 +407,13 @@
 	.row-user {
 		flex-direction: column;
 		align-items: flex-end;
+		gap: var(--space-sm);
+	}
+
+	.row-user .attachment-chips {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		gap: var(--space-sm);
 	}
 

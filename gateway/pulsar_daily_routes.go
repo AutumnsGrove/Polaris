@@ -256,11 +256,12 @@ type pulsarDailyExpandRequest struct {
 
 // pulsarDailyExpandResponse hands back the seeded message text (and, for
 // Picture of the Day, a real attachment) instead of running a turn itself
-// — see handleExpandDailyBlock's doc comment for why. AttachmentID is
-// exactly what POST /api/upload would have returned for the same image,
-// so the frontend sends it over the WebSocket the same way any other
-// image attachment already flows (ClientMessage.AttachmentID/
-// AttachmentFilename/AttachmentContentType).
+// — see handleExpandDailyBlock's doc comment for why. Kept as the same
+// single-attachment shape POST /api/upload itself returns (not
+// ClientMessage.Attachments' list) since this endpoint only ever
+// produces at most one image; the frontend wraps it into a one-element
+// attachments array before sending it over the WebSocket, the same way
+// any other image attachment already flows.
 type pulsarDailyExpandResponse struct {
 	Content               string `json:"content"`
 	AttachmentID          string `json:"attachment_id,omitempty"`

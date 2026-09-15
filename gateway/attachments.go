@@ -3,7 +3,7 @@
 // call ahead of the WebSocket message, same two-step shape as push-to-talk
 // voice memos (POST /api/transcribe, then the transcribed text rides
 // along in the next ClientMessage). Here, the upload returns an opaque
-// ID; the frontend sends that ID as ClientMessage.AttachmentID, and
+// ID; the frontend sends that ID in ClientMessage.Attachments, and
 // handleTurn resolves it back to a file on disk — never a path the
 // client supplies directly.
 package gateway
@@ -71,7 +71,7 @@ func allowedUploadContentType(ct string) bool {
 }
 
 // UploadResponse is what POST /api/upload returns — ID is what the
-// frontend echoes back as ClientMessage.AttachmentID.
+// frontend echoes back in ClientMessage.Attachments.
 type UploadResponse struct {
 	ID          string `json:"id"`
 	Filename    string `json:"filename"`
@@ -256,7 +256,7 @@ var fetchImageURLBytes = func(reqCtx context.Context, url string) (data []byte, 
 // saveRemoteImageAttachment downloads imageURL and saves it to
 // config.Attachments.Dir exactly like a normal upload (saveUploadedFile)
 // — same directory, same generated-UUID naming, same content-type gate —
-// so it flows through the ordinary AttachmentID/resolveAttachment/vision
+// so it flows through the ordinary attachment-reference/resolveAttachments/vision
 // pipeline indistinguishably from a file the user picked themselves. Built
 // for Pulsar Daily's Picture of the Day expand-to-chat: the block's image
 // lives at a remote URL (an image_search result), not a local upload, but

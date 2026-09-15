@@ -11,6 +11,7 @@ import type {
 	TimelineItem,
 	FocusMode,
 	UploadedAttachment,
+	MessageAttachment,
 	VariantGroup,
 	MessageSearchResult
 } from './types';
@@ -575,9 +576,7 @@ export class AppState {
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
 			id: m.role === 'user' ? m.id : undefined,
-			attachmentFilename: m.attachment_filename || undefined,
-			attachmentContentType: m.attachment_content_type || undefined,
-			workspaceFileId: m.workspace_file_id || undefined,
+			attachments: safeParseJSON<MessageAttachment>(m.attachments),
 			timeline:
 				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
 					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
@@ -909,7 +908,7 @@ export class AppState {
 	// sttCostUsd is set when content came from a transcribed voice memo
 	// (already billed via /api/transcribe) so it gets folded into the
 	// thread's running total instead of silently untracked. focusMode/
-	// deepResearch/attachment come from the composer's "+" menu
+	// deepResearch/attachments come from the composer's "+" menu
 	// (ComposerMenu.svelte) — only plumbed through the plain-text send
 	// path for now, not retry/editMessage below (same scope boundary
 	// sttCostUsd already draws) or VoiceButton's transcribed-memo send.
@@ -921,7 +920,7 @@ export class AppState {
 		sttCostUsd?: number,
 		focusMode?: FocusMode,
 		deepResearch?: boolean,
-		attachment?: UploadedAttachment,
+		attachments?: UploadedAttachment[],
 		noResearch?: boolean,
 		source?: string,
 		titleSeed?: string
@@ -935,7 +934,7 @@ export class AppState {
 			sttCostUsd,
 			focusMode,
 			deepResearch,
-			attachment,
+			attachments,
 			noResearch,
 			source,
 			titleSeed
@@ -970,7 +969,7 @@ export class AppState {
 		sttCostUsd?: number,
 		focusMode?: FocusMode,
 		deepResearch?: boolean,
-		attachment?: UploadedAttachment,
+		attachments?: UploadedAttachment[],
 		noResearch?: boolean,
 		// source: only meaningful for a brand-new thread (see
 		// gateway/protocol.go's ClientMessage.Source) — undefined means
@@ -989,8 +988,7 @@ export class AppState {
 		this.turns.push({
 			role: 'user',
 			content,
-			attachmentFilename: attachment?.filename,
-			attachmentContentType: attachment?.content_type
+			attachments: attachments?.map((a) => ({ filename: a.filename, content_type: a.content_type }))
 		});
 		this.turns.push({ role: 'assistant', content: '', timeline: [], streaming: true });
 		this.busy = true;
@@ -1029,9 +1027,11 @@ export class AppState {
 			focus_mode: focusMode && focusMode !== 'off' ? focusMode : undefined,
 			deep_research: deepResearch || undefined,
 			no_research: noResearch || undefined,
-			attachment_id: attachment?.id,
-			attachment_filename: attachment?.filename,
-			attachment_content_type: attachment?.content_type,
+			attachments: attachments?.map((a) => ({
+				id: a.id,
+				filename: a.filename,
+				content_type: a.content_type
+			})),
 			source,
 			title_seed: titleSeed
 		});

@@ -61,10 +61,10 @@
 	}
 
 	// Composer-only state — focusMode/deepResearch/research ride along in
-	// every send() call already; attachedFile gets uploaded (see submit
+	// every send() call already; attachedFiles gets uploaded (see submit
 	// below) only at send time, not the instant it's picked, so backing
-	// out of a message with the file still attached never orphans an
-	// upload nobody ends up sending. research starts true (on by default —
+	// out of a message with files still attached never orphans an upload
+	// nobody ends up sending. research starts true (on by default —
 	// see ComposerMenu's doc comment on the prop); like focusMode/
 	// deepResearch below it's now part of a thread's persisted sticky
 	// config too (see docs/plans/pulsar-routines.md's "Prerequisite"
@@ -74,7 +74,7 @@
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
 	let research = $state(true);
-	let attachedFile = $state<File | null>(null);
+	let attachedFiles = $state<File[]>([]);
 	let uploading = $state(false);
 
 	// Applies the Settings panel's standing default focus mode exactly
@@ -120,13 +120,17 @@
 		lastConfigThreadId = id;
 	});
 
-	function handleAttach(file: File) {
-		attachedFile = file;
+	function handleAttach(files: File[]) {
+		attachedFiles = [...attachedFiles, ...files];
+	}
+
+	function removeAttachment(index: number) {
+		attachedFiles = attachedFiles.filter((_, i) => i !== index);
 	}
 
 	// Clipboard File objects from an image copy (screenshot tools, "Copy
 	// image" from a browser, etc.) commonly arrive with an empty .name —
-	// the attachment chip below renders attachedFile.name, so an unnamed
+	// the attachment chip below renders each file's .name, so an unnamed
 	// blob would show as a blank pill. Giving it a synthetic name keeps
 	// the chip legible without needing any UI just for the paste path.
 	const extensionForImageType: Record<string, string> = {
@@ -140,7 +144,7 @@
 	// Reuses the exact same attach → upload-on-send pipeline as the "+"
 	// menu's file input (see handleAttach/submit above and ComposerMenu's
 	// handleFileChange) — a paste is just another way to arrive at the
-	// same attachedFile state, so nothing downstream needs to know which
+	// same attachedFiles state, so nothing downstream needs to know which
 	// path produced it. Only image types are handled; a text/plain or
 	// text/html paste falls through untouched so normal pasting still works.
 	function onPaste(e: ClipboardEvent) {
@@ -156,32 +160,34 @@
 				: new File([file], `pasted-image-${Date.now()}.${extensionForImageType[file.type] ?? 'png'}`, {
 						type: file.type
 					});
-			handleAttach(named);
+			handleAttach([named]);
 			break;
 		}
 	}
 
 	async function submit() {
 		const text = input;
-		const file = attachedFile;
+		const files = attachedFiles;
 		const sttCostUsd = voiceCostUsd;
 		input = '';
-		attachedFile = null;
+		attachedFiles = [];
 		voiceCostUsd = undefined;
 
-		if (!file) {
+		if (files.length === 0) {
 			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research);
 			return;
 		}
 
 		uploading = true;
-		const uploaded = await uploadAttachment(file);
+		// Falls back to whichever uploads actually succeeded (or none) on a
+		// partial/total upload failure — an error toast would be nicer, but
+		// silently dropping the whole message because one attachment failed
+		// is worse than answering with the rest, or without any of them.
+		const uploaded = (await Promise.all(files.map(uploadAttachment))).filter(
+			(a) => a !== null
+		);
 		uploading = false;
-		// Falls back to sending the text alone on a failed upload — an
-		// error toast would be nicer, but silently dropping the whole
-		// message because the attachment failed is worse than answering
-		// without it.
-		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded ?? undefined, !research);
+		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded, !research);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -322,18 +328,22 @@
 			></textarea>
 		</div>
 
-		{#if attachedFile}
-			<div class="attachment-chip">
-				<Paperclip size={13} />
-				<span class="attachment-name">{attachedFile.name}</span>
-				<button
-					type="button"
-					onclick={() => (attachedFile = null)}
-					disabled={uploading}
-					aria-label="Remove attachment"
-				>
-					<X size={13} />
-				</button>
+		{#if attachedFiles.length > 0}
+			<div class="attachment-chips">
+				{#each attachedFiles as file, i (file.name + i)}
+					<div class="attachment-chip">
+						<Paperclip size={13} />
+						<span class="attachment-name">{file.name}</span>
+						<button
+							type="button"
+							onclick={() => removeAttachment(i)}
+							disabled={uploading}
+							aria-label="Remove attachment"
+						>
+							<X size={13} />
+						</button>
+					</div>
+				{/each}
 			</div>
 		{/if}
 
@@ -838,6 +848,12 @@
 
 	.toolbar-spacer {
 		flex: 1;
+	}
+
+	.attachment-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm);
 	}
 
 	.attachment-chip {

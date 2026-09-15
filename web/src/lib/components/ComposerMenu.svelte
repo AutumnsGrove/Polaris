@@ -28,7 +28,7 @@
 		// so a caller that never wires this prop up still gets normal
 		// research behavior rather than accidentally starting in chat mode.
 		research: boolean;
-		onAttach: (file: File) => void;
+		onAttach: (files: File[]) => void;
 	} = $props();
 
 	let open = $state(false);
@@ -106,8 +106,7 @@
 
 	function handleFileChange(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (file) onAttach(file);
+		if (input.files?.length) onAttach(Array.from(input.files));
 		input.value = '';
 		close();
 	}
@@ -162,7 +161,7 @@
 							<section>
 								<button type="button" class="row-btn" onclick={() => fileInput?.click()}>
 									<ImageIcon size={16} />
-									<span class="row-label">Add photo or file</span>
+									<span class="row-label">Add photos or files</span>
 								</button>
 
 								<button type="button" class="row-btn" onclick={() => drillInto('focus')}>
@@ -246,6 +245,7 @@
 <input
 	bind:this={fileInput}
 	type="file"
+	multiple
 	accept="image/*,.pdf,.md,.txt,.json,.csv,.yaml,.yml,.xml"
 	hidden
 	onchange={handleFileChange}

@@ -12,6 +12,17 @@ export interface Citation {
 	image_url?: string;
 }
 
+// Mirrors store.Attachment — one file included with a user message. Kept
+// snake_case, decoded straight off the wire like Citation/Card above,
+// not remapped to camelCase. workspace_file_id is only known once the
+// server round-trips a reload (see ChatTurnView.svelte's doc comment):
+// a just-sent turn's own attachments array omits it until then.
+export interface MessageAttachment {
+	filename: string;
+	content_type: string;
+	workspace_file_id?: string;
+}
+
 // A structured rich-result item — see tools/registry.go's Card doc
 // comment. General-purpose; music's recommendation carousel is the first
 // user.
@@ -213,12 +224,10 @@ export type ClientMessage =
 			// search" action, overriding the composer's current toggle
 			// state for that one follow-up reply.
 			no_research?: boolean;
-			// Set when the composer's "+" sheet attached a file, already
-			// uploaded via POST /api/upload before this message is sent —
-			// see gateway/attachments.go's resolveAttachment.
-			attachment_id?: string;
-			attachment_filename?: string;
-			attachment_content_type?: string;
+			// Set when the composer's "+" sheet attached one or more files,
+			// each already uploaded via POST /api/upload before this message
+			// is sent — see gateway/attachments.go's resolveAttachments.
+			attachments?: { id: string; filename: string; content_type: string }[];
 			// Only meaningful for a brand-new thread (thread_id omitted) —
 			// see gateway/protocol.go's ClientMessage.Source. Omitted means
 			// the server's own "web" default; only Pulsar Daily's
@@ -455,16 +464,11 @@ export interface StoredMessage {
 	// 0 for user messages, and briefly for a not-yet-finished assistant
 	// message (see store.Store.SetMessageDuration).
 	duration_ms: number;
-	// Set only on a user message that carried an upload — see
-	// store.Store.SetMessageAttachment. '' on every other message.
-	attachment_filename?: string;
-	attachment_content_type?: string;
-	// The exact addressable filename inside the thread's workspace
-	// directory (a short id plus extension) — see
-	// store.Store.SetMessageWorkspaceFileID. '' on every other message,
-	// or one predating this column. Build a download link from it as
+	// JSON-encoded MessageAttachment[] — see store.Store.
+	// SetMessageAttachments. "[]" on every message with no upload. Build a
+	// download link from an entry's workspace_file_id as
 	// `/api/workspace/${thread_id}/${workspace_file_id}`.
-	workspace_file_id?: string;
+	attachments: string;
 	// JSON-encoded PendingQuestion, set only on an assistant message that
 	// ended its turn via ask_user_question — see
 	// store.Store.SetMessagePendingQuestion. '' on every other message.
@@ -534,17 +538,13 @@ export interface ChatTurn {
 	// Assistant turns only, set once "done" arrives (or on reopening a
 	// past thread, from the persisted message).
 	durationMs?: number;
-	// Set only on a user turn that carried an upload (see
-	// StoredMessage.attachment_filename) — shown as a small chip above
-	// the message text.
-	attachmentFilename?: string;
-	attachmentContentType?: string;
-	// The same file's addressable workspace filename — see
-	// StoredMessage.workspace_file_id. When set, the chip above becomes a
-	// real download link (`/api/workspace/${threadId}/${workspaceFileId}`)
-	// instead of a purely cosmetic label, since the upload now persists
-	// for the life of the thread rather than being deleted after one read.
-	workspaceFileId?: string;
+	// Set only on a user turn that carried one or more uploads (see
+	// StoredMessage.attachments) — shown as a chip per file above the
+	// message text. An entry's workspace_file_id becomes a real download
+	// link (`/api/workspace/${threadId}/${workspace_file_id}`) once known;
+	// a just-sent turn shows a purely cosmetic chip until the server
+	// round-trips a reload (see ChatTurnView.svelte).
+	attachments?: MessageAttachment[];
 }
 
 // Mirrors search/domain_rankings.go's RankState constants.

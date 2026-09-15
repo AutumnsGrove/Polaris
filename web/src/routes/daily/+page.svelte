@@ -270,12 +270,14 @@
 				undefined,
 				undefined,
 				resolved.attachment_id
-					? {
-							id: resolved.attachment_id,
-							filename: resolved.attachment_filename ?? '',
-							content_type: resolved.attachment_content_type ?? '',
-							size_bytes: 0
-						}
+					? [
+							{
+								id: resolved.attachment_id,
+								filename: resolved.attachment_filename ?? '',
+								content_type: resolved.attachment_content_type ?? '',
+								size_bytes: 0
+							}
+						]
 					: undefined,
 				undefined,
 				'pulsar-daily',
