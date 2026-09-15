@@ -947,6 +947,7 @@ export class AppState {
 		const userTurn = this.turns[assistantTurnIndex - 1];
 		if (!userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
 		this.dispatch(userTurn.content, userTurn.id, assistantTurnIndex - 1);
+		this.carryForwardAttachmentChips(userTurn.attachments);
 	}
 
 	// Replaces a user message with revised text and re-runs from there.
@@ -955,6 +956,26 @@ export class AppState {
 		const userTurn = this.turns[userTurnIndex];
 		if (!trimmed || !userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
 		this.dispatch(trimmed, userTurn.id, userTurnIndex);
+		this.carryForwardAttachmentChips(userTurn.attachments);
+	}
+
+	// retry()/editMessage() can't pass the original attachments through
+	// dispatch()'s own attachments param — that expects fresh
+	// UploadedAttachments (with an upload id to send the server), which
+	// don't exist here: the server now carries the original message's
+	// already-resolved attachments forward on its own (see
+	// gateway/turn.go's EditFromID handling), so nothing needs re-sending.
+	// This only has to fix the optimistic local display, which dispatch()
+	// otherwise leaves attachment-less — a real gap found live: retrying a
+	// message that had files attached made the chips vanish from the UI
+	// even though the backend (once fixed) kept them. Mutates
+	// pendingUserTurn directly, the same post-push pattern dispatch()
+	// itself documents, since dispatch() already pushed the plain object
+	// literal through Svelte 5's reactive array proxy by the time this runs.
+	private carryForwardAttachmentChips(attachments: ChatTurn['attachments']) {
+		if (attachments?.length && this.pendingUserTurn) {
+			this.pendingUserTurn.attachments = attachments;
+		}
 	}
 
 	// Shared by send/retry/editMessage: truncate everything from

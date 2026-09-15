@@ -560,6 +560,94 @@ func TestHandleTurn_RetryPreservesOriginalAttachments(t *testing.T) {
 	}
 }
 
+// TestHandleTurn_RetryAttachmentUsesRootThreadWorkspace guards a deeper,
+// real bug found live while testing issue #71: after a retry/edit forks
+// the thread, agentCtx.ThreadID (what code_exec/view_image actually
+// address the workspace by — see tools.Context.ThreadID's doc comment)
+// was being set to storageThreadID, the fork's own ephemeral id, not the
+// stable client-facing threadID the workspace directory is actually keyed
+// by. A file uploaded on turn 1 lives under workspaceDir/<threadID>/ —
+// exactly right for turn 1, since storageThreadID == threadID for a
+// brand-new thread — but every retry/edit after that gets its own fresh
+// fork id, so any tool call in that later turn was looking for files in a
+// directory that had never had anything written to it, making every
+// previously-uploaded file invisible to the model from that point on.
+// Attachments (and any code_exec/fetch_url output) must survive a
+// retry/edit exactly like the rest of the persistent workspace does.
+func TestHandleTurn_RetryAttachmentUsesRootThreadWorkspace(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "here's a summary")
+	h := newTestHarness(t, srv.URL)
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	setWorkspaceDirKeepingAttachments(t, h, workspaceDir)
+
+	conn := dialWS(t, h)
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "hello", "model": "test-model",
+	}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+
+	var threadID string
+	var userMsgID float64
+	for _, e := range events {
+		if id, ok := e["thread_id"].(string); ok && id != "" && threadID == "" {
+			threadID = id
+		}
+		if e["type"] == "user_message" {
+			userMsgID, _ = e["user_message_id"].(float64)
+		}
+	}
+	if threadID == "" || userMsgID == 0 {
+		t.Fatalf("didn't capture thread_id/user_message_id: %+v", events)
+	}
+
+	// A retry (forks the thread, so storageThreadID != threadID from here
+	// on) that also attaches a fresh file — proves resolveAttachments
+	// still files it under the stable root thread's workspace directory,
+	// not the fork's own throwaway id.
+	body, contentType := multipartUploadBody(t, "report.pdf", "application/pdf", mustDecodePDF(t))
+	resp, err := http.Post(h.url("/api/upload"), contentType, body)
+	if err != nil {
+		t.Fatalf("POST /api/upload: %v", err)
+	}
+	defer resp.Body.Close()
+	var uploaded UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&uploaded); err != nil {
+		t.Fatalf("decoding upload response: %v", err)
+	}
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "hello again", "model": "test-model",
+		"thread_id": threadID, "edit_from_id": userMsgID,
+		"attachments": []map[string]string{
+			{"id": uploaded.ID, "filename": "report.pdf", "content_type": "application/pdf"},
+		},
+	}); err != nil {
+		t.Fatalf("WriteJSON (retry with attachment): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	entries, err := os.ReadDir(filepath.Join(workspaceDir, threadID))
+	if err != nil {
+		t.Fatalf("reading root thread's workspace dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("root thread workspace dir has %d entries, want exactly 1 (the retry's attachment): %+v", len(entries), entries)
+	}
+
+	forkID, err := h.db.EffectiveThreadID(threadID)
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	if forkID == threadID {
+		t.Fatal("retry didn't actually fork the thread — test setup invalid")
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, forkID)); !os.IsNotExist(err) {
+		t.Errorf("a workspace directory was created under the fork id %q — attachments must use the stable root thread id instead", forkID)
+	}
+}
+
 func TestPruneOldAttachments_RemovesOnlyFilesOlderThanMaxAge(t *testing.T) {
 	dir := t.TempDir()
 

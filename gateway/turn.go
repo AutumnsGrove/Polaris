@@ -260,7 +260,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	turnMessage := msg.Content
 	switch {
 	case len(msg.Attachments) > 0:
-		resolvedMessage, resolved := resolveAttachments(cfg, msg, storageThreadID, func(ref AttachmentRef, err error) {
+		// threadID (the stable, client-facing root id), not storageThreadID
+		// — the workspace directory is one persistent resource shared by
+		// every fork/variant of this conversation, unlike messages/events
+		// which are correctly fork-scoped. Using storageThreadID here would
+		// file a retry/edit's attachment under that fork's own throwaway
+		// id, a directory nothing else ever looks in again.
+		resolvedMessage, resolved := resolveAttachments(cfg, msg, threadID, func(ref AttachmentRef, err error) {
 			log.Warn("resolving attachment failed, continuing without it", "filename", ref.Filename, "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"filename": ref.Filename, "err": err.Error()}, turnID)
 		})
@@ -487,7 +493,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		ListRecentThreads:      s.db.ListThreadsPage,
 		ReadThread:             s.db.ReadThread,
 		Multimodal:             modelCfg.Multimodal,
-		ThreadID:               storageThreadID,
+		// threadID, not storageThreadID: code_exec/fetch_url/view_image
+		// address the persistent workspace directory by this id (see
+		// tools.Context.ThreadID's doc comment), and that directory is one
+		// shared resource for the whole conversation, not per fork/variant
+		// — a retry/edit's own fresh storageThreadID would point tool
+		// calls at a directory nothing was ever written to, making every
+		// previously-uploaded file (or code_exec/fetch_url output)
+		// invisible to the model from that turn on. A real bug found live
+		// testing issue #71's multi-attachment support: retrying a message
+		// that had a file attached left the model unable to find it at all.
+		ThreadID: threadID,
 	}
 	// visionClient mirrors resolveAttachment's own model-selection logic
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
