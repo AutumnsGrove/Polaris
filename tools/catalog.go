@@ -358,40 +358,24 @@ type ToolInfo struct {
 // surfaces this so the frontend doesn't hardcode tool names/descriptions
 // that otherwise only live in tools/descriptions/*.yaml.
 //
-// Two Requires values are excluded here even though they're not in
-// nonToggleable above, for the same underlying reason: nonToggleable is
-// for tools the model always needs regardless of user preference
-// (reasoning/interaction primitives), while these two are excluded
-// because the toggle itself would be structurally inert, not because the
-// tool is mandatory.
-//
-//   - "weaver_run" (search_stars/read_star/create_star/update_star/
-//     link_stars) — unconditionally excluded. These are never offered to
-//     the main assistant in any deployment mode or configuration; only a
-//     Weaver shooting-star run's own restricted tool menu ever reaches
-//     them (see offered()'s WeaverRun exclusion clause above). A settings
-//     toggle for them would do nothing the operator could ever observe.
-//   - "docker_only" (code_exec) — excluded only when dockerModeAvailable
-//     is false. Unlike a missing API key (music/movies/books' Requires
-//     conditions), which stays visible so the operator knows the tool
-//     exists and can add a key later, a bare-metal install can never
-//     satisfy this without switching deployment models entirely — so the
-//     "maybe later" framing that justifies keeping API-key-gated tools
-//     visible doesn't apply here.
-func ToggleableTools(dockerModeAvailable bool) []ToolInfo {
+// "weaver_run" (search_stars/read_star/create_star/update_star/
+// link_stars) is excluded here even though it's not in nonToggleable
+// above, for the same underlying reason: nonToggleable is for tools the
+// model always needs regardless of user preference (reasoning/
+// interaction primitives), while this is excluded because the toggle
+// itself would be structurally inert, not because the tool is mandatory.
+// These are never offered to the main assistant in any configuration;
+// only a Weaver shooting-star run's own restricted tool menu ever
+// reaches them (see offered()'s WeaverRun exclusion clause above).
+func ToggleableTools() []ToolInfo {
 	catalog := loadCatalog()
 	out := make([]ToolInfo, 0, len(catalogOrder))
 	for _, name := range catalogOrder {
 		if nonToggleable[name] {
 			continue
 		}
-		switch catalog[name].Requires {
-		case "weaver_run":
+		if catalog[name].Requires == "weaver_run" {
 			continue
-		case "docker_only":
-			if !dockerModeAvailable {
-				continue
-			}
 		}
 		out = append(out, ToolInfo{Name: name, Description: catalog[name].Description})
 	}

@@ -1,13 +1,9 @@
 package gateway
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
-
-	"polaris/procmgr"
-	"polaris/updater"
 )
 
 // updateStatus tracks the one self-update-or-restart that can run at a
@@ -122,203 +118,17 @@ func (u *updateStatus) snapshot() map[string]interface{} {
 	}
 }
 
-// handleUpdate runs the same git-pull-and-rebuild steps as `polaris
-// update`, then restarts the service — triggered from the settings
-// panel instead of an SSH session. The response is flushed to the
-// client *before* restarting: systemctl/launchctl kills this very
-// process, so the client needs its answer in hand first.
+// handleUpdate resolves the latest published image's digest from GHCR
+// and hands off to the host-side update watcher — triggered from the
+// settings panel instead of an SSH session.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	if deploymentMode() == "docker" {
-		s.handleDockerUpdate(w, r)
-		return
-	}
-
-	started, startedAt := s.updateStatus.tryStart("update")
-	if !started {
-		writeJSON(w, map[string]interface{}{
-			"success":         false,
-			"already_running": true,
-			"error":           "an update or restart is already in progress",
-		})
-		return
-	}
-
-	repoPath, err := updater.RepoPath()
-	if err != nil {
-		s.updateStatus.finish(false, "", err.Error(), false)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Held across the whole pull+build+restart sequence below, not just
-	// the build — see updater.AcquireLock's doc comment for why releasing
-	// early would leave the restart window (which can take tens of
-	// seconds — see procmgr/systemd.go's TimeoutStopSec) open to a second
-	// update racing in and overwriting the binary the OS is mid-exec'ing
-	// for this one's restart. Carried into beginAsyncRestart below when
-	// restarting, since the response has to reach the client (and this
-	// handler return) before that goroutine's Restart() call runs.
-	release, err := updater.AcquireLock(repoPath)
-	if err != nil {
-		s.updateStatus.finish(false, "", err.Error(), false)
-		writeJSON(w, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	result, err := updater.Run(repoPath)
-	if err != nil {
-		release()
-		logOut := result.PullOutput + "\n" + result.BuildOutput
-		s.updateStatus.finish(false, logOut, err.Error(), false)
-		s.db.LogEvent("", "error", "update", "self-update build failed", map[string]interface{}{
-			"err": err.Error(), "pull_output": result.PullOutput, "build_output": result.BuildOutput,
-		}, "")
-		writeJSON(w, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-			"log":     logOut,
-		})
-		return
-	}
-
-	cfg := s.liveConfig()
-	mgr, mgrErr := procmgr.New(cfg.Service.Label)
-	restarting := mgrErr == nil && mgr.IsManaged()
-	logOut := result.PullOutput + "\nbuild successful"
-
-	s.updateStatus.finish(true, logOut, "", restarting)
-
-	s.db.LogEvent("", "info", "update", "self-update built successfully", map[string]interface{}{
-		"pull_output": result.PullOutput, "restarting": restarting,
-	}, "")
-
-	if !restarting {
-		// Nothing more will touch the repo or the binary on this run —
-		// safe to let the next update/restart proceed immediately rather
-		// than holding the lock for no reason.
-		release()
-	}
-
-	writeJSON(w, map[string]interface{}{
-		"success":    true,
-		"log":        logOut,
-		"restarting": restarting,
-	})
-
-	if restarting {
-		s.beginAsyncRestart(w, mgr, release, startedAt, "update")
-	}
+	s.handleDockerUpdate(w, r)
 }
 
-// handleRestart cleanly restarts the service with no git pull, no
-// go build — just `mgr.Restart()`. This is what `polaris update` (and the
-// settings panel's "Update Polaris" button) end up doing too once the
-// build succeeds, but running the FULL update flow purely to force a
-// restart pulls (a no-op when nothing's changed) and rebuilds (a real,
-// if usually fast, `go build`) before it ever gets there — on the potato's
-// weak CPU that can stall for tens of seconds for no benefit, exactly the
-// "using the updater just to reboot doesn't work well" complaint this
-// endpoint exists to fix. Shares updateStatus and the same file lock as
-// handleUpdate so the two can never race each other.
+// handleRestart recreates the container from whatever image is already
+// running, via the host-side update watcher, skipping GHCR entirely.
 func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
-	if deploymentMode() == "docker" {
-		s.handleDockerRestart(w, r)
-		return
-	}
-
-	started, startedAt := s.updateStatus.tryStart("restart")
-	if !started {
-		writeJSON(w, map[string]interface{}{
-			"success":         false,
-			"already_running": true,
-			"error":           "an update or restart is already in progress",
-		})
-		return
-	}
-
-	repoPath, err := updater.RepoPath()
-	if err != nil {
-		s.updateStatus.finish(false, "", err.Error(), false)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Same lock handleUpdate holds across its own pull+build+restart —
-	// see updater.AcquireLock's doc comment. A plain restart doesn't
-	// touch the repo or the binary itself, but still needs to keep an
-	// update from starting (and racing its own restart) mid-flight, and
-	// keep a second restart from piling on top of this one.
-	release, err := updater.AcquireLock(repoPath)
-	if err != nil {
-		s.updateStatus.finish(false, "", err.Error(), false)
-		writeJSON(w, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	cfg := s.liveConfig()
-	mgr, mgrErr := procmgr.New(cfg.Service.Label)
-	if mgrErr != nil || !mgr.IsManaged() {
-		release()
-		errMsg := "service is not managed by systemd/launchd — restart manually"
-		if mgrErr != nil {
-			errMsg = mgrErr.Error()
-		}
-		s.updateStatus.finish(false, "", errMsg, false)
-		writeJSON(w, map[string]interface{}{
-			"success": false,
-			"error":   errMsg,
-		})
-		return
-	}
-
-	s.updateStatus.finish(true, "restart requested", "", true)
-	s.db.LogEvent("", "info", "restart", "clean restart requested", nil, "")
-
-	writeJSON(w, map[string]interface{}{
-		"success":    true,
-		"restarting": true,
-	})
-
-	s.beginAsyncRestart(w, mgr, release, startedAt, "restart")
-}
-
-// beginAsyncRestart flushes the HTTP response (so the client has its
-// answer in hand before this very process gets killed) and then restarts
-// the service in a detached goroutine — shared by handleUpdate (after a
-// successful build) and handleRestart (no build, straight to the restart).
-// release is invoked once the goroutine finishes either way — see
-// updater.AcquireLock's doc comment on why the lock must be held through
-// the whole restart, not released the instant the response goes out.
-func (s *Server) beginAsyncRestart(w http.ResponseWriter, mgr procmgr.Manager, release func(), startedAt time.Time, source string) {
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-	go func() {
-		defer release()
-		defer func() {
-			if r := recover(); r != nil {
-				log.Error("panic in restart goroutine", "source", source, "panic", r)
-				s.db.LogEvent("", "error", source, "panic during restart", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
-			}
-		}()
-		time.Sleep(300 * time.Millisecond) // give the response time to reach the client
-		if err := mgr.Restart(); err != nil {
-			log.Error("restart failed", "source", source, "err", err)
-			s.db.LogEvent("", "error", source, "restart failed", map[string]interface{}{"err": err.Error()}, "")
-			// Surfaced via /api/update/status so the settings panel can
-			// tell the user the restart command itself failed, instead of
-			// spinning on waitForServerAndReload until its own 2-minute
-			// deadline — see restartErr's doc comment on why this
-			// couldn't just be folded into finish().
-			s.updateStatus.setRestartError(startedAt, err.Error())
-		}
-	}()
+	s.handleDockerRestart(w, r)
 }
 
 // handleUpdateStatus reports whether an update or restart is currently
@@ -328,23 +138,21 @@ func (s *Server) beginAsyncRestart(w http.ResponseWriter, mgr procmgr.Manager, r
 // and inviting a second, overlapping click.
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	snap := s.updateStatus.snapshot()
-	// Docker mode's in-process updateStatus only ever records "the signal
-	// file was written" (see handleDockerUpdate/handleDockerRestart) — the
-	// real outcome is decided later, on the host, by a process this one
-	// never hears back from directly. Layer the host watcher's own result
-	// file on top so a client polling this endpoint (waitForServerAndReload)
+	// The in-process updateStatus only ever records "the signal file was
+	// written" (see handleDockerUpdate/handleDockerRestart) — the real
+	// outcome is decided later, on the host, by a process this one never
+	// hears back from directly. Layer the host watcher's own result file
+	// on top so a client polling this endpoint (waitForServerAndReload)
 	// can learn the actual reason an update failed — e.g. a bad SQL
 	// migration — instead of just timing out after two minutes waiting for
 	// a version bump that a rolled-back update will never produce.
-	if deploymentMode() == "docker" {
-		pending := dockerUpdateRequestPending()
-		snap["docker_pending"] = pending
-		if !pending {
-			if res := readDockerWatcherResult(); res != nil {
-				snap["docker_watcher_status"] = res.Status
-				snap["docker_watcher_detail"] = res.Detail
-				snap["docker_watcher_finished_at"] = res.FinishedAt
-			}
+	pending := dockerUpdateRequestPending()
+	snap["docker_pending"] = pending
+	if !pending {
+		if res := readDockerWatcherResult(); res != nil {
+			snap["docker_watcher_status"] = res.Status
+			snap["docker_watcher_detail"] = res.Detail
+			snap["docker_watcher_finished_at"] = res.FinishedAt
 		}
 	}
 	writeJSON(w, snap)
