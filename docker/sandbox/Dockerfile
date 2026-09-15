@@ -23,18 +23,25 @@
 # PDF/image (see gateway/attachments.go's allowedUploadContentTypes) —
 # without it code_exec could still open().read() a .yaml upload as raw
 # text but not yaml.safe_load() it structurally. Same "free until
-# imported" logic pyarrow's own addition already used. Functionally
-# verified locally (all nine packages import and run together, including
-# a real yaml.safe_load/dump, no crash) with a Python-side
-# resource.getrusage peak of ~285MB — consistent with the existing
-# ~200-263MB heavy-workload range, pyyaml's own footprint being small.
-# That number is *not* a real cgroup v2 measurement on the actual potato,
-# though — it was taken locally through Docker Desktop's macOS VM, which
-# doesn't enforce/report memory limits the same way a native Linux host
-# does (every ceiling down to 150m "succeeded" locally, unlike the
-# original table's real 150m OOM-kill on the potato) — re-confirm the
-# real ceiling on the potato before assuming 384MB still holds with
-# certainty, per this repo's own "verify on real hardware" rule.
+# imported" logic pyarrow's own addition already used.
+#
+# Re-measured for real on the potato itself (2026-09-15, after an initial
+# pass through Docker Desktop's macOS VM turned out untrustworthy — that
+# VM doesn't enforce/report memory limits the same way a native Linux
+# host does; every ceiling down to 150m "succeeded" there, unlike the
+# real 150m OOM-kill the original table measured on the potato). Real
+# cgroup v2 `memory.peak`, same all-nine-packages-at-once heavy exercise
+# as the original table plus a real yaml.safe_load/dump: **227-260MB**
+# across repeated runs (host-side cgroup read, no docker-exec-loop
+# noise), one 353MB outlier on the very first run right after a cold
+# image pull. A same-exercise run with pyyaml *not* imported measured
+# 251-252MB — pyyaml's own contribution is within normal run-to-run
+# noise, not a clear regression. All comfortably under the 384MB
+# ceiling, consistent with the original eight-package table's ~200-263MB
+# range. Worth remembering for future package additions: this "all nine
+# imported in one process" number is a deliberate worst case for setting
+# a safe ceiling, not what a typical single code_exec call (which
+# usually imports 1-3 packages) will actually use.
 FROM python:3.11-slim
 
 RUN pip install --no-cache-dir \
