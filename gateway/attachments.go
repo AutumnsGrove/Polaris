@@ -37,12 +37,36 @@ import (
 // as the potato.
 const maxUploadBytes = 100 << 20
 
+// allowedUploadContentTypes is the plain-text/structured-data set beyond
+// PDF/image — leftover from when an upload only ever fed one of two
+// pipelines (PDF-text extraction, vision-model description), so anything
+// neither pipeline understood was rejected outright. Now that an upload
+// just becomes a workspace file (see resolveAttachment), code_exec can
+// already open/parse any of these directly (open().read(),
+// pd.read_csv(), json.load(), ...) — there's no processing-pipeline reason
+// left to reject them, only the genuine safety reason of not accepting
+// something script/executable-shaped, which this stays a real (if
+// generous) allowlist against.
+var allowedUploadContentTypes = map[string]bool{
+	"text/plain":         true,
+	"text/markdown":      true,
+	"text/x-markdown":    true,
+	"text/csv":           true,
+	"application/csv":    true,
+	"application/json":   true,
+	"application/x-yaml": true,
+	"text/yaml":          true,
+	"text/x-yaml":        true,
+	"application/xml":    true,
+	"text/xml":           true,
+}
+
 // allowedUploadContentType accepts exactly what ComposerMenu's file input
-// offers (accept="image/*,.pdf") — anything else is almost certainly a
-// mistake or a client someone's about to abuse, not the human uploading
-// a photo or document.
+// offers (accept="image/*,.pdf,.md,.txt,.json,.csv,.yaml,.yml,.xml") —
+// anything else is almost certainly a mistake or a client someone's about
+// to abuse, not the human uploading a photo or document.
 func allowedUploadContentType(ct string) bool {
-	return ct == "application/pdf" || strings.HasPrefix(ct, "image/")
+	return ct == "application/pdf" || strings.HasPrefix(ct, "image/") || allowedUploadContentTypes[ct]
 }
 
 // UploadResponse is what POST /api/upload returns — ID is what the
@@ -111,8 +135,21 @@ func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHea
 	cfg := s.liveConfig()
 
 	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = mime.TypeByExtension(filepath.Ext(header.Filename))
+	// "" (no guess at all) and the generic "application/octet-stream" both
+	// mean the browser didn't have a real answer — worth a second try via
+	// extension before falling all the way back to rejecting the upload.
+	// mime.TypeByExtension alone isn't enough for .md/.yaml/.yml: they're
+	// not in Go's built-in table and often missing from a container's
+	// /etc/mime.types too (confirmed: absent on this dev machine),
+	// unlike .txt/.json/.csv/.xml, which mime.TypeByExtension already
+	// knows without any override.
+	if contentType == "" || contentType == "application/octet-stream" {
+		ext := filepath.Ext(header.Filename)
+		if guessed := mime.TypeByExtension(ext); guessed != "" {
+			contentType = guessed
+		} else if overridden := extensionContentTypeOverride(ext); overridden != "" {
+			contentType = overridden
+		}
 	}
 	parsedType, _, parseErr := mime.ParseMediaType(firstNonEmpty(contentType, "application/octet-stream"))
 	if parseErr != nil {
@@ -123,7 +160,8 @@ func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHea
 	contentType = parsedType
 	if !allowedUploadContentType(contentType) {
 		return UploadResponse{}, &uploadError{http.StatusBadRequest,
-			fmt.Sprintf("unsupported content type %q — only PDFs and images are accepted", contentType)}
+			fmt.Sprintf("unsupported content type %q — only PDFs, images, and common text/data formats "+
+				"(.md/.txt/.json/.csv/.yaml/.xml) are accepted", contentType)}
 	}
 
 	if err := os.MkdirAll(cfg.Attachments.Dir, 0o755); err != nil {
@@ -263,6 +301,23 @@ func extensionForContentType(contentType string) string {
 		return ".webp"
 	case "image/gif":
 		return ".gif"
+	default:
+		return ""
+	}
+}
+
+// extensionContentTypeOverride covers extensions mime.TypeByExtension
+// doesn't reliably know — Go's built-in table and a typical container's
+// /etc/mime.types both lack .md/.yaml/.yml, unlike .txt/.json/.csv/.xml,
+// which already resolve correctly without this. Only used as a second
+// fallback in saveUploadedFile, after both the browser's own guess and
+// mime.TypeByExtension have already come up empty/generic.
+func extensionContentTypeOverride(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".md":
+		return "text/markdown"
+	case ".yaml", ".yml":
+		return "application/x-yaml"
 	default:
 		return ""
 	}

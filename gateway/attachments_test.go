@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -248,6 +249,41 @@ func TestHandleUpload_RejectsUnsupportedContentType(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for an unsupported content type", resp.StatusCode)
+	}
+}
+
+// TestHandleUpload_AcceptsTextAndDataFormats guards the widened allowlist
+// added alongside workspace unification: an upload no longer needs to feed
+// a PDF/vision pipeline to be useful — code_exec can already
+// open()/pd.read_csv()/json.load() any of these directly. json/csv/txt/xml
+// all resolve correctly via Go's own mime.TypeByExtension; .md specifically
+// exercises extensionContentTypeOverride, since neither Go's built-in
+// table nor a typical container's /etc/mime.types knows it (confirmed
+// missing on the dev machine this was written on).
+func TestHandleUpload_AcceptsTextAndDataFormats(t *testing.T) {
+	cases := []struct {
+		filename    string
+		contentType string // what the "browser" sends; "" lets the server guess via extension
+	}{
+		{"notes.md", "application/octet-stream"}, // the case with no reliable mime.TypeByExtension answer
+		{"data.json", ""},
+		{"table.csv", ""},
+		{"readme.txt", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.filename, func(t *testing.T) {
+			h := newTestHarness(t, "http://127.0.0.1:1")
+			body, multipartContentType := multipartUploadBody(t, tc.filename, tc.contentType, []byte("hello"))
+			resp, err := http.Post(h.url("/api/upload"), multipartContentType, body)
+			if err != nil {
+				t.Fatalf("POST /api/upload: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status = %d, want 200: %s", resp.StatusCode, body)
+			}
+		})
 	}
 }
 

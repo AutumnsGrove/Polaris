@@ -13,15 +13,32 @@
 #
 # Package set and memory ceiling are both measured on real hardware, not
 # guessed — see docs/plans/code-execution.md's "Package set, revisited":
-# real cgroup v2 peak RSS for this exact set landed at ~150-260MB on the
-# potato's aarch64 Cortex-A53 across a light and a heavy realistic
-# workload, comfortably under the 384MB --memory ceiling
+# real cgroup v2 peak RSS for the original eight-package set landed at
+# ~150-260MB on the potato's aarch64 Cortex-A53 across a light and a heavy
+# realistic workload, comfortably under the 384MB --memory ceiling
 # compose/watcher/codeexec.sh passes to `docker run` by default
 # (config.Config.CodeExec.MemoryLimitMB).
+#
+# pyyaml added 2026-09-15 alongside widening upload accept types beyond
+# PDF/image (see gateway/attachments.go's allowedUploadContentTypes) —
+# without it code_exec could still open().read() a .yaml upload as raw
+# text but not yaml.safe_load() it structurally. Same "free until
+# imported" logic pyarrow's own addition already used. Functionally
+# verified locally (all nine packages import and run together, including
+# a real yaml.safe_load/dump, no crash) with a Python-side
+# resource.getrusage peak of ~285MB — consistent with the existing
+# ~200-263MB heavy-workload range, pyyaml's own footprint being small.
+# That number is *not* a real cgroup v2 measurement on the actual potato,
+# though — it was taken locally through Docker Desktop's macOS VM, which
+# doesn't enforce/report memory limits the same way a native Linux host
+# does (every ceiling down to 150m "succeeded" locally, unlike the
+# original table's real 150m OOM-kill on the potato) — re-confirm the
+# real ceiling on the potato before assuming 384MB still holds with
+# certainty, per this repo's own "verify on real hardware" rule.
 FROM python:3.11-slim
 
 RUN pip install --no-cache-dir \
-        numpy pandas matplotlib scipy scikit-learn pillow sympy seaborn pyarrow && \
+        numpy pandas matplotlib scipy scikit-learn pillow sympy seaborn pyarrow pyyaml && \
     find /usr/local/lib/python3.11 -name '__pycache__' -exec rm -rf {} + && \
     rm -rf /root/.cache
 

@@ -243,7 +243,13 @@
 	</div>
 {/if}
 
-<input bind:this={fileInput} type="file" accept="image/*,.pdf" hidden onchange={handleFileChange} />
+<input
+	bind:this={fileInput}
+	type="file"
+	accept="image/*,.pdf,.md,.txt,.json,.csv,.yaml,.yml,.xml"
+	hidden
+	onchange={handleFileChange}
+/>
 
 <style>
 	/* Doubles as a status readout — badges for whatever's actively turned
