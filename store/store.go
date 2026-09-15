@@ -1957,6 +1957,28 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	return msgs, rows.Err()
 }
 
+// GetMessageByID looks up a single message by its primary key, regardless
+// of which thread/fork it currently belongs to — used by handleTurn's
+// retry/edit path (ClientMessage.EditFromID) to carry the original
+// message's attachments forward onto its replacement, since a retry can't
+// resend them itself: the upload's staging file is already gone by then,
+// moved into the workspace by the original turn's resolveAttachments.
+func (s *Store) GetMessageByID(id int64) (Message, error) {
+	var m Message
+	err := s.db.QueryRow(
+		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
+		FROM messages WHERE id = ?`,
+		id,
+	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
+		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt)
+	if err != nil {
+		return Message{}, err
+	}
+	m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
+	return m, nil
+}
+
 // withLegacyAttachmentFallback synthesizes a one-element attachments JSON
 // array from the frozen singular attachment_filename/attachment_content_
 // type/workspace_file_id columns, for any message row written before the

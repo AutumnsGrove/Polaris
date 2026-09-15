@@ -479,6 +479,87 @@ func TestHandleTurn_MovesAttachmentIntoWorkspace(t *testing.T) {
 	}
 }
 
+// TestHandleTurn_RetryPreservesOriginalAttachments guards a real, live-found
+// gap: retrying/regenerating a turn (ClientMessage.EditFromID set) can't
+// resend the original attachment the way a fresh send does — the upload's
+// staging file is already long gone, moved into the workspace by the first
+// turn's resolveAttachments — and state.svelte.ts's retry()/editMessage()
+// never carried the frontend's own attachments array through dispatch()
+// either. Without handleTurn filling this in server-side, retrying a
+// message that had a file attached silently drops it from the replacement
+// message entirely, with no error and no way for the client to have
+// prevented it.
+func TestHandleTurn_RetryPreservesOriginalAttachments(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "here's a summary")
+	h := newTestHarness(t, srv.URL)
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	setWorkspaceDirKeepingAttachments(t, h, workspaceDir)
+
+	body, contentType := multipartUploadBody(t, "report.pdf", "application/pdf", mustDecodePDF(t))
+	resp, err := http.Post(h.url("/api/upload"), contentType, body)
+	if err != nil {
+		t.Fatalf("POST /api/upload: %v", err)
+	}
+	defer resp.Body.Close()
+	var uploaded UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&uploaded); err != nil {
+		t.Fatalf("decoding upload response: %v", err)
+	}
+
+	conn := dialWS(t, h)
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "summarize this", "model": "test-model",
+		"attachments": []map[string]string{
+			{"id": uploaded.ID, "filename": "report.pdf", "content_type": "application/pdf"},
+		},
+	}); err != nil {
+		t.Fatalf("WriteJSON (first): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+
+	var threadID string
+	var userMsgID float64
+	for _, e := range events {
+		if id, ok := e["thread_id"].(string); ok && id != "" && threadID == "" {
+			threadID = id
+		}
+		if e["type"] == "user_message" {
+			userMsgID, _ = e["user_message_id"].(float64)
+		}
+	}
+	if threadID == "" || userMsgID == 0 {
+		t.Fatalf("didn't capture thread_id/user_message_id: %+v", events)
+	}
+
+	// A retry: same content, edit_from_id set, no attachments field at all
+	// — exactly what state.svelte.ts's retry() actually sends.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "summarize this", "model": "test-model",
+		"thread_id": threadID, "edit_from_id": userMsgID,
+	}); err != nil {
+		t.Fatalf("WriteJSON (retry): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	forkID, err := h.db.EffectiveThreadID(threadID)
+	if err != nil {
+		t.Fatalf("EffectiveThreadID: %v", err)
+	}
+	msgs, err := h.db.GetMessages(forkID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) == 0 || msgs[0].Role != "user" {
+		t.Fatalf("expected the forked thread's first message to be the retried user turn: %+v", msgs)
+	}
+	if msgs[0].Attachments == "[]" || msgs[0].Attachments == "" {
+		t.Errorf("retried user message has no attachments, want the original report.pdf carried forward")
+	}
+	if !strings.Contains(msgs[0].Attachments, "report.pdf") {
+		t.Errorf("retried message's attachments = %q, want it to still mention report.pdf", msgs[0].Attachments)
+	}
+}
+
 func TestPruneOldAttachments_RemovesOnlyFilesOlderThanMaxAge(t *testing.T) {
 	dir := t.TempDir()
 

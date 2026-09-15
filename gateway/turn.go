@@ -258,7 +258,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// is augmented, so reopening this thread later shows the original
 	// question, not the pointer notes glued onto it.
 	turnMessage := msg.Content
-	if len(msg.Attachments) > 0 {
+	switch {
+	case len(msg.Attachments) > 0:
 		resolvedMessage, resolved := resolveAttachments(cfg, msg, storageThreadID, func(ref AttachmentRef, err error) {
 			log.Warn("resolving attachment failed, continuing without it", "filename", ref.Filename, "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"filename": ref.Filename, "err": err.Error()}, turnID)
@@ -272,6 +273,35 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				log.Warn("recording attachments failed", "err", err)
 				s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachments failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
+		}
+	case msg.EditFromID != 0:
+		// A retry/edit's ClientMessage never carries the original
+		// attachments itself (state.svelte.ts's retry()/editMessage() only
+		// resend content) — and even if it tried to, the upload's staging
+		// file resolveAttachments moved out of cfg.Attachments.Dir the
+		// first time around is long gone, so re-resolving isn't possible
+		// anyway. The file already lives in the workspace under its
+		// original short ID, so this just carries the old message's
+		// already-resolved attachments forward onto the replacement
+		// message verbatim, rebuilding the same pointer notes
+		// resolveAttachments would have produced. A real gap found live:
+		// without this, every retry of a message that had a file attached
+		// silently dropped it, and the model had no idea any file existed.
+		orig, err := s.db.GetMessageByID(msg.EditFromID)
+		if err != nil {
+			log.Warn("looking up original message for retry/edit attachments failed", "err", err)
+			break
+		}
+		var atts []store.Attachment
+		if err := json.Unmarshal([]byte(orig.Attachments), &atts); err != nil || len(atts) == 0 {
+			break
+		}
+		for _, a := range atts {
+			turnMessage += attachmentNote(a.Filename, a.WorkspaceFileID)
+		}
+		if err := s.db.SetMessageAttachments(userMsgID, orig.Attachments); err != nil {
+			log.Warn("carrying attachments forward on retry/edit failed", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "carrying attachments forward on retry/edit failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 	}
 
