@@ -38,7 +38,6 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx := newTestContext()
 	ctx.LastFMAPIKey = "test-key"
 	ctx.TMDBAPIKey = "test-key"
-	ctx.AttachmentData = []byte("pdf bytes")
 	ctx.RequestLocation = func() (string, bool) { return "", false }
 	ctx.WriteMemory = func(name, memType, description, content, occurredAt string) error { return nil }
 	ctx.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) { return nil, nil }
@@ -159,8 +158,6 @@ func TestCatalogEntry_Offered(t *testing.T) {
 	withKeys.LastFMAPIKey = "x"
 	withKeys.TMDBAPIKey = "x"
 	withoutKeys := newTestContext()
-	withAttachment := newTestContext()
-	withAttachment.AttachmentData = []byte("pdf bytes")
 	withChatSearch := newTestContext()
 	withChatSearch.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) { return nil, nil }
 
@@ -175,8 +172,6 @@ func TestCatalogEntry_Offered(t *testing.T) {
 		{"lastfm_api_key excluded when missing", catalogEntry{Requires: "lastfm_api_key"}, withoutKeys, false},
 		{"tmdb_api_key offered when configured", catalogEntry{Requires: "tmdb_api_key"}, withKeys, true},
 		{"tmdb_api_key excluded when missing", catalogEntry{Requires: "tmdb_api_key"}, withoutKeys, false},
-		{"attachment offered when this turn has one", catalogEntry{Requires: "attachment"}, withAttachment, true},
-		{"attachment excluded when this turn has none", catalogEntry{Requires: "attachment"}, withoutKeys, false},
 		{"chat_search offered when SearchThreads is wired", catalogEntry{Requires: "chat_search"}, withChatSearch, true},
 		{"chat_search excluded when SearchThreads is nil", catalogEntry{Requires: "chat_search"}, withoutKeys, false},
 		{"unrecognized requires fails closed", catalogEntry{Name: "typo_tool", Requires: "last_fm_api_key"}, withKeys, false},

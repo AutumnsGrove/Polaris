@@ -1087,14 +1087,13 @@ func TestRun_WrapUpErrorStillReportsCost(t *testing.T) {
 
 // TestRun_ExtraToolCostIncludedInResultCost is the regression test for the
 // gap Context.ExtraCostUSD's doc comment describes: a tool handler that
-// makes its own internal LLM call (web_read/read_attachment's instructions
-// filter pass, via ctx.AddCost) spends real money the main loop's own
-// per-turn completion calls never see. ctx.ExtraCostUSD is set directly
-// here rather than via a real filtering tool call, to test driver.go's own
+// makes its own internal LLM call (web_read's instructions filter pass,
+// via ctx.AddCost) spends real money the main loop's own per-turn
+// completion calls never see. ctx.ExtraCostUSD is set directly here rather
+// than via a real filtering tool call, to test driver.go's own
 // responsibility (folding it into every Result{CostUSD: ...}) in
 // isolation from tools.Context.AddCost's own accumulation, which
-// tools/web_read_test.go and tools/read_attachment_test.go already cover
-// at the call site.
+// tools/web_read_test.go already covers at the call site.
 func TestRun_ExtraToolCostIncludedInResultCost(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{

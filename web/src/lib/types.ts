@@ -459,6 +459,12 @@ export interface StoredMessage {
 	// store.Store.SetMessageAttachment. '' on every other message.
 	attachment_filename?: string;
 	attachment_content_type?: string;
+	// The exact addressable filename inside the thread's workspace
+	// directory (a short id plus extension) — see
+	// store.Store.SetMessageWorkspaceFileID. '' on every other message,
+	// or one predating this column. Build a download link from it as
+	// `/api/workspace/${thread_id}/${workspace_file_id}`.
+	workspace_file_id?: string;
 	// JSON-encoded PendingQuestion, set only on an assistant message that
 	// ended its turn via ask_user_question — see
 	// store.Store.SetMessagePendingQuestion. '' on every other message.
@@ -533,6 +539,12 @@ export interface ChatTurn {
 	// the message text.
 	attachmentFilename?: string;
 	attachmentContentType?: string;
+	// The same file's addressable workspace filename — see
+	// StoredMessage.workspace_file_id. When set, the chip above becomes a
+	// real download link (`/api/workspace/${threadId}/${workspaceFileId}`)
+	// instead of a purely cosmetic label, since the upload now persists
+	// for the life of the thread rather than being deleted after one read.
+	workspaceFileId?: string;
 }
 
 // Mirrors search/domain_rankings.go's RankState constants.

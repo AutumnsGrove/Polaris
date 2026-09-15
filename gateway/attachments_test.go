@@ -2,12 +2,11 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,38 +33,43 @@ func mustDecodePDF(t *testing.T) []byte {
 
 func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, data, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hello"}, nil)
+	got, shortID, err := resolveAttachment(cfg, ClientMessage{Content: "hello"}, "thread-1")
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
 	}
 	if got != "hello" {
 		t.Errorf("got %q, want unchanged content", got)
 	}
-	if data != nil {
-		t.Errorf("attachmentData = %v, want nil with no attachment", data)
-	}
-	if cost != 0 {
-		t.Errorf("cost = %v, want 0 with no attachment", cost)
+	if shortID != "" {
+		t.Errorf("shortID = %q, want empty with no attachment", shortID)
 	}
 }
 
 func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, nil)
+	_, _, err := resolveAttachment(cfg, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, "thread-1")
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
 	}
 }
 
-func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
-	dir := t.TempDir()
+// TestResolveAttachment_MovesFileIntoThreadWorkspace is the core behavior
+// this unification exists for: an upload no longer gets read once and
+// deleted (see docs/plans/workspace-store-unification.md) — it moves into
+// the thread's persistent code_exec workspace directory under a freshly
+// generated short ID, the same directory code_exec/fetch_url already
+// write into, so a later turn's code_exec call can still open it.
+func TestResolveAttachment_MovesFileIntoThreadWorkspace(t *testing.T) {
+	stagingDir := t.TempDir()
+	workspaceDir := t.TempDir()
 	id := "550e8400-e29b-41d4-a716-446655440001"
-	if err := os.WriteFile(filepath.Join(dir, id), mustDecodePDF(t), 0o644); err != nil {
-		t.Fatalf("writing fake pdf: %v", err)
+	if err := os.WriteFile(filepath.Join(stagingDir, id), []byte("pdf-bytes-stand-in"), 0o644); err != nil {
+		t.Fatalf("writing staged upload: %v", err)
 	}
 
 	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
+	cfg.Attachments.Dir = stagingDir
+	cfg.CodeExec.WorkspaceDir = workspaceDir
 
 	msg := ClientMessage{
 		Content:               "summarize this",
@@ -73,220 +77,105 @@ func TestResolveAttachment_PDFTextIsAppended(t *testing.T) {
 		AttachmentFilename:    "report.pdf",
 		AttachmentContentType: "application/pdf",
 	}
-	got, data, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
+	got, filename, err := resolveAttachment(cfg, msg, "thread-1")
 	if err != nil {
 		t.Fatalf("resolveAttachment returned error: %v", err)
+	}
+	if filename == "" {
+		t.Fatal("filename is empty, want a generated workspace filename")
+	}
+	if !strings.HasSuffix(filename, ".pdf") {
+		t.Errorf("filename = %q, want it to end in .pdf (from the original filename)", filename)
 	}
 	if !bytes.Contains([]byte(got), []byte("summarize this")) {
 		t.Errorf("got %q, want it to still contain the original message", got)
 	}
-	if !bytes.Contains([]byte(got), []byte("[Attached file: report.pdf]")) {
-		t.Errorf("got %q, want it to name the attached file", got)
+	if !bytes.Contains([]byte(got), []byte(filename)) {
+		t.Errorf("got %q, want it to mention the generated filename %q", got, filename)
 	}
-	if !bytes.Contains([]byte(got), []byte("Hello World")) {
-		t.Errorf("got %q, want it to contain the PDF's actual extracted text", got)
+
+	destPath := filepath.Join(workspaceDir, "thread-1", filename)
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("file wasn't moved into the workspace at %q: %v", destPath, err)
 	}
-	if len(data) == 0 {
-		t.Error("attachmentData is empty, want the raw PDF bytes for read_attachment to use")
+	if string(data) != "pdf-bytes-stand-in" {
+		t.Errorf("workspace file contents = %q, want the original upload's bytes", data)
 	}
-	if cost != 0 {
-		t.Errorf("cost = %v, want 0 for a PDF (no model call)", cost)
+	if _, err := os.Stat(filepath.Join(stagingDir, id)); !os.IsNotExist(err) {
+		t.Errorf("staged upload still exists (stat err = %v), want it moved, not copied", err)
+	}
+}
+
+func TestResolveAttachment_FallsBackToContentTypeExtensionWhenFilenameHasNone(t *testing.T) {
+	stagingDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440003"
+	if err := os.WriteFile(filepath.Join(stagingDir, id), []byte("fake-image-bytes"), 0o644); err != nil {
+		t.Fatalf("writing staged upload: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = stagingDir
+	cfg.CodeExec.WorkspaceDir = workspaceDir
+
+	msg := ClientMessage{
+		Content:               "what's in this photo",
+		AttachmentID:          id,
+		AttachmentContentType: "image/png",
+	}
+	_, filename, err := resolveAttachment(cfg, msg, "thread-1")
+	if err != nil {
+		t.Fatalf("resolveAttachment returned error: %v", err)
+	}
+	if !strings.HasSuffix(filename, ".png") {
+		t.Errorf("filename = %q, want a content-type-derived .png extension", filename)
+	}
+	destPath := filepath.Join(workspaceDir, "thread-1", filename)
+	if _, err := os.Stat(destPath); err != nil {
+		t.Errorf("file not found at %q: %v", destPath, err)
 	}
 }
 
 func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Attachments.Dir = t.TempDir()
+	cfg.CodeExec.WorkspaceDir = t.TempDir()
 
-	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
+	_, _, err := resolveAttachment(cfg, ClientMessage{
 		Content:               "hi",
 		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
 		AttachmentContentType: "application/pdf",
-	}, nil)
+	}, "thread-1")
 	if err == nil {
 		t.Fatal("expected an error when the attachment file doesn't exist on disk")
 	}
 }
 
-func TestResolveAttachment_ImageIsDescribedByMultimodalModel(t *testing.T) {
-	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
-	}))
-	defer visionSrv.Close()
-
-	dir := t.TempDir()
-	id := "550e8400-e29b-41d4-a716-446655440003"
-	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
-		t.Fatalf("writing fake image: %v", err)
-	}
-
-	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
-	cfg.OpenRouter.BaseURL = visionSrv.URL
-	cfg.Models = []config.ModelConfig{
-		{ID: "mimo", Name: "MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
-	}
-
-	msg := ClientMessage{
-		Content:               "what's in this photo",
-		AttachmentID:          id,
-		AttachmentFilename:    "bike.jpg",
-		AttachmentContentType: "image/jpeg",
-	}
-	// The selected model (config.ModelConfig{}, i.e. not multimodal) can't see
-	// the image itself, so this exercises the cfg.MultimodalModel() fallback.
-	got, _, cost, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, nil)
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
-	}
-	if !bytes.Contains([]byte(got), []byte("what's in this photo")) {
-		t.Errorf("got %q, want it to still contain the original message", got)
-	}
-	if !bytes.Contains([]byte(got), []byte("red bicycle")) {
-		t.Errorf("got %q, want it to contain the vision model's description", got)
-	}
-	if cost != 0.002 {
-		t.Errorf("cost = %v, want 0.002 from the vision model's usage.cost", cost)
-	}
-}
-
-// TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage guards
-// against the routing gap found in review: resolveAttachment used to always
-// hand image description off to cfg.MultimodalModel() (the first
-// Multimodal-flagged entry in the registry), even when the thread's own
-// selected model was itself vision-capable — so adding a second multimodal
-// model to the registry would silently never be preferred for its own
-// thread. The selected model must win when it's multimodal itself.
-func TestResolveAttachment_MultimodalSelectedModelDescribesItsOwnImage(t *testing.T) {
-	var requestedModel string
-	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Model string `json:"model"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decoding vision request body: %v", err)
-		}
-		requestedModel = body.Model
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
-	}))
-	defer visionSrv.Close()
-
-	dir := t.TempDir()
-	id := "550e8400-e29b-41d4-a716-446655440005"
-	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
-		t.Fatalf("writing fake image: %v", err)
-	}
-
-	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
-	cfg.OpenRouter.BaseURL = visionSrv.URL
-	// A different multimodal model sits earlier in the registry than the
-	// one actually selected for this thread — if the old first-match
-	// fallback fired, the request would go to "registry-mimo" instead.
-	cfg.Models = []config.ModelConfig{
-		{ID: "registry-mimo", Name: "Registry MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
-	}
-	selectedModel := config.ModelConfig{ID: "luna-vision", Name: "Luna Vision", Model: "openai/luna-vision", Multimodal: true}
-
-	msg := ClientMessage{
-		Content:               "what's in this photo",
-		AttachmentID:          id,
-		AttachmentFilename:    "bike.jpg",
-		AttachmentContentType: "image/jpeg",
-	}
-	got, _, _, err := resolveAttachment(context.Background(), cfg, selectedModel, msg, nil)
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
-	}
-	if !bytes.Contains([]byte(got), []byte("red bicycle")) {
-		t.Errorf("got %q, want it to contain the vision model's description", got)
-	}
-	if requestedModel != selectedModel.Model {
-		t.Errorf("requestedModel = %q, want the selected model (%q), not a registry fallback", requestedModel, selectedModel.Model)
-	}
-}
-
-// TestResolveAttachment_ImageEmitsSyntheticToolCall guards the fix for a
-// found-in-the-wild UX gap: describing an image runs entirely before
-// agent.Run even starts, so the frontend showed nothing at all — not even
-// a spinner — for however long the vision-model call took. resolveAttachment
-// now wraps that call in a synthetic tool_call/tool_result pair (tool name
-// "describe_image") through the same emit callback handleTurn uses for
-// real tool calls, so it shows up on the timeline instead of a blank wait.
-func TestResolveAttachment_ImageEmitsSyntheticToolCall(t *testing.T) {
-	visionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"A red bicycle leaning against a brick wall."}}],"usage":{"cost":0.002}}`))
-	}))
-	defer visionSrv.Close()
-
-	dir := t.TempDir()
-	id := "550e8400-e29b-41d4-a716-446655440006"
-	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
-		t.Fatalf("writing fake image: %v", err)
-	}
-
-	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
-	cfg.OpenRouter.BaseURL = visionSrv.URL
-	cfg.Models = []config.ModelConfig{
-		{ID: "mimo", Name: "MiMo", Model: "xiaomi/mimo-v2.5", Multimodal: true},
-	}
-
-	msg := ClientMessage{
-		Content:               "what's in this photo",
-		AttachmentID:          id,
-		AttachmentFilename:    "bike.jpg",
-		AttachmentContentType: "image/jpeg",
-	}
-
-	var events []map[string]interface{}
-	emit := func(eventType string, payload map[string]interface{}) {
-		payload["_type"] = eventType
-		events = append(events, payload)
-	}
-
-	if _, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, msg, emit); err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
-	}
-
-	if len(events) != 2 {
-		t.Fatalf("got %d emitted events, want 2 (tool_call + tool_result): %+v", len(events), events)
-	}
-	if events[0]["_type"] != "tool_call" || events[0]["tool"] != "describe_image" {
-		t.Errorf("first event = %+v, want a describe_image tool_call", events[0])
-	}
-	if args, ok := events[0]["args"].(map[string]interface{}); !ok || args["filename"] != "bike.jpg" {
-		t.Errorf("tool_call args = %+v, want filename bike.jpg", events[0]["args"])
-	}
-	if events[1]["_type"] != "tool_result" || events[1]["tool"] != "describe_image" {
-		t.Errorf("second event = %+v, want a describe_image tool_result", events[1])
-	}
-	if result, _ := events[1]["result"].(string); !strings.Contains(result, "red bicycle") {
-		t.Errorf("tool_result result = %q, want it to contain the vision model's description", result)
-	}
-}
-
-func TestResolveAttachment_ImageWithNoMultimodalModelConfiguredErrors(t *testing.T) {
-	dir := t.TempDir()
-	id := "550e8400-e29b-41d4-a716-446655440004"
-	if err := os.WriteFile(filepath.Join(dir, id), []byte("fake-image-bytes"), 0o644); err != nil {
-		t.Fatalf("writing fake image: %v", err)
-	}
-
-	cfg := &config.Config{}
-	cfg.Attachments.Dir = dir
-	cfg.Models = []config.ModelConfig{{ID: "deepseek", Multimodal: false}}
-
-	_, _, _, err := resolveAttachment(context.Background(), cfg, config.ModelConfig{}, ClientMessage{
-		Content:               "what is this",
-		AttachmentID:          id,
-		AttachmentContentType: "image/png",
-	}, nil)
-	if err == nil {
-		t.Fatal("expected an error when no multimodal model is configured")
+// setWorkspaceDirKeepingAttachments rewrites h's config.yaml with both
+// attachments.dir (h.attachmentsDir, unchanged) and code_exec.workspace_dir
+// set — unlike the shared setWorkspaceDir helper (workspace_test.go),
+// which drops attachments.dir back to config.Load's default since its own
+// tests never need an upload's staging path to survive the rewrite.
+func setWorkspaceDirKeepingAttachments(t *testing.T, h *testHarness, workspaceDir string) {
+	t.Helper()
+	dir := filepath.Dir(h.cfgPath)
+	contents := fmt.Sprintf(`
+server:
+  port: 0
+openrouter:
+  api_key: "test-key"
+  base_url: %q
+database:
+  path: %q
+attachments:
+  dir: %q
+default_model: "mimo-pro"
+code_exec:
+  workspace_dir: %q
+`, h.llmBaseURL, filepath.Join(dir, "test.db"), h.attachmentsDir, workspaceDir)
+	if err := os.WriteFile(h.cfgPath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("rewriting test config: %v", err)
 	}
 }
 
@@ -362,15 +251,23 @@ func TestHandleUpload_RejectsUnsupportedContentType(t *testing.T) {
 	}
 }
 
-// TestHandleTurn_RemovesAttachmentFileAfterUse guards against a
-// found-in-audit bug: uploaded files were never deleted anywhere — not
-// on thread/message deletion, and (the actual root cause) not even right
-// after the one turn that used them, despite nothing ever reading the raw
-// file again afterward. Every attachment ever sent used to stay on disk
-// forever.
-func TestHandleTurn_RemovesAttachmentFileAfterUse(t *testing.T) {
+// TestHandleTurn_MovesAttachmentIntoWorkspace supersedes the old
+// TestHandleTurn_RemovesAttachmentFileAfterUse: uploads no longer get read
+// once and deleted (see docs/plans/workspace-store-unification.md) — the
+// staged file must be gone from the upload staging area, and land instead
+// in the thread's persistent workspace directory, addressable by the short
+// id resolveAttachment generated, so a later turn's code_exec call can
+// still open it.
+func TestHandleTurn_MovesAttachmentIntoWorkspace(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "here's a summary")
 	h := newTestHarness(t, srv.URL)
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	// Not the shared setWorkspaceDir helper: its config.yaml rewrite omits
+	// the attachments section entirely, which would silently move
+	// h.attachmentsDir out from under this test (config.Load falling back
+	// to its own default dir instead) — this test needs both configured
+	// at once, since it exercises the handoff between them.
+	setWorkspaceDirKeepingAttachments(t, h, workspaceDir)
 
 	body, contentType := multipartUploadBody(t, "report.pdf", "application/pdf", mustDecodePDF(t))
 	resp, err := http.Post(h.url("/api/upload"), contentType, body)
@@ -383,8 +280,8 @@ func TestHandleTurn_RemovesAttachmentFileAfterUse(t *testing.T) {
 		t.Fatalf("decoding upload response: %v", err)
 	}
 
-	attachmentPath := filepath.Join(h.attachmentsDir, uploaded.ID)
-	if _, err := os.Stat(attachmentPath); err != nil {
+	stagedPath := filepath.Join(h.attachmentsDir, uploaded.ID)
+	if _, err := os.Stat(stagedPath); err != nil {
 		t.Fatalf("uploaded file missing before the turn even ran: %v", err)
 	}
 
@@ -395,10 +292,32 @@ func TestHandleTurn_RemovesAttachmentFileAfterUse(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("WriteJSON: %v", err)
 	}
-	readEventsUntilDone(t, conn, 5*time.Second)
+	events := readEventsUntilDone(t, conn, 5*time.Second)
 
-	if _, err := os.Stat(attachmentPath); !os.IsNotExist(err) {
-		t.Errorf("attachment file still exists after the turn that used it (stat err = %v), want it removed", err)
+	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
+		t.Errorf("staged upload still exists (stat err = %v), want it moved out of staging", err)
+	}
+
+	var threadID string
+	for _, e := range events {
+		if id, ok := e["thread_id"].(string); ok && id != "" {
+			threadID = id
+			break
+		}
+	}
+	if threadID == "" {
+		t.Fatal("no event carried a thread_id — can't locate this turn's workspace directory")
+	}
+
+	entries, err := os.ReadDir(filepath.Join(workspaceDir, threadID))
+	if err != nil {
+		t.Fatalf("reading thread workspace dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("workspace dir has %d entries, want exactly 1 (the moved upload): %+v", len(entries), entries)
+	}
+	if got := filepath.Ext(entries[0].Name()); got != ".pdf" {
+		t.Errorf("moved file's extension = %q, want .pdf (from the original filename)", got)
 	}
 }
 

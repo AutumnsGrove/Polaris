@@ -477,51 +477,9 @@ func isPDF(resp *http.Response, rawURL string) bool {
 	return strings.HasSuffix(strings.ToLower(path), ".pdf")
 }
 
-// ExtractPDFText pulls plain text out of a fully-buffered PDF via
-// ledongthuc/pdf (pure Go, no cgo, no system dependency — see the doc
-// comment on tavily.Client for why that constraint matters here). PDFs
-// have no <title> tag; the first short line of extracted text is usually
-// the paper's actual title for arXiv-style academic PDFs, so that's used
-// as a best-effort title rather than leaving it blank. Exported — also
-// used directly by gateway's attachment handling for an uploaded PDF, not
-// just PDFs reached via web_read's URL fetch. Whole-document and capped at
-// maxExtractedChars; totalPages/truncated let the caller (gateway's
-// resolveAttachment) decide how to phrase pointing the model at the
-// read_attachment tool for the rest, rather than baking any one tool's
-// name into this package-level text-extraction primitive.
-func ExtractPDFText(data []byte) (title, text string, totalPages int, truncated bool, err error) {
-	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return "", "", 0, false, fmt.Errorf("opening pdf: %w", err)
-	}
-	totalPages = r.NumPage()
-
-	contentReader, err := r.GetPlainText()
-	if err != nil {
-		return "", "", totalPages, false, fmt.Errorf("extracting pdf text: %w", err)
-	}
-
-	raw, err := io.ReadAll(contentReader)
-	if err != nil {
-		return "", "", totalPages, false, fmt.Errorf("reading pdf text: %w", err)
-	}
-
-	text = collapseWhitespace(string(raw))
-	if lines := strings.SplitN(text, "\n", 2); len(lines) > 0 && len(lines[0]) < 150 {
-		title = lines[0]
-	}
-	if len(text) > maxExtractedChars {
-		text = text[:maxExtractedChars]
-		truncated = true
-	}
-	return title, text, totalPages, truncated, nil
-}
-
 // pdfPageRawText extracts one page's plain text from an already-opened
-// reader — the font-table walk ledongthuc/pdf requires for GetPlainText is
-// identical whether the caller wants a single page's text (pdfPageText) or
-// is scanning every page for a literal match (searchPDFPages in
-// read_attachment.go), so both share this instead of duplicating it.
+// reader — the font-table walk ledongthuc/pdf requires for GetPlainText,
+// shared by pdfPageText so it isn't duplicated.
 func pdfPageRawText(p pdf.Page) (string, error) {
 	fonts := make(map[string]*pdf.Font)
 	for _, name := range p.Fonts() {
@@ -537,9 +495,8 @@ func pdfPageRawText(p pdf.Page) (string, error) {
 
 // pdfPageText extracts a single page's text plus a best-effort title (page
 // 1 only), clamped/capped exactly like ExtractPDFPage below — but with no
-// tool-specific continuation hint appended, so callers can each write their
-// own (web_read's "call web_read again..." vs. read_attachment's
-// equivalent). page is 1-indexed; 0 (unset) defaults to page 1.
+// tool-specific continuation hint appended, so the caller can write its own
+// ("call web_read again..."). page is 1-indexed; 0 (unset) defaults to page 1.
 func pdfPageText(data []byte, page int) (title, text string, totalPages int, err error) {
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

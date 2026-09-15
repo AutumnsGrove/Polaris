@@ -577,6 +577,7 @@ export class AppState {
 			id: m.role === 'user' ? m.id : undefined,
 			attachmentFilename: m.attachment_filename || undefined,
 			attachmentContentType: m.attachment_content_type || undefined,
+			workspaceFileId: m.workspace_file_id || undefined,
 			timeline:
 				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
 					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)

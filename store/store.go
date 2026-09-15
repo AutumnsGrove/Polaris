@@ -136,12 +136,22 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- attachment_filename/attachment_content_type: set only on a user
 	-- message that carried an upload from the composer's "+" menu — the
 	-- original filename and its detected content type, for display
-	-- ("📎 report.pdf") when the thread is reopened. The actual file
-	-- lives on disk under config.Attachments.Dir, named by an opaque ID
-	-- from the upload response, not by this filename — this column is
-	-- purely cosmetic. '' on every other message.
+	-- ("📎 report.pdf") when the thread is reopened. '' on every other
+	-- message.
 	attachment_filename TEXT NOT NULL DEFAULT '',
 	attachment_content_type TEXT NOT NULL DEFAULT '',
+	-- workspace_file_id: the exact addressable filename (a short generated
+	-- id plus its extension) an uploaded file was given inside this
+	-- thread's persistent code_exec workspace directory (see
+	-- gateway/attachments.go's resolveAttachment) — what a model tool call
+	-- actually addresses the file by, and the literal last path segment
+	-- GET /api/workspace/:thread_id/:filename serves. attachment_filename
+	-- above stays the human-readable display name; this is the on-disk
+	-- addressing identity. '' on every message with no attachment, and on
+	-- attachment rows predating this column (that upload was already
+	-- deleted after one read under the old single-read-then-deleted
+	-- lifecycle, so there's nothing on disk to point at).
+	workspace_file_id TEXT NOT NULL DEFAULT '',
 	-- cards: structured rich-result items (see tools.Card) a tool wants
 	-- rendered as their own visual block — e.g. music's recommendations
 	-- carousel — set via SetMessageCards once the assistant message's ID
@@ -858,6 +868,10 @@ var migrations = []string{
 	// UPDATE never runs there — harmless, since CREATE TABLE's own
 	// default already populated it correctly.
 	`ALTER TABLE stars ADD COLUMN content_updated_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00'; UPDATE stars SET content_updated_at = CURRENT_TIMESTAMP`,
+	// workspace_file_id — see the schema comment above. Appended at the
+	// end per this file's own established rule (positional user_version
+	// tracking, never insert mid-list).
+	`ALTER TABLE messages ADD COLUMN workspace_file_id TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -996,6 +1010,15 @@ type Message struct {
 	// message that carried an upload — see SetMessageAttachment.
 	AttachmentFilename    string `json:"attachment_filename,omitempty"`
 	AttachmentContentType string `json:"attachment_content_type,omitempty"`
+	// WorkspaceFileID is the exact addressable filename (a short generated
+	// id plus its extension, e.g. "a1b2c3d4e5.pdf") for that same upload
+	// inside the thread's workspace directory — see the schema comment
+	// above workspace_file_id and SetMessageWorkspaceFileID. This is
+	// literally the last path segment GET /api/workspace/:thread_id/
+	// :filename expects, so the frontend can build a download link
+	// directly from it. "" for a message with no attachment, or one
+	// predating this column.
+	WorkspaceFileID string `json:"workspace_file_id,omitempty"`
 	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
 	Cards string `json:"cards"`
 	// Chart is JSON-encoded *tools.ChartSpec — see SetMessageChart. ""
@@ -1166,8 +1189,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, chart, pending_question, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, cards, chart, pending_question, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1878,7 +1901,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, cards, chart, pending_question, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -1891,7 +1914,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
@@ -1959,6 +1982,17 @@ func (s *Store) AddThreadCost(threadID string, delta float64) error {
 func (s *Store) SetMessageAttachment(messageID int64, filename, contentType string) error {
 	_, err := s.db.Exec(`UPDATE messages SET attachment_filename = ?, attachment_content_type = ? WHERE id = ?`,
 		filename, contentType, messageID)
+	return err
+}
+
+// SetMessageWorkspaceFileID records the addressable filename an uploaded
+// file was given once it's actually landed in the thread's workspace
+// directory — a separate post-hoc UPDATE from SetMessageAttachment above
+// because that filename isn't generated until resolveAttachment runs,
+// later in the same turn (gateway/attachments.go), after the display
+// filename/content-type were already recorded.
+func (s *Store) SetMessageWorkspaceFileID(messageID int64, fileID string) error {
+	_, err := s.db.Exec(`UPDATE messages SET workspace_file_id = ? WHERE id = ?`, fileID, messageID)
 	return err
 }
 

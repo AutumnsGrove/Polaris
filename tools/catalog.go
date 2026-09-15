@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
-	"image_search", "view_image", "show", "highlight", "read_attachment", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
 
@@ -104,8 +104,6 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.LastFMAPIKey != ""
 	case "tmdb_api_key":
 		return ctx.TMDBAPIKey != ""
-	case "attachment":
-		return len(ctx.AttachmentData) > 0
 	case "interactive_chat":
 		// Reuses the exact "is there a live client on the other end of
 		// this turn" signal RequestLocation already encodes — nil on
@@ -232,8 +230,6 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Render 1-5 items you actually found this turn as cards instead of describing them in prose " +
 			"— a title, a url, and optionally a short free-text price/badge and an image. Every item must come " +
 			"from a web_search result or a page you actually read this turn, never from memory."},
-	"read_attachment": {Name: "read_attachment", Requires: "attachment", Description: "page through or search this turn's attached PDF.",
-		APIDescription: "Page through or search the PDF the user attached to this turn, beyond the short preview already given."},
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
 		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
 		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},

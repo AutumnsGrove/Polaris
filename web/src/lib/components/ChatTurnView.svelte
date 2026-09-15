@@ -185,10 +185,27 @@
 {#if turn.role === 'user'}
 	<div class="row row-user" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		{#if turn.attachmentFilename && !editing}
-			<div class="attachment-chip">
-				<Paperclip size={12} />
-				<span>{turn.attachmentFilename}</span>
-			</div>
+			{#if turn.workspaceFileId && appState.currentThreadId}
+				<!-- workspaceFileId is only known once the server round-trips a
+					reload (see buildTurnsFromMessages) — a just-sent message shows
+					the plain cosmetic chip below until then, same as before this
+					unification. Uploads now persist for the thread's life instead
+					of being deleted after one read, so this is a real download,
+					not just a label. -->
+				<a
+					class="attachment-chip attachment-chip-link"
+					href={`/api/workspace/${appState.currentThreadId}/${turn.workspaceFileId}`}
+					download={turn.attachmentFilename}
+				>
+					<Paperclip size={12} />
+					<span>{turn.attachmentFilename}</span>
+				</a>
+			{:else}
+				<div class="attachment-chip">
+					<Paperclip size={12} />
+					<span>{turn.attachmentFilename}</span>
+				</div>
+			{/if}
 		{/if}
 		<div class="user-block" class:editing>
 			{#if editing}
@@ -406,6 +423,15 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.row-user .attachment-chip-link {
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.row-user .attachment-chip-link:hover {
+		background: var(--color-surface-3);
 	}
 
 	.row-assistant {

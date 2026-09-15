@@ -125,9 +125,9 @@ func TestHandleSearchChats_ReadRawModeTruncatesLongTranscripts(t *testing.T) {
 
 // TestHandleSearchChats_ReadFilterPassCostReachesContext is search_chats'
 // version of TestHandleWebRead_FilterPassCostReachesContext — the same
-// regression this project already fixed once for web_read/read_attachment
-// (see Context.ExtraCostUSD's doc comment): a filter pass's real LLM spend
-// must reach ctx.AddCost, not be silently discarded.
+// regression this project already fixed once for web_read (see
+// Context.ExtraCostUSD's doc comment): a filter pass's real LLM spend must
+// reach ctx.AddCost, not be silently discarded.
 func TestHandleSearchChats_ReadFilterPassCostReachesContext(t *testing.T) {
 	ctx := newTestContext()
 	ctx.ReadThread = func(threadID string) (*store.ThreadReadResult, error) {

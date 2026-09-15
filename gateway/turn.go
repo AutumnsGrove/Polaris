@@ -251,10 +251,27 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
+	// turnMessage is what the agent actually sees — msg.Content plus a
+	// short pointer note naming the file, if there's an attachment (see
+	// resolveAttachment). The persisted user message above stays as
+	// exactly what the user typed; only the in-flight prompt to the model
+	// is augmented, so reopening this thread later shows the original
+	// question, not the pointer note glued onto it.
+	turnMessage := msg.Content
 	if msg.AttachmentID != "" {
 		if err := s.db.SetMessageAttachment(userMsgID, msg.AttachmentFilename, msg.AttachmentContentType); err != nil {
 			log.Warn("failed to record attachment metadata", "err", err)
 			s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachment metadata failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+		resolved, workspaceFileID, err := resolveAttachment(cfg, msg, storageThreadID)
+		if err != nil {
+			log.Warn("resolving attachment failed, continuing without it", "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
+		} else {
+			turnMessage = resolved
+			if err := s.db.SetMessageWorkspaceFileID(userMsgID, workspaceFileID); err != nil {
+				log.Warn("recording workspace file id failed", "err", err)
+			}
 		}
 	}
 
@@ -348,32 +365,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		s.logTurnEvent(storageThreadID, turnID, eventType, evt)
 	}
 
-	// turnMessage is what the agent actually sees — msg.Content plus the
-	// attachment's extracted text, if any (see resolveAttachment). The
-	// persisted user message above stays as exactly what the user typed;
-	// only the in-flight prompt to the model is augmented, so reopening
-	// this thread later shows the original question, not a wall of
-	// extracted PDF text glued onto it. Called only now, after emit is
-	// defined above — an image attachment's vision-model call streams its
-	// own synthetic tool_call/tool_result pair through emit (see
-	// resolveAttachment's doc comment), so the frontend has something to
-	// show during those few seconds instead of a blank wait before
-	// agent.Run even starts.
-	turnMessage, attachmentData, attachmentCostUSD, err := resolveAttachment(ctx, cfg, modelCfg, msg, emit)
-	if err != nil {
-		log.Warn("resolving attachment failed, continuing without it", "err", err)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
-		turnMessage = msg.Content
-		attachmentData = nil
-		attachmentCostUSD = 0
-	}
-	// The file's only ever read once, right above — nothing re-reads it
-	// later (see removeAttachmentFile's doc comment), so it can be removed
-	// immediately regardless of whether extraction succeeded.
-	if msg.AttachmentID != "" {
-		removeAttachmentFile(cfg, msg.AttachmentID)
-	}
-
 	// Folded into turnMessage (what the model sees), not msg.Content (what
 	// gets persisted/shown as this pulse's own question) — same "augment
 	// the model-facing text, leave the visible transcript alone" split
@@ -450,8 +441,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		LastFMAPIKey:           cfg.LastFM.APIKey,
 		HardcoverAPIKey:        cfg.Hardcover.APIKey,
 		TMDBAPIKey:             cfg.TMDB.APIKey,
-		AttachmentData:         attachmentData,
-		AttachmentFilename:     msg.AttachmentFilename,
 		DefaultLocation:        defaultLocation,
 		RequestLocation:        resolveLiveLocation,
 		VoiceMode:              msg.VoiceMode,
@@ -743,14 +732,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
-	// Total cost added to the thread this turn: the agent's LLM/tool
-	// spend plus any STT cost from a voice memo, plus an image
-	// attachment's description call, plus compaction's own cost if it
-	// just ran — all persisted above, so the frontend's running total
+	// Total cost added to the thread this turn: the agent's LLM/tool spend
+	// plus any STT cost from a voice memo, plus compaction's own cost if
+	// it just ran — all persisted above, so the frontend's running total
 	// should reflect all of them. Follow-up suggestions are deliberately
 	// excluded: that call hasn't run yet (see below), and its cost ships
 	// separately in the "suggestions" event once it does.
-	totalCost := result.CostUSD + msg.SttCostUSD + attachmentCostUSD
+	totalCost := result.CostUSD + msg.SttCostUSD
 	s.db.LogEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
 		"cost_usd":       totalCost,
