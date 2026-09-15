@@ -2,7 +2,7 @@
 
 Architecture, frontend development, the CLI, and deployment internals. For install and
 configuration, see [SETUP.md](SETUP.md). Agent-specific conventions (Go/SvelteKit build commands,
-the Docker-vs-bare-metal checklist for new features, etc.) live in `CLAUDE.md`.
+etc.) live in `CLAUDE.md`.
 
 ## Architecture
 
@@ -25,17 +25,16 @@ Go backend
   │              usage counts
   ├── backup   — daily VACUUM INTO snapshots of the database, rotation, and restore — see
   │              [SETUP.md's Backups](SETUP.md#backups)
-  ├── r2       — hand-rolled SigV4 client mirroring backups off-device to Cloudflare R2
-  └── updater  — git pull + rebuild, shared by the CLI and the settings panel's update button
+  └── r2       — hand-rolled SigV4 client mirroring backups off-device to Cloudflare R2
 ```
 
-One binary, no Node.js at runtime. The SvelteKit frontend is built ahead of time and its static
-output is committed to the repo and embedded directly into the Go binary, so the machine running
-this only ever needs the Go toolchain — nothing else to install, nothing else to keep running.
+One binary, no Node.js at runtime — the SvelteKit frontend is built ahead of time (`web/build/`,
+`go:embed`) into the Go binary itself.
 
-Two ways to run it: bare-metal (the binary directly) or Docker Compose, which bundles a SearXNG
-instance alongside it — see [SETUP.md](SETUP.md). Both are full deployments, not a dev-only
-convenience.
+Runs as a Docker Compose stack, which bundles a SearXNG instance alongside it — see
+[SETUP.md](SETUP.md). `polaris update`/`polaris restart` (CLI or settings panel) resolve the
+latest image from GHCR and hand off to a host-side watcher (`gateway/docker_update.go`,
+`compose/watcher/`) — no in-process git pull/rebuild.
 
 ## Frontend development
 
@@ -86,23 +85,19 @@ polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
 ```
 
-Every command auto-detects Docker vs. bare-metal from `docker-compose.yml`'s presence, no flag
-needed — `search`/`stats`/`update`/`restart`/`backup create`/`backup list` all hit the running
-container's own REST API under Docker instead of assuming a local `config.yaml`/git checkout.
-`install` and `backup restore` are the exceptions: both explicitly refuse under Docker (there's no
-systemd/launchd unit to write; there's no safe way to swap a live database file from the host)
-rather than doing something misleading — `docker compose up -d` and the printed restore sequence
-are those steps instead.
+`search`/`stats`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
+backfill` are all thin HTTP clients hitting the running container's own REST API
+(`cmd/docker_client.go`) — none of them assume a local `config.yaml`/git checkout. `backup
+restore`/`restore-remote` are the exception: there's no safe way to swap a live database file over
+HTTP, so those two always run directly against a local config/database path — under Docker that
+means `docker compose run --rm --no-deps polaris backup restore ...` (see their `--help`).
 
 ## Deployment
 
-Bare-metal: runs as a systemd service (Linux) or launchd agent (macOS) via the bundled `procmgr`
-package — `Restart=always`, logs rotate daily with 90-day retention. Docker: `restart:
-unless-stopped` in `docker-compose.yml` plays the same role. Designed to run on genuinely
-resource-constrained hardware (this was built to run on a Le Potato SBC, and runs there via Docker
-today — 64MB image, no local Go/Node toolchain needed on-device at all); see
-`config.yaml.example` (bare-metal) or `compose/polaris/config.yaml.example` (Docker) for the full
-set of tunables.
+Runs as a Docker container with `restart: unless-stopped` in `docker-compose.yml`. Designed to run
+on genuinely resource-constrained hardware (this was built to run on a Le Potato SBC — 64MB image,
+no local Go/Node toolchain needed on-device at all); see `compose/polaris/config.yaml.example` for
+the full set of tunables.
 
 `GET /healthz` is an unauthenticated liveness check (confirms the process is up and the SQLite
 connection is actually reachable) for `Restart=always` or any external uptime monitor to poll.

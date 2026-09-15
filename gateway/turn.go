@@ -489,8 +489,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// HostWorkspaceDir has no safe default. An install that hasn't set
 	// host_workspace_dir/signal_dir yet gets CodeExecEnabled=false, which
 	// catalog.go's "docker_only" Requires case turns into code_exec
-	// simply not being offered — the same "explicit refuse" outcome
-	// cmd/install.go uses for the CLI side of this same deployment split.
+	// simply not being offered.
 	if cfg.CodeExec.HostWorkspaceDir != "" && cfg.CodeExec.SignalDir != "" {
 		agentCtx.CodeExecEnabled = true
 		agentCtx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir

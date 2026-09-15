@@ -7,7 +7,7 @@ search API, running as a single Go binary with the web UI embedded inside it.
 You're lost at sea with no way to know the answer yourself. Polaris is the fixed point you
 triangulate against — it doesn't know things, it knows how to go find out.
 
-**Get started:** [SETUP.md](SETUP.md) has install instructions (one-liner, bare-metal, or Docker)
+**Get started:** [SETUP.md](SETUP.md) has install instructions (one-liner or manual, both Docker)
 and configuration. **Contributing or hacking on it?** See [DEVELOPMENT.md](DEVELOPMENT.md) for
 architecture, frontend dev, the CLI, and deployment internals.
 

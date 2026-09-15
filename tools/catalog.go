@@ -130,13 +130,13 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		return ctx.SearchThreads != nil
 	case "docker_only":
 		// code_exec requires a real container boundary for arbitrary
-		// code — bare-metal has no equivalent and explicitly refuses
-		// rather than running generated code as a direct host
-		// subprocess, same "explicit refuse" pattern cmd/install.go uses
-		// (see docs/plans/code-execution.md's "Deployment scope").
-		// ctx.CodeExecEnabled is derived from gateway's deploymentMode()
-		// == "docker", not a user preference, so there's no bare-metal
-		// fallback to offer instead.
+		// code — ctx.CodeExecEnabled is a pure capability check (is the
+		// sandbox actually configured: HostWorkspaceDir/SignalDir), not a
+		// deployment-mode check, so this is offered from a bare-metal dev
+		// instance too, as long as the sandbox's own dependencies (Docker
+		// daemon + compose/watcher/codeexec.sh) are present — see
+		// gateway/turn.go's CodeExecEnabled comment and DEVELOPMENT.md's
+		// "Local dev code_exec" section.
 		return ctx.CodeExecEnabled
 	case "deep_research":
 		// Both conditions checked, not just one: DeepResearch alone

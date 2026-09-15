@@ -15,14 +15,18 @@ over clever, night-sky-not-tech-neon).
 ## Production access
 
 The real, live deployment runs on a Le Potato SBC (aarch64/Armbian), reachable via
-`ssh potato-remote` (a Tailscale-IP SSH config alias; `potato` is the LAN-IP alias). It's been
-Docker-only since 2026-08-15 — bare-metal is fully supported by the codebase and still how local
-dev typically runs, but the actual production host runs the Docker Compose stack. Install lives at
-`~/Polaris` on that host either way (same git checkout path, just a different runtime).
+`ssh potato-remote` (a Tailscale-IP SSH config alias; `potato` is the LAN-IP alias). Install and
+production have been Docker-only since 2026-08-15 (further cemented by a 2026-09 migration that
+deleted the bare-metal install/production code paths outright — see
+`docs/plans/docker-only.md`). Install lives at `~/Polaris` on that host.
 
-Useful live-diagnostic commands once SSH'd in (Docker):
+Local dev of the Go backend still runs bare-metal (`go run .`) — that's a deliberate, separate
+choice from the install/production question, not a leftover: see "Install and production are
+Docker-only; local dev is bare-metal Go" below.
+
+Useful live-diagnostic commands once SSH'd in:
 - `docker compose ps` — container status
-- `docker compose logs polaris` / `-f` — logs (equivalent of `journalctl -u polaris` on bare-metal)
+- `docker compose logs polaris` / `-f` — logs
 - `curl http://127.0.0.1:8899/api/version` — `{"deployment":"docker","version":"rNNN.hash"}`
 - `docker run --rm -v polaris_polaris-data:/data alpine sh` — direct access to `polaris.db`/logs/
   attachments, which live in a named Docker volume, not plain host files
@@ -30,23 +34,20 @@ Useful live-diagnostic commands once SSH'd in (Docker):
 
 ## Updating the production deployment
 
-**Prefer `polaris update` / `polaris restart` over SSH, or the settings panel's buttons — both
-auto-detect bare-metal vs. Docker and just work correctly either way, no flag needed.** This is a
-deliberate design point: as of the Docker-CLI-parity work, every update/restart path (settings
-panel and CLI, both install methods) goes through the exact same underlying logic, so there's
-nothing to remember about which mode a given host is in.
+**Use `polaris update` / `polaris restart` over SSH, or the settings panel's buttons — both are
+thin clients hitting the running container's own REST API (`cmd/docker_client.go`'s
+`runDockerModeCall`), never anything host-side beyond that HTTP call.**
 
-- **Bare-metal**: `polaris update` does `git pull && go build && restart` locally.
-- **Docker**: `polaris update` resolves the latest published image's digest from GHCR (waiting out
-  an in-progress CI build first, so a click right after `git push` can't silently grab the
-  *previous* build), then hands off to a host-side systemd watcher (`compose/watcher/update.sh`)
-  that first `git fetch`/`merge --ff-only`s the host checkout (so `docker-compose.yml`'s env
-  passthrough list and the bind-mounted config templates land *with* the new image, not days
-  later on whoever next remembers to `git pull` by hand — a real gap found live: an image update
-  alone left a newly-added secret's passthrough line missing from `docker-compose.yml` until the
-  checkout was synced manually), then does `docker compose pull && up --force-recreate` — the
-  container itself never gets any control over Docker. The `--ff-only` refuses rather than
-  clobbering if the host checkout has diverged (uncommitted edits, a stray local commit).
+`polaris update` resolves the latest published image's digest from GHCR (waiting out an
+in-progress CI build first, so a click right after `git push` can't silently grab the *previous*
+build), then hands off to a host-side systemd watcher (`compose/watcher/update.sh`) that first
+`git fetch`/`merge --ff-only`s the host checkout (so `docker-compose.yml`'s env passthrough list
+and the bind-mounted config templates land *with* the new image, not days later on whoever next
+remembers to `git pull` by hand — a real gap found live: an image update alone left a
+newly-added secret's passthrough line missing from `docker-compose.yml` until the checkout was
+synced manually), then does `docker compose pull && up --force-recreate` — the container itself
+never gets any control over Docker. The `--ff-only` refuses rather than clobbering if the host
+checkout has diverged (uncommitted edits, a stray local commit).
 - If you rebuild the *host-side* `polaris` binary on the potato (needed after a CLI-only code
   change — `cd ~/Polaris && go build -o polaris .`) note that's separate from the running
   container's own image; the CLI binary is just a thin client hitting the container's REST API
@@ -54,17 +55,35 @@ nothing to remember about which mode a given host is in.
 - Images publish automatically to `ghcr.io/autumnsgrove/polaris` (multi-arch) via
   `.github/workflows/docker-publish.yml` on every push to `main`.
 
-## This project ships two deployment models — most new features touch both
+## Install and production are Docker-only; local dev is bare-metal Go
 
-Polaris runs bare-metal (a plain `go build` binary + systemd/launchd) **and** via Docker Compose
-(a container pulling prebuilt images from GHCR, updated by a host-side watcher). Both are real,
-supported install paths — not "Docker as a dev convenience" — see README's "Docker install"
-section for the full picture. Before this dual-support existed, plenty of code only had to think
-about one runtime shape; a lot of the actual bugs found while building the Docker path came from
-code that quietly assumed bare-metal and nobody noticed until it ran somewhere else.
+These are two separate questions with two separate, deliberate answers — don't conflate them:
 
-**When adding a new feature, run through this checklist — most items are "does this even apply
-under Docker," not "go build Docker support for X":**
+- **Install/production: Docker-only, full stop.** `install.sh` only sets up a Docker Compose
+  stack; there is no bare-metal install path anymore (`docs/plans/docker-only.md` deleted it
+  outright in 2026-09 — `cmd/install.go`, `procmgr/`, `updater/`, and every
+  `isDockerComposeInstall()` branch across `cmd/` and `gateway/update.go` are gone). Every CLI
+  command that talks to a running Polaris (`polaris update`/`restart`/`search`/`stats`/`backup`/
+  `atlas search`/`constellation backfill`) is unconditionally a thin HTTP client hitting the
+  container's own REST API (`cmd/docker_client.go`'s `runDockerModeCall`, or the ad hoc
+  equivalents in `cmd/search.go`/`cmd/stats.go`/`cmd/atlas.go` — reuse the real endpoint's
+  request/response types, e.g. `gateway.AskRequest`, `store.Stats`, instead of redefining them).
+  `polaris backup restore`/`restore-remote` are the one exception: no live-API-based restore
+  exists (swapping the database file under a running connection is unsafe), so those two always
+  run directly against a local config/database path — under Docker that means invoking them
+  inside a fresh one-off container via `docker compose run --rm --no-deps polaris backup
+  restore ...` (see `backupRestoreCmd`'s `--help`), not over HTTP.
+- **Local dev of the Go backend: still plain `go run .`/`go build`, deliberately.** The compile-
+  and-restart loop is already fast; containerizing it would be a real regression for zero
+  benefit, since `install.sh` was never part of the inner dev loop to begin with. `code_exec`
+  (the one feature needing a container) is reachable from a bare-metal dev instance too — its
+  gate is a pure capability check (`cfg.CodeExec.HostWorkspaceDir`/`SignalDir` configured, see
+  `gateway/turn.go`), not a deployment-mode check — see `DEVELOPMENT.md`'s "Local dev code_exec"
+  section for the concrete setup (Docker installed locally for the sandbox only, plus running
+  `compose/watcher/codeexec.sh` in a loop).
+
+**When adding a new feature, a couple of things still matter even though there's only one
+install/production shape now:**
 
 1. **Does it read a file relative to CWD?** `prompt.md`, `prompts.yaml`, `blocked_sources.txt` are
    all loaded this way, hot-reloaded, and hand-editable — and Docker's runtime CWD is `/app` inside
@@ -76,37 +95,23 @@ under Docker," not "go build Docker support for X":**
    `docker-compose.yml`'s bind-mount list and `Dockerfile`'s `COPY` lines staying in sync with each
    other — nothing enforces that automatically today.)
 
-2. **Does it add a CLI command, or touch an existing one?** Every `cmd/*.go` command needs to
-   either (a) work correctly under both deployment models, or (b) explicitly refuse under one with
-   a clear message — never silently do the wrong thing. The established pattern:
-   `isDockerComposeInstall(repoPath)` (checks for `docker-compose.yml` in the working directory —
-   **not** `gateway.deploymentMode()`, which reads an env var only ever set *inside* the container,
-   never in a host-side SSH session) gates a branch to a thin HTTP client hitting the running
-   container's own REST API (`cmd/docker_client.go`'s `runDockerModeCall`, or the ad hoc
-   equivalents in `cmd/search.go`/`cmd/stats.go`). Reuse the real API endpoint's request/response
-   types (`gateway.AskRequest`, `store.Stats`, ...) instead of redefining them — see those two
-   files for the exact shape. `cmd/install.go` is the "explicitly refuse" case: there's no
-   systemd/launchd unit to write under Docker, so it says so instead of doing something misleading.
+2. **Does it add a settings-panel action that mutates server state?** The container itself is
+   deliberately never given control over Docker (no socket mount, see `gateway/docker_update.go`)
+   — anything that needs to affect the running deployment writes a signal file the host-side
+   watcher (`compose/watcher/update.sh`, a real systemd path-unit + oneshot service on Linux)
+   picks up instead.
 
-3. **Does it add a settings-panel action that mutates server state?** Bare-metal and Docker
-   diverge hard here — see `gateway/update.go`'s `deploymentMode() == "docker"` branch pattern and
-   `gateway/docker_update.go`. Under Docker, the container itself is deliberately never given
-   control over Docker (no socket mount) — anything that needs to affect the running deployment
-   writes a signal file the host-side watcher (`compose/watcher/update.sh`, a real systemd
-   path-unit + oneshot service on Linux) picks up instead.
-
-4. **Does it touch the frontend's update/restart polling logic?** `waitForServerAndReload` in
+3. **Does it touch the frontend's update/restart polling logic?** `waitForServerAndReload` in
    `web/src/lib/settings.svelte.ts` has real, non-obvious constraints — e.g. a plain restart never
    changes the reported version by design, so "did the version change" can't be the success signal
    for that case. Read its doc comments before changing the polling condition.
 
-5. **Does it change what image gets built?** `Dockerfile`'s frontend and Go build stages are both
+4. **Does it change what image gets built?** `Dockerfile`'s frontend and Go build stages are both
    pinned to `--platform=$BUILDPLATFORM` deliberately (native cross-compilation, no QEMU for the
    slow steps) — don't remove that pin without understanding why it's there. `main.Version` /
    `version.go` **must** stay a bare string-literal initializer, never a computed one — Go's
    `-ldflags -X` silently can't override a computed initializer, which was a real, previously
-   undetected bug (bare-metal's own build never exercised `-X` at all until Docker's CI pipeline
-   did).
+   undetected bug.
 
 ## Verify on real hardware, not just review or mocked tests
 
@@ -138,9 +143,8 @@ pattern for new work here, not just the Docker-specific cases above.
   including the GHCR digest resolution and the "wait out an in-progress CI build" race-window fix
 - `cmd/docker_client.go` — the CLI's thin-client pattern for reaching a running container
 - `.github/workflows/docker-publish.yml` — multi-arch (`amd64`+`arm64`) GHCR publish on every push
-  to `main`; `.github/workflows/go-ci.yml` — build/vet/test on Go changes;
-  `.github/workflows/frontend-build-sync.yml` — fails a PR if `web/build/` drifts from `web/src/`
-- `install.sh` — `POLARIS_INSTALL_MODE=docker` is the Docker install path; default is bare-metal
+  to `main`; `.github/workflows/go-ci.yml` — build/vet/test on Go changes
+- `install.sh` — the only install path; sets up Docker Compose, nothing else
 - `dev/fakeopenrouter/` — a scriptable stand-in for OpenRouter's streaming `/chat/completions` API,
   for exercising a real running `polaris run` (gateway, agent loop, tool dispatch, the actual
   SvelteKit frontend over a real WebSocket) against a canned model instead of a paid, non-deterministic
@@ -244,11 +248,9 @@ app is built/deployed, that's `DEVELOPMENT.md`. Don't let any of the three creep
 
 - `uv`/Python-specific instructions some global CLAUDE.md files carry do **not** apply — this is a
   Go + SvelteKit project. Use `go build`, `go test ./...`, `go vet ./...` directly.
-- Frontend changes require `web/build/` to be rebuilt and committed for bare-metal (the potato
-  can't run `pnpm install`/`vite build` itself) — `git config core.hooksPath .githooks` (once)
-  makes this automatic on commit. Docker doesn't have this constraint (builds fresh from source in
-  CI/on `docker compose up --build`), but the committed `web/build/` still needs to stay in sync
-  for bare-metal, and `frontend-build-sync.yml` enforces it in CI either way.
+- `web/build/` is not committed — Docker's image build always runs `pnpm run build` fresh from
+  `web/src/` (`Dockerfile`'s frontend-build stage). For bare-metal dev/testing, run
+  `cd web && pnpm run build` by hand whenever the frontend changes; see `DEVELOPMENT.md`.
 - Comment style in this codebase explains *why*, not *what* — non-obvious constraints, prior
   incidents, races being guarded against. Match that density when adding new code; a lot of the
   Docker-path bugs were specifically caught because a doc comment recorded the exact reasoning a
