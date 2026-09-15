@@ -80,7 +80,10 @@ These are two separate questions with two separate, deliberate answers — don't
   gate is a pure capability check (`cfg.CodeExec.HostWorkspaceDir`/`SignalDir` configured, see
   `gateway/turn.go`), not a deployment-mode check — see `DEVELOPMENT.md`'s "Local dev code_exec"
   section for the concrete setup (Docker installed locally for the sandbox only, plus running
-  `compose/watcher/codeexec.sh` in a loop).
+  `compose/watcher/codeexec.sh` in a loop). `dev/stack.sh` (issue #72) starts/stops/restarts the
+  whole bare-metal inner loop — vite, `go run . run --dev`, that codeexec watcher loop, and the
+  local SearXNG container — in one command instead of juggling each piece by hand; see
+  `DEVELOPMENT.md`'s "One-command dev stack" section.
 
 **When adding a new feature, a couple of things still matter even though there's only one
 install/production shape now:**
@@ -145,6 +148,8 @@ pattern for new work here, not just the Docker-specific cases above.
 - `.github/workflows/docker-publish.yml` — multi-arch (`amd64`+`arm64`) GHCR publish on every push
   to `main`; `.github/workflows/go-ci.yml` — build/vet/test on Go changes
 - `install.sh` — the only install path; sets up Docker Compose, nothing else
+- `dev/stack.sh` — one-command bare-metal dev stack launcher (`start`/`stop`/`restart`/`status`);
+  see `DEVELOPMENT.md`'s "One-command dev stack" section
 - `dev/fakeopenrouter/` — a scriptable stand-in for OpenRouter's streaming `/chat/completions` API,
   for exercising a real running `polaris run` (gateway, agent loop, tool dispatch, the actual
   SvelteKit frontend over a real WebSocket) against a canned model instead of a paid, non-deterministic

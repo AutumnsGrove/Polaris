@@ -50,6 +50,25 @@ pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go ba
 pnpm run build        # produces web/build/ for `go build`/`go run .` to embed
 ```
 
+### One-command dev stack
+
+`dev/stack.sh` starts (or cleanly restarts) the whole bare-metal dev inner loop in one shot —
+vite, the Go backend (`go run . run --dev`), the code_exec watcher loop (skipped automatically if
+`config.yaml` has no `code_exec:` block), and the local SearXNG container:
+
+```bash
+dev/stack.sh            # restart everything (default): stop, then start fresh
+dev/stack.sh status     # which pieces are up, on which ports
+dev/stack.sh stop
+```
+
+Each process is launched via `setsid`, detached from the invoking shell/terminal, so the stack
+keeps running even after the shell that launched it exits — logs land in `dev/.stack/*.log`, pids
+in `dev/.stack/*.pid`. `stop`/`restart` kill each process's whole group (not just the recorded
+pid), so `pnpm run dev`'s real Node child doesn't survive as an orphan holding :45173. The
+existing `searxng-dev` container is reused (`docker start`) rather than recreated on every run —
+see below for how it's created the first time.
+
 ### Local dev SearXNG (Docker)
 
 ```bash

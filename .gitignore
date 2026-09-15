@@ -12,6 +12,7 @@ attachments/
 web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/
+dev/.stack/
 
 # Docker Compose install — real config/secrets, gitignored the same way
 # their bare-metal equivalents are (see compose/polaris/config.yaml.example).
