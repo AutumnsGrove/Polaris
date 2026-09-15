@@ -31,15 +31,13 @@ type AskRequest struct {
 	FocusMode    string `json:"focus_mode,omitempty"`
 	DeepResearch bool   `json:"deep_research,omitempty"`
 	QuickMode    bool   `json:"quick_mode,omitempty"`
-	// AttachmentID/AttachmentFilename/AttachmentContentType mirror
-	// ClientMessage's fields of the same name — see attachments.go. A JSON
-	// caller uploads via POST /api/upload first, then passes its ID here.
-	// A multipart/form-data caller can skip that step entirely and attach
-	// a file inline instead — see decodeAskRequest — in which case these
-	// three are populated automatically and don't need to be set directly.
-	AttachmentID          string `json:"attachment_id,omitempty"`
-	AttachmentFilename    string `json:"attachment_filename,omitempty"`
-	AttachmentContentType string `json:"attachment_content_type,omitempty"`
+	// Attachments mirrors ClientMessage.Attachments — see attachments.go.
+	// A JSON caller uploads each file via POST /api/upload first, then
+	// passes their IDs here. A multipart/form-data caller can skip that
+	// step entirely and attach one or more files inline instead — see
+	// decodeAskRequest — in which case this is populated automatically
+	// and doesn't need to be set directly.
+	Attachments []AttachmentRef `json:"attachments,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -106,32 +104,41 @@ func (s *Server) decodeAskRequest(w http.ResponseWriter, r *http.Request) (req A
 		QuickMode:    formBool(r, "quick_mode"),
 	}
 
-	file, header, ferr := r.FormFile("file")
-	if ferr != nil {
-		if errors.Is(ferr, http.ErrMissingFile) {
-			// A multipart request with only text fields and no file part is
-			// a legitimate (if unusual) way to ask without an attachment —
-			// not an error.
-			return req, true
-		}
-		http.Error(w, "reading \"file\" field: "+ferr.Error(), http.StatusBadRequest)
-		return AskRequest{}, false
+	// r.MultipartForm.File["file"] rather than r.FormFile("file") — the
+	// latter only ever returns the first part under that key, which is
+	// how this stayed single-file-only even after ClientMessage/AskRequest
+	// went multi-valued. A caller sending several -F file=@a -F file=@b
+	// parts under the same field name gets every one of them attached.
+	headers := r.MultipartForm.File["file"]
+	if len(headers) == 0 {
+		// A multipart request with only text fields and no file part is a
+		// legitimate (if unusual) way to ask without an attachment — not
+		// an error.
+		return req, true
 	}
-	defer file.Close()
-
-	uploaded, uerr := s.saveUploadedFile(file, header)
-	if uerr != nil {
-		var ue *uploadError
-		status := http.StatusInternalServerError
-		if errors.As(uerr, &ue) {
-			status = ue.status
+	for _, header := range headers {
+		file, ferr := header.Open()
+		if ferr != nil {
+			http.Error(w, "reading \"file\" field: "+ferr.Error(), http.StatusBadRequest)
+			return AskRequest{}, false
 		}
-		http.Error(w, uerr.Error(), status)
-		return AskRequest{}, false
+		uploaded, uerr := s.saveUploadedFile(file, header)
+		file.Close()
+		if uerr != nil {
+			var ue *uploadError
+			status := http.StatusInternalServerError
+			if errors.As(uerr, &ue) {
+				status = ue.status
+			}
+			http.Error(w, uerr.Error(), status)
+			return AskRequest{}, false
+		}
+		req.Attachments = append(req.Attachments, AttachmentRef{
+			ID:          uploaded.ID,
+			Filename:    uploaded.Filename,
+			ContentType: uploaded.ContentType,
+		})
 	}
-	req.AttachmentID = uploaded.ID
-	req.AttachmentFilename = uploaded.Filename
-	req.AttachmentContentType = uploaded.ContentType
 	return req, true
 }
 
@@ -170,17 +177,15 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	defer s.FinishTurn()
 
 	msg := ClientMessage{
-		Type:                  "message",
-		ThreadID:              req.ThreadID,
-		Content:               req.Content,
-		Model:                 req.Model,
-		Source:                req.Source,
-		FocusMode:             req.FocusMode,
-		DeepResearch:          req.DeepResearch,
-		QuickMode:             req.QuickMode,
-		AttachmentID:          req.AttachmentID,
-		AttachmentFilename:    req.AttachmentFilename,
-		AttachmentContentType: req.AttachmentContentType,
+		Type:         "message",
+		ThreadID:     req.ThreadID,
+		Content:      req.Content,
+		Model:        req.Model,
+		Source:       req.Source,
+		FocusMode:    req.FocusMode,
+		DeepResearch: req.DeepResearch,
+		QuickMode:    req.QuickMode,
+		Attachments:  req.Attachments,
 	}
 
 	var answer strings.Builder
@@ -278,17 +283,15 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 	defer s.FinishTurn()
 
 	msg := ClientMessage{
-		Type:                  "message",
-		ThreadID:              req.ThreadID,
-		Content:               req.Content,
-		Model:                 req.Model,
-		Source:                req.Source,
-		FocusMode:             req.FocusMode,
-		DeepResearch:          req.DeepResearch,
-		QuickMode:             req.QuickMode,
-		AttachmentID:          req.AttachmentID,
-		AttachmentFilename:    req.AttachmentFilename,
-		AttachmentContentType: req.AttachmentContentType,
+		Type:         "message",
+		ThreadID:     req.ThreadID,
+		Content:      req.Content,
+		Model:        req.Model,
+		Source:       req.Source,
+		FocusMode:    req.FocusMode,
+		DeepResearch: req.DeepResearch,
+		QuickMode:    req.QuickMode,
+		Attachments:  req.Attachments,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")

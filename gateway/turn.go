@@ -252,25 +252,25 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
 	// turnMessage is what the agent actually sees — msg.Content plus a
-	// short pointer note naming the file, if there's an attachment (see
-	// resolveAttachment). The persisted user message above stays as
+	// short pointer note naming each file, if there are attachments (see
+	// resolveAttachments). The persisted user message above stays as
 	// exactly what the user typed; only the in-flight prompt to the model
 	// is augmented, so reopening this thread later shows the original
-	// question, not the pointer note glued onto it.
+	// question, not the pointer notes glued onto it.
 	turnMessage := msg.Content
-	if msg.AttachmentID != "" {
-		if err := s.db.SetMessageAttachment(userMsgID, msg.AttachmentFilename, msg.AttachmentContentType); err != nil {
-			log.Warn("failed to record attachment metadata", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachment metadata failed", map[string]interface{}{"err": err.Error()}, turnID)
-		}
-		resolved, workspaceFileID, err := resolveAttachment(cfg, msg, storageThreadID)
-		if err != nil {
-			log.Warn("resolving attachment failed, continuing without it", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else {
-			turnMessage = resolved
-			if err := s.db.SetMessageWorkspaceFileID(userMsgID, workspaceFileID); err != nil {
-				log.Warn("recording workspace file id failed", "err", err)
+	if len(msg.Attachments) > 0 {
+		resolvedMessage, resolved := resolveAttachments(cfg, msg, storageThreadID, func(ref AttachmentRef, err error) {
+			log.Warn("resolving attachment failed, continuing without it", "filename", ref.Filename, "err", err)
+			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"filename": ref.Filename, "err": err.Error()}, turnID)
+		})
+		turnMessage = resolvedMessage
+		if len(resolved) > 0 {
+			attachmentsJSON, err := json.Marshal(resolved)
+			if err != nil {
+				log.Warn("encoding attachments failed", "err", err)
+			} else if err := s.db.SetMessageAttachments(userMsgID, string(attachmentsJSON)); err != nil {
+				log.Warn("recording attachments failed", "err", err)
+				s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachments failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
 		}
 	}

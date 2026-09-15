@@ -32,23 +32,20 @@ func mustDecodePDF(t *testing.T) []byte {
 	return data
 }
 
-func TestResolveAttachment_NoAttachmentPassesContentThrough(t *testing.T) {
+func TestResolveAttachments_NoAttachmentsPassesContentThrough(t *testing.T) {
 	cfg := &config.Config{}
-	got, shortID, err := resolveAttachment(cfg, ClientMessage{Content: "hello"}, "thread-1")
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
-	}
+	got, resolved := resolveAttachments(cfg, ClientMessage{Content: "hello"}, "thread-1", nil)
 	if got != "hello" {
 		t.Errorf("got %q, want unchanged content", got)
 	}
-	if shortID != "" {
-		t.Errorf("shortID = %q, want empty with no attachment", shortID)
+	if resolved != nil {
+		t.Errorf("resolved = %+v, want nil with no attachments", resolved)
 	}
 }
 
-func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
+func TestResolveOneAttachment_InvalidIDIsRejected(t *testing.T) {
 	cfg := &config.Config{}
-	_, _, err := resolveAttachment(cfg, ClientMessage{Content: "hi", AttachmentID: "../../etc/passwd"}, "thread-1")
+	_, err := resolveOneAttachment(cfg, AttachmentRef{ID: "../../etc/passwd"}, "thread-1")
 	if err == nil {
 		t.Fatal("expected an error for a non-UUID attachment id")
 	}
@@ -60,7 +57,7 @@ func TestResolveAttachment_InvalidIDIsRejected(t *testing.T) {
 // the thread's persistent code_exec workspace directory under a freshly
 // generated short ID, the same directory code_exec/fetch_url already
 // write into, so a later turn's code_exec call can still open it.
-func TestResolveAttachment_MovesFileIntoThreadWorkspace(t *testing.T) {
+func TestResolveAttachments_MovesFileIntoThreadWorkspace(t *testing.T) {
 	stagingDir := t.TempDir()
 	workspaceDir := t.TempDir()
 	id := "550e8400-e29b-41d4-a716-446655440001"
@@ -73,17 +70,18 @@ func TestResolveAttachment_MovesFileIntoThreadWorkspace(t *testing.T) {
 	cfg.CodeExec.WorkspaceDir = workspaceDir
 
 	msg := ClientMessage{
-		Content:               "summarize this",
-		AttachmentID:          id,
-		AttachmentFilename:    "report.pdf",
-		AttachmentContentType: "application/pdf",
+		Content:     "summarize this",
+		Attachments: []AttachmentRef{{ID: id, Filename: "report.pdf", ContentType: "application/pdf"}},
 	}
-	got, filename, err := resolveAttachment(cfg, msg, "thread-1")
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
+	got, resolved := resolveAttachments(cfg, msg, "thread-1", func(ref AttachmentRef, err error) {
+		t.Fatalf("unexpected resolve failure for %q: %v", ref.Filename, err)
+	})
+	if len(resolved) != 1 {
+		t.Fatalf("got %d resolved attachments, want 1: %+v", len(resolved), resolved)
 	}
+	filename := resolved[0].WorkspaceFileID
 	if filename == "" {
-		t.Fatal("filename is empty, want a generated workspace filename")
+		t.Fatal("WorkspaceFileID is empty, want a generated workspace filename")
 	}
 	if !strings.HasSuffix(filename, ".pdf") {
 		t.Errorf("filename = %q, want it to end in .pdf (from the original filename)", filename)
@@ -108,7 +106,88 @@ func TestResolveAttachment_MovesFileIntoThreadWorkspace(t *testing.T) {
 	}
 }
 
-func TestResolveAttachment_FallsBackToContentTypeExtensionWhenFilenameHasNone(t *testing.T) {
+// TestResolveAttachments_MultipleFilesAllResolve covers issue #71's core
+// case: several attachments on one turn, each getting its own pointer
+// note and its own workspace file, not just the first one.
+func TestResolveAttachments_MultipleFilesAllResolve(t *testing.T) {
+	stagingDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	idA := "550e8400-e29b-41d4-a716-446655440010"
+	idB := "550e8400-e29b-41d4-a716-446655440011"
+	if err := os.WriteFile(filepath.Join(stagingDir, idA), []byte("pdf-bytes"), 0o644); err != nil {
+		t.Fatalf("writing staged upload A: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingDir, idB), []byte("csv-bytes"), 0o644); err != nil {
+		t.Fatalf("writing staged upload B: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = stagingDir
+	cfg.CodeExec.WorkspaceDir = workspaceDir
+
+	msg := ClientMessage{
+		Content: "compare these",
+		Attachments: []AttachmentRef{
+			{ID: idA, Filename: "report.pdf", ContentType: "application/pdf"},
+			{ID: idB, Filename: "data.csv", ContentType: "text/csv"},
+		},
+	}
+	got, resolved := resolveAttachments(cfg, msg, "thread-1", func(ref AttachmentRef, err error) {
+		t.Fatalf("unexpected resolve failure for %q: %v", ref.Filename, err)
+	})
+	if len(resolved) != 2 {
+		t.Fatalf("got %d resolved attachments, want 2: %+v", len(resolved), resolved)
+	}
+	for _, r := range resolved {
+		if !bytes.Contains([]byte(got), []byte(r.WorkspaceFileID)) {
+			t.Errorf("got %q, want it to mention %q's generated filename %q", got, r.Filename, r.WorkspaceFileID)
+		}
+		if _, err := os.Stat(filepath.Join(workspaceDir, "thread-1", r.WorkspaceFileID)); err != nil {
+			t.Errorf("%q wasn't moved into the workspace: %v", r.Filename, err)
+		}
+	}
+}
+
+// TestResolveAttachments_OneFailureDoesNotDropTheOthers guards the
+// partial-failure tolerance handleTurn already had for a single
+// attachment (log and continue without it) — now applied per-attachment
+// instead of failing (or silently losing) the rest of the turn's uploads.
+func TestResolveAttachments_OneFailureDoesNotDropTheOthers(t *testing.T) {
+	stagingDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	goodID := "550e8400-e29b-41d4-a716-446655440012"
+	missingID := "550e8400-e29b-41d4-a716-446655440013"
+	if err := os.WriteFile(filepath.Join(stagingDir, goodID), []byte("csv-bytes"), 0o644); err != nil {
+		t.Fatalf("writing staged upload: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = stagingDir
+	cfg.CodeExec.WorkspaceDir = workspaceDir
+
+	msg := ClientMessage{
+		Content: "look at both",
+		Attachments: []AttachmentRef{
+			{ID: missingID, Filename: "gone.pdf", ContentType: "application/pdf"}, // never written to stagingDir
+			{ID: goodID, Filename: "data.csv", ContentType: "text/csv"},
+		},
+	}
+	var failed []string
+	got, resolved := resolveAttachments(cfg, msg, "thread-1", func(ref AttachmentRef, err error) {
+		failed = append(failed, ref.Filename)
+	})
+	if len(failed) != 1 || failed[0] != "gone.pdf" {
+		t.Errorf("onError calls = %v, want exactly one call for gone.pdf", failed)
+	}
+	if len(resolved) != 1 || resolved[0].Filename != "data.csv" {
+		t.Fatalf("resolved = %+v, want exactly one entry for data.csv", resolved)
+	}
+	if !bytes.Contains([]byte(got), []byte("data.csv")) && !bytes.Contains([]byte(got), []byte(resolved[0].WorkspaceFileID)) {
+		t.Errorf("got %q, want it to mention the successfully resolved file", got)
+	}
+}
+
+func TestResolveAttachments_FallsBackToContentTypeExtensionWhenFilenameHasNone(t *testing.T) {
 	stagingDir := t.TempDir()
 	workspaceDir := t.TempDir()
 	id := "550e8400-e29b-41d4-a716-446655440003"
@@ -121,14 +200,16 @@ func TestResolveAttachment_FallsBackToContentTypeExtensionWhenFilenameHasNone(t 
 	cfg.CodeExec.WorkspaceDir = workspaceDir
 
 	msg := ClientMessage{
-		Content:               "what's in this photo",
-		AttachmentID:          id,
-		AttachmentContentType: "image/png",
+		Content:     "what's in this photo",
+		Attachments: []AttachmentRef{{ID: id, ContentType: "image/png"}},
 	}
-	_, filename, err := resolveAttachment(cfg, msg, "thread-1")
-	if err != nil {
-		t.Fatalf("resolveAttachment returned error: %v", err)
+	_, resolved := resolveAttachments(cfg, msg, "thread-1", func(ref AttachmentRef, err error) {
+		t.Fatalf("unexpected resolve failure: %v", err)
+	})
+	if len(resolved) != 1 {
+		t.Fatalf("got %d resolved attachments, want 1", len(resolved))
 	}
+	filename := resolved[0].WorkspaceFileID
 	if !strings.HasSuffix(filename, ".png") {
 		t.Errorf("filename = %q, want a content-type-derived .png extension", filename)
 	}
@@ -138,15 +219,14 @@ func TestResolveAttachment_FallsBackToContentTypeExtensionWhenFilenameHasNone(t 
 	}
 }
 
-func TestResolveAttachment_MissingFileReturnsError(t *testing.T) {
+func TestResolveOneAttachment_MissingFileReturnsError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Attachments.Dir = t.TempDir()
 	cfg.CodeExec.WorkspaceDir = t.TempDir()
 
-	_, _, err := resolveAttachment(cfg, ClientMessage{
-		Content:               "hi",
-		AttachmentID:          "550e8400-e29b-41d4-a716-446655440002",
-		AttachmentContentType: "application/pdf",
+	_, err := resolveOneAttachment(cfg, AttachmentRef{
+		ID:          "550e8400-e29b-41d4-a716-446655440002",
+		ContentType: "application/pdf",
 	}, "thread-1")
 	if err == nil {
 		t.Fatal("expected an error when the attachment file doesn't exist on disk")
@@ -324,7 +404,9 @@ func TestHandleTurn_MovesAttachmentIntoWorkspace(t *testing.T) {
 	conn := dialWS(t, h)
 	if err := conn.WriteJSON(map[string]interface{}{
 		"type": "message", "content": "summarize this", "model": "test-model",
-		"attachment_id": uploaded.ID, "attachment_filename": "report.pdf", "attachment_content_type": "application/pdf",
+		"attachments": []map[string]string{
+			{"id": uploaded.ID, "filename": "report.pdf", "content_type": "application/pdf"},
+		},
 	}); err != nil {
 		t.Fatalf("WriteJSON: %v", err)
 	}

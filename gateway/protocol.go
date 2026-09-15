@@ -6,6 +6,16 @@ package gateway
 
 import "polaris/tools"
 
+// AttachmentRef identifies one uploaded file riding along with a turn —
+// shared wire shape between ClientMessage.Attachments and
+// AskRequest.Attachments (see ask.go), since both describe the same
+// upload-then-reference handoff from POST /api/upload.
+type AttachmentRef struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+}
+
 // ClientMessage is sent by the browser over /ws to start (or continue) a turn.
 // ThreadID empty means "start a new thread".
 //
@@ -93,18 +103,16 @@ type ClientMessage struct {
 	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
 	// Answer via POST /api/ask, never by the WebSocket chat client.
 	QuickMode bool `json:"quick_mode,omitempty"`
-	// AttachmentID/AttachmentFilename/AttachmentContentType describe a
-	// file uploaded via POST /api/upload ahead of this message (see
-	// gateway/attachments.go) — same two-step shape as push-to-talk voice
-	// memos. AttachmentID is the opaque name handleUpload saved the file
-	// under (config.Attachments.Dir/<id>); the other two are only for
+	// Attachments describes zero or more files uploaded via POST
+	// /api/upload ahead of this message (see gateway/attachments.go) —
+	// same two-step shape as push-to-talk voice memos. Each ID is the
+	// opaque name handleUpload saved that file under
+	// (config.Attachments.Dir/<id>); Filename/ContentType are only for
 	// display and content-type dispatch, both already known to the
 	// frontend from the upload response, so the server doesn't need a
-	// side table to look them back up. Empty AttachmentID means no
+	// side table to look them back up. An empty (or nil) slice means no
 	// attachment on this message.
-	AttachmentID          string `json:"attachment_id,omitempty"`
-	AttachmentFilename    string `json:"attachment_filename,omitempty"`
-	AttachmentContentType string `json:"attachment_content_type,omitempty"`
+	Attachments []AttachmentRef `json:"attachments,omitempty"`
 	// PulsarRoutineID/PulsarRoutineName are set only by the scheduler
 	// firing a pulse (see pulsar_scheduler.go's firePulse) — never by any
 	// JSON-decoded request. A non-zero PulsarRoutineID makes handleTurn

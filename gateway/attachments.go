@@ -26,6 +26,7 @@ import (
 
 	"polaris/config"
 	"polaris/llm"
+	"polaris/store"
 	"polaris/tools"
 )
 
@@ -81,7 +82,7 @@ type UploadResponse struct {
 // handleUpload accepts a multipart/form-data POST with a single "file"
 // field, saves it to config.Attachments.Dir under a generated name (never
 // the client-supplied filename — that's only kept for display, see
-// store.Message.AttachmentFilename), and returns its ID.
+// store.Message.Attachments), and returns its ID.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<20) // +1MiB slack for multipart overhead/headers
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
@@ -374,48 +375,40 @@ func extensionForUpload(filename, contentType string) string {
 	return extensionForContentType(contentType)
 }
 
-// resolveAttachment turns a ClientMessage carrying an upload into the text
-// agent.Run should actually see, plus the workspace-addressable filename
-// the uploaded file was given — msg.Content and "" unchanged if there's no
-// attachment. Called once per turn from handleTurn, before agent.Run.
-//
-// Moves the staged upload (written by saveUploadedFile into
-// cfg.Attachments.Dir under an opaque upload ID) into this thread's
-// persistent code_exec workspace directory, renamed to a short generated
-// ID plus its extension — the same durable, never-deleted directory
-// fetch_url/code_exec already write into (see tools/code_exec.go's
-// workspaceDir), and the same exact filename GET /api/workspace/:thread_id/
-// :filename (gateway/workspace.go) serves — so the DB pointer this returns
-// is directly usable as a download link, not just a tool-call reference.
-// This supersedes the old single-read-then-deleted lifecycle entirely: no
-// PDF text extraction, no vision-model description call, no
-// removeAttachmentFile. The model only pays to actually look at the file
-// (via code_exec) when it decides to, not eagerly on every turn it's
-// attached — see docs/plans/workspace-store-unification.md's "How the
-// model finds out a file exists".
+// resolveOneAttachment moves one staged upload (written by
+// saveUploadedFile into cfg.Attachments.Dir under an opaque upload ID)
+// into this thread's persistent code_exec workspace directory, renamed to
+// a short generated ID plus its extension — the same durable,
+// never-deleted directory fetch_url/code_exec already write into (see
+// tools/code_exec.go's workspaceDir), and the same exact filename GET
+// /api/workspace/:thread_id/:filename (gateway/workspace.go) serves — so
+// the filename this returns is directly usable as a download link, not
+// just a tool-call reference. This supersedes the old
+// single-read-then-deleted lifecycle entirely: no PDF text extraction, no
+// vision-model description call, no removeAttachmentFile. The model only
+// pays to actually look at the file (via code_exec) when it decides to,
+// not eagerly on every turn it's attached — see
+// docs/plans/workspace-store-unification.md's "How the model finds out a
+// file exists".
 //
 // threadID is storageThreadID from handleTurn — the workspace directory a
 // short-ID upload lands in must be the same one code_exec/fetch_url mount
 // for this thread, not the client-facing thread id a fork briefly diverges
 // from.
-func resolveAttachment(cfg *config.Config, msg ClientMessage, threadID string) (content string, workspaceFilename string, err error) {
-	if msg.AttachmentID == "" {
-		return msg.Content, "", nil
-	}
-
-	// AttachmentID becomes a filesystem path component (see handleUpload,
-	// which only ever names files with uuid.NewString()) — validate it's
+func resolveOneAttachment(cfg *config.Config, ref AttachmentRef, threadID string) (workspaceFilename string, err error) {
+	// ref.ID becomes a filesystem path component (see handleUpload, which
+	// only ever names files with uuid.NewString()) — validate it's
 	// actually a UUID before joining it into a path, rather than trusting
 	// whatever a client sends here.
-	if _, err := uuid.Parse(msg.AttachmentID); err != nil {
-		return msg.Content, "", fmt.Errorf("invalid attachment id: %w", err)
+	if _, err := uuid.Parse(ref.ID); err != nil {
+		return "", fmt.Errorf("invalid attachment id: %w", err)
 	}
 
 	shortID, err := generateShortFileID()
 	if err != nil {
-		return msg.Content, "", fmt.Errorf("generating file id: %w", err)
+		return "", fmt.Errorf("generating file id: %w", err)
 	}
-	ext := extensionForUpload(msg.AttachmentFilename, msg.AttachmentContentType)
+	ext := extensionForUpload(ref.Filename, ref.ContentType)
 	filename := shortID + ext
 
 	// Same 0o777-plus-explicit-Chmod dance as code_exec.go/fetch_url.go's
@@ -425,20 +418,47 @@ func resolveAttachment(cfg *config.Config, msg ClientMessage, threadID string) (
 	// silently stripped back down by the process umask.
 	workspaceDir := filepath.Join(cfg.CodeExec.WorkspaceDir, threadID)
 	if err := os.MkdirAll(workspaceDir, 0o777); err != nil {
-		return msg.Content, "", fmt.Errorf("preparing workspace directory: %w", err)
+		return "", fmt.Errorf("preparing workspace directory: %w", err)
 	}
 	if err := os.Chmod(workspaceDir, 0o777); err != nil {
-		return msg.Content, "", fmt.Errorf("setting workspace directory permissions: %w", err)
+		return "", fmt.Errorf("setting workspace directory permissions: %w", err)
 	}
 
-	srcPath := filepath.Join(cfg.Attachments.Dir, msg.AttachmentID)
+	srcPath := filepath.Join(cfg.Attachments.Dir, ref.ID)
 	destPath := filepath.Join(workspaceDir, filename)
 	if err := moveUploadedFile(srcPath, destPath); err != nil {
-		return msg.Content, "", fmt.Errorf("moving upload into workspace: %w", err)
+		return "", fmt.Errorf("moving upload into workspace: %w", err)
 	}
 
-	note := fmt.Sprintf("\n\n[A file has been included named %s. Read it if relevant to answering this question.]", filename)
-	return msg.Content + note, filename, nil
+	return filename, nil
+}
+
+// resolveAttachments turns a ClientMessage carrying zero or more uploads
+// (issue #71 — multiple attachments per turn) into the text agent.Run
+// should actually see, plus the resolved attachments to persist via
+// store.SetMessageAttachments. msg.Content is returned unchanged (and
+// resolved is nil) when there are no attachments. Called once per turn
+// from handleTurn, before agent.Run.
+//
+// A single attachment failing to resolve (bad ID, missing file on disk,
+// workspace directory unwritable) is reported to onError — so the caller
+// can log/record it with its own turn context — but doesn't drop the
+// others or fail the whole turn, the same tolerance handleTurn already
+// had for one attachment before this went multi-valued.
+func resolveAttachments(cfg *config.Config, msg ClientMessage, threadID string, onError func(ref AttachmentRef, err error)) (content string, resolved []store.Attachment) {
+	content = msg.Content
+	for _, ref := range msg.Attachments {
+		filename, err := resolveOneAttachment(cfg, ref, threadID)
+		if err != nil {
+			if onError != nil {
+				onError(ref, err)
+			}
+			continue
+		}
+		content += fmt.Sprintf("\n\n[A file has been included named %s. Read it if relevant to answering this question.]", filename)
+		resolved = append(resolved, store.Attachment{Filename: ref.Filename, ContentType: ref.ContentType, WorkspaceFileID: filename})
+	}
+	return content, resolved
 }
 
 // moveUploadedFile relocates an uploaded file from the upload staging area
