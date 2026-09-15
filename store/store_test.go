@@ -1131,3 +1131,58 @@ func TestReadThread_CompactionSubstitutionMatchesEffectiveHistory(t *testing.T) 
 		t.Errorf("Content = %q, want the post-compaction message included", result.Content)
 	}
 }
+
+// TestEffectiveHistory_IncludesPendingQuestionOptions guards against the bug
+// filed as polaris#70: an ask_user_question call's suggested options are
+// persisted in Message.PendingQuestion, a separate column from Content, but
+// EffectiveHistory (and therefore both loadHistory's live turns and
+// search_chats' ReadThread) used to build history from Content alone. A user
+// answering "a combo of 1, 2, and 3" instead of retyping the options left
+// the model with no record of what it had actually offered.
+func TestEffectiveHistory_IncludesPendingQuestionOptions(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.CreateThread("t1", "a thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := s.AddMessage("t1", "user", "help me pick a game", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(user): %v", err)
+	}
+	assistantID, err := s.AddMessage("t1", "assistant", "What kind of game are you in the mood for?", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage(assistant): %v", err)
+	}
+	pendingJSON := `{"question":"What kind of game are you in the mood for?","options":["Puzzle","Strategy","Cozy"]}`
+	if err := s.SetMessagePendingQuestion(assistantID, pendingJSON); err != nil {
+		t.Fatalf("SetMessagePendingQuestion: %v", err)
+	}
+	if _, err := s.AddMessage("t1", "user", "a combo of 1 and 3", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(reply): %v", err)
+	}
+
+	thread, err := s.GetThreadRaw("t1")
+	if err != nil {
+		t.Fatalf("GetThreadRaw: %v", err)
+	}
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	entries := EffectiveHistory(thread, msgs, 0)
+
+	var assistantEntry *HistoryEntry
+	for i := range entries {
+		if entries[i].Role == "assistant" {
+			assistantEntry = &entries[i]
+			break
+		}
+	}
+	if assistantEntry == nil {
+		t.Fatalf("no assistant entry in history: %+v", entries)
+	}
+	for _, want := range []string{"Puzzle", "Strategy", "Cozy"} {
+		if !strings.Contains(assistantEntry.Content, want) {
+			t.Errorf("assistant history Content = %q, want it to include offered option %q", assistantEntry.Content, want)
+		}
+	}
+}

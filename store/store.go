@@ -1454,9 +1454,37 @@ func EffectiveHistory(thread *Thread, msgs []Message, excludeFromID int64) []His
 		if excludeFromID != 0 && m.ID >= excludeFromID {
 			continue
 		}
-		history = append(history, HistoryEntry{Role: m.Role, Content: m.Content})
+		history = append(history, HistoryEntry{Role: m.Role, Content: appendPendingQuestionOptions(m.Content, m.PendingQuestion)})
 	}
 	return history
+}
+
+// appendPendingQuestionOptions folds an ask_user_question call's suggested
+// options into the plain-text content a history entry carries. The frontend
+// renders Options as a separate tappable-row UI (see
+// AskUserQuestionCard.svelte) built from store.Message.PendingQuestion, but
+// that field never flowed into Content itself — so once the model resumed
+// on the next turn, "a combo of 1, 2, and 3" referred to options the model
+// had no record of ever offering. Can't import package tools here for its
+// PendingQuestion type (tools already imports store), so this decodes just
+// the two fields history actually needs.
+func appendPendingQuestionOptions(content, pendingQuestionJSON string) string {
+	if pendingQuestionJSON == "" {
+		return content
+	}
+	var pq struct {
+		Options []string `json:"options"`
+	}
+	if err := json.Unmarshal([]byte(pendingQuestionJSON), &pq); err != nil || len(pq.Options) == 0 {
+		return content
+	}
+	var sb strings.Builder
+	sb.WriteString(content)
+	sb.WriteString("\n\nOptions offered:\n")
+	for i, opt := range pq.Options {
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, opt)
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // ThreadReadResult is search_chats' read action's raw material — a past
