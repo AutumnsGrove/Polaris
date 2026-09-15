@@ -39,20 +39,16 @@ convenience.
 
 ## Frontend development
 
-The Go binary embeds the frontend's built static output (`web/build/`), which is committed to
-this repo — the potato is a Le Potato SBC, too weak to run `pnpm install` + `vite build` in any
-reasonable time on every self-update, so that cost stays on a real dev machine instead.
-
-`git config core.hooksPath .githooks` (once) enables a pre-commit hook that rebuilds `web/build/`
-automatically and stages it whenever a commit touches `web/src/` or the frontend's dependency
-manifests — so it's structurally impossible to commit a stale build. You don't need to remember to
-run `pnpm run build` yourself; the hook does it for you.
+The Go binary embeds the frontend's built static output (`web/build/`) via `go:embed`. It's not
+committed to git — Docker's image build always runs `pnpm run build` fresh from `web/src/` (see
+`Dockerfile`'s frontend-build stage), so there's nothing to keep in sync. For bare-metal dev/
+testing, build it locally whenever the frontend changes:
 
 ```bash
 cd web
 pnpm install
 pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go backend on :8899
-pnpm run build        # manual rebuild, if you ever need one outside of committing
+pnpm run build        # produces web/build/ for `go build`/`go run .` to embed
 ```
 
 ### Local dev SearXNG (Docker)

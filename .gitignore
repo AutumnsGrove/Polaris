@@ -22,11 +22,12 @@ code-exec-signal/
 workspaces/
 .codeexec-watcher.lock
 
-# web/build/ is intentionally committed — the potato is a Le Potato SBC,
-# too weak to run pnpm install + vite build in any reasonable time on
-# every self-update. Built locally instead; the .githooks/pre-commit
-# hook rebuilds it automatically whenever web/src/ changes, so it can't
-# drift from source. See gitconfig core.hooksPath and README.
+# web/build/ is no longer committed — Docker's own image build always
+# runs a fresh `pnpm run build` from web/src/ (Dockerfile's
+# frontend-build stage), so there's no committed copy to keep in sync.
+# Still produced locally by `cd web && pnpm run build` for bare-metal
+# dev/testing; just not tracked.
+web/build/
 
 # BrowseComp dataset/results (cmd/benchmark.go) — OpenAI's canary/leakage
 # note asks that examples not be republished in plain text, and the run

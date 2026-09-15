@@ -1,19 +1,11 @@
 # syntax=docker/dockerfile:1
 
 # --- frontend build -----------------------------------------------------
-# web/build/ is committed to git for the bare-metal path (see README's
-# "Frontend development": the Le Potato SBC can't afford pnpm install +
-# vite build on every self-update, so that cost stays off-device,
-# permanently, via a checked-in prebuilt copy). That constraint doesn't
-# apply here — this image is always built on a real machine (CI, or a
-# dev machine via `docker compose up --build`), never on the potato
-# itself, which only ever pulls an already-built image. So instead of
-# depending on the committed copy staying in sync (a real footgun: see
-# .github/workflows/frontend-build-sync.yml, which exists purely to
-# catch that drift), this stage just builds straight from web/src every
-# time — always exactly what's in this commit, no possibility of drift.
-# Node/pnpm versions matched to that same workflow for the same
-# reproducibility reason it pins them.
+# web/build/ is NOT committed to git — this stage builds it fresh from
+# web/src/ every time, always exactly what's in this commit, no possible
+# drift between source and output. This image is always built on a real
+# machine (CI, or a dev machine via `docker compose up --build`), never
+# on the potato itself, which only ever pulls an already-built image.
 #
 # --platform=$BUILDPLATFORM pins this stage to the build host's own
 # architecture regardless of which platform(s) this image is being
@@ -48,10 +40,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# Overwrites whatever committed web/build/ COPY . . just brought in
-# with the freshly built copy from frontend-build above — see that
-# stage's comment for why this image never relies on the committed one
-# being accurate.
+# web/build/ isn't tracked in git (COPY . . above brings nothing for
+# it) — this is where the freshly built copy from frontend-build above
+# actually lands.
 COPY --from=frontend-build /web/build ./web/build
 
 # ARG (not just a shell default inside the RUN below) is required for
