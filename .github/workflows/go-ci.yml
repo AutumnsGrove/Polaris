@@ -29,6 +29,25 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # web/embed.go unconditionally embeds web/build/ — not committed to
+      # git since bcc95d4 ("Stop committing web/build/"), same as the
+      # Dockerfile's own frontend-build stage builds it fresh every time.
+      # A checkout with no web/build/ at all fails `go build ./...`
+      # outright (go:embed's "all:build" pattern matches zero files), not
+      # just at runtime — this step has to run before the Go steps below,
+      # not after.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: build frontend
+        working-directory: web
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm run build
+
       - name: go build
         run: go build ./...
 
