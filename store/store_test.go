@@ -259,6 +259,83 @@ func TestAddMessage_AccumulatesThreadCost(t *testing.T) {
 	}
 }
 
+func TestSetMessageAttachments_RoundTrips(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	msgID, err := s.AddMessage("t1", "user", "see attached", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	want := `[{"filename":"a.pdf","content_type":"application/pdf","workspace_file_id":"abc123.pdf"},{"filename":"b.csv","content_type":"text/csv","workspace_file_id":"def456.csv"}]`
+	if err := s.SetMessageAttachments(msgID, want); err != nil {
+		t.Fatalf("SetMessageAttachments: %v", err)
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if msgs[0].Attachments != want {
+		t.Errorf("Attachments = %q, want %q", msgs[0].Attachments, want)
+	}
+}
+
+func TestGetMessages_FallsBackToLegacyAttachmentColumns(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	// Simulates a row written before the attachments column existed:
+	// only the three singular legacy columns are populated, never the
+	// new array column.
+	msgID, err := s.AddMessage("t1", "user", "see attached", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := s.SetMessageAttachment(msgID, "report.pdf", "application/pdf"); err != nil {
+		t.Fatalf("SetMessageAttachment: %v", err)
+	}
+	if err := s.SetMessageWorkspaceFileID(msgID, "abc123.pdf"); err != nil {
+		t.Fatalf("SetMessageWorkspaceFileID: %v", err)
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	want := `[{"filename":"report.pdf","content_type":"application/pdf","workspace_file_id":"abc123.pdf"}]`
+	if msgs[0].Attachments != want {
+		t.Errorf("Attachments = %q, want %q (synthesized from legacy columns)", msgs[0].Attachments, want)
+	}
+}
+
+func TestGetMessages_NoAttachmentIsEmptyArray(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := s.AddMessage("t1", "user", "hello", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if msgs[0].Attachments != "[]" {
+		t.Errorf("Attachments = %q, want \"[]\" for a message with no upload", msgs[0].Attachments)
+	}
+}
+
 func TestSetMessageDuration_RecordsElapsedTime(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {

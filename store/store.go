@@ -6,6 +6,7 @@ package store
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -152,6 +153,14 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- deleted after one read under the old single-read-then-deleted
 	-- lifecycle, so there's nothing on disk to point at).
 	workspace_file_id TEXT NOT NULL DEFAULT '',
+	-- attachments: JSON-encoded []Attachment, one entry per file included
+	-- with a user message (issue #71 — multiple attachments per turn).
+	-- Supersedes attachment_filename/attachment_content_type/
+	-- workspace_file_id above, which are now frozen: nothing writes them
+	-- after this column shipped, they're kept only so GetMessages can
+	-- synthesize a one-element attachments array for rows written before
+	-- this column existed. '[]' for a message with no upload.
+	attachments TEXT NOT NULL DEFAULT '[]',
 	-- cards: structured rich-result items (see tools.Card) a tool wants
 	-- rendered as their own visual block — e.g. music's recommendations
 	-- carousel — set via SetMessageCards once the assistant message's ID
@@ -872,6 +881,13 @@ var migrations = []string{
 	// end per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE messages ADD COLUMN workspace_file_id TEXT NOT NULL DEFAULT ''`,
+	// attachments — see the schema comment above (issue #71, multiple
+	// attachments per turn). The three singular attachment_* columns
+	// above are now frozen: no code writes them again after this
+	// migration ships. GetMessages synthesizes a one-element attachments
+	// array from them for any row written before this column existed,
+	// so old messages still display correctly without a backfill.
+	`ALTER TABLE messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1019,6 +1035,14 @@ type Message struct {
 	// directly from it. "" for a message with no attachment, or one
 	// predating this column.
 	WorkspaceFileID string `json:"workspace_file_id,omitempty"`
+	// Attachments is JSON-encoded []Attachment — see SetMessageAttachments
+	// and the schema comment above messages.attachments. Always populated
+	// on read, even for a message written before this column existed:
+	// GetMessages synthesizes a one-element array from the three legacy
+	// fields above in that case, so a caller only ever needs to look at
+	// this field, never the legacy ones. "[]" for a message with no
+	// upload.
+	Attachments string `json:"attachments"`
 	// Cards is JSON-encoded []tools.Card — see SetMessageCards.
 	Cards string `json:"cards"`
 	// Chart is JSON-encoded *tools.ChartSpec — see SetMessageChart. ""
@@ -1029,6 +1053,16 @@ type Message struct {
 	// see SetMessagePendingQuestion. "" for every other message.
 	PendingQuestion string    `json:"pending_question,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+// Attachment is one file included with a user message — see
+// messages.attachments. JSON field names intentionally match
+// UploadedAttachment's shape on the frontend (web/src/lib/types.ts) so
+// the two round-trip without translation.
+type Attachment struct {
+	Filename        string `json:"filename"`
+	ContentType     string `json:"content_type"`
+	WorkspaceFileID string `json:"workspace_file_id"`
 }
 
 // CreateThread inserts a new thread. title is typically derived from the
@@ -1189,8 +1223,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1901,7 +1935,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, cards, chart, pending_question, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -1914,12 +1948,30 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
 			return nil, err
 		}
+		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
 		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
+}
+
+// withLegacyAttachmentFallback synthesizes a one-element attachments JSON
+// array from the frozen singular attachment_filename/attachment_content_
+// type/workspace_file_id columns, for any message row written before the
+// attachments column existed. attachmentsJSON is returned unchanged
+// whenever it's already non-empty (anything but "[]"), which is every row
+// written after this shipped.
+func withLegacyAttachmentFallback(attachmentsJSON, filename, contentType, workspaceFileID string) string {
+	if attachmentsJSON != "[]" || filename == "" {
+		return attachmentsJSON
+	}
+	encoded, err := json.Marshal([]Attachment{{Filename: filename, ContentType: contentType, WorkspaceFileID: workspaceFileID}})
+	if err != nil {
+		return attachmentsJSON
+	}
+	return string(encoded)
 }
 
 // SetMessageDuration records how long agent.Run took to produce a given
@@ -1993,6 +2045,16 @@ func (s *Store) SetMessageAttachment(messageID int64, filename, contentType stri
 // filename/content-type were already recorded.
 func (s *Store) SetMessageWorkspaceFileID(messageID int64, fileID string) error {
 	_, err := s.db.Exec(`UPDATE messages SET workspace_file_id = ? WHERE id = ?`, fileID, messageID)
+	return err
+}
+
+// SetMessageAttachments records every file included with a user message
+// (JSON-encoded []Attachment) — the multi-valued successor to
+// SetMessageAttachment/SetMessageWorkspaceFileID above (issue #71), which
+// only ever recorded one. Those two setters and their columns are now
+// frozen: nothing calls them for a new message after this shipped.
+func (s *Store) SetMessageAttachments(messageID int64, attachmentsJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET attachments = ? WHERE id = ?`, attachmentsJSON, messageID)
 	return err
 }
 
