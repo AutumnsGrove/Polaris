@@ -106,6 +106,46 @@ func TestResolveAttachments_MovesFileIntoThreadWorkspace(t *testing.T) {
 	}
 }
 
+// TestResolveAttachments_NoteMentionsOriginalFilename guards a real,
+// live-found gap: the model only ever saw the generated workspace
+// filename (e.g. "s47cat72nw.jpg"), never the file's actual name, so it
+// had no way to refer back to it the way the human who uploaded it would
+// recognize — a chip reading "arrow-transparent.jpg" next to an answer
+// talking about "s47cat72nw.jpg" with no visible connection between them.
+// The workspace filename itself must stay a short generated ID (not the
+// original name) — see shortFileIDAlphabet's doc comment on why: it has
+// to be reliably retyped by the model in a tool call, which an arbitrary
+// uploaded filename (spaces, unicode, long names) can't guarantee.
+func TestResolveAttachments_NoteMentionsOriginalFilename(t *testing.T) {
+	stagingDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	id := "550e8400-e29b-41d4-a716-446655440020"
+	if err := os.WriteFile(filepath.Join(stagingDir, id), []byte("bytes"), 0o644); err != nil {
+		t.Fatalf("writing staged upload: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Attachments.Dir = stagingDir
+	cfg.CodeExec.WorkspaceDir = workspaceDir
+
+	msg := ClientMessage{
+		Content:     "take a look at this",
+		Attachments: []AttachmentRef{{ID: id, Filename: "arrow-transparent.jpg", ContentType: "image/jpeg"}},
+	}
+	got, resolved := resolveAttachments(cfg, msg, "thread-1", func(ref AttachmentRef, err error) {
+		t.Fatalf("unexpected resolve failure: %v", err)
+	})
+	if len(resolved) != 1 {
+		t.Fatalf("got %d resolved attachments, want 1", len(resolved))
+	}
+	if !strings.Contains(got, "arrow-transparent.jpg") {
+		t.Errorf("got %q, want the note to mention the original filename %q", got, "arrow-transparent.jpg")
+	}
+	if !strings.Contains(got, resolved[0].WorkspaceFileID) {
+		t.Errorf("got %q, want the note to still mention the workspace filename %q (the model's tool-call handle)", got, resolved[0].WorkspaceFileID)
+	}
+}
+
 // TestResolveAttachments_MultipleFilesAllResolve covers issue #71's core
 // case: several attachments on one turn, each getting its own pointer
 // note and its own workspace file, not just the first one.

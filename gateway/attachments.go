@@ -445,6 +445,29 @@ func resolveOneAttachment(cfg *config.Config, ref AttachmentRef, threadID string
 // can log/record it with its own turn context — but doesn't drop the
 // others or fail the whole turn, the same tolerance handleTurn already
 // had for one attachment before this went multi-valued.
+// attachmentNote builds the pointer text appended to the turn for one
+// resolved attachment. Names both the workspace filename (workspaceFilename
+// — a short generated ID, e.g. "s47cat72nw.jpg", see shortFileIDAlphabet's
+// doc comment on why it must stay that way rather than the original name:
+// it has to be reliably retyped by the model in a code_exec/view_image
+// tool call, which an arbitrary uploaded filename can't guarantee) and the
+// original filename, so the model can still call the file by the name a
+// human would recognize when discussing it, instead of only ever knowing
+// it by its cryptic on-disk id — a real gap found live: with multiple
+// attachments in one turn, a chip reading "arrow-transparent.jpg" next to
+// an answer talking about "s47cat72nw.jpg" had no visible connection
+// between them at all. originalFilename empty (a pasted file with no
+// name) falls back to naming only the workspace filename.
+func attachmentNote(originalFilename, workspaceFilename string) string {
+	if originalFilename == "" {
+		return fmt.Sprintf("\n\n[A file has been included as workspace file %s. Read it if relevant to answering this question.]", workspaceFilename)
+	}
+	return fmt.Sprintf(
+		"\n\n[A file named %q has been included as workspace file %s. Open %s if relevant to answering this question, but refer to it as %q (its real name) when talking to the user.]",
+		originalFilename, workspaceFilename, workspaceFilename, originalFilename,
+	)
+}
+
 func resolveAttachments(cfg *config.Config, msg ClientMessage, threadID string, onError func(ref AttachmentRef, err error)) (content string, resolved []store.Attachment) {
 	content = msg.Content
 	for _, ref := range msg.Attachments {
@@ -455,7 +478,7 @@ func resolveAttachments(cfg *config.Config, msg ClientMessage, threadID string, 
 			}
 			continue
 		}
-		content += fmt.Sprintf("\n\n[A file has been included named %s. Read it if relevant to answering this question.]", filename)
+		content += attachmentNote(ref.Filename, filename)
 		resolved = append(resolved, store.Attachment{Filename: ref.Filename, ContentType: ref.ContentType, WorkspaceFileID: filename})
 	}
 	return content, resolved
