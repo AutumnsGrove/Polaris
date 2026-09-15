@@ -28,7 +28,13 @@
 		if (!iso) return '—';
 		const d = new Date(iso);
 		if (Number.isNaN(d.getTime())) return '—';
-		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+		return d.toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit'
+		});
 	}
 
 	function toggleFavorite() {
@@ -319,6 +325,7 @@
 		font-size: 11.5px;
 		font-style: italic;
 		opacity: 0.75;
+		white-space: nowrap;
 	}
 
 	.confirm {
