@@ -101,17 +101,23 @@ logging:
 attachments:
   dir: "./attachments"   # uploaded PDFs/images from the composer's "+" menu
 
-# code_exec: the sandboxed Python tool — Docker-only (see
-# docs/plans/code-execution.md's "Deployment scope"). Bare-metal has no
-# container boundary for arbitrary code, so code_exec is never offered
-# here regardless of what's set below; nothing to configure on this path.
-# code_exec:
-#   workspace_dir: "./workspaces"
-#   host_workspace_dir: ""   # required for Docker; see compose/polaris/config.yaml.example
-#   signal_dir: "./code-exec-signal"
-#   memory_limit_mb: 384
-#   pids_limit: 64
-#   timeout_seconds: 30
+# code_exec: the sandboxed Python tool. The sandbox itself always runs in
+# Docker (compose/watcher/codeexec.sh does `docker run --network none
+# --cap-drop=ALL ...` against ghcr.io/autumnsgrove/polaris-sandbox) — but
+# Polaris itself doesn't need to be containerized to use it. Run
+# codeexec.sh as a plain foreground process (it watches signal_dir on its
+# own; no systemd needed for dev) alongside `go run .`, with Docker
+# installed locally for the sandbox container. Uncomment to enable:
+code_exec:
+  workspace_dir: "./workspaces"
+  # Same path as workspace_dir here specifically because bare-metal has no
+  # container boundary to translate across — Docker's own compose config
+  # legitimately differs (this container's path vs. the host's real path).
+  host_workspace_dir: "./workspaces"
+  signal_dir: "./code-exec-signal"
+  memory_limit_mb: 384
+  pids_limit: 64
+  timeout_seconds: 30
 
 service:
   label: "polaris"

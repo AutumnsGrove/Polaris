@@ -480,15 +480,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			return visionCl.DescribeImage(imgCtx, imageBase64, mimeType, instructions)
 		}
 	}
-	// Left false/empty (not wired above) unless this is genuinely a
-	// Docker deployment with HostWorkspaceDir actually configured — see
-	// config.Config.CodeExec's doc comment on why that field has no safe
-	// default. A bare-metal process, or a Docker one that hasn't set
-	// host_workspace_dir yet, gets CodeExecEnabled=false, which
+	// Left false/empty (not wired above) unless the sandbox is actually
+	// configured — a pure capability check, not a deployment-mode check.
+	// Polaris itself doesn't need to run inside a container for code_exec
+	// to work; only the host-side watcher (compose/watcher/codeexec.sh)
+	// and a reachable Docker daemon do, which a bare-metal dev instance
+	// can have too. See config.Config.CodeExec's doc comment on why
+	// HostWorkspaceDir has no safe default. An install that hasn't set
+	// host_workspace_dir/signal_dir yet gets CodeExecEnabled=false, which
 	// catalog.go's "docker_only" Requires case turns into code_exec
 	// simply not being offered — the same "explicit refuse" outcome
 	// cmd/install.go uses for the CLI side of this same deployment split.
-	if deploymentMode() == "docker" && cfg.CodeExec.HostWorkspaceDir != "" {
+	if cfg.CodeExec.HostWorkspaceDir != "" && cfg.CodeExec.SignalDir != "" {
 		agentCtx.CodeExecEnabled = true
 		agentCtx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir
 		agentCtx.CodeExecHostWorkspaceDir = cfg.CodeExec.HostWorkspaceDir

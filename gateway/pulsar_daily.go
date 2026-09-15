@@ -382,10 +382,11 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 	// "docker_only" Requires case) let a Daily research/elaboration block
 	// generate and display its own matplotlib chart instead of being
 	// limited to weather's Tier-1 "range" chart, once the visualize tool
-	// (never wired here to begin with) was removed — see issue #44.
-	// Bare-metal or an unconfigured Docker install just doesn't offer
-	// these, same as normal chat.
-	if deploymentMode() == "docker" && cfg.CodeExec.HostWorkspaceDir != "" {
+	// (never wired here to begin with) was removed — see issue #44. A
+	// pure capability check, not a deployment-mode check — see
+	// gateway/turn.go's CodeExecEnabled comment. Any install that hasn't
+	// configured the sandbox just doesn't offer these, same as normal chat.
+	if cfg.CodeExec.HostWorkspaceDir != "" && cfg.CodeExec.SignalDir != "" {
 		ctx.CodeExecEnabled = true
 		ctx.CodeExecWorkspaceDir = cfg.CodeExec.WorkspaceDir
 		ctx.CodeExecHostWorkspaceDir = cfg.CodeExec.HostWorkspaceDir

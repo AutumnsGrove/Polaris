@@ -63,6 +63,23 @@ docker run -d --name searxng-dev -p 18888:8080 \
   searxng/searxng:latest
 ```
 
+### Local dev code_exec (Docker sandbox)
+
+`code_exec` needs a reachable Docker daemon and the host-side watcher script running — nothing
+about Polaris itself needs to be containerized. Uncomment `config.yaml`'s `code_exec:` block
+(see `config.yaml.example`), then run the watcher in a spare terminal alongside `go run .`:
+
+```bash
+while true; do ./compose/watcher/codeexec.sh; sleep 1; done
+```
+
+The script itself is single-shot (processes at most one pending request, then exits) — in
+production `polaris-codeexec.path` (a systemd path unit) re-triggers it the instant a new
+request file appears; the loop above is the dev-friendly equivalent. Each iteration is a no-op
+if nothing's pending, and shells out to `docker run` against
+`ghcr.io/autumnsgrove/polaris-sandbox:latest` (pulled automatically on first use) once a
+request does show up.
+
 ## CLI usage
 
 ```bash
