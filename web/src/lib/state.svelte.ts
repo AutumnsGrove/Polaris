@@ -349,6 +349,7 @@ export class AppState {
 			this.pendingTurn = null;
 			this.pendingUserTurn = null;
 			this.pendingThreadId = null;
+			this.pendingIsNewThread = false;
 			this.pendingGhost = false;
 			this.pendingAbandoned = false;
 			return;
@@ -369,6 +370,7 @@ export class AppState {
 			this.pendingTurn = null;
 			this.pendingUserTurn = null;
 			this.pendingThreadId = null;
+			this.pendingIsNewThread = false;
 			this.pendingGhost = false;
 			return;
 		}
@@ -383,6 +385,7 @@ export class AppState {
 		this.pendingTurn = null;
 		this.pendingUserTurn = null;
 		this.pendingThreadId = null;
+		this.pendingIsNewThread = false;
 		this.pendingGhost = false;
 		void this.loadThreads();
 	}
@@ -653,6 +656,13 @@ export class AppState {
 		});
 		this.currentThreadId = id;
 		this.currentThread = data as Thread;
+		// A stale ghost session's id must never leak into whichever real
+		// thread is opened next — dispatch()'s stickiness check (see
+		// ghostThreadId's doc comment) would otherwise treat this real,
+		// just-opened thread's very next message as a ghost turn too,
+		// using the OLD session's id. newThread() already resets this for
+		// "start fresh"; opening an existing thread needs the same reset.
+		this.ghostThreadId = null;
 		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
@@ -1040,17 +1050,32 @@ export class AppState {
 		}
 		this.suggestions = [];
 
-		// Ghost mode (issue #67): mint this session's own client-held thread
-		// id the first time it's used (a ghost thread has no persisted row
-		// for the server to assign one against the way a normal new
-		// thread's id comes back), and build the wire history from this
-		// session's own turns array — everything already on screen, since
-		// nothing about a ghost session is ever fetched back from a thread
-		// row the way loadHistory/openThread normally would. Must run
-		// before the push below, which is this turn's own not-yet-answered
-		// pair — those don't belong in "history so far".
+		// Ghost mode (issue #67) is sticky for the whole session, not just
+		// whatever this one call happened to pass: this.ghostThreadId being
+		// already set means an earlier message in this same session went
+		// ghost, and every later turn MUST stay ghost too regardless of
+		// which UI control fired it — a real bug caught live, not just a
+		// theoretical one: the follow-up suggestion chips' own click
+		// handler (appState.send(suggestion), ChatView.svelte) never passes
+		// ghostMode at all, so without this, clicking a suggestion mid-
+		// ghost-conversation silently produced a fully persisted turn under
+		// a brand-new real thread id — exactly the kind of leak this whole
+		// feature exists to prevent. newThread() is the only thing that
+		// clears ghostThreadId, so this can't accidentally stay stuck across
+		// an unrelated later session.
+		const isGhost = !!ghostMode || this.ghostThreadId !== null;
+
+		// Mint this session's own client-held thread id the first time it's
+		// used (a ghost thread has no persisted row for the server to
+		// assign one against the way a normal new thread's id comes back),
+		// and build the wire history from this session's own turns array —
+		// everything already on screen, since nothing about a ghost session
+		// is ever fetched back from a thread row the way loadHistory/
+		// openThread normally would. Must run before the push below, which
+		// is this turn's own not-yet-answered pair — those don't belong in
+		// "history so far".
 		let ghostHistory: { role: 'user' | 'assistant'; content: string }[] | undefined;
-		if (ghostMode) {
+		if (isGhost) {
 			if (!this.ghostThreadId) this.ghostThreadId = crypto.randomUUID();
 			ghostHistory = this.turns.map((t) => ({ role: t.role, content: t.content }));
 		}
@@ -1081,9 +1106,9 @@ export class AppState {
 		// doc comment), but handleEvent's "still tracking this turn" gate
 		// (eventThreadId !== pendingThreadId) needs a real, matching id to
 		// compare every streamed event against regardless.
-		this.pendingThreadId = ghostMode ? this.ghostThreadId : this.currentThreadId;
+		this.pendingThreadId = isGhost ? this.ghostThreadId : this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
-		this.pendingGhost = !!ghostMode;
+		this.pendingGhost = isGhost;
 		this.pendingAbandoned = false;
 
 		debugBeacon('dispatch sending', {
@@ -1095,7 +1120,7 @@ export class AppState {
 
 		this.socket.send({
 			type: 'message',
-			thread_id: (ghostMode ? this.ghostThreadId : this.currentThreadId) ?? undefined,
+			thread_id: (isGhost ? this.ghostThreadId : this.currentThreadId) ?? undefined,
 			content,
 			model: this.selectedModel,
 			edit_from_id: editFromId,
@@ -1111,7 +1136,7 @@ export class AppState {
 			})),
 			source,
 			title_seed: titleSeed,
-			anonymous: ghostMode || undefined,
+			anonymous: isGhost || undefined,
 			history: ghostHistory
 		});
 	}
@@ -1409,6 +1434,21 @@ export class AppState {
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
+				// Real bug caught live: this used to NOT reset
+				// pendingIsNewThread here — its only job is describing
+				// whatever turn was just in flight, but a stray, LATER event
+				// for the very same turn (the 'suggestions' event, sent
+				// "shortly after done" per its own doc comment above) would
+				// still see pendingIsNewThread=true and pendingThreadId=null
+				// (just cleared right here) and wrongly re-trigger this
+				// function's top-of-handleEvent "brand-new thread just
+				// learned its id" branch a second time — for a normal thread
+				// that's harmless (syncURL no-ops against a path it already
+				// set), but for a ghost turn it meant the suggestions event
+				// alone synced the address bar to the ghost session's real
+				// id, moments after the 'done' handling above had correctly
+				// avoided doing exactly that.
+				this.pendingIsNewThread = false;
 				this.pendingGhost = false;
 				// Skipped for a ghost turn — there's no thread row that
 				// could have been created or bumped for the sidebar to show.
@@ -1429,6 +1469,7 @@ export class AppState {
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
+				this.pendingIsNewThread = false;
 				this.pendingGhost = false;
 				void this.checkVersion();
 				break;
