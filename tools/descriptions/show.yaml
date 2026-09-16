@@ -1,11 +1,15 @@
 name: show
 description: >-
-  display a workspace file (today, always an image — e.g. a code_exec-generated chart) large and
-  inline, right where you called it, instead of in an end-of-message gallery. Docker-only, since it
-  only ever reads from the code_exec workspace.
+  display a workspace file — an image renders large and inline (e.g. a code_exec-generated chart);
+  anything else (a report, a CSV, any other document you wrote with code_exec) renders as a
+  tappable artifact card with its own viewer and download link. Right where you called it, instead
+  of in an end-of-message gallery.
 api_description: >-
-  Display an image already in your workspace (e.g. a chart code_exec just generated) large and
-  inline in the conversation, right at this point in your reply, with an optional caption. Purely a
-  display action — it doesn't let you see the image yourself; use view_image for that. Call it as
-  many times as you have distinct artifacts to show.
+  Display a file already in your workspace, right at this point in your reply, with an optional
+  caption. An image (e.g. a chart code_exec just generated) renders large and inline. Any other
+  file — a Markdown report, a CSV, anything you wrote with code_exec — renders as a document
+  artifact the user can open and download; this is how to surface a generated report once you've
+  written it to the workspace, not something you paste into your own reply text. Purely a display
+  action — it doesn't let you see the file's contents yourself; use view_image for that on an
+  image. Call it as many times as you have distinct artifacts to show.
 requires: docker_only

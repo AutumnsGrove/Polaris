@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Artifacts — mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+.page-head {
+	max-width: 1280px;
+	margin: 0 auto;
+	padding: var(--space-2xl) var(--space-xl) 0;
+}
+.page-head .kicker {
+	font-family: 'Asimovian', sans-serif;
+	color: var(--color-accent);
+	font-size: 1.3rem;
+	margin: 0 0 var(--space-sm);
+}
+.page-head p {
+	color: var(--color-text-dim);
+	max-width: 72ch;
+	line-height: 1.5;
+	font-size: 0.9rem;
+}
+
+.frames {
+	display: flex;
+	gap: var(--space-2xl);
+	flex-wrap: wrap;
+	max-width: 1280px;
+	margin: var(--space-2xl) auto;
+	padding: 0 var(--space-xl) var(--space-2xl);
+	align-items: flex-start;
+}
+.frame {
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-xl);
+	box-shadow: var(--shadow-lg);
+	overflow: hidden;
+}
+.frame-label {
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--color-text-dim);
+	margin-bottom: var(--space-sm);
+}
+
+.thread {
+	padding: var(--space-lg);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-lg);
+}
+
+.msg-user {
+	align-self: flex-end;
+	background: var(--color-surface-3);
+	border-radius: var(--radius-lg) var(--radius-lg) var(--space-xs) var(--radius-lg);
+	padding: var(--space-md) var(--space-lg);
+	max-width: 85%;
+	font-size: 0.88rem;
+}
+.msg-prose { font-size: 0.86rem; line-height: 1.55; color: var(--color-text); }
+.msg-prose p { margin: 0 0 var(--space-sm); }
+
+/* --- Visual tier: unchanged from show.md, big inline image --- */
+.show-image-wrap { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--color-border); max-width: 340px; }
+.show-image-wrap img { display: block; width: 100%; }
+.show-caption { padding: var(--space-sm) var(--space-md); font-size: 0.76rem; color: var(--color-text-dim); background: var(--color-surface); }
+
+/* --- Document tier: the new tappable artifact card --- */
+.artifact-card {
+	display: flex;
+	align-items: center;
+	gap: var(--space-md);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-lg);
+	padding: var(--space-md) var(--space-lg);
+	max-width: 420px;
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+.artifact-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
+.artifact-card .icon {
+	flex-shrink: 0;
+	width: 38px; height: 38px;
+	border-radius: var(--radius-md);
+	background: var(--color-accent-soft);
+	display: flex; align-items: center; justify-content: center;
+}
+.artifact-card .icon svg { width: 18px; height: 18px; stroke: var(--color-accent); }
+.artifact-card .meta { flex: 1; min-width: 0; }
+.artifact-card .title { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-card .type { font-size: 0.74rem; color: var(--color-text-dim); }
+.artifact-card .dl-btn {
+	flex-shrink: 0;
+	display: flex; align-items: center; gap: 6px;
+	background: var(--color-surface-3);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-md);
+	padding: 6px 10px;
+	font-size: 0.76rem;
+	color: var(--color-text);
+	text-decoration: none;
+}
+.artifact-card .dl-btn:hover { background: var(--color-surface-2); }
+.artifact-card .dl-btn svg { width: 12px; height: 12px; }
+.artifact-card .chev { color: var(--color-text-dim); padding-left: 2px; }
+
+/* --- Desktop: split-panel viewer, chat compresses to make room --- */
+.split-shell {
+	display: flex;
+	height: 640px;
+}
+.split-chat {
+	width: 300px;
+	flex-shrink: 0;
+	border-right: 1px solid var(--color-border);
+	overflow-y: auto;
+}
+.split-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	background: var(--color-surface);
+}
+.panel-head {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	padding: var(--space-md) var(--space-lg);
+	border-bottom: 1px solid var(--color-border);
+}
+.panel-head .toggle-group {
+	display: flex;
+	background: var(--color-surface-2);
+	border-radius: var(--radius-sm);
+	padding: 2px;
+	gap: 2px;
+}
+.panel-head .toggle-group button {
+	border: none; background: none; color: var(--color-text-dim);
+	padding: 4px 7px; border-radius: 5px; cursor: pointer; display: flex;
+}
+.panel-head .toggle-group button.active { background: var(--color-surface-3); color: var(--color-text); }
+.panel-head .toggle-group svg { width: 14px; height: 14px; }
+.panel-head .title-block { flex: 1; min-width: 0; }
+.panel-head .title-block .t { font-size: 0.88rem; font-weight: 500; }
+.panel-head .title-block .s { font-size: 0.72rem; color: var(--color-text-dim); }
+.panel-head .actions { display: flex; gap: var(--space-xs); }
+.panel-head .actions button {
+	border: 1px solid var(--color-border-strong); background: var(--color-surface-2);
+	color: var(--color-text-dim); width: 30px; height: 30px; border-radius: var(--radius-sm);
+	display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.panel-head .actions button:hover { color: var(--color-text); background: var(--color-surface-3); }
+.panel-head .actions svg { width: 14px; height: 14px; }
+.panel-body { flex: 1; overflow-y: auto; padding: var(--space-xl); font-size: 0.86rem; line-height: 1.6; }
+.panel-body h1 { font-size: 1.2rem; margin: 0 0 var(--space-md); }
+.panel-body h2 { font-size: 0.95rem; color: var(--color-accent); margin: var(--space-lg) 0 var(--space-xs); }
+.panel-body p { margin: 0 0 var(--space-sm); color: var(--color-text); }
+.panel-body pre {
+	background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+	padding: var(--space-md); font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; line-height: 1.55;
+	color: var(--color-text-dim); overflow-x: auto; white-space: pre-wrap;
+}
+
+/* --- Mobile: full-screen sheet, reusing app's .modal-backdrop convention --- */
+.phone-frame {
+	width: 300px;
+	border-radius: 32px;
+	border: 6px solid #000;
+	background: var(--color-bg);
+	overflow: hidden;
+	box-shadow: var(--shadow-lg);
+	position: relative;
+	height: 620px;
+}
+.sheet {
+	position: absolute; inset: 0;
+	background: var(--color-surface);
+	display: flex; flex-direction: column;
+}
+.sheet .panel-head { padding: var(--space-md); }
+.sheet .panel-body { padding: var(--space-lg); }
+.sheet-notch {
+	position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+	width: 90px; height: 4px; border-radius: 999px; background: var(--color-border-strong);
+}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<p class="kicker">Artifacts — mockup</p>
+	<p>
+		<code>show</code> generalized from images-only into two tiers: a visual artifact (image) stays
+		big and inline, unchanged; a document artifact (a report, later a runnable app) becomes a
+		compact tappable card that opens a dedicated viewer — a side panel on wide viewports, a
+		full-screen sheet on phone-class widths. See docs/plans/artifacts.md.
+	</p>
+</div>
+
+<div class="frames">
+	<div>
+		<div class="frame-label">Visual tier (unchanged) — image stays big inline</div>
+		<div class="frame" style="width: 380px;">
+			<div class="thread">
+				<div class="msg-user">Plot the monthly totals as a bar chart.</div>
+				<div class="show-image-wrap">
+					<img src="https://images.unsplash.com/photo-1543286386-713bdd548da4?w=600&q=60" alt="chart placeholder" />
+					<div class="show-caption">Monthly totals, Jan–Sep</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div>
+		<div class="frame-label">Document tier — collapsed card in the transcript</div>
+		<div class="frame" style="width: 380px;">
+			<div class="thread">
+				<div class="msg-user">Generate me a report on lightweight note-taking apps.</div>
+				<div class="msg-prose"><p>Here's what I found — quick pass over this turn's own searches.</p></div>
+				<div class="artifact-card">
+					<div class="icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+					</div>
+					<div class="meta">
+						<div class="title">Best Lightweight Note-Taking Apps</div>
+						<div class="type">Report · MD · 4 sources</div>
+					</div>
+					<a class="dl-btn" href="#" onclick="return false">
+						<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+						Download
+					</a>
+					<span class="chev">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="m6 9 6 6 6-6"/></svg>
+					</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div>
+		<div class="frame-label">Wide viewport — side panel opens, chat compresses</div>
+		<div class="frame" style="width: 720px;">
+			<div class="split-shell">
+				<div class="split-chat">
+					<div class="thread">
+						<div class="msg-user">Generate me a report on lightweight note-taking apps.</div>
+						<div class="artifact-card" style="border-color: var(--color-accent); max-width: 100%;">
+							<div class="icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+							</div>
+							<div class="meta">
+								<div class="title">Best Lightweight Note-Taking Apps</div>
+								<div class="type">Report · MD</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="split-panel">
+					<div class="panel-head">
+						<div class="toggle-group">
+							<button class="active" title="Rendered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+							<button title="Raw source"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></button>
+						</div>
+						<div class="title-block">
+							<div class="t">Best Lightweight Note-Taking Apps</div>
+							<div class="s">Report · MD · generated just now</div>
+						</div>
+						<div class="actions">
+							<button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+							<button title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+							<button title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+						</div>
+					</div>
+					<div class="panel-body">
+						<h1>Best Lightweight Note-Taking Apps</h1>
+						<h2>Overview</h2>
+						<p>Synthesized from this turn's own searches only — no parallel research fan-out. Fine for a quick comparison; turn on Deep Research for a more thorough pass across independent sources.</p>
+						<h2>Obsidian</h2>
+						<p>Local-first Markdown files, a large plugin ecosystem, free for personal use.</p>
+						<h2>Bear</h2>
+						<p>Polished native app, tagging via hashtags, iCloud sync — Apple platforms only.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div>
+		<div class="frame-label">Narrow viewport — full-screen sheet</div>
+		<div class="phone-frame">
+			<div class="sheet">
+				<div class="sheet-notch"></div>
+				<div class="panel-head" style="margin-top: 14px;">
+					<div class="toggle-group">
+						<button class="active" title="Rendered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+						<button title="Raw source"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></button>
+					</div>
+					<div class="actions">
+						<button title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+						<button title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+						<button title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+					</div>
+				</div>
+				<div class="panel-body">
+					<h1 style="font-size: 1rem;">Best Lightweight Note-Taking Apps</h1>
+					<h2 style="font-size: 0.86rem;">Overview</h2>
+					<p style="font-size: 0.8rem;">Synthesized from this turn's own searches only — no parallel fan-out.</p>
+					<h2 style="font-size: 0.86rem;">Obsidian</h2>
+					<p style="font-size: 0.8rem;">Local-first Markdown files, large plugin ecosystem.</p>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+</body>
+</html>

@@ -5,6 +5,7 @@
 	import hljs from '$lib/highlightjs';
 	import type { TimelineItem, Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
+	import ArtifactViewer from './ArtifactViewer.svelte';
 	import {
 		Search,
 		FileText,
@@ -35,7 +36,8 @@
 		ScanEye,
 		Highlighter,
 		Paperclip,
-		History
+		History,
+		Download
 	} from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
@@ -46,6 +48,7 @@
 	// happened, not tucking it behind a toggle. Own local state since
 	// each ToolEvent instance is exactly one timeline item.
 	let showLightboxOpen = $state(false);
+	let artifactViewerOpen = $state(false);
 	function showCard(showItem: Extract<TimelineItem, { kind: 'tool' }>): Card {
 		return {
 			title: showItem.caption || (showItem.args?.path as string) || 'Artifact',
@@ -54,6 +57,28 @@
 			full_image_url: showItem.url,
 			url: showItem.url ?? ''
 		};
+	}
+
+	// Document tier vs. visual tier — see docs/plans/artifacts.md. show's
+	// tool_result carries a path/URL but no content-type, so this decides
+	// by extension rather than adding new backend metadata plumbing (the
+	// route already sniffs content-type itself when actually serving the
+	// bytes; this only needs a cheap up-front guess to pick a rendering
+	// mode, not a source of truth). Unrecognized/no extension defaults to
+	// the document card — safer than guessing "image" and showing a
+	// broken-image icon for something like a report with no extension.
+	const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif']);
+	function isLikelyImage(path: string | undefined): boolean {
+		if (!path) return false;
+		const ext = path.split('.').pop()?.toLowerCase();
+		return ext ? imageExtensions.has(ext) : false;
+	}
+	function artifactFilename(showItem: Extract<TimelineItem, { kind: 'tool' }>): string {
+		return (showItem.args?.path as string) || 'artifact';
+	}
+	function artifactTypeLabel(filename: string): string {
+		const ext = filename.split('.').pop()?.toUpperCase();
+		return ext && ext !== filename.toUpperCase() ? `Document · ${ext}` : 'Document';
 	}
 	// Tool calls start collapsed (their result is secondary detail) but a
 	// reasoning block starts open — the whole point is watching it happen
@@ -184,7 +209,7 @@
 				<Loader2 size={14} color="var(--color-text-dim)" class="spin" />
 				<span>Preparing artifact…</span>
 			</div>
-		{:else if item.url}
+		{:else if item.url && isLikelyImage(item.args?.path as string)}
 			<button class="show-image-button" onclick={() => (showLightboxOpen = true)}>
 				<img class="show-image" src={item.url} alt={item.caption || 'artifact'} />
 			</button>
@@ -193,6 +218,31 @@
 			{/if}
 			{#if showLightboxOpen}
 				<ImageLightbox card={showCard(item)} onClose={() => (showLightboxOpen = false)} />
+			{/if}
+		{:else if item.url}
+			<button class="artifact-card" onclick={() => (artifactViewerOpen = true)}>
+				<div class="artifact-card-icon"><FileText size={18} /></div>
+				<div class="artifact-card-meta">
+					<div class="artifact-card-title">{item.caption || artifactFilename(item)}</div>
+					<div class="artifact-card-type">{artifactTypeLabel(artifactFilename(item))}</div>
+				</div>
+				<a
+					class="artifact-card-download"
+					href={item.url}
+					download={artifactFilename(item)}
+					onclick={(e) => e.stopPropagation()}
+				>
+					<Download size={12} />
+					Download
+				</a>
+			</button>
+			{#if artifactViewerOpen}
+				<ArtifactViewer
+					url={item.url}
+					filename={artifactFilename(item)}
+					caption={item.caption}
+					onClose={() => (artifactViewerOpen = false)}
+				/>
 			{/if}
 		{:else}
 			<div class="show-error">{item.result}</div>
@@ -469,6 +519,79 @@
 		font-size: 12px;
 		color: var(--color-text-dim);
 		max-width: min(100%, 600px);
+	}
+
+	/* Document tier — see docs/plans/artifacts.md. Sized to sit inline in
+	   normal message flow (unlike .show-image-button's deliberately large
+	   scale), since a report/document artifact is announced by this card
+	   rather than being the visual point of the message itself. */
+	.artifact-card {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		width: 100%;
+		max-width: 420px;
+		background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-lg);
+		padding: var(--space-md) var(--space-lg);
+		cursor: pointer;
+		text-align: left;
+		transition: border-color 0.15s var(--ease-out-expo), background-color 0.15s var(--ease-out-expo);
+	}
+
+	.artifact-card:hover {
+		border-color: var(--color-accent);
+		background: var(--color-surface-2);
+	}
+
+	.artifact-card-icon {
+		flex-shrink: 0;
+		width: 34px;
+		height: 34px;
+		border-radius: var(--radius-md);
+		background: var(--color-accent-soft);
+		color: var(--color-accent);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.artifact-card-meta {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.artifact-card-title {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--color-text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.artifact-card-type {
+		font-size: 11.5px;
+		color: var(--color-text-dim);
+	}
+
+	.artifact-card-download {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-md);
+		padding: 6px 10px;
+		font-size: 12px;
+		color: var(--color-text);
+		text-decoration: none;
+	}
+
+	.artifact-card-download:hover {
+		background: var(--color-surface);
 	}
 
 	.show-error {
