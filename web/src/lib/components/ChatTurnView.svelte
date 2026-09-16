@@ -4,7 +4,7 @@
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
 	import ImageGallery from './ImageGallery.svelte';
-	import HighlightGrid from './HighlightGrid.svelte';
+	import HighlightCarousel from './HighlightCarousel.svelte';
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import { marked } from '$lib/markdown';
@@ -281,7 +281,7 @@
 			{/if}
 
 			{#if highlightCards.length}
-				<HighlightGrid cards={highlightCards} />
+				<HighlightCarousel cards={highlightCards} />
 			{/if}
 
 			{#if turn.chart}
