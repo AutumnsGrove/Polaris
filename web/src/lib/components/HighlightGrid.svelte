@@ -18,6 +18,9 @@
 				{/if}
 			</div>
 			<span class="tile-title">{card.title}</span>
+			{#if card.why}
+				<span class="tile-why">{card.why}</span>
+			{/if}
 		</a>
 	{/each}
 </div>
@@ -100,6 +103,20 @@
 		font-size: 12px;
 		font-weight: 600;
 		color: var(--color-text);
+		line-height: 1.3;
+	}
+
+	/* One short sentence, not a paragraph — bound the height so a model
+	   that ignores the "one sentence" instruction can't blow out the
+	   tile; a plain max-height instead of line-clamp so a mid-word cut
+	   at the boundary is possible but rare given the length this is
+	   meant to hold. */
+	.tile-why {
+		overflow: hidden;
+		max-height: 2.6em;
+		padding: 0 var(--space-sm) var(--space-xs);
+		font-size: 11px;
+		color: var(--color-text-dim);
 		line-height: 1.3;
 	}
 </style>

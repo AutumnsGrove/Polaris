@@ -778,6 +778,15 @@ type Card struct {
 	// it — see highlight.go's doc comment. Empty for every other caller
 	// and for any non-shopping highlight item.
 	Price string `json:"price,omitempty"`
+	// Why is set only by highlight (Kind "highlight") — a one-sentence
+	// reason this pick fits what was asked, rendered on the card itself.
+	// It exists specifically so per-item reasoning has somewhere to live
+	// other than the model's text reply — without it, a request that
+	// needs justification per item (e.g. "which of these fits me best and
+	// why") pushed the model to restate every card's title/url in prose
+	// alongside the cards themselves, duplicating the whole answer. See
+	// highlight.go's doc comment.
+	Why string `json:"why,omitempty"`
 }
 
 // AddCard appends a card unless its URL is already present, same

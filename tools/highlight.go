@@ -46,6 +46,10 @@ var highlightDef = llm.ToolDef{
 							"price": map[string]interface{}{"type": "string",
 								"description": "Optional free text, e.g. \"$129.99\" or \"~$40, limited stock\" — not a structured amount."},
 							"image_url": map[string]interface{}{"type": "string"},
+							"why": map[string]interface{}{"type": "string",
+								"description": "Optional: one short sentence on why this pick fits what was asked. " +
+									"This is the only place your reasoning for a specific item should go — do not " +
+									"also restate it in your text reply."},
 						},
 						"required": []string{"title", "url"},
 					},
@@ -65,6 +69,7 @@ func handleHighlight(argsJSON string, ctx *Context, callID string) string {
 			URL      string `json:"url"`
 			Price    string `json:"price"`
 			ImageURL string `json:"image_url"`
+			Why      string `json:"why"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -97,11 +102,12 @@ func handleHighlight(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	for _, item := range args.Items {
-		ctx.AddCard(Card{Title: item.Title, Price: item.Price, ImageURL: item.ImageURL, URL: item.URL, Kind: "highlight"})
+		ctx.AddCard(Card{Title: item.Title, Price: item.Price, ImageURL: item.ImageURL, URL: item.URL, Kind: "highlight", Why: item.Why})
 	}
 
-	result := fmt.Sprintf("%d item(s) are now attached to this turn's answer as cards — no need to also "+
-		"list them in prose.", len(args.Items))
+	result := fmt.Sprintf("%d item(s) are now rendered as cards, each with its own why field if you set one — "+
+		"do not re-list, re-link, or re-explain individual items in your text reply. Keep your reply to a short "+
+		"wrap-up (1-2 sentences) or a clarifying question, if needed.", len(args.Items))
 	log.Info("highlight", "count", len(args.Items))
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":    "highlight",

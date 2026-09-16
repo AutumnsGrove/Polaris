@@ -46,6 +46,11 @@ export interface Card {
 	// since nothing downstream sorts or computes on it — see
 	// tools/registry.go's Card.Price doc comment.
 	price?: string;
+	// One-sentence reason this pick fits what was asked — set only by
+	// highlight (kind 'highlight'). Exists so per-item reasoning has a
+	// home on the card instead of being restated in the model's text
+	// reply — see tools/highlight.go's doc comment.
+	why?: string;
 }
 
 // A structured chart — see tools/registry.go's ChartSpec doc comment.
