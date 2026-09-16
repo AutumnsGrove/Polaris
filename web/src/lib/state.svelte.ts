@@ -252,6 +252,19 @@ export class AppState {
 	private pendingUserTurn: ChatTurn | null = null;
 	private pendingThreadId: string | null = null;
 	private pendingIsNewThread = false;
+	// True while the in-flight turn belongs to a ghost (Anonymous) session
+	// — see dispatch()'s ghostMode handling and handleEvent's 'done'/
+	// 'user_message' cases, both of which skip their normal
+	// currentThreadId-adoption/sidebar-refresh side effects for one, since
+	// nothing about a ghost thread exists server-side to refresh from.
+	private pendingGhost = false;
+	// This ghost session's own client-minted thread id (see gateway/
+	// protocol.go's Anonymous doc comment) — lazily created by dispatch()
+	// on the session's first message, reused for every later message in
+	// the same session, and reset by newThread(). Deliberately never
+	// assigned to currentThreadId: a ghost thread has no persisted row for
+	// openThread/the sidebar/the URL to ever resolve it against.
+	private ghostThreadId: string | null = null;
 
 	// Set when the user navigates away (openThread to a different thread,
 	// or newThread()) while a turn is still in flight for pendingThreadId.
@@ -336,6 +349,7 @@ export class AppState {
 			this.pendingTurn = null;
 			this.pendingUserTurn = null;
 			this.pendingThreadId = null;
+			this.pendingGhost = false;
 			this.pendingAbandoned = false;
 			return;
 		}
@@ -355,14 +369,21 @@ export class AppState {
 			this.pendingTurn = null;
 			this.pendingUserTurn = null;
 			this.pendingThreadId = null;
+			this.pendingGhost = false;
 			return;
 		}
 
+		// A ghost thread's id never resolves here (openThread's 404 handling
+		// no-ops gracefully) — a dropped/reconnected socket mid-ghost-turn
+		// loses that turn the same way a refresh would, consistent with
+		// ghost mode's "dies on disconnect" design (see gateway/protocol.go's
+		// Anonymous doc comment).
 		await this.openThread(threadId);
 		this.busy = false;
 		this.pendingTurn = null;
 		this.pendingUserTurn = null;
 		this.pendingThreadId = null;
+		this.pendingGhost = false;
 		void this.loadThreads();
 	}
 
@@ -771,6 +792,9 @@ export class AppState {
 		this.totalCost = 0;
 		this.contextTokens = 0;
 		this.suggestions = [];
+		// A leftover ghost session's own id must never carry over into
+		// whatever's opened next — see ghostThreadId's doc comment.
+		this.ghostThreadId = null;
 		this.syncURL(null);
 		this.closeSidebarIfMobile();
 	}
@@ -923,7 +947,13 @@ export class AppState {
 		attachments?: UploadedAttachment[],
 		noResearch?: boolean,
 		source?: string,
-		titleSeed?: string
+		titleSeed?: string,
+		// Ghost mode (issue #67) — set from the composer's ghost toggle,
+		// same "composer-local state passed per-send call" shape as
+		// noResearch/deepResearch above, not a global AppState flag. Never
+		// passed by retry()/editMessage() below: ghost mode doesn't support
+		// retry/edit in v1 (nothing persisted to fork from).
+		ghostMode?: boolean
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
@@ -937,7 +967,8 @@ export class AppState {
 			attachments,
 			noResearch,
 			source,
-			titleSeed
+			titleSeed,
+			ghostMode
 		);
 	}
 
@@ -1000,12 +1031,30 @@ export class AppState {
 		source?: string,
 		// titleSeed: see gateway/protocol.go's ClientMessage.TitleSeed —
 		// only Pulsar Daily's expand-to-chat sets this.
-		titleSeed?: string
+		titleSeed?: string,
+		// ghostMode: see send()'s doc comment.
+		ghostMode?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
 		}
 		this.suggestions = [];
+
+		// Ghost mode (issue #67): mint this session's own client-held thread
+		// id the first time it's used (a ghost thread has no persisted row
+		// for the server to assign one against the way a normal new
+		// thread's id comes back), and build the wire history from this
+		// session's own turns array — everything already on screen, since
+		// nothing about a ghost session is ever fetched back from a thread
+		// row the way loadHistory/openThread normally would. Must run
+		// before the push below, which is this turn's own not-yet-answered
+		// pair — those don't belong in "history so far".
+		let ghostHistory: { role: 'user' | 'assistant'; content: string }[] | undefined;
+		if (ghostMode) {
+			if (!this.ghostThreadId) this.ghostThreadId = crypto.randomUUID();
+			ghostHistory = this.turns.map((t) => ({ role: t.role, content: t.content }));
+		}
+
 		this.turns.push({
 			role: 'user',
 			content,
@@ -1026,8 +1075,15 @@ export class AppState {
 		// literal that was pushed.
 		this.pendingUserTurn = this.turns[this.turns.length - 2];
 		this.pendingTurn = this.turns[this.turns.length - 1];
-		this.pendingThreadId = this.currentThreadId;
+		// A ghost turn's pendingThreadId is this session's own client-minted
+		// id (already known above), not currentThreadId — currentThreadId is
+		// deliberately never set for a ghost session (see ghostThreadId's
+		// doc comment), but handleEvent's "still tracking this turn" gate
+		// (eventThreadId !== pendingThreadId) needs a real, matching id to
+		// compare every streamed event against regardless.
+		this.pendingThreadId = ghostMode ? this.ghostThreadId : this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
+		this.pendingGhost = !!ghostMode;
 		this.pendingAbandoned = false;
 
 		debugBeacon('dispatch sending', {
@@ -1039,7 +1095,7 @@ export class AppState {
 
 		this.socket.send({
 			type: 'message',
-			thread_id: this.currentThreadId ?? undefined,
+			thread_id: (ghostMode ? this.ghostThreadId : this.currentThreadId) ?? undefined,
 			content,
 			model: this.selectedModel,
 			edit_from_id: editFromId,
@@ -1054,7 +1110,9 @@ export class AppState {
 				content_type: a.content_type
 			})),
 			source,
-			title_seed: titleSeed
+			title_seed: titleSeed,
+			anonymous: ghostMode || undefined,
+			history: ghostHistory
 		});
 	}
 
@@ -1093,7 +1151,13 @@ export class AppState {
 		// directly instead, same as swapVariant/openThread do, and handle
 		// it here before that gate would otherwise drop it.
 		if (e.type === 'suggestions') {
-			if (eventThreadId === this.currentThreadId) {
+			// A ghost turn's own thread never becomes currentThreadId (see
+			// ghostThreadId's doc comment), so its own id is checked
+			// separately here — otherwise a ghost session's follow-up
+			// suggestions would always compare false and get silently
+			// dropped, even though the backend still generates and streams
+			// them live (see gateway/turn.go's suggestions goroutine).
+			if (eventThreadId === this.currentThreadId || eventThreadId === this.ghostThreadId) {
 				this.totalCost += e.cost_usd ?? 0;
 				this.suggestions = e.suggestions ?? [];
 			}
@@ -1114,8 +1178,11 @@ export class AppState {
 			// call even starts, let alone finishes. Refresh the sidebar now
 			// instead of waiting for "done", so a brand-new thread appears
 			// (and an existing one jumps to the top) within one round trip
-			// of hitting send, not after the whole answer streams in.
-			void this.loadThreads();
+			// of hitting send, not after the whole answer streams in. Skipped
+			// entirely for a ghost turn — there's no thread row to have been
+			// persisted, and refreshing the sidebar for it would be pure
+			// waste (it could never appear there).
+			if (!this.pendingGhost) void this.loadThreads();
 			return;
 		}
 
@@ -1256,6 +1323,10 @@ export class AppState {
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
 				this.busy = false;
+				// Captured before the pendingGhost reset below, since both
+				// branches below (and the loadThreads gate further down)
+				// need to know what this turn actually was.
+				const wasGhost = this.pendingGhost;
 				// Only adopt the thread id / bump the visible total if the
 				// user is still looking at this thread (or it just became
 				// one) — not if they've since navigated elsewhere.
@@ -1269,12 +1340,28 @@ export class AppState {
 					(this.currentThreadId === null || this.currentThreadId === this.pendingThreadId);
 				debugBeacon('done event received', {
 					stillWatching,
+					wasGhost,
 					pendingAbandoned: this.pendingAbandoned,
 					currentThreadId: this.currentThreadId,
 					pendingThreadId: this.pendingThreadId,
 					eventThreadId: e.thread_id
 				});
-				if (stillWatching) {
+				if (wasGhost) {
+					// Ghost mode (issue #67): never adopt this turn's thread
+					// id as currentThreadId, and never refresh variants/the
+					// current thread/the sidebar — none of that exists
+					// server-side for a session that was never persisted
+					// (see gateway/protocol.go's Anonymous doc comment).
+					// currentThreadId staying null (never resolving to the
+					// ghost thread's real id) is exactly what keeps this
+					// session invisible to the sidebar/URL/GetThread — see
+					// stillWatching itself, which would otherwise treat a
+					// ghost turn as "still watching" too and try to adopt it
+					// the same as a real new thread's first turn.
+					this.totalCost += e.cost_usd ?? 0;
+					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
+					this.suggestions = [];
+				} else if (stillWatching) {
 					this.currentThreadId = e.thread_id;
 					// ?? 0 guards against a missing cost_usd (e.g. an older
 					// cached frontend bundle talking to a newer backend, or
@@ -1322,7 +1409,10 @@ export class AppState {
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
-				void this.loadThreads();
+				this.pendingGhost = false;
+				// Skipped for a ghost turn — there's no thread row that
+				// could have been created or bumped for the sidebar to show.
+				if (!wasGhost) void this.loadThreads();
 				// Retries a version-change reload checkVersion() deferred
 				// while this turn was in flight (see its doc comment) —
 				// without this, a build that landed mid-turn wouldn't be
@@ -1339,6 +1429,7 @@ export class AppState {
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;
 				this.pendingThreadId = null;
+				this.pendingGhost = false;
 				void this.checkVersion();
 				break;
 		}

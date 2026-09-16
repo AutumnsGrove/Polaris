@@ -236,6 +236,15 @@ export type ClientMessage =
 			// See gateway/protocol.go's ClientMessage.TitleSeed — cleaner
 			// input for title generation than a synthetic seeded message.
 			title_seed?: string;
+			// Ghost mode (issue #67) — see gateway/protocol.go's Anonymous doc
+			// comment. Set only by a ghost session's own send/continue calls
+			// (state.svelte.ts's dispatch()); never true for a normal thread.
+			anonymous?: boolean;
+			// A ghost session's own running transcript, held client-side and
+			// replayed on every turn — the server persists nothing about a
+			// ghost thread for loadHistory to reconstruct it from. Only
+			// meaningful alongside anonymous: true.
+			history?: { role: 'user' | 'assistant'; content: string }[];
 	  }
 	// Cancels whatever turn is currently in flight on this connection — the
 	// server only ever runs one turn at a time per socket, so this needs

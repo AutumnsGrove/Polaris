@@ -131,6 +131,31 @@ type ClientMessage struct {
 	// scheduler-only, same as the PulsarRoutineID/Name pair above.
 	PulsarPreviousReport   string `json:"-"`
 	PulsarPreviousReportAt string `json:"-"`
+	// Anonymous is the composer's ghost-mode toggle (issue #67) — set only
+	// on a brand-new thread's first message (ghost mode is new-thread-only,
+	// never flipped mid-conversation). When true, handleTurn skips every
+	// store.Store write for this turn (no thread/message/cost/event rows —
+	// see turn.go's Anonymous branches), which also means the turn never
+	// becomes visible to Constellation's Weaver or search_chats, since both
+	// only ever read persisted content. It additionally suppresses the
+	// memory tool and the {custom_instructions} prompt placeholder — see
+	// turn.go's tools.Context construction.
+	Anonymous bool `json:"anonymous,omitempty"`
+	// History is a ghost thread's own running transcript, held client-side
+	// and replayed on every turn — the server has no persisted row to
+	// reconstruct it from the way loadHistory normally does, since nothing
+	// about a ghost thread is ever written to store.Store. Only meaningful
+	// when Anonymous is true. Same {role, content} shape loadHistory itself
+	// produces (tool calls were never part of persisted/replayed history
+	// either, so this is exact parity, not a reduced approximation).
+	History []GhostTurn `json:"history,omitempty"`
+}
+
+// GhostTurn is one prior turn of a ghost (Anonymous) thread's client-held
+// transcript — see ClientMessage.History.
+type GhostTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

@@ -75,36 +75,54 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// conversation shouldn't retitle it around just that turn, but editing
 	// turn 1 means the question the current title was generated from
 	// doesn't exist anymore.
+	// anonymous is issue #67's ghost mode: this turn is never written to
+	// store.Store in any form. Not just the thread/message/cost rows
+	// (skipped explicitly at each of their call sites below), but also
+	// the events table's audit trail — LogEvent persists tool-call args/
+	// results/reasoning independent of whether a thread row exists, so it
+	// needs its own explicit bypass too. logEvent replaces every direct
+	// s.db.LogEvent call in this function so one switch here, not one at
+	// each of the ~30 call sites below, decides whether any of them
+	// actually reach the database. A ghost turn that's never persisted
+	// also never becomes visible to Constellation's Weaver or
+	// search_chats, since both only ever read persisted content — no
+	// separate skip needed there.
+	anonymous := msg.Anonymous
+	logEvent := s.db.LogEvent
+	if anonymous {
+		logEvent = func(string, string, string, string, map[string]interface{}, string) {}
+	}
+
 	storageThreadID := threadID
 	isFirstMessageEdit := false
-	if !isNewThread {
+	if !isNewThread && !anonymous {
 		effectiveID, err := s.db.EffectiveThreadID(threadID)
 		if err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "resolving active variant failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(threadID, "error", "turn", "resolving active variant failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
 		}
 		if msg.EditFromID != 0 {
 			isFirstMessageEdit, err = s.db.IsFirstMessage(effectiveID, msg.EditFromID)
 			if err != nil {
-				s.db.LogEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(threadID, "error", "turn", "checking edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 				return
 			}
 			atIndex, err := s.db.MessageIndex(effectiveID, msg.EditFromID)
 			if err != nil {
-				s.db.LogEvent(threadID, "error", "turn", "locating edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(threadID, "error", "turn", "locating edit/retry position failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 				return
 			}
 			forkID, err := s.db.ForkThread(threadID, effectiveID, atIndex)
 			if err != nil {
-				s.db.LogEvent(threadID, "error", "turn", "forking thread for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(threadID, "error", "turn", "forking thread for edit/retry failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 				return
 			}
 			if err := s.db.SetActiveVariant(threadID, forkID); err != nil {
-				s.db.LogEvent(threadID, "error", "turn", "activating forked variant failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(threadID, "error", "turn", "activating forked variant failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 				return
 			}
@@ -146,7 +164,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		client = client.WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(true), Effort: rc.Effort, MaxTokens: rc.MaxTokens})
 	}
 
-	if isNewThread {
+	if isNewThread && !anonymous {
 		// TitleSeed, not msg.Content, when set — see its doc comment: a
 		// synthetic wrapper message (Pulsar Daily's expand-to-chat) makes
 		// a confusing placeholder too, not just a confusing generateTitle
@@ -163,7 +181,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			source = "web"
 		}
 		if err := s.db.CreateThread(threadID, title, modelCfg.ID, source); err != nil {
-			s.db.LogEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
@@ -184,7 +202,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// the same outcome a turn failure further downstream would
 			// already have.
 			if err := s.db.SetThreadPulsarRoutine(threadID, msg.PulsarRoutineID); err != nil {
-				s.db.LogEvent(threadID, "error", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(threadID, "error", "turn", "linking pulse thread to routine failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", Message: err.Error()})
 				return
 			}
@@ -202,7 +220,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 		if err := s.db.SetThreadTitle(threadID, title); err != nil {
 			log.Warn("failed to reset placeholder title for first-message edit", "err", err)
-			s.db.LogEvent(threadID, "warn", "title", "resetting placeholder title for first-message edit failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(threadID, "warn", "title", "resetting placeholder title for first-message edit failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 	}
 
@@ -212,16 +230,30 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// what this turn actually ran with regardless of whether an edit/retry
 	// forked storageThreadID above. Best-effort: a failure here shouldn't
 	// abort an otherwise-working turn, same reasoning as TouchUpdatedAt.
-	if err := s.db.SetThreadConfig(threadID, modelCfg.ID, msg.FocusMode, msg.DeepResearch, msg.NoResearch); err != nil {
-		log.Warn("failed to persist thread turn config", "thread", threadID, "err", err)
-		s.db.LogEvent(threadID, "warn", "turn", "persisting thread turn config failed", map[string]interface{}{"err": err.Error()}, turnID)
+	if !anonymous {
+		if err := s.db.SetThreadConfig(threadID, modelCfg.ID, msg.FocusMode, msg.DeepResearch, msg.NoResearch); err != nil {
+			log.Warn("failed to persist thread turn config", "thread", threadID, "err", err)
+			logEvent(threadID, "warn", "turn", "persisting thread turn config failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
 	}
 
-	history, err := s.loadHistory(storageThreadID, 0)
-	if err != nil {
-		s.db.LogEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
-		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
-		return
+	// A ghost thread has no persisted row for loadHistory to reconstruct
+	// from (see the Anonymous doc comment on ClientMessage) — its own
+	// client-held transcript, replayed on every turn, stands in instead.
+	var history []llm.ChatMessage
+	if anonymous {
+		history = make([]llm.ChatMessage, len(msg.History))
+		for i, t := range msg.History {
+			history[i] = llm.ChatMessage{Role: t.Role, Content: t.Content}
+		}
+	} else {
+		var err error
+		history, err = s.loadHistory(storageThreadID, 0)
+		if err != nil {
+			logEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
+			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+			return
+		}
 	}
 
 	// Persist the user message before running the agent, not after — so
@@ -234,20 +266,27 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// above already left storageThreadID with exactly the shared prefix
 	// and nothing else, so there's nothing left to delete the way
 	// DeleteMessagesFromAndAddMessage used to.
-	userMsgID, err := s.db.AddMessage(storageThreadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
-	if err != nil {
-		s.db.LogEvent(storageThreadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
-		send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
-		return
-	}
-	// See TouchUpdatedAt's doc comment: AddMessage above just bumped
-	// storageThreadID's own updated_at, which is invisible to ListThreads
-	// once storageThreadID is a forked variant (post edit/retry) rather
-	// than threadID itself — without this, the thread silently stops
-	// climbing the sidebar's recency order the moment it's ever been
-	// edited, even while actively being used.
-	if err := s.db.TouchUpdatedAt(threadID); err != nil {
-		log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
+	// userMsgID stays 0 for a ghost turn — there's no row to reference it,
+	// and ghost mode doesn't support retry/edit (nothing persisted to fork
+	// from), so the frontend never needs a real id for it.
+	var userMsgID int64
+	if !anonymous {
+		var err error
+		userMsgID, err = s.db.AddMessage(storageThreadID, "user", msg.Content, "[]", "[]", msg.SttCostUSD, turnID)
+		if err != nil {
+			logEvent(storageThreadID, "error", "turn", "persisting user message failed", map[string]interface{}{"err": err.Error()}, turnID)
+			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+			return
+		}
+		// See TouchUpdatedAt's doc comment: AddMessage above just bumped
+		// storageThreadID's own updated_at, which is invisible to ListThreads
+		// once storageThreadID is a forked variant (post edit/retry) rather
+		// than threadID itself — without this, the thread silently stops
+		// climbing the sidebar's recency order the moment it's ever been
+		// edited, even while actively being used.
+		if err := s.db.TouchUpdatedAt(threadID); err != nil {
+			log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
+		}
 	}
 	send(ServerEvent{Type: "user_message", ThreadID: threadID, UserMessageID: userMsgID})
 
@@ -268,19 +307,19 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		// id, a directory nothing else ever looks in again.
 		resolvedMessage, resolved := resolveAttachments(cfg, msg, threadID, func(ref AttachmentRef, err error) {
 			log.Warn("resolving attachment failed, continuing without it", "filename", ref.Filename, "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"filename": ref.Filename, "err": err.Error()}, turnID)
+			logEvent(storageThreadID, "warn", "turn", "resolving attachment failed", map[string]interface{}{"filename": ref.Filename, "err": err.Error()}, turnID)
 		})
 		turnMessage = resolvedMessage
-		if len(resolved) > 0 {
+		if len(resolved) > 0 && !anonymous {
 			attachmentsJSON, err := json.Marshal(resolved)
 			if err != nil {
 				log.Warn("encoding attachments failed", "err", err)
 			} else if err := s.db.SetMessageAttachments(userMsgID, string(attachmentsJSON)); err != nil {
 				log.Warn("recording attachments failed", "err", err)
-				s.db.LogEvent(storageThreadID, "warn", "turn", "recording attachments failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(storageThreadID, "warn", "turn", "recording attachments failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
 		}
-	case msg.EditFromID != 0:
+	case msg.EditFromID != 0 && !anonymous:
 		// A retry/edit's ClientMessage never carries the original
 		// attachments itself (state.svelte.ts's retry()/editMessage() only
 		// resend content) — and even if it tried to, the upload's staging
@@ -307,11 +346,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 		if err := s.db.SetMessageAttachments(userMsgID, orig.Attachments); err != nil {
 			log.Warn("carrying attachments forward on retry/edit failed", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "carrying attachments forward on retry/edit failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(storageThreadID, "warn", "turn", "carrying attachments forward on retry/edit failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 	}
 
-	s.db.LogEvent(storageThreadID, "info", "turn", "turn started", map[string]interface{}{
+	logEvent(storageThreadID, "info", "turn", "turn started", map[string]interface{}{
 		"model":         modelCfg.ID,
 		"is_new_thread": isNewThread,
 		"voice_mode":    msg.VoiceMode,
@@ -332,7 +371,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if reasoningBuf.Len() == 0 {
 			return
 		}
-		s.db.LogEvent(storageThreadID, "info", "turn", "reasoning", map[string]interface{}{"content": reasoningBuf.String()}, turnID)
+		logEvent(storageThreadID, "info", "turn", "reasoning", map[string]interface{}{"content": reasoningBuf.String()}, turnID)
 		reasoningBuf.Reset()
 	}
 
@@ -398,7 +437,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			flushReasoning()
 		}
 		send(evt)
-		s.logTurnEvent(storageThreadID, turnID, eventType, evt)
+		if !anonymous {
+			s.logTurnEvent(storageThreadID, turnID, eventType, evt)
+		}
 	}
 
 	// Folded into turnMessage (what the model sees), not msg.Content (what
@@ -485,14 +526,26 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		NoResearch:             msg.NoResearch,
 		QuickMode:              msg.QuickMode,
 		DisabledTools:          DisabledToolsFromStore(s.db),
-		CustomInstructions:     CustomInstructionsFromStore(s.db),
-		LLM:                    client,
-		Emit:                   emit,
-		MaxTurns:               cfg.MaxAgentTurns,
-		SearchThreads:          s.db.SearchMessages,
-		ListRecentThreads:      s.db.ListThreadsPage,
-		ReadThread:             s.db.ReadThread,
-		Multimodal:             modelCfg.Multimodal,
+		// CustomInstructions is left unset below for a ghost turn (issue
+		// #67's "no personalization") rather than wired here — same
+		// "leave the field nil/empty" convention applyCustomInstructions
+		// Placeholder already relies on for the benchmark harness's
+		// isolated Context, which collapses {custom_instructions} to
+		// nothing rather than needing its own flag.
+		LLM: client,
+		// SearchThreads/ListRecentThreads/ReadThread are left unset below
+		// for a ghost turn, same as CustomInstructions above — they back
+		// the chat_search tool (tools/catalog.go's "chat_search" case keys
+		// off SearchThreads != nil, same nil-check convention as memory),
+		// which reads real, persisted past conversations. Left wired
+		// unconditionally here, a ghost turn could (and, live-tested, did)
+		// answer "tell me about myself" by searching prior real threads
+		// instead of using memory — a second personalization channel the
+		// issue's "no personalization" requirement didn't name explicitly
+		// but clearly meant to cover.
+		Emit:       emit,
+		MaxTurns:   cfg.MaxAgentTurns,
+		Multimodal: modelCfg.Multimodal,
 		// threadID, not storageThreadID: code_exec/fetch_url/view_image
 		// address the persistent workspace directory by this id (see
 		// tools.Context.ThreadID's doc comment), and that directory is one
@@ -504,6 +557,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		// testing issue #71's multi-attachment support: retrying a message
 		// that had a file attached left the model unable to find it at all.
 		ThreadID: threadID,
+	}
+	if !anonymous {
+		agentCtx.CustomInstructions = CustomInstructionsFromStore(s.db)
+		agentCtx.SearchThreads = s.db.SearchMessages
+		agentCtx.ListRecentThreads = s.db.ListThreadsPage
+		agentCtx.ReadThread = s.db.ReadThread
 	}
 	// visionClient mirrors resolveAttachment's own model-selection logic
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s
@@ -535,11 +594,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.CodeExecTimeoutSeconds = cfg.CodeExec.TimeoutSeconds
 		agentCtx.UITheme = ThemeFromStore(s.db)
 	}
-	// Left nil (not wired above) when the operator has turned memory off —
+	// Left nil (not wired below) when the operator has turned memory off, OR
+	// unconditionally for a ghost turn (issue #67's "no memory tool") —
 	// see MemoryEnabledFromStore's doc comment for why leaving these nil
 	// is what actually makes the memory tool AND the {memories} prompt
 	// section disappear, not just a tool call that would fail if attempted.
-	if MemoryEnabledFromStore(s.db) {
+	if !anonymous && MemoryEnabledFromStore(s.db) {
 		agentCtx.ListMemories = s.db.ListMemories
 		agentCtx.GetMemory = s.db.GetMemory
 		agentCtx.WriteMemory = s.db.CreateMemory
@@ -603,7 +663,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if result != nil {
 			partialCost = result.CostUSD
 		}
-		s.db.LogEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID, "cost_usd": partialCost}, turnID)
+		logEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID, "cost_usd": partialCost}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
 	}
@@ -621,7 +681,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		const msg = "The model didn't return an answer — it may have spent its whole response budget on " +
 			"internal reasoning. Try again, or switch models."
 		log.Warn("turn produced an empty answer", "thread", threadID, "model", modelCfg.ID)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "model returned an empty answer", map[string]interface{}{"model": modelCfg.ID}, turnID)
+		logEvent(storageThreadID, "warn", "turn", "model returned an empty answer", map[string]interface{}{"model": modelCfg.ID}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: msg})
 		return
 	}
@@ -635,7 +695,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// completion-gating as suggestions: skip on a stopped generation or
 	// an empty answer, where the placeholder is already the more
 	// sensible title anyway.
-	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" {
+	if (isNewThread || isFirstMessageEdit) && ctx.Err() == nil && result.Answer != "" && !anonymous {
 		if msg.PulsarRoutineID != 0 {
 			// Deterministic, not an LLM call — see the plan doc's "Pulse
 			// execution model": every pulse from the same routine starts
@@ -653,18 +713,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			}
 			if err := s.db.SetThreadTitle(threadID, title); err != nil {
 				log.Warn("failed to persist pulse title", "thread", threadID, "err", err)
-				s.db.LogEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
 		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, firstNonEmpty(msg.TitleSeed, msg.Content)); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {
 			if err := s.db.SetThreadTitle(threadID, title); err != nil {
 				log.Warn("failed to persist generated thread title", "err", err)
-				s.db.LogEvent(storageThreadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(storageThreadID, "warn", "title", "persisting generated title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			} else {
 				result.CostUSD += titleCost
-				s.db.LogEvent(storageThreadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
+				logEvent(storageThreadID, "info", "title", "thread title generated", map[string]interface{}{"title": title, "cost_usd": titleCost}, turnID)
 			}
 		} else {
 			// No error, but nothing usable came back — this exact gap is
@@ -678,81 +738,89 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// the event log explaining why. Logging this case (and
 			// raising generateTitle's token budget) closes both the
 			// silence and the likely cause.
-			s.db.LogEvent(storageThreadID, "warn", "title", "model returned no usable title", nil, turnID)
+			logEvent(storageThreadID, "warn", "title", "model returned no usable title", nil, turnID)
 		}
 	}
 
-	citationsJSON, err := json.Marshal(result.Citations)
-	if err != nil {
-		log.Warn("failed to marshal citations, persisting message without them", "err", err)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
-		citationsJSON = []byte("[]")
-	}
-	// Suggestions start empty and are filled in by a post-hoc UPDATE once
-	// generateSuggestions returns — see the call after "done" ships below.
-	assistantMsgID, err := s.db.AddMessage(storageThreadID, "assistant", result.Answer, string(citationsJSON), "[]", result.CostUSD, turnID)
-	if err != nil {
-		// The answer was already fully streamed live via "token" events —
-		// the browser has it. But "done" (see protocol.go's doc comment)
-		// means "persisted, safe to re-enable input assuming this thread
-		// can be reopened with it intact" — sending it here would be a lie:
-		// reopening this thread would show the question with no reply, and
-		// its cost would never be added to the thread's running total.
-		// Surfacing an explicit error instead tells the user their answer
-		// exists only in this live view and won't survive a reload.
-		log.Warn("failed to persist assistant message", "err", err)
-		s.db.LogEvent(storageThreadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err.Error()}, turnID)
-		send(ServerEvent{
-			Type:          "error",
-			ThreadID:      threadID,
-			UserMessageID: userMsgID,
-			Message:       "Your answer was generated but couldn't be saved — copy it now if you need it, then try again.",
-		})
-		return
-	}
-	// See the matching call above (and TouchUpdatedAt's doc comment) —
-	// same gap, same fix, for the assistant reply's own write.
-	if err := s.db.TouchUpdatedAt(threadID); err != nil {
-		log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
-	}
-
-	if err := s.db.SetContextTokens(storageThreadID, result.ContextTokens); err != nil {
-		log.Warn("failed to record context tokens", "err", err)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
-	}
-
-	if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
-		log.Warn("failed to record message duration", "err", err)
-		s.db.LogEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
-	}
-
-	if len(result.Cards) > 0 {
-		if cardsJSON, err := json.Marshal(result.Cards); err != nil {
-			log.Warn("failed to marshal cards, message persisted without them", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling cards failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else if err := s.db.SetMessageCards(assistantMsgID, string(cardsJSON)); err != nil {
-			log.Warn("failed to record cards", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "recording cards failed", map[string]interface{}{"err": err.Error()}, turnID)
+	// assistantMsgID stays 0 for a ghost turn — the whole block below (the
+	// assistant AddMessage and everything keyed off its id) is skipped
+	// entirely, not just individually gated, since none of it has anywhere
+	// to write to; see the Anonymous doc comment on ClientMessage.
+	var assistantMsgID int64
+	if !anonymous {
+		citationsJSON, err := json.Marshal(result.Citations)
+		if err != nil {
+			log.Warn("failed to marshal citations, persisting message without them", "err", err)
+			logEvent(storageThreadID, "warn", "turn", "marshaling citations failed", map[string]interface{}{"err": err.Error()}, turnID)
+			citationsJSON = []byte("[]")
 		}
-	}
-
-	if result.Chart != nil {
-		if chartJSON, err := json.Marshal(result.Chart); err != nil {
-			log.Warn("failed to marshal chart, message persisted without it", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling chart failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else if err := s.db.SetMessageChart(assistantMsgID, string(chartJSON)); err != nil {
-			log.Warn("failed to record chart", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "recording chart failed", map[string]interface{}{"err": err.Error()}, turnID)
+		// Suggestions start empty and are filled in by a post-hoc UPDATE once
+		// generateSuggestions returns — see the call after "done" ships below.
+		var err2 error
+		assistantMsgID, err2 = s.db.AddMessage(storageThreadID, "assistant", result.Answer, string(citationsJSON), "[]", result.CostUSD, turnID)
+		if err2 != nil {
+			// The answer was already fully streamed live via "token" events —
+			// the browser has it. But "done" (see protocol.go's doc comment)
+			// means "persisted, safe to re-enable input assuming this thread
+			// can be reopened with it intact" — sending it here would be a lie:
+			// reopening this thread would show the question with no reply, and
+			// its cost would never be added to the thread's running total.
+			// Surfacing an explicit error instead tells the user their answer
+			// exists only in this live view and won't survive a reload.
+			log.Warn("failed to persist assistant message", "err", err2)
+			logEvent(storageThreadID, "error", "turn", "persisting assistant message failed", map[string]interface{}{"err": err2.Error()}, turnID)
+			send(ServerEvent{
+				Type:          "error",
+				ThreadID:      threadID,
+				UserMessageID: userMsgID,
+				Message:       "Your answer was generated but couldn't be saved — copy it now if you need it, then try again.",
+			})
+			return
 		}
-	}
+		// See the matching call above (and TouchUpdatedAt's doc comment) —
+		// same gap, same fix, for the assistant reply's own write.
+		if err := s.db.TouchUpdatedAt(threadID); err != nil {
+			log.Warn("failed to bump thread recency", "thread", threadID, "err", err)
+		}
 
-	if result.PendingQuestion != nil {
-		if pendingJSON, err := json.Marshal(result.PendingQuestion); err != nil {
-			log.Warn("failed to marshal pending question, message persisted without it", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "marshaling pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else if err := s.db.SetMessagePendingQuestion(assistantMsgID, string(pendingJSON)); err != nil {
-			log.Warn("failed to record pending question", "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "turn", "recording pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
+		if err := s.db.SetContextTokens(storageThreadID, result.ContextTokens); err != nil {
+			log.Warn("failed to record context tokens", "err", err)
+			logEvent(storageThreadID, "warn", "turn", "recording context tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+
+		if err := s.db.SetMessageDuration(assistantMsgID, durationMs); err != nil {
+			log.Warn("failed to record message duration", "err", err)
+			logEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+
+		if len(result.Cards) > 0 {
+			if cardsJSON, err := json.Marshal(result.Cards); err != nil {
+				log.Warn("failed to marshal cards, message persisted without them", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "marshaling cards failed", map[string]interface{}{"err": err.Error()}, turnID)
+			} else if err := s.db.SetMessageCards(assistantMsgID, string(cardsJSON)); err != nil {
+				log.Warn("failed to record cards", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "recording cards failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		}
+
+		if result.Chart != nil {
+			if chartJSON, err := json.Marshal(result.Chart); err != nil {
+				log.Warn("failed to marshal chart, message persisted without it", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "marshaling chart failed", map[string]interface{}{"err": err.Error()}, turnID)
+			} else if err := s.db.SetMessageChart(assistantMsgID, string(chartJSON)); err != nil {
+				log.Warn("failed to record chart", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "recording chart failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		}
+
+		if result.PendingQuestion != nil {
+			if pendingJSON, err := json.Marshal(result.PendingQuestion); err != nil {
+				log.Warn("failed to marshal pending question, message persisted without it", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "marshaling pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
+			} else if err := s.db.SetMessagePendingQuestion(assistantMsgID, string(pendingJSON)); err != nil {
+				log.Warn("failed to record pending question", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "recording pending question failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
 		}
 	}
 
@@ -761,15 +829,18 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// history from that summary instead of the full raw text. The
 	// messages table itself is untouched — only what gets sent back to
 	// the LLM shrinks, the visible transcript stays the true record.
+	// Never runs for a ghost turn — nothing persisted to compact into, and
+	// a single incognito conversation isn't expected to run long enough to
+	// need it.
 	contextTokens := result.ContextTokens
-	if result.ContextTokens >= cfg.ContextWindowTokens {
+	if !anonymous && result.ContextTokens >= cfg.ContextWindowTokens {
 		if summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
-			s.db.LogEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
+			logEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else {
 			contextTokens = estimateTokens(summary)
 			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
-			s.db.LogEvent(storageThreadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
+			logEvent(storageThreadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
 				"through_message_id": assistantMsgID,
 				"cost_usd":           compactCost,
 				"summary":            summary,
@@ -785,7 +856,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// excluded: that call hasn't run yet (see below), and its cost ships
 	// separately in the "suggestions" event once it does.
 	totalCost := result.CostUSD + msg.SttCostUSD
-	s.db.LogEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
+	logEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
 		"cost_usd":       totalCost,
 		"context_tokens": contextTokens,
@@ -840,7 +911,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			sug, sugCost, err := s.generateSuggestions(cfg, modelCfg, msg.Content, result.Answer)
 			if err != nil {
 				log.Warn("follow-up suggestions failed", "thread", threadID, "err", err)
-				s.db.LogEvent(storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
+				logEvent(storageThreadID, "warn", "suggestions", "follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
 				return
 			}
 			if len(sug) == 0 {
@@ -851,17 +922,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				// case that surfaced this). Otherwise this failure mode
 				// is completely silent: no error to log, no suggestions
 				// to show, no trace in the event log to explain why.
-				s.db.LogEvent(storageThreadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
+				logEvent(storageThreadID, "warn", "suggestions", "model returned no usable suggestions", nil, turnID)
 				return
 			}
-			suggestionsJSON, _ := json.Marshal(sug)
-			if err := s.db.SetMessageSuggestions(assistantMsgID, string(suggestionsJSON)); err != nil {
-				log.Warn("failed to persist follow-up suggestions", "err", err)
-				s.db.LogEvent(storageThreadID, "warn", "suggestions", "persisting follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
-				return
-			}
-			if err := s.db.AddThreadCost(storageThreadID, sugCost); err != nil {
-				log.Warn("failed to record follow-up suggestions cost", "err", err)
+			// Still generated and streamed live even in ghost mode (the
+			// answer's own live suggestions are a UX nicety, not
+			// personalization) — only the persistence below is skipped,
+			// same "gate the write, not the behavior" split as the rest of
+			// an anonymous turn.
+			if !anonymous {
+				suggestionsJSON, _ := json.Marshal(sug)
+				if err := s.db.SetMessageSuggestions(assistantMsgID, string(suggestionsJSON)); err != nil {
+					log.Warn("failed to persist follow-up suggestions", "err", err)
+					logEvent(storageThreadID, "warn", "suggestions", "persisting follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
+					return
+				}
+				if err := s.db.AddThreadCost(storageThreadID, sugCost); err != nil {
+					log.Warn("failed to record follow-up suggestions cost", "err", err)
+				}
 			}
 			send(ServerEvent{
 				Type:        "suggestions",

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -127,6 +129,37 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// just never touches it.
 	var locationBroker connLocationBroker
 
+	// ghostWorkspaceIDs collects every ghost (Anonymous) thread id seen on
+	// this connection — client-minted (see protocol.go's Anonymous doc
+	// comment), never a server-generated id, since a ghost thread's own
+	// turns all carry the same id from the client's first message onward.
+	// handleTurn's tools.Context still keys code_exec/attachment workspace
+	// directories off this id (turn.go's ThreadID field) even in ghost
+	// mode, since that's a filesystem resource, not a store.Store row —
+	// cleaned up here on connection close instead, best-effort, so a full
+	// incognito session doesn't leave uploaded files/exec output behind
+	// indefinitely. Only appended from this loop's own goroutine, never
+	// read until the deferred cleanup below runs after it returns, so no
+	// locking is needed. A turn's own goroutine can still be running past
+	// that point (see the "Deliberately NOT cancelling `current`" comment
+	// below) — same best-effort tolerance this file already accepts for a
+	// disconnect racing an in-flight turn elsewhere.
+	var ghostWorkspaceIDs []string
+	defer func() {
+		if len(ghostWorkspaceIDs) == 0 {
+			return
+		}
+		workspaceDir := s.liveConfig().CodeExec.WorkspaceDir
+		if workspaceDir == "" {
+			return
+		}
+		for _, id := range ghostWorkspaceIDs {
+			if err := os.RemoveAll(filepath.Join(workspaceDir, id)); err != nil {
+				log.Warn("failed to clean up ghost thread workspace directory", "thread", id, "err", err)
+			}
+		}
+	}()
+
 	for {
 		var msg ClientMessage
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -166,6 +199,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if msg.Anonymous && msg.ThreadID != "" {
+			alreadySeen := false
+			for _, id := range ghostWorkspaceIDs {
+				if id == msg.ThreadID {
+					alreadySeen = true
+					break
+				}
+			}
+			if !alreadySeen {
+				ghostWorkspaceIDs = append(ghostWorkspaceIDs, msg.ThreadID)
+			}
+		}
+
 		if msg.Type == "location_response" {
 			locationBroker.deliver(msg.UserLocation)
 			continue
@@ -198,7 +244,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			cancelMu.Unlock()
 			s.FinishTurn() // matches the TryStartTurn above — this turn never actually starts
 			log.Warn("rejected a new turn while one was already in flight on this connection", "thread", msg.ThreadID)
-			s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
+			if !msg.Anonymous {
+				s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
+			}
 			send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "a response is already in progress on this connection — please wait for it to finish"})
 			continue
 		}
@@ -246,7 +294,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic in turn goroutine", "thread", msg.ThreadID, "panic", r)
-					s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
+					if !msg.Anonymous {
+						s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
+					}
 					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
 				}
 			}()

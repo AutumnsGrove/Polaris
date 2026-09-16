@@ -16,7 +16,8 @@
 		TriangleAlert,
 		RotateCcw,
 		MessageCirclePlus,
-		ChevronLeft
+		ChevronLeft,
+		Ghost
 	} from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
@@ -74,6 +75,14 @@
 	let focusMode = $state<FocusMode>('off');
 	let deepResearch = $state(false);
 	let research = $state(true);
+	// Ghost mode (issue #67) — unlike focusMode/deepResearch/research, this
+	// has no persisted thread config to round-trip (a ghost thread writes
+	// nothing to store.Store at all — see gateway/protocol.go's Anonymous
+	// doc comment), so it's reset on every thread switch/new-thread instead
+	// of restored from one (see the thread-switch $effect below). New-
+	// thread-only, locked by ComposerMenu itself the moment the session has
+	// any messages.
+	let ghostMode = $state(false);
 	let attachedFiles = $state<File[]>([]);
 	let uploading = $state(false);
 
@@ -116,6 +125,15 @@
 			focusMode = appState.threadFocusMode;
 			deepResearch = appState.threadDeepResearch;
 			research = !appState.threadNoResearch;
+		}
+		// Ghost mode has no persisted config to restore, unlike the three
+		// above — always reset on any thread switch (including to/from
+		// "new thread"), never carried over. A stale "on" from a
+		// just-finished ghost session silently making the next, unrelated
+		// conversation a ghost too would be a bigger surprise than just
+		// needing to flip it on again each time.
+		if (id !== lastConfigThreadId) {
+			ghostMode = false;
 		}
 		lastConfigThreadId = id;
 	});
@@ -174,7 +192,7 @@
 		voiceCostUsd = undefined;
 
 		if (files.length === 0) {
-			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research);
+			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research, undefined, undefined, ghostMode);
 			return;
 		}
 
@@ -187,7 +205,7 @@
 			(a) => a !== null
 		);
 		uploading = false;
-		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded, !research);
+		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded, !research, undefined, undefined, ghostMode);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -403,10 +421,28 @@
 		{/if}
 	</div>
 	<div class="header-right">
-		{#if !appState.currentThreadId}
-			<!-- Homepage only, per ModeToggle's shared-chrome role — once a
-			     thread exists this row switches to the New-thread/ThreadMenu
-			     controls below instead, so the two never compete for space. -->
+		{#if appState.turns.length === 0}
+			<!-- Homepage only — turns.length, not !appState.currentThreadId:
+			     a ghost session (issue #67) never sets currentThreadId at
+			     all (see state.svelte.ts's ghostThreadId doc comment), so
+			     that check alone would keep this row (and the ghost toggle
+			     below) showing for its entire multi-turn conversation
+			     instead of just the empty-composer moment before the first
+			     message, same as a normal thread. Once turns exist, this
+			     row switches to the New-thread/ThreadMenu controls below
+			     instead, so the two never compete for space. -->
+			<button
+				type="button"
+				class="icon-btn"
+				onclick={() => (ghostMode = !ghostMode)}
+				title={ghostMode
+					? 'Ghost mode is on — nothing about this chat will be saved'
+					: 'Start a ghost chat — no history, no memory, no personalization'}
+				aria-label="Toggle ghost mode"
+				aria-pressed={ghostMode}
+			>
+				<Ghost size={17} class={ghostMode ? 'ghost-filled' : ''} />
+			</button>
 			<ModeToggle mode="assistant" />
 		{/if}
 		{#if appState.currentThreadId}
@@ -560,6 +596,16 @@
 	   .icon-btn, same quiet treatment as the sidebar toggle and the "..."
 	   trigger right next to it, so the icon's shape alone communicates
 	   what it does instead of a competing pill of color. */
+
+	/* Ghost mode's "on" state tints the glyph itself in the accent color —
+	   no fill (unlike ThreadMenu's favorited star): the Ghost icon's eyes
+	   are their own separate paths, and setting fill="currentColor" on the
+	   whole icon fills them in solid along with the body, erasing the
+	   detail that makes it read as a ghost at all. A plain color change
+	   keeps the outline intact and still clearly reads as "on". */
+	.icon-btn :global(svg.ghost-filled) {
+		color: var(--color-accent);
+	}
 
 	/* The welcome state is the ONE screen in the app allowed a committed
 	   color treatment — a subtle off-center radial wash of the starlight
