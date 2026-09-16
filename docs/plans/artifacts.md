@@ -122,28 +122,23 @@ shown in the references, since none of the three screenshots were mobile:
    Live-verified working on the first attempt against a real dev backend, including an ASCII-art
    stress test for string-escaping issues.
 
-## Future direction (not decided): runnable HTML/JS/CSS artifacts
+## Runnable HTML/JS/CSS app artifacts: considered and rejected, out of scope
 
-Explicitly out of scope for this pass, but worth recording now since it's the reason the viewer is
-designed as "the one place that knows about kinds" rather than Markdown-only forever:
+Raised during the discussion that prompted this doc (a `kind: "app"` artifact rendering in a
+sandboxed `<iframe>`, "eventually a React app maybe") and then reconsidered directly: **this isn't
+a fit for what Polaris is**, not just a "later phase." Polaris is a search-augmented assistant —
+sourcing real material and citing it (README/PRODUCT.md: closer to Kagi Assistant/Perplexity than
+a chatbot). Reports and charts are direct extensions of that: they're still answers to a question,
+backed by real material, just rendered as a document instead of chat prose. A general runnable
+web-app runtime is a different product wearing the same UI, not an extension of "answer questions
+with sources" — the sandboxed-`<iframe>` security posture, multi-file serving, and especially a JS
+build toolchain living in the sandbox image are real, nontrivial engineering costs in service of a
+capability that doesn't serve this app's actual purpose. Not revisiting unless what Polaris
+fundamentally is changes, which is a much bigger conversation than an artifacts viewer.
 
-- A `kind: "app"` artifact would need the viewer to render a **sandboxed `<iframe>`** instead of the
-  Markdown pane — `show.md`'s own deferred open item already named the real posture question:
-  `allow-scripts` without `allow-same-origin`, no top navigation, some resource/size ceiling. None
-  of that is designed here.
-- `code_exec`'s sandbox can already write arbitrary files (so an `index.html` + `app.js` + `app.css`
-  triple is no harder to produce than a single `.md`), but serving a *multi-file* app through
-  today's single-file `handleGetWorkspaceFile` route needs a real look — either a small static-file
-  sub-server scoped to one artifact's directory, or a bundling step that inlines everything into one
-  HTML file before it's ever written. Not decided.
-- React/build-tooling inside the sandbox (the "or something like that" from the discussion that
-  prompted this doc) is a much bigger ask than plain HTML/JS/CSS — it implies either a JS
-  toolchain living inside the Docker sandbox image or the model hand-writing pre-bundled code. Worth
-  a dedicated follow-up doc once plain static HTML/JS/CSS artifacts are live and the appetite for
-  going further is real, not speculative.
-- Whether an "app" artifact even reuses `show`'s calling convention (`path` + `caption`) or needs
-  its own tool given the very different trust/security posture — an open question, not assumed
-  either way.
+The two-tier split (visual vs. document) and the viewer being "the one place that knows about
+kinds" both stand on their own regardless of this — they exist to serve reports/charts/exports,
+not because an app tier was assumed to be coming.
 
 ## Open items — remaining after v1
 
