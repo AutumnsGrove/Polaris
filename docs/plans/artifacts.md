@@ -1,12 +1,29 @@
 # Artifacts: a universal name and viewer for anything `show` surfaces
 
-**Status: designed, not yet implemented.** Reframes `show` (shipped 2026-09-14,
-`docs/plans/show.md`) from an images-only inline viewer into the universal "here's something I
-made" surface, covering code_exec-generated charts, generated reports, and — as a documented but
-explicitly deferred future phase — runnable HTML/JS/CSS mini-apps. Filed as the design pass behind
-issue #41 (report generator) and the workspace-downloads gap found while reviewing it: there was no
-way to download what `show` already renders, and no attachment affordance at all on an assistant
-message. Mockup: `mockups/artifacts.html`.
+**Status: shipped and live-verified (2026-09-15, `03e86ca`).** Reframes `show` (shipped
+2026-09-14, `docs/plans/show.md`) from an images-only inline viewer into the universal "here's
+something I made" surface, covering code_exec-generated charts, generated reports, and — as a
+documented but explicitly deferred future phase — runnable HTML/JS/CSS mini-apps. Filed as the
+design pass behind issue #41 (report generator) and the workspace-downloads gap found while
+reviewing it: there was no way to download what `show` already renders, and no attachment
+affordance at all on an assistant message. Mockup: `mockups/artifacts.html`.
+
+**What actually shipped vs. this doc's original plan:** the "Report generator (#41), concretely"
+section below describes a dedicated `generate_report` Go tool — that direction was reconsidered
+and rejected before implementation. No new tool exists. Instead, `code_exec`'s and `show`'s own
+tool descriptions were updated to state directly that `code_exec` is the only way to create a
+file (including a report/document) and `show` is how to surface it — the model is trusted to
+chain `spawn_researchers` (if it wants real research) → `code_exec` (write the file) → `show`
+(display it) on its own, with no orchestration code in between. Live-verified against a real
+running dev backend (not `fakeopenrouter`) with two real requests, including a deliberate
+ASCII-art stress test (backslashes/pipes/repeated quote-like characters inside the Python string
+embedding the report content, to check for tool-call-argument escaping corruption) — both
+round-tripped correctly on the first attempt, no retry needed. Sample size is small (n=2); treat
+"the model reliably self-chains this" as promising, not proven, until more real usage accumulates.
+
+The viewer itself shipped as a fixed-position overlay (reusing `.modal-backdrop`'s blur/scrim
+convention), not the true side-by-side split the reference screenshots showed — see issue #73 for
+that follow-up; not done here.
 
 ## Why now
 
@@ -62,7 +79,11 @@ shown in the references, since none of the three screenshots were mobile:
   (matches the reference exactly — the panel is a real sibling of the chat column, not an overlay
   on top of it). Panel header: artifact title + type label, a raw/rendered toggle (the `</>` / eye
   icons in the reference), Copy, Download, expand-to-fullscreen, close. This is genuinely new UI
-  chrome — nothing in the app currently does a persistent split-pane layout.
+  chrome — nothing in the app currently does a persistent split-pane layout. **What shipped instead
+  (v1 simplification, see issue #73):** a fixed-position overlay docked to the right edge, reusing
+  `.modal-backdrop`'s blur/scrim, not a real flex sibling — the chat column doesn't actually
+  narrow. Lower risk to ship first (no changes to `ChatView.svelte`'s layout), but visibly not the
+  same as the reference; #73 tracks doing the true split.
 - **Narrow viewport (phone-class width, this app's primary real usage per README/PRODUCT.md): a
   full-screen modal**, reusing the app's existing `.modal-backdrop`/`.modal-backdrop-close` scrim
   convention (`app.css`, already used by `ImageLightbox.svelte`) rather than inventing new overlay
@@ -77,10 +98,11 @@ shown in the references, since none of the three screenshots were mobile:
 
 ## What's new, concretely
 
-1. **`ToolEvent.svelte`'s `show` branch** learns to check `item.result`'s content type (or simplest:
-   attempt the `<img>`, `onerror` falls back to the card — no backend metadata plumbing needed,
-   matching `show`'s existing "purely a display action" minimalism) and render the document card
-   instead of a broken image icon for a non-image path.
+1. **`ToolEvent.svelte`'s `show` branch** decides by file extension (`isLikelyImage`, a small fixed
+   set — png/jpg/jpeg/gif/webp/svg/bmp/avif) rather than adding backend content-type metadata —
+   matches `show`'s existing "purely a display action" minimalism, and an unrecognized/missing
+   extension defaults to the document card (safer than guessing "image" and showing a broken-image
+   icon).
 2. **A new `ArtifactViewer.svelte`** (side panel + full-screen modal, same component branching on
    viewport width via a media query, not two separate components) — the one place, per `show.md`'s
    original prediction, that needs to know about artifact kinds. Markdown-rendered / raw / download
@@ -91,12 +113,14 @@ shown in the references, since none of the three screenshots were mobile:
    (`ChatTurnView.svelte`'s upload-chip) already produces a correctly-named download with zero
    `Content-Disposition` work — the viewer's Download button and the card's own Download button both
    just reuse that attribute.
-4. **Report generator (#41), concretely, once this lands**: no new Go tool file beyond what
-   `docs/plans/report-generator.md` already describes for the *research* half (reusing
-   `spawn_researchers`); the *output* half changes to "the synthesis step's own `code_exec` call
-   writes `report.md` into the thread workspace, then the orchestrator calls `show("report.md")`" —
-   deleting that doc's now-stale `SetMessageAttachment`/attachments-dir section entirely rather than
-   leaving two competing descriptions of how the file gets persisted.
+4. **Report generator (#41): no dedicated tool at all — superseded, see `docs/plans/report-generator.md`'s
+   status header.** Reconsidered during implementation: a `generate_report` Go tool doing its own
+   research fan-out + synthesis was rejected as unnecessary orchestration weight. Instead
+   `code_exec`'s and `show`'s tool descriptions (`tools/descriptions/*.yaml`) were updated to state
+   directly that `code_exec` is the only way to create a file — including a report — and `show`
+   surfaces it; the model chains `spawn_researchers` (optional) → `code_exec` → `show` on its own.
+   Live-verified working on the first attempt against a real dev backend, including an ASCII-art
+   stress test for string-escaping issues.
 
 ## Future direction (not decided): runnable HTML/JS/CSS artifacts
 
@@ -121,16 +145,14 @@ designed as "the one place that knows about kinds" rather than Markdown-only for
   its own tool given the very different trust/security posture — an open question, not assumed
   either way.
 
-## Open items for implementation
+## Open items — remaining after v1
 
-- Exact card visual spec (icon-per-filetype vs. one generic document icon; whether the "Download"
-  button's chevron-dropdown from the reference — implying format alternatives — is worth copying
-  when v1 only ever has one format per artifact).
-- `ArtifactViewer`'s wide/narrow breakpoint — reuse whatever breakpoint the rest of the app already
-  treats as "phone vs. desktop" rather than picking a new one.
-- Whether `show`'s tool description (`tools/descriptions/show.yaml`) needs updating to actively
-  suggest itself for "write this to a file and show it to me"-shaped requests, now that it's not
-  just for images.
-- Update `docs/plans/report-generator.md`'s "Output shape" section to match this doc once
-  implementation actually starts, rather than leaving two design docs disagreeing about how a
-  report gets persisted.
+- **True side-by-side split** instead of the shipped overlay — issue #73, not done here.
+- One generic document icon was used for v1 (no icon-per-filetype); revisit only if real usage
+  makes that feel wrong.
+- The "Download" button's chevron-dropdown from the reference (implying format alternatives) was
+  dropped — v1 only ever has one format per artifact, so there was nothing for it to do.
+- `ArtifactViewer`'s wide/narrow breakpoint reuses the app's existing 768px convention (same one
+  `app.css`'s other `@media` rules already use), not a new one.
+- Sample size on live-testing is small (n=2, both prompts fairly explicit about which tools to
+  use) — a vaguer "write me a report" with no mechanism hint hasn't been tested yet.

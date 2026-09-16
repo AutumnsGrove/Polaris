@@ -1,8 +1,18 @@
 # Report generator
 
-**Status: designed, not yet implemented.** Answers issue #41's open questions with concrete
-decisions tied to real files in this codebase; no application code has been written. A mockup of
-the rendered result lives at `mockups/report-generator.html`.
+**Status: superseded — see `docs/plans/artifacts.md`.** This doc's core direction (a dedicated
+`generate_report` Go tool doing its own `spawn_researchers` fan-out + a forced synthesis pass) was
+reconsidered before any of it was built and rejected as unnecessary orchestration weight, once
+`docs/plans/artifacts.md` established that `code_exec` can already write any file and `show` can
+already surface it. What actually shipped (2026-09-15, `03e86ca`) needed no new tool at all: the
+model chains `spawn_researchers` (optional, its own existing judgment call) → `code_exec` (write
+the report) → `show` (display it), steered only by updated tool descriptions
+(`tools/descriptions/code_exec.yaml`, `tools/descriptions/show.yaml`) — live-verified working on
+the first attempt, including an ASCII-art stress test for string-escaping issues. Kept below for
+historical record of the gating decisions (still accurate: available in plain chat, not gated
+behind Deep Research) and the citation/persistence reasoning that fed into `artifacts.md`, but the
+"Shape"/tool-schema section and `mockups/report-generator.html` describe a tool that doesn't
+exist and was never built.
 
 ## What it is
 

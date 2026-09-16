@@ -54,8 +54,13 @@ with citations.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
   (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
   file processing, and charts styled to match the app's own theme, and can pull in a URL you've
-  already been shown as a citation to work with real data. Docker installs only — see
-  [SETUP.md](SETUP.md#requirements).
+  already been shown as a citation to work with real data. It's also how any generated document
+  (a report, a CSV export, anything file-shaped) gets created — there's no separate file-writing
+  tool.
+- **Artifacts** — anything the model writes to its workspace can be surfaced inline: an image (a
+  generated chart, a fetched photo) renders large and inline; anything else (a report, a data
+  export) renders as a tappable card that opens a viewer with a rendered/raw toggle, copy, and
+  download.
 - **Calculator** — evaluates arithmetic exactly (ratios, percentages, date-interval math) instead
   of doing the math in free text, removing a whole class of LLM arithmetic mistakes.
 - **Image search & viewing** — finds real photos for a query as a gallery, and can look directly

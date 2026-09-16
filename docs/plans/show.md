@@ -1,6 +1,11 @@
 # show: a big, inline artifact viewer — one step above highlight
 
-**Status: shipped and live-verified (2026-09-14).** `tools/show.go` (path-only, uncapped-calls, as
+**Status: shipped and live-verified (2026-09-14); generalized 2026-09-15, see
+`docs/plans/artifacts.md`.** This doc's own "Open items" section predicted a future artifact kind
+needing the lightbox to branch on content type — that's exactly what happened: `show` no longer
+assumes every artifact is an image. A non-image workspace file now renders as a tappable document
+card with its own viewer instead of the `<img>` this doc originally described as the only case.
+The image-tier behavior below is otherwise unchanged. `tools/show.go` (path-only, uncapped-calls, as
 designed below), `gateway/workspace.go`'s `GET /api/workspace/{thread_id}/{filename}` route (new
 plumbing, path-traversal-checked the same way `view_image`'s `resolveWorkspaceFilePath` is —
 factored out of `readWorkspaceImageBytes` and shared by both tools), and a `ToolEvent.svelte`
