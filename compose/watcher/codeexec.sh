@@ -167,6 +167,7 @@ docker run --rm --name "$container_name" \
 	--cpus=1 \
 	--pids-limit="${pids_limit}" \
 	--cap-drop=ALL \
+	--security-opt=no-new-privileges \
 	--read-only \
 	--tmpfs /tmp \
 	-v "$host_workspace_dir:/workspace" \
