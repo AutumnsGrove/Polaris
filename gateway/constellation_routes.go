@@ -31,6 +31,11 @@ type constellationConfigRequest struct {
 	Enabled             bool   `json:"enabled"`
 	PollIntervalMinutes int    `json:"poll_interval_minutes"`
 	Model               string `json:"model"`
+	// PersonName/PersonPronouns: optional guidance about the operator
+	// themselves, prepended to Weaver's system prompt — see
+	// store.ConstellationConfig's own doc comment.
+	PersonName     string `json:"person_name"`
+	PersonPronouns string `json:"person_pronouns"`
 }
 
 func (s *Server) handleUpdateConstellationConfig(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +48,7 @@ func (s *Server) handleUpdateConstellationConfig(w http.ResponseWriter, r *http.
 		http.Error(w, "poll_interval_minutes must be positive", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.UpdateConstellationConfig(req.Enabled, req.PollIntervalMinutes, req.Model); err != nil {
+	if err := s.db.UpdateConstellationConfig(req.Enabled, req.PollIntervalMinutes, req.Model, req.PersonName, req.PersonPronouns); err != nil {
 		log.Warn("updating constellation config failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

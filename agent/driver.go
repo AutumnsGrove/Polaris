@@ -185,7 +185,15 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		// does) — the one substitution it does need is its own single %s,
 		// the live in-use category list (ctx.WeaverCategoriesInUse) for
 		// its category escape hatch.
-		return fmt.Sprintf(p.Weaver.System, ctx.WeaverCategoriesInUse)
+		system := fmt.Sprintf(p.Weaver.System, ctx.WeaverCategoriesInUse)
+		if guidance := weaverPersonGuidance(p, ctx.WeaverPersonName, ctx.WeaverPersonPronouns); guidance != "" {
+			// Prepended, not appended: this is operator-supplied ground
+			// truth about a real person (not a guess Weaver should weigh
+			// against the thread content), so it belongs ahead of
+			// weaver.system's own framing, not buried after it.
+			system = guidance + "\n\n" + system
+		}
+		return system
 	}
 
 	if ctx.PulsarWizard {
@@ -248,6 +256,24 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		prompt += "\n\n" + p.Agent.NoResearchInstruction
 	}
 	return prompt
+}
+
+// weaverPersonGuidance builds the operator-supplied name/pronouns preamble
+// loadSystemPrompt prepends to weaver.system — see store.ConstellationConfig's
+// PersonName/PersonPronouns doc comment for where these come from. Returns ""
+// when both are unset (the default), so a from-scratch/unconfigured install
+// sees exactly the same prompt as before this existed. name and pronouns are
+// independently optional (someone might set only one), so each gets its own
+// one-%s prompts.yaml template rather than one template requiring both.
+func weaverPersonGuidance(p *prompts.Set, name, pronouns string) string {
+	var parts []string
+	if name != "" {
+		parts = append(parts, fmt.Sprintf(p.Weaver.PersonNameGuidance, name))
+	}
+	if pronouns != "" {
+		parts = append(parts, fmt.Sprintf(p.Weaver.PersonPronounsGuidance, pronouns))
+	}
+	return strings.Join(parts, " ")
 }
 
 // applyToolsPlaceholder replaces every "{tools}" occurrence in prompt with

@@ -707,3 +707,9 @@ weaver:
     the new full body — rewrite so the star reads as one coherent, current entry reflecting their
     input, never just appending it as a new paragraph, keeping the same general length and tone as
     the original unless their correction genuinely calls for more.
+  person_name_guidance: >-
+    The person this library is about is named %s — use their real name naturally in stars where it
+    reads better than "they"/"the person", never a placeholder.
+  person_pronouns_guidance: >-
+    The person this library is about uses %s pronouns — use them consistently in every star,
+    especially personal ones, rather than guessing from context.

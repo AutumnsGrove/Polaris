@@ -74,7 +74,10 @@ func TestHandleGetConstellationConfig_CreatesDefaultsOnFirstRead(t *testing.T) {
 func TestHandleUpdateConstellationConfig_RoundTrips(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
-	body, _ := json.Marshal(map[string]interface{}{"enabled": true, "poll_interval_minutes": 30, "model": "deepseek-pro"})
+	body, _ := json.Marshal(map[string]interface{}{
+		"enabled": true, "poll_interval_minutes": 30, "model": "deepseek-pro",
+		"person_name": "Alex", "person_pronouns": "she/her",
+	})
 	req, _ := http.NewRequest(http.MethodPut, h.url("/api/constellation/config"), bytes.NewReader(body))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -86,7 +89,8 @@ func TestHandleUpdateConstellationConfig_RoundTrips(t *testing.T) {
 	}
 	var cfg store.ConstellationConfig
 	json.NewDecoder(resp.Body).Decode(&cfg)
-	if !cfg.Enabled || cfg.PollIntervalMinutes != 30 || cfg.Model != "deepseek-pro" {
+	if !cfg.Enabled || cfg.PollIntervalMinutes != 30 || cfg.Model != "deepseek-pro" ||
+		cfg.PersonName != "Alex" || cfg.PersonPronouns != "she/her" {
 		t.Errorf("cfg after update = %+v, want the values just written", cfg)
 	}
 }
