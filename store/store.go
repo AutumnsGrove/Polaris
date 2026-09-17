@@ -249,7 +249,10 @@ CREATE TABLE IF NOT EXISTS api_usage (
 -- that: one row per completed ghost turn, cost_usd and created_at only,
 -- deliberately nothing that could identify the thread, its content, or the
 -- model used — recording any of that would reintroduce exactly the trail
--- ghost mode exists to avoid. See RecordGhostCost and Stats.CostBySource.Ghost.
+-- ghost mode exists to avoid. GetStats folds this straight into Polaris's
+-- regular cost totals (a ghost thread is an incognito regular chat, not a
+-- separate subsystem, so its spend belongs in the same bucket a persisted
+-- thread's would have) — see RecordGhostCost and stats.go's GetStats.
 CREATE TABLE IF NOT EXISTS ghost_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,

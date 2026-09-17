@@ -259,9 +259,10 @@ func TestHandleAskStream_EmptyContent_ReturnsBadRequest(t *testing.T) {
 // POST /api/ask must behave exactly like a ghost turn over /ws — the
 // caller still gets back a real answer and a generated ThreadID, but
 // GetThread for that id comes back empty (no thread/message row was ever
-// written) — while the turn's real, billed cost still shows up somewhere:
-// store.Stats.CostBySource.Ghost, via the new ghost_usage table, since
-// that's the one thing a ghost turn is allowed to leave behind.
+// written) — while the turn's real, billed cost still counts toward the
+// regular Polaris totals via the new ghost_usage table (a ghost thread is
+// an incognito regular chat, not a separate subsystem, so its spend isn't
+// broken out into its own bucket the way Pulsar Daily's is).
 func TestHandleAsk_Ghost_PersistsNothingButRecordsCost(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "The capital of France is Paris.")
 	h := newTestHarness(t, srv.URL)
@@ -299,13 +300,14 @@ func TestHandleAsk_Ghost_PersistsNothingButRecordsCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStats (after): %v", err)
 	}
-	if got := statsAfter.CostBySource.Ghost.TotalCostUSD - statsBefore.CostBySource.Ghost.TotalCostUSD; got <= 0 {
-		t.Errorf("CostBySource.Ghost.TotalCostUSD grew by %v, want > 0", got)
+	// The whole point: a ghost turn's cost must still land in the regular
+	// totals — both the plain grand total and the Polaris bucket — even
+	// though nothing about the turn itself was ever a thread.
+	if got := statsAfter.TotalCostUSD - statsBefore.TotalCostUSD; got <= 0 {
+		t.Errorf("TotalCostUSD grew by %v, want > 0", got)
 	}
-	// The whole point: a ghost turn's cost must never land in the ordinary
-	// per-thread totals, since nothing about it was ever a thread.
-	if statsAfter.TotalCostUSD != statsBefore.TotalCostUSD {
-		t.Errorf("TotalCostUSD changed from %v to %v, want a ghost turn to leave it untouched", statsBefore.TotalCostUSD, statsAfter.TotalCostUSD)
+	if got := statsAfter.CostBySource.Polaris.TotalCostUSD - statsBefore.CostBySource.Polaris.TotalCostUSD; got <= 0 {
+		t.Errorf("CostBySource.Polaris.TotalCostUSD grew by %v, want > 0", got)
 	}
 }
 

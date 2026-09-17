@@ -26,12 +26,17 @@ type Stats struct {
 	PeriodCostUSD float64 `json:"period_cost_usd"`
 
 	// CostBySource splits TotalCostUSD/PeriodCostUSD three ways — Polaris
-	// (regular chat, every threads.source other than "pulsar"), Pulsar
-	// (routine pulses, threads.source = "pulsar"), and Daily (Pulsar
-	// Daily editions). Daily is a wholly separate cost path
-	// (pulsar_daily_editions.cost_usd) — it's never a thread at all, so
-	// it was previously invisible in both totals above; this is the first
-	// place its cost is surfaced anywhere in Stats.
+	// (regular chat, every threads.source other than "pulsar", plus
+	// ghost-mode turns' spend from ghost_usage — see GetStats — since a
+	// ghost thread is just an incognito regular chat, not a distinct
+	// subsystem the way Pulsar/Daily are), Pulsar (routine pulses,
+	// threads.source = "pulsar"), and Daily (Pulsar Daily editions). Daily
+	// is a wholly separate cost path (pulsar_daily_editions.cost_usd) —
+	// it's never a thread at all, so it was previously invisible in both
+	// totals above; this is the first place its cost is surfaced anywhere
+	// in Stats. Ghost's spend, unlike Daily's, is folded directly into
+	// TotalCostUSD/PeriodCostUSD too (via Polaris), not just this
+	// breakdown — see GetStats.
 	CostBySource CostBySource `json:"cost_by_source"`
 
 	ThreadCount int `json:"thread_count"`
@@ -84,17 +89,16 @@ type SourceCost struct {
 }
 
 // CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
-// the cost actually came from.
+// the cost actually came from. Polaris + Pulsar always sums back to the
+// plain total/period figures exactly (Daily is deliberately excluded from
+// both, same as always — see GetStats). There's no separate "ghost"
+// bucket: ghost-mode spend is folded straight into Polaris, the same
+// source a ghost thread would have been tagged if it were persisted —
+// see GetStats.
 type CostBySource struct {
 	Polaris SourceCost `json:"polaris"`
 	Pulsar  SourceCost `json:"pulsar"`
 	Daily   SourceCost `json:"daily"`
-	// Ghost is ghost-mode (issue #67) turns' aggregate spend — see
-	// ghost_usage's schema comment. Same as Daily, it's a wholly separate
-	// cost path (never a thread, so never in threads/messages at all) and
-	// is never folded into TotalCostUSD/PeriodCostUSD above: those two stay
-	// an exact sum of Polaris + Pulsar, and Ghost is visible only here.
-	Ghost SourceCost `json:"ghost"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -229,25 +233,31 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		}
 	}
 
-	// Ghost's cost never touches threads/messages at all (see ghost_usage's
-	// own doc comment) — a separate query, not a fourth bucket folded into
-	// the joins above. Same created_at-filtered shape as Daily's query,
-	// just against ghost_usage's own timestamp column instead of Daily's
-	// edition_date.
+	// Ghost-mode spend never touches threads/messages at all (see
+	// ghost_usage's own doc comment) — but unlike Daily, it isn't its own
+	// subsystem with its own bucket; a ghost thread is just an incognito
+	// regular chat, so its cost is added straight into both the grand
+	// totals above and CostBySource.Polaris, the same place it would have
+	// landed had the thread been persisted normally.
+	var ghostTotal, ghostPeriod float64
 	if err := s.db.QueryRow(
 		`SELECT COALESCE(SUM(cost_usd), 0) FROM ghost_usage`,
-	).Scan(&stats.CostBySource.Ghost.TotalCostUSD); err != nil {
+	).Scan(&ghostTotal); err != nil {
 		return nil, err
 	}
 	if since == "" {
-		stats.CostBySource.Ghost.PeriodCostUSD = stats.CostBySource.Ghost.TotalCostUSD
+		ghostPeriod = ghostTotal
 	} else {
 		if err := s.db.QueryRow(
 			`SELECT COALESCE(SUM(cost_usd), 0) FROM ghost_usage WHERE created_at >= ?`, since,
-		).Scan(&stats.CostBySource.Ghost.PeriodCostUSD); err != nil {
+		).Scan(&ghostPeriod); err != nil {
 			return nil, err
 		}
 	}
+	stats.TotalCostUSD += ghostTotal
+	stats.PeriodCostUSD += ghostPeriod
+	stats.CostBySource.Polaris.TotalCostUSD += ghostTotal
+	stats.CostBySource.Polaris.PeriodCostUSD += ghostPeriod
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
 	// variant fork isn't a thread the user thinks of as "one of theirs".

@@ -125,14 +125,6 @@
 							)}</span
 						>
 					</div>
-					<div class="usage-stat-row">
-						<span class="label">Ghost</span>
-						<span class="value"
-							>${usage.cost_by_source.ghost.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.ghost.total_cost_usd.toFixed(
-								2
-							)}</span
-						>
-					</div>
 				</div>
 
 				<div class="usage-section-label">Activity</div>
