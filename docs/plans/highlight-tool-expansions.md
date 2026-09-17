@@ -1,5 +1,13 @@
 # Highlight tool expansions — v1 plan
 
+**Status: shipped.** Media/places/GitHub-repo spotlighting via `highlight`, the paged-carousel
+rendering (issue #75), and the `web_read` JSON-LD extraction path (§4) all landed on `main` — see
+`ff3e89e` ("Expand highlight tool to places and GitHub repos (#49)") through `bdfcdff` ("Polish
+highlight carousel: destination chip, globe-code icon (issue #75)"). The "Out of scope / deferred"
+and "Next steps" sections below still describe real, un-picked-up follow-ons (language-composition
+bar, travel/event JSON-LD types, a Researcher-mode source grid) — those remain open, just not as
+"this plan isn't done" but as separately deferred future work.
+
 Follow-up to #49 ("Expand highlight tool to more callers") and to `docs/plans/shopping-mode.md`,
 which built `highlight` deliberately domain-agnostic and left a list of candidate callers
 undesigned. This plan picks up three of them (media spotlighting, GitHub repos, image curation).

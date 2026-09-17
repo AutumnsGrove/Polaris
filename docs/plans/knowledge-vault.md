@@ -1,7 +1,11 @@
 # Knowledge vault — very early brainstorm, not scoped yet
 
-**Status: idea capture plus a settled UI direction — schema and implementation still not
-started.** This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends
+**Status: superseded — shipped as Constellation.** This brainstorm's "Option D" UI direction and
+personal-facts framing became `docs/plans/constellation.md` (see that doc's own "Status:
+implemented and shipped" line), not a separate feature. `store/constellation.go`,
+`gateway/constellation_*.go`, and the Weaver's `tools/{search,read,create,update,link}_star*.go`
+are the real, current design — read this file only for the original brainstorm history, not as an
+open item. This came out of a live brainstorm with Polaris itself (see the "Polaris Usage Trends
 and Recent Queries" thread on the potato, 2026-09-09/10 — ask to search past chats for it if this
 doc needs the full transcript again) after using the newly-shipped `search_chats` tool to ask
 "what do I actually use you for?" Five brainstorm passes (below, in order) resolved most of the

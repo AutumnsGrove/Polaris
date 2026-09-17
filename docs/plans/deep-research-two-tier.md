@@ -1,5 +1,14 @@
 # Deep Research — two-tier plan
 
+**Status: implemented and shipped.** Tier 1 (Researcher focus mode) and Tier 2 (multi-agent Deep
+Research: plan-confirmation step, `spawn_researchers`/`subagent_report`, session budget, and
+synthesis pass) are both real code on `main` — see `agent/driver.go`'s Researcher focus-mode
+handling, `gateway/turn.go`'s Deep Research wiring, and `tools/{spawn_researchers,
+subagent_report,research_budget}.go`. The rest of this doc is the original design record; treat
+its "Explicitly out of scope for v1" section as still accurate for what's genuinely deferred
+(recursive fan-out, a dedicated CitationAgent call, STORM-style perspective discovery, adaptive
+concurrency limiting), not as a to-do list for this feature as a whole.
+
 Today's "Deep Research" toggle (`ctx.DeepResearch` in `tools/registry.go`) is a single-agent
 turn with a longer leash: `gateway/turn.go`'s `loadSystemPrompt` appends a ~5-sentence prompt
 fragment (`prompts.yaml`'s `agent.deep_research_instruction`) and `deepResearchTurnMultiplier`/
