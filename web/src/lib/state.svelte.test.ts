@@ -161,6 +161,25 @@ describe('AppState.handleEvent', () => {
 		expect(state.turns[1].timeline![0]).toMatchObject({ kind: 'tool', done: true, result: 'found stuff' });
 	});
 
+	it("cost_update sets the pending turn's live running total without touching the thread's overall totalCost", () => {
+		// cost_update is always the full running total for THIS turn, never
+		// a delta (see gateway/protocol.go's doc comment) — unlike 'done'/
+		// 'suggestions', which add their own cost_usd to totalCost once the
+		// turn is over. Before this event existed, the footer showed
+		// nothing at all for cost until the whole turn finished.
+		state.send('search something expensive');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		expect(state.turns[1].costUsd).toBeUndefined();
+
+		fireEvent(state, { type: 'cost_update', thread_id: 't1', cost_usd: 0.002 });
+		expect(state.turns[1].costUsd).toBe(0.002);
+		expect(state.totalCost).toBe(0);
+
+		fireEvent(state, { type: 'cost_update', thread_id: 't1', cost_usd: 0.009 });
+		expect(state.turns[1].costUsd).toBe(0.009);
+		expect(state.totalCost).toBe(0);
+	});
+
 	// Mirrors the exact wire sequence gateway/turn.go now emits for an
 	// image attachment (see gateway/attachments.go's resolveAttachment):
 	// user_message, then a synthetic describe_image tool_call/tool_result
@@ -481,6 +500,70 @@ describe('AppState.openThread', () => {
 			})
 		);
 		await state.openThread('unrelated-thread');
+		expect(state.turns).toHaveLength(1);
+	});
+
+	it("reconstructs a genuinely still-running turn's timeline from persisted events when nobody's own live socket is attached to it (a refresh, a reconnect, or a Pulsar pulse)", async () => {
+		// turn_in_progress: true with no assistant message yet — exactly what
+		// a mid-turn page refresh or WebSocket reconnect sees (see
+		// threadTurnInProgress's doc comment): AddMessage already persisted
+		// the user message (and its turn_id) before agent.Run even started,
+		// and logTurnEvent has been persisting this turn's tool calls all
+		// along, keyed by that same turn_id — but before this fix,
+		// buildTurnsFromMessages had no assistant message row to attach
+		// eventsByTurn's entries to, so all of it was silently discarded and
+		// only the bare "Still running…" banner showed.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (url.endsWith('/events')) {
+					return Promise.resolve({
+						ok: true,
+						json: async () => [
+							{ id: 1, level: 'info', source: 'tool.calculator', message: 'tool call started', data: '{"args":{"expression":"2+2"}}', turn_id: 'turn-1', created_at: '' },
+							{ id: 2, level: 'info', source: 'tool.calculator', message: 'tool call finished', data: '{"result":"4"}', turn_id: 'turn-1', created_at: '' }
+						]
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0,
+						context_tokens: 0,
+						turn_in_progress: true,
+						messages: [
+							{ id: 1, role: 'user', content: 'what is 2+2, then keep going', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-1' }
+						]
+					})
+				});
+			})
+		);
+
+		await state.openThread('t1');
+
+		expect(state.turns).toHaveLength(2);
+		expect(state.turns[1]).toMatchObject({ role: 'assistant', content: '', streaming: true });
+		// The started/finished pair collapses into one completed timeline
+		// item, same as buildTimelineFromEvents does for any reopened turn.
+		expect(state.turns[1].timeline).toHaveLength(1);
+		expect(state.turns[1].timeline?.[0]).toMatchObject({ kind: 'tool', tool: 'calculator', result: '4', done: true });
+	});
+
+	it('does not append a synthetic turn for an in-progress turn that has not produced any persisted events yet', async () => {
+		// The turn just started — no tool call/thinking event has been
+		// logged yet, so there's nothing in eventsByTurn to reconstruct.
+		// ChatView's "Still running…" banner is the only signal in this
+		// window, until the first real event lands on the next poll.
+		vi.stubGlobal(
+			'fetch',
+			fakeFetch({
+				cost_usd: 0,
+				context_tokens: 0,
+				turn_in_progress: true,
+				messages: [{ id: 1, role: 'user', content: 'q', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-1' }]
+			})
+		);
+		await state.openThread('t1');
 		expect(state.turns).toHaveLength(1);
 	});
 });

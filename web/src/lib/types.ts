@@ -161,6 +161,11 @@ export type ServerEvent =
 			call_id?: string;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
+	// A live-only running total for this turn — see gateway/protocol.go's
+	// doc comment. Always the full amount so far, never a delta: overwrite
+	// turn.costUsd with it, don't accumulate. Not persisted, so it never
+	// appears in a reopened thread's own event history.
+	| { type: 'cost_update'; thread_id?: string; cost_usd: number }
 	// What the model said before deciding to call a tool (or before an
 	// aborted attempt got discarded) — see gateway/protocol.go's doc
 	// comment on this event type for the full rationale.

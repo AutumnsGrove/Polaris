@@ -487,13 +487,21 @@
 				     component's answer()/enableWebSearch() split. -->
 				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
-			{#if appState.threadTurnInProgress}
+			{#if appState.threadTurnInProgress && appState.turns[appState.turns.length - 1]?.role !== 'assistant'}
 				<!-- A pulse (or any other turn with no live client attached)
 				     genuinely still running server-side — see
 				     threadTurnInProgress's doc comment. No retry action here:
 				     unlike lastTurnInterrupted below, there's nothing to
 				     retry, just a wait for the poll in openThread() to pick
-				     up the finished answer. -->
+				     up the finished answer.
+
+				     Only shown before this turn has produced its first
+				     persisted event: once it has, openThread() appends a
+				     synthetic streaming assistant turn built from those
+				     events (see its own doc comment) and that turn's own
+				     "…"/timeline rendering already covers "still working" —
+				     showing this banner too on top of it would be a
+				     redundant second spinner for the exact same fact. -->
 				<div class="in-progress" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 					<Loader2 size={15} class="spin" />
 					<span>Still running…</span>

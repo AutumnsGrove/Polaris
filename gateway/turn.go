@@ -431,6 +431,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["caption"].(string); ok {
 			evt.Caption = v
 		}
+		if v, ok := payload["cost_usd"].(float64); ok {
+			evt.CostUSD = v
+		}
 		if eventType == "reasoning" {
 			reasoningBuf.WriteString(evt.Content)
 		} else {
