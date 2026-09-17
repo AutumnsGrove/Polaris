@@ -164,15 +164,25 @@
      so it hard-clipped this text at 2 lines; a single focused card doesn't. */
   .why { font-size: 13.5px; line-height: 1.55; color: var(--color-text-dim); margin-top: var(--space-sm); }
 
+  /* Shows the actual destination domain rather than a bare "Open" label —
+     see HighlightCarousel.svelte's matching comment. */
   .open {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
     margin-top: var(--space-md);
-    font-size: 13px;
+    padding: 4px var(--space-sm);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-3);
+    box-shadow: 0 1px 2px rgba(15, 10, 5, 0.3);
+    font-size: 12px;
     font-weight: 600;
-    color: var(--color-accent-strong);
+    color: var(--color-text-dim);
     text-decoration: none;
+    transition: color 0.15s var(--ease-out-expo);
   }
-  .open:hover { color: var(--color-accent); }
+  .open:hover { color: var(--color-text); }
+  .open svg { flex: none; }
 
   .nav { display: flex; align-items: center; justify-content: center; gap: var(--space-md); margin-top: var(--space-lg); }
 
@@ -210,7 +220,10 @@
 <div class="phone">
   <div class="top-bar">
     <span class="label">Assistant</span>
-    <button class="theme-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    <div style="display: flex; gap: 8px;">
+      <button class="theme-btn" id="countToggle" title="Toggle card count" aria-label="Toggle card count" style="width: auto; padding: 0 10px; font-size: 11px;">5 items</button>
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    </div>
   </div>
 
   <div class="greeting">Here are a few solid picks for iPad strategy and puzzle games:</div>
@@ -224,17 +237,22 @@
         <div class="content">
           <div class="title" id="title"></div>
           <div class="why" id="why"></div>
-          <a class="open" id="open" href="#" target="_blank" rel="noreferrer">Open ↗</a>
+          <a class="open" id="open" href="#" target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+            <span id="openHost"></span>
+          </a>
         </div>
       </div>
     </div>
 
-    <div class="nav">
-      <button class="nav-btn" id="prevBtn" aria-label="Previous pick">‹</button>
-      <div class="dots" id="dots"></div>
-      <button class="nav-btn" id="nextBtn" aria-label="Next pick">›</button>
+    <div id="navWrap">
+      <div class="nav">
+        <button class="nav-btn" id="prevBtn" aria-label="Previous pick">‹</button>
+        <div class="dots" id="dots"></div>
+        <button class="nav-btn" id="nextBtn" aria-label="Next pick">›</button>
+      </div>
+      <div class="position" id="position"></div>
     </div>
-    <div class="position" id="position"></div>
   </div>
 </div>
 
@@ -242,7 +260,7 @@
   // Sample data mirroring the highlight tool's actual schema
   // (title/url/price?/image_url?/why?, tools/highlight.go) — two entries
   // omit image_url on purpose, to show the domain-hashed fallback.
-  var CARDS = [
+  var ALL_CARDS = [
     { title: "Slay the Spire", url: "https://www.slaythespire.com", price: "$9.99", scene: "cards",
       why: "A roguelike deckbuilder that rewards careful sequencing over twitch reflexes — closest thing to a puzzle disguised as a card game, and it's a premium one-time purchase with no IAP grind." },
     { title: "Baba Is You", url: "https://hempuli.com/baba", price: "$14.99", scene: "grid",
@@ -254,6 +272,13 @@
     { title: "Into the Breach", url: "https://subsetgames.com", price: "$14.99", scene: null,
       why: "Perfect information tactics — every enemy move is shown before you act, so losses come from real mistakes, not RNG. The closest thing to chess this list has." }
   ];
+
+  // The "5 items"/"1 item" toggle demonstrates highlight's minItems: 1 case
+  // (tools/highlight.go) — HighlightCarousel.svelte gates the whole nav
+  // row, the position counter, and both depth-stack layers on cards.length
+  // so a single pick renders as a plain card with no dead controls, rather
+  // than a disabled prev/next pair and a pointless "1 of 1".
+  var CARDS = ALL_CARDS;
 
   // Same formula app.css's --color-cat-* tokens already use: fixed
   // lightness/chroma, hue alone varies. Hashing the card's own domain
@@ -290,8 +315,11 @@
       '<circle cx="140" cy="30" r="5" fill="white"/><circle cx="30" cy="30" r="5" fill="white"/><circle cx="110" cy="100" r="5" fill="white"/></svg>'
   };
 
-  var SPARKLES_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="38" height="38">' +
-    '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>';
+  // Path data copied verbatim from @lucide/svelte's globe-code icon (the
+  // same one HighlightCarousel.svelte imports) so this mockup shows the
+  // real glyph, not an approximation.
+  var FALLBACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="38" height="38">' +
+    '<path d="M15.5 10 13 7.5 15.5 5"/><path d="M15.861 14A14.5 14.5 0 0 1 12 22a14.48 14.48 0 0 1 0-20 10 10 0 1 0 9.888 11.5"/><path d="M19.5 5 22 7.5 19.5 10"/><path d="M2 12h8.5"/></svg>';
 
   var index = 0;
 
@@ -302,12 +330,13 @@
       media.innerHTML = SCENES[card.scene] +
         (card.price ? '<span class="price">' + card.price + '</span>' : '');
     } else {
-      media.innerHTML = '<div class="fallback" style="background:' + fallbackBackground(card.url) + '">' + SPARKLES_ICON + '</div>' +
+      media.innerHTML = '<div class="fallback" style="background:' + fallbackBackground(card.url) + '">' + FALLBACK_ICON + '</div>' +
         (card.price ? '<span class="price">' + card.price + '</span>' : '');
     }
     document.getElementById('title').textContent = card.title;
     document.getElementById('why').textContent = card.why || '';
     document.getElementById('open').href = card.url;
+    document.getElementById('openHost').textContent = hostname(card.url);
 
     document.getElementById('prevBtn').disabled = index === 0;
     document.getElementById('nextBtn').disabled = index === CARDS.length - 1;
@@ -326,10 +355,19 @@
     var stack = document.getElementById('stack');
     stack.querySelectorAll('.depth-2').forEach(function (el) { el.style.display = CARDS.length > 2 ? '' : 'none'; });
     stack.querySelectorAll('.depth-1').forEach(function (el) { el.style.display = CARDS.length > 1 ? '' : 'none'; });
+    document.getElementById('navWrap').style.display = CARDS.length > 1 ? '' : 'none';
   }
 
   document.getElementById('prevBtn').addEventListener('click', function () { if (index > 0) { index -= 1; render(); } });
   document.getElementById('nextBtn').addEventListener('click', function () { if (index < CARDS.length - 1) { index += 1; render(); } });
+
+  document.getElementById('countToggle').addEventListener('click', function () {
+    var showingAll = CARDS.length > 1;
+    CARDS = showingAll ? ALL_CARDS.slice(0, 1) : ALL_CARDS;
+    index = 0;
+    this.textContent = showingAll ? '1 item' : '5 items';
+    render();
+  });
 
   render();
 

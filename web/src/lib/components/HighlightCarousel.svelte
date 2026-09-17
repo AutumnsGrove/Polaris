@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Card } from '$lib/types';
-	import { ChevronLeft, ChevronRight, Sparkles } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, ExternalLink, GlobeCode } from '@lucide/svelte';
 
 	let { cards }: { cards: Card[] } = $props();
 
@@ -68,7 +68,7 @@
 					<img src={card.image_url} alt="" loading="lazy" />
 				{:else}
 					<div class="fallback" style:background={fallbackBackground(card.url)}>
-						<Sparkles size={38} />
+						<GlobeCode size={38} />
 					</div>
 				{/if}
 				{#if card.price}
@@ -80,7 +80,10 @@
 				{#if card.why}
 					<div class="why">{card.why}</div>
 				{/if}
-				<a class="open" href={card.url} target="_blank" rel="noreferrer">Open ↗</a>
+				<a class="open" href={card.url} target="_blank" rel="noreferrer">
+					<ExternalLink size={12} />
+					{hostname(card.url)}
+				</a>
 			</div>
 		</div>
 	</div>
@@ -219,17 +222,29 @@
 		margin-top: var(--space-sm);
 	}
 
+	/* Shows the actual destination domain rather than a bare "Open" label —
+	   same "say where a link goes before it's tapped" idea as the citations
+	   footer's .source-chip/.source-domain, just scoped to one card instead
+	   of a whole source list. Still text only, no favicon: see hashHue's
+	   doc comment on why a real per-link icon fetch was ruled out. */
 	.open {
-		display: inline-block;
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs);
 		margin-top: var(--space-md);
-		font-size: 13px;
+		padding: 4px var(--space-sm);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface-3);
+		box-shadow: var(--shadow-xs);
+		font-size: 12px;
 		font-weight: 600;
-		color: var(--color-accent-strong);
+		color: var(--color-text-dim);
 		text-decoration: none;
+		transition: color 0.15s var(--ease-out-expo);
 	}
 
 	.open:hover {
-		color: var(--color-accent);
+		color: var(--color-text);
 	}
 
 	.nav {
