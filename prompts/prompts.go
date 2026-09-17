@@ -151,6 +151,16 @@ type Set struct {
 		// one piece of free-text human input into an already-identified
 		// star's fields) triggered by gateway/constellation_routes.go.
 		ReconcileSystem string `yaml:"reconcile_system"`
+		// PersonNameGuidance/PersonPronounsGuidance each have one %s (the
+		// operator-supplied value itself, from store.ConstellationConfig's
+		// PersonName/PersonPronouns — set in the Constellation settings
+		// panel) and are only ever used, independently, when the
+		// corresponding field is non-empty — see agent/driver.go's
+		// weaverPersonGuidance, which prepends whichever apply to System.
+		// Kept as two separate one-%s templates rather than one two-%s
+		// template because either can be set without the other.
+		PersonNameGuidance     string `yaml:"person_name_guidance"`
+		PersonPronounsGuidance string `yaml:"person_pronouns_guidance"`
 	} `yaml:"weaver"`
 }
 
@@ -583,6 +593,12 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 	d.Weaver.RevisitInstruction = "Check for updates on: %s. Flag anything that updates, corrects, or adds " +
 		"to those, plus anything genuinely new."
 
+	d.Weaver.PersonNameGuidance = "The person this library is about is named %s — use their real name " +
+		"naturally in stars where it reads better than \"they\"/\"the person\", never a placeholder."
+
+	d.Weaver.PersonPronounsGuidance = "The person this library is about uses %s pronouns — use them " +
+		"consistently in every star, especially personal ones, rather than guessing from context."
+
 	d.Weaver.ReconcileSystem = "You are folding a person's free-text correction or addition into one of " +
 		"their existing Constellation stars. You'll be given the star's current summary and body, and what " +
 		"they just said. Rewrite the summary and body so the star reads as one coherent, current entry " +
@@ -831,6 +847,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Weaver.ReconcileSystem == "" {
 		s.Weaver.ReconcileSystem = defaults.Weaver.ReconcileSystem
+	}
+	if s.Weaver.PersonNameGuidance == "" {
+		s.Weaver.PersonNameGuidance = defaults.Weaver.PersonNameGuidance
+	}
+	if s.Weaver.PersonPronounsGuidance == "" {
+		s.Weaver.PersonPronounsGuidance = defaults.Weaver.PersonPronounsGuidance
 	}
 	if s.PulsarDaily.ExpandPrefix == "" {
 		s.PulsarDaily.ExpandPrefix = defaults.PulsarDaily.ExpandPrefix

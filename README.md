@@ -114,7 +114,8 @@ deeper elaboration. Generates on schedule or on demand via Settings.
 background agent ("Weaver") reads your recent threads and extracts durable facts about *you* into
 short, evergreen "stars," collapsing repeated mentions into one growing card instead of scattered
 notes. Browsable by category, plus a star-map view of how stars connect to each other. Runs
-cheaply on an interval, never live-per-message.
+cheaply on an interval, never live-per-message. Its settings panel takes an optional name and
+pronouns so Weaver has real guidance instead of guessing when writing personal stars about you.
 
 ---
 

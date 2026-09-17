@@ -16,6 +16,8 @@ export interface ConstellationConfigInput {
 	enabled: boolean;
 	poll_interval_minutes: number;
 	model: string;
+	person_name: string;
+	person_pronouns: string;
 }
 
 // ConstellationState is Constellation's own store, same shape/reasoning as

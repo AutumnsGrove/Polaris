@@ -270,6 +270,14 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		categories = nil
 	}
 
+	// personName/personPronouns: same non-fatal fallback as categories
+	// above — a config read failure here means Weaver just gets no
+	// guidance for this run, not that the run fails outright.
+	var personName, personPronouns string
+	if cfg, cfgErr := db.GetConstellationConfig(); cfgErr == nil {
+		personName, personPronouns = cfg.PersonName, cfg.PersonPronouns
+	}
+
 	// seenStars is a defense-in-depth backstop against prompt injection:
 	// thread content (which can include text originally fetched from the
 	// open web by web_search/web_read during a normal chat turn) is the
@@ -316,6 +324,8 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 			warnOnErr("recording tool validation failure", db.RecordShootingStarEvent(runID, tool, "", resultText, 0))
 		},
 		WeaverCategoriesInUse: strings.Join(categories, ", "),
+		WeaverPersonName:      personName,
+		WeaverPersonPronouns:  personPronouns,
 
 		WeaverSearchStars: func(query string) ([]store.StarSearchResult, error) {
 			results, err := db.SearchStars(query, 10)

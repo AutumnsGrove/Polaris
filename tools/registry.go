@@ -205,6 +205,16 @@ type Context struct {
 	// the escape hatch just has nothing to reuse yet.
 	WeaverCategoriesInUse string
 
+	// WeaverPersonName/WeaverPersonPronouns are optional operator-supplied
+	// guidance (set in the Constellation settings panel, see
+	// store.ConstellationConfig) about who Weaver is writing personal stars
+	// about — both "" by default, meaning no guidance to inject. Prepended
+	// to weaver.system by agent/driver.go's loadSystemPrompt, not
+	// substituted into it, so an empty pair costs nothing (unlike
+	// WeaverCategoriesInUse's %s, which is always substituted in).
+	WeaverPersonName     string
+	WeaverPersonPronouns string
+
 	// GitHubToken is an optional personal access token attached to
 	// github_repo's API calls as a bearer token. Empty means "call
 	// unauthenticated" — GitHub's REST API works fine without one, just

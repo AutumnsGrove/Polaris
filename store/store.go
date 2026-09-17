@@ -626,6 +626,15 @@ CREATE TABLE IF NOT EXISTS constellation_config (
 	-- past backfillStaleAfter so a crashed/killed backfill can't wedge the
 	-- scheduler off forever -- see runConstellationTick's own check.
 	backfill_started_at   DATETIME,
+	-- person_name/person_pronouns: optional operator-supplied guidance
+	-- about themselves (set in the Constellation settings panel), prepended
+	-- to Weaver's system prompt on every shooting star (see
+	-- gateway/constellation_weaver.go's newWeaverToolContext and
+	-- agent/driver.go's loadSystemPrompt) -- without it Weaver has no
+	-- signal for either and has to guess, which is exactly what motivated
+	-- adding this: Weaver defaulting to he/him with no basis for the guess.
+	person_name           TEXT NOT NULL DEFAULT '',
+	person_pronouns       TEXT NOT NULL DEFAULT '',
 	created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -907,6 +916,11 @@ var migrations = []string{
 	// array from them for any row written before this column existed,
 	// so old messages still display correctly without a backfill.
 	`ALTER TABLE messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'`,
+	// person_name/person_pronouns — see the schema comment above. Appended
+	// at the end per this file's own established rule (positional
+	// user_version tracking, never insert mid-list).
+	`ALTER TABLE constellation_config ADD COLUMN person_name TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE constellation_config ADD COLUMN person_pronouns TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {

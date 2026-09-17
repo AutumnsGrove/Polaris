@@ -49,7 +49,7 @@ func TestRunConstellationTick_NothingEligible_StillRecordsLastChecked(t *testing
 	// the tick itself still ran (Constellation is enabled), so
 	// last_checked_at should move regardless.
 	seedWeaverThread(t, db, "hello")
-	if err := db.UpdateConstellationConfig(true, 999999, ""); err != nil {
+	if err := db.UpdateConstellationConfig(true, 999999, "", "", ""); err != nil {
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 	// poll_interval_minutes=0: the seeded thread is eligible immediately,
 	// so if the tick doesn't skip, this would otherwise be indistinguishable
 	// from "nothing eligible."
-	if err := db.UpdateConstellationConfig(true, 0, ""); err != nil {
+	if err := db.UpdateConstellationConfig(true, 0, "", "", ""); err != nil {
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 	if err := db.SetConstellationBackfillStarted(backfillStaleAfter); err != nil {
@@ -123,7 +123,7 @@ func TestRunConstellationTick_SkipsWhileBackfillInProgress(t *testing.T) {
 func TestRunConstellationTick_StopsWhenGateRefuses(t *testing.T) {
 	db := openTestStoreForConstellation(t)
 	threadID := seedWeaverThread(t, db, "hello")
-	if err := db.UpdateConstellationConfig(true, 0, ""); err != nil {
+	if err := db.UpdateConstellationConfig(true, 0, "", "", ""); err != nil {
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 
