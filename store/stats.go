@@ -89,6 +89,12 @@ type CostBySource struct {
 	Polaris SourceCost `json:"polaris"`
 	Pulsar  SourceCost `json:"pulsar"`
 	Daily   SourceCost `json:"daily"`
+	// Ghost is ghost-mode (issue #67) turns' aggregate spend — see
+	// ghost_usage's schema comment. Same as Daily, it's a wholly separate
+	// cost path (never a thread, so never in threads/messages at all) and
+	// is never folded into TotalCostUSD/PeriodCostUSD above: those two stay
+	// an exact sum of Polaris + Pulsar, and Ghost is visible only here.
+	Ghost SourceCost `json:"ghost"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -219,6 +225,26 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		if err := s.db.QueryRow(
 			`SELECT COALESCE(SUM(cost_usd), 0) FROM pulsar_daily_editions WHERE edition_date >= ?`, sinceDate,
 		).Scan(&stats.CostBySource.Daily.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+	}
+
+	// Ghost's cost never touches threads/messages at all (see ghost_usage's
+	// own doc comment) — a separate query, not a fourth bucket folded into
+	// the joins above. Same created_at-filtered shape as Daily's query,
+	// just against ghost_usage's own timestamp column instead of Daily's
+	// edition_date.
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM ghost_usage`,
+	).Scan(&stats.CostBySource.Ghost.TotalCostUSD); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		stats.CostBySource.Ghost.PeriodCostUSD = stats.CostBySource.Ghost.TotalCostUSD
+	} else {
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM ghost_usage WHERE created_at >= ?`, since,
+		).Scan(&stats.CostBySource.Ghost.PeriodCostUSD); err != nil {
 			return nil, err
 		}
 	}

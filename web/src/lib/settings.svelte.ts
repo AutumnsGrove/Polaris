@@ -28,6 +28,10 @@ export interface UsageStats {
 		polaris: { period_cost_usd: number; total_cost_usd: number };
 		pulsar: { period_cost_usd: number; total_cost_usd: number };
 		daily: { period_cost_usd: number; total_cost_usd: number };
+		// ghost is ghost-mode (incognito thread) turns' aggregate spend —
+		// the one thing that survives a ghost thread once it's gone. Never
+		// folded into total_cost_usd/period_cost_usd above, same as daily.
+		ghost: { period_cost_usd: number; total_cost_usd: number };
 	};
 	thread_count: number;
 	turn_count: number;

@@ -79,6 +79,10 @@ with citations.
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
+- **Ghost threads** — an incognito mode that persists nothing about the conversation (no
+  thread/message rows), gone the moment it ends. Its real cost is still tracked, in aggregate
+  only, so spend never goes unaccounted for. Available over the WebSocket chat client and
+  `POST /api/ask`/`/api/ask/stream`.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
   of a bare text chip.
 - **Settings panel** — theme, default model, the Memory list above, and a one-click
