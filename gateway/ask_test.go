@@ -253,3 +253,97 @@ func TestHandleAskStream_EmptyContent_ReturnsBadRequest(t *testing.T) {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
 	}
 }
+
+// TestHandleAsk_Ghost_PersistsNothingButRecordsCost is the ghost-mode
+// (issue #67) hardening this test guards: setting Anonymous over
+// POST /api/ask must behave exactly like a ghost turn over /ws — the
+// caller still gets back a real answer and a generated ThreadID, but
+// GetThread for that id comes back empty (no thread/message row was ever
+// written) — while the turn's real, billed cost still counts toward the
+// regular Polaris totals via the new ghost_usage table (a ghost thread is
+// an incognito regular chat, not a separate subsystem, so its spend isn't
+// broken out into its own bucket the way Pulsar Daily's is).
+func TestHandleAsk_Ghost_PersistsNothingButRecordsCost(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "The capital of France is Paris.")
+	h := newTestHarness(t, srv.URL)
+
+	statsBefore, err := h.db.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats (before): %v", err)
+	}
+
+	resp, out := postAsk(t, h, AskRequest{Content: "what is the capital of france", Model: "test-model", Anonymous: true})
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if out.Answer != "The capital of France is Paris." {
+		t.Errorf("Answer = %q, want the model's full answer", out.Answer)
+	}
+	if out.ThreadID == "" {
+		t.Fatal("ThreadID is empty, want a generated thread id even for a ghost turn")
+	}
+	if out.CostUSD <= 0 {
+		t.Errorf("CostUSD = %v, want > 0 — a ghost turn still costs real money, it just isn't tied to a thread", out.CostUSD)
+	}
+
+	if _, err := h.db.GetThread(out.ThreadID); err == nil {
+		t.Error("GetThread succeeded for a ghost turn's id, want it to have never been persisted")
+	}
+	if msgs, err := h.db.GetMessages(out.ThreadID); err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	} else if len(msgs) != 0 {
+		t.Errorf("GetMessages returned %d rows for a ghost thread, want 0", len(msgs))
+	}
+
+	statsAfter, err := h.db.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats (after): %v", err)
+	}
+	// The whole point: a ghost turn's cost must still land in the regular
+	// totals — both the plain grand total and the Polaris bucket — even
+	// though nothing about the turn itself was ever a thread.
+	if got := statsAfter.TotalCostUSD - statsBefore.TotalCostUSD; got <= 0 {
+		t.Errorf("TotalCostUSD grew by %v, want > 0", got)
+	}
+	if got := statsAfter.CostBySource.Polaris.TotalCostUSD - statsBefore.CostBySource.Polaris.TotalCostUSD; got <= 0 {
+		t.Errorf("CostBySource.Polaris.TotalCostUSD grew by %v, want > 0", got)
+	}
+}
+
+// TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory exercises a
+// second ghost turn on the same (client-tracked) thread id, carrying the
+// first turn's exchange back in History — mirroring how a ghost thread
+// continues over /ws (state.svelte.ts's own client-held transcript, per
+// ClientMessage.History's doc comment), since there's no persisted row
+// this endpoint could otherwise reconstruct a continuation's history from.
+func TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "Second answer.")
+	h := newTestHarness(t, srv.URL)
+
+	_, first := postAsk(t, h, AskRequest{Content: "first question", Model: "test-model", Anonymous: true})
+	if first.ThreadID == "" {
+		t.Fatal("first.ThreadID is empty")
+	}
+
+	_, second := postAsk(t, h, AskRequest{
+		Content:   "second question",
+		Model:     "test-model",
+		ThreadID:  first.ThreadID,
+		Anonymous: true,
+		History: []GhostTurn{
+			{Role: "user", Content: "first question"},
+			{Role: "assistant", Content: first.Answer},
+		},
+	})
+
+	if second.ThreadID != first.ThreadID {
+		t.Errorf("second.ThreadID = %q, want it to match the first turn's %q", second.ThreadID, first.ThreadID)
+	}
+	if second.Answer != "Second answer." {
+		t.Errorf("Answer = %q, want %q", second.Answer, "Second answer.")
+	}
+	if _, err := h.db.GetThread(second.ThreadID); err == nil {
+		t.Error("GetThread succeeded after a ghost continuation, want it to still have never been persisted")
+	}
+}

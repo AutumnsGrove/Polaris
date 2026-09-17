@@ -663,6 +663,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if result != nil {
 			partialCost = result.CostUSD
 		}
+		// A ghost turn has no event log to carry this partial spend in (see
+		// logEvent's no-op swap above) — ghost_usage is the only place it
+		// isn't just lost outright, same reasoning as the success path
+		// below.
+		if anonymous && partialCost > 0 {
+			if recErr := s.db.RecordGhostCost(partialCost); recErr != nil {
+				log.Warn("failed to record ghost turn's partial cost", "err", recErr)
+			}
+		}
 		logEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID, "cost_usd": partialCost}, turnID)
 		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
 		return
@@ -856,6 +865,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// excluded: that call hasn't run yet (see below), and its cost ships
 	// separately in the "suggestions" event once it does.
 	totalCost := result.CostUSD + msg.SttCostUSD
+	// The one write a ghost turn ever makes — see ghost_usage's schema
+	// comment. Every other persistence path above was skipped by its own
+	// !anonymous guard; this is what keeps the real, billed cost from
+	// disappearing along with the rest of the turn.
+	if anonymous && totalCost > 0 {
+		if err := s.db.RecordGhostCost(totalCost); err != nil {
+			log.Warn("failed to record ghost turn cost", "err", err)
+		}
+	}
 	logEvent(storageThreadID, "info", "turn", "turn completed", map[string]interface{}{
 		"model":          modelCfg.ID,
 		"cost_usd":       totalCost,
@@ -929,7 +947,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// answer's own live suggestions are a UX nicety, not
 			// personalization) — only the persistence below is skipped,
 			// same "gate the write, not the behavior" split as the rest of
-			// an anonymous turn.
+			// an anonymous turn. Its real billed cost still needs to land
+			// somewhere, though: sugCost is fresh spend this same call
+			// tallied at the top of handleTurn never saw, so it's not
+			// covered by RecordGhostCost's call there — this is its own,
+			// separate ghost_usage row.
 			if !anonymous {
 				suggestionsJSON, _ := json.Marshal(sug)
 				if err := s.db.SetMessageSuggestions(assistantMsgID, string(suggestionsJSON)); err != nil {
@@ -939,6 +961,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				}
 				if err := s.db.AddThreadCost(storageThreadID, sugCost); err != nil {
 					log.Warn("failed to record follow-up suggestions cost", "err", err)
+				}
+			} else if sugCost > 0 {
+				if err := s.db.RecordGhostCost(sugCost); err != nil {
+					log.Warn("failed to record ghost turn's suggestion cost", "err", err)
 				}
 			}
 			send(ServerEvent{

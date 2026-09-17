@@ -24,6 +24,11 @@ export interface UsageStats {
 	// store.Stats.CostBySource's doc comment. Daily is a wholly separate
 	// cost path (Pulsar Daily editions), never a thread at all, so it was
 	// previously invisible in total_cost_usd/period_cost_usd above.
+	// polaris includes ghost-mode (incognito thread) turns' spend, folded
+	// in directly (and into total_cost_usd/period_cost_usd above too) —
+	// a ghost thread is just an incognito regular chat, not a separate
+	// subsystem the way pulsar/daily are, so there's no separate bucket
+	// for it.
 	cost_by_source: {
 		polaris: { period_cost_usd: number; total_cost_usd: number };
 		pulsar: { period_cost_usd: number; total_cost_usd: number };

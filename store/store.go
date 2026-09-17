@@ -240,6 +240,25 @@ CREATE TABLE IF NOT EXISTS api_usage (
 	PRIMARY KEY (provider, month)
 );
 
+-- ghost_usage is the one thing a ghost-mode (issue #67, Anonymous) turn
+-- ever leaves behind. handleTurn skips every other store.Store write for
+-- such a turn — no thread/message/event rows, see gateway/turn.go's
+-- Anonymous branches — which means a ghost turn's real, billed LLM spend
+-- (result.CostUSD, computed exactly the same way as any other turn) had
+-- nowhere to land and simply evaporated. This table exists solely to catch
+-- that: one row per completed ghost turn, cost_usd and created_at only,
+-- deliberately nothing that could identify the thread, its content, or the
+-- model used — recording any of that would reintroduce exactly the trail
+-- ghost mode exists to avoid. GetStats folds this straight into Polaris's
+-- regular cost totals (a ghost thread is an incognito regular chat, not a
+-- separate subsystem, so its spend belongs in the same bucket a persisted
+-- thread's would have) — see RecordGhostCost and stats.go's GetStats.
+CREATE TABLE IF NOT EXISTS ghost_usage (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	cost_usd REAL NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- search_history backs Atlas's sidebar "Recent searches"/Favorites
 -- sections — the same shape as threads' recency+favorite model, but for
 -- one-shot queries rather than conversations, so it's its own table
@@ -2137,4 +2156,15 @@ func (s *Store) GetAPIUsage(provider string) (int, error) {
 		return 0, nil
 	}
 	return count, err
+}
+
+// RecordGhostCost appends one anonymous row for a ghost-mode turn's cost —
+// see ghost_usage's schema comment for why this is the only place that
+// spend survives at all. Called for both a completed turn's total cost and
+// a failed turn's partial spend (gateway/turn.go), since either way real
+// money was billed and a ghost turn has no event log to fall back on the
+// way a normal thread's failure does.
+func (s *Store) RecordGhostCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO ghost_usage (cost_usd) VALUES (?)`, costUSD)
+	return err
 }

@@ -3,7 +3,10 @@
 // finished, cited answer back — not a live event stream. It runs the
 // exact same handleTurn path as the WebSocket client, so the resulting
 // thread/messages/events are indistinguishable from a normal chat turn
-// in the database; only the transport differs.
+// in the database; only the transport differs. The one deliberate
+// exception is AskRequest.Anonymous (ghost mode, issue #67): set that and
+// nothing is persisted at all, same as a ghost turn over /ws — see
+// ClientMessage.Anonymous's doc comment in protocol.go.
 package gateway
 
 import (
@@ -38,6 +41,21 @@ type AskRequest struct {
 	// decodeAskRequest — in which case this is populated automatically
 	// and doesn't need to be set directly.
 	Attachments []AttachmentRef `json:"attachments,omitempty"`
+	// Anonymous mirrors ClientMessage.Anonymous — starts (or continues) a
+	// ghost thread (issue #67): nothing about this turn is persisted
+	// anywhere (no thread/message/event rows), and its real LLM cost is
+	// only ever recorded in aggregate via store.Store's ghost_usage table,
+	// never tied back to this request's thread or content — see
+	// ClientMessage.Anonymous's doc comment in protocol.go for the full
+	// semantics, including why History (below) is required to continue one.
+	Anonymous bool `json:"anonymous,omitempty"`
+	// History mirrors ClientMessage.History — a ghost thread's prior turns,
+	// held and replayed by the caller itself, since nothing about a ghost
+	// thread is ever written to store.Store for this endpoint to load a
+	// continuation's history from the way ThreadID normally does. Only
+	// meaningful when Anonymous is true; ignored otherwise. Omit it (or
+	// leave it empty) on a ghost thread's first message.
+	History []GhostTurn `json:"history,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -102,6 +120,18 @@ func (s *Server) decodeAskRequest(w http.ResponseWriter, r *http.Request) (req A
 		FocusMode:    r.FormValue("focus_mode"),
 		DeepResearch: formBool(r, "deep_research"),
 		QuickMode:    formBool(r, "quick_mode"),
+		Anonymous:    formBool(r, "anonymous"),
+	}
+	// history has no natural multipart form-field shape (it's a list of
+	// {role, content} pairs, not a scalar) — accepted as a JSON-encoded
+	// string under the same field name instead, so a ghost thread that
+	// also wants to attach a file inline isn't forced to give up either
+	// capability.
+	if h := r.FormValue("history"); h != "" {
+		if err := json.Unmarshal([]byte(h), &req.History); err != nil {
+			http.Error(w, "invalid \"history\" field: must be a JSON array of {role,content}", http.StatusBadRequest)
+			return AskRequest{}, false
+		}
 	}
 
 	// r.MultipartForm.File["file"] rather than r.FormFile("file") — the
@@ -186,6 +216,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		DeepResearch: req.DeepResearch,
 		QuickMode:    req.QuickMode,
 		Attachments:  req.Attachments,
+		Anonymous:    req.Anonymous,
+		History:      req.History,
 	}
 
 	var answer strings.Builder
@@ -292,6 +324,8 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		DeepResearch: req.DeepResearch,
 		QuickMode:    req.QuickMode,
 		Attachments:  req.Attachments,
+		Anonymous:    req.Anonymous,
+		History:      req.History,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
