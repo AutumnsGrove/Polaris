@@ -34,7 +34,7 @@ export interface Card {
 	// Selects which frontend treatment renders this card — omitted means
 	// "media" (RecommendationsCarousel, today's behavior). image_search is
 	// the only "image" producer — see ImageGallery.svelte. highlight is the
-	// only "highlight" producer — see HighlightGrid.svelte.
+	// only "highlight" producer — see HighlightCarousel.svelte.
 	kind?: 'image' | 'highlight';
 	// A higher-resolution image than image_url's deliberately small
 	// thumbnail, for ImageGallery's lightbox to use instead of upscaling

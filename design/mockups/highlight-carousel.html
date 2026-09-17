@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Highlight carousel — mockup</title>
+<style>
+  /* Token values copied verbatim from web/src/app.css's :root (dark) and
+     [data-theme="light"] blocks — this mockup exists to show the shipped
+     HighlightCarousel.svelte design against the app's real palette, not a
+     bespoke one, so it stays accurate as those tokens evolve only if kept
+     in sync by hand (there's no build step wiring this file to app.css). */
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --color-accent-strong: oklch(72% 0.18 74);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-xl: 22px;
+    --radius-full: 999px;
+
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+
+    --shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-theme="light"] {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-border-strong: oklch(78% 0.016 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --color-accent-strong: oklch(46% 0.18 66);
+    --shadow-md: 0 8px 24px -8px rgba(60, 48, 32, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px;
+  }
+
+  .phone {
+    width: 390px;
+    max-width: 100%;
+  }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-xl);
+  }
+
+  .top-bar .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+  }
+
+  .theme-btn {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text-dim);
+    border-radius: var(--radius-full);
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .greeting {
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 22px;
+  }
+
+  /* --- HighlightCarousel — mirrors web/src/lib/components/HighlightCarousel.svelte --- */
+
+  .carousel { max-width: 342px; margin: 0 auto; }
+  .stack { position: relative; }
+
+  /* One step further from --color-bg than the card itself (surface-2) —
+     see HighlightCarousel.svelte's matching comment: bg/surface-2 sit only
+     2 lightness points apart in light theme, so a depth layer at surface-2
+     all but disappears there even though it reads fine in dark theme. */
+  .depth {
+    position: absolute;
+    left: var(--space-md);
+    right: calc(-1 * var(--space-md));
+    bottom: 0;
+    background: var(--color-surface-3);
+    border-radius: var(--radius-xl);
+  }
+  .depth-1 { top: var(--space-sm); opacity: 0.75; transform: rotate(0.6deg); }
+  .depth-2 { top: var(--space-lg); opacity: 0.5; transform: rotate(1.2deg); }
+
+  .card {
+    position: relative;
+    background: var(--color-surface-2);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+
+  .media { position: relative; width: 100%; height: 190px; overflow: hidden; }
+  .media svg.scene { width: 100%; height: 100%; display: block; }
+
+  .fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text);
+    opacity: 0.55;
+  }
+
+  .price {
+    position: absolute;
+    left: var(--space-md);
+    bottom: var(--space-md);
+    padding: 3px 9px;
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, black 55%, transparent);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .content { padding: var(--space-lg) var(--space-lg) var(--space-xl); }
+  .title { font-size: 17px; font-weight: 700; line-height: 1.3; }
+
+  /* No clamp, no max-height — see HighlightCarousel.svelte's .why comment.
+     The old masonry grid this replaces needed roughly uniform tile heights,
+     so it hard-clipped this text at 2 lines; a single focused card doesn't. */
+  .why { font-size: 13.5px; line-height: 1.55; color: var(--color-text-dim); margin-top: var(--space-sm); }
+
+  /* Shows the actual destination domain rather than a bare "Open" label —
+     see HighlightCarousel.svelte's matching comment. */
+  .open {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-md);
+    padding: 4px var(--space-sm);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-3);
+    box-shadow: 0 1px 2px rgba(15, 10, 5, 0.3);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-dim);
+    text-decoration: none;
+    transition: color 0.15s var(--ease-out-expo);
+  }
+  .open:hover { color: var(--color-text); }
+  .open svg { flex: none; }
+
+  .nav { display: flex; align-items: center; justify-content: center; gap: var(--space-md); margin-top: var(--space-lg); }
+
+  .nav-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.15s var(--ease-out-expo);
+  }
+  .nav-btn:hover:not(:disabled) { background: var(--color-surface-3); }
+  .nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+  .dots { display: flex; align-items: center; gap: 6px; }
+  .dot {
+    width: 6px; height: 6px; padding: 0; border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+    cursor: pointer;
+    transition: all 0.2s var(--ease-out-expo);
+  }
+  .dot.active { width: 16px; background: var(--color-accent); }
+
+  .position { text-align: center; margin-top: var(--space-xs); font-size: 11px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="top-bar">
+    <span class="label">Assistant</span>
+    <div style="display: flex; gap: 8px;">
+      <button class="theme-btn" id="countToggle" title="Toggle card count" aria-label="Toggle card count" style="width: auto; padding: 0 10px; font-size: 11px;">5 items</button>
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    </div>
+  </div>
+
+  <div class="greeting">Here are a few solid picks for iPad strategy and puzzle games:</div>
+
+  <div class="carousel">
+    <div class="stack" id="stack">
+      <div class="depth depth-2"></div>
+      <div class="depth depth-1"></div>
+      <div class="card">
+        <div class="media" id="media"></div>
+        <div class="content">
+          <div class="title" id="title"></div>
+          <div class="why" id="why"></div>
+          <a class="open" id="open" href="#" target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+            <span id="openHost"></span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div id="navWrap">
+      <div class="nav">
+        <button class="nav-btn" id="prevBtn" aria-label="Previous pick">‹</button>
+        <div class="dots" id="dots"></div>
+        <button class="nav-btn" id="nextBtn" aria-label="Next pick">›</button>
+      </div>
+      <div class="position" id="position"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Sample data mirroring the highlight tool's actual schema
+  // (title/url/price?/image_url?/why?, tools/highlight.go) — two entries
+  // omit image_url on purpose, to show the domain-hashed fallback.
+  var ALL_CARDS = [
+    { title: "Slay the Spire", url: "https://www.slaythespire.com", price: "$9.99", scene: "cards",
+      why: "A roguelike deckbuilder that rewards careful sequencing over twitch reflexes — closest thing to a puzzle disguised as a card game, and it's a premium one-time purchase with no IAP grind." },
+    { title: "Baba Is You", url: "https://hempuli.com/baba", price: "$14.99", scene: "grid",
+      why: "The puzzle mechanic is the game: you rearrange the rules themselves, which fits your interest in systems you can bend rather than execute against." },
+    { title: "Civilization VI", url: "https://civilization.com", price: "$59.99", scene: null,
+      why: "The deepest strategy option on iPad by a wide margin — if you want something you could sink forty hours into over a single game, not just an app you check for ten minutes. It's also the rare 4X game whose iPad port doesn't feel like a compromise: the interface was rebuilt for touch rather than scaled down from desktop." },
+    { title: "Mini Metro", url: "https://dinopoloclub.com/minimetro", price: "$4.99", scene: "transit",
+      why: "Lower commitment than the others here — a five-minute puzzle loop about subway routing that's genuinely relaxing rather than another dopamine-loop mobile game." },
+    { title: "Into the Breach", url: "https://subsetgames.com", price: "$14.99", scene: null,
+      why: "Perfect information tactics — every enemy move is shown before you act, so losses come from real mistakes, not RNG. The closest thing to chess this list has." }
+  ];
+
+  // The "5 items"/"1 item" toggle demonstrates highlight's minItems: 1 case
+  // (tools/highlight.go) — HighlightCarousel.svelte gates the whole nav
+  // row, the position counter, and both depth-stack layers on cards.length
+  // so a single pick renders as a plain card with no dead controls, rather
+  // than a disabled prev/next pair and a pointless "1 of 1".
+  var CARDS = ALL_CARDS;
+
+  // Same formula app.css's --color-cat-* tokens already use: fixed
+  // lightness/chroma, hue alone varies. Hashing the card's own domain
+  // (never a model-filled field) means a source always lands on the same
+  // hue, with no network fetch — see HighlightCarousel.svelte's hashHue
+  // doc comment for why a real favicon fetch was ruled out.
+  function hostname(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; }
+  }
+  function hashHue(domain) {
+    var h = 0;
+    for (var i = 0; i < domain.length; i++) { h = (h * 31 + domain.charCodeAt(i)) >>> 0; }
+    return h % 360;
+  }
+  function fallbackBackground(url) {
+    var hue = hashHue(hostname(url));
+    return 'radial-gradient(120% 120% at 30% 20%, color-mix(in srgb, oklch(78% 0.15 ' + hue + ') 30%, transparent), transparent 60%), var(--color-surface-3)';
+  }
+
+  var SCENES = {
+    cards: '<div style="width:100%;height:100%;background:linear-gradient(135deg, oklch(30% 0.05 30), oklch(20% 0.03 30));position:relative;">' +
+      '<div style="position:absolute;left:50%;top:50%;width:62px;height:88px;background:oklch(55% 0.12 30);border:2px solid oklch(70% 0.1 40);border-radius:8px;transform:translate(-50%,-50%) rotate(-14deg) translate(-26px,6px);"></div>' +
+      '<div style="position:absolute;left:50%;top:50%;width:62px;height:88px;background:oklch(60% 0.13 45);border:2px solid oklch(75% 0.1 50);border-radius:8px;transform:translate(-50%,-50%);"></div>' +
+      '<div style="position:absolute;left:50%;top:50%;width:62px;height:88px;background:oklch(55% 0.12 20);border:2px solid oklch(70% 0.1 25);border-radius:8px;transform:translate(-50%,-50%) rotate(14deg) translate(26px,6px);"></div></div>',
+    grid: '<div style="width:100%;height:100%;background:oklch(22% 0.02 250);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:8px;padding:18px;">' +
+      ['BABA','IS','YOU','ROCK','IS','STOP'].map(function (w, i) {
+        var hues = [30, 60, 140, 60, 60, 25];
+        return '<div style="background:oklch(55% 0.14 ' + hues[i] + ');border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;">' + w + '</div>';
+      }).join('') + '</div>',
+    transit: '<svg class="scene" viewBox="0 0 160 130" style="background:oklch(20% 0.015 250);">' +
+      '<path d="M20 100 L60 60 L100 60 L140 30" stroke="oklch(70% 0.15 40)" stroke-width="4" fill="none" stroke-linecap="round"/>' +
+      '<path d="M30 30 L60 60 L60 100 L110 100" stroke="oklch(70% 0.13 200)" stroke-width="4" fill="none" stroke-linecap="round"/>' +
+      '<circle cx="20" cy="100" r="5" fill="white"/><circle cx="60" cy="60" r="6" fill="white"/><circle cx="100" cy="60" r="5" fill="white"/>' +
+      '<circle cx="140" cy="30" r="5" fill="white"/><circle cx="30" cy="30" r="5" fill="white"/><circle cx="110" cy="100" r="5" fill="white"/></svg>'
+  };
+
+  // Path data copied verbatim from @lucide/svelte's globe-code icon (the
+  // same one HighlightCarousel.svelte imports) so this mockup shows the
+  // real glyph, not an approximation.
+  var FALLBACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="38" height="38">' +
+    '<path d="M15.5 10 13 7.5 15.5 5"/><path d="M15.861 14A14.5 14.5 0 0 1 12 22a14.48 14.48 0 0 1 0-20 10 10 0 1 0 9.888 11.5"/><path d="M19.5 5 22 7.5 19.5 10"/><path d="M2 12h8.5"/></svg>';
+
+  var index = 0;
+
+  function render() {
+    var card = CARDS[index];
+    var media = document.getElementById('media');
+    if (card.scene) {
+      media.innerHTML = SCENES[card.scene] +
+        (card.price ? '<span class="price">' + card.price + '</span>' : '');
+    } else {
+      media.innerHTML = '<div class="fallback" style="background:' + fallbackBackground(card.url) + '">' + FALLBACK_ICON + '</div>' +
+        (card.price ? '<span class="price">' + card.price + '</span>' : '');
+    }
+    document.getElementById('title').textContent = card.title;
+    document.getElementById('why').textContent = card.why || '';
+    document.getElementById('open').href = card.url;
+    document.getElementById('openHost').textContent = hostname(card.url);
+
+    document.getElementById('prevBtn').disabled = index === 0;
+    document.getElementById('nextBtn').disabled = index === CARDS.length - 1;
+    document.getElementById('position').textContent = (index + 1) + ' of ' + CARDS.length;
+
+    var dots = document.getElementById('dots');
+    dots.innerHTML = '';
+    CARDS.forEach(function (c, i) {
+      var b = document.createElement('button');
+      b.className = 'dot' + (i === index ? ' active' : '');
+      b.setAttribute('aria-label', 'Go to pick ' + (i + 1) + ' of ' + CARDS.length);
+      b.addEventListener('click', function () { index = i; render(); });
+      dots.appendChild(b);
+    });
+
+    var stack = document.getElementById('stack');
+    stack.querySelectorAll('.depth-2').forEach(function (el) { el.style.display = CARDS.length > 2 ? '' : 'none'; });
+    stack.querySelectorAll('.depth-1').forEach(function (el) { el.style.display = CARDS.length > 1 ? '' : 'none'; });
+    document.getElementById('navWrap').style.display = CARDS.length > 1 ? '' : 'none';
+  }
+
+  document.getElementById('prevBtn').addEventListener('click', function () { if (index > 0) { index -= 1; render(); } });
+  document.getElementById('nextBtn').addEventListener('click', function () { if (index < CARDS.length - 1) { index += 1; render(); } });
+
+  document.getElementById('countToggle').addEventListener('click', function () {
+    var showingAll = CARDS.length > 1;
+    CARDS = showingAll ? ALL_CARDS.slice(0, 1) : ALL_CARDS;
+    index = 0;
+    this.textContent = showingAll ? '1 item' : '5 items';
+    render();
+  });
+
+  render();
+
+  (function () {
+    var root = document.documentElement;
+    var stored = localStorage.getItem('polaris-mockup-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', stored || (prefersDark ? 'dark' : 'light'));
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('polaris-mockup-theme', next);
+    });
+  })();
+</script>
+
+</body>
+</html>
