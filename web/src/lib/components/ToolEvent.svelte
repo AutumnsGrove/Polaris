@@ -37,7 +37,8 @@
 		Highlighter,
 		Paperclip,
 		History,
-		Download
+		Download,
+		CircleStar
 	} from '@lucide/svelte';
 
 	let { item }: { item: TimelineItem } = $props();
@@ -301,6 +302,8 @@
 				<Paperclip size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'search_chats'}
 				<History size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'stars'}
+				<CircleStar size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}

@@ -563,6 +563,26 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.SearchThreads = s.db.SearchMessages
 		agentCtx.ListRecentThreads = s.db.ListThreadsPage
 		agentCtx.ReadThread = s.db.ReadThread
+		// stars (issue #56) — the main assistant's own read-only search
+		// over Constellation's library. Nil for a ghost turn, same "no
+		// persisted-store reads leaking into an incognito session"
+		// reasoning as SearchThreads/WriteMemory above. StarsRead wraps
+		// GetStar (which Weaver's own read_star deliberately lets see
+		// rejected/disabled stars) with the same eligibility filter
+		// SearchLibraryStars already applies, so a guessed/stale star_id
+		// can't surface something the person rejected or hid via the
+		// Library UI's Disable action.
+		agentCtx.StarsSearch = s.db.SearchLibraryStars
+		agentCtx.StarsRead = func(starID int64) (*store.Star, error) {
+			star, err := s.db.GetStar(starID)
+			if err != nil {
+				return nil, err
+			}
+			if star.Disabled || (star.Status != "auto" && star.Status != "confirmed") {
+				return nil, store.ErrStarNotFound
+			}
+			return star, nil
+		}
 	}
 	// visionClient mirrors resolveAttachment's own model-selection logic
 	// (this thread's model if multimodal, else cfg.MultimodalModel()'s

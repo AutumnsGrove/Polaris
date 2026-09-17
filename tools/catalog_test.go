@@ -41,6 +41,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.RequestLocation = func() (string, bool) { return "", false }
 	ctx.WriteMemory = func(name, memType, description, content, occurredAt string) error { return nil }
 	ctx.SearchThreads = func(query string, limit int) ([]store.MessageSearchResult, error) { return nil, nil }
+	ctx.StarsSearch = func(query string, limit int) ([]store.Star, error) { return nil, nil }
 	ctx.DeepResearch = true
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	ctx.PulsarWizard = true

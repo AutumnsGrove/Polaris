@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
-	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "stars", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars",
 }
 
@@ -126,6 +126,14 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// three search_chats closures together (see gateway/turn.go,
 		// cmd/search.go) or none at all (cmd/benchmark.go).
 		return ctx.SearchThreads != nil
+	case "stars_library":
+		// Gated on StarsSearch rather than a dedicated bool, same
+		// reasoning as memory_store/chat_search above: StarsSearch and
+		// StarsRead are always wired together or not at all (see
+		// gateway/turn.go) — nil for a ghost turn (issue #67), same "no
+		// persisted-store reads leaking into an incognito session"
+		// reasoning as memory/search_chats.
+		return ctx.StarsSearch != nil
 	case "docker_only":
 		// code_exec requires a real container boundary for arbitrary
 		// code — ctx.CodeExecEnabled is a pure capability check (is the
@@ -240,6 +248,9 @@ var catalogDefaults = map[string]catalogEntry{
 		Description: "search or list your own past conversations, and read one back in full.",
 		APIDescription: "Search your own past conversations by keyword, or list your most recent ones when no " +
 			"query is given, and read one back in full (filtered to what you ask for, or raw)."},
+	"stars": {Name: "stars", Requires: "stars_library",
+		Description:    "search the person's Constellation library — facts Weaver has synthesized about them — and read one back in full.",
+		APIDescription: "Search the person's Constellation library (facts Weaver has synthesized about them across past conversations) and read one star back in full by ID."},
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
 		Description:    "fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.",
 		APIDescription: "Fan out to multiple independent research sub-agents running in parallel, each investigating one focused angle, then report back their findings for you to synthesize."},

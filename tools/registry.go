@@ -179,6 +179,23 @@ type Context struct {
 	WeaverUpdateStar func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error
 	WeaverLinkStars  func(starIDA, starIDB int64, reasoning string) error
 
+	// StarsSearch/StarsRead back the stars tool (tools/stars.go) — the main
+	// assistant's own read-only search over Constellation's library
+	// (issue #56), distinct from WeaverSearchStars/WeaverReadStar above:
+	// those are Weaver's internal dedup/link-discovery lookups, which
+	// deliberately still see rejected/disabled stars (see read_star.go's
+	// "that's a stop sign" handling); StarsRead/StarsSearch must not — a
+	// rejected or disabled star is exactly what shouldn't resurface to the
+	// person through their own assistant. Narrow closures over store.Store,
+	// same pattern as the memory/search_chats closures above. Both nil
+	// together wherever the library shouldn't be searchable at all — a
+	// ghost turn (issue #67), same "no persisted-store reads leaking into
+	// an incognito session" reasoning gateway/turn.go already applies to
+	// SearchThreads/WriteMemory there — see catalog.go's "stars_library"
+	// Requires case, gated on StarsSearch != nil.
+	StarsSearch func(query string, limit int) ([]store.Star, error)
+	StarsRead   func(starID int64) (*store.Star, error)
+
 	// WeaverCategoriesInUse lists every category value already in the
 	// library (store.Store's DistinctCategories, comma-joined) — substituted
 	// into weaver.system's own escape-hatch instruction so a category
@@ -1001,7 +1018,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "code_exec": codeExecDef, "fetch_url": fetchURLDef,
 		"image_search": imageSearchDef, "view_image": viewImageDef, "show": showDef, "highlight": highlightDef,
-		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "spawn_researchers": spawnResearchersDef,
+		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "stars": starsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_pulsar_prompt": finalizePulsarPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
 		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
