@@ -909,6 +909,14 @@
 		height: auto;
 	}
 
+	/* The whole render pane (not just the SVG) is the tap target
+	   mermaid.ts's lightbox opens from — cursor: zoom-in is the standard
+	   "this image gets bigger" affordance, the same signal a browser's
+	   own <img> gets at native resolution over a smaller display size. */
+	.prose :global(.mermaid-render) {
+		cursor: zoom-in;
+	}
+
 	/* Hidden until hover/focus, same "reveal on intent" language as
 	   .edit-trigger above — a diagram is meant to be looked at, not
 	   cluttered with chrome by default. :focus-within (not just :hover)

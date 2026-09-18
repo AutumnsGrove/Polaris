@@ -83,6 +83,14 @@ function autoQuoteLabels(source: string): string {
 // recovery, and runs unconditionally on every diagram rather than only
 // after a failed render.
 const STYLE_FILL_LINE = /^(\s*style\s+\S+\s+)([^\n]*\bfill:\s*#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b[^\n]*)$/gm;
+// `classDef className fill:#f5f5f0,stroke:#ccc` hits an even worse version
+// of the same problem, confirmed live: mermaid emits that same `fill` onto
+// both the node shape *and* the label's `span` (`.className span{fill:...}`)
+// when no `color:` is given, so the label text isn't just low-contrast —
+// it's the exact same color as its own background and vanishes entirely,
+// in either theme, not just this app's dark one. Same fix, different
+// mermaid directive.
+const CLASSDEF_FILL_LINE = /^(\s*classDef\s+\S+\s+)([^\n]*\bfill:\s*#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b[^\n]*)$/gm;
 const HAS_COLOR_PROP = /(^|,)\s*color:/;
 
 function expandHex(hex: string): string {
@@ -104,11 +112,13 @@ function readableTextColorFor(hex: string): '#000000' | '#ffffff' {
 	return (r * 299 + g * 587 + b * 114) / 1000 > 140 ? '#000000' : '#ffffff';
 }
 
+function addContrastColor(match: string, prefix: string, props: string, fillHex: string): string {
+	if (HAS_COLOR_PROP.test(props)) return match;
+	return `${prefix}${props},color:${readableTextColorFor(fillHex)}`;
+}
+
 function ensureStyleContrast(source: string): string {
-	return source.replace(STYLE_FILL_LINE, (match, prefix: string, props: string, fillHex: string) => {
-		if (HAS_COLOR_PROP.test(props)) return match;
-		return `${prefix}${props},color:${readableTextColorFor(fillHex)}`;
-	});
+	return source.replace(STYLE_FILL_LINE, addContrastColor).replace(CLASSDEF_FILL_LINE, addContrastColor);
 }
 
 let renderCounter = 0;
@@ -139,8 +149,16 @@ const ICON_ATTRS = 'width="13" height="13" viewBox="0 0 24 24" fill="none" strok
 const COPY_ICON = `<svg ${ICON_ATTRS}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 const CHECK_ICON = `<svg ${ICON_ATTRS}><path d="M20 6 9 17l-5-5"/></svg>`;
 const CODE_ICON = `<svg ${ICON_ATTRS}><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>`;
+// Slightly larger than the inline toolbar's 13px — the lightbox toolbar
+// sits over a full-screen scrim rather than a compact chip, so its buttons
+// can afford (and, on a phone, need) a bigger touch target.
+const LIGHTBOX_ICON_ATTRS = 'width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const LIGHTBOX_COPY_ICON = `<svg ${LIGHTBOX_ICON_ATTRS}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+const LIGHTBOX_CHECK_ICON = `<svg ${LIGHTBOX_ICON_ATTRS}><path d="M20 6 9 17l-5-5"/></svg>`;
+const LIGHTBOX_CODE_ICON = `<svg ${LIGHTBOX_ICON_ATTRS}><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>`;
+const LIGHTBOX_CLOSE_ICON = `<svg ${LIGHTBOX_ICON_ATTRS}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 
-function iconButton(icon: string, title: string): HTMLButtonElement {
+function iconButton(icon: string, title: string, className = 'icon-btn mermaid-btn'): HTMLButtonElement {
 	const btn = document.createElement('button');
 	btn.type = 'button';
 	// icon-btn is app.css's plain global icon-button class (the same one
@@ -149,7 +167,7 @@ function iconButton(icon: string, title: string): HTMLButtonElement {
 	// to sitting on top of a diagram (a translucent backdrop chip, since
 	// icon-btn's transparent background assumes a plain surface behind
 	// it, not arbitrary SVG diagram colors).
-	btn.className = 'icon-btn mermaid-btn';
+	btn.className = className;
 	btn.title = title;
 	btn.setAttribute('aria-label', title);
 	btn.innerHTML = icon;
@@ -191,6 +209,328 @@ function buildToolbar(source: string, renderPane: HTMLElement, sourcePane: HTMLE
 	return toolbar;
 }
 
+// --- Lightbox ---------------------------------------------------------
+//
+// A diagram rendered inline is necessarily small (it has to fit the chat
+// column) and, on a touch device, pinch-to-zoom on the page itself just
+// zooms the whole app UI rather than the diagram — there's no way to get
+// a bigger look at it short of switching to the source view, which
+// defeats the point of rendering it at all. This gives every diagram a
+// tap target that opens it full-screen with real, isolated pinch/wheel
+// zoom and drag-to-pan, the same "tap an image to see it bigger"
+// convention a chat UI's image attachments already get elsewhere in the
+// app — see ImageGallery.svelte's own lightbox for the sibling pattern
+// this deliberately doesn't share code with (that one lightboxes a
+// raster <img>; this one needs pan/zoom math against a live SVG's
+// natural size instead of a fixed pixel size, and reuses this module's
+// existing copy/view-source toolbar affordances, so a shared component
+// would need to abstract over both anyway for one call site each).
+//
+// Built once, lazily, and reused for every diagram — there's only ever
+// one lightbox open at a time, so a single pooled overlay avoids
+// rebuilding this DOM (and re-attaching its gesture listeners) per
+// diagram, per open.
+
+interface LightboxEls {
+	backdrop: HTMLDivElement;
+	viewport: HTMLDivElement;
+	stage: HTMLDivElement;
+	renderHost: HTMLDivElement;
+	sourceHost: HTMLPreElement;
+	sourceCode: HTMLElement;
+	toggleBtn: HTMLButtonElement;
+}
+
+let lightbox: LightboxEls | undefined;
+
+// The mermaid source of whichever diagram the lightbox currently has
+// open — a plain mutable ref rather than a function parameter baked into
+// a closure, so the toolbar's copy/toggle listeners can be attached once
+// in ensureLightbox and just read whatever this points at, instead of
+// needing to be torn down and re-attached (or accumulate a new listener)
+// on every open of a different diagram.
+let currentSource = '';
+
+// Pan/zoom state, reset on every open. transform-origin is pinned to the
+// stage's own top-left (see the CSS below) so tx/ty can be plain "stage
+// top-left position within the viewport" pixel offsets — the standard
+// image-viewer zoom-anchored-at-a-point math (see zoomAt below) only
+// stays simple when the origin isn't also moving as scale changes.
+let scale = 1;
+let tx = 0;
+let ty = 0;
+const MIN_SCALE = 1;
+const MAX_SCALE = 6;
+
+function applyTransform() {
+	if (!lightbox) return;
+	lightbox.stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+}
+
+// Clamps tx/ty so the diagram can't be dragged entirely out of view —
+// centers the axis instead of clamping to an edge when the scaled content
+// is smaller than the viewport on that axis (otherwise a partially
+// zoomed-out drag would leave it pinned off-center against one wall).
+function clampPan() {
+	if (!lightbox) return;
+	const vp = lightbox.viewport.getBoundingClientRect();
+	const contentW = lightbox.stage.offsetWidth * scale;
+	const contentH = lightbox.stage.offsetHeight * scale;
+	tx = contentW <= vp.width ? (vp.width - contentW) / 2 : Math.min(0, Math.max(vp.width - contentW, tx));
+	ty = contentH <= vp.height ? (vp.height - contentH) / 2 : Math.min(0, Math.max(vp.height - contentH, ty));
+}
+
+// Zooms to `next` while keeping the content point currently under
+// (clientX, clientY) fixed on screen — the anchor a pinch or a scroll-
+// wheel zoom needs to feel like it's zooming "into" where the pointer
+// is, not just rescaling around the diagram's center.
+function zoomAt(clientX: number, clientY: number, next: number) {
+	if (!lightbox) return;
+	const vp = lightbox.viewport.getBoundingClientRect();
+	const x = clientX - vp.left;
+	const y = clientY - vp.top;
+	const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+	// Content-space point under the cursor, in unscaled stage pixels.
+	const px = (x - tx) / scale;
+	const py = (y - ty) / scale;
+	scale = clamped;
+	tx = x - px * scale;
+	ty = y - py * scale;
+	clampPan();
+	applyTransform();
+}
+
+function resetZoom() {
+	scale = MIN_SCALE;
+	tx = 0;
+	ty = 0;
+	clampPan();
+	applyTransform();
+}
+
+// Pan/pinch via Pointer Events (unifies mouse/touch/pen) rather than
+// separate mouse + touch listeners — a pinch is just "two active
+// pointers," so one Map of in-flight pointers covers both one-finger
+// drag-to-pan and two-finger pinch-to-zoom without duplicating the
+// tracking logic. touch-action: none on the viewport (see CSS) is what
+// stops the browser's own page-pinch-zoom from ever seeing these touches
+// — that's the actual fix for "pinching shifts the whole UI," not
+// anything in this handler itself.
+function wirePanZoom(viewport: HTMLDivElement) {
+	const pointers = new Map<number, { x: number; y: number }>();
+	// Baseline captured at the start of a drag or a pinch: `dist` for a
+	// pinch's scale ratio, and `mid`/`content` as the anchor pair a pinch
+	// needs to zoom "into" the pinch center rather than the diagram's
+	// center — `content` is the stage-space point that was under `mid`
+	// when the gesture began (computed the same way zoomAt derives it),
+	// and every subsequent frame re-solves tx/ty so that same content
+	// point stays under the pinch's *current* midpoint at the *current*
+	// scale. (A first version of this just added the midpoint's on-screen
+	// delta to tx/ty without ever touching the anchor for the new scale —
+	// it panned correctly but the zoom itself drifted away from wherever
+	// the fingers actually were, confirmed live via a simulated pinch
+	// that left the diagram scrolled entirely out of view.) A one-finger
+	// drag reuses the same shape with dist unused.
+	let gesture: { dist: number; mid: { x: number; y: number }; content: { x: number; y: number }; scale: number } | null = null;
+
+	function midpoint(): { x: number; y: number } {
+		const pts = Array.from(pointers.values());
+		return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+	}
+	function distance(): number {
+		const pts = Array.from(pointers.values());
+		return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+	}
+	// Stage-space point currently under viewport-relative point `mid`, at
+	// the current scale/tx/ty — the inverse of zoomAt's own px/py.
+	function contentUnder(mid: { x: number; y: number }): { x: number; y: number } {
+		if (!lightbox) return { x: 0, y: 0 };
+		const vp = lightbox.viewport.getBoundingClientRect();
+		return { x: (mid.x - vp.left - tx) / scale, y: (mid.y - vp.top - ty) / scale };
+	}
+	function beginGesture(): void {
+		const mid = pointers.size === 2 ? midpoint() : Array.from(pointers.values())[0];
+		gesture = { dist: pointers.size === 2 ? distance() : 0, mid, content: contentUnder(mid), scale };
+	}
+
+	viewport.addEventListener('pointerdown', (e) => {
+		viewport.setPointerCapture(e.pointerId);
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		beginGesture();
+	});
+
+	viewport.addEventListener('pointermove', (e) => {
+		if (!pointers.has(e.pointerId) || !lightbox) return;
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (!gesture) return;
+		const vp = lightbox.viewport.getBoundingClientRect();
+		if (pointers.size === 2) {
+			const mid = midpoint();
+			const ratio = distance() / (gesture.dist || 1);
+			scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, gesture.scale * ratio));
+			tx = mid.x - vp.left - gesture.content.x * scale;
+			ty = mid.y - vp.top - gesture.content.y * scale;
+			clampPan();
+			applyTransform();
+		} else if (pointers.size === 1 && scale > MIN_SCALE) {
+			const p = pointers.get(e.pointerId)!;
+			tx = p.x - vp.left - gesture.content.x * scale;
+			ty = p.y - vp.top - gesture.content.y * scale;
+			clampPan();
+			applyTransform();
+		}
+	});
+
+	function release(e: PointerEvent) {
+		pointers.delete(e.pointerId);
+		// Re-baseline instead of clearing outright: lifting one finger of a
+		// two-finger pinch should fall through to a plain one-finger pan of
+		// whatever's left, not stop responding until the pointer is lifted
+		// and pressed again.
+		if (pointers.size > 0) beginGesture();
+		else gesture = null;
+	}
+	viewport.addEventListener('pointerup', release);
+	viewport.addEventListener('pointercancel', release);
+
+	// Wheel: desktop trackpad/mouse zoom. Every browser reports a pinch-
+	// to-zoom trackpad gesture as a wheel event with ctrlKey set (that's
+	// the actual OS gesture translated to a "zoom" wheel event, not a
+	// held-down Ctrl key), but a plain mouse wheel over the lightbox
+	// should zoom too rather than doing nothing, so this doesn't gate on
+	// ctrlKey — there's no scroll position for wheel to otherwise mean.
+	viewport.addEventListener(
+		'wheel',
+		(e) => {
+			e.preventDefault();
+			const factor = Math.exp(-e.deltaY * 0.01);
+			zoomAt(e.clientX, e.clientY, scale * factor);
+		},
+		{ passive: false }
+	);
+
+	// Double-click/double-tap toggles between fit (1x) and a fixed 2.5x,
+	// anchored at the click point — 'dblclick' fires for both a mouse
+	// double-click and a touch double-tap in every browser tested here
+	// (Safari/Chrome), so one listener covers both input types.
+	viewport.addEventListener('dblclick', (e) => {
+		zoomAt(e.clientX, e.clientY, scale > MIN_SCALE ? MIN_SCALE : 2.5);
+	});
+}
+
+function closeLightbox() {
+	if (!lightbox) return;
+	lightbox.backdrop.hidden = true;
+	document.body.style.overflow = '';
+}
+
+// Lazily builds the single pooled lightbox and appends it to <body> (not
+// the diagram's own container) — a full-screen overlay has to escape
+// .prose's layout/overflow entirely, the same reason a modal never lives
+// inside the content that opens it. Reuses app.css's .modal-backdrop /
+// .modal-backdrop-close (dim + blur + click-outside-to-dismiss) exactly
+// the way ImageLightbox.svelte does for the photo lightbox — one scrim
+// convention for "something opened full-screen over the app," not a
+// second one invented here. Everything past the scrim (the pannable
+// viewport, the floating toolbar) is specific to this lightbox's own
+// content and gets its own mermaid-lightbox-* styling in app.css, next
+// to ImageLightbox's own .lightbox-* rules.
+function ensureLightbox(): LightboxEls {
+	if (lightbox) return lightbox;
+
+	const backdrop = document.createElement('div');
+	backdrop.className = 'modal-backdrop mermaid-lightbox-backdrop';
+	backdrop.hidden = true;
+
+	const dismissBtn = document.createElement('button');
+	dismissBtn.className = 'modal-backdrop-close';
+	dismissBtn.setAttribute('aria-label', 'Close');
+	dismissBtn.addEventListener('click', closeLightbox);
+
+	const content = document.createElement('div');
+	content.className = 'mermaid-lightbox-content';
+
+	const viewport = document.createElement('div');
+	viewport.className = 'mermaid-lightbox-viewport';
+
+	const stage = document.createElement('div');
+	stage.className = 'mermaid-lightbox-stage';
+
+	const renderHost = document.createElement('div');
+	renderHost.className = 'mermaid-lightbox-render';
+
+	const sourceHost = document.createElement('pre');
+	sourceHost.className = 'mermaid-lightbox-source';
+	sourceHost.hidden = true;
+	const sourceCode = document.createElement('code');
+	sourceHost.appendChild(sourceCode);
+
+	stage.append(renderHost, sourceHost);
+	viewport.appendChild(stage);
+
+	const toolbar = document.createElement('div');
+	toolbar.className = 'mermaid-lightbox-toolbar';
+
+	const copyBtn = iconButton(LIGHTBOX_COPY_ICON, 'Copy diagram source', 'mermaid-lightbox-btn');
+	copyBtn.addEventListener('click', () => {
+		void copyToClipboard(currentSource).then(() => {
+			copyBtn.innerHTML = LIGHTBOX_CHECK_ICON;
+			setTimeout(() => {
+				copyBtn.innerHTML = LIGHTBOX_COPY_ICON;
+			}, 1500);
+		});
+	});
+
+	const toggleBtn = iconButton(LIGHTBOX_CODE_ICON, 'View source', 'mermaid-lightbox-btn');
+	toggleBtn.setAttribute('aria-pressed', 'false');
+	toggleBtn.addEventListener('click', () => {
+		if (!lightbox) return;
+		const showingSource = toggleBtn.getAttribute('aria-pressed') === 'true';
+		lightbox.renderHost.hidden = !showingSource;
+		lightbox.sourceHost.hidden = showingSource;
+		toggleBtn.setAttribute('aria-pressed', showingSource ? 'false' : 'true');
+		toggleBtn.title = showingSource ? 'View source' : 'View diagram';
+		toggleBtn.setAttribute('aria-label', toggleBtn.title);
+	});
+
+	const closeBtn = iconButton(LIGHTBOX_CLOSE_ICON, 'Close preview', 'mermaid-lightbox-btn');
+	closeBtn.addEventListener('click', closeLightbox);
+	toolbar.append(copyBtn, toggleBtn, closeBtn);
+
+	content.append(viewport, toolbar);
+	backdrop.append(dismissBtn, content);
+	document.body.appendChild(backdrop);
+
+	wirePanZoom(viewport);
+
+	document.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape' && !backdrop.hidden) closeLightbox();
+	});
+
+	lightbox = { backdrop, viewport, stage, renderHost, sourceHost, sourceCode, toggleBtn };
+	return lightbox;
+}
+
+function openLightbox(source: string, svg: string) {
+	const els = ensureLightbox();
+	currentSource = source;
+	els.renderHost.innerHTML = svg;
+	els.sourceCode.textContent = source;
+	els.renderHost.hidden = false;
+	els.sourceHost.hidden = true;
+	els.toggleBtn.setAttribute('aria-pressed', 'false');
+	els.toggleBtn.title = 'View source';
+	els.toggleBtn.setAttribute('aria-label', 'View source');
+
+	resetZoom();
+	els.backdrop.hidden = false;
+	// Belt-and-suspenders alongside the backdrop's own fixed positioning:
+	// iOS Safari can still rubber-band/scroll the page behind a fixed
+	// overlay on a swipe that starts outside any of this handler's own
+	// listeners, so pin the body too for as long as the lightbox is open.
+	document.body.style.overflow = 'hidden';
+}
+
 function buildDiagramWrapper(source: string, svg: string, theme: string): HTMLDivElement {
 	const wrapper = document.createElement('div');
 	wrapper.className = 'mermaid-diagram';
@@ -200,6 +540,8 @@ function buildDiagramWrapper(source: string, svg: string, theme: string): HTMLDi
 	const renderPane = document.createElement('div');
 	renderPane.className = 'mermaid-render';
 	renderPane.innerHTML = svg;
+	renderPane.title = 'Tap to enlarge';
+	renderPane.addEventListener('click', () => openLightbox(source, svg));
 
 	const sourcePane = document.createElement('pre');
 	sourcePane.className = 'mermaid-source-view';

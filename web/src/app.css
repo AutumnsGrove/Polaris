@@ -866,6 +866,171 @@ a {
 	font-style: italic;
 }
 
+/* Mermaid diagram lightbox (web/src/lib/mermaid.ts) — full-screen pan/
+   zoom preview opened by tapping a rendered diagram. Reuses
+   .modal-backdrop/.modal-backdrop-close above for the scrim, the same
+   way ImageLightbox.svelte's own .lightbox-* rules do for the photo
+   lightbox — one dim/blur/click-outside-to-dismiss convention, not a
+   second one invented here. Everything below is specific to this
+   lightbox's own content, which needs far more of the viewport than a
+   capped-width image or a form panel gets, so unlike ImageLightbox this
+   doesn't reuse .modal-panel either. Built as plain DOM by mermaid.ts,
+   not a Svelte component (see that file's own doc comment on why), so
+   these rules have to be global rather than a component's scoped
+   <style> block. */
+.mermaid-lightbox-backdrop[hidden] {
+	display: none;
+}
+
+.mermaid-lightbox-content {
+	position: relative;
+	width: min(94vw, 1400px);
+	height: min(88vh, 1000px);
+}
+
+.mermaid-lightbox-viewport {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	border-radius: var(--radius-lg);
+	background: var(--color-surface);
+	/* A drag-to-pan or a double-click-to-zoom shouldn't also select the
+	   diagram's label text underneath the pointer — confirmed live:
+	   without this, double-clicking to zoom highlighted whatever word was
+	   under the cursor the same way it would on ordinary page text. */
+	user-select: none;
+	-webkit-user-select: none;
+	/* Kills the browser's own pinch-to-zoom/pan on this element so
+	   mermaid.ts's own pointer-event math is the only thing that ever
+	   sees these touches — otherwise the page itself zooms along with
+	   (or instead of) the diagram, which is exactly the "pinching shifts
+	   the whole UI" problem this lightbox exists to fix. */
+	touch-action: none;
+	cursor: grab;
+}
+
+.mermaid-lightbox-viewport:active {
+	cursor: grabbing;
+}
+
+/* transform-origin: 0 0 (not the default center) is what lets
+   mermaid.ts treat tx/ty as a plain "stage top-left position within the
+   viewport" pixel offset — see its zoomAt doc comment. Fixed at exactly
+   the viewport's own size (not sized to its content) so the render/
+   source panes it holds have a *definite* box to compute percentages
+   against — max-width/max-height:100% on the svg below, deep inside a
+   chain of content-sized flex items with no definite size anywhere,
+   resolves to a 0×0 box (confirmed live: that's exactly what shipped
+   here first — an empty lightbox, toolbar and all, with the diagram
+   itself invisible). */
+.mermaid-lightbox-stage {
+	transform-origin: 0 0;
+	width: 100%;
+	height: 100%;
+}
+
+.mermaid-lightbox-render {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* Same reasoning as .mermaid-lightbox-backdrop[hidden] above: this
+   class's own `display: flex`/`overflow: auto` outrank the browser's
+   default `[hidden]{display:none}` UA rule at equal specificity once an
+   author stylesheet sets `display` on the element at all, so toggling
+   the `hidden` *attribute* (mermaid.ts's view-source/view-diagram
+   toggle) silently did nothing without these — confirmed live: the
+   render pane stayed visually on screen under the "source" view with
+   hidden already true in the DOM. */
+.mermaid-lightbox-render[hidden],
+.mermaid-lightbox-source[hidden] {
+	display: none;
+}
+
+.mermaid-lightbox-render svg {
+	max-width: 100%;
+	max-height: 100%;
+	width: auto;
+	height: auto;
+}
+
+.mermaid-lightbox-source {
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	margin: 0;
+	padding: var(--space-lg);
+	overflow: auto;
+	background: var(--color-surface-2);
+	border-radius: var(--radius-md);
+	font-size: 13px;
+	/* Source text is meant to be read and selected (the copy button is a
+	   shortcut, not the only way to grab it) — opts back in over the
+	   viewport's own user-select: none, which exists for the *diagram*
+	   pane's drag/double-click gestures instead. */
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+.mermaid-lightbox-toolbar {
+	position: absolute;
+	top: var(--space-sm);
+	right: var(--space-sm);
+	display: flex;
+	gap: var(--space-xs);
+}
+
+/* Matches ImageLightbox.svelte's .lightbox-close exactly — the same
+   frosted dark circle regardless of the app's own light/dark theme,
+   since these float on top of arbitrary diagram colors rather than app
+   chrome, the same reasoning .mermaid-btn (ChatTurnView.svelte) already
+   follows for the inline toolbar. */
+.mermaid-lightbox-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border: none;
+	border-radius: var(--radius-full);
+	background: color-mix(in srgb, black 55%, transparent);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	color: white;
+	cursor: pointer;
+}
+
+.mermaid-lightbox-btn:hover {
+	background: color-mix(in srgb, black 70%, transparent);
+}
+
+.mermaid-lightbox-btn[aria-pressed='true'] {
+	color: var(--color-accent-2);
+}
+
+/* Diagrams need real screen space to be worth zooming into at all — the
+   general .modal-backdrop mobile rule further up turns every other
+   modal into a bottom sheet, which would cramp this into a thin strip
+   along the bottom edge instead of the near-full-screen preview a phone
+   user pinching a diagram actually wants. Same specificity as that
+   earlier rule, so this only wins because it's declared later in the
+   file — keep it below the .modal-backdrop mobile block above, not
+   reordered above it. */
+@media (max-width: 768px) {
+	.mermaid-lightbox-backdrop {
+		align-items: center;
+		padding: var(--space-md);
+	}
+
+	.mermaid-lightbox-content {
+		width: 94vw;
+		height: 80vh;
+	}
+}
+
 .hljs-punctuation,
 .hljs-operator,
 .hljs-meta,
