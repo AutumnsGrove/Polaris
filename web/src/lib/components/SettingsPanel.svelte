@@ -256,10 +256,10 @@
 				</div>
 			</div>
 
-			<section>
-				<h3>Appearance</h3>
-				<div class="row">
-					<span>Theme</span>
+			<div class="section-label">Appearance</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Theme</span>
 					<div class="theme-toggle">
 						<button
 							class:active={appState.settings.theme === 'dark'}
@@ -275,12 +275,12 @@
 						</button>
 					</div>
 				</div>
-			</section>
+			</div>
 
-			<section>
-				<h3>Model</h3>
-				<div class="row">
-					<span>Default model</span>
+			<div class="section-label">Model</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Default model</span>
 					<select
 						value={appState.settings.defaultModel}
 						onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
@@ -290,15 +290,15 @@
 						{/each}
 					</select>
 				</div>
-				<p class="hint">
-					Applies to new threads. You can still switch models per-thread from the chat header.
-				</p>
-			</section>
+			</div>
+			<p class="hint">
+				Applies to new threads. You can still switch models per-thread from the chat header.
+			</p>
 
-			<section>
-				<h3>Focus</h3>
-				<div class="row">
-					<span>Default focus mode</span>
+			<div class="section-label">Focus</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Default focus mode</span>
 					<select
 						value={appState.settings.defaultFocusMode}
 						onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
@@ -309,77 +309,83 @@
 						{/each}
 					</select>
 				</div>
-				<p class="hint">
-					Applied to every new message until changed from the composer's "+" menu.
-				</p>
-			</section>
+			</div>
+			<p class="hint">
+				Applied to every new message until changed from the composer's "+" menu.
+			</p>
 
-			<section>
-				<h3>Custom instructions</h3>
-				<textarea
-					class="custom-instructions-input"
-					placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
-					maxlength="4000"
-					value={appState.settings.customInstructions}
-					onblur={(e) => appState.settings.setCustomInstructions(e.currentTarget.value)}
-				></textarea>
-				<p class="hint">
-					Added to every answer as steering, on top of <code>prompt.md</code>. Edit
-					<code>prompt.md</code> directly for anything more involved than a short standing
-					preference.
-				</p>
-			</section>
+			<div class="section-label">Custom instructions</div>
+			<div class="settings-group">
+				<div class="settings-row stacked">
+					<textarea
+						class="custom-instructions-input"
+						placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
+						maxlength="4000"
+						value={appState.settings.customInstructions}
+						onblur={(e) => appState.settings.setCustomInstructions(e.currentTarget.value)}
+					></textarea>
+				</div>
+			</div>
+			<p class="hint">
+				Added to every answer as steering, on top of <code>prompt.md</code>. Edit
+				<code>prompt.md</code> directly for anything more involved than a short standing
+				preference.
+			</p>
 
-			<section>
-				<h3>About you</h3>
-				<div class="row location-row">
+			<div class="section-label">About you</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Name</span>
 					<input
 						type="text"
+						class="inline-input"
 						placeholder="e.g. Alex"
 						maxlength="80"
 						value={appState.settings.personName}
 						onblur={(e) => appState.settings.setPersonName(e.currentTarget.value)}
 					/>
 				</div>
-				<div class="theme-toggle person-pronoun-toggle">
-					{#each PRONOUN_PRESETS as preset (preset)}
+				<div class="settings-row stacked">
+					<span class="row-label">Pronouns</span>
+					<div class="theme-toggle person-pronoun-toggle">
+						{#each PRONOUN_PRESETS as preset (preset)}
+							<button
+								type="button"
+								class:active={pronounChoice === preset}
+								onclick={() => choosePronoun(preset)}
+							>
+								{preset}
+							</button>
+						{/each}
 						<button
 							type="button"
-							class:active={pronounChoice === preset}
-							onclick={() => choosePronoun(preset)}
+							class:active={pronounChoice === 'custom'}
+							onclick={() => choosePronoun('custom')}
 						>
-							{preset}
+							Custom
 						</button>
-					{/each}
-					<button
-						type="button"
-						class:active={pronounChoice === 'custom'}
-						onclick={() => choosePronoun('custom')}
-					>
-						Custom
-					</button>
-				</div>
-				{#if pronounChoice === 'custom'}
-					<div class="row location-row">
+					</div>
+					{#if pronounChoice === 'custom'}
 						<input
 							type="text"
+							class="stacked-input"
 							placeholder="e.g. ze/zir"
 							maxlength="40"
 							value={customPronouns}
 							onblur={(e) => appState.settings.setPersonPronouns(e.currentTarget.value)}
 						/>
-					</div>
-				{/if}
-				<p class="hint">
-					Used by both this assistant and Constellation's Weaver — without it, either has to guess
-					pronouns from context (and can guess wrong).
-				</p>
-			</section>
+					{/if}
+				</div>
+			</div>
+			<p class="hint">
+				Used by both this assistant and Constellation's Weaver — without it, either has to guess
+				pronouns from context (and can guess wrong).
+			</p>
 
-			<section>
-				<h3>Voice</h3>
-				<div class="row">
-					<span>Mic button</span>
+			<div class="section-label">Voice</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Mic button</span>
 					<div class="theme-toggle">
 						<button
 							class:active={appState.settings.voiceInputMode === 'toggle'}
@@ -395,34 +401,35 @@
 						</button>
 					</div>
 				</div>
-				<p class="hint">
-					"Tap to toggle" starts recording on the first tap and stops on the second — no need to
-					keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
-					behavior.
-				</p>
-			</section>
+			</div>
+			<p class="hint">
+				"Tap to toggle" starts recording on the first tap and stops on the second — no need to
+				keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
+				behavior.
+			</p>
 
-			<section>
-				<h3>Location</h3>
-				<div class="row location-row">
+			<div class="section-label">Location</div>
+			<div class="settings-group">
+				<div class="settings-row stacked">
 					<input
 						type="text"
+						class="stacked-input"
 						placeholder="e.g. Seattle, WA"
 						value={appState.settings.manualLocation}
 						onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
 					/>
 				</div>
-				<p class="hint">
-					Used by "near me" questions when the browser can't get your real location (it needs
-					https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
-					is available.
-				</p>
-			</section>
+			</div>
+			<p class="hint">
+				Used by "near me" questions when the browser can't get your real location (it needs
+				https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
+				is available.
+			</p>
 
-			<section>
-				<h3>Memory</h3>
-				<div class="row">
-					<span>Enabled</span>
+			<div class="section-label">Memory</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Enabled</span>
 					<label class="switch">
 						<input
 							type="checkbox"
@@ -432,9 +439,11 @@
 						<span class="slider"></span>
 					</label>
 				</div>
-				<div class:section-disabled={!appState.settings.memoryEnabled}>
-					<div class="row">
-						<span>What <span class="wordmark">Polaris</span> remembers about you</span>
+			</div>
+			<div class:section-disabled={!appState.settings.memoryEnabled}>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">What <span class="wordmark">Polaris</span> remembers about you</span>
 						<button
 							class="btn manage-btn"
 							onclick={() => appState.settings.memoryEnabled && (showMemory = true)}
@@ -443,32 +452,32 @@
 							<Brain size={14} /> Manage
 						</button>
 					</div>
-					<p class="hint">
-						View, edit by telling <span class="wordmark">Polaris</span> what to change, or forget things
-						it's saved across conversations.
-					</p>
 				</div>
-			</section>
+				<p class="hint">
+					View, edit by telling <span class="wordmark">Polaris</span> what to change, or forget things
+					it's saved across conversations.
+				</p>
+			</div>
 
-			<section>
-				<h3>Tools</h3>
-				<div class="row">
-					<span>Which tools <span class="wordmark">Polaris</span> can use</span>
+			<div class="section-label">Tools</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Which tools <span class="wordmark">Polaris</span> can use</span>
 					<button class="btn manage-btn" onclick={() => (showTools = true)}>
 						<Wrench size={14} /> Manage
 					</button>
 				</div>
-				<p class="hint">
-					Turn off individual tools, or use the composer's "+" menu to turn off research entirely
-					for a plain chat.
-				</p>
-			</section>
+			</div>
+			<p class="hint">
+				Turn off individual tools, or use the composer's "+" menu to turn off research entirely
+				for a plain chat.
+			</p>
 
-			<section>
-				<h3>Updates</h3>
-				{#if appState.version}
-					<div class="row version-row">
-						<span>Version</span>
+			<div class="section-label">Updates</div>
+			{#if appState.version}
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Version</span>
 						<span class="version-info">
 							<code class="version">{appState.version}</code>
 							{#if appState.deployment === 'docker'}
@@ -482,60 +491,60 @@
 							{/if}
 						</span>
 					</div>
-				{/if}
-				<div class="update-actions">
-					<button
-						class="btn update-btn"
-						onclick={() => appState.settings.pushUpdate(() => appState.busy)}
-						disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
-					>
-						<RefreshCw
-							size={14}
-							class={appState.settings.updateKind === 'update' &&
-							(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
-								? 'spin'
-								: ''}
-						/>
-						{#if appState.settings.updateKind === 'update' && appState.settings.updateState === 'updating'}
-							Pulling & building…
-						{:else if appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'}
-							Restarting…
-						{:else}
-							Update <span class="wordmark">Polaris</span>
-						{/if}
-					</button>
-					<!-- No pull, no rebuild — just kills and cleanly restarts the
-					     running binary. Separate from Update Polaris because running
-					     the full update flow just to force a restart still does a
-					     real (if usually no-op) git pull and go build first, which
-					     can stall for no benefit when there's nothing new to pull. -->
-					<button
-						class="btn restart-btn"
-						onclick={() => appState.settings.pushRestart(() => appState.busy)}
-						disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
-					>
-						<RotateCw
-							size={14}
-							class={appState.settings.updateKind === 'restart' &&
-							(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
-								? 'spin'
-								: ''}
-						/>
-						{#if appState.settings.updateKind === 'restart' && (appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
-							Restarting…
-						{:else}
-							Restart <span class="wordmark">Polaris</span>
-						{/if}
-					</button>
 				</div>
-				<p class="hint">
-					<strong>Update</strong> pulls the latest code, rebuilds, then restarts.
-					<strong>Restart</strong> just cleanly restarts the running process — no pull, no rebuild.
-				</p>
-				{#if appState.settings.updateLog}
-					<pre class="log">{appState.settings.updateLog}</pre>
-				{/if}
-			</section>
+			{/if}
+			<div class="update-actions">
+				<button
+					class="btn update-btn"
+					onclick={() => appState.settings.pushUpdate(() => appState.busy)}
+					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+				>
+					<RefreshCw
+						size={14}
+						class={appState.settings.updateKind === 'update' &&
+						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
+							? 'spin'
+							: ''}
+					/>
+					{#if appState.settings.updateKind === 'update' && appState.settings.updateState === 'updating'}
+						Pulling & building…
+					{:else if appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'}
+						Restarting…
+					{:else}
+						Update <span class="wordmark">Polaris</span>
+					{/if}
+				</button>
+				<!-- No pull, no rebuild — just kills and cleanly restarts the
+				     running binary. Separate from Update Polaris because running
+				     the full update flow just to force a restart still does a
+				     real (if usually no-op) git pull and go build first, which
+				     can stall for no benefit when there's nothing new to pull. -->
+				<button
+					class="btn restart-btn"
+					onclick={() => appState.settings.pushRestart(() => appState.busy)}
+					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+				>
+					<RotateCw
+						size={14}
+						class={appState.settings.updateKind === 'restart' &&
+						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
+							? 'spin'
+							: ''}
+					/>
+					{#if appState.settings.updateKind === 'restart' && (appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
+						Restarting…
+					{:else}
+						Restart <span class="wordmark">Polaris</span>
+					{/if}
+				</button>
+			</div>
+			<p class="hint">
+				<strong>Update</strong> pulls the latest code, rebuilds, then restarts.
+				<strong>Restart</strong> just cleanly restarts the running process — no pull, no rebuild.
+			</p>
+			{#if appState.settings.updateLog}
+				<pre class="log">{appState.settings.updateLog}</pre>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -552,44 +561,85 @@
 	   .usage-section-label/.usage-stat-group/.usage-stat-row, shared with
 	   ConstellationUsageModal.svelte's own Usage section. */
 
-	/* Whitespace does the separating instead of a rule line — a wider gap
-	   between sections reads as more considered than a hairline, and pairs
-	   with the modal's own step up to a deeper, glass-like surface. */
-	section {
-		margin-bottom: var(--space-xl);
-		padding-bottom: 0;
-	}
-
-	section:last-child {
-		margin-bottom: 0;
-	}
-
-	/* Small-caps section labels: heavier weight + wider tracking so the
-	   contrast against 400-weight body copy underneath reads as confident
-	   rather than timid. Text color pushed up a notch so labels aren't
-	   ghost-dim. */
-	section h3 {
-		margin: 0 0 var(--space-md) 0;
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-text);
-	}
-
 	.header-actions {
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
 	}
 
-	.row {
+	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
+	   exactly (issue #83 — bringing every settings surface onto one visual
+	   language instead of N divergent ones). Duplicated here rather than
+	   shared, same reasoning as .switch below: Svelte scopes component
+	   styles per-file, so this is copy-once-per-component by design, not
+	   an oversight. */
+	.section-label {
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-dim);
+		padding: 0 var(--space-xs) var(--space-sm);
+	}
+
+	.settings-group {
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		overflow: hidden;
+		margin-bottom: var(--space-xl);
+	}
+
+	.settings-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		margin-bottom: var(--space-sm);
+		padding: var(--space-md) var(--space-lg);
+		border-bottom: 1px solid var(--color-border);
 		font-size: 14px;
+	}
+
+	.settings-row:last-child {
+		border-bottom: none;
+	}
+
+	/* Used where a row's control doesn't fit beside its label on one line
+	   (a full segmented control, a full-width text field) — label on its
+	   own line, content below it, instead of forcing a cramped inline fit. */
+	.settings-row.stacked {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--space-sm);
+	}
+
+	.row-label {
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	.settings-row select {
+		font: inherit;
+		font-size: 13px;
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text);
+		padding: var(--space-xs) var(--space-sm);
+	}
+
+	/* Compact, inline field beside its own row-label (Name) — sized like
+	   the select above it, not stretched full-width the way a stacked
+	   field is. */
+	.inline-input {
+		font: inherit;
+		font-size: 13px;
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text);
+		padding: var(--space-xs) var(--space-sm);
+		width: 140px;
 	}
 
 	.usage-empty {
@@ -726,23 +776,16 @@
 	}
 
 	.person-pronoun-toggle {
-		margin-top: var(--space-sm);
 		flex-wrap: wrap;
 	}
 
-	select {
+	/* Full-width, "carved into the surface" field — used wherever a
+	   .settings-row.stacked's control is a free-text field rather than a
+	   toggle/segmented-control (custom pronouns, manual location). */
+	.stacked-input {
+		width: 100%;
 		border: none;
-		background: var(--color-surface-2);
-		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-well);
-		padding: var(--space-sm) var(--space-md);
-		font-size: 13px;
-	}
-
-	.location-row input {
-		flex: 1;
-		border: none;
-		background: var(--color-surface-2);
+		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
 		padding: var(--space-sm) var(--space-md);
@@ -750,7 +793,7 @@
 		color: var(--color-text);
 	}
 
-	.location-row input::placeholder {
+	.stacked-input::placeholder {
 		color: var(--color-text-dim);
 	}
 
@@ -759,7 +802,7 @@
 		min-height: 72px;
 		resize: vertical;
 		border: none;
-		background: var(--color-surface-2);
+		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
 		padding: var(--space-sm) var(--space-md);
@@ -770,10 +813,6 @@
 
 	.custom-instructions-input::placeholder {
 		color: var(--color-text-dim);
-	}
-
-	.version-row {
-		margin-bottom: var(--space-md);
 	}
 
 	.version {

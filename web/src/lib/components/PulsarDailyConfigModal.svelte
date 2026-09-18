@@ -190,12 +190,14 @@
 		</div>
 
 		<form onsubmit={submit}>
-			<div class="row daily-enabled-row">
-				<span>The Daily</span>
-				<label class="switch">
-					<input type="checkbox" bind:checked={dailyEnabled} />
-					<span class="slider"></span>
-				</label>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label daily-enabled-label">The Daily</span>
+					<label class="switch">
+						<input type="checkbox" bind:checked={dailyEnabled} />
+						<span class="slider"></span>
+					</label>
+				</div>
 			</div>
 			<p class="hint">
 				{dailyEnabled
@@ -203,77 +205,88 @@
 					: "Off — won't generate on its own. \"Generate now\" still works."}
 			</p>
 
-			<h3>Blocks</h3>
-			<div class="block-list">
+			<div class="section-label">Blocks</div>
+			<div class="settings-group">
 				{#each blockOptions as opt (opt.key)}
-					<label class="block-row">
-						<input
-							type="checkbox"
-							checked={enabledBlocks.has(opt.key)}
-							onchange={() => toggleBlock(opt.key)}
-						/>
-						<span>{opt.label}</span>
-					</label>
-					{#if opt.key === 'weather' && enabledBlocks.has('weather')}
-						<div class="field block-subfield">
-							<label for="daily-weather-location">Location (optional)</label>
-							<input
-								id="daily-weather-location"
-								type="text"
-								bind:value={weatherLocation}
-								placeholder="e.g. Seattle, WA — leave blank to use the server's default location"
-							/>
+					{@const expanded =
+						(opt.key === 'weather' || opt.key === 'sports' || opt.placeholder) &&
+						enabledBlocks.has(opt.key)}
+					<div class="settings-row" class:stacked={expanded}>
+						<div class="block-toggle-row">
+							<span class="row-label">{opt.label}</span>
+							<label class="switch">
+								<input
+									type="checkbox"
+									checked={enabledBlocks.has(opt.key)}
+									onchange={() => toggleBlock(opt.key)}
+								/>
+								<span class="slider"></span>
+							</label>
 						</div>
-					{:else if opt.key === 'sports' && enabledBlocks.has('sports')}
-						<div class="field block-subfield">
-							<div class="field-label-row">
-								<label for="daily-sports-teams">Which teams/leagues?</label>
-								<button
-									type="button"
-									class="wizard-btn"
-									onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
-								>
-									<Sparkles size={12} />
-									Help me write this
-								</button>
+						{#if opt.key === 'weather' && enabledBlocks.has('weather')}
+							<div class="subfield">
+								<label for="daily-weather-location">Location (optional)</label>
+								<input
+									id="daily-weather-location"
+									type="text"
+									class="stacked-input"
+									bind:value={weatherLocation}
+									placeholder="e.g. Seattle, WA — leave blank to use the server's default location"
+								/>
 							</div>
-							<textarea
-								id="daily-sports-teams"
-								rows="1"
-								bind:value={sportsTeams}
-								placeholder="Warriors, 49ers, Premier League"
-								required
-								use:autoResize={{ value: sportsTeams, maxHeight: customFieldMaxHeight }}
-							></textarea>
-						</div>
-					{:else if opt.placeholder && enabledBlocks.has(opt.key)}
-						<div class="field block-subfield">
-							<div class="field-label-row">
-								<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
-								<button
-									type="button"
-									class="wizard-btn"
-									onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
-								>
-									<Sparkles size={12} />
-									Help me write this
-								</button>
+						{:else if opt.key === 'sports' && enabledBlocks.has('sports')}
+							<div class="subfield">
+								<div class="field-label-row">
+									<label for="daily-sports-teams">Which teams/leagues?</label>
+									<button
+										type="button"
+										class="wizard-btn"
+										onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
+									>
+										<Sparkles size={12} />
+										Help me write this
+									</button>
+								</div>
+								<textarea
+									id="daily-sports-teams"
+									class="stacked-input"
+									rows="1"
+									bind:value={sportsTeams}
+									placeholder="Warriors, 49ers, Premier League"
+									required
+									use:autoResize={{ value: sportsTeams, maxHeight: customFieldMaxHeight }}
+								></textarea>
 							</div>
-							<textarea
-								id="daily-custom-{opt.key}"
-								rows="1"
-								value={customInstructions[opt.key] ?? ''}
-								oninput={(e) => (customInstructions[opt.key] = e.currentTarget.value)}
-								placeholder={opt.placeholder}
-								use:autoResize={{ value: customInstructions[opt.key] ?? '', maxHeight: customFieldMaxHeight }}
-							></textarea>
-						</div>
-					{/if}
+						{:else if opt.placeholder && enabledBlocks.has(opt.key)}
+							<div class="subfield">
+								<div class="field-label-row">
+									<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
+									<button
+										type="button"
+										class="wizard-btn"
+										onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
+									>
+										<Sparkles size={12} />
+										Help me write this
+									</button>
+								</div>
+								<textarea
+									id="daily-custom-{opt.key}"
+									class="stacked-input"
+									rows="1"
+									value={customInstructions[opt.key] ?? ''}
+									oninput={(e) => (customInstructions[opt.key] = e.currentTarget.value)}
+									placeholder={opt.placeholder}
+									use:autoResize={{ value: customInstructions[opt.key] ?? '', maxHeight: customFieldMaxHeight }}
+								></textarea>
+							</div>
+						{/if}
+					</div>
 				{/each}
 			</div>
 
-			<div class="section-header-row">
-				<h3>Custom blocks</h3>
+			<div class="section-label-row">
+				<div class="section-label">Custom blocks</div>
 				<button type="button" class="wizard-btn" onclick={addCustomBlock}>
 					<Plus size={12} />
 					New general purpose block
@@ -285,9 +298,9 @@
 					you want tracked. Runs with the same research tools as Headlines or Local.
 				</p>
 			{:else}
-				<div class="block-list">
+				<div class="settings-group">
 					{#each customBlocks as block (block.key)}
-						<div class="field block-subfield custom-block-row">
+						<div class="settings-row stacked">
 							<div class="field-label-row">
 								<input
 									type="text"
@@ -320,6 +333,7 @@
 								</button>
 							</div>
 							<textarea
+								class="stacked-input"
 								rows="1"
 								value={block.instructions}
 								oninput={(e) => (block.instructions = e.currentTarget.value)}
@@ -331,38 +345,44 @@
 				</div>
 			{/if}
 
-			<h3>Models</h3>
-			<div class="row">
-				<span>Architect</span>
-				<select bind:value={architectModel}>
-					{#each appState.models as m (m.id)}
-						<option value={m.id}>{m.name}</option>
-					{/each}
-				</select>
+			<div class="section-label">Models</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Architect</span>
+					<select bind:value={architectModel}>
+						{#each appState.models as m (m.id)}
+							<option value={m.id}>{m.name}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">Writer</span>
+					<select bind:value={writerModel}>
+						{#each appState.models as m (m.id)}
+							<option value={m.id}>{m.name}</option>
+						{/each}
+					</select>
+				</div>
 			</div>
-			<p class="hint">Judges what changed and elects today's Top Story — Stage A/B's decisions.</p>
-			<div class="row">
-				<span>Writer</span>
-				<select bind:value={writerModel}>
-					{#each appState.models as m (m.id)}
-						<option value={m.id}>{m.name}</option>
-					{/each}
-				</select>
-			</div>
-			<p class="hint">Writes every block's actual content — Stage A/C's prose.</p>
+			<p class="hint">
+				Architect judges what changed and elects today's Top Story — Stage A/B's decisions. Writer
+				writes every block's actual content — Stage A/C's prose.
+			</p>
 
-			<h3>Schedule</h3>
-			<div class="row">
-				<span>Generates at</span>
-				<input type="time" bind:value={timeOfDay} />
+			<div class="section-label">Schedule</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Generates at</span>
+					<input type="time" bind:value={timeOfDay} />
+				</div>
+				<div class="settings-row">
+					<span class="row-label">Right now</span>
+					<button type="button" class="btn generate-now-btn" onclick={generateNow} disabled={generating}>
+						{generating ? 'Starting…' : 'Generate now'}
+					</button>
+				</div>
 			</div>
 			<p class="hint">Server-local time — no timezone handling.</p>
-			<div class="row">
-				<span>Right now</span>
-				<button type="button" class="btn generate-now-btn" onclick={generateNow} disabled={generating}>
-					{generating ? 'Starting…' : 'Generate now'}
-				</button>
-			</div>
 			<p class="hint">
 				{generateResult || 'Runs today’s edition immediately with the currently-saved settings, not whatever’s still unsaved in this form.'}
 			</p>
@@ -393,49 +413,89 @@
 {/if}
 
 <style>
-	h3 {
-		margin: var(--space-lg) 0 var(--space-md);
+	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
+	   exactly (issue #83's settings-menu unification). Duplicated per-file
+	   for the same reason .switch below is — Svelte scopes component
+	   styles, so there's no shared-import version of this. */
+	.section-label {
 		font-size: 11px;
-		font-weight: 700;
+		font-weight: 600;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-text);
+		color: var(--color-text-dim);
+		padding: 0 var(--space-xs) var(--space-sm);
 	}
 
-	.block-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-xs);
+	.settings-group {
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		overflow: hidden;
+		margin-bottom: var(--space-md);
 	}
 
-	.block-row {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: 13.5px;
-		padding: var(--space-xs) 0;
-	}
-
-	.block-subfield {
-		margin: 0 0 var(--space-sm) var(--space-xl);
-	}
-
-	.section-header-row {
+	.settings-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-	}
-	.section-header-row h3 {
-		margin: var(--space-lg) 0 var(--space-md);
+		padding: var(--space-md) var(--space-lg);
+		border-bottom: 1px solid var(--color-border);
+		font-size: 14px;
 	}
 
-	/* Not indented under a checkbox like a fixed block's own subfield —
-	   there's no checkbox here, the block's existence in the list already
-	   means it's enabled (see store.PulsarDailyConfig.CustomBlocks' doc
-	   comment). */
-	.custom-block-row {
-		margin: 0 0 var(--space-sm) 0;
+	.settings-row:last-child {
+		border-bottom: none;
+	}
+
+	/* A block row with an inline sub-field (weather's location, sports'
+	   required team list, or any block with a custom-instructions
+	   placeholder) stacks its toggle above the field instead of trying
+	   to fit both on one line. */
+	.settings-row.stacked {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.row-label {
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	.block-toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+	}
+
+	/* A sub-field lives inside its own block's row (dashed divider, not a
+	   separate card) so the toggle and the field it controls read as one
+	   unit while scanning down a long block list — see the mockup this
+	   was built from at mockups/settings-unification.html. */
+	.subfield {
+		width: 100%;
+		margin-top: var(--space-md);
+		padding-top: var(--space-md);
+		border-top: 1px dashed var(--color-border);
+	}
+
+	.subfield label {
+		display: block;
+		margin-bottom: var(--space-xs);
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.section-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+		margin-bottom: var(--space-sm);
+	}
+	.section-label-row .section-label {
+		padding-bottom: 0;
 	}
 
 	.custom-block-title {
@@ -450,13 +510,6 @@
 	}
 	.custom-block-title::placeholder {
 		font-weight: 400;
-		color: var(--color-text-dim);
-	}
-
-	.field label {
-		display: block;
-		margin-bottom: var(--space-xs);
-		font-size: 12px;
 		color: var(--color-text-dim);
 	}
 
@@ -492,11 +545,13 @@
 		background: var(--color-accent-soft);
 	}
 
-	.field textarea,
-	.field input[type='text'] {
+	/* Full-width, "carved into the surface" field — used for every
+	   sub-field inside a stacked settings-row (weather location, sports
+	   teams, headlines steer, custom block instructions). */
+	.stacked-input {
 		width: 100%;
 		border: none;
-		background: var(--color-surface-2);
+		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-well);
 		padding: var(--space-sm) var(--space-md);
@@ -506,22 +561,12 @@
 		resize: none;
 	}
 
-	.row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		margin-bottom: var(--space-sm);
-		font-size: 14px;
-	}
-
-	.row select,
-	.row input[type='time'] {
-		border: none;
-		background: var(--color-surface-2);
+	.settings-row select,
+	.settings-row input[type='time'] {
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-well);
-		padding: var(--space-sm) var(--space-md);
+		padding: var(--space-xs) var(--space-sm);
 		font-size: 13px;
 		color: var(--color-text);
 	}
@@ -554,7 +599,7 @@
 		padding: var(--space-sm) var(--space-md);
 	}
 
-	.daily-enabled-row {
+	.daily-enabled-label {
 		font-weight: 600;
 	}
 

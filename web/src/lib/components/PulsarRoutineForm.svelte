@@ -162,63 +162,66 @@
 				></textarea>
 			</div>
 
-			<div class="row">
-				<span>Model</span>
-				<select bind:value={model}>
-					{#each appState.models as m (m.id)}
-						<option value={m.id}>{m.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="row">
-				<span>Focus mode</span>
-				<select bind:value={focusMode}>
-					<option value="off">Off</option>
-					{#each FOCUS_MODES as mode (mode.id)}
-						<option value={mode.id}>{mode.label}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="row">
-				<span>Deep research</span>
-				<label class="switch">
-					<input type="checkbox" bind:checked={deepResearch} />
-					<span class="slider"></span>
-				</label>
-			</div>
-
-			<h3>Schedule</h3>
-
-			<div class="row">
-				<span>Repeats</span>
-				<select bind:value={scheduleType}>
-					<option value="daily">Daily</option>
-					<option value="weekly">Weekly</option>
-					<option value="monthly">Monthly</option>
-				</select>
-			</div>
-
-			{#if scheduleType === 'weekly'}
-				<div class="row">
-					<span>On</span>
-					<select bind:value={weeklyParam}>
-						{#each weekdays as wd (wd.value)}
-							<option value={wd.value}>{wd.label}</option>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Model</span>
+					<select bind:value={model}>
+						{#each appState.models as m (m.id)}
+							<option value={m.id}>{m.name}</option>
 						{/each}
 					</select>
 				</div>
-			{:else if scheduleType === 'monthly'}
-				<div class="row">
-					<span>On day</span>
-					<input type="number" min="1" max="31" bind:value={monthlyParam} class="day-input" />
-				</div>
-			{/if}
 
-			<div class="row">
-				<span>At</span>
-				<input type="time" bind:value={timeOfDay} />
+				<div class="settings-row">
+					<span class="row-label">Focus mode</span>
+					<select bind:value={focusMode}>
+						<option value="off">Off</option>
+						{#each FOCUS_MODES as mode (mode.id)}
+							<option value={mode.id}>{mode.label}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="settings-row">
+					<span class="row-label">Deep research</span>
+					<label class="switch">
+						<input type="checkbox" bind:checked={deepResearch} />
+						<span class="slider"></span>
+					</label>
+				</div>
+			</div>
+
+			<div class="section-label">Schedule</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Repeats</span>
+					<select bind:value={scheduleType}>
+						<option value="daily">Daily</option>
+						<option value="weekly">Weekly</option>
+						<option value="monthly">Monthly</option>
+					</select>
+				</div>
+
+				{#if scheduleType === 'weekly'}
+					<div class="settings-row">
+						<span class="row-label">On</span>
+						<select bind:value={weeklyParam}>
+							{#each weekdays as wd (wd.value)}
+								<option value={wd.value}>{wd.label}</option>
+							{/each}
+						</select>
+					</div>
+				{:else if scheduleType === 'monthly'}
+					<div class="settings-row">
+						<span class="row-label">On day</span>
+						<input type="number" min="1" max="31" bind:value={monthlyParam} class="day-input" />
+					</div>
+				{/if}
+
+				<div class="settings-row">
+					<span class="row-label">At</span>
+					<input type="time" bind:value={timeOfDay} />
+				</div>
 			</div>
 			<p class="hint">Server-local time — no timezone handling.</p>
 
@@ -266,15 +269,6 @@
 		font-family: var(--font-wordmark);
 		font-weight: 400;
 		letter-spacing: 0.01em;
-	}
-
-	h3 {
-		margin: var(--space-lg) 0 var(--space-md);
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-text);
 	}
 
 	.field {
@@ -337,24 +331,58 @@
 		resize: vertical;
 	}
 
-	.row {
+	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
+	   exactly (issue #83's settings-menu unification). Duplicated per-file
+	   for the same reason .switch below is — Svelte scopes component
+	   styles, so there's no shared-import version of this. */
+	.section-label {
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-dim);
+		padding: 0 var(--space-xs) var(--space-sm);
+	}
+
+	.settings-group {
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		overflow: hidden;
+		margin-bottom: var(--space-md);
+	}
+
+	.settings-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		margin-bottom: var(--space-sm);
+		padding: var(--space-md) var(--space-lg);
+		border-bottom: 1px solid var(--color-border);
 		font-size: 14px;
 	}
 
-	.row select,
-	.row input[type='time'] {
-		border: none;
-		background: var(--color-surface-2);
+	.settings-row:last-child {
+		border-bottom: none;
+	}
+
+	.row-label {
+		font-size: 14px;
+		font-weight: 500;
+	}
+
+	.settings-row select,
+	.settings-row input[type='time'],
+	.settings-row input[type='number'] {
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
-		box-shadow: var(--shadow-well);
-		padding: var(--space-sm) var(--space-md);
+		padding: var(--space-xs) var(--space-sm);
 		/* Same 16px floor as .field above — a <select>/time input focuses
-		   just like a text input and triggers the same iOS Safari zoom. */
+		   just like a text input and triggers the same iOS Safari zoom.
+		   Constellation's own equivalent rows use 13px since that modal
+		   has no mobile-zoom-triggering fields today — don't copy that
+		   value here along with the rest of the card look. */
 		font-size: 16px;
 		color: var(--color-text);
 	}
@@ -362,8 +390,6 @@
 	.day-input {
 		width: 64px;
 		text-align: center;
-		/* Same 16px floor as .field/.row above. */
-		font-size: 16px;
 	}
 
 	.hint {

@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings unification — issue #83</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-danger: oklch(65% 0.19 25);
+
+	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+	--shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+.page-head {
+	max-width: 1040px;
+	margin: 0 auto;
+	padding: var(--space-2xl) var(--space-xl) 0;
+}
+.page-head h1 {
+	font-size: 1.3rem;
+	margin: 0 0 var(--space-sm);
+}
+.page-head p {
+	color: var(--color-text-dim);
+	max-width: 760px;
+	line-height: 1.6;
+	font-size: 0.9rem;
+	margin: 0 0 var(--space-md);
+}
+.page-head code {
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	font-size: 0.85em;
+}
+
+.row-of-panels {
+	max-width: 1040px;
+	margin: 0 auto;
+	padding: var(--space-xl) var(--space-xl) var(--space-2xl);
+	display: flex;
+	gap: var(--space-2xl);
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+
+.col {
+	flex: 1 1 420px;
+	max-width: 460px;
+}
+
+.col-label {
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-dim);
+	margin-bottom: var(--space-md);
+}
+.col-label .sub {
+	display: block;
+	text-transform: none;
+	letter-spacing: normal;
+	font-weight: 400;
+	margin-top: 2px;
+	font-size: 0.72rem;
+}
+
+.section-heading {
+	max-width: 1040px;
+	margin: var(--space-2xl) auto 0;
+	padding: 0 var(--space-xl);
+	border-top: 1px solid var(--color-border);
+	padding-top: var(--space-xl);
+}
+.section-heading h2 {
+	font-size: 1.1rem;
+	margin: 0 0 var(--space-xs);
+}
+.section-heading p {
+	color: var(--color-text-dim);
+	font-size: 0.85rem;
+	line-height: 1.5;
+	max-width: 720px;
+	margin: 0;
+}
+
+/* ---- shared app chrome, copied from web/src/app.css ---- */
+.panel {
+	background: var(--color-surface-3);
+	border-radius: var(--radius-xl);
+	box-shadow: var(--shadow-lg), var(--shadow-glass-edge);
+	padding: var(--space-2xl) var(--space-xl) var(--space-xl);
+}
+.panel-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: var(--space-xl);
+}
+.panel-header h2 {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-size: 20px;
+	font-weight: 700;
+	letter-spacing: -0.005em;
+}
+.icon-x {
+	color: var(--color-text-dim);
+	font-size: 16px;
+}
+
+/* ---- BEFORE: today's flat SettingsPanel/PulsarRoutineForm pattern ---- */
+.flat-section {
+	margin-bottom: var(--space-xl);
+}
+.flat-section h3 {
+	margin: 0 0 var(--space-md);
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	color: var(--color-text);
+}
+.flat-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-md);
+	margin-bottom: var(--space-sm);
+	font-size: 14px;
+}
+.flat-hint {
+	font-size: 12px;
+	color: var(--color-text-dim);
+	margin: var(--space-sm) 0 0 0;
+}
+
+/* ---- AFTER: Constellation's card-grouped pattern, applied app-wide ---- */
+.section-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-dim);
+	padding: 0 var(--space-xs) var(--space-sm);
+}
+.settings-group {
+	border-radius: var(--radius-lg);
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	overflow: hidden;
+	margin-bottom: var(--space-xl);
+}
+.settings-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-md);
+	padding: var(--space-md) var(--space-lg);
+	border-bottom: 1px solid var(--color-border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row.stacked {
+	flex-direction: column;
+	align-items: stretch;
+}
+.row-label { font-size: 14px; font-weight: 500; }
+.row-hint {
+	font-size: 11.5px;
+	color: var(--color-text-dim);
+	margin-top: 2px;
+	line-height: 1.4;
+}
+.settings-row select,
+.settings-row input[type="text"],
+.settings-row input[type="time"],
+.settings-row input[type="number"] {
+	font: inherit;
+	font-size: 13px;
+	background: var(--color-surface-3);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	color: var(--color-text);
+	padding: var(--space-xs) var(--space-sm);
+}
+.subfield {
+	width: 100%;
+	margin-top: var(--space-md);
+	padding-top: var(--space-md);
+	border-top: 1px dashed var(--color-border);
+}
+.subfield-label-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: var(--space-xs);
+}
+.subfield label {
+	font-size: 12px;
+	color: var(--color-text-dim);
+}
+.subfield textarea,
+.subfield input[type="text"] {
+	width: 100%;
+	border: none;
+	background: var(--color-surface-3);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-well);
+	padding: var(--space-sm) var(--space-md);
+	font: inherit;
+	font-size: 13px;
+	color: var(--color-text);
+	resize: none;
+}
+.wizard-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--space-xs);
+	padding: 2px var(--space-sm);
+	border: none;
+	background: transparent;
+	border-radius: var(--radius-full);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--color-accent);
+	white-space: nowrap;
+}
+.wizard-btn:hover { background: var(--color-accent-soft); }
+.icon-btn-mini {
+	background: transparent;
+	border: none;
+	color: var(--color-text-dim);
+	font-size: 12px;
+	padding: var(--space-xs) var(--space-sm);
+	border-radius: var(--radius-sm);
+}
+
+.switch {
+	position: relative;
+	display: inline-block;
+	width: 36px;
+	height: 20px;
+	flex-shrink: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+	position: absolute;
+	inset: 0;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-full);
+	transition: background 0.15s ease;
+}
+.slider::before {
+	content: '';
+	position: absolute;
+	width: 14px; height: 14px;
+	left: 2px; top: 2px;
+	background: var(--color-text-dim);
+	border-radius: 50%;
+	transition: transform 0.15s ease, background 0.15s ease;
+}
+.switch input:checked + .slider {
+	background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+	border-color: var(--color-accent);
+}
+.switch input:checked + .slider::before {
+	transform: translateX(16px);
+	background: var(--color-accent);
+}
+
+.theme-toggle {
+	display: flex;
+	gap: var(--space-xs);
+	background: var(--color-bg);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-well);
+	padding: var(--space-xs);
+}
+.theme-toggle button {
+	border: none;
+	background: transparent;
+	border-radius: calc(var(--radius-md) - 3px);
+	padding: var(--space-xs) var(--space-md);
+	font: inherit;
+	font-size: 12.5px;
+	color: var(--color-text-dim);
+}
+.theme-toggle button.active {
+	background: var(--color-surface-3);
+	color: var(--color-text);
+	font-weight: 600;
+	box-shadow: var(--shadow-xs);
+}
+
+.btn-mini {
+	border: none;
+	background: transparent;
+	color: var(--color-accent);
+	font-size: 12px;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* app.css's real :focus-visible override — omitted from the first pass of
+   this mockup, so every input fell back to the browser's raw blue focus
+   ring instead of the app's own warm accent-2 outline. That mismatch is
+   what actually read as "off" about the Custom Blocks title field in
+   screenshot review — not the card styling itself. */
+:focus-visible {
+	outline: 2px solid var(--color-accent-2);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
+}
+
+/* One shared text-input treatment for every free-text field in these
+   mockups (About You's name field, block sub-fields, custom block title)
+   — the custom-block title field was drifting off this via a one-off
+   inline style (6px/10px padding, no explicit font-size) instead of
+   sharing it, which is the second thing that made it look subtly
+   different from its neighbors. */
+.text-input {
+	border: none;
+	background: var(--color-surface-3);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-well);
+	padding: var(--space-sm) var(--space-md);
+	font: inherit;
+	font-size: 13px;
+	color: var(--color-text);
+}
+
+.annotation {
+	font-size: 11.5px;
+	color: var(--color-text-dim);
+	margin-top: var(--space-sm);
+	padding: var(--space-sm) var(--space-md);
+	background: color-mix(in srgb, var(--color-accent-2) 10%, transparent);
+	border-radius: var(--radius-md);
+	line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<h1>Settings unification — issue #83</h1>
+	<p>
+		Scope: visual re-skin only. Constellation's card-grouped row pattern
+		(<code>.settings-group</code> / <code>.settings-row</code> / <code>.section-label</code>, already in
+		<code>app.css</code>/<code>ConstellationSettingsModal.svelte</code>) becomes the one look for every
+		settings surface. Nothing moves — <code>SettingsPanel</code>, <code>PulsarRoutineForm</code>, and
+		<code>PulsarDailyConfigModal</code> keep their existing entry points; only the row/section styling
+		inside each changes. Real CSS custom properties from <code>app.css</code>, not approximations.
+	</p>
+</div>
+
+<div class="section-heading">
+	<h2>1 — General Settings</h2>
+	<p>Today's flat, whitespace-separated sections next to the card-grouped rewrite. Same fields, same copy — only the container changes.</p>
+</div>
+
+<div class="row-of-panels">
+	<div class="col">
+		<div class="col-label">Before<span class="sub">whitespace-only separation, plain uppercase h3 labels</span></div>
+		<div class="panel">
+			<div class="panel-header"><h2>Settings</h2><span class="icon-x">&times;</span></div>
+
+			<div class="flat-section">
+				<h3>Appearance</h3>
+				<div class="flat-row">
+					<span>Theme</span>
+					<div class="theme-toggle">
+						<button class="active">Dark</button><button>Light</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="flat-section">
+				<h3>About you</h3>
+				<div class="flat-row"><input type="text" placeholder="e.g. Alex" style="flex:1;border:none;background:var(--color-surface-2);border-radius:var(--radius-md);box-shadow:var(--shadow-well);padding:var(--space-sm) var(--space-md);font-size:13px;color:var(--color-text);"></div>
+				<div class="theme-toggle" style="margin-top:8px;flex-wrap:wrap;">
+					<button class="active">he/him</button><button>she/her</button><button>they/them</button><button>Custom</button>
+				</div>
+				<p class="flat-hint">Used by both this assistant and Constellation's Weaver.</p>
+			</div>
+
+			<div class="flat-section">
+				<h3>Memory</h3>
+				<div class="flat-row">
+					<span>Enabled</span>
+					<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+				</div>
+				<div class="flat-row">
+					<span>What Polaris remembers about you</span>
+					<button class="btn-mini">Manage</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="col">
+		<div class="col-label">After<span class="sub">Constellation's bordered card, divided rows, small-caps section label</span></div>
+		<div class="panel">
+			<div class="panel-header"><h2>Settings</h2><span class="icon-x">&times;</span></div>
+
+			<div class="section-label">Appearance</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Theme</span>
+					<div class="theme-toggle"><button class="active">Dark</button><button>Light</button></div>
+				</div>
+			</div>
+
+			<div class="section-label">About you</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Name</span>
+					<input type="text" placeholder="e.g. Alex" style="width:140px;">
+				</div>
+				<div class="settings-row stacked">
+					<div class="row-label">Pronouns</div>
+					<div class="theme-toggle" style="flex-wrap:wrap;margin-top:6px;">
+						<button class="active">he/him</button><button>she/her</button><button>they/them</button><button>Custom</button>
+					</div>
+					<div class="row-hint">Used by both this assistant and Constellation's Weaver.</div>
+				</div>
+			</div>
+
+			<div class="section-label">Memory</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<div>
+						<div class="row-label">Enabled</div>
+						<div class="row-hint">Turn off to stop saving anything new.</div>
+					</div>
+					<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">What Polaris remembers about you</span>
+					<button class="btn-mini">Manage &rsaquo;</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section-heading">
+	<h2>2 — Pulsar Daily config</h2>
+	<p>
+		The hardest case: nine toggleable blocks, four of which reveal an inline textarea (plus a
+		"Help me write this" wizard button) when switched on, plus a free-form custom-blocks list with
+		add/remove. Shown here as one settings-group per logical cluster, with the sub-field nested
+		inside its own row using a dashed divider rather than breaking out into a separate box —
+		keeps the toggle and its own field visually bound together as you scan down the list.
+	</p>
+</div>
+
+<div class="row-of-panels">
+	<div class="col" style="max-width:520px;">
+		<div class="col-label">After<span class="sub">block toggle + inline sub-field, same row</span></div>
+		<div class="panel">
+			<div class="panel-header"><h2>The Daily settings</h2><span class="icon-x">&times;</span></div>
+
+			<div class="section-label">The Daily</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<div>
+						<div class="row-label">Enabled</div>
+						<div class="row-hint">Generates automatically at the scheduled time below.</div>
+					</div>
+					<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+				</div>
+			</div>
+
+			<div class="section-label">Blocks</div>
+			<div class="settings-group">
+				<div class="settings-row stacked">
+					<div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+						<span class="row-label">Weather</span>
+						<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+					</div>
+					<div class="subfield">
+						<div class="subfield-label-row"><label>Location (optional)</label></div>
+						<input type="text" placeholder="e.g. Seattle, WA — leave blank to use the server's default">
+					</div>
+				</div>
+				<div class="settings-row stacked">
+					<div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+						<span class="row-label">Sports</span>
+						<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+					</div>
+					<div class="subfield">
+						<div class="subfield-label-row">
+							<label>Which teams/leagues?</label>
+							<button class="wizard-btn">&#10024; Help me write this</button>
+						</div>
+						<textarea rows="1" placeholder="Warriors, 49ers, Premier League"></textarea>
+					</div>
+				</div>
+				<div class="settings-row stacked">
+					<div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+						<span class="row-label">Top Headlines</span>
+						<label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+					</div>
+					<div class="subfield">
+						<div class="subfield-label-row">
+							<label>What do you want to see? (optional)</label>
+							<button class="wizard-btn">&#10024; Help me write this</button>
+						</div>
+						<textarea rows="1" placeholder="e.g. focus on AI, geopolitics, or your interests"></textarea>
+					</div>
+				</div>
+				<div class="settings-row">
+					<span class="row-label" style="color:var(--color-text-dim);">Trending Now</span>
+					<label class="switch"><input type="checkbox"><span class="slider"></span></label>
+				</div>
+			</div>
+
+			<div class="section-label">Custom blocks</div>
+			<div class="settings-group">
+				<div class="settings-row stacked">
+					<div class="subfield-label-row" style="margin-bottom:8px;">
+						<input type="text" class="text-input" placeholder="Title, e.g. Stock Watchlist" style="flex:1;margin-right:8px;">
+						<button class="wizard-btn">&#10024; Help</button>
+						<button class="icon-btn-mini">&#128465;</button>
+					</div>
+					<textarea rows="1" placeholder="What should this check every day?"></textarea>
+				</div>
+				<div class="settings-row">
+					<button class="btn-mini">&#43; New general purpose block</button>
+				</div>
+			</div>
+
+			<div class="annotation">
+				Note: this is denser than Constellation's own settings ever gets (that modal tops out at
+				3 rows). Whether nine block rows plus a growing custom list still reads as calm inside one
+				card, or needs its own scroll affordance/visual break partway down, is worth checking against
+				the real block count once this is built for real — not just eyeballed at 4 example rows here.
+			</div>
+		</div>
+	</div>
+</div>
+
+<div class="section-heading">
+	<h2>3 — Pulsar routine form (create/edit)</h2>
+	<p>Conditional schedule fields (weekly picks a weekday, monthly picks a day-of-month) grouped into one card so the "Repeats" row and whichever param row is currently relevant read as one unit, not two unrelated rows.</p>
+</div>
+
+<div class="row-of-panels">
+	<div class="col">
+		<div class="col-label">After</div>
+		<div class="panel">
+			<div class="panel-header"><h2>New Pulsar</h2><span class="icon-x">&times;</span></div>
+
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Model</span>
+					<select><option>Same as chat</option></select>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">Focus mode</span>
+					<select><option>Off</option></select>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">Deep research</span>
+					<label class="switch"><input type="checkbox"><span class="slider"></span></label>
+				</div>
+			</div>
+
+			<div class="section-label">Schedule</div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Repeats</span>
+					<select><option>Weekly</option></select>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">On</span>
+					<select><option>Monday</option></select>
+				</div>
+				<div class="settings-row">
+					<span class="row-label">At</span>
+					<input type="time" value="07:00">
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+</body>
+</html>
