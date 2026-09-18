@@ -500,6 +500,12 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		}
 		sniff.flush()
 		totalCost += resp.CostUSD
+		// Live-only running total, not persisted (logTurnEvent has no case
+		// for it) and not additive — the footer used to sit at $0.00 for
+		// the entire turn, only learning the real spend from "done" once
+		// everything was already over. See gateway/protocol.go's doc
+		// comment on "cost_update".
+		ctx.Emit("cost_update", map[string]interface{}{"cost_usd": totalCost + ctx.ExtraCostUSD})
 
 		if len(resp.ToolCalls) == 0 {
 			if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
@@ -577,6 +583,12 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		for _, r := range results {
 			messages = append(messages, llm.ChatMessage{Role: "tool", Content: r.result, ToolCallID: r.call.ID})
 		}
+		// A tool handler may have just called ctx.AddCost (web_read's filter
+		// pass, view_image's description call, ...) — surface that in the
+		// same running total the loop's own per-LLM-call emit above uses,
+		// so a batch of paid tool calls shows up live too, not just the
+		// model's own completions.
+		ctx.Emit("cost_update", map[string]interface{}{"cost_usd": totalCost + ctx.ExtraCostUSD})
 		// Any view_image "see" calls in this batch queued a real image
 		// message via ctx.AddPendingImageMessage — flushed only now, after
 		// every tool-result message above, never interleaved with them, for

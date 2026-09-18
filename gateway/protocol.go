@@ -168,6 +168,13 @@ type GhostTurn struct {
 //	"tool_call"     — tool + args: a search/read call just started
 //	"tool_result"   — tool + result + citations: that call finished
 //	"token"         — content: one chunk of the final answer, appended live
+//	"cost_update"   — cost_usd: the turn's running spend so far, fired after each LLM completion
+//	                  and each tool-dispatch batch inside agent.Run (see its own doc comment on
+//	                  the two ctx.Emit call sites) — a live-only signal, never persisted, so the
+//	                  turn footer can show real spend as the turn progresses instead of sitting
+//	                  at nothing until "done". Always the full running total, never a delta — the
+//	                  frontend should overwrite whatever it's showing for this turn, not add to it
+//	                  (unlike "done"/"suggestions", which add their cost_usd to the thread's total).
 //	"commentary"    — content: what the model said before deciding to call a tool (or before an
 //	                  aborted attempt got discarded) — sent once, with the full text, right before
 //	                  that turn's tool_call events; the frontend clears whatever it had streamed

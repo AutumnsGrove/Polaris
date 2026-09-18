@@ -256,6 +256,18 @@
 				<div class="pending">…</div>
 			{/if}
 
+			{#if turn.streaming && turn.costUsd}
+				<!-- The real turn-footer below is entirely hidden while
+				     streaming (copy/read-aloud/variant-switch don't make
+				     sense on an answer that isn't done) — this is just the
+				     live running total from 'cost_update' events, reusing
+				     the same footer/cost styling so it doesn't look like a
+				     new element once the real footer takes over at "done". -->
+				<div class="turn-footer">
+					<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
+				</div>
+			{/if}
+
 			{#if turn.pendingQuestion}
 				<!-- The turn right after one that ended with a pending question
 				     is, definitionally, however it was answered — see

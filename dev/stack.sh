@@ -4,7 +4,18 @@
 # vite, the Go backend, the code_exec watcher loop, and the local SearXNG
 # container, and can report whether all four are actually up.
 #
-# Usage: dev/stack.sh [start|stop|restart|status]   (default: restart)
+# Usage: dev/stack.sh [start|stop|restart|status] [--fake-llm] [--fake-llm-delay=DURATION]
+#   (default command: restart)
+#
+# --fake-llm runs the backend against dev/fakeopenrouter instead of real
+# OpenRouter (see its own package doc comment) — no OPENROUTER_API_KEY
+# needed, and turns are scriptable/deterministic via its /_control/queue
+# API, which is what makes this useful for actually watching (or
+# Playwright-driving) a multi-tool-call turn stream in end to end.
+# --fake-llm-delay=1500ms also implies --fake-llm and slows every model
+# call down by that much — plenty for a screenshot or a manual page
+# reload mid-turn; omit it (plain --fake-llm) for the default 0 delay,
+# which answers instantly and suits an automated assertion instead.
 #
 # Everything is launched as a `set -m` background job, not a plain `&`
 # without job control: `setsid` (the obvious tool for "detach into your
@@ -29,6 +40,26 @@ VITE_PORT=45173
 BACKEND_PORT=8899
 SEARXNG_PORT=18888
 SEARXNG_CONTAINER=searxng-dev
+FAKE_LLM_PORT=18901
+
+# --fake-llm[-delay=DURATION] (start/restart only): runs the backend
+# against dev/fakeopenrouter (see its own package doc comment) instead of
+# real OpenRouter — no OPENROUTER_API_KEY needed, and turns are
+# deterministic/scriptable via its /_control/queue API. Doesn't touch
+# config.yaml itself: a derived copy with openrouter.base_url overridden
+# is generated into STATE_DIR on every start and the backend is pointed
+# at that instead (see fake_llm_config below). -delay defaults to 0
+# (instant) unless --fake-llm-delay is also given — e.g. 1500ms, so a
+# scripted multi-tool-call turn actually streams slowly enough to watch
+# or to catch a thread genuinely mid-turn in the browser.
+FAKE_LLM=0
+FAKE_LLM_DELAY=0
+for arg in "$@"; do
+	case "$arg" in
+		--fake-llm) FAKE_LLM=1 ;;
+		--fake-llm-delay=*) FAKE_LLM=1; FAKE_LLM_DELAY="${arg#--fake-llm-delay=}" ;;
+	esac
+done
 
 pidfile() { echo "$STATE_DIR/$1.pid"; }
 logfile() { echo "$STATE_DIR/$1.log"; }
@@ -88,6 +119,28 @@ has_code_exec_config() {
 	grep -q "^code_exec:" "$ROOT/config.yaml" 2>/dev/null
 }
 
+# Writes STATE_DIR/config.fake-llm.yaml: config.yaml's content with
+# openrouter.base_url overridden to point at fakeopenrouter instead of
+# real OpenRouter. Replaces an existing "  base_url:" line inside the
+# openrouter: block in place; if that block has no such line (a config.yaml
+# that relies on config.Load's real-OpenRouter default), one is inserted
+# right before the block ends instead — either way exactly one base_url
+# line survives under openrouter:. Everything else in config.yaml
+# (api_key, every other section) passes through untouched.
+write_fake_llm_config() {
+	local url="http://127.0.0.1:$FAKE_LLM_PORT"
+	awk -v url="$url" '
+		/^openrouter:[[:space:]]*$/ { print; in_or=1; done=0; next }
+		in_or && /^[^[:space:]]/ {
+			if (!done) print "  base_url: \"" url "\""
+			in_or=0
+		}
+		in_or && /^[[:space:]]+base_url:/ { print "  base_url: \"" url "\""; done=1; next }
+		{ print }
+		END { if (in_or && !done) print "  base_url: \"" url "\"" }
+	' "$ROOT/config.yaml" >"$STATE_DIR/config.fake-llm.yaml"
+}
+
 port_listening() {
 	lsof -ti:"$1" >/dev/null 2>&1
 }
@@ -97,8 +150,10 @@ do_stop() {
 	stop_proc vite
 	stop_proc backend
 	stop_proc codeexec
+	stop_proc fakellm
 	free_port "$VITE_PORT"
 	free_port "$BACKEND_PORT"
+	free_port "$FAKE_LLM_PORT"
 }
 
 do_start() {
@@ -107,8 +162,17 @@ do_start() {
 	echo "  vite (:$VITE_PORT)"
 	( cd "$ROOT/web" && start_bg vite pnpm run dev )
 
-	echo "  backend (:$BACKEND_PORT)"
-	( cd "$ROOT" && start_bg backend go run . run --dev )
+	local backend_config="config.yaml"
+	if [ "$FAKE_LLM" = "1" ]; then
+		echo "  fake-llm (:$FAKE_LLM_PORT, delay=$FAKE_LLM_DELAY)"
+		( cd "$ROOT" && start_bg fakellm go run ./dev/fakeopenrouter -addr "127.0.0.1:$FAKE_LLM_PORT" -delay "$FAKE_LLM_DELAY" )
+		write_fake_llm_config
+		backend_config="$STATE_DIR/config.fake-llm.yaml"
+		echo "  backend (:$BACKEND_PORT, against fake-llm)"
+	else
+		echo "  backend (:$BACKEND_PORT)"
+	fi
+	( cd "$ROOT" && start_bg backend go run . run --dev --config "$backend_config" )
 
 	if has_code_exec_config; then
 		echo "  code_exec watcher loop"
@@ -134,7 +198,7 @@ do_start() {
 
 do_status() {
 	printf "%-12s %-8s %-10s %s\n" "COMPONENT" "PID" "PORT" "STATUS"
-	for entry in "vite:$VITE_PORT" "backend:$BACKEND_PORT" "codeexec:-"; do
+	for entry in "vite:$VITE_PORT" "backend:$BACKEND_PORT" "codeexec:-" "fakellm:$FAKE_LLM_PORT"; do
 		name="${entry%%:*}"; port="${entry##*:}"
 		if is_alive "$name"; then
 			pid="$(cat "$(pidfile "$name")")"
@@ -154,17 +218,29 @@ do_status() {
 		printf "%-12s %-8s %-10s %s\n" "searxng" "-" "$SEARXNG_PORT" "down"
 	fi
 	echo
-	echo "Logs: $STATE_DIR/{vite,backend,codeexec}.log"
+	echo "Logs: $STATE_DIR/{vite,backend,codeexec,fakellm}.log"
 }
 
-cmd="${1:-restart}"
+# $1 may be a flag (--fake-llm/--fake-llm-delay=...) rather than the
+# command itself, e.g. `dev/stack.sh --fake-llm` meaning "restart, with
+# fake-llm" — the flag loop above already scanned every "$@" for those, so
+# here just skip past any leading flags to find the actual command word,
+# defaulting to "restart" if there isn't one.
+cmd="restart"
+for arg in "$@"; do
+	case "$arg" in
+		--fake-llm | --fake-llm-delay=*) ;;
+		*) cmd="$arg"; break ;;
+	esac
+done
+
 case "$cmd" in
 	start) do_start ;;
 	stop) do_stop ;;
 	restart) do_stop; do_start ;;
 	status) do_status ;;
 	*)
-		echo "Usage: $0 [start|stop|restart|status]" >&2
+		echo "Usage: $0 [start|stop|restart|status] [--fake-llm] [--fake-llm-delay=DURATION]" >&2
 		exit 1
 		;;
 esac

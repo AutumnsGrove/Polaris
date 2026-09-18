@@ -25,6 +25,14 @@
 //	# (api_key can be any non-empty string — config.Load requires one
 //	# present but this server never checks it)
 //
+// -delay (e.g. -delay=1500ms) sleeps that long before every call starts
+// streaming — everything answers instantly by default, which is right for
+// a test assertion but too fast to ever actually watch a multi-tool-call
+// turn stream in, or to catch a thread genuinely mid-turn (GetThread's
+// turn_in_progress) via a browser or a page reload. See also
+// dev/stack.sh's --fake-llm[-delay] flags, which wire this whole server
+// into the one-command dev stack.
+//
 // With nothing queued, every call gets a generic canned plain-text reply
 // — enough to exercise a normal turn end-to-end with zero setup. Queue a
 // specific scripted response (a tool call, a particular answer) before
@@ -73,6 +81,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // queuedToolCall is the control API's ergonomic shape for a scripted tool
@@ -123,6 +132,15 @@ type server struct {
 	mu    sync.Mutex
 	queue []queuedResponse
 	calls []json.RawMessage
+	// delay is how long each call sleeps before it starts streaming its
+	// response — 0 by default (instant, the normal case for a Playwright/
+	// CI script that just wants a real turn to complete). A real model's
+	// tool-calling turn is far from instant, and a scripted multi-tool-call
+	// scenario against the default 0 delay finishes in low tens of
+	// milliseconds — plenty fast for a test assertion, but too fast for a
+	// human (or a screenshot/mid-turn state check) to ever see it "still
+	// running." Set via -delay to slow every call down uniformly instead.
+	delay time.Duration
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +153,10 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.calls = append(s.calls, json.RawMessage(body))
 	s.mu.Unlock()
+
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
 
 	resp := s.takeResponse(string(body))
 
@@ -270,15 +292,16 @@ func (s *server) handleCalls(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18901", "listen address")
+	delay := flag.Duration("delay", 0, "sleep this long before each call starts streaming its response — 0 (default) answers instantly; set e.g. 1500ms to slow a scripted multi-tool-call turn down enough to actually watch it stream or catch it mid-turn")
 	flag.Parse()
 
-	s := &server{}
+	s := &server{delay: *delay}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/_control/queue", s.handleQueue)
 	mux.HandleFunc("/_control/reset", s.handleReset)
 	mux.HandleFunc("/_control/calls", s.handleCalls)
 
-	log.Printf("fake OpenRouter stub listening on %s — point openrouter.base_url at it in config.yaml", *addr)
+	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point openrouter.base_url at it in config.yaml", *addr, *delay)
 	log.Fatal(http.ListenAndServe(*addr, mux))
 }

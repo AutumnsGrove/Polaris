@@ -705,6 +705,33 @@ export class AppState {
 			turns = this.pendingUserTurn
 				? [...turns.slice(0, -1), this.pendingUserTurn, this.pendingTurn]
 				: [...turns, this.pendingTurn];
+		} else if (this.threadTurnInProgress) {
+			// Genuinely still running with nobody's own live socket attached
+			// to it (a pulse, or this same client after a refresh/reconnect
+			// — the branch above already covers "my own socket is still
+			// watching this exact turn"). The trailing user message already
+			// carries this turn's turn_id (AddMessage persists it before
+			// agent.Run even starts — see gateway/turn.go), and
+			// logTurnEvent has been persisting its thinking/tool-call
+			// events all along, so eventsByTurn already has everything
+			// produced so far; buildTurnsFromMessages just had nowhere to
+			// attach it, since there's no assistant message row yet.
+			// Without this, a refresh or reconnect mid-turn silently threw
+			// away every tool call already run, leaving only a bare "Still
+			// running…" with no detail (see ChatView.svelte's in-progress
+			// banner) until the whole thing finally finished.
+			const last = messages[messages.length - 1];
+			if (last?.role === 'user' && last.turn_id && eventsByTurn.has(last.turn_id)) {
+				turns = [
+					...turns,
+					{
+						role: 'assistant',
+						content: '',
+						streaming: true,
+						timeline: buildTimelineFromEvents(eventsByTurn.get(last.turn_id)!)
+					}
+				];
+			}
 		}
 		this.turns = turns;
 
@@ -1308,6 +1335,15 @@ export class AppState {
 				turn.timeline = items;
 				break;
 			}
+
+			case 'cost_update':
+				// Always the full running total, never a delta (see
+				// gateway/protocol.go's doc comment) — overwrite, don't add.
+				// appState.totalCost is untouched here on purpose: it only
+				// moves on 'done'/'suggestions', which already add their
+				// own cost_usd to it once, so adding this too would double-count.
+				turn.costUsd = e.cost_usd;
+				break;
 
 			case 'compacted':
 				this.closeOpenReasoning(turn);
