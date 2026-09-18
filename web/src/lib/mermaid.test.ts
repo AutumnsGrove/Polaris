@@ -157,6 +157,30 @@ describe('renderMermaidIn', () => {
 		expect(wrapper?.dataset.mermaidSource).toBe(source);
 	});
 
+	// classDef hits a worse version of the same problem than a plain style
+	// line: confirmed live against the real mermaid package, `classDef X
+	// fill:#hex` with no `color:` puts that same fill on the label's own
+	// span too (`.X span{fill:...}`), so the text isn't just low-contrast —
+	// it's the exact same color as its own background and disappears
+	// completely, in either theme.
+	it('adds an explicit contrasting color to a classDef fill that is missing one', async () => {
+		const source = 'graph TD; A["Step 1"];\n  classDef pastel fill:#f5f5f0,stroke:#ccc\n  class A pastel';
+		const container = containerWith(fenceBlock(source));
+		await renderMermaidIn(container);
+
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toContain('classDef pastel fill:#f5f5f0,stroke:#ccc,color:#000000');
+	});
+
+	it('does not touch a classDef line that already sets an explicit color', async () => {
+		const source = 'graph TD; A["Step 1"];\n  classDef pastel fill:#f5f5f0,color:#111111\n  class A pastel';
+		const container = containerWith(fenceBlock(source));
+		await renderMermaidIn(container);
+
+		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
+		expect(wrapper?.dataset.mermaidSource).toBe(source);
+	});
+
 	it('does nothing when the container has no mermaid blocks', async () => {
 		const container = document.createElement('div');
 		container.innerHTML = '<p>ordinary prose</p>';
@@ -281,5 +305,86 @@ describe('renderMermaidIn toolbar', () => {
 		const [copyBtn] = container.querySelectorAll<HTMLButtonElement>('.mermaid-btn');
 		copyBtn.click();
 		expect(copyToClipboard).toHaveBeenCalledWith('graph TD; A-->B;');
+	});
+});
+
+// The lightbox itself is a single pooled overlay appended to
+// document.body (see mermaid.ts's ensureLightbox doc comment), not
+// scoped to any one test's `container` — these tests always drive a
+// full open→assert→close cycle rather than asserting on hidden's state
+// *before* opening, since a previous test's lightbox (or a stray one
+// left open by a bug) can otherwise leak into document.body across
+// cases in this same file.
+describe('mermaid lightbox', () => {
+	function openedLightbox(source: string) {
+		const container = containerWith(fenceBlock(source));
+		return renderMermaidIn(container).then(() => {
+			const renderPane = container.querySelector<HTMLElement>('.mermaid-render')!;
+			renderPane.click();
+			return document.querySelector<HTMLElement>('.mermaid-lightbox-backdrop')!;
+		});
+	}
+
+	it('opens on a click on the rendered diagram, with a matching close button', async () => {
+		const backdrop = await openedLightbox('graph TD; A-->B;');
+
+		expect(backdrop.hidden).toBe(false);
+		expect(backdrop.querySelector('.mermaid-lightbox-render svg')).not.toBeNull();
+		expect(document.body.style.overflow).toBe('hidden');
+
+		backdrop.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!.click();
+		expect(backdrop.hidden).toBe(true);
+		expect(document.body.style.overflow).toBe('');
+	});
+
+	it('closes on a click on the scrim (the modal-backdrop-close button behind the content), but not on a click that hits the diagram itself', async () => {
+		const backdrop = await openedLightbox('graph TD; A-->B;');
+
+		backdrop.querySelector<HTMLElement>('.mermaid-lightbox-content')!.click();
+		expect(backdrop.hidden).toBe(false);
+
+		backdrop.querySelector<HTMLButtonElement>('.modal-backdrop-close')!.click();
+		expect(backdrop.hidden).toBe(true);
+	});
+
+	it('closes on Escape', async () => {
+		const backdrop = await openedLightbox('graph TD; A-->B;');
+
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(backdrop.hidden).toBe(true);
+	});
+
+	it('copies this diagram\'s own source, not a previously opened diagram\'s', async () => {
+		await openedLightbox('graph TD; A-->B;');
+		const secondBackdrop = await openedLightbox('graph TD; C-->D;');
+
+		secondBackdrop.querySelector<HTMLButtonElement>('button[title="Copy diagram source"]')!.click();
+		expect(copyToClipboard).toHaveBeenCalledWith('graph TD; C-->D;');
+	});
+
+	it('toggles between the rendered diagram and its source, independently of the inline toggle', async () => {
+		const backdrop = await openedLightbox('graph TD; A-->B;');
+
+		const renderHost = backdrop.querySelector<HTMLElement>('.mermaid-lightbox-render')!;
+		const sourceHost = backdrop.querySelector<HTMLElement>('.mermaid-lightbox-source')!;
+		const toggleBtn = backdrop.querySelector<HTMLButtonElement>('button[title="View source"]')!;
+
+		expect(renderHost.hidden).toBe(false);
+		expect(sourceHost.hidden).toBe(true);
+		expect(sourceHost.textContent).toBe('graph TD; A-->B;');
+
+		toggleBtn.click();
+		expect(renderHost.hidden).toBe(true);
+		expect(sourceHost.hidden).toBe(false);
+	});
+
+	it('resets the source toggle back to the diagram view on every fresh open', async () => {
+		const firstBackdrop = await openedLightbox('graph TD; A-->B;');
+		firstBackdrop.querySelector<HTMLButtonElement>('button[title="View source"]')!.click();
+		expect(firstBackdrop.querySelector<HTMLElement>('.mermaid-lightbox-render')!.hidden).toBe(true);
+
+		const secondBackdrop = await openedLightbox('graph TD; C-->D;');
+		expect(secondBackdrop.querySelector<HTMLElement>('.mermaid-lightbox-render')!.hidden).toBe(false);
+		expect(secondBackdrop.querySelector<HTMLElement>('.mermaid-lightbox-source')!.hidden).toBe(true);
 	});
 });
