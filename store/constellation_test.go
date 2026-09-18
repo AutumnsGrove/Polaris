@@ -28,18 +28,14 @@ func TestConstellationConfig_DefaultsThenUpdate(t *testing.T) {
 	if c.LastCheckedAt != nil {
 		t.Errorf("LastCheckedAt should be unset initially, got %+v", c.LastCheckedAt)
 	}
-	if c.PersonName != "" || c.PersonPronouns != "" {
-		t.Errorf("PersonName/PersonPronouns should default to empty, got %q/%q", c.PersonName, c.PersonPronouns)
-	}
-
-	if err := s.UpdateConstellationConfig(true, 30, "deepseek-pro", "Alex", "she/her"); err != nil {
+	if err := s.UpdateConstellationConfig(true, 30, "deepseek-pro"); err != nil {
 		t.Fatalf("UpdateConstellationConfig: %v", err)
 	}
 	c, err = s.GetConstellationConfig()
 	if err != nil {
 		t.Fatalf("GetConstellationConfig (after update): %v", err)
 	}
-	if !c.Enabled || c.PollIntervalMinutes != 30 || c.Model != "deepseek-pro" || c.PersonName != "Alex" || c.PersonPronouns != "she/her" {
+	if !c.Enabled || c.PollIntervalMinutes != 30 || c.Model != "deepseek-pro" {
 		t.Errorf("GetConstellationConfig after update = %+v, want the values just written", c)
 	}
 

@@ -624,11 +624,6 @@ export interface ConstellationConfig {
 	poll_interval_minutes: number;
 	last_checked_at: string | null;
 	model: string;
-	// person_name/person_pronouns: optional guidance about the operator
-	// themselves, both '' by default — prepended to Weaver's system prompt
-	// on every shooting star when set. See ConstellationSettingsModal.svelte.
-	person_name: string;
-	person_pronouns: string;
 	created_at: string;
 }
 

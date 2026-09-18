@@ -26,6 +26,33 @@
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
 
+	// "About you" pronoun presets — same segmented-control-plus-custom
+	// pattern Constellation's own settings modal used before this moved
+	// here (issue tracking the settings-menu unification is separate; see
+	// GitHub #83). pronounChoice is one of PRONOUN_PRESETS, 'custom', or ''
+	// (nothing picked yet); customPronouns only matters while
+	// pronounChoice === 'custom'.
+	const PRONOUN_PRESETS = ['he/him', 'she/her', 'they/them'];
+	let pronounChoice = $state('');
+	let customPronouns = $state('');
+	let pronounSynced = false;
+	$effect(() => {
+		if (appState.settings.loaded && !pronounSynced) {
+			pronounSynced = true;
+			const saved = appState.settings.personPronouns;
+			if (saved === '' || PRONOUN_PRESETS.includes(saved)) {
+				pronounChoice = saved;
+			} else {
+				pronounChoice = 'custom';
+				customPronouns = saved;
+			}
+		}
+	});
+	function choosePronoun(choice: string) {
+		pronounChoice = choice;
+		if (choice !== 'custom') void appState.settings.setPersonPronouns(choice);
+	}
+
 	// Re-check on every open, not just once at app startup — catches an
 	// update that finished (or started, from another tab/device) since
 	// the panel was last open, without waiting for a full page reload.
@@ -300,6 +327,52 @@
 					Added to every answer as steering, on top of <code>prompt.md</code>. Edit
 					<code>prompt.md</code> directly for anything more involved than a short standing
 					preference.
+				</p>
+			</section>
+
+			<section>
+				<h3>About you</h3>
+				<div class="row location-row">
+					<input
+						type="text"
+						placeholder="e.g. Alex"
+						maxlength="80"
+						value={appState.settings.personName}
+						onblur={(e) => appState.settings.setPersonName(e.currentTarget.value)}
+					/>
+				</div>
+				<div class="theme-toggle person-pronoun-toggle">
+					{#each PRONOUN_PRESETS as preset (preset)}
+						<button
+							type="button"
+							class:active={pronounChoice === preset}
+							onclick={() => choosePronoun(preset)}
+						>
+							{preset}
+						</button>
+					{/each}
+					<button
+						type="button"
+						class:active={pronounChoice === 'custom'}
+						onclick={() => choosePronoun('custom')}
+					>
+						Custom
+					</button>
+				</div>
+				{#if pronounChoice === 'custom'}
+					<div class="row location-row">
+						<input
+							type="text"
+							placeholder="e.g. ze/zir"
+							maxlength="40"
+							value={customPronouns}
+							onblur={(e) => appState.settings.setPersonPronouns(e.currentTarget.value)}
+						/>
+					</div>
+				{/if}
+				<p class="hint">
+					Used by both this assistant and Constellation's Weaver — without it, either has to guess
+					pronouns from context (and can guess wrong).
 				</p>
 			</section>
 
@@ -650,6 +723,11 @@
 		color: var(--color-text);
 		font-weight: 600;
 		box-shadow: var(--shadow-xs);
+	}
+
+	.person-pronoun-toggle {
+		margin-top: var(--space-sm);
+		flex-wrap: wrap;
 	}
 
 	select {

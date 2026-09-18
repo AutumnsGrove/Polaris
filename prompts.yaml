@@ -33,6 +33,8 @@ agent:
     Use these naturally, without announcing that you're doing so. Use the memory tool to add to
     this, correct it, or read one memory's full content.
 
+    {person}
+
     There is no separate "reply" tool. Once you have enough information (or the question needs none),
     just answer directly in plain text — that ends the research phase and streams straight to the user.
 
@@ -284,6 +286,11 @@ agent:
     harmonious complementary colors for the rest (#176490 is the app's own secondary accent)
     rather than forcing every series to the same color at the cost of legibility. This doesn't
     auto-update if the mode changes later — it reflects only what's active right now.
+  person_name_guidance: >-
+    You're speaking with %s.
+  person_pronouns_guidance: >-
+    The person you're speaking with uses %s pronouns — use them if you ever need to refer to
+    them in the third person (e.g. summarizing back what they said).
 
 # One-off, non-streamed LLM calls made from gateway/turn.go around a normal
 # turn — see that file's generateSuggestions/generateTitle/compactThread.

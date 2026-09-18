@@ -300,13 +300,13 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		categories = nil
 	}
 
-	// personName/personPronouns: same non-fatal fallback as categories
-	// above — a config read failure here means Weaver just gets no
-	// guidance for this run, not that the run fails outright.
-	var personName, personPronouns string
-	if cfg, cfgErr := db.GetConstellationConfig(); cfgErr == nil {
-		personName, personPronouns = cfg.PersonName, cfg.PersonPronouns
-	}
+	// personName/personPronouns: general operator-level settings (the
+	// same "About you" fields the main assistant's own system prompt
+	// uses — see gateway/settings.go's PersonNameFromStore/
+	// PersonPronounsFromStore), not Constellation-owned. Both already
+	// fail open to "" on any read trouble, so no error to check here.
+	personName := PersonNameFromStore(db)
+	personPronouns := PersonPronounsFromStore(db)
 
 	// seenStars is a defense-in-depth backstop against prompt injection:
 	// thread content (which can include text originally fetched from the

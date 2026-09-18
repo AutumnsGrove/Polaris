@@ -118,6 +118,17 @@ export class SettingsState {
 	// nothing.
 	customInstructions = $state('');
 
+	// "About you" — the operator's own name/pronouns (gateway/settings.go's
+	// settingPersonName/settingPersonPronouns), used by both the main
+	// assistant's system prompt ({person} in prompt.md) and Weaver's
+	// (Constellation's background extraction agent) — moved here from being
+	// Constellation-only so a brand-new user's name/pronouns are known
+	// immediately instead of waiting for them to come up naturally in
+	// conversation and get picked up via memory. Both '' by default (no
+	// guidance).
+	personName = $state('');
+	personPronouns = $state('');
+
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
 	// address/city, client-side only (a cookie, not /api/settings), since
@@ -208,6 +219,8 @@ export class SettingsState {
 		this.disabledTools = data.disabled_tools ?? [];
 		this.memoryEnabled = data.memory_enabled ?? true;
 		this.customInstructions = data.custom_instructions ?? '';
+		this.personName = data.person_name ?? '';
+		this.personPronouns = data.person_pronouns ?? '';
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -267,6 +280,18 @@ export class SettingsState {
 	async setCustomInstructions(value: string) {
 		this.customInstructions = value;
 		await this.put({ custom_instructions: value });
+	}
+
+	// Saved on blur/click, not per-keystroke — same reasoning as
+	// setCustomInstructions above.
+	async setPersonName(value: string) {
+		this.personName = value;
+		await this.put({ person_name: value });
+	}
+
+	async setPersonPronouns(value: string) {
+		this.personPronouns = value;
+		await this.put({ person_pronouns: value });
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

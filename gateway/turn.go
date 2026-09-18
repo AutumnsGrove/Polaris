@@ -563,6 +563,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}
 	if !anonymous {
 		agentCtx.CustomInstructions = CustomInstructionsFromStore(s.db)
+		agentCtx.PersonName = PersonNameFromStore(s.db)
+		agentCtx.PersonPronouns = PersonPronounsFromStore(s.db)
 		agentCtx.SearchThreads = s.db.SearchMessages
 		agentCtx.ListRecentThreads = s.db.ListThreadsPage
 		agentCtx.ReadThread = s.db.ReadThread

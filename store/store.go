@@ -921,6 +921,16 @@ var migrations = []string{
 	// user_version tracking, never insert mid-list).
 	`ALTER TABLE constellation_config ADD COLUMN person_name TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE constellation_config ADD COLUMN person_pronouns TEXT NOT NULL DEFAULT ''`,
+	// person_name/person_pronouns move from being Constellation-owned (the
+	// two migrations above) to the general operator-level settings table,
+	// so the main assistant's own system prompt can use them too, not just
+	// Weaver's — see gateway/settings.go's settingPersonName/
+	// settingPersonPronouns. One-time copy of whatever was already saved;
+	// constellation_config's own columns are left in place (unused from
+	// here on) rather than dropped, matching this file's usual "don't claw
+	// back schema" convention for a superseded column.
+	`INSERT OR IGNORE INTO settings (key, value) SELECT 'person_name', person_name FROM constellation_config WHERE id = 1 AND person_name != ''`,
+	`INSERT OR IGNORE INTO settings (key, value) SELECT 'person_pronouns', person_pronouns FROM constellation_config WHERE id = 1 AND person_pronouns != ''`,
 }
 
 func Open(path string) (*Store, error) {

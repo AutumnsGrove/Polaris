@@ -234,6 +234,7 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	}
 	prompt = applyToolsPlaceholder(prompt, ctx)
 	prompt = applyMemoriesPlaceholder(prompt, ctx)
+	prompt = applyPersonPlaceholder(prompt, ctx)
 	prompt = applyCustomInstructionsPlaceholder(prompt, ctx)
 	prompt = applyMultimodalPlaceholder(prompt, ctx)
 	prompt = applyCodeExecThemePlaceholder(prompt, ctx)
@@ -266,14 +267,36 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 // independently optional (someone might set only one), so each gets its own
 // one-%s prompts.yaml template rather than one template requiring both.
 func weaverPersonGuidance(p *prompts.Set, name, pronouns string) string {
+	return personGuidanceText(p.Weaver.PersonNameGuidance, p.Weaver.PersonPronounsGuidance, name, pronouns)
+}
+
+// personGuidanceText joins whichever of a name/pronouns template is
+// applicable into one string — shared by weaverPersonGuidance above and
+// applyPersonPlaceholder below, which differ only in which prompts.yaml
+// template pair they pass (Weaver's "this library is about" phrasing vs.
+// the main assistant's "you're speaking with" phrasing for the same
+// underlying operator-supplied fact).
+func personGuidanceText(nameTemplate, pronounsTemplate, name, pronouns string) string {
 	var parts []string
 	if name != "" {
-		parts = append(parts, fmt.Sprintf(p.Weaver.PersonNameGuidance, name))
+		parts = append(parts, fmt.Sprintf(nameTemplate, name))
 	}
 	if pronouns != "" {
-		parts = append(parts, fmt.Sprintf(p.Weaver.PersonPronounsGuidance, pronouns))
+		parts = append(parts, fmt.Sprintf(pronounsTemplate, pronouns))
 	}
 	return strings.Join(parts, " ")
+}
+
+// applyPersonPlaceholder replaces every "{person}" occurrence with the
+// operator's name/pronouns guidance (ctx.PersonName/PersonPronouns — the
+// general settings panel's "About you" fields, see
+// gateway.PersonNameFromStore/PersonPronounsFromStore), collapsing to
+// nothing when both are unset — same convention as
+// applyCustomInstructionsPlaceholder/applyMemoriesPlaceholder for an unset
+// or unwired field.
+func applyPersonPlaceholder(prompt string, ctx *tools.Context) string {
+	text := personGuidanceText(prompts.Get().Agent.PersonNameGuidance, prompts.Get().Agent.PersonPronounsGuidance, ctx.PersonName, ctx.PersonPronouns)
+	return strings.ReplaceAll(prompt, "{person}", text)
 }
 
 // applyToolsPlaceholder replaces every "{tools}" occurrence in prompt with

@@ -34,14 +34,7 @@ type ConstellationConfig struct {
 	// the schema comment on this column in store.go's `schema` const for
 	// why this is a DB column and not an in-process flag.
 	BackfillStartedAt *time.Time `json:"backfill_started_at"`
-	// PersonName/PersonPronouns: optional operator-supplied guidance about
-	// themselves, both "" by default (no guidance, Weaver gets nothing
-	// extra). See the schema comment on these columns in store.go for why
-	// they exist — prepended to Weaver's system prompt on every shooting
-	// star (gateway/constellation_weaver.go, agent/driver.go).
-	PersonName     string    `json:"person_name"`
-	PersonPronouns string    `json:"person_pronouns"`
-	CreatedAt      time.Time `json:"created_at"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // GetConstellationConfig returns the singleton config row, inserting the
@@ -53,9 +46,9 @@ func (s *Store) GetConstellationConfig() (*ConstellationConfig, error) {
 	}
 	var c ConstellationConfig
 	err := s.db.QueryRow(
-		`SELECT enabled, poll_interval_minutes, last_checked_at, model, backfill_started_at, person_name, person_pronouns, created_at
+		`SELECT enabled, poll_interval_minutes, last_checked_at, model, backfill_started_at, created_at
 		 FROM constellation_config WHERE id = 1`,
-	).Scan(&c.Enabled, &c.PollIntervalMinutes, &c.LastCheckedAt, &c.Model, &c.BackfillStartedAt, &c.PersonName, &c.PersonPronouns, &c.CreatedAt)
+	).Scan(&c.Enabled, &c.PollIntervalMinutes, &c.LastCheckedAt, &c.Model, &c.BackfillStartedAt, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get constellation config: %w", err)
 	}
@@ -115,13 +108,16 @@ func (s *Store) ClearConstellationBackfillStarted() error {
 }
 
 // UpdateConstellationConfig writes the settings-panel-editable fields.
-func (s *Store) UpdateConstellationConfig(enabled bool, pollIntervalMinutes int, model, personName, personPronouns string) error {
+// person_name/person_pronouns used to be set here too, before they moved to
+// the general settings table (store.SetSetting) — see store.go's migration
+// comment.
+func (s *Store) UpdateConstellationConfig(enabled bool, pollIntervalMinutes int, model string) error {
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO constellation_config (id) VALUES (1)`); err != nil {
 		return fmt.Errorf("update constellation config: %w", err)
 	}
 	_, err := s.db.Exec(
-		`UPDATE constellation_config SET enabled = ?, poll_interval_minutes = ?, model = ?, person_name = ?, person_pronouns = ? WHERE id = 1`,
-		enabled, pollIntervalMinutes, model, personName, personPronouns,
+		`UPDATE constellation_config SET enabled = ?, poll_interval_minutes = ?, model = ? WHERE id = 1`,
+		enabled, pollIntervalMinutes, model,
 	)
 	if err != nil {
 		return fmt.Errorf("update constellation config: %w", err)

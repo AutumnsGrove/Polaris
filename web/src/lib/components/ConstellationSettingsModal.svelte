@@ -14,20 +14,9 @@
 
 	const POLL_INTERVALS = [15, 30, 60, 120, 240];
 
-	// Preset pronoun choices the segmented control offers — 'custom' isn't a
-	// real pronoun value, it's the toggle's fourth button that reveals the
-	// free-text input below for anything not on this fixed list.
-	const PRONOUN_PRESETS = ['he/him', 'she/her', 'they/them'];
-
 	let enabled = $state(constellationState.config?.enabled ?? false);
 	let pollInterval = $state(constellationState.config?.poll_interval_minutes ?? 60);
 	let model = $state(constellationState.config?.model ?? '');
-	let personName = $state(constellationState.config?.person_name ?? '');
-	// pronounChoice is one of PRONOUN_PRESETS, 'custom', or '' (nothing
-	// picked yet — no guidance saved). customPronouns only matters while
-	// pronounChoice === 'custom'.
-	let pronounChoice = $state('');
-	let customPronouns = $state('');
 	let saving = $state(false);
 	let error = $state('');
 	let showUsage = $state(false);
@@ -41,14 +30,6 @@
 			enabled = constellationState.config.enabled;
 			pollInterval = constellationState.config.poll_interval_minutes;
 			model = constellationState.config.model;
-			personName = constellationState.config.person_name;
-			const savedPronouns = constellationState.config.person_pronouns;
-			if (savedPronouns === '' || PRONOUN_PRESETS.includes(savedPronouns)) {
-				pronounChoice = savedPronouns;
-			} else {
-				pronounChoice = 'custom';
-				customPronouns = savedPronouns;
-			}
 		}
 	});
 
@@ -58,9 +39,7 @@
 		const input: ConstellationConfigInput = {
 			enabled,
 			poll_interval_minutes: pollInterval,
-			model,
-			person_name: personName.trim(),
-			person_pronouns: pronounChoice === 'custom' ? customPronouns.trim() : pronounChoice
+			model
 		};
 		const result = await constellationState.updateConfig(input);
 		saving = false;
@@ -117,59 +96,6 @@
 						<option value={m.id}>{m.name}</option>
 					{/each}
 				</select>
-			</div>
-		</div>
-
-		<div class="section-label">About you</div>
-		<div class="settings-group">
-			<div class="settings-row column-row">
-				<div>
-					<div class="row-label">Name</div>
-					<div class="row-hint">So Weaver can use it instead of "they" where that reads better.</div>
-				</div>
-				<input
-					type="text"
-					class="text-input"
-					placeholder="e.g. Alex"
-					maxlength="80"
-					bind:value={personName}
-				/>
-			</div>
-			<div class="settings-row column-row">
-				<div>
-					<div class="row-label">Pronouns</div>
-					<div class="row-hint">
-						Weaver has no way to know this on its own — it'll keep guessing from context (and can
-						guess wrong) unless you set it here.
-					</div>
-				</div>
-				<div class="pronoun-toggle">
-					{#each PRONOUN_PRESETS as preset (preset)}
-						<button
-							type="button"
-							class:active={pronounChoice === preset}
-							onclick={() => (pronounChoice = preset)}
-						>
-							{preset}
-						</button>
-					{/each}
-					<button
-						type="button"
-						class:active={pronounChoice === 'custom'}
-						onclick={() => (pronounChoice = 'custom')}
-					>
-						Custom
-					</button>
-				</div>
-				{#if pronounChoice === 'custom'}
-					<input
-						type="text"
-						class="text-input"
-						placeholder="e.g. ze/zir"
-						maxlength="40"
-						bind:value={customPronouns}
-					/>
-				{/if}
 			</div>
 		</div>
 
@@ -276,50 +202,6 @@
 		border-radius: var(--radius-md);
 		color: var(--color-text);
 		padding: var(--space-xs) var(--space-sm);
-	}
-
-	/* column-row: label/hint on top, the control on its own full-width line
-	   below — the plain switch/select settings-row layout (label left,
-	   control right) doesn't have room for a text input or a four-button
-	   pronoun toggle next to it, especially at phone width. */
-	.settings-row.column-row {
-		flex-direction: column;
-		align-items: stretch;
-		gap: var(--space-sm);
-	}
-	.text-input {
-		font: inherit;
-		font-size: 13px;
-		background: var(--color-surface-3);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		color: var(--color-text);
-		padding: var(--space-xs) var(--space-sm);
-		width: 100%;
-	}
-	.pronoun-toggle {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-xs);
-	}
-	.pronoun-toggle button {
-		font: inherit;
-		font-size: 13px;
-		background: var(--color-surface-3);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		color: var(--color-text-dim);
-		padding: var(--space-xs) var(--space-md);
-		transition:
-			background-color 0.15s ease,
-			color 0.15s ease,
-			border-color 0.15s ease;
-	}
-	.pronoun-toggle button.active {
-		background: color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-3));
-		border-color: var(--color-accent);
-		color: var(--color-text);
-		font-weight: 600;
 	}
 
 	.section-label {

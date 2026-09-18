@@ -206,12 +206,17 @@ type Context struct {
 	WeaverCategoriesInUse string
 
 	// WeaverPersonName/WeaverPersonPronouns are optional operator-supplied
-	// guidance (set in the Constellation settings panel, see
-	// store.ConstellationConfig) about who Weaver is writing personal stars
-	// about — both "" by default, meaning no guidance to inject. Prepended
-	// to weaver.system by agent/driver.go's loadSystemPrompt, not
-	// substituted into it, so an empty pair costs nothing (unlike
-	// WeaverCategoriesInUse's %s, which is always substituted in).
+	// guidance (the general settings panel's "About you" section, see
+	// gateway.PersonNameFromStore/PersonPronounsFromStore — not
+	// Constellation-specific, despite the Weaver- prefix here) about who
+	// Weaver is writing personal stars about — both "" by default, meaning
+	// no guidance to inject. Prepended to weaver.system by agent/driver.go's
+	// loadSystemPrompt, not substituted into it, so an empty pair costs
+	// nothing (unlike WeaverCategoriesInUse's %s, which is always
+	// substituted in). Set independently from PersonName/PersonPronouns
+	// below (same underlying setting, two separate reads) since Weaver's
+	// tools.Context is built by its own newWeaverToolContext, never
+	// touching the main assistant's turn-building path.
 	WeaverPersonName     string
 	WeaverPersonPronouns string
 
@@ -428,6 +433,17 @@ type Context struct {
 	// collapses that placeholder to nothing, same as CustomInstructions
 	// being genuinely unset.
 	CustomInstructions string
+
+	// PersonName/PersonPronouns are the main assistant's own read of the
+	// same "About you" settings-panel fields WeaverPersonName/
+	// WeaverPersonPronouns above use — substituted into prompt.md wherever
+	// it writes "{person}" (see agent/driver.go's applyPersonPlaceholder),
+	// collapsing to nothing when both are unset. Left unset for a ghost
+	// turn (gateway/turn.go), same "no personalization" convention
+	// CustomInstructions follows there — knowing the operator's name is
+	// exactly the kind of thing an incognito turn shouldn't see.
+	PersonName     string
+	PersonPronouns string
 
 	// ThreadID is the current thread's ID (gateway/turn.go's
 	// storageThreadID) — code_exec joins it onto CodeExecWorkspaceDir/

@@ -66,6 +66,17 @@ type Set struct {
 		// ("theme") returned at turn start (see ThemeFromStore).
 		CodeExecThemeDark  string `yaml:"code_exec_theme_dark"`
 		CodeExecThemeLight string `yaml:"code_exec_theme_light"`
+		// PersonNameGuidance/PersonPronounsGuidance fill the {person}
+		// placeholder (see agent/driver.go's applyPersonPlaceholder) with
+		// the operator's own name/pronouns, when set in the general
+		// settings panel — the main-assistant-facing counterpart to
+		// Weaver.PersonNameGuidance/PersonPronounsGuidance below, phrased
+		// for "who you're talking to" rather than "who this library is
+		// about" since the two prompts address a different audience for
+		// the same underlying fact. Each has one %s, same independently-
+		// optional shape as Weaver's.
+		PersonNameGuidance     string `yaml:"person_name_guidance"`
+		PersonPronounsGuidance string `yaml:"person_pronouns_guidance"`
 	} `yaml:"agent"`
 
 	Turn struct {
@@ -190,6 +201,8 @@ results (they run concurrently) — don't batch when a later call depends on an 
 
 Use these naturally, without announcing that you're doing so. Use the memory tool to add to this,
 correct it, or read one memory's full content.
+
+{person}
 
 {custom_instructions}
 
@@ -367,6 +380,10 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 	d.Agent.MultimodalFalse = "You are not a multimodal model — you cannot see images directly. Use " +
 		"view_image's \"describe\" mode (the only mode available to you) to get a text description of an " +
 		"image from image_search results; \"see\" mode will be rejected."
+
+	d.Agent.PersonNameGuidance = "You're speaking with %s."
+	d.Agent.PersonPronounsGuidance = "The person you're speaking with uses %s pronouns — use them if you " +
+		"ever need to refer to them in the third person (e.g. summarizing back what they said)."
 
 	d.Turn.SuggestionsSystem = "You write short follow-up-question suggestions for a Q&A search app's " +
 		"UI. You never continue, restate, or add commentary to the previous answer — your only output " +
@@ -838,6 +855,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Agent.CodeExecThemeLight == "" {
 		s.Agent.CodeExecThemeLight = defaults.Agent.CodeExecThemeLight
+	}
+	if s.Agent.PersonNameGuidance == "" {
+		s.Agent.PersonNameGuidance = defaults.Agent.PersonNameGuidance
+	}
+	if s.Agent.PersonPronounsGuidance == "" {
+		s.Agent.PersonPronounsGuidance = defaults.Agent.PersonPronounsGuidance
 	}
 	if s.Agent.FocusModes == nil {
 		s.Agent.FocusModes = defaults.Agent.FocusModes

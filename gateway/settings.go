@@ -46,7 +46,26 @@ const (
 	// agent/driver.go's applyCustomInstructionsPlaceholder. Empty/unset
 	// means no custom instructions, same as an empty string.
 	settingCustomInstructions = "custom_instructions"
+	// settingPersonName/settingPersonPronouns: optional operator-supplied
+	// guidance about themselves, entered in the general settings panel's
+	// "About you" section — used by both the main assistant's system
+	// prompt (agent/driver.go's personGuidance/{person} placeholder) and
+	// Weaver's (gateway/constellation_weaver.go), since both need the same
+	// underlying fact. Originally Constellation-owned (constellation_config's
+	// person_name/person_pronouns columns, added for Weaver's pronoun
+	// accuracy) before being promoted here so the main assistant benefits
+	// too — see store.go's migration comment for the one-time data copy.
+	settingPersonName     = "person_name"
+	settingPersonPronouns = "person_pronouns"
 )
+
+// maxPersonNameChars/maxPersonPronounsChars mirror the settings-panel
+// inputs' own maxlength (see SettingsPanel.svelte) — generous for a name
+// or a pronoun set, but enough of a ceiling that a malformed client can't
+// wedge an arbitrarily large value into a string substituted into every
+// single turn's system prompt.
+const maxPersonNameChars = 80
+const maxPersonPronounsChars = 40
 
 // maxCustomInstructionsChars caps settingCustomInstructions — this text
 // gets substituted into the system prompt on every single turn, so an
@@ -129,6 +148,35 @@ func CustomInstructionsFromStore(db *store.Store) string {
 	return val
 }
 
+// PersonNameFromStore/PersonPronounsFromStore read the operator's "About
+// you" fields — shared by gateway/turn.go (the main assistant's system
+// prompt) and gateway/constellation_weaver.go (Weaver's), same "one
+// underlying setting, two independent readers" shape as
+// CustomInstructionsFromStore. A nil db, a read error, or an unset value
+// all default to "" (no guidance), matching every other FromStore
+// function's fail-open convention in this file.
+func PersonNameFromStore(db *store.Store) string {
+	if db == nil {
+		return ""
+	}
+	val, err := db.GetSetting(settingPersonName)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+func PersonPronounsFromStore(db *store.Store) string {
+	if db == nil {
+		return ""
+	}
+	val, err := db.GetSetting(settingPersonPronouns)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
 // ThemeFromStore reads the theme setting for tools.Context.UITheme (see
 // tools.CodeExecThemePrompt) — same "default rather than fail" reasoning
 // as MemoryEnabledFromStore/CustomInstructionsFromStore above. A nil db, a
@@ -203,6 +251,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"toggleable_tools":    tools.ToggleableTools(),
 		"memory_enabled":      MemoryEnabledFromStore(s.db),
 		"custom_instructions": all[settingCustomInstructions],
+		"person_name":         all[settingPersonName],
+		"person_pronouns":     all[settingPersonPronouns],
 	})
 }
 
@@ -215,6 +265,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		DisabledTools      *[]string `json:"disabled_tools"`
 		MemoryEnabled      *bool     `json:"memory_enabled"`
 		CustomInstructions *string   `json:"custom_instructions"`
+		PersonName         *string   `json:"person_name"`
+		PersonPronouns     *string   `json:"person_pronouns"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -327,6 +379,32 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "custom instructions changed", map[string]interface{}{"length": len(*req.CustomInstructions)}, "")
+	}
+	if req.PersonName != nil {
+		if len(*req.PersonName) > maxPersonNameChars {
+			http.Error(w, fmt.Sprintf("person_name must be %d characters or fewer", maxPersonNameChars), http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingPersonName, *req.PersonName); err != nil {
+			log.Warn("saving person_name setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving person_name setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "person name changed", map[string]interface{}{"length": len(*req.PersonName)}, "")
+	}
+	if req.PersonPronouns != nil {
+		if len(*req.PersonPronouns) > maxPersonPronounsChars {
+			http.Error(w, fmt.Sprintf("person_pronouns must be %d characters or fewer", maxPersonPronounsChars), http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingPersonPronouns, *req.PersonPronouns); err != nil {
+			log.Warn("saving person_pronouns setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving person_pronouns setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "person pronouns changed", map[string]interface{}{"pronouns": *req.PersonPronouns}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)
