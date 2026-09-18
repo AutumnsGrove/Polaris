@@ -51,7 +51,7 @@
 
 			<div class="usage-section-label">Tool calls</div>
 			<div class="usage-stat-group">
-				{#each ['search_stars', 'read_star', 'create_star', 'update_star', 'link_stars'] as tool (tool)}
+				{#each ['search_stars', 'read_star', 'create_star', 'update_star', 'link_stars', 'search_chats'] as tool (tool)}
 					<div class="usage-stat-row"><span class="label">{tool}</span><span class="value">{byTool[tool] ?? 0}</span></div>
 				{/each}
 			</div>

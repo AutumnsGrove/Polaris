@@ -196,14 +196,16 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		if err != nil {
 			return "", err
 		}
-		return read.Content, nil
+		return threadDateGrounding(msgs) + read.Content, nil
 	}
 
 	var delta strings.Builder
+	var deltaMsgs []store.Message
 	for _, m := range msgs {
 		if m.ID <= lastRun.LastMessageIDSeen {
 			continue
 		}
+		deltaMsgs = append(deltaMsgs, m)
 		label := "User"
 		if m.Role == "assistant" {
 			label = "Assistant"
@@ -217,6 +219,7 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 	if deltaText == "" {
 		return "", nil
 	}
+	dateGrounding := threadDateGrounding(deltaMsgs)
 
 	priorStars, err := db.StarsByThread(threadID)
 	if err != nil {
@@ -236,10 +239,37 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		// Degrade to the raw delta rather than failing the whole run —
 		// the same choice web_read/search_chats' own FilterExtractedText
 		// callers make when the filter pass itself errors.
-		return deltaText, nil
+		return dateGrounding + deltaText, nil
 	}
 	warnOnErr("recording filter_pass event", db.RecordShootingStarEvent(runID, "filter_pass", instruction, filtered, filterCost))
-	return filtered, nil
+	return dateGrounding + filtered, nil
+}
+
+// threadDateGrounding gives Weaver the one piece of temporal context it has
+// no other way to get: weaverTaskText hands it either the thread's raw
+// content or a filtered delta, neither of which otherwise carries any date
+// info. Without this, Weaver's only signal for "is this newer than what I
+// already wrote in this star" was which thread happens to be processed in
+// which order across separate runs — a real, live-tested problem (found
+// 2026-09-18 while tuning weaver.system's "supersede stale specifics, keep
+// the newest as current" guidance): EligibleConstellationThreadsForBackfill
+// used to order backfill newest-active-thread-first, which meant the
+// *last*-processed thread — the one whose content Weaver would treat as
+// current — was actually the *oldest* real conversation. That ordering is
+// fixed now too (oldest-first, see that function's doc comment), but this
+// is the more direct, robust fix: give Weaver the real date so it doesn't
+// have to infer recency from processing order at all. Uses the messages'
+// own created_at, not time.Now() — the point is when the conversation
+// itself happened, not when Weaver happens to be reading it.
+func threadDateGrounding(msgs []store.Message) string {
+	if len(msgs) == 0 {
+		return ""
+	}
+	first, last := msgs[0].CreatedAt, msgs[len(msgs)-1].CreatedAt
+	if first.Format("2006-01-02") == last.Format("2006-01-02") {
+		return fmt.Sprintf("This conversation took place on %s.\n\n", first.Format("Monday, January 2, 2006"))
+	}
+	return fmt.Sprintf("This conversation took place between %s and %s.\n\n", first.Format("January 2, 2006"), last.Format("January 2, 2006"))
 }
 
 // warnOnErr logs a failed observability/side-effect write rather than
@@ -326,6 +356,16 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		WeaverCategoriesInUse: strings.Join(categories, ", "),
 		WeaverPersonName:      personName,
 		WeaverPersonPronouns:  personPronouns,
+
+		// SearchThreads/ListRecentThreads/ReadThread back search_chats —
+		// see catalog.go's WeaverRun exclusion for why this is the one
+		// main-catalog tool Weaver also gets. Wired the same three-closures-
+		// together-or-not-at-all way gateway/turn.go does for the main
+		// assistant (offered()'s "chat_search" case is gated on
+		// SearchThreads != nil alone, same reasoning as memory_store).
+		SearchThreads:     db.SearchMessages,
+		ListRecentThreads: db.ListThreadsPage,
+		ReadThread:        db.ReadThread,
 
 		WeaverSearchStars: func(query string) ([]store.StarSearchResult, error) {
 			results, err := db.SearchStars(query, 10)

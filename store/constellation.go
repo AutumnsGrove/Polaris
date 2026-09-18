@@ -963,7 +963,7 @@ type ConstellationStats struct {
 
 	StarCountsByStatus map[string]int `json:"star_counts_by_status"`
 
-	// ToolCallCounts is scoped to the five real tools only — the cost sum
+	// ToolCallCounts is scoped to Weaver's real tools only — the cost sum
 	// above includes filter_pass/final_answer too, but this breakdown
 	// doesn't, same distinction Stats.SearchProviderCounts' doc comment
 	// draws between "what actually answered" and "what was billed".
@@ -977,7 +977,11 @@ type ConstellationStats struct {
 	NeedsRetryCount int `json:"needs_retry_count"`
 }
 
-var constellationRealTools = []string{"search_stars", "read_star", "create_star", "update_star", "link_stars"}
+// constellationRealTools is Weaver's own five tools plus search_chats — the
+// one main-catalog tool Weaver also gets (see catalog.go's WeaverRun
+// exclusion, added 2026-09-18) — so its usage shows up in this same
+// breakdown instead of being silently invisible here.
+var constellationRealTools = []string{"search_stars", "read_star", "create_star", "update_star", "link_stars", "search_chats"}
 
 // GetConstellationStats aggregates on demand from Constellation's own
 // tables — same "no running counters, no second source of truth" approach
@@ -1311,9 +1315,24 @@ func (s *Store) GetConstellationWeekFeed() ([]ConstellationWeekItem, error) {
 // EligibleConstellationThreadsForBackfill is EligibleConstellationThreads
 // with the idle-timing gate bypassed (a historical thread is definitionally
 // not "mid-conversation" — see the plan doc's "Backfill") and ordered
-// newest-active-first, optionally capped at limit (0 means every eligible
+// oldest-active-first, optionally capped at limit (0 means every eligible
 // thread) — the -n flag `polaris constellation backfill` exposes for
 // testing against a small sample instead of a full backlog run.
+//
+// Oldest-first (not newest-first, as this originally shipped) because of a
+// real, live-tested finding (2026-09-18): Weaver is never told a
+// conversation's actual date (see weaverTaskText) — the only signal it has
+// for "is this newer than what I already wrote in this star" is which
+// thread it's processing right now, this run, relative to prior runs.
+// weaver.system's "supersede stale specifics, keep the newest as current"
+// guidance (prompts.yaml) depends entirely on that processing order
+// matching real chronology, or a star accreted across many backfilled
+// threads on the same subject ends up treating whichever thread happens to
+// be processed *last* as current — which, under the old newest-first
+// order, was actually the *oldest* real conversation. limit now samples the
+// oldest backlog first rather than the most recent activity — a real
+// trade for the -n testing flag's convenience, accepted deliberately for
+// correctness on a full, real backfill (the actual point of this function).
 func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, error) {
 	ids, err := s.EligibleConstellationThreads(0)
 	if err != nil {
@@ -1346,7 +1365,7 @@ func (s *Store) EligibleConstellationThreadsForBackfill(limit int) ([]string, er
 		}
 		withTimes = append(withTimes, idWithTime{id, t})
 	}
-	sort.Slice(withTimes, func(i, j int) bool { return withTimes[i].t.After(withTimes[j].t) })
+	sort.Slice(withTimes, func(i, j int) bool { return withTimes[i].t.Before(withTimes[j].t) })
 	if limit > 0 && limit < len(withTimes) {
 		withTimes = withTimes[:limit]
 	}
@@ -1407,7 +1426,17 @@ func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string,
 		      WHERE r3.thread_id = root.id ORDER BY r3.id DESC LIMIT 1
 		    )
 		  )
-		ORDER BY root.id`,
+		ORDER BY root.created_at`, // real bug found live 2026-09-18: this was
+		// "ORDER BY root.id" — root.id is a UUID string, so that sorted
+		// threads effectively at random with no relationship to when they
+		// happened. Barely visible on the live per-minute scheduler (usually
+		// 0-1 newly-eligible threads per tick), but it directly corrupted a
+		// backfill's ability to track an evolving topic's *current* state
+		// across many merged update_star calls (see weaver.system's
+		// "supersede stale specifics" guidance in prompts.yaml) — Weaver
+		// would end a run believing whichever thread happened to sort last
+		// by UUID was the most recent conversation, not the one that
+		// actually was.
 		pollIntervalMinutes,
 	)
 	if err != nil {

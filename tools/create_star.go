@@ -48,6 +48,16 @@ var createStarDef = llm.ToolDef{
 	},
 }
 
+// weaverStarBodyMaxLen enforces the "concise, personal, not a topic
+// explainer" bar as a hard, mechanically-checked ceiling rather than relying
+// on prompt wording alone — soft "keep it short" guidance already in the
+// system prompt was measured not holding on unusually rich conversations (a
+// live body over 11,000 characters was observed before this existed).
+// Rejecting via emitToolError lets Weaver retry with a trimmed body instead
+// of the length limit silently truncating real content. Shared with
+// update_star.go (same package).
+const weaverStarBodyMaxLen = 800
+
 func init() { Register("create_star", handleCreateStar) }
 
 func handleCreateStar(argsJSON string, ctx *Context, callID string) string {
@@ -72,6 +82,12 @@ func handleCreateStar(argsJSON string, ctx *Context, callID string) string {
 	}
 	if args.ConfidenceClass != "obvious" && args.ConfidenceClass != "fuzzy" {
 		return emitToolError(ctx, "create_star", map[string]interface{}{"confidence_class": args.ConfidenceClass}, "error: confidence_class must be \"obvious\" or \"fuzzy\"", callID)
+	}
+	if len(args.Body) > weaverStarBodyMaxLen {
+		return emitToolError(ctx, "create_star", map[string]interface{}{"title": args.Title, "body_len": len(args.Body)},
+			fmt.Sprintf("error: body is %d characters, over the %d-character limit — this reads like a topic "+
+				"explainer or reference dump rather than a personal fact. Cut it down to the evergreen personal "+
+				"takeaway and call create_star again.", len(args.Body), weaverStarBodyMaxLen), callID)
 	}
 	if ctx.WeaverCreateStar == nil {
 		return emitToolError(ctx, "create_star", map[string]interface{}{"title": args.Title}, "error: create_star is not available in this context", callID)

@@ -5,6 +5,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"polaris/llm"
@@ -67,6 +68,12 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	args.Summary = strings.TrimSpace(args.Summary)
 	if args.Summary == "" {
 		return emitToolError(ctx, "update_star", map[string]interface{}{"star_id": args.StarID}, "error: summary is required", callID)
+	}
+	if len(args.Body) > weaverStarBodyMaxLen {
+		return emitToolError(ctx, "update_star", map[string]interface{}{"star_id": args.StarID, "body_len": len(args.Body)},
+			fmt.Sprintf("error: body is %d characters, over the %d-character limit — this reads like a topic "+
+				"explainer or reference dump rather than a personal fact. Cut it down to the evergreen personal "+
+				"takeaway and call update_star again.", len(args.Body), weaverStarBodyMaxLen), callID)
 	}
 	if ctx.WeaverUpdateStar == nil {
 		return emitToolError(ctx, "update_star", map[string]interface{}{"star_id": args.StarID}, "error: update_star is not available in this context", callID)

@@ -88,13 +88,22 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// which it still needs for its own reasoning.
 		return false
 	}
-	if ctx.WeaverRun && e.Requires != "weaver_run" {
-		// Weaver: restrict the menu to exactly its own five tools —
-		// never think/calculator/web_search/anything from the main
+	if ctx.WeaverRun && e.Requires != "weaver_run" && e.Requires != "chat_search" {
+		// Weaver: restrict the menu to its own five tools plus search_chats
+		// — never think/calculator/web_search/anything else from the main
 		// catalog, since Weaver's whole job is reading and inferring from
 		// already-written chat content, not researching or computing
 		// anything new (see docs/plans/constellation.md's "Weaver" design
 		// principle: "never Polaris's main chat agent gaining a tool").
+		// search_chats is the one deliberate exception, added 2026-09-18:
+		// still reading already-written chat content, just from threads
+		// other than the one this run is about — useful for checking
+		// whether a related fact already came up elsewhere before deciding
+		// create_star vs. update_star, the same judgment search_stars
+		// already exists to support but scoped to raw conversations
+		// instead of the stars library itself. Gated on ctx.SearchThreads
+		// != nil below (the "chat_search" case), same as the main
+		// assistant — see newWeaverToolContext for where Weaver wires it.
 		return false
 	}
 	switch e.Requires {
