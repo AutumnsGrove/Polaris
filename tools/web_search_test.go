@@ -136,11 +136,14 @@ func TestHandleWebSearch_DegradedFallsBackToTavily(t *testing.T) {
 	}))
 	t.Cleanup(tavilySrv.Close)
 
+	var incremented int
 	ctx := &Context{
-		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(searxngSrv.URL, nil),
-		Tavily:  tavily.NewClientForTest("test-key", tavilySrv.URL),
-		Emit:    func(string, map[string]interface{}) {},
+		Ctx:                  context.Background(),
+		SearXNG:              search.NewSearXNGClient(searxngSrv.URL, nil),
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementTavilyUsage: func() error { incremented++; return nil },
+		Emit:                 func(string, map[string]interface{}) {},
 	}
 
 	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
@@ -154,6 +157,41 @@ func TestHandleWebSearch_DegradedFallsBackToTavily(t *testing.T) {
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://example.com/cold-brew" {
 		t.Errorf("Citations = %+v, want the Tavily result's URL added", ctx.Citations)
 	}
+	if incremented != 1 {
+		t.Errorf("IncrementTavilyUsage called %d times, want 1", incremented)
+	}
+}
+
+func TestHandleWebSearch_DegradedSkipsTavilyWhenMonthlyCapReached(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+
+	tavilyHit := false
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tavilyHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(tavilySrv.Close)
+
+	ctx := &Context{
+		Ctx:                  context.Background(),
+		SearXNG:              search.NewSearXNGClient(searxngSrv.URL, nil),
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return tavilyMonthlyCap, nil }, // already at the cap
+		IncrementTavilyUsage: func() error {
+			t.Error("IncrementTavilyUsage must not be called when the cap gates Tavily out")
+			return nil
+		},
+		Emit: func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
+
+	if !strings.Contains(result, "degraded") {
+		t.Errorf("result = %q, want the degraded message once every fallback (including Tavily at its cap) is exhausted", result)
+	}
+	if tavilyHit {
+		t.Error("tavily was hit, want it skipped — the monthly cap should gate it out before any request goes out")
+	}
 }
 
 func TestHandleWebSearch_DegradedTavilyAlsoFailsReturnsDegradedMessage(t *testing.T) {
@@ -164,10 +202,11 @@ func TestHandleWebSearch_DegradedTavilyAlsoFailsReturnsDegradedMessage(t *testin
 	t.Cleanup(tavilySrv.Close)
 
 	ctx := &Context{
-		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(searxngSrv.URL, nil),
-		Tavily:  tavily.NewClientForTest("test-key", tavilySrv.URL),
-		Emit:    func(string, map[string]interface{}) {},
+		Ctx:                  context.Background(),
+		SearXNG:              search.NewSearXNGClient(searxngSrv.URL, nil),
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		Emit:                 func(string, map[string]interface{}) {},
 	}
 
 	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
@@ -237,14 +276,15 @@ func TestHandleWebSearch_DegradedPrefersBraveOverParallelAndTavily(t *testing.T)
 
 	var incremented int
 	ctx := &Context{
-		Ctx:                 context.Background(),
-		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
-		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
-		BraveUsageThisMonth: func() (int, error) { return 0, nil },
-		IncrementBraveUsage: func() error { incremented++; return nil },
-		Parallel:            parallel.NewClientForTest("test-key", parallelSrv.URL),
-		Tavily:              tavily.NewClientForTest("test-key", tavilySrv.URL),
-		Emit:                func(string, map[string]interface{}) {},
+		Ctx:                  context.Background(),
+		SearXNG:              search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:                brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth:  func() (int, error) { return 0, nil },
+		IncrementBraveUsage:  func() error { incremented++; return nil },
+		Parallel:             parallel.NewClientForTest("test-key", parallelSrv.URL),
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		Emit:                 func(string, map[string]interface{}) {},
 	}
 
 	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
@@ -356,6 +396,7 @@ func TestHandleWebSearch_DegradedPrefersParallelOverTavily(t *testing.T) {
 		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
 		IncrementParallelUsage: func() error { incremented++; return nil },
 		Tavily:                 tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth:   func() (int, error) { return 0, nil },
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
@@ -405,8 +446,9 @@ func TestHandleWebSearch_DegradedSkipsParallelWhenMonthlyCapReached(t *testing.T
 			t.Error("IncrementParallelUsage must not be called when the cap gates Parallel out")
 			return nil
 		},
-		Tavily: tavily.NewClientForTest("test-key", tavilySrv.URL),
-		Emit:   func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		Emit:                 func(string, map[string]interface{}) {},
 	}
 
 	result := handleWebSearch(`{"query":"how to brew cold green tea at home"}`, ctx, "test-call")
@@ -445,6 +487,7 @@ func TestHandleWebSearch_DegradedFallsBackToTavilyWhenParallelErrors(t *testing.
 		ParallelUsageThisMonth: func() (int, error) { return 0, nil },
 		IncrementParallelUsage: func() error { incremented++; return nil },
 		Tavily:                 tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth:   func() (int, error) { return 0, nil },
 		Emit:                   func(string, map[string]interface{}) {},
 	}
 
@@ -792,10 +835,11 @@ func TestHandleWebSearch_DegradedFallsBackToTavilyWithDomains(t *testing.T) {
 	t.Cleanup(tavilySrv.Close)
 
 	ctx := &Context{
-		Ctx:     context.Background(),
-		SearXNG: search.NewSearXNGClient(searxngSrv.URL, nil),
-		Tavily:  tavily.NewClientForTest("test-key", tavilySrv.URL),
-		Emit:    func(string, map[string]interface{}) {},
+		Ctx:                  context.Background(),
+		SearXNG:              search.NewSearXNGClient(searxngSrv.URL, nil),
+		Tavily:               tavily.NewClientForTest("test-key", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		Emit:                 func(string, map[string]interface{}) {},
 	}
 
 	handleWebSearch(`{"query":"cold brew","domains":["example.com"]}`, ctx, "test-call")

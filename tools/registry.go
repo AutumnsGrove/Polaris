@@ -74,7 +74,7 @@ type Context struct {
 
 	SearXNG    *search.SearXNGClient
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
-	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback is skipped without it
+	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback and its force_tavily argument are both skipped without it
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
@@ -106,6 +106,21 @@ type Context struct {
 	// out before reaching Parallel doesn't count against the budget.
 	ParallelUsageThisMonth func() (int, error)
 	IncrementParallelUsage func() error
+
+	// TavilyUsageThisMonth/IncrementTavilyUsage back the monthly cap on
+	// Tavily calls (store.Store's api_usage table) — same shape as
+	// BraveUsageThisMonth/IncrementBraveUsage above. One counter shared
+	// across every way this deployment can spend a Tavily credit: the
+	// SearXNG-degraded Search fallback (tools/web_search.go's
+	// tavilyFallback), web_read's own JS-render/paywall Extract fallback,
+	// and web_read's explicit force_tavily argument (tools/web_read.go) —
+	// unlike Brave/Parallel, nothing enforced a real ceiling on Tavily
+	// before this (it was only "scarce" by comment/convention), which
+	// mattered less while every Tavily call was a last-resort fallback
+	// the model reached only accidentally; force_tavily lets the model
+	// spend a credit on purpose, so the cap needs to be real too.
+	TavilyUsageThisMonth func() (int, error)
+	IncrementTavilyUsage func() error
 
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,

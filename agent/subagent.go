@@ -63,6 +63,8 @@ func newSubAgentContext(baseCtx *tools.Context, llmClient llm.ChatClient) *tools
 		IncrementBraveUsage:    baseCtx.IncrementBraveUsage,
 		ParallelUsageThisMonth: baseCtx.ParallelUsageThisMonth,
 		IncrementParallelUsage: baseCtx.IncrementParallelUsage,
+		TavilyUsageThisMonth:   baseCtx.TavilyUsageThisMonth,
+		IncrementTavilyUsage:   baseCtx.IncrementTavilyUsage,
 		PinnedProvider:         baseCtx.PinnedProvider,
 		Emit:                   baseCtx.Emit,
 		MaxTurns:               baseCtx.MaxTurns,

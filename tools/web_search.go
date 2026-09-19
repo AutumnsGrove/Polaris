@@ -24,6 +24,17 @@ import (
 // principle to get exactly right.
 const parallelMonthlyCap = 4900
 
+// tavilyMonthlyCap is the hard ceiling on Tavily API calls per calendar
+// month — shared across every way this deployment can spend a Tavily
+// credit (this file's Search fallback, web_read.go's Extract fallback,
+// and web_read.go's explicit force_tavily argument), since they all draw
+// from the same account. Tavily's free tier is ~1,000 credits, but Search
+// costs 1 credit/call and Extract's advanced mode (JS rendering, used by
+// both the fallback and force_tavily) costs 2 — so, same "leave headroom"
+// reasoning as parallelMonthlyCap above, this is a call-count cap set
+// well under the raw credit count rather than at it.
+const tavilyMonthlyCap = 500
+
 // webSearchMaxDomains caps the domains list the same way highlightMaxItems
 // caps highlight's items — a small, deliberate ceiling the model gets back
 // as a correctable tool error, not a silent truncation. Five matches
@@ -255,8 +266,12 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				return formatted
 			}
 		}
-		if ctx.Tavily != nil {
-			if formatted, ok := tavilyFallback(ctx, args.Query, domains, callID); ok {
+		if ctx.Tavily != nil && ctx.TavilyUsageThisMonth != nil {
+			if used, uErr := ctx.TavilyUsageThisMonth(); uErr != nil {
+				log.Warn("web_search: checking tavily usage failed, skipping fallback", "query", args.Query, "err", uErr)
+			} else if used >= tavilyMonthlyCap {
+				log.Warn("web_search: tavily monthly cap reached, skipping fallback", "query", args.Query, "used", used, "cap", tavilyMonthlyCap)
+			} else if formatted, ok := tavilyFallback(ctx, args.Query, domains, callID); ok {
 				return formatted
 			}
 		}
@@ -455,10 +470,14 @@ func parallelFallback(ctx *Context, query string, callID string) (formatted stri
 }
 
 // tavilyFallback tries Tavily's Search API once SearXNG has confirmed
-// itself degraded (see handleWebSearch). Returns ok=false on any failure
-// or an empty result so the caller falls through to the plain "degraded"
-// message instead — this is a best-effort rescue, not something worth its
-// own error path back to the model.
+// itself degraded and the caller has already checked the monthly usage
+// cap (see handleWebSearch). Only increments the persisted usage counter
+// once the request actually completed (err == nil), same reasoning as
+// braveFallback/parallelFallback above — a network failure or non-200
+// response never reached Tavily's own billing. Returns ok=false on any
+// failure or an empty result so the caller falls through to the plain
+// "degraded" message instead — this is a best-effort rescue, not
+// something worth its own error path back to the model.
 // domains is passed through to Tavily's own dedicated include_domains
 // request field rather than folded into query via withSiteFilter — Tavily
 // runs its own index/crawl (not a metasearch proxy over engines that
@@ -469,8 +488,17 @@ func tavilyFallback(ctx *Context, query string, domains []string, callID string)
 	dedupKey := searchDedupKey("tavily", query+"|"+strings.Join(domains, ","), "", 1, 5)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*tavily.SearchResponse, error) {
 		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5, domains)
-		if e == nil && ctx.ResearchBudget != nil {
-			ctx.ResearchBudget.RecordCall(true)
+		if e == nil {
+			// Recorded inside fn — see the searxng call site's comment
+			// above for why this must not live after dedupedCall returns.
+			if ctx.IncrementTavilyUsage != nil {
+				if incErr := ctx.IncrementTavilyUsage(); incErr != nil {
+					log.Warn("web_search: recording tavily usage failed", "query", query, "err", incErr)
+				}
+			}
+			if ctx.ResearchBudget != nil {
+				ctx.ResearchBudget.RecordCall(true)
+			}
 		}
 		return r, e
 	})
