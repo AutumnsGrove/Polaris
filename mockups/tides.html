@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tides — mockup</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/asimovian@5/latin-400.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-danger: oklch(65% 0.19 25);
+
+	/* Same star-category palette as Constellation (web/src/app.css) — reused
+	   verbatim rather than invented fresh, so a category means the same
+	   color here as it does on the star map. Only the handful actually
+	   used in this mockup's sample data are pulled in. */
+	--color-cat-software-engineering: oklch(78% 0.15 347.3);
+	--color-cat-ai-machine-learning: oklch(78% 0.15 357.6);
+	--color-cat-technology: oklch(78% 0.15 337);
+	--color-cat-space-astronomy: oklch(78% 0.15 18.2);
+	--color-cat-finance-shopping: oklch(78% 0.15 265.8);
+	--color-cat-food-drink: oklch(78% 0.15 203.9);
+
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
+	--shadow-md: 0 8px 24px -8px rgba(15, 10, 5, 0.45);
+	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: 'Lexend', system-ui, sans-serif;
+	font-size: 15px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Masthead — same starfield-gradient treatment as Pulsar
+   Daily's, since Tides is the same "edition" family (one page, generated
+   on a cadence), just monthly instead of daily. ---------- */
+.masthead {
+	position: relative;
+	padding: var(--space-2xl) var(--space-xl) var(--space-xl);
+	background:
+		radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.5), transparent),
+		radial-gradient(1px 1px at 65% 15%, rgba(255,255,255,.35), transparent),
+		radial-gradient(1.5px 1.5px at 85% 55%, rgba(255,255,255,.4), transparent),
+		radial-gradient(1px 1px at 45% 70%, rgba(255,255,255,.3), transparent),
+		linear-gradient(180deg, var(--color-surface), var(--color-bg));
+	border-bottom: 1px solid var(--color-border);
+	text-align: center;
+}
+.masthead .wordmark { font-family: 'Asimovian', sans-serif; font-size: 2rem; letter-spacing: 0.08em; color: var(--color-accent); margin: 0; }
+.masthead .kicker { color: var(--color-text-dim); font-size: 0.8rem; letter-spacing: 0.18em; text-transform: uppercase; margin: var(--space-xs) 0 0; }
+.masthead .dateline { margin-top: var(--space-md); font-size: 0.95rem; color: var(--color-text-dim); }
+/* The one line of editorial framing this whole page earns itself — a
+   single sentence, not a summary paragraph. If this needs two sentences
+   to say, the page underneath has already lost the minimalism fight. */
+.masthead .hook { max-width: 46ch; margin: var(--space-md) auto 0; font-size: 1rem; color: var(--color-text); line-height: 1.5; }
+.edition-nav { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); margin-top: var(--space-xl); }
+.edition-nav button {
+	display: flex; align-items: center; justify-content: center;
+	font: inherit; font-size: 0.8rem;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	color: var(--color-text-dim);
+	width: 32px; height: 32px;
+	border-radius: var(--radius-full);
+	cursor: pointer;
+}
+.edition-nav button:disabled { opacity: 0.35; cursor: default; }
+.edition-nav .current { font-size: 0.85rem; font-weight: 500; color: var(--color-text); padding: 0 var(--space-md); min-width: 11ch; text-align: center; }
+
+main { max-width: 760px; margin: 0 auto; padding: var(--space-2xl) var(--space-xl) var(--space-3xl); }
+
+.section-label {
+	font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+	color: var(--color-text-dim); margin: 0 0 var(--space-md);
+}
+.section-label .count { color: var(--color-text-dim); font-weight: 400; text-transform: none; letter-spacing: normal; margin-left: var(--space-xs); }
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-sm), var(--shadow-glass-edge);
+	padding: var(--space-xl);
+	margin-bottom: var(--space-xl);
+}
+
+/* ---------- Block 1 — stat row ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-md); margin-bottom: var(--space-xl); }
+.stat-tile {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-lg) var(--space-md);
+	text-align: center;
+}
+.stat-tile .icon {
+	width: 30px; height: 30px; margin: 0 auto var(--space-sm);
+	display: grid; place-items: center;
+	border-radius: var(--radius-md);
+	background: var(--color-accent-soft);
+	color: var(--color-accent);
+}
+.stat-tile .icon svg { width: 15px; height: 15px; }
+.stat-tile .value { font-size: 1.4rem; font-weight: 600; line-height: 1.1; }
+.stat-tile .label { font-size: 0.7rem; color: var(--color-text-dim); margin-top: 3px; }
+
+/* ---------- Block 2 — category breakdown ---------- */
+.cat-row { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-sm) 0; }
+.cat-row .dot { width: 9px; height: 9px; border-radius: var(--radius-full); flex-shrink: 0; }
+.cat-row .name { font-size: 0.85rem; width: 13ch; flex-shrink: 0; }
+.cat-row .bar-track { flex: 1; height: 7px; border-radius: var(--radius-full); background: var(--color-surface-3); overflow: hidden; }
+.cat-row .bar-fill { height: 100%; border-radius: var(--radius-full); }
+.cat-row .count { font-size: 0.78rem; color: var(--color-text-dim); width: 3ch; text-align: right; flex-shrink: 0; }
+
+/* ---------- Block 3 — spiked / faded ---------- */
+.split-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); }
+.split-row .card { margin-bottom: 0; }
+.trend-card .card-head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.trend-card .card-head svg { width: 16px; height: 16px; flex-shrink: 0; }
+.trend-card.spiked .card-head { color: var(--color-accent); }
+.trend-card.faded .card-head { color: var(--color-text-dim); }
+.trend-card .card-head .title { font-size: 0.85rem; font-weight: 600; color: var(--color-text); }
+.trend-card ul { list-style: none; margin: 0; padding: 0; }
+.trend-card li { padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); font-size: 0.85rem; display: flex; justify-content: space-between; gap: var(--space-sm); }
+.trend-card li:last-child { border-bottom: none; }
+.trend-card.faded li { color: var(--color-text-dim); }
+.trend-card .delta { font-size: 0.72rem; color: var(--color-text-dim); flex-shrink: 0; }
+.trend-card.spiked .delta { color: var(--color-accent); }
+
+/* ---------- Block 4 — new stars this month ---------- */
+.star-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); margin-top: var(--space-sm); }
+.mini-star { display: flex; gap: var(--space-sm); padding: var(--space-md); border-radius: var(--radius-md); background: var(--color-surface-2); border: 1px solid var(--color-border); }
+.mini-star .tile { width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.mini-star .tile svg { width: 13px; height: 13px; }
+.mini-star .title { font-size: 0.82rem; font-weight: 500; line-height: 1.3; }
+.mini-star .cat { font-size: 0.68rem; color: var(--color-text-dim); margin-top: 2px; }
+.more-link { display: block; text-align: center; margin-top: var(--space-lg); font-size: 0.82rem; color: var(--color-accent-2); text-decoration: none; }
+
+.card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--space-lg); }
+.card-head h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.card-head .meta { font-size: 0.75rem; color: var(--color-text-dim); }
+
+@media (max-width: 620px) {
+	.stat-grid { grid-template-columns: repeat(2, 1fr); }
+	.split-row { grid-template-columns: 1fr; }
+	.star-grid { grid-template-columns: 1fr; }
+	.cat-row .name { width: 10ch; font-size: 0.78rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+	<p class="wordmark">Tides</p>
+	<p class="kicker">Monthly retrospective</p>
+	<p class="dateline">September 1 – 30, 2026</p>
+	<p class="hook">Mostly software engineering and space this month, with a late pull toward personal finance.</p>
+	<div class="edition-nav">
+		<button aria-label="Previous month">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+		</button>
+		<span class="current">September 2026</span>
+		<button aria-label="Next month" disabled>
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+		</button>
+	</div>
+</div>
+
+<main>
+
+	<!-- Block 1 — stat row. Four numbers, straight from Stats/search_history/
+	     stars, no synthesis. -->
+	<div class="stat-grid">
+		<div class="stat-tile">
+			<div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+			<div class="value">214</div>
+			<div class="label">Turns asked</div>
+		</div>
+		<div class="stat-tile">
+			<div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/></svg></div>
+			<div class="value">8</div>
+			<div class="label">New stars formed</div>
+		</div>
+		<div class="stat-tile">
+			<div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+			<div class="value">96</div>
+			<div class="label">Searches run</div>
+		</div>
+		<div class="stat-tile">
+			<div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+			<div class="value">$4.12</div>
+			<div class="label">Cost this month</div>
+		</div>
+	</div>
+
+	<!-- Block 2 — category breakdown, reusing Constellation's own category
+	     palette rather than inventing a new one. -->
+	<div class="card">
+		<div class="card-head">
+			<h2>Where your attention went</h2>
+			<span class="meta">by new star</span>
+		</div>
+		<div class="cat-rows">
+			<div class="cat-row"><span class="dot" style="background:var(--color-cat-software-engineering)"></span><span class="name">Software Eng.</span><div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--color-cat-software-engineering)"></div></div><span class="count">6</span></div>
+			<div class="cat-row"><span class="dot" style="background:var(--color-cat-ai-machine-learning)"></span><span class="name">AI &amp; ML</span><div class="bar-track"><div class="bar-fill" style="width:57%;background:var(--color-cat-ai-machine-learning)"></div></div><span class="count">4</span></div>
+			<div class="cat-row"><span class="dot" style="background:var(--color-cat-space-astronomy)"></span><span class="name">Space</span><div class="bar-track"><div class="bar-fill" style="width:43%;background:var(--color-cat-space-astronomy)"></div></div><span class="count">3</span></div>
+			<div class="cat-row"><span class="dot" style="background:var(--color-cat-finance-shopping)"></span><span class="name">Finance</span><div class="bar-track"><div class="bar-fill" style="width:29%;background:var(--color-cat-finance-shopping)"></div></div><span class="count">2</span></div>
+			<div class="cat-row"><span class="dot" style="background:var(--color-cat-food-drink)"></span><span class="name">Food &amp; Drink</span><div class="bar-track"><div class="bar-fill" style="width:14%;background:var(--color-cat-food-drink)"></div></div><span class="count">1</span></div>
+		</div>
+	</div>
+
+	<!-- Block 3 — spiked / faded, sourced from search_history rather than
+	     stars (stars move too slowly month to month to show a real spike). -->
+	<div class="split-row">
+		<div class="card trend-card spiked">
+			<div class="card-head">
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+				<span class="title">What spiked</span>
+			</div>
+			<ul>
+				<li><span>Docker Compose</span><span class="delta">↑ 11 searches</span></li>
+				<li><span>Le Potato SBC power draw</span><span class="delta">↑ 6 searches</span></li>
+				<li><span>SearXNG engine config</span><span class="delta">↑ 5 searches</span></li>
+			</ul>
+		</div>
+		<div class="card trend-card faded">
+			<div class="card-head">
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+				<span class="title">Quietly faded</span>
+			</div>
+			<ul>
+				<li><span>Sourdough hydration ratios</span><span class="delta">quiet since Aug 14</span></li>
+				<li><span>Kubernetes migration</span><span class="delta">quiet since Aug 22</span></li>
+				<li><span>Tokyo trip planning</span><span class="delta">quiet since Sep 2</span></li>
+			</ul>
+		</div>
+	</div>
+
+	<!-- Block 4 — capped star showcase, not the full library. -->
+	<div class="card">
+		<div class="card-head">
+			<h2>New stars this month <span class="section-label count">8 formed</span></h2>
+		</div>
+		<div class="star-grid">
+			<div class="mini-star"><div class="tile" style="background:color-mix(in srgb, var(--color-cat-software-engineering) 18%, transparent); color:var(--color-cat-software-engineering)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div><div><div class="title">Runs a Go + SvelteKit stack on a Le Potato SBC</div><div class="cat">Software Engineering</div></div></div>
+			<div class="mini-star"><div class="tile" style="background:color-mix(in srgb, var(--color-cat-space-astronomy) 18%, transparent); color:var(--color-cat-space-astronomy)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></div><div><div class="title">Tracks the Beehive Cluster as a favorite deep-sky object</div><div class="cat">Space &amp; Astronomy</div></div></div>
+			<div class="mini-star"><div class="tile" style="background:color-mix(in srgb, var(--color-cat-finance-shopping) 18%, transparent); color:var(--color-cat-finance-shopping)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div><div><div class="title">Started tracking monthly spend by category</div><div class="cat">Finance &amp; Shopping</div></div></div>
+			<div class="mini-star"><div class="tile" style="background:color-mix(in srgb, var(--color-cat-ai-machine-learning) 18%, transparent); color:var(--color-cat-ai-machine-learning)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></div><div><div class="title">Prefers small self-hosted models over paid APIs</div><div class="cat">AI &amp; Machine Learning</div></div></div>
+		</div>
+		<a class="more-link" href="#">+4 more · view in Constellation →</a>
+	</div>
+
+</main>
+
+</body>
+</html>
