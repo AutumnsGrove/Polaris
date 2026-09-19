@@ -13,7 +13,7 @@ None of these have design docs yet. When one gets picked up for real, it gets it
 
 ## Green-lit — moving to mockups next
 
-### Tides — the monthly/yearly retrospective (working name "Perihelion" — rejected, see below)
+### Comet — the monthly/yearly retrospective (see `docs/plans/comet.md` for the full design)
 
 A Wrapped-style retrospective mined entirely from data Polaris already has timestamped:
 `threads`/`messages`, `search_history`, `stars` (formed/updated in the period), and `api_usage`
@@ -27,19 +27,25 @@ prompt-instruction alone — lean on `code_exec`+`matplotlib` and fixed layout s
 open-ended generation, so there's a hard ceiling on how much text can come out regardless of what
 the model decides to write.
 
-**Naming: settled on Tides.** "Perihelion" is cool but tells you nothing (it's an orbital-mechanics
-term — closest approach to the sun — which reads as *arbitrary* cosmic flavor rather than
-*informative* cosmic flavor, unlike Polaris/Atlas/Pulsar/Constellation which are all doing real
-conceptual work for their feature). Operator's stated ceiling: **Pulsar is about as far out as the
-naming should go** — anything more obscure than that reads as reaching. First round of
-alternatives (Almanac, Long Exposure, Logbook, Field Notes) didn't land either — operator wanted a
-genuinely different angle rather than another word from the same well the app was already deep in.
-Second round moved into the *nautical* half of the brand (README's own "you're lost at sea"
-framing, which the astro naming had left unused) — **Tides** won: the ebb and flow of what you
-cared about over a stretch of time, rhyming with Pulsar's own periodic-signal framing without
-repeating it, plain word, zero jargon. Ruled out along the way: **Digest** — already means
-something specific (Constellation's weekly digest banner, `docs/plans/constellation.md`'s "The
-weekly digest" section) and reusing it here would collide.
+**Naming: settled on Comet, after a detour through Tides.** "Perihelion" is cool but tells you
+nothing (it's an orbital-mechanics term — closest approach to the sun — which reads as *arbitrary*
+cosmic flavor rather than *informative* cosmic flavor, unlike Polaris/Atlas/Pulsar/Constellation
+which are all doing real conceptual work for their feature). Operator's stated ceiling: **Pulsar is
+about as far out as the naming should go** — anything more obscure than that reads as reaching.
+First round of alternatives (Almanac, Long Exposure, Logbook, Field Notes) didn't land either.
+Second round moved into the *nautical* half of the brand (README's own "you're lost at sea" framing)
+and landed on **Tides** — the ebb and flow of what you cared about over a stretch of time. Ruled out
+along the way: **Digest** — already means something specific (Constellation's weekly digest banner)
+and reusing it here would collide.
+
+Revisited on reflection: the operator's real preference is astronomy naming specifically — it's
+what every other feature name in the app is already doing — and Tides broke from that pattern into
+nautical language instead. **Renamed to Comet**: a comet's defining trait is *periodic return*
+(Halley's Comet, etc.), which is exactly what a monthly/yearly retrospective is — real conceptual
+work, not arbitrary flavor, same bar Perihelion failed. The run/artifact split (mirroring Weaver's
+shooting-star/star) is now **Approach** (the per-thread classification run) and **Trail** (the
+stored record). Icon: `majesticons:comet`, vendored — see `docs/plans/comet.md`'s Naming section for
+the full icon research (no comet/meteor icon exists in Lucide at all).
 
 **Cost note:** operator flagged this "would cost a bunch per run" — true of a naive full-history
 synthesis pass, but this only needs to run monthly (or yearly) like Pulsar Daily's daily cadence,

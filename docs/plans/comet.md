@@ -1,14 +1,45 @@
-# Tides — monthly retrospective
+# Comet — monthly retrospective
 
 **Status: mockup reviewed and liked (operator: "just right... quite brief"), backend mechanics for
 category breakdown + spiked/faded now settled — still entirely in planning, implementation
 explicitly deferred.** Named and scoped in a live brainstorm 2026-09-19 — see
-`docs/plans/crazy-ideas.md` for the naming history (rejected: Perihelion, Almanac, Long Exposure,
-Logbook, Field Notes) and the operator's scoping verdict this doc builds on. A first visual mockup
-lives at `mockups/tides.html` (monthly cadence, all four blocks below — the "full page" density
-option the operator picked over a single stat card or a stats+chart-only cut). Nothing here is
+`docs/plans/crazy-ideas.md` for the naming history. A first visual mockup lives at
+`mockups/comet.html` (monthly cadence, all four blocks below — the "full page" density option the
+operator picked over a single stat card or a stats+chart-only cut). Nothing here is
 implementation-ready yet — no schema written, no code started — this is still the shape to react
 to and refine before any of that begins.
+
+## Naming — settled 2026-09-19
+
+Working name through most of this doc's early drafts was **Tides** (nautical: `wave`/`crashing
+wave`/`the tide`), reached after **Perihelion** (the very first idea, rejected — real astronomy but
+arbitrary-sounding orbital-mechanics jargon to anyone who isn't an astronomer) and a first round of
+alternatives (Almanac, Long Exposure, Logbook, Field Notes) that didn't land either. Revisited once
+more on reflection: the operator likes astronomy naming specifically (it's what Polaris/Atlas/
+Pulsar/Constellation/Weaver are all already doing), and Tides broke from that into nautical
+language instead. Renamed to **Comet**, replacing the whole Tides/wave/crashing-wave family:
+
+- **Comet** — the feature itself. A comet's defining trait is *periodic return* (Halley's Comet,
+  etc.) — "look what's come back around" — which is exactly what a monthly/yearly retrospective is.
+- **Approach** — the per-thread classification run (was "crashing wave"), mirroring Weaver's own
+  "shooting star" run naming.
+- **Trail** — the resulting stored record for one thread, one period (was "wave"), mirroring
+  Weaver's "star" artifact — what a comet leaves visible behind it as it passes.
+
+**Icon: `majesticons:comet`, vendored.** No Lucide icon exists for comet/meteor/shooting-star at all
+(checked directly against every plausible name in 1.46.0 — all 404, including `lucide-lab`, Lucide's
+own staging repo for icons without a merged use-case yet). Researched broadly outside Lucide/Tabler
+too (Phosphor, Iconoir, Remix Icon, Solar) — most "astronomy icon packs" turned out to be
+inconsistent-style marketplace bundles, not real maintained icon libraries, and a couple of
+plausible-looking hits (Phosphor's `meteor`, Remix's `meteor-line`) turned out to be false positives
+on inspection (a JS-framework logo and a ringed-planet glyph, respectively) rather than real comet
+glyphs. `majesticons:comet` — a radiating diagonal burst with a solid nucleus — is a genuine,
+MIT-licensed comet glyph built on the exact same conventions Lucide uses (24×24, stroke-width 2,
+round linecap/linejoin), so it drops in as one small vendored component
+(`web/src/lib/components/icons/`, same pattern as `ShootingStar.svelte`, already shipped for the
+`stars` tool icon) rather than a new npm dependency. See `mockups/comet-icon-options.html` for the
+full comparison against Tabler's and Hugeicons' comet glyphs, and against Majesticons' catalog for
+Pulsar/Daily/Constellation (none beat the existing Lucide icons there — kept as-is).
 
 ## What it is
 
@@ -48,7 +79,7 @@ instead of creating a countable row — there's no occurrence counter anywhere i
 it's only ever written from one place, `gateway/search.go:64` — Atlas's own search box. It never
 sees a single `web_search` tool call the assistant makes during ordinary chat, which is the actual
 "assistant-based search engine" signal this feature is supposed to reflect (confirmed live in the
-brainstorm — Tides is a Polaris/assistant feature, explicitly not an Atlas one).
+brainstorm — Comet is a Polaris/assistant feature, explicitly not an Atlas one).
 
 The real source: every `web_search` call the agent makes gets logged to `events` regardless of
 which thread it happened in — `gateway/turn.go:1019`, `source = "tool."+evt.Tool` (i.e.
@@ -100,26 +131,26 @@ just for a different table. Real thread volume from the same live check: **Aug 2
 366 user messages, 571 `tool.web_search` events; Sept 2026 (partial) — 79 threads, 226 user
 messages, 497 events.** That's the actual scale a classification job needs to handle.
 
-**Decision: a new monthly classification job, upstream of Tides generation, not a Tides-time read.**
+**Decision: a new monthly classification job, upstream of Comet generation, not a Comet-time read.**
 This doesn't violate the "no raw transcript re-reads" cost guardrail above — that guardrail is
 about the *retrospective render step* specifically. This job is a separate, once-a-month pass that
-reads each thread exactly once and writes a small structured row; Tides generation itself still
+reads each thread exactly once and writes a small structured row; Comet generation itself still
 only ever aggregates over stored output, same as it does for `Stats`. Scope, picked after weighing
 per-thread-incremental (needs a new thread-idle trigger, doesn't exist), batch-of-queries-only
 (no mood/topic-per-conversation at all), and sampled/capped (accepts incompleteness): **per-thread,
 once, run as a month-end batch** — simplest trigger shape, full coverage, no new "thread just went
 idle" detection to build.
 
-- **New table (tentative), `thread_classifications`**: one row per thread — `thread_id`, `topic`
-  (reusing the *same* category taxonomy `stars.category` already uses, so this doesn't invent a
-  second palette/taxonomy for Tides to reconcile against Constellation's), a mood/tone tag,
-  `classified_at`. Forced through a tool-call schema for structured output, not prose — same shape
-  `tools/finalize_daily_items.go`/`finalize_pulsar_prompt.go` already use elsewhere in this
-  codebase.
+- **New table (tentative), `trails`**: one row per thread per period — `thread_id`, `period`,
+  `topic` (reusing the *same* category taxonomy `stars.category` already uses, so this doesn't
+  invent a second palette/taxonomy for Comet to reconcile against Constellation's), `mood`,
+  `intent`, `resolved`, `classified_at`. Forced through a tool-call schema for structured output,
+  not prose — same shape `tools/finalize_daily_items.go`/`finalize_pulsar_prompt.go` already use
+  elsewhere in this codebase.
 - **Trigger**: reuse `isDailyDue`'s exact shape (`gateway/pulsar_daily.go:616`) — a month-boundary
   check on the existing once-a-minute scheduler tick (`gateway/pulsar_scheduler.go`), not a new
-  scheduling primitive. At month-end: find threads in the period with no classification row yet,
-  classify each, write the row, then Tides generation reads this table instead of any transcript.
+  scheduling primitive. At month-end: find threads in the period with no Trail yet, run an Approach
+  over each, write the row, then Comet generation reads this table instead of any transcript.
 - **Classifier input, bounded per call regardless of thread length**: strip tool calls and internal
   reasoning entirely — just the conversational back-and-forth. User messages in full (per the
   operator's own estimate, user messages run roughly 10x shorter than assistant replies in
@@ -140,7 +171,7 @@ idle" detection to build.
   already has exactly this shape — an `-n` flag that hits `/api/constellation/backfill?limit=N`
   and processes only the N most-recently-active eligible threads, specifically so a backlog run
   can be eyeballed on a handful of threads before running the full thing. A matching
-  `polaris tides classify -n N` against a new `/api/tides/classify?limit=N` gets the same
+  `polaris comet classify -n N` against a new `/api/comet/classify?limit=N` gets the same
   try-before-you-commit workflow for free, no new CLI pattern needed.
 
 **Status: mechanics settled, nothing implemented.** Explicitly flagged by the operator as needing
@@ -148,37 +179,30 @@ real testing against real threads (quality of topic/mood output, actual per-call
 chars of assistant reply is enough signal) before any schema is finalized or real implementation
 starts — implementation is "not for another day or few" as of 2026-09-19. The `-n`-limited classify
 path above is the first concrete thing to build, specifically so that testing can happen before the
-`thread_classifications` schema is locked in.
+`trails` schema is locked in.
 
-## Naming, cross-month behavior, and remaining mechanics — settled 2026-09-19
+## Cross-month behavior and remaining mechanics — settled 2026-09-19
 
-**Naming, mirroring Constellation's run/artifact split.** Weaver's "shooting star" is the *run*
-that produces a *star* (the stored artifact). Tides gets the same two-name split: **"crashing
-wave"** is the per-thread classification run, **"wave"** is the resulting stored record (one
-thread's topic/mood/intent for one period). **"The tide"** is the existing monthly Tides
-generation pass itself — it comes in and assembles from that period's accumulated waves, same
-nautical image as the feature name, not a separate coinage.
-
-**Schema correction: a wave is keyed by `(thread_id, period)`, not `thread_id` alone.** Walking
-through a concrete case surfaced this: a thread about fishing boats gets a wave in September (at
+**Schema correction: a Trail is keyed by `(thread_id, period)`, not `thread_id` alone.** Walking
+through a concrete case surfaced this: a thread about fishing boats gets a Trail in September (at
 turn 10). The same thread stays open and picks back up in October (now at turn 30, "I bought one").
-That's a *second* wave for the same thread, not an update to the first — each period a thread has
-new activity in gets its own wave. **Eligible for a wave this period = thread has message activity
-within the period AND has no wave yet for `(thread_id, this period)`.** A thread quiet for months
-then revived only gets a new wave for the period it was actually active in, not a retroactive
+That's a *second* Trail for the same thread, not an update to the first — each period a thread has
+new activity in gets its own Trail. **Eligible for a Trail this period = thread has message activity
+within the period AND has no Trail yet for `(thread_id, this period)`.** A thread quiet for months
+then revived only gets a new Trail for the period it was actually active in, not a retroactive
 rewrite of the old one.
 
-**The classifier gets a `search_waves` tool.** Same shape as `tools/search_stars.go`'s existing
-`stars_fts`-backed lookup, but over prior waves instead of stars. Two jobs: (1) when a thread gets
-a second wave in a later period, the crashing-wave run for it surfaces the thread's own prior
-wave(s) as context, so the new wave can note "picked back up from last period's result: X, Y, Z"
+**The classifier gets a `search_trails` tool.** Same shape as `tools/search_stars.go`'s existing
+`stars_fts`-backed lookup, but over prior Trails instead of stars. Two jobs: (1) when a thread gets
+a second Trail in a later period, the Approach run for it surfaces the thread's own prior
+Trail(s) as context, so the new Trail can note "picked back up from last period's result: X, Y, Z"
 instead of re-deriving the whole thread's history cold; (2) keeps topic/mood phrasing consistent
 run over run generally, the same reason `search_stars` existing for Weaver's internal use matters —
-without it, wave-writing style would drift thread to thread with no shared reference point.
-Toolbelt is now `{view_image, search_waves, record_classification}` — still forced to end via
+without it, Trail-writing style would drift thread to thread with no shared reference point.
+Toolbelt is now `{view_image, search_trails, record_classification}` — still forced to end via
 `record_classification`, the other two are optional exploration steps first.
 
-**Fields recorded per wave: four, not two.** `topic` (reusing `stars.category`'s taxonomy as the
+**Fields recorded per Trail: four, not two.** `topic` (reusing `stars.category`'s taxonomy as the
 rough starting vocabulary, with a freeform escape hatch when a thread genuinely doesn't fit any
 existing category — not a hard closed enum), `mood`, **`intent`** ("what were you trying to do," one
 line), and **`resolved`** ("did you get your answer" — yes/no/partial). `mood` has no ready-made
@@ -191,111 +215,85 @@ schema.
 eligible. Excluded: `source = 'pulsar'` (routine pulses); Pulsar Daily editions (already confirmed
 in `store/stats.go`'s own comment to never be a `threads` row at all —
 `pulsar_daily_editions.cost_usd` is a wholly separate table/cost path, so no filter is even needed
-there); Weaver/shooting-star runs (`gateway/constellation_weaver.go`'s `RunShootingStar` calls
-`agent.Run` directly as an internal task, not through the normal thread-creation path); star-edit
-runs (assumed to be a direct DB mutation from the Constellation UI, not a chat thread — worth
-confirming when this is actually built); and ghost-mode turns, confirmed via `gateway/turn.go`'s
-`Anonymous` handling and `ghost_usage`'s own schema comment ("a ghost turn has no event log to fall
-back on... the very thing ghost mode exists to avoid") to never persist as an ordinary thread
-either. **Ghost mode gets exactly one number surfaced in Tides: a plain count of that period's
-`ghost_usage` rows** — how many times ghost mode was used, nothing about content — mirroring how
-`GetStats` already folds ghost spend into Polaris's totals via that same genuinely-anonymous table,
-not new tracking machinery.
+there); Weaver/shooting-star runs (`source = 'weaver'`, shipped via issue #90 — real thread rows
+now, so this needs an explicit filter, not "they don't exist as threads"); star-edit runs (confirmed
+to be one-off DB mutations from the Constellation UI, no `threads` row at all — no filter needed);
+and ghost-mode turns, confirmed via `gateway/turn.go`'s `Anonymous` handling and `ghost_usage`'s own
+schema comment ("a ghost turn has no event log to fall back on... the very thing ghost mode exists
+to avoid") to never persist as an ordinary thread either. **Ghost mode gets exactly one number
+surfaced in Comet: a plain count of that period's `ghost_usage` rows** — how many times ghost mode
+was used, nothing about content — mirroring how `GetStats` already folds ghost spend into Polaris's
+totals via that same genuinely-anonymous table, not new tracking machinery.
 
-**The tide has a hard dependency on that period's waves being complete — no partial-month
-tolerance in production.** The whole premise (aggregating real signal instead of re-reading
-transcripts) needs the full period's waves present before the tide can generate anything
-worthwhile. Failed per-thread classification retries reuse Constellation's existing pattern exactly
-(`constellation_scheduler.go`'s stale-run sweep / `needs_retry` marking) — failed threads get
-swept and retried before the tide crashes, not silently skipped for the month.
+**Comet has a hard dependency on that period's Trails being complete — no partial-month tolerance
+in production.** The whole premise (aggregating real signal instead of re-reading transcripts) needs
+the full period's Trails present before Comet can generate anything worthwhile. Failed per-thread
+Approach retries reuse Constellation's existing pattern exactly (`constellation_scheduler.go`'s
+stale-run sweep / `needs_retry` marking) — failed threads get swept and retried before Comet
+assembles that month's edition, not silently skipped.
 
-**Still open: dedicated testing infrastructure.** The `-n`-limited `polaris tides classify` path
-(above) covers trying the classifier against a handful of *real* threads before trusting it at
-scale. But the operator separately flagged needing a throwaway/synthetic environment — something
-closer to the `polaris benchmark` command's isolated-DB-plus-pinned-search approach — to let a full
-tide run "cook" against seeded test questions without waiting on a real month's worth of real data,
-or touching production `polaris.db`. This has no design yet; it's the next thing to scope before
-implementation starts.
-
-## Yearly cadence — settled 2026-09-19
-
-**A year-end tide aggregates over that year's twelve already-computed monthly tides, not a fresh
-classification pass.** The classification work (crashing waves) has already happened twelve times
-over by the time a year boundary is reached — re-running anything more expensive than reading back
-that year's monthly tide output + underlying waves would waste data that's already sitting there.
-No longer deferred-and-undesigned the way it was earlier in this doc; it's cheap by construction
-once monthly is real, same "aggregate stored output, never re-derive" discipline as everything else
-here.
-
-## Testing infrastructure and hidden-thread visibility — settled 2026-09-19
-
-**Shooting star (Weaver) persistence is a separate prerequisite, not part of Tides' own scope.**
-Filed as its own issue — [#90](https://github.com/AutumnsGrove/Polaris/issues/90) — since
-`RunShootingStar` currently creates no `threads` row and persists no transcript at all (`agent.Run`
-never persists messages itself; that's the caller's job, and Weaver's caller never does it). This
-was originally going to be a Tides-driven nice-to-have ("I want to open the hood on Weaver"), but
-it turns out to be a real prerequisite: Tides' classification eligibility filter currently excludes
-shooting-star runs *because they don't exist as threads*, and that assumption breaks the moment
-they do. Handle #90 first, right after this planning session, ahead of any Tides implementation.
-
-**Crashing-wave runs get the same "real thread, hidden from sidebar" treatment**, once #90's
-pattern exists to copy: `threads.source = 'tide_wave'`, added to `ListThreads`/`ListThreadsPage`'s
-exclusion list (`store/store.go:1441` already excludes `source = 'pulsar'` the same way) — free
-visibility at `/t/<uuid>` via the existing filter-less `GetThreadRaw`, no frontend work.
-
-**Classification runs concurrently, in small batches (~5 at a time), unlike Weaver.** Weaver
+**Approaches run concurrently, in small batches (~5 at a time), unlike Weaver.** Weaver
 processes threads one at a time deliberately — a later shooting star run may need to see what an
 earlier one already wrote to a star, since stars evolve as new developments occur across runs.
-Crashing waves have no such cross-thread dependency: one thread produces exactly one wave,
-independent of every other thread's wave that period, so there's no correctness reason to serialize
-them. Batches of ~5 balance real parallelism against not hammering the LLM provider with the full
-month's thread count at once.
+Approaches have no such cross-thread dependency: one thread produces exactly one Trail,
+independent of every other thread's Trail that period, so there's no correctness reason to
+serialize them. Batches of ~5 balance real parallelism against not hammering the LLM provider with
+the full month's thread count at once.
 
 **This concurrency choice has a direct testing-infra consequence.** `dev/fakeopenrouter`'s plain
 FIFO queueing only works for genuinely sequential request order — Pulsar Daily's Stage A already
 needed the `match`-substring targeting (pin a queued response to whichever request body actually
 contains that text, ahead of FIFO and independent of queue position — see the package doc comment
 in `dev/fakeopenrouter/main.go`) specifically because its own concurrent block-firing breaks FIFO
-assumptions the same way. Since crashing-wave batches are concurrent by design, **testing them
-through `fakeopenrouter` needs `match`-based targeting from the start**, not as a later add-on —
-each batch member's scripted response should be pinned to something identifying in its request
-(e.g. the thread's own content/topic), not queue position.
+assumptions the same way. Since Approach batches are concurrent by design, **testing them through
+`fakeopenrouter` needs `match`-based targeting from the start**, not as a later add-on — each batch
+member's scripted response should be pinned to something identifying in its request (e.g. the
+thread's own content/topic), not queue position.
 
 ## Throwaway test environment — settled 2026-09-19
-
-**Star-edit runs confirmed: one-off DB mutations from the Constellation UI, no `threads` row, not
-recorded anywhere durable.** No exclusion-filter work needed for these at all.
 
 **The test workflow deliberately stays close to how this codebase already verifies everything
 else — real `/api/ask` calls against a real, throwaway server, not synthetic fixtures.** No new
 seeding mechanism needed: `polaris run --config <path>` already loads any config file
 (`cmd/run.go:61`), and that config's `database.path` field already controls where the DB lives —
 the exact same override `gateway/testutil_test.go`'s `newTestHarness` already uses for its own
-tempdir-isolated tests. So a throwaway Tides environment is just a second `config.yaml` pointing
+tempdir-isolated tests. So a throwaway Comet environment is just a second `config.yaml` pointing
 `database.path` somewhere disposable (never the real `polaris.db`), same spirit as
 `polaris benchmark --db <path>`'s isolation, just via the ordinary config mechanism instead of a
 dedicated flag.
 
-The actual workflow, agreed 2026-09-19:
+The actual workflow, agreed 2026-09-19 (and already exercised once, live, for issue #90's
+verification):
 
 1. Stand up `polaris run` against that throwaway config.
 2. Claude has a real, varied set of conversations against its `/api/ask` endpoint — genuinely
    realistic thread content (covering different topics/moods, at least one thread with an image to
    exercise `view_image`, at least one pair of threads spanning a fake month boundary to exercise
-   cross-month wave continuation), not hand-authored fixture rows bypassing the real chat path.
+   cross-month Trail continuation), not hand-authored fixture rows bypassing the real chat path.
    This is the same "verify against the real thing, not a mock" discipline this codebase already
    applies everywhere else (spiking APIs with `curl`, testing tools via `/api/ask`, live-verifying
    installers on real hardware) — applied here to seeding instead of to a finished feature.
 3. Run `polaris constellation backfill` against that same throwaway DB to populate `stars` from
    those seeded threads, so the environment has real Constellation data too, not just raw threads.
-4. Run the Tides classify pass (crashing waves) against that DB, then tide generation itself, and
-   inspect the results — including opening a crashing-wave thread directly at its own `/t/<uuid>`
-   to confirm the hidden-thread visibility actually works, something no Go unit test can show.
+4. Run the Comet classify pass (Approaches) against that DB, then Comet generation itself, and
+   inspect the results — including opening an Approach's own hidden thread directly at its own
+   `/t/<uuid>` to confirm the hidden-thread visibility actually works, something no Go unit test
+   can show. (Weaver's own equivalent — a shooting star's hidden thread at `/t/<uuid>` — is exactly
+   what issue #90 shipped and live-verified this same way, real bugs found and fixed included.)
 
 Go-level unit tests (mirroring `pulsar_daily_pipeline_test.go`'s `newTestHarness` +
 `sequencedSSEServer` scripted-response pattern) remain available as a faster, CI-friendly
 complement once the mechanics are locked in enough to write assertions against — but the live
 seeded-throwaway-server workflow above is the primary, agreed testing plan, not a fallback.
+
+## Yearly cadence — settled 2026-09-19
+
+**A year-end edition aggregates over that year's twelve already-computed monthly editions, not a
+fresh classification pass.** The classification work (Approaches) has already happened twelve times
+over by the time a year boundary is reached — re-running anything more expensive than reading back
+that year's monthly output + underlying Trails would waste data that's already sitting there.
+Cheap by construction once monthly is real, same "aggregate stored output, never re-derive"
+discipline as everything else here.
 
 ## `mood` vocabulary — settled 2026-09-19
 
@@ -309,28 +307,33 @@ starting list but can grow, and the prompt always shows the model what's already
 it reuses rather than duplicates.
 
 `mood` gets the identical treatment: **a hardcoded starting list of roughly 50 values**, baked into
-the crashing-wave classifier's own prompt the same way, with the same "extend rather than
-fragment, check what's in use first" escape hatch and the same live currently-in-use interpolation.
-Left at that until real wave output over real months actually shows a gap — no attempt to
-enumerate the 50 now; that's prompt-writing work for implementation, not a planning decision.
+the Approach classifier's own prompt the same way, with the same "extend rather than fragment,
+check what's in use first" escape hatch and the same live currently-in-use interpolation. Left at
+that until real Trail output over real months actually shows a gap — no attempt to enumerate the 50
+now; that's prompt-writing work for implementation, not a planning decision.
 
 ## Open questions before this is buildable
 
-Every open question from this planning session — generation cadence/scheduling, cost-control-per-
-run, yearly cadence, the test environment, star-edit runs' thread status, and `mood`'s vocabulary —
-is now settled. Nothing outstanding remains before a schema pass and implementation can start,
-beyond the still-open, separately-tracked prerequisite in
-[issue #90](https://github.com/AutumnsGrove/Polaris/issues/90).
+Every open question from the original planning session — generation cadence/scheduling,
+cost-control-per-run, yearly cadence, the test environment, star-edit runs' thread status, and
+`mood`'s vocabulary — is settled. What's left, surfaced by the naming pass:
+
+- **`trails` table naming/schema is still tentative** — chosen for consistency with the new
+  Comet/Approach/Trail naming, not yet validated against a real schema pass.
+- **`threads.source` value for an Approach's hidden thread** — likely `'comet_approach'` or
+  `'comet'`, not yet picked; needs the same `ListThreads`/`ListThreadsPage` exclusion treatment
+  `'weaver'` already got in issue #90.
 
 ## Next step
 
-Planning is done — mockup reaction, classification mechanics, naming, eligibility, concurrency, and
-the test environment are all settled. Before any Tides implementation starts:
+Planning is done — mockup reaction, classification mechanics, naming (including the icon), eligibility,
+concurrency, and the test environment are all settled. Before any Comet implementation starts:
 
 1. [Issue #90](https://github.com/AutumnsGrove/Polaris/issues/90) (Weaver/shooting-star transcript
-   persistence) ships first — Tides' classification eligibility filter depends on it existing.
-2. Then: stand up the throwaway test environment (see above), seed it via real `/api/ask`
-   conversations plus a `constellation backfill` run, and build the classify pass against it before
-   any `thread_classifications` schema is locked in.
+   persistence) — **shipped** 2026-09-19, live-verified, two real bugs found and fixed along the
+   way. Comet's classification eligibility filter depends on this pattern, now proven.
+2. Stand up the throwaway test environment (see above), seed it via real `/api/ask` conversations
+   plus a `constellation backfill` run, and build the classify pass against it before any `trails`
+   schema is locked in.
 
 Full implementation is intentionally not starting yet.
