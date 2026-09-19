@@ -251,6 +251,12 @@ app is built/deployed, that's `DEVELOPMENT.md`. Don't let any of the three creep
 
 ## Conventions worth knowing before editing Go here
 
+See `docs/STANDARDS.md` for the full coding standards doc (error handling, comment style, the
+three-strikes reuse rule, Svelte/state-management conventions, testing conventions) — it's the
+long-form version of the bullets below, written from this codebase's own established patterns
+rather than a generic style guide. Check it before a review pass or when something in a diff feels
+inconsistent with the rest of the file.
+
 - `uv`/Python-specific instructions some global CLAUDE.md files carry do **not** apply — this is a
   Go + SvelteKit project. Use `go build`, `go test ./...`, `go vet ./...` directly.
 - `web/build/` is not committed — Docker's image build always runs `pnpm run build` fresh from

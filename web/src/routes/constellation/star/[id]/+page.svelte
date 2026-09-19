@@ -159,9 +159,9 @@
 
 <div class="content">
 	{#if loading}
-		<p class="empty">Loading…</p>
+		<p class="constellation-empty">Loading…</p>
 	{:else if !detail}
-		<p class="empty">Couldn't find that star.</p>
+		<p class="constellation-empty">Couldn't find that star.</p>
 	{:else}
 		<div class="tile-row">
 			<div class="tile" style="--star-color: {starColor}">
@@ -301,14 +301,6 @@
 		overflow-y: auto;
 		padding: var(--space-xs) var(--space-lg) 140px;
 	}
-	.empty {
-		max-width: 46ch;
-		margin: var(--space-2xl) auto;
-		text-align: center;
-		font-size: 13.5px;
-		color: var(--color-text-dim);
-	}
-
 	.tile-row {
 		display: flex;
 		align-items: center;
