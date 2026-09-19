@@ -37,9 +37,9 @@
 		Highlighter,
 		Paperclip,
 		History,
-		Download,
-		CircleStar
+		Download
 	} from '@lucide/svelte';
+	import ShootingStar from './icons/ShootingStar.svelte';
 
 	let { item }: { item: TimelineItem } = $props();
 
@@ -303,7 +303,7 @@
 			{:else if item.tool === 'search_chats'}
 				<History size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'stars'}
-				<CircleStar size={13} color="var(--color-accent-2)" />
+				<ShootingStar size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}

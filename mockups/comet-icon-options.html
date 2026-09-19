@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Comet — sidebar icon options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Asimovian&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+    --font-wordmark: 'Asimovian', serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --radius-md: 10px;
+    --space-sm: 8px;
+    --space-md: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    padding: 48px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    align-items: flex-start;
+  }
+  .panel {
+    width: 260px;
+    background: var(--color-surface);
+    border-radius: 14px;
+    padding: 16px 0;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  }
+  .panel-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-dim);
+    padding: 0 var(--space-md) 10px;
+    border-bottom: 1px solid var(--color-surface-3);
+    margin-bottom: 8px;
+  }
+  .wordmark {
+    font-family: var(--font-wordmark);
+    font-size: 18px;
+    padding: 4px var(--space-md) 14px;
+    color: var(--color-text);
+  }
+  .nav-entry {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin: 0 var(--space-md) 4px;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    color: var(--color-text-dim);
+  }
+  .nav-entry svg { flex-shrink: 0; color: var(--color-accent); }
+  .nav-entry span {
+    font-family: var(--font-wordmark);
+    font-size: 1.05em;
+    letter-spacing: 0.02em;
+  }
+  .nav-entry.new {
+    background: var(--color-accent-soft);
+    color: var(--color-text);
+    font-weight: 600;
+    outline: 1px dashed var(--color-accent);
+    outline-offset: -1px;
+  }
+  .nav-entry.new span { font-weight: 600; }
+  .caption {
+    width: 260px;
+    font-size: 12px;
+    color: var(--color-text-dim);
+    line-height: 1.5;
+    margin-top: 10px;
+    padding: 0 4px;
+  }
+  .caption b { color: var(--color-text); }
+  .source-tag {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    background: var(--color-surface-2);
+    color: var(--color-text-dim);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Existing nav — real source, verified</div>
+    <div class="nav-entry">
+      <!-- Orbit — Pulsar (real lucide orbit.svg) -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85" /><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152" /><circle cx="12" cy="12" r="3" /><circle cx="19" cy="5" r="2" /><circle cx="5" cy="19" r="2" /></svg>
+      <span>Pulsar</span>
+    </div>
+    <div class="nav-entry">
+      <!-- Sunrise — The Daily (real lucide sunrise.svg) -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8" /><path d="m4.93 10.93 1.41 1.41" /><path d="M2 18h2" /><path d="M20 18h2" /><path d="m19.07 10.93-1.41 1.41" /><path d="M22 22H2" /><path d="m8 6 4-4 4 4" /><path d="M16 18a4 4 0 0 0-8 0" /></svg>
+      <span>The Daily</span>
+    </div>
+    <div class="nav-entry">
+      <!-- Galaxy — Constellation (real lucide galaxy.svg) -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.005 15.108a5.041 6.52 28.25 0 0-8.008-6.217 5.041 6.52 28.25 0 0 8.008 6.217A11.884 7.288 -60.76 0 1 4.029 7.001" /><path d="M17 21h.01" /><path d="M7 3h.01" /><path d="M7.997 8.891a11.885 7.288 -60.756 0 1 11.977 8.107" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>
+      <span>Constellation</span>
+    </div>
+  </div>
+  <div class="caption">Real existing sidebar icons, pulled directly from Lucide's own source this time (my first pass hand-approximated these and got it wrong — sorry). Confirms <b>Orbit is already claimed by Pulsar</b> — ruled out for this feature.</div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Option A — Majesticons "comet"</div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m9.879 5.636l.707-.707a6 6 0 0 1 8.485 8.485l-2.121 2.122M7.757 7.757L5.636 9.88M3.515 12l-.707.707m12.02 4.95l-1.414 1.414m-.707-4.95l-.707.707M9.879 16.95l-2.122 2.12m2.122-7.778l-6.364 6.364"/><circle cx="14.828" cy="9.172" r="2" fill="currentColor" transform="rotate(45 14.828 9.172)"/></g></svg><span>Comet</span></div>
+    <div class="nav-entry">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.005 15.108a5.041 6.52 28.25 0 0-8.008-6.217 5.041 6.52 28.25 0 0 8.008 6.217A11.884 7.288 -60.76 0 1 4.029 7.001" /><path d="M17 21h.01" /><path d="M7 3h.01" /><path d="M7.997 8.891a11.885 7.288 -60.756 0 1 11.977 8.107" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>
+      <span>Constellation</span>
+    </div>
+  </div>
+  <div class="caption">A radiating diagonal burst with a small solid nucleus — genuinely reads as a comet, not just "sparkle." <b>Stroke-width 2, round caps, 24×24</b> — matches Lucide's exact conventions almost exactly, closest visual fit of everything found. From <a href="https://majesticons.com" target="_blank">Majesticons</a> (MIT), a small curated line-icon set, not Lucide or Tabler.<div class="source-tag">majesticons:comet, vendored</div></div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Option B — Tabler "comet"</div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 18.5l-3 1.5l.5 -3.5l-2 -2l3 -.5l1.5 -3l1.5 3l3 .5l-2 2l.5 3.5l-3 -1.5" /><path d="M4 4l7 7" /><path d="M9 4l3.5 3.5" /><path d="M4 9l3.5 3.5" /></svg><span>Comet</span></div>
+  </div>
+  <div class="caption">A four-pointed sparkle-burst trailing behind a diagonal streak — more literal "comet with a tail" than Option A, but reads slightly closer to a generic sparkle/twinkle up close. Also stroke-2/round-cap/24×24. From <a href="https://tabler.io/icons" target="_blank">Tabler Icons</a> (MIT).<div class="source-tag">tabler:comet, vendored</div></div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Option C — Hugeicons "comet-01"</div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M4.05 10.05a7 7 0 0 0 9.9 9.9L17.899 16M12.1 2L6.5 7.6M22 11.9l-2 2"/><path d="M11.121 12.879A3 3 0 1 1 6.88 17.12a3 3 0 0 1 4.242-4.242Zm-4.242.001l7.12-7.122M17.758 2L16 3.758m6 2.485l-6.636 6.637"/></g></svg><span>Comet</span></div>
+  </div>
+  <div class="caption">An orbital arc being crossed by a diagonal trajectory — more abstract "trajectory/path" than a literal comet-with-tail, but conceptually closest to what the feature actually does (a periodic pass through data). Stroke-width 1.5, slightly thinner than the others (easy to bump to 2 for consistency). From <a href="https://hugeicons.com" target="_blank">Hugeicons</a>.<div class="source-tag">hugeicons:comet-01, vendored</div></div>
+</div>
+
+<div style="width:100%; height:1px; background:var(--color-surface-3); margin: 8px 0;"></div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Majesticons vs. current — Pulsar</div>
+    <div class="nav-entry">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85" /><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152" /><circle cx="12" cy="12" r="3" /><circle cx="19" cy="5" r="2" /><circle cx="5" cy="19" r="2" /></svg>
+      <span>Pulsar (current — Lucide Orbit)</span>
+    </div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3.223a9.003 9.003 0 0 0-5.605 13.592L3 21l4.185-1.395A9.003 9.003 0 0 0 20.777 14m0-4A9.01 9.01 0 0 0 14 3.223M17 12a5 5 0 0 0-5-5m1 5a1 1 0 0 0-1-1"/></svg><span>Pulsar (alt — chat-signal)</span></div>
+  </div>
+  <div class="caption">No literal "pulsar" or "orbit" icon in Majesticons' catalog. Closest concept found is <code>chat-signal</code> — a speech bubble emitting concentric pulses, which conceptually fits "recurring signal" but its chat-bubble base shape reads more like messaging/notifications than astronomy. <b>Current Orbit icon is already a strong, literal fit</b> — nothing here clearly beats it.<div class="source-tag">majesticons:chat-signal — weak alternative, not a clear win</div></div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Majesticons vs. current — The Daily</div>
+    <div class="nav-entry">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8" /><path d="m4.93 10.93 1.41 1.41" /><path d="M2 18h2" /><path d="M20 18h2" /><path d="m19.07 10.93-1.41 1.41" /><path d="M22 22H2" /><path d="m8 6 4-4 4 4" /><path d="M16 18a4 4 0 0 0-8 0" /></svg>
+      <span>The Daily (current — Lucide Sunrise)</span>
+    </div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.353 3C5.849 4.408 3 7.463 3 11.47A9.53 9.53 0 0 0 12.53 21c4.007 0 7.062-2.849 8.47-6.353C8.17 17.065 8.14 8.14 9.353 3"/></svg><span>The Daily (alt — moon)</span></div>
+  </div>
+  <div class="caption">No <code>sunrise</code>, <code>newspaper</code>, or <code>morning</code> concept in Majesticons at all. Only tangential option is a plain crescent <code>moon</code> — a lateral swap at best (evening instead of morning), not an improvement. <b>Nothing here beats the current Sunrise icon.</b></div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Majesticons vs. current — Constellation</div>
+    <div class="nav-entry">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.005 15.108a5.041 6.52 28.25 0 0-8.008-6.217 5.041 6.52 28.25 0 0 8.008 6.217A11.884 7.288 -60.76 0 1 4.029 7.001" /><path d="M17 21h.01" /><path d="M7 3h.01" /><path d="M7.997 8.891a11.885 7.288 -60.756 0 1 11.977 8.107" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>
+      <span>Constellation (current — Lucide Galaxy)</span>
+    </div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M18 7.96c2.59-.125 4.379.274 4.625 1.193c.429 1.6-3.98 4.172-9.849 5.745c-5.868 1.572-10.972 1.55-11.401-.051c-.254-.948 1.188-2.236 3.625-3.455"/></g></svg><span>Constellation (alt — planet-ring-2)</span></div>
+  </div>
+  <div class="caption">No <code>star</code>-cluster, <code>network</code>, <code>nodes</code>, or literal <code>constellation</code> concept exists in Majesticons. The only vaguely-related option is a Saturn-like <code>planet-ring-2</code>, which reads as "a planet," not "connected stars" — actively worse than Galaxy for this specific feature. <b>Keep Galaxy.</b></div>
+</div>
+
+<div>
+  <div class="panel">
+    <div class="wordmark">Polaris</div>
+    <div class="panel-label">Bonus find (not for these three)</div>
+    <div class="nav-entry"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 8c-1.667.667-5.4 2.7-7 5.5m9.5-2.5C9.167 12.333 4 16.4 2 22m10.5-7.5c-1.167 1.167-3.8 4.1-5 6.5m7.174-14.55l.673-3.285l2.225 2.51l3.027-.294l-1.768 3.062l1.743 2.639l-3.286-.673l-2.51 2.225l.19-3.156l-3.062-1.768z"/></svg><span>Weaver?</span></div>
+  </div>
+  <div class="caption">Majesticons also has a genuine <code>shooting-star</code> glyph — streaking lines converging into a sparkle-burst. Not relevant to Pulsar/Daily/Constellation, but Weaver has no icon of its own today (it's an internal process, not a nav entry) — worth remembering if that ever changes, since "shooting star" is already Weaver's own internal name for a run.<div class="source-tag">majesticons:shooting-star — parked, not needed right now</div></div>
+</div>
+
+</body>
+</html>
