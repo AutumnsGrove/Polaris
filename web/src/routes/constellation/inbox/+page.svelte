@@ -28,11 +28,11 @@
 
 <div class="content">
 	{#if !constellationState.inboxLoaded}
-		<p class="empty">Loading…</p>
+		<p class="constellation-empty">Loading…</p>
 	{:else if constellationState.inboxError && constellationState.inboxStars.length === 0}
-		<p class="empty">Couldn't load the inbox — check your connection and try again.</p>
+		<p class="constellation-empty">Couldn't load the inbox — check your connection and try again.</p>
 	{:else if constellationState.inboxStars.length === 0}
-		<p class="empty">Nothing waiting on review right now.</p>
+		<p class="constellation-empty">Nothing waiting on review right now.</p>
 	{:else}
 		<div class="card-list">
 			{#each constellationState.inboxStars as star (star.id)}
@@ -72,13 +72,6 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 0 var(--space-lg) var(--space-xl);
-	}
-	.empty {
-		max-width: 46ch;
-		margin: var(--space-2xl) auto;
-		text-align: center;
-		font-size: 13.5px;
-		color: var(--color-text-dim);
 	}
 	.card-list {
 		display: flex;

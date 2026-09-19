@@ -40,7 +40,7 @@
 
 <div class="content">
 	{#if constellationState.weekItems.length === 0}
-		<p class="empty">Nothing yet this week.</p>
+		<p class="constellation-empty">Nothing yet this week.</p>
 	{:else}
 		<div class="week-list">
 			{#each constellationState.weekItems as item, i (item.kind + '-' + item.star_id + '-' + item.timestamp + '-' + i)}
@@ -87,13 +87,6 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 0 var(--space-lg) var(--space-xl);
-	}
-	.empty {
-		max-width: 46ch;
-		margin: var(--space-2xl) auto;
-		text-align: center;
-		font-size: 13.5px;
-		color: var(--color-text-dim);
 	}
 	.week-list {
 		display: flex;

@@ -252,7 +252,7 @@
 <div class="content" class:map-content={view === 'map'}>
 	{#if searchOpen && searchQuery.trim()}
 		{#if searchLoading}
-			<p class="empty">Searching…</p>
+			<p class="constellation-empty">Searching…</p>
 		{:else if searchResults && searchResults.length > 0}
 			<p class="meta-line">
 				{searchResults.length} result{searchResults.length === 1 ? '' : 's'}
@@ -263,15 +263,15 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="empty">No stars match "{searchQuery.trim()}".</p>
+			<p class="constellation-empty">No stars match "{searchQuery.trim()}".</p>
 		{/if}
 	{:else if view === 'library'}
 		{#if !constellationState.libraryLoaded}
-			<p class="empty">Loading your library…</p>
+			<p class="constellation-empty">Loading your library…</p>
 		{:else if constellationState.libraryError && constellationState.libraryStars.length === 0 && constellationState.aboutYouStars.length === 0}
-			<p class="empty">Couldn't load your library — check your connection and try again.</p>
+			<p class="constellation-empty">Couldn't load your library — check your connection and try again.</p>
 		{:else if constellationState.libraryStars.length === 0 && constellationState.aboutYouStars.length === 0}
-			<p class="empty">
+			<p class="constellation-empty">
 				No stars yet. Constellation builds itself from threads you've already had — check back
 				after it's had a chance to run, or trigger a backfill from Settings.
 			</p>
@@ -338,9 +338,9 @@
 			{/if}
 		{/if}
 	{:else if !constellationState.mapLoaded}
-		<p class="empty">Loading the map…</p>
+		<p class="constellation-empty">Loading the map…</p>
 	{:else if constellationState.mapError}
-		<p class="empty">Couldn't load the map — check your connection and try again.</p>
+		<p class="constellation-empty">Couldn't load the map — check your connection and try again.</p>
 	{:else if mapLayout && mapLayout.nodes.length > 0}
 		<!-- Background tap-to-deselect, same as elsewhere in the app (see
 		     ThreadMenu.svelte) — this is a dismiss surface behind real
@@ -413,7 +413,7 @@
 		</button>
 		<p class="map-hint">Pinch or scroll to zoom · drag to pan · tap a star to see its name</p>
 	{:else}
-		<p class="empty">Nothing to map yet.</p>
+		<p class="constellation-empty">Nothing to map yet.</p>
 	{/if}
 </div>
 
@@ -530,14 +530,6 @@
 		position: relative;
 	}
 
-	.empty {
-		max-width: 46ch;
-		margin: var(--space-2xl) auto;
-		text-align: center;
-		font-size: 13.5px;
-		line-height: 1.6;
-		color: var(--color-text-dim);
-	}
 	.meta-line {
 		padding: var(--space-sm) var(--space-xs) var(--space-md);
 		font-size: 12px;

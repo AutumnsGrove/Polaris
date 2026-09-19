@@ -622,6 +622,23 @@ a {
 	letter-spacing: -0.005em;
 }
 
+/* constellation-empty — the shared "nothing here yet / couldn't load"
+   message style across Constellation's own screens (Library, Star detail,
+   Inbox, Review, This week) — previously five near-identical copies of the
+   same `.empty { ... }` rule pasted into each route's own scoped styles,
+   the exact kind of repeated component CSS the usage-* block below already
+   set the precedent for hoisting into app.css instead of keeping in sync
+   by hand. Namespaced (not plain .empty) for the same collision reason the
+   usage-* comment gives below. */
+.constellation-empty {
+	max-width: 46ch;
+	margin: var(--space-2xl) auto;
+	text-align: center;
+	font-size: 13.5px;
+	line-height: 1.6;
+	color: var(--color-text-dim);
+}
+
 /* usage-* — the shared visual language for a "usage stats" section: a big
    headline cost figure, then grouped stat rows in bordered boxes. Extracted
    from ConstellationUsageModal.svelte so the main Settings panel's own

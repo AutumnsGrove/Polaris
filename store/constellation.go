@@ -199,26 +199,75 @@ func (s *Store) CreateStar(star Star) (int64, error) {
 	return id, nil
 }
 
-// GetStar returns one star by id, or ErrStarNotFound.
-func (s *Store) GetStar(id int64) (*Star, error) {
+// starColumns is the column list every plain star scan below selects, in
+// the exact order rowScanner.scanStar expects — kept as one constant so the
+// four call sites below can never drift out of sync with each other on
+// which columns (or what order) they ask for.
+const starColumns = `id, title, category, summary, body, tags, status, confidence, is_personal, disabled, created_at, updated_at`
+
+// starColumnsPrefixed is starColumns qualified with a table alias, for a
+// query that joins stars against another table (SearchLibraryStars,
+// StarsByThread) and needs unambiguous column references.
+func starColumnsPrefixed(alias string) string {
+	cols := strings.Split(starColumns, ", ")
+	for i, c := range cols {
+		cols[i] = alias + "." + c
+	}
+	return strings.Join(cols, ", ")
+}
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows — scanStar uses it
+// so GetStar (one row) and the list/search queries below (many rows) share
+// one scan implementation instead of four hand-rolled copies of the same
+// scan-then-decode-tags block, matching the scanEvents helper
+// store/events.go already established for the same "N callers, one row
+// shape" situation.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanStar scans one row selected via starColumns into a Star, decoding the
+// tags JSON column and the is_personal/disabled ints along the way.
+func scanStar(row rowScanner) (Star, error) {
 	var star Star
 	var tagsJSON string
 	var isPersonal, disabled int
-	err := s.db.QueryRow(
-		`SELECT id, title, category, summary, body, tags, status, confidence, is_personal, disabled, created_at, updated_at
-		 FROM stars WHERE id = ?`, id,
-	).Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt)
+	if err := row.Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt); err != nil {
+		return Star{}, err
+	}
+	if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
+		return Star{}, fmt.Errorf("decode tags: %w", err)
+	}
+	star.IsPersonal = isPersonal != 0
+	star.Disabled = disabled != 0
+	return star, nil
+}
+
+// scanStars runs scanStar over every remaining row of an already-executed
+// query — the caller still owns closing rows (via its own defer) — shared
+// by every list/search query below.
+func scanStars(rows *sql.Rows) ([]Star, error) {
+	var stars []Star
+	for rows.Next() {
+		star, err := scanStar(rows)
+		if err != nil {
+			return nil, err
+		}
+		stars = append(stars, star)
+	}
+	return stars, rows.Err()
+}
+
+// GetStar returns one star by id, or ErrStarNotFound.
+func (s *Store) GetStar(id int64) (*Star, error) {
+	row := s.db.QueryRow(`SELECT `+starColumns+` FROM stars WHERE id = ?`, id)
+	star, err := scanStar(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrStarNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get star: %w", err)
 	}
-	if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
-		return nil, fmt.Errorf("get star: decode tags: %w", err)
-	}
-	star.IsPersonal = isPersonal != 0
-	star.Disabled = disabled != 0
 	return &star, nil
 }
 
@@ -346,7 +395,7 @@ func (s *Store) ListStars(filter StarFilter) ([]Star, error) {
 	if len(filter.Statuses) == 0 {
 		return nil, fmt.Errorf("list stars: at least one status is required")
 	}
-	query := `SELECT id, title, category, summary, body, tags, status, confidence, is_personal, disabled, created_at, updated_at
+	query := `SELECT ` + starColumns + `
 	           FROM stars WHERE disabled = 0 AND status IN (` + placeholders(len(filter.Statuses)) + `)`
 	args := make([]any, 0, len(filter.Statuses)+1)
 	for _, st := range filter.Statuses {
@@ -364,22 +413,11 @@ func (s *Store) ListStars(filter StarFilter) ([]Star, error) {
 	}
 	defer rows.Close()
 
-	var stars []Star
-	for rows.Next() {
-		var star Star
-		var tagsJSON string
-		var isPersonal, disabled int
-		if err := rows.Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("list stars: %w", err)
-		}
-		if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
-			return nil, fmt.Errorf("list stars: decode tags: %w", err)
-		}
-		star.IsPersonal = isPersonal != 0
-		star.Disabled = disabled != 0
-		stars = append(stars, star)
+	stars, err := scanStars(rows)
+	if err != nil {
+		return nil, fmt.Errorf("list stars: %w", err)
 	}
-	return stars, rows.Err()
+	return stars, nil
 }
 
 // DistinctCategories returns every category value currently in use across
@@ -406,14 +444,10 @@ func (s *Store) DistinctCategories() ([]string, error) {
 }
 
 func placeholders(n int) string {
-	out := ""
-	for i := 0; i < n; i++ {
-		if i > 0 {
-			out += ", "
-		}
-		out += "?"
+	if n == 0 {
+		return ""
 	}
-	return out
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // StarSearchResult is one search_stars hit — title/summary only, a lead
@@ -487,7 +521,7 @@ func (s *Store) SearchStars(query string, limit int) ([]StarSearchResult, error)
 // Library uses instead of a second, inconsistent-looking result row.
 func (s *Store) SearchLibraryStars(query string, limit int) ([]Star, error) {
 	rows, err := s.db.Query(
-		`SELECT s.id, s.title, s.category, s.summary, s.body, s.tags, s.status, s.confidence, s.is_personal, s.disabled, s.created_at, s.updated_at
+		`SELECT `+starColumnsPrefixed("s")+`
 		 FROM stars_fts
 		 JOIN stars s ON s.id = stars_fts.rowid
 		 WHERE stars_fts MATCH ? AND s.disabled = 0 AND s.status IN ('auto', 'confirmed')
@@ -499,25 +533,14 @@ func (s *Store) SearchLibraryStars(query string, limit int) ([]Star, error) {
 	}
 	defer rows.Close()
 
-	var results []Star
-	for rows.Next() {
-		var star Star
-		var tagsJSON string
-		var isPersonal, disabled int
-		if err := rows.Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("search library stars: %w", err)
-		}
-		if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
-			return nil, fmt.Errorf("search library stars: decode tags: %w", err)
-		}
-		star.IsPersonal = isPersonal != 0
-		star.Disabled = disabled != 0
-		results = append(results, star)
+	results, err := scanStars(rows)
+	if err != nil {
+		return nil, fmt.Errorf("search library stars: %w", err)
 	}
 	if results == nil {
 		results = []Star{}
 	}
-	return results, rows.Err()
+	return results, nil
 }
 
 // orFTSQuery turns a free-text query into an FTS5 query string that
@@ -598,7 +621,7 @@ func (s *Store) StarSources(starID int64) ([]StarSource, error) {
 // (see the plan doc's "Revisiting a thread").
 func (s *Store) StarsByThread(threadID string) ([]Star, error) {
 	rows, err := s.db.Query(
-		`SELECT s.id, s.title, s.category, s.summary, s.body, s.tags, s.status, s.confidence, s.is_personal, s.disabled, s.created_at, s.updated_at
+		`SELECT `+starColumnsPrefixed("s")+`
 		 FROM stars s
 		 JOIN star_sources src ON src.star_id = s.id
 		 WHERE src.thread_id = ?
@@ -609,22 +632,11 @@ func (s *Store) StarsByThread(threadID string) ([]Star, error) {
 	}
 	defer rows.Close()
 
-	var stars []Star
-	for rows.Next() {
-		var star Star
-		var tagsJSON string
-		var isPersonal, disabled int
-		if err := rows.Scan(&star.ID, &star.Title, &star.Category, &star.Summary, &star.Body, &tagsJSON, &star.Status, &star.Confidence, &isPersonal, &disabled, &star.CreatedAt, &star.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("stars by thread: %w", err)
-		}
-		if err := json.Unmarshal([]byte(tagsJSON), &star.Tags); err != nil {
-			return nil, fmt.Errorf("stars by thread: decode tags: %w", err)
-		}
-		star.IsPersonal = isPersonal != 0
-		star.Disabled = disabled != 0
-		stars = append(stars, star)
+	stars, err := scanStars(rows)
+	if err != nil {
+		return nil, fmt.Errorf("stars by thread: %w", err)
 	}
-	return stars, rows.Err()
+	return stars, nil
 }
 
 // StarEdge is one reflection-layer connection, as seen from either side.
