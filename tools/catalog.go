@@ -280,7 +280,7 @@ var catalogDefaults = map[string]catalogEntry{
 		APIDescription: "Write a new star capturing something genuinely learned about the person themselves in this thread — a taste, identity fact, circumstance, or habit, not a standalone topic explainer — and not already covered by an existing star."},
 	"update_star": {Name: "update_star", Requires: "weaver_run",
 		Description:    "merge new content into an existing star.",
-		APIDescription: "Merge new content into an existing personal star — rewrite so it reads as one coherent, current entry, never append."},
+		APIDescription: "Merge new content into an existing personal star — rewrite so it reads as one coherent, current entry, never append. Leave title blank unless this update changes what the star is fundamentally about or contradicts something the current title states."},
 	"link_stars": {Name: "link_stars", Requires: "weaver_run",
 		Description:    "connect two related-but-distinct stars.",
 		APIDescription: "Record that two distinct stars relate to each other, with a specific reason why."},

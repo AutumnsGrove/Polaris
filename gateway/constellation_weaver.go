@@ -402,14 +402,11 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 			warnOnErr("recording create_star event", db.RecordShootingStarEvent(runID, "create_star", string(args), fmt.Sprintf("star_id=%d", id), 0))
 			return id, nil
 		},
-		WeaverUpdateStar: func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
+		WeaverUpdateStar: func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
 			if err := requireSeen(starID); err != nil {
 				return err
 			}
-			// "" for title: update_star's own tool schema has no title field
-			// (Weaver never retitles an existing star this way) — see
-			// store.UpdateStar's doc comment on the "" == "leave as-is" contract.
-			if err := db.UpdateStar(starID, "", summary, body, tags, confidenceClass, isPersonal); err != nil {
+			if err := db.UpdateStar(starID, title, summary, body, tags, confidenceClass, isPersonal); err != nil {
 				return err
 			}
 			warnOnErr("linking star source", db.LinkStarSource(starID, threadID))

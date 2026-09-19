@@ -62,10 +62,13 @@ func (f *fakeStarStore) wireInto(ctx *Context, runID int64) {
 		}{runID, title, confidenceClass, "new_star", reasoning, &id}
 		return id, nil
 	}
-	ctx.WeaverUpdateStar = func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
+	ctx.WeaverUpdateStar = func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
 		s, ok := f.stars[starID]
 		if !ok {
 			return store.ErrStarNotFound
+		}
+		if title != "" {
+			s.Title = title
 		}
 		s.Summary, s.Body, s.Tags, s.Confidence = summary, body, tags, confidenceClass
 		if isPersonal != nil {
@@ -180,6 +183,31 @@ func TestUpdateStar_MergesContent(t *testing.T) {
 	}
 	if f.stars[1].Summary != "new summary" {
 		t.Errorf("Summary = %q, want new summary", f.stars[1].Summary)
+	}
+}
+
+func TestUpdateStar_TitleOmittedLeavesExistingTitle(t *testing.T) {
+	f := newFakeStarStore()
+	f.stars[1] = store.Star{ID: 1, Title: "Original title", Category: "technology", Summary: "old", Status: "auto"}
+	ctx := newWeaverTestContext(f)
+
+	handleUpdateStar(`{"star_id":1,"summary":"new summary"}`, ctx, "call1")
+	if f.stars[1].Title != "Original title" {
+		t.Errorf("Title = %q, want left unchanged (title omitted from the call)", f.stars[1].Title)
+	}
+}
+
+func TestUpdateStar_TitleRetitlesWhenGiven(t *testing.T) {
+	f := newFakeStarStore()
+	f.stars[1] = store.Star{ID: 1, Title: "Transition is on hold", Category: "personal", Summary: "old", Status: "confirmed"}
+	ctx := newWeaverTestContext(f)
+
+	result := handleUpdateStar(`{"star_id":1,"title":"Transition is active","summary":"still transitioning, just paused on next steps"}`, ctx, "call1")
+	if strings.HasPrefix(result, "error:") {
+		t.Fatalf("handleUpdateStar returned error: %q", result)
+	}
+	if f.stars[1].Title != "Transition is active" {
+		t.Errorf("Title = %q, want the new title from the call", f.stars[1].Title)
 	}
 }
 

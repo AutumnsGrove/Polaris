@@ -175,8 +175,10 @@ type Context struct {
 	// a model call that omits it must leave the star's existing value
 	// alone rather than silently flipping it to false (see
 	// store.UpdateStar's doc comment on the same "" == "leave as-is"
-	// contract for body/tags/confidenceClass).
-	WeaverUpdateStar func(starID int64, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error
+	// contract for body/tags/confidenceClass). title shares that same ""
+	// == "leave as-is" contract — update_star's schema makes it optional
+	// too, since most updates don't change what the star is about.
+	WeaverUpdateStar func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error
 	WeaverLinkStars  func(starIDA, starIDB int64, reasoning string) error
 
 	// StarsSearch/StarsRead back the stars tool (tools/stars.go) — the main

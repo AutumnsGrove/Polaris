@@ -7,6 +7,7 @@
 	import DOMPurify from 'dompurify';
 	import ConstellationMiniMap from '$lib/components/ConstellationMiniMap.svelte';
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
+	import EditTextModal from '$lib/components/EditTextModal.svelte';
 	import { ArrowLeft, MoreVertical, MessageCircle, Pencil, Link2 } from '@lucide/svelte';
 	import { iconForCategory } from '$lib/categoryIcons';
 	import { colorForCategory } from '$lib/categoryColors';
@@ -20,7 +21,6 @@
 	let showEdit = $state(false);
 	let showMenu = $state(false);
 	let renaming = $state(false);
-	let renameValue = $state('');
 	let menuRootEl = $state<HTMLDivElement | null>(null);
 
 	// loadSeq guards against a stale response clobbering a newer one — this
@@ -91,21 +91,20 @@
 
 	function startRename() {
 		if (!detail) return;
-		renameValue = detail.star.title;
 		renaming = true;
 		showMenu = false;
 	}
 
-	async function saveRename() {
-		if (!detail || !renameValue.trim()) return;
-		const result = await constellationState.patchStar(detail.star.id, { title: renameValue.trim() });
+	async function saveRename(newTitle: string) {
+		if (!detail) return;
+		const result = await constellationState.patchStar(detail.star.id, { title: newTitle });
 		if (result.star) {
 			detail = { ...detail, star: result.star };
 			renaming = false;
 		} else {
 			// Left open (not closed) on failure — same reasoning as
 			// ThreadMenu.svelte's regenerateTitle — so the person can see
-			// what they typed and retry instead of the form just vanishing
+			// what they typed and retry instead of the modal just vanishing
 			// with no explanation and the title silently reverting.
 			appState.showToast(result.error || "Couldn't rename that star");
 		}
@@ -175,21 +174,7 @@
 			</div>
 		</div>
 
-		{#if renaming}
-			<form
-				class="rename-form"
-				onsubmit={(e) => {
-					e.preventDefault();
-					void saveRename();
-				}}
-			>
-				<input type="text" bind:value={renameValue} autofocus />
-				<button type="submit" class="btn btn-accent">Save</button>
-				<button type="button" class="btn" onclick={() => (renaming = false)}>Cancel</button>
-			</form>
-		{:else}
-			<h1>{detail.star.title}</h1>
-		{/if}
+		<h1>{detail.star.title}</h1>
 
 		<div class="tags-row">
 			{#each detail.star.tags as tag (tag)}
@@ -245,6 +230,17 @@
 		starTitle={detail.star.title}
 		onSubmit={submitEdit}
 		onClose={() => (showEdit = false)}
+	/>
+{/if}
+
+{#if renaming && detail}
+	<EditTextModal
+		heading="Rename star"
+		initialValue={detail.star.title}
+		placeholder="Star title"
+		maxLength={200}
+		onSave={saveRename}
+		onCancel={() => (renaming = false)}
 	/>
 {/if}
 
@@ -341,22 +337,6 @@
 		line-height: 1.2;
 		margin: 0 0 var(--space-md);
 	}
-	.rename-form {
-		display: flex;
-		gap: var(--space-sm);
-		margin-bottom: var(--space-md);
-	}
-	.rename-form input {
-		flex: 1;
-		font: inherit;
-		font-size: 18px;
-		padding: var(--space-xs) var(--space-sm);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		color: var(--color-text);
-	}
-
 	.tags-row {
 		display: flex;
 		gap: var(--space-xs);
