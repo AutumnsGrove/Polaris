@@ -707,9 +707,10 @@ func TestHandleWebRead_NoArchiveSnapshotFallsBackToTavily(t *testing.T) {
 	tavilyServer := fakeJSONServer(t, http.StatusOK, tavilyJSON)
 
 	ctx := &Context{
-		Ctx:    context.Background(),
-		Emit:   func(string, map[string]interface{}) {},
-		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
+		Ctx:                  context.Background(),
+		Emit:                 func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", tavilyServer.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
 	}
 	result := handleWebRead(`{"url":"`+deadServer.URL+`"}`, ctx, "test-call")
 
@@ -737,9 +738,10 @@ func TestHandleWebRead_EmptyBodyFallsBackToTavilyWithoutArchiveOrg(t *testing.T)
 	tavilyServer := fakeJSONServer(t, http.StatusOK, tavilyJSON)
 
 	ctx := &Context{
-		Ctx:    context.Background(),
-		Emit:   func(string, map[string]interface{}) {},
-		Tavily: tavily.NewClientForTest("test-key", tavilyServer.URL),
+		Ctx:                  context.Background(),
+		Emit:                 func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", tavilyServer.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
 	}
 	result := handleWebRead(`{"url":"`+jsRenderedServer.URL+`"}`, ctx, "test-call")
 
@@ -748,6 +750,98 @@ func TestHandleWebRead_EmptyBodyFallsBackToTavilyWithoutArchiveOrg(t *testing.T)
 	}
 	if waybackCalled {
 		t.Error("archive.org was called for a JS-render case (err == nil) — it should only be tried on dead links/paywalls")
+	}
+}
+
+// TestHandleWebRead_ForceTavilySkipsFreePathAndArchive covers the whole
+// point of force_tavily: for a page whose live data is only ever
+// populated by client-side polling (a live dashboard), the plain fetch
+// returns a real 200 with real-but-stale/sparse text, so nothing in the
+// ordinary err/paywall/looksEmpty chain ever trips — the model has to be
+// able to ask for a real render directly instead of falling through to
+// the free path (or, worse, an archived snapshot of a page that's
+// supposed to be live). Both the URL server and the wayback server are
+// canaries here: force_tavily must never touch either one.
+func TestHandleWebRead_ForceTavilySkipsFreePathAndArchive(t *testing.T) {
+	urlHit := false
+	pageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		urlHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(pageServer.Close)
+
+	waybackHit := false
+	waybackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		waybackHit = true
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"archived_snapshots":{}}`))
+	}))
+	t.Cleanup(waybackServer.Close)
+	withWaybackAPI(t, waybackServer.URL)
+
+	tavilyServer := fakeJSONServer(t, http.StatusOK,
+		`{"results":[{"url":"x","raw_content":"`+strings.Repeat("Live via Tavily, day 4. ", 10)+`"}]}`)
+
+	var incremented int
+	ctx := &Context{
+		Ctx:                  context.Background(),
+		Emit:                 func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", tavilyServer.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementTavilyUsage: func() error { incremented++; return nil },
+	}
+	result := handleWebRead(fmt.Sprintf(`{"url":"%s","force_tavily":true}`, pageServer.URL), ctx, "test-call")
+
+	if !strings.Contains(result, "Live via Tavily, day 4.") {
+		t.Errorf("result = %q, want Tavily's content", result)
+	}
+	if urlHit {
+		t.Error("the plain page fetch was hit — force_tavily must skip fetchAndExtract entirely")
+	}
+	if waybackHit {
+		t.Error("archive.org was hit — force_tavily must skip the wayback fallback entirely")
+	}
+	if incremented != 1 {
+		t.Errorf("IncrementTavilyUsage called %d times, want 1", incremented)
+	}
+}
+
+func TestHandleWebRead_ForceTavilyWithoutTavilyConfigured_ReturnsError(t *testing.T) {
+	// No ctx.Tavily configured at all — mirrors a deployment that hasn't
+	// set TAVILY_API_KEY.
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleWebRead(`{"url":"https://example.com/live","force_tavily":true}`, ctx, "test-call")
+
+	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "Tavily") {
+		t.Errorf("result = %q, want an error naming Tavily as unconfigured", result)
+	}
+}
+
+func TestHandleWebRead_ForceTavilySkippedAtMonthlyCap(t *testing.T) {
+	tavilyHit := false
+	tavilyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tavilyHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(tavilyServer.Close)
+
+	ctx := &Context{
+		Ctx:                  context.Background(),
+		Emit:                 func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", tavilyServer.URL),
+		TavilyUsageThisMonth: func() (int, error) { return tavilyMonthlyCap, nil }, // already at the cap
+		IncrementTavilyUsage: func() error {
+			t.Error("IncrementTavilyUsage must not be called when the cap gates force_tavily out")
+			return nil
+		},
+	}
+	result := handleWebRead(`{"url":"https://example.com/live","force_tavily":true}`, ctx, "test-call")
+
+	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "cap") {
+		t.Errorf("result = %q, want an error naming the monthly cap", result)
+	}
+	if tavilyHit {
+		t.Error("tavily was hit, want it skipped — the monthly cap should gate it out before any request goes out")
 	}
 }
 

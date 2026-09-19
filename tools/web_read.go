@@ -12,6 +12,17 @@
 // then Tavily's paid Extract API last (the only one of the three that
 // can actually execute JS, since Tavily runs that rendering on their own
 // infrastructure — see tavily.Client.Extract).
+//
+// A fourth case that heuristic chain can't catch on its own: a page whose
+// raw HTML is non-empty and not paywall-shaped, but whose meaningful
+// content is still entirely populated by client-side polling after load
+// (a live dashboard/ticker) — the free path sees a real 200 with real
+// (if sparse) text, so nothing here trips. The model's own force_tavily
+// argument exists for exactly that case: skip straight to Tavily's real
+// JS-rendering fetch (and skip archive.org, which would just hand back
+// whatever frozen historical snapshot it has of a page that's supposed
+// to be live) once the model already has reason to suspect it's holding
+// stale data for this URL.
 package tools
 
 import (
@@ -62,6 +73,15 @@ var webReadDef = llm.ToolDef{
 					"description": "Optional, for PDFs only: 1-indexed page number to read " +
 						"— use the page number given in a previous result to keep reading a multi-page PDF.",
 				},
+				"force_tavily": map[string]interface{}{
+					"type": "boolean",
+					"description": "Absolute last resort. Skips the normal free fetch (and any archived-snapshot fallback) and reads the URL " +
+						"directly through a real, JS-rendering fetch instead, at the cost of a real, limited paid credit. Only set this when " +
+						"you already have specific reason to believe a plain read of this exact URL gave stale or wrong data — e.g. it's a " +
+						"live-updating page/dashboard, or a previous read of this URL this conversation looks frozen/outdated. Always try a " +
+						"plain read first; don't set this by default. Returns an error instead of silently falling back if Tavily isn't " +
+						"configured on this deployment or its monthly cap has been reached.",
+				},
 			},
 			"required": []string{"url"},
 		},
@@ -76,6 +96,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 		Instructions string `json:"instructions"`
 		Offset       int    `json:"offset"`
 		Page         int    `json:"page"`
+		ForceTavily  bool   `json:"force_tavily"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "web_read", nil, "error: "+err.Error(), callID)
@@ -89,55 +110,111 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool":    "web_read",
-		"args":    map[string]interface{}{"url": args.URL, "instructions": args.Instructions, "offset": args.Offset, "page": args.Page},
+		"tool": "web_read",
+		"args": map[string]interface{}{
+			"url": args.URL, "instructions": args.Instructions, "offset": args.Offset, "page": args.Page, "force_tavily": args.ForceTavily,
+		},
 		"call_id": callID,
 	})
 
-	title, siteName, imageURL, text, totalPages, err := fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist, args.Page)
+	var title, siteName, imageURL, text string
+	var totalPages int
+	var err error
 
 	// fallbackUsed is purely for logging — it doesn't change control flow,
 	// just helps tell "the free path worked" apart from "it took a paid
 	// API to get this" when reading logs later.
 	fallbackUsed := ""
 
-	// A non-nil err here covers both a dead link and most paywalls (many
-	// paywall servers respond 402/403 rather than a real 200) — archive.org
-	// is worth trying first since it's free and frequently has a snapshot
-	// from before a paywall went up or a page got taken down.
-	if err != nil || looksLikePaywall(text) {
-		if wbTitle, wbSiteName, wbImageURL, wbText, wbTotalPages, wbErr := fetchFromWayback(ctx.Ctx, args.URL, ctx.Blocklist, args.Page); wbErr == nil {
-			title, siteName, imageURL, text, totalPages, err = wbTitle, wbSiteName, wbImageURL, wbText, wbTotalPages, nil
-			fallbackUsed = "archive.org"
-		} else {
-			log.Warn("web_read: wayback fallback failed", "url", args.URL, "err", wbErr)
+	if args.ForceTavily {
+		// force_tavily deliberately skips fetchAndExtract and the
+		// archive.org fallback entirely — the whole point of asking for
+		// this is that the model already suspects the free path (and any
+		// frozen historical snapshot standing in for it) is giving stale
+		// data, so falling through to either first would defeat it. See
+		// tavilyMonthlyCap's doc comment (tools/web_search.go) for why
+		// this shares one cap with every other way this deployment can
+		// spend a Tavily credit.
+		if ctx.Tavily == nil {
+			result := "error: force_tavily requires Tavily to be configured on this deployment, which it isn't"
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": result, "call_id": callID})
+			return result
 		}
-	}
-
-	// Whatever's left unresolved — still erroring, still reading like a
-	// paywall, or empty because the page is JS-rendered and goquery only
-	// ever saw the pre-render HTML shell — gets one last shot via Tavily,
-	// which actually executes the page's JS on its own infrastructure.
-	// This is the only branch archive.org can't substitute for: a
-	// snapshot of a JS-rendered SPA is just as empty as the live page was.
-	if ctx.Tavily != nil && (err != nil || looksLikePaywall(text) || looksEmpty(text)) {
-		if tavilyText, tErr := ctx.Tavily.Extract(ctx.Ctx, args.URL, true); tErr == nil && !looksEmpty(tavilyText) {
-			text = tavilyText
-			totalPages = 0
-			err = nil
-			fallbackUsed = "tavily"
-			if title == "" {
-				title = args.URL
+		if ctx.TavilyUsageThisMonth != nil {
+			if used, uErr := ctx.TavilyUsageThisMonth(); uErr != nil {
+				log.Warn("web_read: checking tavily usage failed", "url", args.URL, "err", uErr)
+			} else if used >= tavilyMonthlyCap {
+				result := fmt.Sprintf("error: force_tavily is unavailable right now — Tavily's monthly cap (%d calls) has been reached", tavilyMonthlyCap)
+				ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": result, "call_id": callID})
+				return result
 			}
-		} else if tErr != nil {
-			log.Warn("web_read: tavily fallback failed", "url", args.URL, "err", tErr)
 		}
-	}
 
-	if err != nil {
-		log.Warn("web_read failed", "url", args.URL, "err", err)
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error(), "call_id": callID})
-		return "error: " + err.Error()
+		tavilyText, tErr := ctx.Tavily.Extract(ctx.Ctx, args.URL, true)
+		if tErr != nil {
+			result := "error: fetching url via tavily: " + tErr.Error()
+			log.Warn("web_read: force_tavily failed", "url", args.URL, "err", tErr)
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": result, "call_id": callID})
+			return result
+		}
+		if ctx.IncrementTavilyUsage != nil {
+			if incErr := ctx.IncrementTavilyUsage(); incErr != nil {
+				log.Warn("web_read: recording tavily usage failed", "url", args.URL, "err", incErr)
+			}
+		}
+		text = tavilyText
+		title = args.URL
+		fallbackUsed = "tavily (forced)"
+	} else {
+		title, siteName, imageURL, text, totalPages, err = fetchAndExtract(ctx.Ctx, args.URL, ctx.Blocklist, args.Page)
+
+		// A non-nil err here covers both a dead link and most paywalls (many
+		// paywall servers respond 402/403 rather than a real 200) — archive.org
+		// is worth trying first since it's free and frequently has a snapshot
+		// from before a paywall went up or a page got taken down.
+		if err != nil || looksLikePaywall(text) {
+			if wbTitle, wbSiteName, wbImageURL, wbText, wbTotalPages, wbErr := fetchFromWayback(ctx.Ctx, args.URL, ctx.Blocklist, args.Page); wbErr == nil {
+				title, siteName, imageURL, text, totalPages, err = wbTitle, wbSiteName, wbImageURL, wbText, wbTotalPages, nil
+				fallbackUsed = "archive.org"
+			} else {
+				log.Warn("web_read: wayback fallback failed", "url", args.URL, "err", wbErr)
+			}
+		}
+
+		// Whatever's left unresolved — still erroring, still reading like a
+		// paywall, or empty because the page is JS-rendered and goquery only
+		// ever saw the pre-render HTML shell — gets one last shot via Tavily,
+		// which actually executes the page's JS on its own infrastructure.
+		// This is the only branch archive.org can't substitute for: a
+		// snapshot of a JS-rendered SPA is just as empty as the live page was.
+		if ctx.Tavily != nil && ctx.TavilyUsageThisMonth != nil && (err != nil || looksLikePaywall(text) || looksEmpty(text)) {
+			if used, uErr := ctx.TavilyUsageThisMonth(); uErr != nil {
+				log.Warn("web_read: checking tavily usage failed, skipping fallback", "url", args.URL, "err", uErr)
+			} else if used >= tavilyMonthlyCap {
+				log.Warn("web_read: tavily monthly cap reached, skipping fallback", "url", args.URL, "used", used, "cap", tavilyMonthlyCap)
+			} else if tavilyText, tErr := ctx.Tavily.Extract(ctx.Ctx, args.URL, true); tErr == nil && !looksEmpty(tavilyText) {
+				text = tavilyText
+				totalPages = 0
+				err = nil
+				fallbackUsed = "tavily"
+				if title == "" {
+					title = args.URL
+				}
+				if ctx.IncrementTavilyUsage != nil {
+					if incErr := ctx.IncrementTavilyUsage(); incErr != nil {
+						log.Warn("web_read: recording tavily usage failed", "url", args.URL, "err", incErr)
+					}
+				}
+			} else if tErr != nil {
+				log.Warn("web_read: tavily fallback failed", "url", args.URL, "err", tErr)
+			}
+		}
+
+		if err != nil {
+			log.Warn("web_read failed", "url", args.URL, "err", err)
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "web_read", "result": "error: " + err.Error(), "call_id": callID})
+			return "error: " + err.Error()
+		}
 	}
 	if fallbackUsed != "" {
 		log.Info("web_read: used fallback", "url", args.URL, "fallback", fallbackUsed)

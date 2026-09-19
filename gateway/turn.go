@@ -510,6 +510,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		Blocklist:              s.blocklist,
 		Foursquare:             s.foursquare,
 		Tavily:                 s.tavily,
+		TavilyUsageThisMonth:   func() (int, error) { return s.db.GetAPIUsage("tavily") },
+		IncrementTavilyUsage:   func() error { _, err := s.db.IncrementAPIUsage("tavily"); return err },
 		Brave:                  s.brave,
 		BraveUsageThisMonth:    func() (int, error) { return s.db.GetAPIUsage("brave") },
 		IncrementBraveUsage:    func() error { _, err := s.db.IncrementAPIUsage("brave"); return err },

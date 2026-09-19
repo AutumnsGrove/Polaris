@@ -200,11 +200,24 @@ confirmed a full outage (not an ordinary empty result) — see `search.SearXNGCl
 cooldown/degraded logic and `tools/web_search.go`'s `handleWebSearch`. Wiring this into a new call
 site means giving it `tools.Context.Brave`/`Parallel`/`Tavily` **and** a real `store.Store` for the
 usage-cap closures (`BraveUsageThisMonth`/`IncrementBraveUsage`,
-`ParallelUsageThisMonth`/`IncrementParallelUsage`) — `cmd/search.go` originally had none of these
+`ParallelUsageThisMonth`/`IncrementParallelUsage`,
+`TavilyUsageThisMonth`/`IncrementTavilyUsage`) — `cmd/search.go` originally had none of these
 wired for the CLI's one-shot `polaris search` path even after the web UI/assistant got them, a real
 gap only found by running `polaris search` live and checking what it actually had access to, not by
 code review. Any new CLI command or server entry point that can trigger `web_search` needs the same
-four pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not just the LLM client.
+five pieces (SearXNG, Brave, Parallel, Tavily + DB-backed usage closures), not just the LLM client.
+
+`TavilyUsageThisMonth`/`IncrementTavilyUsage` back a single `tavilyMonthlyCap` (`tools/web_search.go`)
+shared across every way a deployment can spend a Tavily credit — this file's Search fallback above,
+`web_read`'s own JS-render/paywall Extract fallback, and `web_read`'s explicit `force_tavily`
+argument (for when the model already has specific reason to believe a plain read of a URL gave
+stale data, e.g. a live-updating page whose numbers are only ever populated by client-side polling —
+the ordinary err/paywall/looksEmpty heuristic chain never trips for a page like that, since the free
+fetch still comes back a real 200 with real, if stale/sparse, text). Unlike Brave/Parallel, nothing
+enforced a real ceiling on Tavily before this — it was only "scarce" by comment/convention — which
+mattered less while every Tavily call was an accidental last-resort fallback; `force_tavily` lets the
+model spend a credit on purpose, so the cap needed to be real too. Any new place that wires
+`tools.Context.Tavily` needs the usage-cap closures alongside it, same as Brave/Parallel.
 
 ## Pulsar and Pulsar Daily
 

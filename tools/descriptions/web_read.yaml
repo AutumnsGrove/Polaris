@@ -9,4 +9,7 @@ api_description: >-
   web_search result needs deeper investigation. Optionally pass 'instructions' to extract only
   specific information (e.g. 'just the prices', 'just the release date') instead of the full
   page. Long results are cut off with a note telling you how to read the rest: pass that same
-  'offset' back for a normal web page, or that same 'page' back for a PDF.
+  'offset' back for a normal web page, or that same 'page' back for a PDF. 'force_tavily' is an
+  absolute last resort for when you already have specific reason to believe a plain read gave
+  stale data (e.g. a live-updating page) — it costs a real, limited paid credit, so don't set it
+  by default.

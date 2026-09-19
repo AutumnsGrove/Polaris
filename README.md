@@ -28,7 +28,9 @@ with citations.
   with `?` for a fast sourced answer instead of full results. Same fallback chain as web search.
 - **Page reading** — fetches a URL and extracts clean text, optionally focused by an instruction
   ("just the prices"). Handles PDFs directly; falls back to archive.org, then Tavily's Extract API,
-  for dead links and JS-rendered pages.
+  for dead links and JS-rendered pages. Can also skip straight to a real, JS-rendering read as a
+  deliberate last resort when a plain read looks stale (e.g. a live-updating page), within Tavily's
+  own monthly cap.
 - **YouTube transcripts** — reads a video's captions straight from its watch page via `yt-dlp`, so
   a shared link is as researchable as any article.
 - **Weather** — current conditions and a short forecast via Open-Meteo, no API key.
