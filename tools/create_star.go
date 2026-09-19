@@ -55,8 +55,11 @@ var createStarDef = llm.ToolDef{
 // live body over 11,000 characters was observed before this existed).
 // Rejecting via emitToolError lets Weaver retry with a trimmed body instead
 // of the length limit silently truncating real content. Shared with
-// update_star.go (same package).
-const weaverStarBodyMaxLen = 800
+// update_star.go (same package). Raised from 800 to 1000 after a full
+// backfill audit (2026-09-19) showed the cap working well at scale (avg
+// 576 chars, max 796 across 127 real stars) — a small amount of headroom
+// for the genuinely rich cases, not a sign 800 wasn't working.
+const weaverStarBodyMaxLen = 1000
 
 func init() { Register("create_star", handleCreateStar) }
 

@@ -602,7 +602,7 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"summary and body are finished, evergreen reference content — never your own process notes or " +
 		"session-state commentary. Default to short: a couple of sentences to a couple of short paragraphs, " +
 		"reporting what the conversation actually covered — not an exhaustive treatment of the topic drawing " +
-		"on what you separately know about it. Body is hard-capped at 800 characters — create_star/" +
+		"on what you separately know about it. Body is hard-capped at 1000 characters — create_star/" +
 		"update_star reject anything longer as a tool error reporting the character count, so treat that as " +
 		"a wall to write under, not a limit to test. If a call comes back rejected, don't respond by " +
 		"trimming a little from everywhere; cut down to the single evergreen personal takeaway and drop the " +
