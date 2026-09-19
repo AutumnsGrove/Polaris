@@ -707,8 +707,10 @@ func (s *Server) handleConstellationBackfill(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	client := WeaverClient(s.liveConfig(), cfgRow.Model)
-	processed, err := BackfillConstellation(r.Context(), s.db, client, limit, s.shootingStarTurnGate())
+	cfg := s.liveConfig()
+	client := WeaverClient(cfg, cfgRow.Model)
+	modelID := cfg.ModelByID(cfgRow.Model).ID
+	processed, err := BackfillConstellation(r.Context(), s.db, client, modelID, limit, s.shootingStarTurnGate())
 	if err == store.ErrBackfillAlreadyRunning {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

@@ -22,7 +22,7 @@ func TestBackfillConstellation_ProcessesEligibleThreadsUpToLimit(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted."}},
 	}}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, 2, NoopTurnGate())
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 2, NoopTurnGate())
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestBackfillConstellation_ZeroLimitProcessesEverything(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted."}},
 	}}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, 0, NoopTurnGate())
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate())
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestBackfillConstellation_StopsWhenGateRefuses(t *testing.T) {
 		finish: func() {},
 	}
 
-	processed, err := BackfillConstellation(context.Background(), db, mock, 0, gate)
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, gate)
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v", err)
 	}
@@ -95,9 +95,19 @@ func TestBackfillConstellation_StopsWhenGateRefuses(t *testing.T) {
 // check at busy=true forever, refusing every future backfill attempt for
 // no real reason. Sweeping it also puts the thread's retry gate back in
 // play immediately (needs_retry=1), so this same backfill call goes on to
-// pick it back up — since nothing changed since the original (never
-// actually processed) attempt, that reprocessing is a harmless no-op that
-// clears needs_retry again, not a fresh LLM call.
+// pick it back up.
+//
+// That reprocessing must be a real re-analysis, not a hollow no-op — a
+// live-verified bug (2026-09-19, see LastSuccessfulShootingStarRun's doc
+// comment) had RunShootingStar compute its revisit delta against the
+// *stale* run's own last_message_id_seen (recorded the moment that run
+// started, before it ever crashed), finding zero new messages and quietly
+// no-opping instead of actually retrying Weaver's analysis. Since the
+// stale run never finished successfully, LastSuccessfulShootingStarRun
+// now returns nil for this thread, so this reprocessing correctly takes
+// weaverTaskText's first-ever-pass branch and makes a real completion
+// call — hence the queued mock response below, where before this fix
+// there was deliberately none needed at all.
 func TestBackfillConstellation_SweepsStaleRunsBeforeBusyCheck(t *testing.T) {
 	db := openTestStoreForConstellation(t)
 	threadID := seedWeaverThread(t, db, "an old thread")
@@ -109,13 +119,15 @@ func TestBackfillConstellation_SweepsStaleRunsBeforeBusyCheck(t *testing.T) {
 	shootingStarStaleAfter = 0
 	defer func() { shootingStarStaleAfter = oldStaleAfter }()
 
-	mock := &llmtest.MockClient{}
-	processed, err := BackfillConstellation(context.Background(), db, mock, 0, NoopTurnGate())
+	mock := &llmtest.MockClient{Responses: []llmtest.Response{
+		{Resp: &llm.ChatResponse{Content: "Noted."}},
+	}}
+	processed, err := BackfillConstellation(context.Background(), db, mock, "test-model", 0, NoopTurnGate())
 	if err != nil {
 		t.Fatalf("BackfillConstellation: %v (a stale run should have been swept before the busy check, not blocked it)", err)
 	}
 	if processed != 1 {
-		t.Errorf("processed = %d, want 1 (the swept thread's retry gate makes it eligible again, and this call picks it back up as a no-op)", processed)
+		t.Errorf("processed = %d, want 1 (the swept thread's retry gate makes it eligible again, and this call actually re-analyzes it)", processed)
 	}
 
 	run, err := db.LastShootingStarRun(threadID)

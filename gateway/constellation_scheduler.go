@@ -115,6 +115,11 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 
 	if len(threadIDs) > 0 {
 		client := WeaverClient(cfg, cfgRow.Model)
+		// Resolved id (handles cfgRow.Model == "" falling back to the
+		// default model, same as WeaverClient's own cfg.ModelByID call) —
+		// only used to label each run's own hidden thread, see
+		// RunShootingStar's doc comment.
+		modelID := cfg.ModelByID(cfgRow.Model).ID
 		// Sequential, never concurrent — each run's writes commit before
 		// the next starts, so run N's own search_stars retrieval sees
 		// whatever run N-1 just wrote. This is what prevents two threads
@@ -147,7 +152,7 @@ func runConstellationTick(reqCtx context.Context, db *store.Store, cfg *config.C
 				log.Warn("constellation: server is restarting, stopping tick early", "threads_remaining", len(threadIDs))
 				break
 			}
-			err := RunShootingStarRecovered(reqCtx, db, client, threadID)
+			err := RunShootingStarRecovered(reqCtx, db, client, threadID, modelID)
 			gate.finish()
 			if err != nil {
 				log.Warn("constellation: shooting star failed", "thread_id", threadID, "err", err)

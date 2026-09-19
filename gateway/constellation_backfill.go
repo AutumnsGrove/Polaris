@@ -50,7 +50,7 @@ import (
 // NoopTurnGate since it isn't part of the long-running `polaris run`
 // process at all; the Docker-mode HTTP handler (handleConstellationBackfill)
 // passes the real server's gate since it runs inside that process.
-func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.ChatClient, limit int, gate turnGate) (processed int, err error) {
+func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.ChatClient, modelID string, limit int, gate turnGate) (processed int, err error) {
 	// Ahead of everything else below — a stale row from a previous
 	// crashed run would otherwise wedge HasInFlightShootingStarRun's check
 	// just below at busy=true forever, blocking every future backfill
@@ -88,7 +88,7 @@ func BackfillConstellation(reqCtx context.Context, db *store.Store, client llm.C
 			log.Warn("constellation backfill: server is restarting, stopping early", "processed", processed, "remaining", len(ids)-processed)
 			break
 		}
-		err := RunShootingStarRecovered(reqCtx, db, client, threadID)
+		err := RunShootingStarRecovered(reqCtx, db, client, threadID, modelID)
 		gate.finish()
 		if err != nil {
 			log.Warn("constellation backfill: shooting star failed", "thread_id", threadID, "err", err)

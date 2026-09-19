@@ -51,7 +51,7 @@ func TestRunShootingStar_FirstPass_CreatesStarAndLinksSource(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "Noted a new interest in Cloudflare Workers."}},
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestRunShootingStar_Revisit_FeedsFilteredDeltaNotRawThread(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "No new star needed, just an addendum noted."}},                   // Weaver's own turn
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 
@@ -172,7 +172,7 @@ func TestRunShootingStar_HitsTurnCap_SetsNeedsRetryAndError(t *testing.T) {
 	responses = append(responses, llmtest.Response{Resp: &llm.ChatResponse{Content: "forced wrap-up text"}})
 	mock := &llmtest.MockClient{Responses: responses}
 
-	err := RunShootingStar(context.Background(), db, mock, threadID)
+	err := RunShootingStar(context.Background(), db, mock, threadID, "test-model")
 	if err == nil {
 		t.Fatal("RunShootingStar should return an error when the turn cap is hit")
 	}
@@ -224,7 +224,7 @@ func TestRunShootingStar_LinkStarsRejectsUnseenStarID(t *testing.T) {
 		{Resp: &llm.ChatResponse{Content: "done"}},
 	}}
 
-	if err := RunShootingStar(context.Background(), db, mock, threadID); err != nil {
+	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
 		t.Fatalf("RunShootingStar: %v", err)
 	}
 

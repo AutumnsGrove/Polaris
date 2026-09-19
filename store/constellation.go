@@ -758,6 +758,43 @@ func (s *Store) LastShootingStarRun(threadID string) (*ShootingStarRun, error) {
 	return &run, nil
 }
 
+// LastSuccessfulShootingStarRun returns the most recent run that actually
+// finished cleanly (needs_retry = 0, finished_at set), or nil, nil if none
+// exists — deliberately distinct from LastShootingStarRun, which returns
+// the literal last row regardless of outcome and is what callers wanting
+// "did the last attempt fail" (tests, admin views) still want.
+//
+// weaverTaskText's revisit-delta baseline needs this narrower query
+// instead: StartShootingStarRun records last_message_id_seen unconditionally
+// the moment a run *starts*, success or failure, so a failed run's own row
+// already "covers" every message that existed at that point. Live-verified
+// bug (2026-09-19): retrying a failed shooting star with no new messages
+// since the failure computed an empty delta against that failed run's own
+// last_message_id_seen and silently no-opped ("nothing new since the last
+// pass") instead of actually retrying the analysis — the retry never
+// re-ran Weaver's reasoning at all. Basing the delta on the last
+// *successful* run instead means a failed run correctly falls back to
+// nil (weaverTaskText's own "first-ever pass" branch), which re-feeds the
+// thread's full content rather than a hollow empty delta.
+func (s *Store) LastSuccessfulShootingStarRun(threadID string) (*ShootingStarRun, error) {
+	var run ShootingStarRun
+	var needsRetry int
+	err := s.db.QueryRow(
+		`SELECT id, thread_id, last_message_id_seen, started_at, finished_at, summary, error, needs_retry, cost_usd
+		 FROM shooting_star_runs
+		 WHERE thread_id = ? AND needs_retry = 0 AND finished_at IS NOT NULL
+		 ORDER BY id DESC LIMIT 1`, threadID,
+	).Scan(&run.ID, &run.ThreadID, &run.LastMessageIDSeen, &run.StartedAt, &run.FinishedAt, &run.Summary, &run.Error, &needsRetry, &run.CostUSD)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("last successful shooting star run: %w", err)
+	}
+	run.NeedsRetry = needsRetry != 0
+	return &run, nil
+}
+
 // HasInFlightShootingStarRun reports whether any shooting_star_run is
 // currently mid-flight (started_at set, finished_at still NULL) — the
 // signal the Docker update watcher needs to avoid recreating the container
@@ -1424,6 +1461,7 @@ func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string,
 		JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
 		WHERE root.disabled = 0
 		  AND root.source != 'pulsar'
+		  AND root.source != 'weaver'
 		  AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		  AND (SELECT MAX(m.created_at) FROM messages m WHERE m.thread_id = t.id) <= datetime('now', '-' || ? || ' minutes')
 		  AND (

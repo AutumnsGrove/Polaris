@@ -1438,7 +1438,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -1648,7 +1648,7 @@ func decodeThreadCursor(cursor string) (updatedAtStr, id string, err error) {
 // per-thread context for a model reasoning over "what have I been asking
 // about lately" without a separate query per thread.
 func (s *Store) ListThreadsPage(cursor string) (threads []ThreadSummary, nextCursor string, err error) {
-	where := "disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND (source != 'atlas' OR continued_in_assistant = 1)"
+	where := "disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)"
 	args := []interface{}{}
 	if cursor != "" {
 		cursorUpdatedAt, cursorID, derr := decodeThreadCursor(cursor)
@@ -1782,6 +1782,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		   AND root.disabled = 0
 		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		   AND root.source != 'pulsar'
+		   AND root.source != 'weaver'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,

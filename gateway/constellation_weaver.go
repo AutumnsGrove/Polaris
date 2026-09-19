@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"polaris/agent"
 	"polaris/llm"
 	"polaris/prompts"
@@ -34,8 +36,18 @@ const weaverMaxTurns = 25
 // the observability trail described in the plan doc's "Database schema":
 // the run itself, candidates/events logged as a side effect of Weaver's
 // own tool calls, and the final needs_retry/error state on failure.
-func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID string) error {
-	lastRun, err := db.LastShootingStarRun(threadID)
+//
+// modelID is the resolved Polaris model id (cfg.ModelByID(...).ID, same
+// convention gateway/turn.go's own CreateThread call uses) — needed only
+// to label the run's own hidden thread (see below), not to build client,
+// which the caller already constructed from the same id.
+func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) error {
+	// LastSuccessfulShootingStarRun, not LastShootingStarRun — see its own
+	// doc comment for the live-verified bug this avoids: basing the delta
+	// on a failed run's own last_message_id_seen made a retry with no new
+	// messages compute an empty delta and silently no-op instead of
+	// actually re-running Weaver's analysis.
+	lastRun, err := db.LastSuccessfulShootingStarRun(threadID)
 	if err != nil {
 		return fmt.Errorf("shooting star: %w", err)
 	}
@@ -85,7 +97,30 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 		return nil
 	}
 
-	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID)
+	// weaverThreadID/turnID give this run a real, ordinary threads/messages/
+	// events transcript — the exact same primitives gateway/turn.go uses for
+	// real chat — in parallel with (not instead of) the bespoke
+	// shooting_star_events/candidates trail above, which still backs
+	// Constellation's own admin rollups. store.ListThreads/ListThreadsPage
+	// exclude source = 'weaver' the same way they already exclude 'pulsar',
+	// so this never appears in the sidebar; GetThreadRaw has no such filter,
+	// so it's still fully viewable at its own /t/<uuid> (issue #90).
+	weaverThreadID := uuid.NewString()
+	turnID := uuid.NewString()
+	analyzedThread, err := db.GetThreadRaw(threadID)
+	title := "Shooting star"
+	if err != nil {
+		warnOnErr("reading analyzed thread's title", err)
+	} else if analyzedThread.Title != "" {
+		title = "Shooting star — " + analyzedThread.Title
+	}
+	warnOnErr("creating shooting star thread", db.CreateThread(weaverThreadID, title, modelID, "weaver"))
+	warnOnErr("persisting shooting star task message", func() error {
+		_, err := db.AddMessage(weaverThreadID, "user", task, "[]", "[]", 0, turnID)
+		return err
+	}())
+
+	agentCtx := newWeaverToolContext(reqCtx, db, client, runID, threadID, weaverThreadID, turnID)
 	result, err := agent.Run(reqCtx, agentCtx, nil, task)
 	if err != nil {
 		warnOnErr("finishing failed shooting star run", db.FinishShootingStarRun(runID, "", err.Error(), true))
@@ -102,6 +137,10 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 	// branch below — hitting the turn cap still means real, billed
 	// completion calls happened on the way there, not a $0 no-op.
 	warnOnErr("recording final_answer event", db.RecordShootingStarEvent(runID, "final_answer", "", strings.TrimSpace(result.Answer), result.CostUSD))
+	warnOnErr("persisting shooting star answer message", func() error {
+		_, err := db.AddMessage(weaverThreadID, "assistant", strings.TrimSpace(result.Answer), "[]", "[]", result.CostUSD, turnID)
+		return err
+	}())
 
 	if result.TurnCount > weaverMaxTurns {
 		// agent.Run forces a wrap-up answer rather than erroring when it
@@ -130,14 +169,14 @@ func RunShootingStar(reqCtx context.Context, db *store.Store, client llm.ChatCli
 // unrecovered panic anywhere in Weaver's loop (agent.Run, any of the five
 // tool handlers) would otherwise take down the whole Polaris process
 // instead of just failing that one shooting star.
-func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID string) (err error) {
+func RunShootingStarRecovered(reqCtx context.Context, db *store.Store, client llm.ChatClient, threadID, modelID string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Error("panic running shooting star", "thread_id", threadID, "panic", rec)
 			err = fmt.Errorf("shooting star: panic: %v", rec)
 		}
 	}()
-	return RunShootingStar(reqCtx, db, client, threadID)
+	return RunShootingStar(reqCtx, db, client, threadID, modelID)
 }
 
 // turnGate lets a shooting star register with the server's shutdown-drain
@@ -292,7 +331,12 @@ func warnOnErr(op string, err error) {
 // shooting_star_events as a side effect of each call, giving the
 // per-tool-call trace the plan doc's "Full observability from day one"
 // principle asks for.
-func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID string) *tools.Context {
+//
+// weaverThreadID/turnID are this run's own hidden thread (see
+// RunShootingStar) — passed through so Emit below can additionally log
+// every tool_call/tool_result into the ordinary events table, the same
+// way gateway/turn.go's own event switch does for real chat.
+func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string) *tools.Context {
 	categories, err := db.DistinctCategories()
 	if err != nil {
 		// Not fatal — the escape hatch just falls back to guessing blind,
@@ -335,23 +379,35 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		LLM:       client,
 		WeaverRun: true,
 		MaxTurns:  weaverMaxTurns,
-		// Emit only ever sees a "tool_result" whose result starts with
-		// "error:" here — every successful call is already logged by its
-		// own WeaverX closure below. Before this, a tool call that failed
-		// validation before ever reaching a WeaverX closure (a bad star_id,
-		// star_id_a == star_id_b, a missing required field) left zero trace
-		// anywhere: emitToolError (tools/registry.go) only calls ctx.Emit,
-		// which was a no-op for Weaver.
+		// Two independent jobs live here now. (1) The original one: a
+		// "tool_result" whose result starts with "error:" is a validation
+		// failure that never reached a WeaverX closure below (a bad
+		// star_id, star_id_a == star_id_b, a missing required field) and
+		// so would otherwise leave zero trace anywhere — emitToolError
+		// (tools/registry.go) only calls ctx.Emit, which used to be a
+		// no-op for Weaver. (2) New: every tool_call/tool_result, success
+		// or failure, also gets logged into the ordinary events table
+		// against weaverThreadID — the same db.LogEvent shape
+		// gateway/turn.go's own event switch uses for real chat
+		// (turn.go's "tool call started"/"tool call finished" cases) —
+		// so this run's hidden thread renders as real tool cards in the
+		// normal thread viewer (issue #90), independent of the
+		// shooting_star_events rollup the five WeaverX closures still
+		// maintain below for Constellation's own admin views.
 		Emit: func(event string, data map[string]interface{}) {
-			if event != "tool_result" {
-				return
-			}
-			resultText, _ := data["result"].(string)
-			if !strings.HasPrefix(resultText, "error:") {
-				return
-			}
 			tool, _ := data["tool"].(string)
-			warnOnErr("recording tool validation failure", db.RecordShootingStarEvent(runID, tool, "", resultText, 0))
+			switch event {
+			case "tool_call":
+				db.LogEvent(weaverThreadID, "info", "tool."+tool, "tool call started", data, turnID)
+			case "tool_result":
+				resultText, _ := data["result"].(string)
+				level := "info"
+				if strings.HasPrefix(resultText, "error:") {
+					level = "warn"
+					warnOnErr("recording tool validation failure", db.RecordShootingStarEvent(runID, tool, "", resultText, 0))
+				}
+				db.LogEvent(weaverThreadID, level, "tool."+tool, "tool call finished", data, turnID)
+			}
 		},
 		WeaverCategoriesInUse: strings.Join(categories, ", "),
 		WeaverPersonName:      personName,
