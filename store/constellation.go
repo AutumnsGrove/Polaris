@@ -273,12 +273,13 @@ func (s *Store) GetStar(id int64) (*Star, error) {
 
 // UpdateStar merges into an existing star (rewrite to read as one coherent,
 // current entry, never append — Weaver's own job, this just persists it).
-// title == "" means "leave the title as-is" — the Weaver background tool
-// (tools/update_star.go) has no title field in its own schema at all and
-// always passes "", while the Edit/Refine correction sheet
-// (reconcileAndSaveStar) supplies whatever reconcileStarContent resolved,
-// which is only ever non-empty when the correction actually changed what
-// the star is about (see weaver.reconcile_system's TITLE: instructions) —
+// title == "" means "leave the title as-is" — both the Weaver background
+// tool (tools/update_star.go) and the Edit/Refine correction sheet
+// (reconcileAndSaveStar, via reconcileStarContent) treat a non-empty title
+// as the exception, only supplying one when the correction actually
+// changed what the star is about, or when it contradicts something the
+// current title itself states (see weaver.reconcile_system's TITLE:
+// instructions and update_star.yaml's title field description) —
 // before this, a correction that invalidated the original title (e.g. "it's
 // fantasy, not sci-fi") could rewrite summary/body to match while the title
 // silently kept describing the old, now-wrong premise.

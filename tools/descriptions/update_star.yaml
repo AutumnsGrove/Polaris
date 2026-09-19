@@ -7,5 +7,9 @@ api_description: >-
   summary/body so the star reads as one coherent, current entry — never just append the new content onto the
   old.
 
+  Leave title blank unless this update changes what the star is fundamentally about, or the current title
+  itself states something this update now contradicts — a title claiming something "is on hold" when it's
+  actually still active is exactly that case, even if the general topic hasn't changed.
+
   is_personal works the same as in create_star: this library is personal-only, so it should be true on
   essentially every call — a fact about who the person IS, not a topic explainer.

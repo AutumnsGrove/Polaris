@@ -223,8 +223,9 @@ func TestStar_UpdateStarTitle(t *testing.T) {
 		t.Fatalf("CreateStar: %v", err)
 	}
 
-	// "" leaves the title untouched — the Weaver background tool's own
-	// contract (it has no title field at all).
+	// "" leaves the title untouched — the normal case for both callers
+	// (update_star's title field and Edit/Refine's TITLE: line are each
+	// optional, omitted on most calls).
 	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", boolPtr(false)); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}

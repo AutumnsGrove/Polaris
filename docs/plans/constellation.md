@@ -375,9 +375,12 @@ offered on a normal chat turn.
   a new `stars` row and the matching `shooting_star_candidates` row (`decision = 'new_star'`) as a
   side effect of the call itself. `category` is free text — no fixed list; reuse a category
   already in use for the same general area rather than inventing a near-duplicate.
-- **`update_star(star_id, summary, body, tags, confidence_class, is_personal)`** — merges into an
-  existing star (rewrite to read as one coherent, current entry, never append), same side-effect
-  logging (`decision = 'merged'`).
+- **`update_star(star_id, summary, body, tags, confidence_class, is_personal, title?)`** — merges
+  into an existing star (rewrite to read as one coherent, current entry, never append), same
+  side-effect logging (`decision = 'merged'`). `title` is optional and normally omitted — only set
+  when the update changes what the star is fundamentally about, or contradicts something the
+  current title itself states (the same threshold the Edit/Refine correction sheet's `TITLE:` line
+  uses — see "Reviewing and editing a star" below).
 - **`link_stars(star_id_a, star_id_b, reasoning)`** — writes `star_edges`, idempotent (no-ops if
   the pair's already linked). **No cap on how many links a run can create** — quality is a
   prompting problem, backstopped by `read_star` (so a careful decision is *possible*) and by full

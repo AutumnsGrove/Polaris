@@ -22,6 +22,7 @@ var updateStarDef = llm.ToolDef{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"star_id": map[string]interface{}{"type": "integer", "description": "The star_id to merge into, from search_stars/read_star."},
+				"title":   map[string]interface{}{"type": "string", "description": "The new title, only if this update changes what the star is fundamentally about (or the current title asserts something this update now contradicts). Omit to leave the title as-is — the normal case."},
 				"summary": map[string]interface{}{"type": "string", "description": "The rewritten one-line summary, reflecting the star as it now stands."},
 				"body":    map[string]interface{}{"type": "string", "description": "The rewritten full Markdown body."},
 				"tags": map[string]interface{}{
@@ -51,7 +52,11 @@ func init() { Register("update_star", handleUpdateStar) }
 
 func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
-		StarID          int64    `json:"star_id"`
+		StarID int64 `json:"star_id"`
+		// Title is normally omitted — see the schema's own description and
+		// store.UpdateStar's "" == "leave as-is" contract, which this trims
+		// down to before passing through.
+		Title           string   `json:"title"`
 		Summary         string   `json:"summary"`
 		Body            string   `json:"body"`
 		Tags            []string `json:"tags"`
@@ -65,6 +70,7 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "update_star", nil, "error: "+err.Error(), callID)
 	}
+	args.Title = strings.TrimSpace(args.Title)
 	args.Summary = strings.TrimSpace(args.Summary)
 	if args.Summary == "" {
 		return emitToolError(ctx, "update_star", map[string]interface{}{"star_id": args.StarID}, "error: summary is required", callID)
@@ -80,12 +86,12 @@ func handleUpdateStar(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	callArgs := map[string]interface{}{
-		"star_id": args.StarID, "summary": args.Summary, "tags": args.Tags,
+		"star_id": args.StarID, "title": args.Title, "summary": args.Summary, "tags": args.Tags,
 		"confidence_class": args.ConfidenceClass, "is_personal": args.IsPersonal,
 	}
 	ctx.Emit("tool_call", map[string]interface{}{"tool": "update_star", "args": callArgs, "call_id": callID})
 
-	if err := ctx.WeaverUpdateStar(args.StarID, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal, strings.TrimSpace(args.Reasoning)); err != nil {
+	if err := ctx.WeaverUpdateStar(args.StarID, args.Title, args.Summary, args.Body, args.Tags, args.ConfidenceClass, args.IsPersonal, strings.TrimSpace(args.Reasoning)); err != nil {
 		errText := "error: " + err.Error()
 		if err == store.ErrStarNotFound {
 			errText = "error: no star with that id — call search_stars/read_star to find the right one first"

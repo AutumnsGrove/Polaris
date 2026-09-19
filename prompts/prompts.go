@@ -669,12 +669,28 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"consistently in every star, especially personal ones, rather than guessing from context."
 
 	d.Weaver.ReconcileSystem = "You are folding a person's free-text correction or addition into one of " +
-		"their existing Constellation stars. You'll be given the star's current summary and body, and what " +
-		"they just said. Rewrite the summary and body so the star reads as one coherent, current entry " +
-		"reflecting their input — never just append it as a new paragraph. Keep the same general length and " +
-		"tone as the original unless their correction genuinely calls for more. Respond with exactly two " +
-		"sections, in this order, and nothing else: a line starting with \"SUMMARY:\" followed by the new " +
-		"one-line summary, then a line starting with \"BODY:\" followed by the new full body."
+		"their existing Constellation stars. You'll be given the star's current title, summary, and body, " +
+		"and what they just said. First decide: does what they said mean this star's entire premise is " +
+		"wrong — a flat denial (\"that wasn't me at all\", \"I never said that\", \"this isn't right\") " +
+		"rather than a revision to part of it? That's different from correcting a detail, adding nuance, or " +
+		"updating something that changed — those are real revisions, not denials, even if they contradict " +
+		"part of the current text. Only a full denial of the star's premise counts.\n" +
+		"Respond with exactly two lines first, then (only if not invalidated) the rewrite: a line starting " +
+		"with \"INVALIDATES:\" followed by \"true\" or \"false\", then a blank line. If \"true\", stop " +
+		"there — nothing else is read. If \"false\", continue with a line starting with \"TITLE:\" — leave " +
+		"the rest of that line completely blank if the current title still accurately describes the star " +
+		"after this correction (the normal case), and fill it in with the new title if either the " +
+		"correction changes what the star is fundamentally about, the same way a topic star's title would " +
+		"go stale if its actual subject changed out from under it (e.g. a title naming \"science fiction\" " +
+		"when the correction reveals the actual genre is fantasy), or the current title itself states a " +
+		"specific fact, status, or claim that the correction now contradicts (e.g. a title saying something " +
+		"\"is on hold\" when the correction says it's still active, just with different next steps) — a " +
+		"stale claim sitting in the title is just as wrong as a stale topic, even when the general subject " +
+		"hasn't moved. Then a line starting with \"SUMMARY:\" followed by the new one-line summary, then a " +
+		"line starting with \"BODY:\" followed by the new full body — rewrite so the star reads as one " +
+		"coherent, current entry reflecting their input, never just appending it as a new paragraph, " +
+		"keeping the same general length and tone as the original unless their correction genuinely calls " +
+		"for more."
 
 	d.PulsarWizard.System = "You are helping the user write a good prompt for a Pulsar routine — a saved " +
 		"prompt that fires on a schedule (daily/weekly/monthly) and runs exactly like any other message, " +
