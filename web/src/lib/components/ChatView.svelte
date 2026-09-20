@@ -477,6 +477,7 @@
 	</div>
 </header>
 
+{#if !showTransponder}
 {#if appState.turns.length === 0}
 	<!-- Empty state: composer floats centered, like Claude/OpenWebUI's
 	     landing view, instead of sitting pinned at the bottom of a mostly
@@ -553,8 +554,21 @@
 	</div>
 	{@render composerForm()}
 {/if}
+{/if}
 
 {#if showTransponder}
+	<!-- The normal turn list (and everything else above) is unmounted
+	     while a call is active, not just visually covered — it used to
+	     stay fully mounted underneath the full-screen overlay, which meant
+	     ChatTurnView's own WaveformAudioPlayer for the turn Transponder
+	     just synthesized (autoplay={appState.audio.justFinishedIndex ===
+	     index}) ALSO autoplayed the exact same file independently, a beat
+	     apart from Transponder's own playback — two real, separate audio
+	     engines racing the same clip. Live-described as "like a second
+	     version playing on top with a slight delay," which is exactly what
+	     that is: a genuine phase/comb-filter artifact from real double
+	     playback, not a synthesis or mic-constraint quality issue (both
+	     were red herrings chased first). -->
 	<Transponder onClose={() => (showTransponder = false)} />
 {/if}
 

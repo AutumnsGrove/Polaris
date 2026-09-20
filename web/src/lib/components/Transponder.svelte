@@ -200,23 +200,22 @@
 		// garbled transcripts despite a full-length hold). Nothing below
 		// needs either to have run yet.
 		try {
-			// Dropped noiseSuppression/autoGainControl (kept only
-			// echoCancellation) — live testing found garbled transcripts
-			// across three different STT models (Voxtral, Parakeet, Chirp 3),
-			// but feeding a clean synthesized clip straight into the same
-			// running model transcribed it perfectly. That rules out model
-			// choice: the problem is upstream, in what's actually getting
-			// captured. noiseSuppression/autoGainControl are the more
-			// aggressive, content-altering processors of the three (and on
-			// macOS in particular, requesting them can hand the whole tab's
-			// audio session to a voice-isolation DSP pipeline meant for
-			// suppressing background noise around speech — not something
-			// that's ever been verified to leave real speech content
-			// intact). This is the next concrete thing to try, not a
-			// confirmed fix yet.
-			micStream = await navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true }
-			});
+			// No constraints at all now — dropped noiseSuppression/
+			// autoGainControl first (transcription quality turned out to be
+			// a mic-distance/ambient-noise thing instead, not this), and now
+			// echoCancellation too. Live testing described reply *playback*
+			// in Transponder as sounding phase-doubled/reverberated — "like
+			// a second version playing on top of the first with a ~25ms
+			// delay" — which is a textbook comb-filter/phasing artifact, not
+			// a compression-quality complaint. echoCancellation (AEC) works
+			// by comparing mic input against a reference tap of the
+			// system's own audio *output* to cancel feedback; some OS/
+			// browser AEC implementations are known to leak a delayed copy
+			// of that reference tap audibly back into output. Given the
+			// exact symptom described, that reference-tap mechanism is the
+			// most likely remaining culprit — still unconfirmed, next thing
+			// to test.
+			micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch (err) {
 			console.error('microphone access denied or unavailable', err);
 			phase = 'idle';
@@ -348,6 +347,18 @@
 
 	async function beginSpeaking(idx: number) {
 		await appState.readAloud(idx);
+		// appState.readAloud() sets appState.audio.justFinishedIndex as a
+		// side effect meant for ChatView's WaveformAudioPlayer (its
+		// autoplay prop) — that component's own doc comment assumes it
+		// "only ever mounts once per turn... never a reload", which held
+		// until Transponder started unmounting/remounting ChatView on
+		// open/close. Left alone, hanging up replayed the exact reply
+		// Transponder had just finished speaking the instant ChatView's
+		// WaveformAudioPlayer remounted and saw that stale flag. Playback
+		// here is entirely Transponder's own — this flag was never meant
+		// for it — so clear it immediately rather than leave it armed for
+		// whatever mounts next.
+		appState.audio.justFinishedIndex = null;
 		const t = appState.turns[idx];
 		if (!t?.ttsAudioFile) {
 			// Synthesis failed — the reply text is still visible on screen
