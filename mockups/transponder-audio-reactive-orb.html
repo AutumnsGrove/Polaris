@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transponder — audio-reactive orb (live proof of concept)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: oklch(15% 0.014 65);
+    --surface: oklch(19% 0.014 65);
+    --surface-2: oklch(23% 0.016 65);
+    --surface-3: oklch(28% 0.018 65);
+    --border: oklch(30% 0.016 65);
+    --border-strong: oklch(40% 0.02 65);
+    --text: oklch(93% 0.01 75);
+    --text-dim: oklch(64% 0.014 70);
+    --accent: oklch(82% 0.17 78);
+    --accent-2: oklch(78% 0.06 235);
+    --danger: oklch(65% 0.19 25);
+    --danger-bg: oklch(28% 0.05 25);
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --ease: cubic-bezier(0.16,1,0.3,1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 48px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    align-items: flex-start;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  .note {
+    width: 100%;
+    max-width: 820px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px 22px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .note b { color: var(--text); }
+  .note code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); }
+
+  .card {
+    width: 390px;
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 32px 28px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .card-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; align-self: flex-start; }
+
+  .orb {
+    width: 168px;
+    height: 168px;
+    border-radius: 999px;
+    background: radial-gradient(circle at 35% 30%, oklch(28% 0.03 78), var(--surface) 70%);
+    border: 1px solid var(--border-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.06s linear, box-shadow 0.06s linear;
+  }
+  .orb svg { flex-shrink: 0; }
+
+  .bars {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 46px;
+  }
+  .bar {
+    width: 5px;
+    border-radius: 2.5px;
+    background: var(--accent);
+    height: 8px;
+    transition: height 0.05s linear;
+  }
+
+  .status { font-size: 13px; color: var(--text-dim); min-height: 18px; text-align: center; }
+  .status.live { color: var(--accent); }
+  .status.error { color: oklch(75% 0.14 25); }
+
+  .btn {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    color: var(--text); padding: 10px 18px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+  }
+  .btn.active { background: var(--danger-bg); border-color: oklch(65% 0.19 25 / 45%); color: oklch(88% 0.06 25); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+
+<div class="note">
+  <b>What this proves:</b> both orbs below are driven by a live <code>AnalyserNode</code> reading real
+  audio amplitude every frame (<code>requestAnimationFrame</code> + <code>getByteFrequencyData</code>),
+  not a canned CSS keyframe loop like <code>mockups/transponder.html</code>'s call screens currently
+  show. <b>Input</b> taps your actual microphone (same <code>getUserMedia</code> stream
+  <code>VoiceButton.svelte</code> already captures for <code>MediaRecorder</code> — nothing here is
+  sent anywhere, it's read locally in the browser and discarded). <b>Output</b> plays a short
+  synthesized placeholder clip (this file has no real Kokoro audio to work with) through the same
+  <code>AnalyserNode</code> mechanism a persisted TTS <code>&lt;audio&gt;</code> element would use once
+  <code>docs/plans/voice-playback-infra.md</code>'s Fix 1 lands — the wiring is identical either way,
+  only the audio source changes.
+</div>
+
+<div class="card">
+  <div class="card-label">Input — live mic</div>
+  <div class="orb" id="orbInput">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+  </div>
+  <div class="bars" id="barsInput"></div>
+  <div class="status" id="statusInput">Grants mic permission on start — nothing recorded or sent</div>
+  <button class="btn" id="btnInput">Start mic test</button>
+</div>
+
+<div class="card">
+  <div class="card-label">Output — sample reply (synthetic)</div>
+  <div class="orb" id="orbOutput">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+  </div>
+  <div class="bars" id="barsOutput"></div>
+  <div class="status" id="statusOutput">~3.5s synthesized tone sequence, stands in for a real spoken reply</div>
+  <button class="btn" id="btnOutput">Play sample reply</button>
+</div>
+
+<script>
+  const BAR_COUNT = 9;
+  function makeBars(container) {
+    const bars = [];
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const el = document.createElement('div');
+      el.className = 'bar';
+      container.appendChild(el);
+      bars.push(el);
+    }
+    return bars;
+  }
+  const barsInput = makeBars(document.getElementById('barsInput'));
+  const barsOutput = makeBars(document.getElementById('barsOutput'));
+
+  function driveVisual(analyser, orbEl, barEls) {
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let rafId;
+    function tick() {
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const level = sum / data.length / 255; // 0..1 overall loudness
+      orbEl.style.transform = `scale(${1 + level * 0.14})`;
+      orbEl.style.boxShadow = `0 0 0 ${4 + level * 28}px oklch(82% 0.17 78 / ${(0.04 + level * 0.22).toFixed(3)})`;
+      barEls.forEach((bar, i) => {
+        const binIndex = Math.min(data.length - 1, Math.floor((i / barEls.length) * data.length * 0.7) + 1);
+        const v = data[binIndex] / 255;
+        bar.style.height = `${8 + v * 38}px`;
+      });
+      rafId = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => cancelAnimationFrame(rafId);
+  }
+  function resetVisual(orbEl, barEls) {
+    orbEl.style.transform = 'scale(1)';
+    orbEl.style.boxShadow = 'none';
+    barEls.forEach((bar) => { bar.style.height = '8px'; });
+  }
+
+  // --- Input: live mic ---
+  const btnInput = document.getElementById('btnInput');
+  const statusInput = document.getElementById('statusInput');
+  const orbInput = document.getElementById('orbInput');
+  let inputCtx, inputStream, stopInputVisual, inputActive = false;
+
+  btnInput.addEventListener('click', async () => {
+    if (inputActive) {
+      stopInputVisual && stopInputVisual();
+      inputStream && inputStream.getTracks().forEach((t) => t.stop());
+      inputCtx && inputCtx.close();
+      resetVisual(orbInput, barsInput);
+      statusInput.textContent = 'Stopped';
+      statusInput.className = 'status';
+      btnInput.textContent = 'Start mic test';
+      btnInput.classList.remove('active');
+      inputActive = false;
+      return;
+    }
+    try {
+      statusInput.textContent = 'Requesting mic permission…';
+      inputCtx = new (window.AudioContext || window.webkitAudioContext)();
+      inputStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = inputCtx.createMediaStreamSource(inputStream);
+      const analyser = inputCtx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.75;
+      source.connect(analyser); // NOT connected to destination — no echo/feedback
+      stopInputVisual = driveVisual(analyser, orbInput, barsInput);
+      statusInput.textContent = 'Live — talk normally';
+      statusInput.className = 'status live';
+      btnInput.textContent = 'Stop mic test';
+      btnInput.classList.add('active');
+      inputActive = true;
+    } catch (err) {
+      statusInput.textContent = 'Mic permission denied or unavailable';
+      statusInput.className = 'status error';
+    }
+  });
+
+  // --- Output: synthesized sample reply ---
+  const btnOutput = document.getElementById('btnOutput');
+  const statusOutput = document.getElementById('statusOutput');
+  const orbOutput = document.getElementById('orbOutput');
+
+  // A short sequence of tone bursts with speech-like cadence/pauses — a
+  // stand-in for a real Kokoro clip, purely so this demo has real audio
+  // to route through the same AnalyserNode mechanism a persisted TTS
+  // <audio> element would use.
+  async function buildSampleBuffer(ctx) {
+    const duration = 3.4;
+    const offline = new OfflineAudioContext(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate);
+    const segments = [
+      { t: 0.00, d: 0.18, f: 180, g: 0.5 }, { t: 0.22, d: 0.12, f: 230, g: 0.35 },
+      { t: 0.40, d: 0.24, f: 160, g: 0.55 }, { t: 0.70, d: 0.10, f: 260, g: 0.30 },
+      { t: 0.86, d: 0.32, f: 190, g: 0.60 }, { t: 1.26, d: 0.15, f: 230, g: 0.40 },
+      { t: 1.70, d: 0.26, f: 200, g: 0.55 }, { t: 2.02, d: 0.14, f: 250, g: 0.35 },
+      { t: 2.22, d: 0.32, f: 175, g: 0.60 }, { t: 2.62, d: 0.12, f: 215, g: 0.30 },
+      { t: 2.80, d: 0.38, f: 185, g: 0.55 }
+    ];
+    segments.forEach((seg) => {
+      const osc = offline.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = seg.f;
+      const gain = offline.createGain();
+      gain.gain.setValueAtTime(0, seg.t);
+      gain.gain.linearRampToValueAtTime(seg.g, seg.t + 0.02);
+      gain.gain.linearRampToValueAtTime(0, seg.t + seg.d);
+      osc.connect(gain).connect(offline.destination);
+      osc.start(seg.t);
+      osc.stop(seg.t + seg.d + 0.02);
+    });
+    return offline.startRendering();
+  }
+
+  btnOutput.addEventListener('click', async () => {
+    btnOutput.disabled = true;
+    statusOutput.textContent = 'Synthesizing sample…';
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const buffer = await buildSampleBuffer(ctx);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.7;
+      src.connect(analyser);
+      analyser.connect(ctx.destination); // connected — this one should be audible
+      const stop = driveVisual(analyser, orbOutput, barsOutput);
+      statusOutput.textContent = 'Playing…';
+      statusOutput.className = 'status live';
+      src.start();
+      src.onended = () => {
+        stop();
+        resetVisual(orbOutput, barsOutput);
+        statusOutput.textContent = '~3.5s synthesized tone sequence, stands in for a real spoken reply';
+        statusOutput.className = 'status';
+        btnOutput.disabled = false;
+        ctx.close();
+      };
+    } catch (err) {
+      statusOutput.textContent = 'Playback unavailable in this browser';
+      statusOutput.className = 'status error';
+      btnOutput.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>

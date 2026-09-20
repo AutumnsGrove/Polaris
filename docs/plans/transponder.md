@@ -20,6 +20,9 @@ referenced from `docs/plans/pulsar-daily.md`):
 - `mockups/transponder-audio-player-options.html` — the full A/B/C/D comparison for the
   read-aloud player, kept for the record of what was considered and why D won (same convention as
   `mockups/comet-icon-options.html`).
+- `mockups/transponder-audio-reactive-orb.html` — a **working** proof of concept (not a static
+  visual comp) that the call screens' orb should be driven by real audio amplitude, not a canned
+  CSS loop — see "Resolved" below.
 
 A "Telephone Mode — Call Screen Mockups" canvas artifact from the same planning session also
 exists with the same content (interactive, pan/zoomable) — kept in sync with the repo files above,
@@ -74,6 +77,26 @@ the existing turn pipeline.
 
 ## Resolved
 
+- **The orb reacts to real audio amplitude on both sides, like ChatGPT's voice mode — not a
+  canned animation.** The static call-screen mockups (`mockups/transponder.html`) use fixed CSS
+  keyframe loops for the Listening/Speaking orb, which is fine for a visual comp but isn't what
+  should actually ship. The real mechanism, proven working in
+  `mockups/transponder-audio-reactive-orb.html`: a Web Audio `AnalyserNode` reads live frequency
+  data every frame (`requestAnimationFrame` + `getByteFrequencyData`) and drives the orb's
+  scale/glow and the waveform bars directly.
+  - **Input side:** the same `getUserMedia` stream `VoiceButton.svelte` already captures for
+    `MediaRecorder` gets a second branch into `AnalyserNode` (via
+    `audioCtx.createMediaStreamSource(stream)`) — not connected to the speaker output, so there's
+    no echo/feedback risk. The orb reacts to the operator's own voice while recording.
+  - **Output side:** once `voice-playback-infra.md`'s Fix 1 (persisted WAV) lands, the same
+    `<audio>` element gets a `MediaElementAudioSourceNode` → `AnalyserNode` → destination chain —
+    the orb reacts to the actual synthesized speech as it plays, not a decorative loop timed to
+    roughly match. The demo file fakes this side with a short synthesized tone sequence (no real
+    Kokoro clip to work with in a standalone mockup), but the wiring is identical to what a real
+    persisted clip would use.
+  - This is purely a visual-fidelity decision, not an architecture change — doesn't touch the
+    "no full-duplex" scope boundary above; the orb reacting to audio in each direction is still
+    strictly turn-by-turn (record, then play), never simultaneous.
 - **Visual indicator copy.** "Polaris is speaking" broke the pattern the other three screens
   already used (plain single words: "Listening", "Thinking") — changed to "Speaking" for
   consistency. Real research behind the direction, not just a guess: ChatGPT's original dedicated
