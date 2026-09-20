@@ -127,14 +127,43 @@ the existing turn pipeline.
   original approach, and `PRODUCT.md`'s "calm over clever") is still worth considering later; the
   single-word fix is the safe, consistent v1 answer.
 
+- **Yes, it needs one small persisted marker after all: whether a thread was ever used in a call,
+  plus a "Transponder calls" count in Settings.** This settles the "own `store.Thread` marker"
+  question below in favor of "yes, one boolean" — the operator wants to see usage, which needs
+  something to query. Fits existing conventions closely enough that it's basically wiring, not new
+  design:
+  - **Per-thread flag:** a `threads.used_transponder` boolean (mirrors how `store.Thread.Source`
+    is already a plain informational column — see `store/store.go`'s schema comment on it), set
+    true the first time a turn on that thread carries `voice_mode: true`. Updated where
+    `gateway/turn.go` already reads `msg.VoiceMode` (line ~356/528) — an `UPDATE threads SET
+    used_transponder = 1 WHERE id = ? AND used_transponder = 0` alongside the existing turn
+    bookkeeping there, not a new code path.
+  - **Deliberately NOT thread origin.** This is not the same thing as `Source = "transponder"`
+    would be — `Source` is fixed at thread creation and never revisited (`protocol.go`'s doc
+    comment: "only read on thread creation; ignored on every later turn"), but a thread can move
+    freely between chat and call view per "What this is" above. A thread started as plain text
+    that later gets one call turn should count; the flag has to be able to flip on any turn, not
+    just the first one — a plain column updated in `handleTurn`, not `Source`.
+  - **What "one call" counts as, for the aggregate number:** simplest definition, avoiding a new
+    "call session" concept the architecture otherwise has no use for — **the count is distinct
+    threads with `used_transponder = true`**, not raw voice turns and not explicit call-start/end
+    events. `store.Stats` (`store/stats.go`) gets one more field (e.g. `TransponderCallCount`),
+    computed the same way `ThreadCount`/the existing `source`-grouped queries already are —
+    `SELECT COUNT(*) FROM threads WHERE used_transponder = 1 AND disabled = 0`. This is an
+    assumption, not confirmed with the operator: if "number of them" was meant as total call
+    *turns* (every push-to-talk exchange) rather than distinct threads-that-had-a-call, that's a
+    different, still-simple query (`COUNT` against whatever logs `voice_mode: true` per-turn) —
+    worth a quick confirm before building, not before planning.
+  - **Settings UI:** `SettingsPanel.svelte`'s existing "Activity" usage section already has this
+    exact row shape — `usage-stat-row` label/value pairs like "Threads / turns" and "Tool calls"
+    (lines ~157-176), with conditional rendering only when the count is nonzero (same pattern as
+    the `code_exec_wall_time_ms > 0` row just below them). "Transponder calls" slots in there
+    identically, no new UI pattern needed.
+
 ## Not-yet-decided
 
 - **Where the call screen lives in navigation** — a dedicated route, entry point from the
   composer, from the sidebar — not yet settled.
-- **Whether this needs its own `store.Thread` marker at all.** Current thinking is no (see "What
-  this is" above — it's a view, not a thread kind), but worth re-confirming once the actual
-  routing/state design is drafted, in case something about reopening a call-originated thread
-  later in normal chat view turns out to need a hint the thread came from a call.
 
 ## Why this is deliberately *not* more decided yet
 
