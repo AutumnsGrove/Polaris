@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { appState } from '$lib/state.svelte';
+	import { synthesizeStream } from '$lib/speech';
 	import { Mic, PhoneOff, X, Loader2, Volume2 } from '@lucide/svelte';
 	import type { TimelineItem } from '$lib/types';
 
@@ -45,13 +46,27 @@
 	let turn = $derived(assistantIndex !== null ? appState.turns[assistantIndex] : undefined);
 	let audioEl: HTMLAudioElement | undefined = $state();
 	// Real playback state, driven only by the <audio> element's own
-	// 'playing'/'pause'/'ended' events — see handlePlaybackReady's doc
-	// comment for why this replaced a play()-promise-based check. The
-	// file itself checks out fine server-side (verified directly against
-	// a real persisted .wav: ~85% non-zero PCM payload, valid header), so
-	// a failure here is a browser/playback-state problem, not a broken
-	// file.
+	// 'playing'/'pause'/'ended' events — see beginSpeaking's doc comment
+	// for why this replaced a play()-promise-based check. The file itself
+	// checks out fine server-side (verified directly against a real
+	// persisted .wav: ~85% non-zero PCM payload, valid header), so a
+	// failure here is a browser/playback-state problem, not a broken file.
 	let isPlaying = $state(false);
+	// True from the moment the first chunk of this round's reply exists —
+	// drives the "Tap to hear it" fallback's visibility (see the template)
+	// independent of whether the ENTIRE reply has finished synthesizing.
+	let hasAnyChunkToPlay = $state(false);
+	// Bumped every time a new round starts speaking; a chunk-arrival
+	// callback or the final synthesizeStream() result checks its own
+	// captured token against this before acting, so an interrupted
+	// round's still-in-flight network response can't hijack audioEl once
+	// the operator has already moved on to a new question — mirrors
+	// AudioPlayer.readAloud's own sessionToken pattern (audio.svelte.ts).
+	let speakGeneration = 0;
+	let pendingChunks: { url: string; blob: Blob }[] = [];
+	let currentChunkUrl: string | null = null;
+	let chunkInFlight = false;
+	let streamFullyReceived = false;
 
 	// --- Web Audio: mic-input analysis only, not playback. Real frequency
 	// data drove the Listening AND Speaking orb in the original plan (see
@@ -76,6 +91,20 @@
 	let micSourceNode: MediaStreamAudioSourceNode | null = null;
 	let barLevels = $state([0.3, 0.5, 0.3, 0.5, 0.3]);
 	let orbScale = $state(1);
+
+	// Real amplitude data for the Speaking orb, decoded once per reply —
+	// same technique WaveformAudioPlayer.svelte already uses for its own
+	// waveform (fetch -> decodeAudioData -> bucket into peaks), not a live
+	// AnalyserNode tap on the playing <audio> element. Deliberately not
+	// that: routing actual playback through Web Audio (createMediaElement
+	// Source) is exactly what caused the total-silence bug earlier in this
+	// project (see the doc comment above). Pre-decoding a static peaks
+	// array and sweeping through it against audioEl.currentTime gets real,
+	// audio-reflective bars with zero risk to playback itself — the decode
+	// context is a throwaway, closed immediately, never touches the
+	// element actually making sound.
+	let playbackPeaks: number[] = [];
+	const playbackPeakResolutionMs = 25;
 
 	function ensureAudioContext(): AudioContext {
 		if (!audioCtx) {
@@ -156,30 +185,102 @@
 		orbScale = 1;
 	}
 
+	// Peak amplitude per playbackPeakResolutionMs-wide bucket, normalized
+	// against this clip's own loudest bucket and exponent-exaggerated —
+	// mirrors WaveformAudioPlayer.svelte's decodePeaks() almost exactly
+	// (same reasoning: Kokoro's output has a narrow dynamic range, so
+	// stretching each clip's own peaks to fill 0..1 first reads far less
+	// flat than a fixed-constant normalization would).
+	function computePeaks(buffer: AudioBuffer): number[] {
+		const channel = buffer.getChannelData(0);
+		const bucketSize = Math.max(1, Math.floor((playbackPeakResolutionMs / 1000) * buffer.sampleRate));
+		const raw: number[] = [];
+		let maxPeak = 0;
+		for (let i = 0; i < channel.length; i += bucketSize) {
+			let peak = 0;
+			const end = Math.min(i + bucketSize, channel.length);
+			for (let j = i; j < end; j++) {
+				const abs = Math.abs(channel[j]);
+				if (abs > peak) peak = abs;
+			}
+			raw.push(peak);
+			if (peak > maxPeak) maxPeak = peak;
+		}
+		return raw.map((peak) => {
+			const normalized = maxPeak > 0 ? peak / maxPeak : 0;
+			return Math.max(0.08, Math.pow(normalized, 2.2));
+		});
+	}
+
+	// How far apart (in buckets) the 5 sampled bars are spread — see
+	// startPlaybackVisualizer's doc comment for why this isn't 1 (adjacent
+	// buckets).
+	const barStrideBuckets = 8;
+
+	// Sweeps the 5 orb bars through playbackPeaks in step with the
+	// <audio> element's real currentTime — genuinely reflects what's
+	// playing, not a canned loop with no relationship to the actual audio.
+	// Deliberately samples across a WIDE spread (barStrideBuckets apart,
+	// ~200ms at the 25ms bucket resolution above — ~800ms of history
+	// across all 5 bars), not 5 adjacent buckets: ordinary speech barely
+	// changes amplitude within a quarter-second, so an adjacent-bucket
+	// version looked nearly flat/jittery most of the time and only
+	// twitched on loud syllable onsets — a real bug caught live, not just
+	// a tuning nitpick. Shares rafId/barLevels/stopAnalyserLoop with the
+	// Listening-side mic visualizer above since only one is ever running
+	// at a time (Listening and Speaking can't overlap).
+	function startPlaybackVisualizer() {
+		if (rafId !== undefined) return;
+		const tick = () => {
+			if (!audioEl || playbackPeaks.length === 0) {
+				rafId = requestAnimationFrame(tick);
+				return;
+			}
+			const centerIdx = Math.floor((audioEl.currentTime * 1000) / playbackPeakResolutionMs);
+			const levels: number[] = [];
+			for (let i = 4; i >= 0; i--) {
+				levels.push(playbackPeaks[Math.max(0, centerIdx - i * barStrideBuckets)] ?? 0.1);
+			}
+			barLevels = levels;
+			orbScale = 1 + (levels.reduce((a, b) => a + b, 0) / 5) * 0.22;
+			rafId = requestAnimationFrame(tick);
+		};
+		rafId = requestAnimationFrame(tick);
+	}
+
 	function pickMimeType(): string {
 		return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
 	}
 
 	async function startRecording() {
 		if (phase === 'listening') return;
-		if (phase === 'thinking') {
-			// Interrupting mid-generation — the operator wants to redo a
-			// question the moment they realize the transcript was wrong,
-			// not wait out the rest of a now-pointless answer. Abandon
-			// tracking of the turn being aborted (its eventual 'done', with
-			// whatever partial content streamed before the stop landed,
-			// still persists normally to the thread — see
-			// appState.stopGeneration's doc comment — it just stops being
-			// this screen's business) so it doesn't get spoken once this
-			// new round's real answer comes back instead.
-			appState.stopGeneration();
+		if (phase === 'thinking' || phase === 'speaking') {
+			if (phase === 'thinking') {
+				// Interrupting mid-generation — the operator wants to redo a
+				// question the moment they realize the transcript was wrong,
+				// not wait out the rest of a now-pointless answer. Whatever
+				// partial content streamed before the stop landed still
+				// persists normally to the thread — see
+				// appState.stopGeneration's doc comment — it just stops
+				// being this screen's business.
+				appState.stopGeneration();
+			}
+			// Tapping the mic mid-Speaking is an interrupt too (mockup's
+			// "Tap the mic to interrupt") — bump speakGeneration so any
+			// chunk still arriving over the network for the turn being
+			// abandoned gets ignored (its callback checks this token)
+			// instead of hijacking audioEl mid-new-recording, and fully
+			// release whatever was queued/playing rather than leaving it
+			// dangling.
+			speakGeneration++;
 			assistantIndex = null;
 			speakingTriggered = false;
+			isPlaying = false;
+			hasAnyChunkToPlay = false;
+			chunkInFlight = false;
+			revokeAllChunkUrls();
+			if (audioEl && !audioEl.paused) audioEl.pause();
 		}
-		// Tapping the mic mid-Speaking is an interrupt (mockup's "Tap the
-		// mic to interrupt") — stop whatever's still playing rather than
-		// layering a new recording's mic input on top of it.
-		if (audioEl && !audioEl.paused) audioEl.pause();
 		phase = 'listening';
 		pendingStop = false;
 		// Runs for the whole round (Listening -> Thinking -> Speaking), not
@@ -345,39 +446,11 @@
 		else void startRecording();
 	}
 
-	async function beginSpeaking(idx: number) {
-		await appState.readAloud(idx);
-		// appState.readAloud() sets appState.audio.justFinishedIndex as a
-		// side effect meant for ChatView's WaveformAudioPlayer (its
-		// autoplay prop) — that component's own doc comment assumes it
-		// "only ever mounts once per turn... never a reload", which held
-		// until Transponder started unmounting/remounting ChatView on
-		// open/close. Left alone, hanging up replayed the exact reply
-		// Transponder had just finished speaking the instant ChatView's
-		// WaveformAudioPlayer remounted and saw that stale flag. Playback
-		// here is entirely Transponder's own — this flag was never meant
-		// for it — so clear it immediately rather than leave it armed for
-		// whatever mounts next.
-		appState.audio.justFinishedIndex = null;
-		const t = appState.turns[idx];
-		if (!t?.ttsAudioFile) {
-			// Synthesis failed — the reply text is still visible on screen
-			// for the beat it was shown as "Speaking" with no audio; just
-			// return to idle for the next push-to-talk round.
-			endRound();
-		}
-	}
-
-	// The object URL backing audioEl.src, so it can be revoked instead of
-	// leaking — see handlePlaybackReady's doc comment for why this exists
-	// at all (fetched-and-blobbed, not just pointed at the network URL).
-	let playbackBlobUrl: string | null = null;
-	let fetchedFor: string | null = null;
-
-	function revokePlaybackBlob() {
-		if (playbackBlobUrl) URL.revokeObjectURL(playbackBlobUrl);
-		playbackBlobUrl = null;
-		fetchedFor = null;
+	function revokeAllChunkUrls() {
+		if (currentChunkUrl) URL.revokeObjectURL(currentChunkUrl);
+		currentChunkUrl = null;
+		for (const c of pendingChunks) URL.revokeObjectURL(c.url);
+		pendingChunks = [];
 	}
 
 	function endRound() {
@@ -385,56 +458,140 @@
 		assistantIndex = null;
 		speakingTriggered = false;
 		isPlaying = false;
-		revokePlaybackBlob();
+		hasAnyChunkToPlay = false;
+		chunkInFlight = false;
+		revokeAllChunkUrls();
 		clearInterval(elapsedTimer);
 		elapsedTimer = undefined;
 	}
 
-	// Deliberately NOT routed through the AudioContext/AnalyserNode graph
-	// — see the doc comment above audioCtx's declaration for why: doing
-	// that made the reply completely inaudible on a real device (visible
-	// text, zero sound, no error) once the AudioContext got suspended
-	// during the Thinking gap. Plain, unmodified <audio> playback here
-	// instead — the Speaking orb's pulse is a CSS animation (.speaking-orb
-	// in the styles below), not real frequency data.
+	// Progressive playback: talks to /api/speak/stream directly (via
+	// synthesizeStream's onChunk callback) instead of going through
+	// appState.readAloud()/AudioPlayer, which always waits for the whole
+	// answer before returning anything playable. Each chunk is a complete,
+	// independently-decodable WAV (see SpeechChunk's doc comment in
+	// speech.ts), so chaining them through the same <audio> element one at
+	// a time via playNextQueuedChunk/handleChunkEnded needs no gapless-PCM
+	// stitching — this is exactly the time-to-first-audio behavior this
+	// codebase had once before and removed for normal chat's read-aloud
+	// (too many chunks, a scrubber to keep correct); voice_mode answers
+	// are short enough (1-3 sentences) that reviving it here is a much
+	// smaller, lower-risk surface. Deliberately NOT routed through the
+	// AudioContext/AnalyserNode graph either way — see audioCtx's own doc
+	// comment for why that made a whole answer silently inaudible before.
 	//
-	// isPlaying is driven entirely by the <audio> element's own real
-	// 'playing'/'pause'/'ended' events (see the template below), not by
-	// whether play()'s promise resolved or rejected — live testing found
-	// play() can resolve successfully while nothing audible actually
-	// happens and 'ended' never fires, so a promise-based "did it work"
-	// check was both a false positive (looked fine, wasn't) and left the
-	// canned pulse animation running forever with no way to tell it had
-	// silently failed. The manual control below is unconditional on
-	// !isPlaying, not just shown reactively after a caught error — it
-	// doesn't matter *why* autoplay didn't produce sound, only whether a
-	// real 'playing' event ever actually fired.
-	//
-	// audioEl.src is set to a fully-fetched Blob URL, not the live
-	// /api/workspace/... network URL directly — live testing found the
-	// reply sounded audibly distorted/"robotic" played that way, while the
-	// exact same file through the normal chat's WaveformAudioPlayer (whose
-	// waveform-decode step does its own full fetch() of the file first)
-	// sounded completely normal. The server response is chunked transfer
-	// encoding with no Content-Length (see gateway/workspace.go), which
-	// some browsers appear to decode incorrectly as a live audio stream
-	// but decode fine once it's a complete, fully-buffered blob — fetching
-	// it fully before ever handing it to <audio> sidesteps that entirely.
-	async function handlePlaybackReady(el: HTMLAudioElement, url: string) {
-		if (fetchedFor === url) return; // already fetched this round
-		fetchedFor = url;
-		try {
-			const res = await fetch(url);
-			const blob = await res.blob();
-			playbackBlobUrl = URL.createObjectURL(blob);
-			el.src = playbackBlobUrl;
-		} catch (err) {
-			console.error('fetching call audio failed, falling back to direct URL', err);
-			el.src = url;
+	// speakGeneration guards every callback below against acting on a
+	// round the operator has since interrupted (see startRecording's
+	// speakGeneration bump) — without it, a chunk still arriving over the
+	// network for an abandoned turn could hijack audioEl mid a completely
+	// different new recording.
+	async function beginSpeaking(idx: number) {
+		const t = appState.turns[idx];
+		if (!t || t.role !== 'assistant' || !t.content) {
+			endRound();
+			return;
 		}
-		el.muted = false;
-		el.volume = 1;
-		void el.play().catch((err) => console.error('call autoplay attempt failed (manual control still available)', err));
+		const token = ++speakGeneration;
+		pendingChunks = [];
+		currentChunkUrl = null;
+		chunkInFlight = false;
+		streamFullyReceived = false;
+		hasAnyChunkToPlay = false;
+		playbackPeaks = [];
+
+		const result = await synthesizeStream(t.content, appState.currentThreadId ?? undefined, t.id, (chunk) => {
+			if (token !== speakGeneration) return; // this round was interrupted — ignore
+			enqueueChunk(chunk.audioBase64, chunk.contentType);
+		});
+		if (token !== speakGeneration) return; // interrupted before the stream even finished
+		streamFullyReceived = true;
+
+		if (result.cost) {
+			// Mirrors AudioPlayer.readAloud's own bookkeeping (audio.svelte.ts)
+			// — this bypasses that class entirely (it has no progressive-chunk
+			// support), so its two side effects worth keeping are replicated
+			// by hand: the thread-wide running total, and this turn's own
+			// visible cost badge.
+			appState.totalCost += result.cost;
+			t.costUsd = (t.costUsd ?? 0) + result.cost;
+		}
+		if (result.error) {
+			console.error('call TTS stream ended with an error', result.error);
+		}
+		if (result.file) {
+			// For ChatView's later normal display on reload/after hanging
+			// up — Transponder's own playback here never reads this field.
+			t.ttsAudioFile = result.file;
+		}
+
+		if (!hasAnyChunkToPlay) {
+			// Nothing ever synthesized — no reply to speak at all. If chunks
+			// DID arrive, playback is already underway/chained on its own
+			// via handleChunkEnded; nothing more to do here in that case.
+			endRound();
+		}
+	}
+
+	function enqueueChunk(base64: string, contentType: string) {
+		if (!audioEl) return;
+		hasAnyChunkToPlay = true;
+		const binary = atob(base64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		const blob = new Blob([bytes], { type: contentType });
+		pendingChunks.push({ url: URL.createObjectURL(blob), blob });
+		if (!chunkInFlight) playNextQueuedChunk();
+	}
+
+	function playNextQueuedChunk() {
+		if (!audioEl) return;
+		const next = pendingChunks.shift();
+		if (!next) {
+			chunkInFlight = false;
+			return;
+		}
+		chunkInFlight = true;
+		if (currentChunkUrl) URL.revokeObjectURL(currentChunkUrl);
+		currentChunkUrl = next.url;
+		audioEl.src = next.url;
+		audioEl.muted = false;
+		audioEl.volume = 1;
+		void audioEl.play().catch((err) => {
+			console.error('call chunk playback failed (manual control still available)', err);
+			chunkInFlight = false;
+		});
+		// Decoded separately, after kicking off play() above — never let
+		// waveform decoding delay actual playback starting.
+		void decodePlaybackPeaks(next.blob);
+	}
+
+	// Fires on the shared <audio> element's real 'ended' event — chains to
+	// whatever's queued next, or leaves chunkInFlight false to wait: either
+	// more are still arriving (enqueueChunk resumes playback itself once
+	// one lands) or streamFullyReceived is already true and this really is
+	// the end of the reply, in which case there's nothing left to do —
+	// same "stay on Speaking, don't auto-return to Idle" behavior as
+	// before applies either way.
+	function handleChunkEnded() {
+		chunkInFlight = false;
+		if (pendingChunks.length > 0) playNextQueuedChunk();
+	}
+
+	async function decodePlaybackPeaks(blob: Blob) {
+		let decodeCtx: AudioContext | undefined;
+		try {
+			decodeCtx = new AudioContext();
+			const arrayBuffer = await blob.arrayBuffer();
+			const buffer = await decodeCtx.decodeAudioData(arrayBuffer);
+			playbackPeaks = computePeaks(buffer);
+		} catch (err) {
+			// Cosmetic only — the orb just falls back to its resting state
+			// (startPlaybackVisualizer's own empty-array guard), playback
+			// itself is entirely unaffected.
+			console.error('decoding call audio for orb waveform failed', err);
+		} finally {
+			void decodeCtx?.close().catch(() => {});
+		}
 	}
 
 	function retryPlayback() {
@@ -444,8 +601,7 @@
 
 	// Advances phase from Thinking -> Speaking the moment the assistant
 	// turn this round is waiting on finishes streaming, then kicks off
-	// synthesis via the same appState.readAloud() the normal chat's
-	// speaker icon uses (sets turn.ttsAudioFile once persisted).
+	// progressive synthesis/playback — see beginSpeaking's own doc comment.
 	$effect(() => {
 		if (assistantIndex === null || speakingTriggered) return;
 		const t = appState.turns[assistantIndex];
@@ -455,10 +611,13 @@
 		void beginSpeaking(assistantIndex);
 	});
 
+	// Drives the Speaking orb's bars from real decoded peak data while
+	// audio is genuinely playing (see isPlaying's own doc comment on why
+	// that's real-event-driven, not assumed) — same stopAnalyserLoop reset
+	// the Listening side uses once playback pauses/ends.
 	$effect(() => {
-		if (phase === 'speaking' && audioEl && turn?.ttsAudioFile) {
-			void handlePlaybackReady(audioEl, turn.ttsAudioFile);
-		}
+		if (isPlaying) startPlaybackVisualizer();
+		else stopAnalyserLoop();
 	});
 
 	// Condensed chip label for the Thinking screen — a shorter cousin of
@@ -499,7 +658,12 @@
 	onDestroy(() => {
 		clearInterval(elapsedTimer);
 		releaseMicAudio();
-		revokePlaybackBlob();
+		revokeAllChunkUrls();
+		// Any chunk still arriving over the network after the component's
+		// already gone must not touch a detached audioEl — bind:this
+		// doesn't get nulled out on unmount, so without this a phantom
+		// chunk could still start "playing" nobody can see or stop.
+		speakGeneration++;
 	});
 
 	function citationHost(url: string): string {
@@ -658,6 +822,7 @@
 				type="button"
 				class="orb speaking-orb"
 				class:paused={!isPlaying}
+				style:transform={isPlaying ? `scale(${orbScale})` : undefined}
 				onclick={toggleMode ? handleMicClick : undefined}
 				onmousedown={toggleMode ? undefined : handleMicDown}
 				onmouseup={toggleMode ? undefined : handleMicUp}
@@ -676,17 +841,23 @@
 						}}
 				aria-label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
 			>
+				<!-- Real decoded-peaks data via barLevels, not a canned loop
+				     — see startPlaybackVisualizer's doc comment. -->
 				<div class="bars">
-					{#each { length: 5 } as _, i (i)}
-						<div class="bar speaking-bar" style:animation-delay="{i * 0.1}s"></div>
+					{#each barLevels as level, i (i)}
+						<div class="bar" style:height="{14 + level * 34}px"></div>
 					{/each}
 				</div>
 			</button>
-			{#if turn?.ttsAudioFile && !isPlaying}
+			{#if hasAnyChunkToPlay && !isPlaying}
 				<!-- Unconditional on !isPlaying, not just shown after a caught
-				     error — see handlePlaybackReady's doc comment on why
+				     error — see beginSpeaking's doc comment on why
 				     detecting the failure mode reliably isn't possible, so
-				     this is the one guaranteed-working path instead. -->
+				     this is the one guaranteed-working path instead.
+				     hasAnyChunkToPlay (not turn?.ttsAudioFile, which only
+				     becomes true once the ENTIRE reply has finished
+				     synthesizing) so this is available the moment the first
+				     chunk exists, same as playback itself now is. -->
 				<button class="tap-to-play-btn" onclick={retryPlayback}>
 					<Volume2 size={14} />
 					Tap to hear it
@@ -708,19 +879,18 @@
 					{/each}
 				</div>
 			{/if}
-			{#if turn?.ttsAudioFile}
-				<!-- src is set imperatively in handlePlaybackReady (a fetched
-				     Blob URL, not this src attribute) — see that function's
-				     doc comment. -->
-				<!-- svelte-ignore a11y_media_has_caption -->
-				<audio
-					bind:this={audioEl}
-					onplaying={() => (isPlaying = true)}
-					onpause={() => (isPlaying = false)}
-					onended={() => (isPlaying = false)}
-					onerror={() => (isPlaying = false)}
-				></audio>
-			{/if}
+			<!-- Always mounted in Speaking (not gated on a chunk existing yet)
+			     — src is set imperatively in playNextQueuedChunk, one chunk
+			     at a time, as each arrives; see beginSpeaking's doc comment
+			     for the whole progressive-playback design. -->
+			<!-- svelte-ignore a11y_media_has_caption -->
+			<audio
+				bind:this={audioEl}
+				onplaying={() => (isPlaying = true)}
+				onpause={() => (isPlaying = false)}
+				onended={handleChunkEnded}
+				onerror={() => (isPlaying = false)}
+			></audio>
 		{/if}
 	</div>
 
@@ -816,13 +986,21 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		justify-content: center;
+		/* safe center, not plain center — a real bug caught live: with
+		   plain `center` + overflow-y: auto, content taller than the
+		   viewport gets pushed ABOVE the visible/scrollable area by the
+		   centering itself, and that portion becomes unreachable by
+		   scrolling in most browsers (the classic "centered flexbox
+		   content can't be scrolled to" trap). `safe center` falls back to
+		   flex-start alignment specifically when content would overflow,
+		   so nothing ever ends up in unreachable space. */
+		justify-content: safe center;
 		gap: var(--space-2xl);
-		padding: 0 var(--space-2xl);
-		/* Safety net beyond the transcript bubble's own internal scroll cap
-		   — a long reply + citations + a capped transcript together could
-		   still exceed a short viewport (small phone, landscape). Scrolls
-		   internally instead of clipping past the fixed header/footer. */
+		padding: var(--space-xl) var(--space-2xl);
+		/* Safety net beyond .reply-card/.transcript-bubble's own internal
+		   scroll caps — several long elements together could still exceed
+		   a short viewport (small phone, landscape). Scrolls internally
+		   instead of clipping past the fixed header/footer. */
 		overflow-y: auto;
 	}
 
@@ -886,18 +1064,6 @@
 		opacity: 0.6;
 	}
 
-	.speaking-orb.paused .speaking-bar {
-		animation-play-state: paused;
-	}
-
-	/* Canned, not audio-reactive — see the doc comment above
-	   handlePlaybackReady for why real playback correctness won out over
-	   wiring this to live frequency data. */
-	.speaking-bar {
-		height: 30px;
-		animation: bar-bounce 0.7s ease-in-out infinite;
-	}
-
 	.tap-to-play-btn {
 		display: flex;
 		align-items: center;
@@ -909,11 +1075,6 @@
 		border-radius: var(--radius-full);
 		font-size: 13px;
 		font-weight: 600;
-	}
-
-	@keyframes bar-bounce {
-		0%, 100% { transform: scaleY(0.4); }
-		50% { transform: scaleY(1); }
 	}
 
 	@keyframes pulse-ring {
@@ -989,6 +1150,14 @@
 	.reply-card {
 		width: 100%;
 		max-width: 320px;
+		/* Capped and internally scrollable — voice_mode_instruction usually
+		   keeps answers short, but not always (live-caught: a "that's not a
+		   real thing" clarifying answer ran to a full multi-paragraph
+		   reply). Same reasoning as .transcript-bubble's own cap: this
+		   can't be allowed to just expand forever and push the orb and
+		   footer around. */
+		max-height: 280px;
+		overflow-y: auto;
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
@@ -1100,8 +1269,7 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.mic-orb,
-		.speaking-orb,
-		.speaking-bar {
+		.speaking-orb {
 			animation: none;
 		}
 	}

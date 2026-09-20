@@ -55,27 +55,43 @@ interface SpeakStreamLine {
 	file?: string;
 }
 
+// One decoded, independently-playable chunk — each speakStreamChunk's
+// audio_base64 is a complete, standalone WAV (gateway wraps each chunk's
+// raw PCM individually via voice.WrapPCMAsWAV before base64-encoding it),
+// not a fragment of one continuous stream, so handing these off to
+// sequential <audio>.play() calls needs no gapless-PCM-stitching trickery.
+export interface SpeechChunk {
+	audioBase64: string;
+	contentType: string;
+}
+
 /**
  * Synthesizes text via /api/speak/stream (chunked sentence-by-sentence
- * server-side — see gateway/voice_handlers.go's handleSpeakStream — for
- * Kokoro synthesis latency, not for progressive client playback). Resolves
- * once the whole answer has finished synthesizing and been persisted, with
- * whatever cost was billed and the persisted file's URL. This used to also
- * invoke a per-chunk callback with a playable Audio element the instant
- * each chunk arrived, for lower time-to-first-audio on a long answer —
- * live testing found that queued chunk-by-chunk playback silently breaking
- * after the first chunk more often than not, and separately, Kokoro
- * synthesizing a typical answer end-to-end only takes a few seconds
- * anyway. Simpler and more robust to wait for the one real file and let
- * WaveformAudioPlayer own playback entirely, so per-chunk audio_base64
- * lines are received (the wire format still carries them, see
- * gateway/voice_handlers.go's speakStreamChunk) but intentionally ignored
- * here now.
+ * server-side — see gateway/voice_handlers.go's handleSpeakStream). Always
+ * resolves once the whole answer has finished synthesizing and been
+ * persisted, with whatever cost was billed and the persisted file's URL —
+ * that contract is unchanged, so every existing caller (AudioPlayer.
+ * readAloud, WaveformAudioPlayer's normal-chat flow) behaves exactly as
+ * before. The optional onChunk callback is new: when given, it fires as
+ * each chunk's audio actually arrives, for a caller that wants to start
+ * playing before the full answer is done synthesizing.
+ *
+ * This capability existed once before and was removed — "queued
+ * chunk-by-chunk playback silently breaking after the first chunk more
+ * often than not" — for the *normal chat* read-aloud flow specifically,
+ * where a long multi-paragraph answer could mean many chunks and a
+ * scrubbable player has real correctness expectations. Transponder's
+ * voice_mode answers are short (1-3 sentences = 1-3 chunks per
+ * voice_mode_instruction), and there's no scrubber to keep correct — a
+ * much smaller, lower-risk surface to revive this for. Left disabled
+ * (onChunk omitted) for every other caller, so this doesn't reopen that
+ * old bug for the path it was actually found on.
  */
 export async function synthesizeStream(
 	text: string,
 	threadId: string | undefined,
-	messageId: number | undefined
+	messageId: number | undefined,
+	onChunk?: (chunk: SpeechChunk) => void
 ): Promise<{ cost: number; error?: string; file?: string }> {
 	const res = await fetch('/api/speak/stream', {
 		method: 'POST',
@@ -119,8 +135,9 @@ export async function synthesizeStream(
 				file = parsed.file;
 				continue;
 			}
-			// Non-final lines' audio_base64/content_type are intentionally
-			// unused now — see this function's doc comment.
+			if (onChunk && parsed.audio_base64 && parsed.content_type) {
+				onChunk({ audioBase64: parsed.audio_base64, contentType: parsed.content_type });
+			}
 		}
 	}
 
