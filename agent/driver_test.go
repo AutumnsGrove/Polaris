@@ -15,6 +15,7 @@ import (
 	"polaris/embed"
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/prompts"
 	"polaris/search"
 	"polaris/tools"
 )
@@ -130,6 +131,103 @@ func TestRun_FocusModeInstructionReachesSystemPrompt(t *testing.T) {
 	}
 	if !strings.Contains(systemMsg.Content, "Focus mode: Academic") {
 		t.Errorf("system prompt sent to the LLM doesn't contain the Academic focus mode instruction: %q", systemMsg.Content)
+	}
+	// Nil history — position 0 is already maximally recent, so no
+	// reinforcement message should be added on top of it. Exactly 2
+	// messages: system + the new user message.
+	if len(mock.Calls[0].Messages) != 2 {
+		t.Errorf("Messages = %d entries, want 2 (no reinforcement duplicate on a history-less first turn): %+v",
+			len(mock.Calls[0].Messages), mock.Calls[0].Messages)
+	}
+}
+
+// TestRun_FocusModeReinforcedNearEndWithHistory is the actual regression
+// test for the drift bug docs/plans/voice-playback-infra.md's Bug 2
+// describes: a standing focus-mode instruction resent every turn but
+// buried only at position 0 still drifts out of a model's effective
+// attention as history grows. Nothing before this asserted anything about
+// *where* in the message list the instruction ends up relative to prior
+// turns — which is exactly why the drift shipped uncaught.
+func TestRun_FocusModeReinforcedNearEndWithHistory(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "answer"}, Chunks: []string{"answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.FocusMode = FocusModeBrief
+
+	history := []llm.ChatMessage{
+		{Role: "user", Content: "first question"},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "user", Content: "second question"},
+		{Role: "assistant", Content: "second answer"},
+	}
+
+	if _, err := Run(context.Background(), ctx, history, "third question"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	sent := mock.Calls[0].Messages
+	// system, 4 history entries, the new user message, then the
+	// reinforcement — 7 total, reinforcement last.
+	if len(sent) != 7 {
+		t.Fatalf("Messages = %d entries, want 7 (system + history + user + reinforcement): %+v", len(sent), sent)
+	}
+	last := sent[len(sent)-1]
+	if last.Role != "user" {
+		t.Errorf("reinforcement message Role = %q, want %q", last.Role, "user")
+	}
+	if !strings.Contains(last.Content, "Focus mode: Brief") {
+		t.Errorf("last message doesn't carry the Brief focus mode reinforcement: %q", last.Content)
+	}
+	// The actual regression check: it must land AFTER all of history, not
+	// bunched in with (or before) it.
+	for i, m := range sent[:len(sent)-1] {
+		if strings.Contains(m.Content, "Focus mode: Brief") && i != 0 {
+			t.Errorf("focus mode instruction leaked into message %d ahead of the reinforcement: %q", i, m.Content)
+		}
+	}
+}
+
+// TestRun_VoiceModeReinforcedNearEndWithHistory mirrors the focus-mode
+// case above for ctx.VoiceMode — confirmed during planning to already be
+// fully wired end-to-end (contrary to a stale doc comment claiming
+// otherwise), so it drifts identically and needs the identical fix.
+func TestRun_VoiceModeReinforcedNearEndWithHistory(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{Resp: &llm.ChatResponse{Content: "answer"}, Chunks: []string{"answer"}},
+		},
+	}
+	rec := &recordingEmit{}
+	ctx := newTestContext(mock, rec, 5)
+	ctx.VoiceMode = true
+
+	history := []llm.ChatMessage{
+		{Role: "user", Content: "first question"},
+		{Role: "assistant", Content: "first answer"},
+	}
+
+	if _, err := Run(context.Background(), ctx, history, "second question"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	sent := mock.Calls[0].Messages
+	last := sent[len(sent)-1]
+	if last.Role != "user" {
+		t.Errorf("reinforcement message Role = %q, want %q", last.Role, "user")
+	}
+	instr := prompts.Get().Agent.VoiceModeInstruction
+	if instr == "" {
+		t.Fatal("prompts.Get().Agent.VoiceModeInstruction is empty — can't assert on its content")
+	}
+	if last.Content != instr {
+		t.Errorf("reinforcement message = %q, want the exact voice mode instruction %q", last.Content, instr)
+	}
+	if !strings.Contains(sent[0].Content, instr) {
+		t.Error("voice mode instruction missing from the system prompt (position 0) as well as the reinforcement")
 	}
 }
 

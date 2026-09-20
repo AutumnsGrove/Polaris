@@ -238,11 +238,8 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 	prompt = applyCustomInstructionsPlaceholder(prompt, ctx)
 	prompt = applyMultimodalPlaceholder(prompt, ctx)
 	prompt = applyCodeExecThemePlaceholder(prompt, ctx)
-	if voiceMode {
-		prompt += "\n\n" + p.Agent.VoiceModeInstruction
-	}
-	if instr, ok := p.Agent.FocusModes[focusMode]; ok {
-		prompt += "\n\n" + instr
+	if reinforcement := modeReinforcement(p, voiceMode, focusMode); reinforcement != "" {
+		prompt += "\n\n" + reinforcement
 	}
 	if deepResearch {
 		prompt += "\n\n" + p.Agent.DeepResearchInstruction
@@ -257,6 +254,24 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		prompt += "\n\n" + p.Agent.NoResearchInstruction
 	}
 	return prompt
+}
+
+// modeReinforcement returns whichever voice-mode/focus-mode instruction
+// text applies to this turn — the same text loadSystemPrompt bakes into
+// the system prompt above, factored out so Run can also re-inject it near
+// the end of the message list (see Run's own doc comment on why): a
+// standing instruction resent every turn but buried at position 0 still
+// drifts out of a model's effective attention as history grows — the fix
+// isn't presence, it's recency. "" if neither mode is active.
+func modeReinforcement(p *prompts.Set, voiceMode bool, focusMode string) string {
+	var parts []string
+	if voiceMode {
+		parts = append(parts, p.Agent.VoiceModeInstruction)
+	}
+	if instr, ok := p.Agent.FocusModes[focusMode]; ok {
+		parts = append(parts, instr)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // weaverPersonGuidance builds the operator-supplied name/pronouns preamble
@@ -462,10 +477,22 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	ctx.Ctx = reqCtx
 	warmUpEmbedClient(ctx)
 
-	messages := make([]llm.ChatMessage, 0, len(history)+2)
+	messages := make([]llm.ChatMessage, 0, len(history)+3)
 	messages = append(messages, llm.ChatMessage{Role: "system", Content: currentContextPreamble() + loadSystemPrompt(ctx, ctx.VoiceMode, ctx.FocusMode, ctx.DeepResearch, ctx.NoResearch)})
 	messages = append(messages, history...)
 	messages = append(messages, llm.ChatMessage{Role: "user", Content: userMessage})
+	// Re-anchor the focus/voice-mode instruction near the end of the
+	// message list, not just at position 0 above — see modeReinforcement's
+	// doc comment. Gated on non-empty history: on a conversation's first
+	// turn position 0 is already maximally recent, so this would just
+	// duplicate identical text for no benefit (and would make
+	// TestRun_FocusModeInstructionReachesSystemPrompt's nil-history case
+	// send the same instruction twice for nothing).
+	if len(history) > 0 {
+		if reinforcement := modeReinforcement(prompts.Get(), ctx.VoiceMode, ctx.FocusMode); reinforcement != "" {
+			messages = append(messages, llm.ChatMessage{Role: "user", Content: reinforcement})
+		}
+	}
 
 	toolDefs := tools.Defs(ctx)
 	var totalCost float64
