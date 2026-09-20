@@ -220,8 +220,16 @@
       btnInput.classList.add('active');
       inputActive = true;
     } catch (err) {
-      statusInput.textContent = 'Mic permission denied or unavailable';
+      // Surfacing err.name (NotAllowedError vs SecurityError vs NotFoundError,
+      // etc.) rather than one generic message — this is the actual signal for
+      // telling "you denied the prompt" apart from "the embedding page's
+      // Permissions Policy blocked the mic request before any prompt could
+      // even appear," which look identical from a getUserMedia() rejection
+      // alone but need very different fixes.
+      const detail = (err && err.name) ? err.name : 'unknown error';
+      statusInput.textContent = `Mic unavailable: ${detail}`;
       statusInput.className = 'status error';
+      console.error('getUserMedia failed', err);
     }
   });
 
