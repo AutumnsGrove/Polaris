@@ -1,8 +1,4 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Transponder — audio-reactive orb (live proof of concept)</title>
+<title>Audio-Reactive Orb</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&display=swap" rel="stylesheet">
@@ -24,6 +20,9 @@
     --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
     --ease: cubic-bezier(0.16,1,0.3,1);
   }
+  /* Deliberately single-theme: this is a night-sky-themed technical demo for
+     Polaris/Transponder, matching that product's own dark identity rather
+     than a general-purpose page — colors are still painted explicitly. */
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -31,13 +30,17 @@
     color: var(--text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
-    padding: 48px;
+    padding-inline: 16px;
+    padding-block: 32px;
     display: flex;
     flex-wrap: wrap;
-    gap: 40px;
+    gap: 32px;
     align-items: flex-start;
+    justify-content: center;
   }
   button { font-family: inherit; cursor: pointer; }
+  button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
   .note {
     width: 100%;
     max-width: 820px;
@@ -53,10 +56,11 @@
   .note code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); }
 
   .card {
-    width: 390px;
+    width: 100%;
+    max-width: 390px;
     background: var(--surface);
     border-radius: 20px;
-    padding: 32px 28px 28px;
+    padding: 32px 24px 28px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -67,6 +71,8 @@
   .orb {
     width: 168px;
     height: 168px;
+    max-width: 40vw;
+    max-height: 40vw;
     border-radius: 999px;
     background: radial-gradient(circle at 35% 30%, oklch(28% 0.03 78), var(--surface) 70%);
     border: 1px solid var(--border-strong);
@@ -105,20 +111,17 @@
   .btn.active { background: var(--danger-bg); border-color: oklch(65% 0.19 25 / 45%); color: oklch(88% 0.06 25); }
   .btn:disabled { opacity: 0.5; cursor: default; }
 </style>
-</head>
-<body>
 
 <div class="note">
   <b>What this proves:</b> both orbs below are driven by a live <code>AnalyserNode</code> reading real
   audio amplitude every frame (<code>requestAnimationFrame</code> + <code>getByteFrequencyData</code>),
-  not a canned CSS keyframe loop like <code>mockups/transponder.html</code>'s call screens currently
-  show. <b>Input</b> taps your actual microphone (same <code>getUserMedia</code> stream
-  <code>VoiceButton.svelte</code> already captures for <code>MediaRecorder</code> — nothing here is
-  sent anywhere, it's read locally in the browser and discarded). <b>Output</b> plays a short
-  synthesized placeholder clip (this file has no real Kokoro audio to work with) through the same
-  <code>AnalyserNode</code> mechanism a persisted TTS <code>&lt;audio&gt;</code> element would use once
-  <code>docs/plans/voice-playback-infra.md</code>'s Fix 1 lands — the wiring is identical either way,
-  only the audio source changes.
+  not a canned CSS keyframe loop like Transponder's static call-screen mockups currently show.
+  <b>Input</b> taps your actual microphone (same <code>getUserMedia</code> stream Polaris's existing
+  voice-memo button already captures for <code>MediaRecorder</code> — nothing here is sent anywhere,
+  it's read locally in the browser and discarded). <b>Output</b> plays a short synthesized placeholder
+  clip (no real Kokoro audio to work with here) through the same <code>AnalyserNode</code> mechanism a
+  persisted TTS <code>&lt;audio&gt;</code> element would use — the wiring is identical, only the audio
+  source changes.
 </div>
 
 <div class="card">
@@ -289,6 +292,3 @@
     }
   });
 </script>
-
-</body>
-</html>

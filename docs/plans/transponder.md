@@ -22,7 +22,11 @@ referenced from `docs/plans/pulsar-daily.md`):
   `mockups/comet-icon-options.html`).
 - `mockups/transponder-audio-reactive-orb.html` — a **working** proof of concept (not a static
   visual comp) that the call screens' orb should be driven by real audio amplitude, not a canned
-  CSS loop — see "Resolved" below.
+  CSS loop — see "Resolved" below. Also published live at
+  https://claude.ai/artifact/TjaugGpkkrrG2NJnCMwNhx (needs a real HTTPS origin to actually request
+  mic access — opening the repo file directly as `file://` won't prompt for the microphone in most
+  browsers, since that's not a secure context; the hosted link is the one to actually click "Start
+  mic test" on).
 
 A "Telephone Mode — Call Screen Mockups" canvas artifact from the same planning session also
 exists with the same content (interactive, pan/zoomable) — kept in sync with the repo files above,
