@@ -39,11 +39,15 @@
 		detail = result;
 		loading = false;
 		if (!detail) return;
-		// Neighbor stars for the mini-map — bounded to the first 3 edges,
-		// fetched directly rather than pulling the whole map dataset for a
-		// 3-node preview (see ConstellationMiniMap's own doc comment).
-		const toFetch = detail.edges.slice(0, 3);
-		const results = await Promise.all(toFetch.map((e) => constellationState.loadStarDetail(e.other_star_id)));
+		// Neighbor stars for the mini-map — every edge, fetched directly
+		// rather than pulling the whole map dataset for what's usually a
+		// small preview (see ConstellationMiniMap's own doc comment).
+		// ConstellationMiniMap itself collapses the list past a handful of
+		// rows; no cap belongs here, since a star with dozens of edges
+		// should still be able to show all of them once expanded.
+		const results = await Promise.all(
+			detail.edges.map((e) => constellationState.loadStarDetail(e.other_star_id))
+		);
 		if (seq !== loadSeq) return;
 		neighborStars = results.filter((r): r is ConstellationStarDetail => r !== null).map((r) => r.star);
 	}

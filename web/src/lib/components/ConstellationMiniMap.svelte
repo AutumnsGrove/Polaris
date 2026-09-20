@@ -1,24 +1,34 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { ChevronDown, ChevronUp } from '@lucide/svelte';
 	import type { Star, StarEdge } from '$lib/types';
 	import { colorForCategory } from '$lib/categoryColors';
 
 	// ConstellationMiniMap is the Star detail screen's "Nearby in the
 	// constellation" panel. Deliberately NOT the full Map's force-directed
-	// layout scaled down — a physics simulation crammed into a ~90px-tall
-	// panel had nowhere to put 2-3 titles without stacking them directly on
-	// top of each other (the original bug this component was rewritten to
-	// fix). Instead: this star anchors a fixed left column, and each
-	// neighbor gets its own fixed-height row fanning out to the right —
+	// layout scaled down — a physics simulation crammed into this panel had
+	// nowhere to put more than a couple of titles without stacking them
+	// directly on top of each other (the original bug this component was
+	// rewritten to fix). Instead: this star anchors a fixed left column, and
+	// each neighbor gets its own fixed-height row fanning out to the right —
 	// deterministic placement, so "no overlap" is guaranteed by
 	// construction rather than hoped for from a collision force that only
 	// ever tracked dot centers, never label width.
 	//
+	// A star can have arbitrarily many edges, and the fan's row-per-neighbor
+	// layout has no natural ceiling of its own — so past INITIAL_VISIBLE
+	// rows this collapses to a "+N more" toggle instead of silently
+	// hard-capping the neighbor list (the previous behavior, bounded
+	// upstream in star/[id]/+page.svelte's own fetch). Expanding is meant to
+	// let the block genuinely grow as tall as the real edge count requires
+	// — the surrounding page already scrolls — rather than introduce a
+	// second, inner scroll region on top of it.
+	//
 	// Takes exactly what GET /api/constellation/stars/{id} already returns
 	// (centerStar + its own edges) plus each neighbor's Star object
-	// (fetched by the caller, star/[id]/+page.svelte, via a few bounded
-	// loadStarDetail calls) — deliberately not the full map dataset, which
-	// would be a much heavier fetch for a 3-node preview.
+	// (fetched by the caller, star/[id]/+page.svelte, via loadStarDetail
+	// calls for every edge) — deliberately not the full map dataset, which
+	// would be a much heavier fetch for what's usually a small preview.
 	let {
 		centerStar,
 		neighborStars,
@@ -44,17 +54,28 @@
 	// on NEIGHBOR_X instead of ~4px to its right, which is what made the
 	// line look like it stopped short of the dot instead of touching it.
 	const NEIGHBOR_DOT_RADIUS = 4;
+	// How many rows show before collapsing behind "+N more" — chosen to
+	// match the original 3-edge cap plus a little headroom, not some
+	// layout-derived limit; expanding always reveals every remaining row at
+	// once; there's no second "load more" tier.
+	const INITIAL_VISIBLE = 4;
 
-	// neighborStars already carries the caller's own order/bound (the first
-	// 3 edges — see star/[id]/+page.svelte's load()); this just drops any
-	// edge whose star didn't come back (a deleted/rejected neighbor).
+	// neighborStars/edges carry every edge now (see star/[id]/+page.svelte's
+	// load()); this just drops any edge whose star didn't come back (a
+	// deleted/rejected neighbor).
 	const rows = $derived(neighborStars.filter((s) => edges.some((e) => e.other_star_id === s.id)));
+
+	let expanded = $state(false);
+	const visibleRows = $derived(expanded ? rows : rows.slice(0, INITIAL_VISIBLE));
+	const hiddenCount = $derived(Math.max(0, rows.length - INITIAL_VISIBLE));
 
 	// Measured, not assumed — the card this sits in has different available
 	// widths depending on sidebar/viewport state, and a fixed canvas width
 	// either clipped long titles unnecessarily or wasted space.
 	let canvasWidth = $state(280);
-	const canvasHeight = $derived(rows.length === 0 ? 0 : TOP_PAD * 2 + Math.max(0, rows.length - 1) * ROW_HEIGHT);
+	const canvasHeight = $derived(
+		visibleRows.length === 0 ? 0 : TOP_PAD * 2 + Math.max(0, visibleRows.length - 1) * ROW_HEIGHT
+	);
 	const hubY = $derived(canvasHeight / 2);
 	const labelMaxWidth = $derived(
 		Math.max(80, canvasWidth - (NEIGHBOR_X - NEIGHBOR_DOT_RADIUS) - RIGHT_PAD)
@@ -66,12 +87,12 @@
 		<div class="constellation-label">{rows.length} related star{rows.length === 1 ? '' : 's'}</div>
 		<div class="canvas" bind:clientWidth={canvasWidth} style="height: {canvasHeight}px;">
 			<svg class="lines" viewBox="0 0 {canvasWidth} {canvasHeight}" preserveAspectRatio="none">
-				{#each rows as star, i (star.id)}
+				{#each visibleRows as star, i (star.id)}
 					<line x1={HUB_X} y1={hubY} x2={NEIGHBOR_X} y2={TOP_PAD + i * ROW_HEIGHT} />
 				{/each}
 			</svg>
 			<div class="hub-dot" style="left: {HUB_X}px; top: {hubY}px;" aria-hidden="true"></div>
-			{#each rows as star, i (star.id)}
+			{#each visibleRows as star, i (star.id)}
 				<button
 					class="node"
 					style="left: {NEIGHBOR_X - NEIGHBOR_DOT_RADIUS}px; top: {TOP_PAD +
@@ -85,6 +106,15 @@
 				</button>
 			{/each}
 		</div>
+		{#if hiddenCount > 0}
+			<button class="expand-toggle" onclick={() => (expanded = !expanded)}>
+				{#if expanded}
+					Show fewer <ChevronUp size={14} />
+				{:else}
+					Show {hiddenCount} more <ChevronDown size={14} />
+				{/if}
+			</button>
+		{/if}
 	</div>
 {/if}
 
@@ -169,5 +199,22 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.expand-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-xs);
+		width: 100%;
+		margin-top: var(--space-sm);
+		padding: var(--space-sm);
+		border-radius: var(--radius-md);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		color: var(--color-text-dim);
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
 	}
 </style>
