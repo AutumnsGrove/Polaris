@@ -164,6 +164,10 @@ the existing turn pipeline.
 
 - **Where the call screen lives in navigation** — a dedicated route, entry point from the
   composer, from the sidebar — not yet settled.
+- **A call-shaped `ask_user_question` UI** — filed as issue #93 after live testing surfaced it:
+  right now a clarifying question mid-call just renders as plain spoken reply text, with no way
+  to answer from an options picker without leaving the call screen. Explicitly a later idea, not
+  v1 — see the issue for why.
 
 ## Why this is deliberately *not* more decided yet
 

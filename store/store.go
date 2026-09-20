@@ -945,6 +945,13 @@ var migrations = []string{
 	// end per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE messages ADD COLUMN tts_audio_file_id TEXT NOT NULL DEFAULT ''`,
+	// used_transponder — plain informational flag, same shape as favorite:
+	// set true the first time a turn on this thread carries voice_mode
+	// (see gateway/turn.go, docs/plans/transponder.md's "Resolved" section
+	// on why this isn't Source instead — a thread can move freely between
+	// chat and call view, so this has to be settable on any later turn,
+	// not just fixed at creation).
+	`ALTER TABLE threads ADD COLUMN used_transponder INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1053,6 +1060,9 @@ type Thread struct {
 	FocusMode    string `json:"focus_mode"`
 	DeepResearch bool   `json:"deep_research"`
 	NoResearch   bool   `json:"no_research"`
+	// UsedTransponder is set once a turn on this thread carried voice_mode
+	// (a Transponder call) — see the used_transponder migration's comment.
+	UsedTransponder bool `json:"used_transponder"`
 	// PulsarRoutineID is set only on a pulse (source = "pulsar") — nil for
 	// every other thread. The frontend uses this to show a "back to
 	// routine" affordance on a pulse's thread view instead of the normal
@@ -1205,6 +1215,17 @@ func (s *Store) SetThreadFavorite(id string, favorite bool) error {
 // setting it there just does nothing observable.
 func (s *Store) MarkThreadContinued(id string) error {
 	_, err := s.db.Exec(`UPDATE threads SET continued_in_assistant = 1 WHERE id = ?`, id)
+	return err
+}
+
+// MarkThreadUsedTransponder flips used_transponder to 1 the first time a
+// turn on this thread carries voice_mode — see that column's schema
+// comment. The `AND used_transponder = 0` guard just avoids a pointless
+// write on every later call turn once it's already set; it's not needed
+// for correctness (the value doesn't change), only for not touching the
+// row on a call thread's second and later turns.
+func (s *Store) MarkThreadUsedTransponder(id string) error {
+	_, err := s.db.Exec(`UPDATE threads SET used_transponder = 1 WHERE id = ? AND used_transponder = 0`, id)
 	return err
 }
 
@@ -1406,9 +1427,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, pulsar_routine_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

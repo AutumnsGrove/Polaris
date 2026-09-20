@@ -997,7 +997,11 @@ export class AppState {
 		// noResearch/deepResearch above, not a global AppState flag. Never
 		// passed by retry()/editMessage() below: ghost mode doesn't support
 		// retry/edit in v1 (nothing persisted to fork from).
-		ghostMode?: boolean
+		ghostMode?: boolean,
+		// voiceMode: set only by Transponder (see
+		// components/Transponder.svelte) for every turn made during a call
+		// — see gateway/protocol.go's ClientMessage.VoiceMode doc comment.
+		voiceMode?: boolean
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
@@ -1012,7 +1016,8 @@ export class AppState {
 			noResearch,
 			source,
 			titleSeed,
-			ghostMode
+			ghostMode,
+			voiceMode
 		);
 	}
 
@@ -1077,7 +1082,9 @@ export class AppState {
 		// only Pulsar Daily's expand-to-chat sets this.
 		titleSeed?: string,
 		// ghostMode: see send()'s doc comment.
-		ghostMode?: boolean
+		ghostMode?: boolean,
+		// voiceMode: see send()'s doc comment.
+		voiceMode?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1171,7 +1178,8 @@ export class AppState {
 			source,
 			title_seed: titleSeed,
 			anonymous: isGhost || undefined,
-			history: ghostHistory
+			history: ghostHistory,
+			voice_mode: voiceMode || undefined
 		});
 	}
 

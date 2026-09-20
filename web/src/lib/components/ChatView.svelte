@@ -5,6 +5,7 @@
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
 	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
 	import VoiceButton from '$lib/components/VoiceButton.svelte';
+	import Transponder from '$lib/components/Transponder.svelte';
 	import {
 		Send,
 		Square,
@@ -17,7 +18,8 @@
 		RotateCcw,
 		MessageCirclePlus,
 		ChevronLeft,
-		Ghost
+		Ghost,
+		MicAudioLines
 	} from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
@@ -34,6 +36,7 @@
 	// whatever text actually ends up submitted, same as attachedFile.
 	let voiceCostUsd = $state<number | undefined>(undefined);
 	let scrollEl: HTMLDivElement | undefined = $state();
+	let showTransponder = $state(false);
 
 	// pinnedToBottom tracks whether the timeline should keep auto-scrolling
 	// as new content streams in, vs. leaving the view alone because the
@@ -368,6 +371,15 @@
 		<div class="composer-toolbar">
 			<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
 			<div class="toolbar-spacer"></div>
+			<button
+				type="button"
+				class="call-btn"
+				disabled={busyElsewhere}
+				title="Talk to Polaris"
+				onclick={() => (showTransponder = true)}
+			>
+				<MicAudioLines size={16} />
+			</button>
 			<VoiceButton bind:value={input} bind:sttCostUsd={voiceCostUsd} />
 			<button
 				type={appState.busyOnCurrentThread ? 'button' : 'submit'}
@@ -540,6 +552,10 @@
 		{/if}
 	</div>
 	{@render composerForm()}
+{/if}
+
+{#if showTransponder}
+	<Transponder onClose={() => (showTransponder = false)} />
 {/if}
 
 <style>
@@ -904,6 +920,39 @@
 
 	.toolbar-spacer {
 		flex: 1;
+	}
+
+	/* Mirrors VoiceButton's own .mic-btn treatment (that component's style
+	   is scoped and unreachable from here) — same recedes-until-relevant
+	   secondary-control look as the rest of the toolbar. */
+	.call-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid transparent;
+		background: transparent;
+		border-radius: var(--radius-md);
+		width: 38px;
+		height: 38px;
+		color: var(--color-text-dim);
+		flex-shrink: 0;
+		transition:
+			border-color 0.18s var(--ease-out-expo),
+			background-color 0.18s var(--ease-out-expo),
+			color 0.18s var(--ease-out-expo),
+			transform 0.18s var(--ease-out-expo);
+	}
+
+	.call-btn:hover:not(:disabled) {
+		border-color: var(--color-border);
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		transform: translateY(-1px);
+	}
+
+	.call-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 
 	.attachment-chips {

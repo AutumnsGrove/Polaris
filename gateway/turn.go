@@ -357,6 +357,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"is_retry":      msg.EditFromID != 0,
 	}, turnID)
 
+	// Transponder usage tracking (docs/plans/transponder.md) — a plain
+	// informational flag, not thread config, so a failure here shouldn't
+	// fail the turn; just log and move on.
+	if msg.VoiceMode {
+		if err := s.db.MarkThreadUsedTransponder(storageThreadID); err != nil {
+			log.Warn("marking thread used_transponder failed", "err", err)
+		}
+	}
+
 	// reasoningBuf accumulates one "reasoning" burst — a reasoning-capable
 	// model's native hidden-thinking stream arrives as dozens-to-hundreds
 	// of tiny chunks, so persisting one DB row per chunk (like "token")

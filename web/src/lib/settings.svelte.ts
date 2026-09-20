@@ -36,6 +36,9 @@ export interface UsageStats {
 	};
 	thread_count: number;
 	turn_count: number;
+	// Distinct threads that have ever had a voice_mode (Transponder call)
+	// turn — see store.Stats.TransponderCallCount's doc comment.
+	transponder_call_count: number;
 	avg_turn_duration_ms: number;
 	tool_call_counts: Record<string, number>;
 	tool_error_counts: Record<string, number>;

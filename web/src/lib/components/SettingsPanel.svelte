@@ -164,6 +164,12 @@
 						<span class="label">Tool calls</span>
 						<span class="value">{toolCallTotal} ({toolErrorRate.toFixed(1)}% errored)</span>
 					</div>
+					{#if usage.transponder_call_count > 0}
+						<div class="usage-stat-row">
+							<span class="label">Transponder calls</span>
+							<span class="value">{usage.transponder_call_count}</span>
+						</div>
+					{/if}
 					{#if searchProviderCounts.length > 0}
 						<div class="usage-stat-row">
 							<span class="label">web_search providers</span>

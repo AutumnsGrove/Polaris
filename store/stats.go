@@ -42,6 +42,11 @@ type Stats struct {
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
 
+	// TransponderCallCount is the number of distinct threads that have
+	// ever had a voice_mode (Transponder) turn — see
+	// docs/plans/transponder.md's "one call" definition. Always all-time.
+	TransponderCallCount int `json:"transponder_call_count"`
+
 	AvgTurnDurationMs int64 `json:"avg_turn_duration_ms"`
 
 	// ToolCallCounts/ToolErrorCounts are keyed by tool name (e.g.
@@ -268,6 +273,14 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		threadArgs = append(threadArgs, since)
 	}
 	if err := s.db.QueryRow(threadQuery, threadArgs...).Scan(&stats.ThreadCount); err != nil {
+		return nil, err
+	}
+
+	// TransponderCallCount counts distinct threads, not raw call turns —
+	// always all-time regardless of the period filter above, same as
+	// TotalCostUSD, since "how many threads have I ever called into" isn't
+	// a trailing-window question the way spend/turn-rate stats are.
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM threads WHERE used_transponder = 1 AND disabled = 0`).Scan(&stats.TransponderCallCount); err != nil {
 		return nil, err
 	}
 

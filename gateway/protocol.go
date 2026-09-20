@@ -37,9 +37,10 @@ type ClientMessage struct {
 	EditFromID int64  `json:"edit_from_id,omitempty"`
 	// VoiceMode, when true, tells the driver this answer is likely to be
 	// read aloud — nudges the model toward a brief, speakable answer
-	// instead of a long markdown-formatted one. Not wired to any UI toggle
-	// yet (that's the planned full voice-mode session, built later); for
-	// now, read-aloud is a per-message opt-in that doesn't set this.
+	// instead of a long markdown-formatted one. Set by Transponder (the
+	// full-screen call UI, web/src/lib/components/Transponder.svelte) for
+	// every turn made during a call. Ordinary read-aloud on a normal chat
+	// turn is a separate, per-message opt-in that doesn't set this.
 	VoiceMode bool `json:"voice_mode,omitempty"`
 	// SttCostUSD carries the transcription cost from a push-to-talk memo
 	// (already billed via /api/transcribe) so it gets folded into the
