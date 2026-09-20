@@ -599,7 +599,14 @@ export class AppState {
 			pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
 			costUsd: m.cost_usd,
 			durationMs: m.duration_ms || undefined,
-			id: m.role === 'user' ? m.id : undefined,
+			// Both roles now carry their real DB id — see ChatTurn.id's doc
+			// comment (assistant turns need it too, for read-aloud's
+			// persisted-audio attachment; this used to be user-only before
+			// that existed).
+			id: m.id,
+			ttsAudioFile: m.tts_audio_file_id
+				? `/api/workspace/${this.currentThreadId}/${m.tts_audio_file_id}`
+				: undefined,
 			attachments: safeParseJSON<MessageAttachment>(m.attachments),
 			timeline:
 				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
@@ -1383,6 +1390,11 @@ export class AppState {
 				turn.pendingQuestion = e.pending_question;
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
+				// See ServerEvent's assistant_message_id doc comment — without
+				// this, read-aloud on a turn from the current session (not yet
+				// reloaded from history) has no message id to attach a
+				// persisted audio file to.
+				turn.id = e.assistant_message_id;
 				this.busy = false;
 				// Captured before the pendingGhost reset below, since both
 				// branches below (and the loadThreads gate further down)

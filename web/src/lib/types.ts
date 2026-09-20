@@ -179,6 +179,14 @@ export type ServerEvent =
 			cards?: Card[];
 			chart?: ChartSpec;
 			user_message_id?: number;
+			// The persisted id of the assistant reply this turn just wrote —
+			// undefined for a ghost/anonymous turn (see gateway/turn.go's
+			// assistantMsgID doc comment), which never gets a message row.
+			// Without this, a freshly-generated turn's ChatTurn.id stays
+			// undefined for the rest of the session (only a reload's
+			// GetMessages populates it) — needed by read-aloud to know which
+			// message row a persisted audio file attaches to.
+			assistant_message_id?: number;
 			context_tokens?: number;
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
@@ -550,13 +558,23 @@ export interface ChatTurn {
 	pendingQuestion?: PendingQuestion;
 	costUsd?: number;
 	streaming?: boolean;
-	// DB message id. Only ever set on 'user' turns — needed to retry/edit
-	// from this point. Undefined until the server confirms it's persisted.
+	// DB message id. On a 'user' turn, needed to retry/edit from this point.
+	// On an 'assistant' turn, needed by read-aloud to attach a persisted
+	// audio file to the right message row (see the 'done' event's
+	// assistant_message_id). Undefined until the server confirms it's
+	// persisted (a ghost/anonymous turn's assistant id never arrives at all).
 	id?: number;
 	// How long agent.Run took to produce this answer, in milliseconds.
 	// Assistant turns only, set once "done" arrives (or on reopening a
 	// past thread, from the persisted message).
 	durationMs?: number;
+	// URL of this assistant turn's persisted read-aloud audio, once one
+	// exists (GET /api/workspace/:thread_id/:filename) — set from a reload's
+	// StoredMessage.tts_audio_file_id, or filled in live by AudioPlayer once
+	// handleSpeakStream's Done line reports a file for the turn currently
+	// playing. Undefined until read-aloud has been used at least once for
+	// this turn.
+	ttsAudioFile?: string;
 	// Set only on a user turn that carried one or more uploads (see
 	// StoredMessage.attachments) — shown as a chip per file above the
 	// message text. An entry's workspace_file_id becomes a real download

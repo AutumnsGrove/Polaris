@@ -1,11 +1,14 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"polaris/voice"
 )
@@ -93,8 +96,9 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 // speakStreamChunk is one line of handleSpeakStream's NDJSON response —
 // either a synthesized chunk (Seq + AudioBase64 populated), a fatal error
 // partway through (Seq + Error), or the final summary line (Done +
-// CostUSD). Kept as one struct with omitempty tags rather than three
-// separate shapes so the frontend only needs one parse path per line.
+// CostUSD, plus File once the persisted audio has actually been written).
+// Kept as one struct with omitempty tags rather than three separate shapes
+// so the frontend only needs one parse path per line.
 type speakStreamChunk struct {
 	Seq         int     `json:"seq"`
 	AudioBase64 string  `json:"audio_base64,omitempty"`
@@ -102,6 +106,11 @@ type speakStreamChunk struct {
 	Error       string  `json:"error,omitempty"`
 	Done        bool    `json:"done,omitempty"`
 	CostUSD     float64 `json:"cost_usd,omitempty"`
+	// File is the persisted read-aloud audio's URL (GET
+	// /api/workspace/:thread_id/:filename), set only on the Done line and
+	// only when MessageID/ThreadID were both given — see the doc comment
+	// below on why persistence is skipped otherwise.
+	File string `json:"file,omitempty"`
 }
 
 // handleSpeakStream synthesizes text one sentence-chunk at a time (see
@@ -112,10 +121,23 @@ type speakStreamChunk struct {
 // OpenRouter's own documented pattern for long text (chunk + concatenate
 // client-side), not a special streaming mode of the TTS endpoint itself —
 // see voice/chunk.go's doc comment.
+//
+// Each chunk is requested as raw "pcm" (not the client's configured
+// tts_format) regardless of site-wide config — see voice.WrapPCMAsWAV's
+// doc comment for why: raw PCM chunks concatenate byte-exact with no
+// frame-boundary artifacts, unlike independently-encoded MP3 chunks naively
+// joined end to end. Each chunk is wrapped in its own throwaway WAV header
+// before being sent to the browser (so it stays immediately playable via
+// `new Audio(blobURL)`, exactly as before), while the same raw bytes are
+// also accumulated server-side and wrapped in one real WAV header once
+// streaming finishes — that becomes the persisted, reloadable, scrubbable
+// file. Same underlying samples, two different header wrappings for two
+// different purposes; no double synthesis, no format renegotiation.
 func (s *Server) handleSpeakStream(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text     string `json:"text"`
-		ThreadID string `json:"thread_id"`
+		Text      string `json:"text"`
+		ThreadID  string `json:"thread_id"`
+		MessageID int64  `json:"message_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -146,9 +168,18 @@ func (s *Server) handleSpeakStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 
+	// Persistence (this turn's read-aloud becoming a real, reloadable file)
+	// needs a message row to attach to — a ghost/anonymous turn never gets
+	// one (see turn.go's assistantMsgID doc comment), and an older/anonymous
+	// caller might not send MessageID at all. In that case we still stream
+	// chunks for immediate playback, exactly as before this change; there's
+	// just nothing to write to disk or a database row to update.
+	persist := req.ThreadID != "" && req.MessageID != 0
+	var pcmBuf bytes.Buffer
+
 	var totalCost float64
 	for i, chunk := range chunks {
-		audio, err := s.tts.Speak(chunk)
+		pcm, err := s.tts.SpeakWithFormat(chunk, "pcm")
 		if err != nil {
 			log.Warn("TTS stream chunk failed", "seq", i, "err", err)
 			s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "TTS stream chunk failed",
@@ -163,10 +194,13 @@ func (s *Server) handleSpeakStream(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		totalCost += s.tts.EstimateCost(chunk)
+		if persist {
+			pcmBuf.Write(pcm)
+		}
 		enc.Encode(speakStreamChunk{
 			Seq:         i,
-			AudioBase64: base64.StdEncoding.EncodeToString(audio),
-			ContentType: s.tts.ContentType(),
+			AudioBase64: base64.StdEncoding.EncodeToString(voice.WrapPCMAsWAV(pcm)),
+			ContentType: "audio/wav",
 		})
 		flusher.Flush()
 	}
@@ -178,6 +212,60 @@ func (s *Server) handleSpeakStream(w http.ResponseWriter, r *http.Request) {
 				map[string]interface{}{"err": err.Error()}, "")
 		}
 	}
-	enc.Encode(speakStreamChunk{Done: true, CostUSD: totalCost})
+
+	var file string
+	if persist && pcmBuf.Len() > 0 {
+		var err error
+		file, err = s.persistTTSAudio(req.ThreadID, req.MessageID, pcmBuf.Bytes())
+		if err != nil {
+			// Persistence failing shouldn't invalidate a synthesis the
+			// browser already heard live — log and move on with an empty
+			// File field, same tolerance as every other post-hoc-UPDATE
+			// failure in this codebase (SetMessageDuration, SetMessageCards,
+			// etc.), rather than turning this into an HTTP error this late.
+			log.Warn("failed to persist read-aloud audio", "err", err)
+			s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "persisting read-aloud audio failed",
+				map[string]interface{}{"err": err.Error()}, "")
+		}
+	}
+
+	enc.Encode(speakStreamChunk{Done: true, CostUSD: totalCost, File: file})
 	flusher.Flush()
+}
+
+// persistTTSAudio writes a turn's fully-synthesized read-aloud audio (raw
+// PCM, already accumulated chunk by chunk) as one real WAV file in the
+// thread's code_exec workspace directory, and records its addressable
+// filename on the message row — mirrors resolveOneAttachment's
+// (gateway/attachments.go) generated-id/workspace-dir/permissions pattern,
+// the existing "write a file a model or browser can address by a short id"
+// convention in this codebase. Returns the URL the frontend can point a
+// player at directly (GET /api/workspace/:thread_id/:filename,
+// gateway/workspace.go — unchanged, already serves whatever's on disk).
+func (s *Server) persistTTSAudio(threadID string, messageID int64, pcm []byte) (string, error) {
+	shortID, err := generateShortFileID()
+	if err != nil {
+		return "", fmt.Errorf("generating file id: %w", err)
+	}
+	filename := shortID + ".wav"
+
+	cfg := s.liveConfig()
+	workspaceDir := filepath.Join(cfg.CodeExec.WorkspaceDir, threadID)
+	if err := os.MkdirAll(workspaceDir, 0o777); err != nil {
+		return "", fmt.Errorf("preparing workspace directory: %w", err)
+	}
+	if err := os.Chmod(workspaceDir, 0o777); err != nil {
+		return "", fmt.Errorf("setting workspace directory permissions: %w", err)
+	}
+
+	destPath := filepath.Join(workspaceDir, filename)
+	if err := os.WriteFile(destPath, voice.WrapPCMAsWAV(pcm), 0o644); err != nil {
+		return "", fmt.Errorf("writing persisted audio: %w", err)
+	}
+
+	if err := s.db.SetMessageTTSAudioFileID(messageID, filename); err != nil {
+		return "", fmt.Errorf("recording persisted audio on message: %w", err)
+	}
+
+	return fmt.Sprintf("/api/workspace/%s/%s", threadID, filename), nil
 }

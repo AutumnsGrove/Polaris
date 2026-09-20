@@ -49,32 +49,38 @@ interface SpeakStreamLine {
 	error?: string;
 	done?: boolean;
 	cost_usd?: number;
-}
-
-function base64ToBlob(base64: string, contentType: string): Blob {
-	const binary = atob(base64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-	return new Blob([bytes], { type: contentType });
+	// URL of the persisted read-aloud audio, set only on the done line and
+	// only when messageId was given below (see gateway/voice_handlers.go's
+	// speakStreamChunk.File doc comment).
+	file?: string;
 }
 
 /**
- * Synthesizes text in sentence-sized chunks via /api/speak/stream,
- * invoking onChunk with a ready-to-play Audio element for each chunk the
- * instant it arrives — the caller can start playback of the first chunk
- * long before the rest of a multi-paragraph answer has finished
- * synthesizing. Resolves once the stream ends (all chunks delivered, or a
- * fatal error partway through) with whatever cost was actually billed.
+ * Synthesizes text via /api/speak/stream (chunked sentence-by-sentence
+ * server-side — see gateway/voice_handlers.go's handleSpeakStream — for
+ * Kokoro synthesis latency, not for progressive client playback). Resolves
+ * once the whole answer has finished synthesizing and been persisted, with
+ * whatever cost was billed and the persisted file's URL. This used to also
+ * invoke a per-chunk callback with a playable Audio element the instant
+ * each chunk arrived, for lower time-to-first-audio on a long answer —
+ * live testing found that queued chunk-by-chunk playback silently breaking
+ * after the first chunk more often than not, and separately, Kokoro
+ * synthesizing a typical answer end-to-end only takes a few seconds
+ * anyway. Simpler and more robust to wait for the one real file and let
+ * WaveformAudioPlayer own playback entirely, so per-chunk audio_base64
+ * lines are received (the wire format still carries them, see
+ * gateway/voice_handlers.go's speakStreamChunk) but intentionally ignored
+ * here now.
  */
 export async function synthesizeStream(
 	text: string,
 	threadId: string | undefined,
-	onChunk: (audio: HTMLAudioElement) => void
-): Promise<{ cost: number; error?: string }> {
+	messageId: number | undefined
+): Promise<{ cost: number; error?: string; file?: string }> {
 	const res = await fetch('/api/speak/stream', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ text, thread_id: threadId })
+		body: JSON.stringify({ text, thread_id: threadId, message_id: messageId })
 	});
 	if (!res.ok || !res.body) {
 		console.error('TTS stream request failed', res.ok ? 'no response body' : await res.text());
@@ -86,6 +92,7 @@ export async function synthesizeStream(
 	let buffered = '';
 	let cost = 0;
 	let error: string | undefined;
+	let file: string | undefined;
 
 	// NDJSON: each line is a complete JSON value, but a single chunk read
 	// from the stream can split a line across two reads (or contain
@@ -109,17 +116,13 @@ export async function synthesizeStream(
 			}
 			if (parsed.done) {
 				cost = parsed.cost_usd ?? cost;
+				file = parsed.file;
 				continue;
 			}
-			if (parsed.audio_base64 && parsed.content_type) {
-				const blob = base64ToBlob(parsed.audio_base64, parsed.content_type);
-				const url = URL.createObjectURL(blob);
-				const audio = new Audio(url);
-				audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
-				onChunk(audio);
-			}
+			// Non-final lines' audio_base64/content_type are intentionally
+			// unused now — see this function's doc comment.
 		}
 	}
 
-	return { cost, error };
+	return { cost, error, file };
 }

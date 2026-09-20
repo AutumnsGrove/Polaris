@@ -266,11 +266,17 @@ type ServerEvent struct {
 	// and permanently turning totalCost into NaN for the rest of the
 	// session — this bit us once already with the analogous "token"
 	// event's content field (see streamSniffer.resolve in agent/pseudocall.go).
-	CostUSD       float64  `json:"cost_usd"`
-	ContextTokens int      `json:"context_tokens"`
-	Message       string   `json:"message,omitempty"`
-	UserMessageID int64    `json:"user_message_id,omitempty"`
-	Suggestions   []string `json:"suggestions,omitempty"`
+	CostUSD       float64 `json:"cost_usd"`
+	ContextTokens int     `json:"context_tokens"`
+	Message       string  `json:"message,omitempty"`
+	UserMessageID int64   `json:"user_message_id,omitempty"`
+	// AssistantMessageID is the persisted id of the assistant reply this
+	// turn just wrote, sent on "done" — without it, a freshly-generated
+	// turn's ChatTurn.id stays undefined for the rest of the session (only
+	// a page reload's GetMessages populates it), which read-aloud needs to
+	// know which message row to attach a persisted audio file to.
+	AssistantMessageID int64    `json:"assistant_message_id,omitempty"`
+	Suggestions        []string `json:"suggestions,omitempty"`
 	// DurationMs is how long agent.Run took to produce the answer — unlike
 	// CostUSD/ContextTokens above, omitempty is fine here: a real LLM call
 	// always takes measurably more than 0ms, so there's no legitimate zero

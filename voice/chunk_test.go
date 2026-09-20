@@ -7,12 +7,14 @@ import (
 
 func TestStripMarkdown(t *testing.T) {
 	cases := map[string]string{
-		"**bold** text":                     "bold text",
-		"*italic* text":                     "italic text",
-		"[a link](https://example.com)":     "a link",
-		"# Heading":                         "Heading",
-		"some `code` here":                  "some code here",
-		"plain text, nothing to strip here": "plain text, nothing to strip here",
+		"**bold** text":                                        "bold text",
+		"*italic* text":                                        "italic text",
+		"[a link](https://example.com)":                        "",
+		"# Heading":                                            "Heading",
+		"some `code` here":                                     "some code here",
+		"plain text, nothing to strip here":                    "plain text, nothing to strip here",
+		"crossed the mark [nytimes.com](https://example.com).": "crossed the mark.",
+		"see [a](url), [b](url2) for more":                     "see, for more",
 	}
 	for input, want := range cases {
 		if got := StripMarkdown(input); got != want {

@@ -2,36 +2,75 @@ import type { ChatTurn } from './types';
 import { synthesizeStream } from './speech';
 
 // Manual per-message read-aloud, split out of state.svelte.ts since it's a
-// self-contained concern (playback state + one async action) with exactly
-// one consumer (ChatTurnView's speaker icon). speakingIndex is set the
-// instant synthesis starts (fetching); isPlaying flips true only once
-// audio actually starts playing — the button needs both to distinguish
-// "loading" from "playing, click to stop" from "idle".
+// self-contained concern (one async action + its loading state) with
+// exactly one consumer (ChatTurnView's speaker icon). speakingIndex is set
+// for the duration of the synthesis request only — this class no longer
+// owns any playback itself; once the full answer is synthesized and
+// persisted, WaveformAudioPlayer (a real component with its own <audio>
+// element and scrub UI) takes over entirely.
 //
-// Playback is chunked (see speech.ts's synthesizeStream): the answer is
-// synthesized sentence-by-sentence, and each chunk queues up and plays as
-// soon as it arrives rather than waiting for the whole answer to finish
-// synthesizing — noticeably faster time-to-first-audio on a long answer.
+// This used to play each sentence-chunk live as it streamed in, queuing
+// ephemeral blob-URL Audio elements one after another — the original
+// rationale being faster time-to-first-audio on a long answer. Live
+// testing found that queue silently breaking after the first chunk more
+// often than not, and separately, Kokoro synthesizing a typical answer
+// end-to-end only takes a few seconds anyway — not enough latency to be
+// worth chasing that bug for. Simpler and more robust to just wait for the
+// one real, persisted, reloadable file and hand playback to the one
+// visible widget the user can actually see and scrub, instead of an
+// invisible queue playing in the background that's decoupled from it.
 export class AudioPlayer {
 	speakingIndex = $state<number | null>(null);
-	isPlaying = $state(false);
+	// Set to the turn index whose synthesis just finished THIS click (not
+	// one whose audio was already persisted from history) — the one-shot
+	// signal ChatTurnView passes to WaveformAudioPlayer's `autoplay` prop.
+	// Never reset back to null: a fresh WaveformAudioPlayer instance only
+	// ever mounts once per turn, at the exact moment turn.ttsAudioFile
+	// transitions from unset to set, so the mount-time check this drives
+	// only ever fires for that one live-finishing turn, never a reload.
+	justFinishedIndex = $state<number | null>(null);
 
-	private queue: HTMLAudioElement[] = [];
-	private currentAudio: HTMLAudioElement | null = null;
-	// True once synthesizeStream's promise has resolved — until then, an
-	// empty queue with nothing currently playing just means playback has
-	// caught up to synthesis, not that the session is over.
-	private streamDone = false;
-	// Bumped on every stop()/new readAloud call so chunks that arrive
-	// after a stop (the fetch was already in flight) recognize they're
-	// stale and don't get queued or played.
+	// True once a silent clip has successfully played inside a real user
+	// gesture this tab session — see unlock()'s doc comment.
+	private unlocked = false;
+	// Bumped on every stop()/new readAloud call so a synthesis request
+	// that resolves after being superseded recognizes it's stale and
+	// doesn't clobber whatever's happening now.
 	private sessionToken = 0;
 
-	// Clicking the turn that's already active (loading OR playing) stops
-	// it — a toggle, not just a one-way trigger. onCost reports the
-	// synthesis session's total billed cost back to the caller (folded
-	// into the thread's running total) since this class has no thread
-	// state of its own.
+	// Browsers grant continued playback permission for the rest of a tab's
+	// lifetime once a media element has successfully played following a
+	// direct user gesture (Chrome's autoplay policy and Safari's
+	// equivalent). Both this request's own synthesis wait AND
+	// WaveformAudioPlayer's later autoplay happen well after this click's
+	// activation window would otherwise have expired, especially on iOS
+	// Safari in this app's `display: standalone` PWA mode — which is what
+	// made read-aloud never audibly work in the first place (see
+	// docs/plans/voice-playback-infra.md's Fix 1). Playing (and
+	// immediately pausing) a trivial silent clip synchronously inside the
+	// click handler, before any await, is the standard workaround: it
+	// satisfies the "played during a real gesture" requirement once, and
+	// every later async .play() in this tab session — including the
+	// widget's own autoplay — stops being blocked.
+	private unlock() {
+		if (this.unlocked) return;
+		this.unlocked = true;
+		const silence = new Audio(
+			'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA=='
+		);
+		silence
+			.play()
+			.then(() => silence.pause())
+			.catch(() => {
+				// If even this fails, the widget's real playback will too —
+				// nothing more to do here, the failure surfaces there instead.
+			});
+	}
+
+	// Clicking the turn that's already synthesizing cancels the request —
+	// a toggle, not just a one-way trigger. onCost reports the synthesis's
+	// billed cost back to the caller (folded into the thread's running
+	// total) since this class has no thread state of its own.
 	async readAloud(turns: ChatTurn[], assistantTurnIndex: number, threadId: string | null, onCost: (cost: number) => void) {
 		if (this.speakingIndex === assistantTurnIndex) {
 			this.stop();
@@ -39,88 +78,44 @@ export class AudioPlayer {
 		}
 
 		const turn = turns[assistantTurnIndex];
-		if (!turn || turn.role !== 'assistant' || !turn.content) return;
+		if (!turn || turn.role !== 'assistant' || !turn.content || turn.ttsAudioFile) return;
 
-		this.stop(); // only one read-aloud plays at a time
+		// Must run synchronously, before any await below — see unlock()'s
+		// doc comment on why the gesture window closes otherwise.
+		this.unlock();
+
+		this.stop(); // only one synthesis request in flight at a time
 		const token = ++this.sessionToken;
 		this.speakingIndex = assistantTurnIndex;
-		this.streamDone = false;
 
-		const result = await synthesizeStream(turn.content, threadId ?? undefined, (audio) => {
-			if (token !== this.sessionToken) {
-				// Stopped (or a different turn started reading) while this
-				// chunk was still in flight — don't resurrect playback.
-				URL.revokeObjectURL(audio.src);
-				return;
-			}
-			this.enqueue(audio);
-		});
+		const result = await synthesizeStream(turn.content, threadId ?? undefined, turn.id);
 
-		if (token !== this.sessionToken) return; // superseded mid-stream
-		this.streamDone = true;
-		if (result.cost) onCost(result.cost);
+		if (token !== this.sessionToken) return; // stopped/superseded meanwhile
+		this.speakingIndex = null;
+
+		if (result.cost) {
+			onCost(result.cost); // bumps appState.totalCost, the thread-wide running total
+			// Also fold onto the turn's own visible cost badge — the figure
+			// shown right next to this same read-aloud button/player in
+			// ChatTurnView, which otherwise never reflected read-aloud's real
+			// spend even though totalCost (shown only in ThreadMenu) did.
+			turn.costUsd = (turn.costUsd ?? 0) + result.cost;
+		}
 		if (result.error) {
 			console.error('TTS stream ended early', result.error);
 		}
-		this.maybeFinish();
-	}
-
-	private enqueue(audio: HTMLAudioElement) {
-		audio.onended = () => {
-			if (this.currentAudio !== audio) return;
-			this.currentAudio = null;
-			this.playNext();
-		};
-		this.queue.push(audio);
-		if (!this.currentAudio) this.playNext();
-	}
-
-	// Plays the next queued chunk, if any; otherwise checks whether the
-	// whole session (all chunks played, streaming finished) just ended.
-	private playNext() {
-		const next = this.queue.shift();
-		if (!next) {
-			this.maybeFinish();
-			return;
-		}
-		this.currentAudio = next;
-		next
-			.play()
-			.then(() => {
-				this.isPlaying = true;
-			})
-			.catch((err) => {
-				// One chunk failing to play (autoplay policy, decode error)
-				// shouldn't kill the rest of the answer — skip to the next.
-				console.error('audio playback failed', err);
-				this.currentAudio = null;
-				this.playNext();
-			});
-	}
-
-	// The session is fully over only once synthesis has finished AND
-	// every synthesized chunk has played — an empty queue alone can just
-	// mean playback is briefly waiting on the next chunk to arrive.
-	private maybeFinish() {
-		if (this.streamDone && this.queue.length === 0 && !this.currentAudio) {
-			this.isPlaying = false;
-			this.speakingIndex = null;
+		// turn is the same reactive object live in appState.turns (passed by
+		// reference, not copied) — setting this here is what makes
+		// WaveformAudioPlayer mount and autoplay the instant this session's
+		// synthesis finishes, without waiting for a reload.
+		if (result.file) {
+			turn.ttsAudioFile = result.file;
+			this.justFinishedIndex = assistantTurnIndex;
 		}
 	}
 
 	stop() {
-		this.sessionToken++; // any in-flight synthesizeStream chunks become stale
-		if (this.currentAudio) {
-			this.currentAudio.onended = null;
-			this.currentAudio.pause();
-			this.currentAudio = null;
-		}
-		for (const audio of this.queue) {
-			URL.revokeObjectURL(audio.src);
-		}
-		this.queue = [];
-		this.streamDone = true;
-		this.isPlaying = false;
+		this.sessionToken++; // any in-flight synthesizeStream call becomes stale
 		this.speakingIndex = null;
 	}
 }

@@ -910,16 +910,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	}, turnID)
 
 	send(ServerEvent{
-		Type:            "done",
-		ThreadID:        threadID,
-		UserMessageID:   userMsgID,
-		Citations:       result.Citations,
-		Cards:           result.Cards,
-		Chart:           result.Chart,
-		CostUSD:         totalCost,
-		ContextTokens:   contextTokens,
-		DurationMs:      durationMs,
-		PendingQuestion: result.PendingQuestion,
+		Type:               "done",
+		ThreadID:           threadID,
+		UserMessageID:      userMsgID,
+		AssistantMessageID: assistantMsgID,
+		Citations:          result.Citations,
+		Cards:              result.Cards,
+		Chart:              result.Chart,
+		CostUSD:            totalCost,
+		ContextTokens:      contextTokens,
+		DurationMs:         durationMs,
+		PendingQuestion:    result.PendingQuestion,
 	})
 
 	// Follow-up suggestions, Perplexity-style — generated in a detached

@@ -35,18 +35,32 @@ var (
 	mdItalicRe = regexp.MustCompile(`[*_]([^*_]+)[*_]`)
 	mdHeaderRe = regexp.MustCompile(`(?m)^#{1,6}\s*`)
 	mdCodeRe   = regexp.MustCompile("`([^`]*)`")
+	// Cleans up what dropping a citation link leaves behind — the model
+	// puts the sentence's own punctuation right after the link
+	// ("...mark [nytimes.com](url).", see prompt.md's citation format), so
+	// removing the whole link leaves a stray space before that period/
+	// comma, and sometimes two spaces where the link used to sit.
+	spaceBeforePunctRe = regexp.MustCompile(`[ \t]+([.,!?;:])`)
+	multiSpaceRe       = regexp.MustCompile(`[ \t]{2,}`)
 )
 
-// StripMarkdown reduces a markdown-formatted answer to plain prose: link
-// text survives, the URL doesn't; bold/italic markers are dropped but the
-// wrapped text stays; headers lose their leading #s; inline code loses
-// its backticks.
+// StripMarkdown reduces a markdown-formatted answer to plain prose for
+// Kokoro to speak: bold/italic markers are dropped but the wrapped text
+// stays; headers lose their leading #s; inline code loses its backticks.
+// Citation links ([Source Name](url), per prompt.md's citation format) are
+// dropped entirely — text and URL both, not just de-linked with the
+// source name left behind — since hearing "...crossed the mark
+// japannews.yomiuri.co.jp." mid-sentence reads as a stray, jarring word
+// rather than a citation; sources stay visible in the written transcript
+// (chips, citations list) for anyone reading instead of listening.
 func StripMarkdown(text string) string {
-	text = mdLinkRe.ReplaceAllString(text, "$1")
+	text = mdLinkRe.ReplaceAllString(text, "")
 	text = mdBoldRe.ReplaceAllString(text, "$1")
 	text = mdItalicRe.ReplaceAllString(text, "$1")
 	text = mdHeaderRe.ReplaceAllString(text, "")
 	text = mdCodeRe.ReplaceAllString(text, "$1")
+	text = spaceBeforePunctRe.ReplaceAllString(text, "$1")
+	text = multiSpaceRe.ReplaceAllString(text, " ")
 	return text
 }
 

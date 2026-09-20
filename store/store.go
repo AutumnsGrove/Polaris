@@ -181,6 +181,16 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- there's no separate "answered" flag: any message after this one
 	-- already implies it's resolved. '' for every other message.
 	pending_question TEXT NOT NULL DEFAULT '',
+	-- tts_audio_file_id: the addressable filename (short generated id plus
+	-- ".wav") of a persisted read-aloud synthesis for this assistant
+	-- message, inside the same per-thread code_exec workspace directory
+	-- workspace_file_id above uses -- the same
+	-- GET /api/workspace/:thread_id/:filename route serves it back. A
+	-- dedicated column rather than reusing workspace_file_id/attachments:
+	-- those are upload-specific and frozen (see the attachments comment
+	-- above), and a message could plausibly carry both a user upload and a
+	-- TTS synthesis. '' for every message with no persisted read-aloud audio.
+	tts_audio_file_id TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -931,6 +941,10 @@ var migrations = []string{
 	// back schema" convention for a superseded column.
 	`INSERT OR IGNORE INTO settings (key, value) SELECT 'person_name', person_name FROM constellation_config WHERE id = 1 AND person_name != ''`,
 	`INSERT OR IGNORE INTO settings (key, value) SELECT 'person_pronouns', person_pronouns FROM constellation_config WHERE id = 1 AND person_pronouns != ''`,
+	// tts_audio_file_id — see the schema comment above. Appended at the
+	// end per this file's own established rule (positional user_version
+	// tracking, never insert mid-list).
+	`ALTER TABLE messages ADD COLUMN tts_audio_file_id TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1094,8 +1108,13 @@ type Message struct {
 	// PendingQuestion is JSON-encoded *tools.PendingQuestion, set only on
 	// an assistant message that ended its turn via ask_user_question —
 	// see SetMessagePendingQuestion. "" for every other message.
-	PendingQuestion string    `json:"pending_question,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	PendingQuestion string `json:"pending_question,omitempty"`
+	// TTSAudioFileID is the addressable filename of a persisted read-aloud
+	// synthesis for this assistant message — see the schema comment above
+	// messages.tts_audio_file_id and SetMessageTTSAudioFileID. "" for a
+	// message with no persisted read-aloud audio.
+	TTSAudioFileID string    `json:"tts_audio_file_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Attachment is one file included with a user message — see
@@ -1266,8 +1285,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -2007,7 +2026,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2020,7 +2039,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2039,11 +2058,11 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	var m Message
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.CreatedAt)
+		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.CreatedAt)
 	if err != nil {
 		return Message{}, err
 	}
@@ -2149,6 +2168,16 @@ func (s *Store) SetMessageWorkspaceFileID(messageID int64, fileID string) error 
 // frozen: nothing calls them for a new message after this shipped.
 func (s *Store) SetMessageAttachments(messageID int64, attachmentsJSON string) error {
 	_, err := s.db.Exec(`UPDATE messages SET attachments = ? WHERE id = ?`, attachmentsJSON, messageID)
+	return err
+}
+
+// SetMessageTTSAudioFileID records the addressable filename a persisted
+// read-aloud synthesis was written to inside the thread's workspace
+// directory — same post-hoc-UPDATE shape as SetMessageWorkspaceFileID,
+// since the file isn't written (and its generated id doesn't exist) until
+// after the client has already requested read-aloud for this message.
+func (s *Store) SetMessageTTSAudioFileID(messageID int64, fileID string) error {
+	_, err := s.db.Exec(`UPDATE messages SET tts_audio_file_id = ? WHERE id = ?`, fileID, messageID)
 	return err
 }
 

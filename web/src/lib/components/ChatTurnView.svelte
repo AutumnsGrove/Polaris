@@ -7,10 +7,11 @@
 	import HighlightCarousel from './HighlightCarousel.svelte';
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
+	import WaveformAudioPlayer from './WaveformAudioPlayer.svelte';
 	import { marked } from '$lib/markdown';
 	import { renderMermaidIn } from '$lib/mermaid';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, Square, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
+	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
@@ -378,25 +379,23 @@
 							{/if}
 						</button>
 					{/if}
-					<button
-						class="icon-btn"
-						onclick={() => appState.readAloud(index)}
-						title={appState.audio.speakingIndex === index
-							? appState.audio.isPlaying
-								? 'Stop'
-								: 'Loading…'
-							: 'Read aloud'}
-					>
-						{#if appState.audio.speakingIndex === index}
-							{#if appState.audio.isPlaying}
-								<Square size={13} fill="currentColor" />
-							{:else}
+					{#if !turn.ttsAudioFile}
+						<!-- Hidden once a persisted audio file exists — that's what
+							 WaveformAudioPlayer below plays/scrubs; re-showing this
+							 button then would just offer to re-spend TTS cost
+							 synthesizing the same answer a second time. -->
+						<button
+							class="icon-btn"
+							onclick={() => appState.readAloud(index)}
+							title={appState.audio.speakingIndex === index ? 'Loading…' : 'Read aloud'}
+						>
+							{#if appState.audio.speakingIndex === index}
 								<Loader2 size={13} class="spin" />
+							{:else}
+								<Volume2 size={13} />
 							{/if}
-						{:else}
-							<Volume2 size={13} />
-						{/if}
-					</button>
+						</button>
+					{/if}
 					<button
 						class="icon-btn retry-btn"
 						onclick={() => appState.retry(index)}
@@ -406,6 +405,9 @@
 						<RotateCcw size={13} />
 					</button>
 				</div>
+			{/if}
+			{#if turn.ttsAudioFile}
+				<WaveformAudioPlayer src={turn.ttsAudioFile} autoplay={appState.audio.justFinishedIndex === index} />
 			{/if}
 		</div>
 	</div>
