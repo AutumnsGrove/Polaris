@@ -1028,8 +1028,17 @@
 		justify-content: center;
 		background: radial-gradient(circle at 35% 30%, var(--color-surface-3), var(--color-surface) 70%);
 		border: 1px solid var(--color-border-strong);
-		transition: transform 0.08s linear;
-		/* Live-caught: a brief system "move/drag" cursor (renders as a
+		/* No transition on transform, deliberately — style:transform here
+		   is already updated by JS on every animation frame (~60fps) while
+		   audio is active. A CSS transition trying to interpolate toward a
+		   target a 60fps loop keeps yanking away is a real, confirmed-live
+		   source of visual tearing/snapping ("the element stretching too
+		   far") — the orb's own pulse-ring box-shadow keyframe (removed)
+		   was a second, independent animation compounding the same
+		   problem, running on its own uncoordinated 1.8s schedule against
+		   the real scale updates. JS driving the value every frame IS the
+		   animation; a second system animating toward it just fights it. */
+		/* Also fixes: a brief system "move/drag" cursor (renders as a
 		   crosshair/plus in some browsers) flashed over the orb during a
 		   press-and-hold — the orb's own bar children change height every
 		   animation frame while held, and without this the browser can
@@ -1087,14 +1096,12 @@
 		padding: 0;
 		cursor: pointer;
 		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-		animation: pulse-ring 1.8s var(--ease-out-expo) infinite;
 	}
 
-	/* !isPlaying: freeze the pulse instead of animating away with nothing
-	   actually playing — a moving orb over silence read as "still
-	   working" rather than what it actually was, "stuck". */
+	/* !isPlaying: dim to signal "not producing anything right now" — a
+	   moving orb over silence read as "still working" rather than what it
+	   actually was, "stuck". */
 	.speaking-orb.paused {
-		animation-play-state: paused;
 		opacity: 0.6;
 	}
 
@@ -1109,11 +1116,6 @@
 		border-radius: var(--radius-full);
 		font-size: 13px;
 		font-weight: 600;
-	}
-
-	@keyframes pulse-ring {
-		0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 22%, transparent); }
-		50% { box-shadow: 0 0 0 10px transparent; }
 	}
 
 	.spinner {
