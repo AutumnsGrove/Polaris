@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transponder — call screen mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: oklch(15% 0.014 65);
+    --surface: oklch(19% 0.014 65);
+    --surface-2: oklch(23% 0.016 65);
+    --surface-3: oklch(28% 0.018 65);
+    --border: oklch(30% 0.016 65);
+    --border-strong: oklch(40% 0.02 65);
+    --text: oklch(93% 0.01 75);
+    --text-dim: oklch(64% 0.014 70);
+    --accent: oklch(82% 0.17 78);
+    --accent-strong: oklch(72% 0.18 74);
+    --accent-soft: oklch(82% 0.17 78 / 14%);
+    --accent-2: oklch(78% 0.06 235);
+    --danger: oklch(65% 0.19 25);
+    --danger-bg: oklch(28% 0.05 25);
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+    --ease: cubic-bezier(0.16,1,0.3,1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 48px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    align-items: flex-start;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  .icon-btn { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); }
+  .icon-btn-sm { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; border: none; background: transparent; color: var(--text-dim); }
+  .caption { width: 100%; max-width: 390px; font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 12px; }
+  .caption b { color: var(--text); }
+  .wf-bar { width: 3px; border-radius: 1.5px; flex-shrink: 0; }
+
+  @keyframes breathe { 0%,100% { transform: scale(1); box-shadow: 0 0 0 0 var(--accent-soft); } 50% { transform: scale(1.03); box-shadow: 0 0 0 14px transparent; } }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 oklch(82% 0.17 78 / 35%); } 70% { box-shadow: 0 0 0 22px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @keyframes bar { 0%,100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+  @keyframes blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+  @keyframes pulse-ring { 0%,100% { box-shadow: 0 0 0 0 oklch(82% 0.17 78 / 22%); } 50% { box-shadow: 0 0 0 10px transparent; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @media (prefers-reduced-motion: reduce) { .orb, .bar, .cursor, .spinner { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div>
+  <div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(circle at 18% 8%, oklch(23% 0.02 65 / 55%), transparent 45%), radial-gradient(circle at 85% 92%, oklch(20% 0.02 235 / 35%), transparent 40%), var(--bg); display: flex; flex-direction: column; border-radius: 20px;">
+    <div style="position: absolute; inset: 0; pointer-events: none; opacity: 0.5; background-image:
+      radial-gradient(1px 1px at 12% 18%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 82% 12%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 34% 6%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 62% 22%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 91% 44%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 6% 55%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 48% 82%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 76% 70%, var(--text-dim), transparent);"></div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0 20px;">
+      <button class="icon-btn" aria-label="Close Transponder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase;">Transponder</span>
+      <div style="width: 38px; height: 38px;"></div>
+    </div>
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 0 40px;">
+      <div class="orb" style="animation: breathe 3.6s var(--ease) infinite; width: 168px; height: 168px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, oklch(26% 0.02 65), var(--surface) 70%); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px oklch(82% 0.17 78 / 8%), 0 20px 60px -20px oklch(0% 0 0 / 60%);">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+      </div>
+      <div style="text-align: center; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-family: var(--font-wordmark); font-size: 20px; color: var(--text);">Talk to Polaris</div>
+        <div style="font-size: 14px; color: var(--text-dim); line-height: 1.4;">Tap the mic and start speaking</div>
+      </div>
+    </div>
+    <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0 24px 44px 24px;">
+      <div style="display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px;">
+        <div style="padding: 8px 16px; border-radius: 999px; background: var(--surface-3); color: var(--text); font-size: 13px; font-weight: 500; border: 1px solid var(--border-strong);">Push‑to‑talk</div>
+        <div style="padding: 8px 16px; border-radius: 999px; color: var(--text-dim); font-size: 13px; font-weight: 500;">Hands‑free</div>
+      </div>
+      <div style="font-size: 12px; color: var(--text-dim); text-align: center; max-width: 280px; line-height: 1.5;">Answers are read aloud and sources still show on screen — uses your STT/TTS budget.</div>
+    </div>
+  </div>
+  <div class="caption"><b>1 — Idle.</b> Call not started. The push-to-talk/hands-free segmented control is the v1-vs-v2 scope boundary made visible — hands-free (client-side VAD) is a real v2 candidate, not built for v1.</div>
+</div>
+
+<div>
+  <div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(circle at 18% 8%, oklch(23% 0.02 65 / 55%), transparent 45%), radial-gradient(circle at 85% 92%, oklch(20% 0.02 235 / 35%), transparent 40%), var(--bg); display: flex; flex-direction: column; border-radius: 20px;">
+    <div style="position: absolute; inset: 0; pointer-events: none; opacity: 0.5; background-image:
+      radial-gradient(1px 1px at 12% 18%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 82% 12%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 34% 6%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 62% 22%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 91% 44%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 6% 55%, var(--text-dim), transparent);"></div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0 20px;">
+      <button class="icon-btn" aria-label="Close Transponder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); text-transform: uppercase;">Listening</span>
+      <span style="font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; width: 38px; text-align: right;">0:07</span>
+    </div>
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 0 32px;">
+      <div class="orb" style="animation: ring 2.2s var(--ease) infinite; width: 148px; height: 148px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, oklch(30% 0.03 78), var(--surface) 70%); border: 1px solid oklch(82% 0.17 78 / 45%); display: flex; align-items: center; justify-content: center; gap: 4px;">
+        <div class="bar" style="animation: bar 0.9s ease-in-out infinite; animation-delay: 0s; width: 4px; height: 34px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.9s ease-in-out infinite; animation-delay: 0.12s; width: 4px; height: 46px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.9s ease-in-out infinite; animation-delay: 0.24s; width: 4px; height: 26px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.9s ease-in-out infinite; animation-delay: 0.36s; width: 4px; height: 44px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.9s ease-in-out infinite; animation-delay: 0.48s; width: 4px; height: 30px; border-radius: 2px; background: var(--accent);"></div>
+      </div>
+      <div style="width: 100%; max-width: 300px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; min-height: 76px; box-sizing: border-box;">
+        <div style="font-size: 15px; line-height: 1.5; color: var(--text);">What's the weather going to be like this weekend at the coa<span class="cursor" style="animation: blink 1s step-start infinite; display: inline-block; width: 2px; height: 16px; background: var(--accent); vertical-align: -3px; margin-left: 1px;"></span></div>
+      </div>
+      <button style="background: none; border: none; color: var(--text-dim); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; padding: 4px;">Cancel</button>
+    </div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; padding: 0 24px 44px 24px;">
+      <button style="display: flex; align-items: center; gap: 8px; background: var(--danger-bg); border: 1px solid oklch(65% 0.19 25 / 45%); color: oklch(88% 0.06 25); padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="transform: rotate(135deg);"><path d="M15.05 5.05a7 7 0 0 1 6 6M15.05 1a11 11 0 0 1 10 10M20 17.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 2.2 2h2a2 2 0 0 1 2 1.7c.1 1.1.4 2.2.7 3.2a2 2 0 0 1-.5 2L5.1 10a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2-.5c1 .4 2.1.6 3.2.7a2 2 0 0 1 1.7 2.1Z"/></svg>
+        End Call
+      </button>
+    </div>
+  </div>
+  <div class="caption"><b>2 — Listening.</b> Push-to-talk recording. Releasing the mic sends automatically — no composer review step, unlike the ordinary voice-memo flow — because not having to look at the screen is the whole point.</div>
+</div>
+
+<div>
+  <div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(circle at 18% 8%, oklch(23% 0.02 65 / 55%), transparent 45%), radial-gradient(circle at 85% 92%, oklch(22% 0.03 235 / 45%), transparent 40%), var(--bg); display: flex; flex-direction: column; border-radius: 20px;">
+    <div style="position: absolute; inset: 0; pointer-events: none; opacity: 0.5; background-image:
+      radial-gradient(1px 1px at 12% 18%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 82% 12%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 34% 6%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 62% 22%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 91% 44%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 6% 55%, var(--text-dim), transparent);"></div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0 20px;">
+      <button class="icon-btn" aria-label="Close Transponder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent-2); text-transform: uppercase;">Thinking</span>
+      <span style="font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; width: 38px; text-align: right;">0:09</span>
+    </div>
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 0 32px;">
+      <div style="position: relative; width: 148px; height: 148px; display: flex; align-items: center; justify-content: center;">
+        <div class="spinner" style="animation: spin 1.6s linear infinite; position: absolute; inset: 0; border-radius: 999px; border: 2px solid transparent; border-top-color: var(--accent-2); border-right-color: oklch(78% 0.06 235 / 25%);"></div>
+        <div style="width: 148px; height: 148px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, oklch(26% 0.02 235), var(--surface) 70%); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </div>
+      </div>
+      <div style="width: 100%; max-width: 300px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 15px; color: var(--text-dim); font-style: italic;">Thinking…</div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); background: var(--surface-3); border-radius: 999px; padding: 6px 10px; width: fit-content;">
+            <span style="width: 6px; height: 6px; border-radius: 999px; background: var(--accent-2); flex-shrink: 0;"></span>
+            Searching the web
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); background: var(--surface-3); border-radius: 999px; padding: 6px 10px; width: fit-content;">
+            <span style="width: 6px; height: 6px; border-radius: 999px; background: var(--accent-2); flex-shrink: 0;"></span>
+            Reading weather.gov
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; padding: 0 24px 44px 24px;">
+      <button style="display: flex; align-items: center; gap: 8px; background: var(--danger-bg); border: 1px solid oklch(65% 0.19 25 / 45%); color: oklch(88% 0.06 25); padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="transform: rotate(135deg);"><path d="M15.05 5.05a7 7 0 0 1 6 6M15.05 1a11 11 0 0 1 10 10M20 17.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 2.2 2h2a2 2 0 0 1 2 1.7c.1 1.1.4 2.2.7 3.2a2 2 0 0 1-.5 2L5.1 10a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2-.5c1 .4 2.1.6 3.2.7a2 2 0 0 1 1.7 2.1Z"/></svg>
+        End Call
+      </button>
+    </div>
+  </div>
+  <div class="caption"><b>3 — Thinking.</b> An ordinary <code>agent.Run</code> turn under the hood — real tool calls (web_search, web_read) surface as the same chip list ToolEvent already shows in normal chat, just condensed.</div>
+</div>
+
+<div>
+  <div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(circle at 18% 8%, oklch(23% 0.02 65 / 55%), transparent 45%), radial-gradient(circle at 85% 92%, oklch(20% 0.02 235 / 35%), transparent 40%), var(--bg); display: flex; flex-direction: column; border-radius: 20px;">
+    <div style="position: absolute; inset: 0; pointer-events: none; opacity: 0.5; background-image:
+      radial-gradient(1px 1px at 12% 18%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 82% 12%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 34% 6%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 62% 22%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 91% 44%, var(--text-dim), transparent),
+      radial-gradient(1px 1px at 6% 55%, var(--text-dim), transparent);"></div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0 20px;">
+      <button class="icon-btn" aria-label="Close Transponder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); text-transform: uppercase;">Speaking</span>
+      <span style="font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; width: 38px; text-align: right;">0:14</span>
+    </div>
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 0 28px;">
+      <div class="orb" style="animation: pulse-ring 1.8s var(--ease) infinite; width: 128px; height: 128px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, oklch(30% 0.03 78), var(--surface) 70%); border: 1px solid oklch(82% 0.17 78 / 45%); display: flex; align-items: center; justify-content: center; gap: 4px;">
+        <div class="bar" style="animation: bar 0.7s ease-in-out infinite; animation-delay: 0s; width: 4px; height: 28px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.7s ease-in-out infinite; animation-delay: 0.1s; width: 4px; height: 40px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.7s ease-in-out infinite; animation-delay: 0.2s; width: 4px; height: 22px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.7s ease-in-out infinite; animation-delay: 0.3s; width: 4px; height: 36px; border-radius: 2px; background: var(--accent);"></div>
+        <div class="bar" style="animation: bar 0.7s ease-in-out infinite; animation-delay: 0.4s; width: 4px; height: 24px; border-radius: 2px; background: var(--accent);"></div>
+      </div>
+      <div style="width: 100%; max-width: 320px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-sizing: border-box;">
+        <div style="font-size: 15px; line-height: 1.55; color: var(--text);">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 320px;">
+        <div style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px;">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          weather.gov
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px;">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          noaa.gov
+        </div>
+      </div>
+      <div style="font-size: 12px; color: var(--text-dim);">Tap the mic to interrupt</div>
+    </div>
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; gap: 16px; padding: 0 24px 44px 24px;">
+      <button class="icon-btn" style="width: 48px; height: 48px;" aria-label="Interrupt and speak">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+      </button>
+      <button style="display: flex; align-items: center; gap: 8px; background: var(--danger-bg); border: 1px solid oklch(65% 0.19 25 / 45%); color: oklch(88% 0.06 25); padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="transform: rotate(135deg);"><path d="M15.05 5.05a7 7 0 0 1 6 6M15.05 1a11 11 0 0 1 10 10M20 17.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 2.2 2h2a2 2 0 0 1 2 1.7c.1 1.1.4 2.2.7 3.2a2 2 0 0 1-.5 2L5.1 10a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2-.5c1 .4 2.1.6 3.2.7a2 2 0 0 1 1.7 2.1Z"/></svg>
+        End Call
+      </button>
+      <div style="width: 48px;"></div>
+    </div>
+  </div>
+  <div class="caption"><b>4 — Speaking.</b> "Speaking" not "Polaris is speaking" — matches the plain-word pattern the other three screens already use (see the research note below on why no label at all is also a real option). Citations stay visible on screen even though they're never read aloud (<code>voice_mode_instruction</code> in <code>prompts.yaml</code> already says as much).</div>
+</div>
+
+<div style="width: 100%;"></div>
+
+<div>
+  <div style="width: 640px; box-sizing: border-box; background: var(--surface); border-radius: 20px; padding: 28px 32px; display: flex; flex-direction: column; gap: 12px;">
+    <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase;">Chosen audio-player direction (read-aloud, normal chat thread)</div>
+    <div style="max-width: 560px; font-size: 15px; line-height: 1.65; color: var(--text);">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+    <div style="max-width: 560px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+          <span style="font-size: 12px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.02em;">Audio · 0:42</span>
+        </div>
+        <button class="icon-btn-sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg></button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: var(--accent); border: none; color: var(--bg); flex-shrink: 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <div style="position: relative; flex: 1; height: 32px; display: flex; align-items: center;">
+          <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between;">
+            <div class="wf-bar" style="height: 9px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 18px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 12px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 24px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 15px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 20px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 10px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 16px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 22px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 8px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 19px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 13px; background: var(--accent);"></div>
+            <div class="wf-bar" style="height: 25px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 11px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 19px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 23px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 13px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 17px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 8px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 21px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 12px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 16px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 10px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 20px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 14px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 24px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 18px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 12px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 22px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 15px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 8px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 20px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 14px; background: var(--border-strong);"></div>
+            <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+          </div>
+          <div style="position: absolute; left: 27%; top: 50%; transform: translate(-50%, -50%); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+            <div style="width: 3px; height: 32px; background: var(--text); border-radius: 999px; position: absolute;"></div>
+            <div style="width: 14px; height: 14px; border-radius: 999px; background: var(--text); box-shadow: 0 0 0 3px var(--surface-2), 0 1px 4px oklch(0% 0 0 / 40%);"></div>
+          </div>
+        </div>
+        <span style="font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0;">0:12 / 0:42</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 11px; color: var(--text-dim);">$0.00041</span>
+      <span style="font-size: 11px; color: var(--text-dim);">2.4s</span>
+      <button class="icon-btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>
+      <button class="icon-btn-sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+    </div>
+  </div>
+  <div class="caption" style="max-width: 640px;"><b>Waveform-as-scrubber</b> — combines the card convention shared with <code>ChartCard</code>/tool results with a static waveform that doubles as the drag-to-seek track (not a separate thin progress line), stretched edge-to-edge for desktop/wide widths. Full option comparison (A/B/C, why this one won): <code>mockups/transponder-audio-player-options.html</code>. No speed control — dropped per feedback.</div>
+</div>
+
+</body>
+</html>

@@ -11,12 +11,19 @@ weaker mechanical fit than Transponder's literal definition).
 
 **Status: planning only — nothing here has been built yet, and it shouldn't be started until
 `docs/plans/voice-playback-infra.md`'s two fixes (reliable audio playback, recency-anchored focus/
-voice-mode reinforcement) actually land.** See that doc for why. See the "Telephone Mode — Call
-Screen Mockups" canvas artifact from the same planning session for the current call-screen visual
-direction (idle/listening/thinking/speaking states) — still 80% there per the operator, pending a
-revised indicator design (the mockup's canvas title and in-UI copy still say "Telephone Mode" /
-"Polaris is speaking" and haven't been updated to the new name yet — that's a follow-up, not done
-as part of this rename).
+voice-mode reinforcement) actually land.** See that doc for why.
+
+**Mockups live in the repo, per this project's usual convention** (see e.g. `mockups/pulsar-daily.html`
+referenced from `docs/plans/pulsar-daily.md`):
+- `mockups/transponder.html` — the four call-screen states (idle/listening/thinking/speaking) plus
+  the chosen read-aloud audio-player direction, all renamed to Transponder.
+- `mockups/transponder-audio-player-options.html` — the full A/B/C/D comparison for the
+  read-aloud player, kept for the record of what was considered and why D won (same convention as
+  `mockups/comet-icon-options.html`).
+
+A "Telephone Mode — Call Screen Mockups" canvas artifact from the same planning session also
+exists with the same content (interactive, pan/zoomable) — kept in sync with the repo files above,
+but the repo HTML is the durable copy.
 
 ## What this is
 
@@ -65,13 +72,24 @@ the existing turn pipeline.
 - **Selectable voice**, per `voice-playback-infra.md`'s Bug 3 — depends on that landing, not new
   scope here.
 
+## Resolved
+
+- **Visual indicator copy.** "Polaris is speaking" broke the pattern the other three screens
+  already used (plain single words: "Listening", "Thinking") — changed to "Speaking" for
+  consistency. Real research behind the direction, not just a guess: ChatGPT's original dedicated
+  voice UI (the full-screen blue orb, before its Nov 2025 redesign folded voice into the regular
+  chat window) had **no text label at all**, just the orb's color/motion — some users specifically
+  prefer that version because it's "less going on visually"
+  ([TechCrunch](https://techcrunch.com/2025/11/25/chatgpts-voice-mode-is-no-longer-a-separate-interface/),
+  [Coursiv](https://coursiv.io/blog/chatgpt-voice-mode)). Kagi's voice input turned out not to be a
+  comparable full-screen call UI at all — just a mic button for dictation into the normal Assistant
+  chat box ([Kagi docs](https://help.kagi.com/kagi/ai/assistant.html)), so there was no
+  state-indicator convention to borrow from there. Dropping the label entirely (matching ChatGPT's
+  original approach, and `PRODUCT.md`'s "calm over clever") is still worth considering later; the
+  single-word fix is the safe, consistent v1 answer.
+
 ## Not-yet-decided
 
-- **Visual indicator redesign.** Current mockup's top-of-screen "Polaris is speaking" text label
-  was called out as not quite right, and the mockup canvas/artboards still need a pass to actually
-  say "Transponder" now that the name is locked — does the UI put the name front and center, or
-  lean entirely on the orb's motion/color to convey state without words (more in the spirit of
-  `PRODUCT.md`'s "calm over clever")? Not decided yet.
 - **Where the call screen lives in navigation** — a dedicated route, entry point from the
   composer, from the sidebar — not yet settled.
 - **Whether this needs its own `store.Thread` marker at all.** Current thinking is no (see "What
