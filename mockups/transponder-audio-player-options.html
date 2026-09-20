@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transponder — read-aloud audio player options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: oklch(15% 0.014 65);
+    --surface: oklch(19% 0.014 65);
+    --surface-2: oklch(23% 0.016 65);
+    --surface-3: oklch(28% 0.018 65);
+    --border: oklch(30% 0.016 65);
+    --border-strong: oklch(40% 0.02 65);
+    --text: oklch(93% 0.01 75);
+    --text-dim: oklch(64% 0.014 70);
+    --accent: oklch(82% 0.17 78);
+    --accent-2: oklch(78% 0.06 235);
+    --danger-bg: oklch(28% 0.05 25);
+    --font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 48px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    align-items: flex-start;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  .icon-btn { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; border: none; background: transparent; color: var(--text-dim); }
+  .card { width: 640px; background: var(--surface); border-radius: 16px; padding: 28px 32px; display: flex; flex-direction: column; gap: 10px; }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--text-dim); text-transform: uppercase; }
+  .label.chosen { color: var(--accent); }
+  .answer { max-width: 560px; font-size: 15px; line-height: 1.65; color: var(--text); }
+  .caption { width: 640px; font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+  .bar { width: 2.5px; border-radius: 1.5px; background: var(--accent); }
+  .wf-bar { width: 3px; border-radius: 1.5px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- Option A — inline in the existing footer row -->
+<div class="card" style="height: 320px;">
+  <div class="label">Option A — inline in the existing footer row</div>
+  <div class="answer">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+  <div style="display: flex; align-items: center; gap: 10px; padding-top: 6px;">
+    <span style="font-size: 11px; color: var(--text-dim);">$0.00041</span>
+    <span style="font-size: 11px; color: var(--text-dim);">2.4s</span>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+    <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 4px;">
+      <button style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--accent); border: none; color: var(--bg); flex-shrink: 0;">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div style="position: relative; flex: 1; height: 3px; background: var(--surface-3); border-radius: 999px; overflow: hidden;">
+        <div style="position: absolute; inset: 0 70% 0 0; background: var(--accent); border-radius: 999px;"></div>
+      </div>
+      <span style="font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0;">0:12 / 0:42</span>
+    </div>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+  </div>
+  <div class="caption">Least visual weight — the player replaces the plain speaker icon in place, only when a synthesized clip exists for that message.</div>
+</div>
+
+<!-- Option B — voice-memo pill -->
+<div class="card" style="height: 340px;">
+  <div class="label">Option B — a small voice-memo pill under the answer</div>
+  <div class="answer">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+  <div style="display: inline-flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px 6px 6px; width: fit-content;">
+    <button style="display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; background: var(--accent); border: none; color: var(--bg); flex-shrink: 0;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div style="display: flex; align-items: center; gap: 2px; height: 18px;">
+      <div class="bar" style="height: 6px;"></div>
+      <div class="bar" style="height: 14px;"></div>
+      <div class="bar" style="height: 9px;"></div>
+      <div class="bar" style="height: 17px;"></div>
+      <div class="bar" style="height: 7px;"></div>
+      <div class="bar" style="height: 12px; opacity: 0.35;"></div>
+      <div class="bar" style="height: 8px; opacity: 0.35;"></div>
+      <div class="bar" style="height: 15px; opacity: 0.35;"></div>
+      <div class="bar" style="height: 6px; opacity: 0.35;"></div>
+    </div>
+    <span style="font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums;">0:42</span>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px; padding-top: 2px;">
+    <span style="font-size: 11px; color: var(--text-dim);">$0.00041</span>
+    <span style="font-size: 11px; color: var(--text-dim);">2.4s</span>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+  </div>
+  <div class="caption">Reads like a real voice memo (iMessage/WhatsApp convention) — static waveform, no scrubbing on its own, ordinary footer icons unchanged below it. The waveform look this contributed is what won in Option D.</div>
+</div>
+
+<!-- Option C — full card with speed control -->
+<div class="card" style="height: 440px;">
+  <div class="label">Option C — a full card, matching ChartCard/ToolEvent's existing convention</div>
+  <div class="answer">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+  <div style="max-width: 560px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <span style="font-size: 12px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.02em;">Audio · 0:42</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 2px; background: var(--surface-3); border-radius: 999px; padding: 2px;">
+        <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; color: var(--text-dim);">1x</span>
+        <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);">1.5x</span>
+        <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; color: var(--text-dim);">2x</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: var(--accent); border: none; color: var(--bg); flex-shrink: 0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div style="position: relative; flex: 1; height: 4px; background: var(--surface-3); border-radius: 999px;">
+        <div style="position: absolute; inset: 0 70% 0 0; background: var(--accent); border-radius: 999px;"></div>
+        <div style="position: absolute; left: 30%; top: 50%; width: 10px; height: 10px; border-radius: 999px; background: var(--accent); transform: translate(-50%, -50%); box-shadow: 0 0 0 3px var(--surface-2);"></div>
+      </div>
+      <span style="font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0;">0:12 / 0:42</span>
+      <button class="icon-btn" style="flex-shrink: 0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg></button>
+    </div>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px; padding-top: 2px;">
+    <span style="font-size: 11px; color: var(--text-dim);">$0.00041</span>
+    <span style="font-size: 11px; color: var(--text-dim);">2.4s</span>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+  </div>
+  <div class="caption">Most visual weight — real scrubbing, a download affordance, and a playback-speed control. The card convention and drag-to-seek are what won in Option D; the speed control (1x/1.5x/2x) was dropped — not wanted.</div>
+</div>
+
+<!-- Option D — CHOSEN -->
+<div class="card" style="height: 420px; outline: 1px solid var(--accent); outline-offset: -1px;">
+  <div class="label chosen">Option D — CHOSEN: waveform-as-scrubber (B + C combined)</div>
+  <div class="answer">This weekend looks mostly clear — highs near 68°F Saturday, with a chance of showers Sunday afternoon along the coast.</div>
+  <div style="max-width: 560px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <span style="font-size: 12px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.02em;">Audio · 0:42</span>
+      </div>
+      <button class="icon-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg></button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: var(--accent); border: none; color: var(--bg); flex-shrink: 0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div style="position: relative; flex: 1; height: 32px; display: flex; align-items: center;">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between;">
+          <div class="wf-bar" style="height: 9px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 18px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 12px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 24px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 15px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 20px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 10px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 16px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 22px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 8px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 19px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 13px; background: var(--accent);"></div>
+          <div class="wf-bar" style="height: 25px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 11px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 19px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 23px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 13px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 17px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 8px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 21px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 12px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 16px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 10px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 20px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 14px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 24px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 18px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 12px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 22px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 15px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 8px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 20px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 14px; background: var(--border-strong);"></div>
+          <div class="wf-bar" style="height: 9px; background: var(--border-strong);"></div>
+        </div>
+        <div style="position: absolute; left: 27%; top: 50%; transform: translate(-50%, -50%); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+          <div style="width: 3px; height: 32px; background: var(--text); border-radius: 999px; position: absolute;"></div>
+          <div style="width: 14px; height: 14px; border-radius: 999px; background: var(--text); box-shadow: 0 0 0 3px var(--surface-2), 0 1px 4px oklch(0% 0 0 / 40%);"></div>
+        </div>
+      </div>
+      <span style="font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0;">0:12 / 0:42</span>
+    </div>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px; padding-top: 2px;">
+    <span style="font-size: 11px; color: var(--text-dim);">$0.00041</span>
+    <span style="font-size: 11px; color: var(--text-dim);">2.4s</span>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>
+    <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+  </div>
+  <div class="caption">Waveform stretches edge-to-edge (<code>justify-content: space-between</code>, not a fixed gap) so it fills the available width on desktop/wide layouts. Handle has a 44px invisible touch target for reliable mobile dragging even though the visible grip stays small. No speed control.</div>
+</div>
+
+</body>
+</html>
