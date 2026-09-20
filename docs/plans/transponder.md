@@ -9,9 +9,20 @@ rejected: Uplink (operator's second choice — good fit, `Transponder` won on gu
 (collides with the messaging app), Beacon (nice tie to Polaris's own "fixed point" framing, but
 weaker mechanical fit than Transponder's literal definition).
 
-**Status: planning only — nothing here has been built yet, and it shouldn't be started until
-`docs/plans/voice-playback-infra.md`'s two fixes (reliable audio playback, recency-anchored focus/
-voice-mode reinforcement) actually land.** See that doc for why.
+**Status: v1 shipped and actively hardened by live testing** — `web/src/lib/components/
+Transponder.svelte` is on main, reachable from the composer's mic-audio-lines icon. Every locked-in
+v1 boundary below held; both Resolved commitments either shipped as specified or were adapted for
+concrete reasons live testing surfaced (see each bullet). Both Not-yet-decided items are still
+correctly deferred, tracked as issues #93/#95. A long tail of real bugs the plan had no way to
+predict got fixed along the way — `ChatView` never actually unmounting under the call overlay
+(causing genuine double audio playback, not a quality issue), an `AudioContext` lingering between
+rounds, mic-capture latency ordering, a `justify-content: center` + `overflow: auto` combination
+that made the orb permanently unreachable once a reply overflowed the screen, an unbounded
+Thinking chip-list crushing the layout, and a still-not-fully-resolved Firefox WebRender rendering
+artifact on the orb during scale animation (parked, not chased further — diminishing returns).
+Also went beyond this doc's original "latency accepted as-is" boundary: live pain was worse than
+anticipated, so progressive chunk-by-chunk TTS playback got revived for Transponder specifically
+(not just the persisted-file approach this doc describes below).
 
 **Mockups live in the repo, per this project's usual convention** (see e.g. `mockups/pulsar-daily.html`
 referenced from `docs/plans/pulsar-daily.md`):
@@ -92,12 +103,19 @@ the existing turn pipeline.
     `MediaRecorder` gets a second branch into `AnalyserNode` (via
     `audioCtx.createMediaStreamSource(stream)`) — not connected to the speaker output, so there's
     no echo/feedback risk. The orb reacts to the operator's own voice while recording.
-  - **Output side:** once `voice-playback-infra.md`'s Fix 1 (persisted WAV) lands, the same
-    `<audio>` element gets a `MediaElementAudioSourceNode` → `AnalyserNode` → destination chain —
-    the orb reacts to the actual synthesized speech as it plays, not a decorative loop timed to
-    roughly match. The demo file fakes this side with a short synthesized tone sequence (no real
-    Kokoro clip to work with in a standalone mockup), but the wiring is identical to what a real
-    persisted clip would use.
+  - **Output side — shipped differently than planned here, for a concrete reason.** The
+    `MediaElementAudioSourceNode` → `AnalyserNode` → destination chain described above turned out
+    to be exactly what caused the reply to go completely silent on a real device: once an
+    `<audio>` element is routed through that graph, its output *only* reaches speakers via the
+    graph, and browsers suspend an idle `AudioContext` during the multi-second Thinking gap, then
+    won't resume it outside a real user gesture (the effect chain that triggers playback is async,
+    not a click handler). Live-confirmed on desktop Firefox, not just theorized. Shipped instead:
+    the reply's audio is pre-decoded once via `AudioContext.decodeAudioData` (a throwaway context,
+    closed immediately, never touching the actual playing element — same technique
+    `WaveformAudioPlayer.svelte` already used for its own waveform), producing a static peaks
+    array that the orb's bars sweep through against the `<audio>` element's real `currentTime`.
+    Genuinely audio-reflective, same as planned, just without ever putting actual playback at
+    risk.
   - This is purely a visual-fidelity decision, not an architecture change — doesn't touch the
     "no full-duplex" scope boundary above; the orb reacting to audio in each direction is still
     strictly turn-by-turn (record, then play), never simultaneous.
@@ -170,12 +188,13 @@ the existing turn pipeline.
   visual, but `voice_mode_instruction` has no idea Transponder's screen can display it. Deferred
   on purpose — refining the core push-to-talk loop first, not adding frills yet.
 
-## Why this is deliberately *not* more decided yet
+## Why this wasn't decided further before it was built (historical)
 
-Per the operator: two infrastructure passes (`docs/plans/voice-playback-infra.md`) need to land
-and be validated first — reliable audio autoplay and recency-anchored mode reinforcement — before
-it's worth locking down Transponder's own implementation details further. Building this UI on top
-of a read-aloud mechanism that's never actually worked, or a voice-mode instruction that degrades
-into long spoken answers by turn 4, would mean redoing this plan's implementation section anyway
-once those fixes exist. Mockups and architecture-level scoping (this doc) are fine to keep
-developing in parallel; wiring anything up is not.
+Per the operator, at planning time: two infrastructure passes (`docs/plans/voice-playback-infra.md`)
+needed to land and be validated first — reliable audio autoplay and recency-anchored mode
+reinforcement — before it was worth locking down Transponder's own implementation details
+further. Building this UI on top of a read-aloud mechanism that had never actually worked, or a
+voice-mode instruction that degraded into long spoken answers by turn 4, would have meant redoing
+this plan's implementation section anyway once those fixes existed. Both landed
+(`docs/plans/voice-playback-infra.md`'s fixes shipped, confirmed working), which is what actually
+unblocked building this — see the Status line at the top of this doc for where things stand now.
