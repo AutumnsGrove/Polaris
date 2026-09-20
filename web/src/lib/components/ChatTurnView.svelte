@@ -50,6 +50,22 @@
 	let imageCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'image'));
 	let highlightCards = $derived((turn.cards ?? []).filter((c) => c.kind === 'highlight'));
 
+	// highlight's cards live on turn.cards (a cumulative, turn-wide
+	// snapshot set once at 'done'), not on the individual TimelineItem that
+	// triggered the call — unlike show, which stashes its url/caption
+	// directly on its own tool-call item. So "render inline where the call
+	// happened" means picking one position in the timeline to anchor the
+	// single merged carousel to, rather than branching per-item like show's
+	// ToolEvent.svelte treatment: the last highlight call in the turn, so a
+	// second call's cards don't get shown a second time at the first call's
+	// earlier position.
+	let lastHighlightTimelineIndex = $derived(
+		(turn.timeline ?? []).reduce(
+			(last, it, i) => (it.kind === 'tool' && it.tool === 'highlight' ? i : last),
+			-1
+		)
+	);
+
 	// Sources start collapsed — a 15-result answer was burying the actual
 	// answer under a wall of full-width pills. Count-only toggle up front,
 	// full list is one click away for anyone who wants to skim every
@@ -246,7 +262,15 @@
 			{#if turn.timeline?.length}
 				<div class="timeline">
 					{#each turn.timeline as item, i (i)}
-						<ToolEvent {item} />
+						{#if item.kind === 'tool' && item.tool === 'highlight'}
+							<!-- No raw tool-call chip for highlight — like show, it
+								 goes straight to the rendered cards, in place. -->
+							{#if i === lastHighlightTimelineIndex && highlightCards.length}
+								<HighlightCarousel cards={highlightCards} />
+							{/if}
+						{:else}
+							<ToolEvent {item} />
+						{/if}
 					{/each}
 				</div>
 			{/if}
@@ -291,10 +315,6 @@
 
 			{#if imageCards.length}
 				<ImageGallery cards={imageCards} />
-			{/if}
-
-			{#if highlightCards.length}
-				<HighlightCarousel cards={highlightCards} />
 			{/if}
 
 			{#if turn.chart}

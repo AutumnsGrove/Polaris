@@ -34,7 +34,6 @@
 		CloudDownload,
 		Images,
 		ScanEye,
-		Highlighter,
 		Paperclip,
 		History,
 		Download
@@ -296,8 +295,6 @@
 				<Images size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'view_image'}
 				<ScanEye size={13} color="var(--color-accent-2)" />
-			{:else if item.tool === 'highlight'}
-				<Highlighter size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'read_attachment'}
 				<Paperclip size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'search_chats'}
