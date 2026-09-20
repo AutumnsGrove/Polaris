@@ -642,6 +642,16 @@
 			(i): i is ThinkingChip => i.kind === 'tool' || i.kind === 'reasoning'
 		)
 	);
+	let chipListEl: HTMLDivElement | undefined = $state();
+	// Keeps the newest chip in view as more stream in — without this, once
+	// the list is taller than its capped max-height, a fresh chip appends
+	// below the fold and the "what's happening right now" signal this
+	// screen exists for goes invisible again, just via a different
+	// mechanism than the original unbounded-height bug.
+	$effect(() => {
+		toolChips.length;
+		queueMicrotask(() => chipListEl?.scrollTo({ top: chipListEl.scrollHeight, behavior: 'smooth' }));
+	});
 
 	function handleClose() {
 		if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -798,7 +808,7 @@
 				</div>
 			{/if}
 			{#if toolChips.length > 0}
-				<div class="chip-list">
+				<div class="chip-list" bind:this={chipListEl}>
 					{#each toolChips as item, i (i)}
 						<div class="chip">
 							{#if !item.done}
@@ -1133,6 +1143,16 @@
 		flex-direction: column;
 		gap: var(--space-xs);
 		max-width: 300px;
+		/* Capped and internally scrollable, same reasoning as .reply-card/
+		   .transcript-bubble — a research-heavy turn can run to a dozen+
+		   web_search/web_read chips (live-caught, see the screenshot this
+		   was reported from), which without a cap just kept growing and
+		   crushed everything else in .stage regardless of the safe-center
+		   fix. Auto-scrolls to the newest chip (see the chipList bind:this
+		   + $effect below) so the live "what's happening right now" chip
+		   is always the one visible, not buried above the fold. */
+		max-height: 220px;
+		overflow-y: auto;
 	}
 
 	.chip {
