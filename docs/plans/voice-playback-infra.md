@@ -1,14 +1,15 @@
 # Voice playback infra — fixing read-aloud and reinforcing focus modes (living doc, mid-design)
 
 **Status: planning only — nothing here has been built yet. This is prerequisite work for
-`docs/plans/telephone-mode.md`; that plan explicitly depends on both fixes below landing first.**
-See `docs/plans/telephone-mode.md` for the feature this unblocks, and the "Telephone Mode —
-Call Screen Mockups" canvas artifact from the same planning session for UI mockups (call screens
-plus the audio-player options this doc covers).
+`docs/plans/transponder.md`; that plan explicitly depends on both fixes below landing first.**
+See `docs/plans/transponder.md` for the feature this unblocks (named Transponder — see that doc's
+top note for why), and the "Telephone Mode — Call Screen Mockups" canvas artifact from the same
+planning session for UI mockups (call screens plus the audio-player options this doc covers; the
+canvas itself hasn't been renamed to match yet).
 
 ## Why this exists
 
-Two infrastructure gaps surfaced while planning telephone mode, both blocking it outright rather
+Two infrastructure gaps surfaced while planning Transponder, both blocking it outright rather
 than being nice-to-haves:
 
 1. **Read-aloud (`ChatTurnView`'s speaker icon) doesn't actually play audio in practice.** It
@@ -18,7 +19,7 @@ than being nice-to-haves:
    started in Brief mode answers briefly for the first exchange or two, then drifts back to long
    answers within ~4 turns — even though the instruction is technically still present every turn.
 
-Telephone mode's core premise ("push, talk, let go, it thinks, it comes back to you, out loud")
+Transponder's core premise ("push, talk, let go, it thinks, it comes back to you, out loud")
 needs both of these solved first: reliable audio autoplay with no fresh tap required, and answers
 that stay short for the whole call, not just the first exchange.
 
@@ -39,10 +40,9 @@ just does `console.error(...)` and silently advances to the next queued chunk �
 succeeds and gets billed (`s.db.AddCost` in `gateway/voice_handlers.go`), while playback never
 audibly happens and nothing surfaces the failure to the UI.
 
-This isn't cosmetic for telephone mode: walkie-talkie mode's whole premise is the reply
-auto-playing with *no new tap* after you release push-to-talk — the exact same async-gap
-problem, guaranteed to trigger on every single turn instead of occasionally on a read-aloud
-click deep in a scrolled transcript.
+This isn't cosmetic for Transponder: its whole premise is the reply auto-playing with *no new
+tap* after you release push-to-talk — the exact same async-gap problem, guaranteed to trigger on
+every single turn instead of occasionally on a read-aloud click deep in a scrolled transcript.
 
 ### Fix, two parts
 
@@ -51,7 +51,7 @@ Browsers (Chrome's autoplay policy and Safari's equivalent) grant continued play
 for the rest of a tab's lifetime once a media element has successfully played following a direct
 user gesture — the standard trick is to play+immediately-pause a silent/tiny audio element
 *synchronously inside the click handler itself*, before any `await`. Do this once (the first
-read-aloud tap, or telephone mode's "start call" tap) and later async-triggered `play()` calls
+read-aloud tap, or Transponder's "start call" tap) and later async-triggered `play()` calls
 stop being blocked for that session.
 
 **2. Persist the synthesized audio as a real file instead of streaming ephemeral blob URLs
@@ -175,7 +175,7 @@ of scope for this pass — a possible future idea, not a blocker for anything he
 
 ## Non-goals for this pass
 
-- No telephone-mode UI or backend work — that's `docs/plans/telephone-mode.md`, and depends on
+- No Transponder UI or backend work — that's `docs/plans/transponder.md`, and depends on
   this doc's fixes landing first, not the other way around.
 - No new TTS/STT provider integration.
 - No changes to `handleTranscribe`/STT — the bug is entirely on the TTS playback side.
@@ -183,8 +183,8 @@ of scope for this pass — a possible future idea, not a blocker for anything he
 ## Sequencing
 
 1. Fix 1 (persisted audio + gesture unlock) — read-aloud in normal chat becomes reliable; this is
-   the same mechanism telephone mode needs for auto-play.
+   the same mechanism Transponder needs for auto-play.
 2. Fix 2 (recency-anchored reinforcement) — validate against Brief focus mode first, since it's
    easy to test without any voice infra involved at all.
 3. Bug 3 (voice picker) — small, can land alongside either of the above.
-4. Only then: `docs/plans/telephone-mode.md`.
+4. Only then: `docs/plans/transponder.md`.
