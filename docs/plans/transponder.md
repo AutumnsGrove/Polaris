@@ -101,6 +101,18 @@ the existing turn pipeline.
   - This is purely a visual-fidelity decision, not an architecture change — doesn't touch the
     "no full-duplex" scope boundary above; the orb reacting to audio in each direction is still
     strictly turn-by-turn (record, then play), never simultaneous.
+  - **Known limitation of the hosted demo, not of the technique:** the published artifact copy
+    (https://claude.ai/artifact/TjaugGpkkrrG2NJnCMwNhx) can't actually request mic access — tested
+    live, `getUserMedia` fails with `NotAllowedError` and no permission prompt ever appears, the
+    exact signature of an iframe's Permissions Policy blocking the request before the browser gets
+    to ask. Claude's artifact sandbox almost certainly doesn't delegate microphone access to
+    embedded pages, deliberately. This says nothing about whether the real feature will work:
+    `VoiceButton.svelte`'s `getUserMedia` call already succeeds today, in production, over
+    Tailscale, outside any artifact sandbox — that's how push-to-talk voice memos already work.
+    The `AnalyserNode` addition is a small extension of an already-working capture path, not new
+    uncertain territory. Real verification of this specific piece happens naturally once it's
+    wired into the actual app (per this codebase's "verify on real hardware" culture) — the
+    artifact link was never going to be the right venue to prove it live.
 - **Visual indicator copy.** "Polaris is speaking" broke the pattern the other three screens
   already used (plain single words: "Listening", "Thinking") — changed to "Speaking" for
   consistency. Real research behind the direction, not just a guess: ChatGPT's original dedicated
