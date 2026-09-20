@@ -965,10 +965,17 @@
 		color: var(--color-text-dim);
 	}
 
+	/* The wordmark font (Asimovian) — used sparingly, in the same
+	   deliberate-accent-moment spirit as "Ask Polaris" on the welcome
+	   screen, not as a body font. Sized up from a plain small caps label
+	   since Asimovian is a chunky display face that reads cramped/wrong at
+	   11px; letter-spacing pulled back to match, since the font already
+	   carries its own visual weight. */
 	.phase-label {
-		font-size: 11px;
-		font-weight: 600;
-		letter-spacing: 0.08em;
+		font-family: var(--font-wordmark);
+		font-size: 15px;
+		font-weight: 400;
+		letter-spacing: 0.04em;
 		color: var(--color-accent);
 		text-transform: uppercase;
 	}
@@ -1022,6 +1029,23 @@
 		background: radial-gradient(circle at 35% 30%, var(--color-surface-3), var(--color-surface) 70%);
 		border: 1px solid var(--color-border-strong);
 		transition: transform 0.08s linear;
+		/* Live-caught: a brief system "move/drag" cursor (renders as a
+		   crosshair/plus in some browsers) flashed over the orb during a
+		   press-and-hold — the orb's own bar children change height every
+		   animation frame while held, and without this the browser can
+		   read a mousedown-and-hold over fast-changing content as an
+		   ambiguous drag/selection attempt and show its own drag-affordance
+		   cursor instead of the plain pointer this button actually wants. */
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+	}
+
+	.bars,
+	.bar {
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
 	}
 
 	/* The push-to-talk control itself in Idle/Listening — a real <button>,
