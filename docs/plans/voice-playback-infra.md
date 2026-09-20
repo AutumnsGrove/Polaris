@@ -81,17 +81,47 @@ Concretely:
   element appended to the message once the file exists — see the audio-player mockup options
   below for the visual options under consideration.
 
-**Open implementation question, not resolved yet:** `handleSpeakStream`'s whole reason for
-existing is fast time-to-first-audio (sentence-chunked synthesis, play chunk 1 while chunk 2 is
-still synthesizing). A single persisted file is simplest but reverts to "wait for the whole
-answer to finish synthesizing" latency. Options to weigh once this is actually built: (a) accept
-that latency trade for V1 simplicity, since telephone mode's own latency is already
-operator-accepted as "it's a research assistant, it'll take a bit"; (b) persist each sentence
-chunk as its own small file and play them back-to-back from disk in sequence (keeps the fast-start
-benefit, more moving parts); (c) synthesize the full answer as one request once the answer is
-final rather than streaming per-sentence at all, if the current chunking exists mainly to serve a
-playback model that's being replaced anyway. Decide this once the persisted-file approach is
-actually being implemented, not before.
+**Resolved: stream for time-to-first-audio, persist one stitched file for everything after.**
+Worth being explicit about a misconception this question raised: chunked delivery is a *latency*
+optimization, not a *naturalness* one — each chunk is still a complete, ordinary Kokoro synthesis
+of one sentence, so a persisted single file built from the same chunks sounds identical, not more
+robotic. If anything, today's chunk-by-chunk playback (separate `Audio` elements handed off via
+`onended`→`playNext` in `audio.svelte.ts`) risks small audible gaps at sentence boundaries that a
+properly stitched single file wouldn't have. So this was never really a naturalness trade-off —
+it only ever traded time-to-first-audio against having one clean, reliably scrubbable file, and
+there's no reason to have to pick one:
+
+- Keep requesting chunks from `handleSpeakStream` as today (fast start, chunk *n+1* synthesizing
+  while chunk *n* plays), but request Kokoro's **`pcm` response format** (already a supported
+  `TTSClient` format, see `config/config.go`) instead of `mp3` for this path. Raw PCM samples
+  concatenate byte-exact with no frame-boundary artifacts — unlike MP3, which has per-frame
+  headers that make naive concatenation of independently-encoded chunks a real (if usually minor)
+  risk of audible clicks at the seams.
+- As each chunk arrives, append its raw PCM bytes to the thread's workspace file server-side
+  *and* still forward it to the client for immediate low-latency playback, exactly as now.
+- Once the turn's synthesis is done, wrap the fully-concatenated PCM in a single WAV header (trivial
+  — WAV is just a 44-byte header over raw PCM) and that's the persisted, seekable file this doc's
+  Fix 2 describes. WAV also scrubs natively and reliably in every browser's `<audio>` element,
+  mobile Safari included, which matters for the scrubbing requirement below.
+- On reload (or a second visit to a thread), the player just points at that one finished WAV —
+  no chunk-boundary seams, real scrubbing across the whole clip, same file whether it's being
+  heard for the first time mid-stream or replayed later.
+
+This resolves the operator's "streaming heart vs. persisted-file intuition" tension directly:
+streaming is still what makes the first playback start quickly; the persisted file is what makes
+replay, reload, and scrubbing reliable — they were never actually in tension once chunking stops
+meaning "several separate audio files" and starts meaning "the same one file, written
+incrementally."
+
+**Chosen UI direction: a waveform-as-scrubber, combining mockup Options B and C** (see the canvas
+artifact) — Option C's bordered card (matches `ChartCard`/tool-result convention) and real
+drag-to-seek, with Option B's static waveform bars replacing C's plain progress line: bars behind
+the playhead render solid/accent, bars ahead render dimmed, and the whole waveform is the
+scrub track (drag anywhere on it to seek), not just a thin line. Per the operator, this needs to
+work reliably as a drag gesture on mobile, not just desktop — the scrub handle gets a generous
+touch target (≥44px hit area per `PRODUCT.md`'s accessibility note, even though the visible
+handle stays small). Playback-speed control (1x/1.5x/2x, in the original Option C) is dropped —
+not wanted.
 
 ## Bug 2: focus/voice-mode instructions drift over a conversation
 
