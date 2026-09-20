@@ -161,7 +161,21 @@
 	}
 
 	async function startRecording() {
-		if (appState.busy || phase === 'listening') return;
+		if (phase === 'listening') return;
+		if (phase === 'thinking') {
+			// Interrupting mid-generation — the operator wants to redo a
+			// question the moment they realize the transcript was wrong,
+			// not wait out the rest of a now-pointless answer. Abandon
+			// tracking of the turn being aborted (its eventual 'done', with
+			// whatever partial content streamed before the stop landed,
+			// still persists normally to the thread — see
+			// appState.stopGeneration's doc comment — it just stops being
+			// this screen's business) so it doesn't get spoken once this
+			// new round's real answer comes back instead.
+			appState.stopGeneration();
+			assistantIndex = null;
+			speakingTriggered = false;
+		}
 		// Tapping the mic mid-Speaking is an interrupt (mockup's "Tap the
 		// mic to interrupt") — stop whatever's still playing rather than
 		// layering a new recording's mic input on top of it.
@@ -186,8 +200,22 @@
 		// garbled transcripts despite a full-length hold). Nothing below
 		// needs either to have run yet.
 		try {
+			// Dropped noiseSuppression/autoGainControl (kept only
+			// echoCancellation) — live testing found garbled transcripts
+			// across three different STT models (Voxtral, Parakeet, Chirp 3),
+			// but feeding a clean synthesized clip straight into the same
+			// running model transcribed it perfectly. That rules out model
+			// choice: the problem is upstream, in what's actually getting
+			// captured. noiseSuppression/autoGainControl are the more
+			// aggressive, content-altering processors of the three (and on
+			// macOS in particular, requesting them can hand the whole tab's
+			// audio session to a voice-isolation DSP pipeline meant for
+			// suppressing background noise around speech — not something
+			// that's ever been verified to leave real speech content
+			// intact). This is the next concrete thing to try, not a
+			// confirmed fix yet.
 			micStream = await navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+				audio: { echoCancellation: true }
 			});
 		} catch (err) {
 			console.error('microphone access denied or unavailable', err);
@@ -246,6 +274,18 @@
 		phase = 'idle';
 	}
 
+	// See transcribeAndSend's call site for why this exists. A generous
+	// but bounded wait — stopGeneration aborting an in-flight turn is
+	// normally fast (no more LLM/tool round-trips to wait out), but this
+	// should never be able to hang the UI indefinitely if something goes
+	// wrong server-side.
+	async function waitUntilNotBusy(timeoutMs = 8000): Promise<void> {
+		const start = Date.now();
+		while (appState.busy && Date.now() - start < timeoutMs) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+	}
+
 	async function transcribeAndSend(blob: Blob, durationMs: number) {
 		if (durationMs < 300 || blob.size < 500) {
 			phase = 'idle';
@@ -266,6 +306,14 @@
 				return;
 			}
 			lastTranscript = text;
+			// If this round interrupted a still-in-flight turn (startRecording
+			// called appState.stopGeneration()), the abort's own 'done' event
+			// — the thing that actually flips appState.busy back to false —
+			// may not have landed yet. appState.send() silently no-ops while
+			// busy is true (only one turn in flight per connection at a
+			// time), so wait for that to clear first rather than dropping
+			// what was just said on the floor.
+			await waitUntilNotBusy();
 			// Deliberately skips the composer entirely and sends right away —
 			// see this component's top doc comment. voiceMode: true is the
 			// one thing that makes this a Transponder turn rather than an
@@ -540,10 +588,34 @@
 				{/if}
 			</div>
 		{:else if phase === 'thinking'}
-			<div class="orb thinking-orb">
+			<!-- Interruptible too, same orb-is-the-mic pattern as Speaking —
+			     the operator needs to be able to redo a question the moment
+			     they realize the transcript was wrong, without waiting out
+			     the rest of the (now-pointless) generation first. -->
+			<button
+				type="button"
+				class="orb thinking-orb"
+				onclick={toggleMode ? handleMicClick : undefined}
+				onmousedown={toggleMode ? undefined : handleMicDown}
+				onmouseup={toggleMode ? undefined : handleMicUp}
+				onmouseleave={toggleMode ? undefined : handleMicUp}
+				ontouchstart={toggleMode
+					? undefined
+					: (e) => {
+							e.preventDefault();
+							handleMicDown();
+						}}
+				ontouchend={toggleMode
+					? undefined
+					: (e) => {
+							e.preventDefault();
+							handleMicUp();
+						}}
+				aria-label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
+			>
 				<div class="spinner"></div>
 				<Loader2 size={26} color="var(--color-accent-2)" class="spin" />
-			</div>
+			</button>
 			{#if lastTranscript}
 				<div class="transcript-bubble">
 					<span class="transcript-label">You said</span>
@@ -565,13 +637,40 @@
 				<div class="thinking-copy">Thinking…</div>
 			{/if}
 		{:else if phase === 'speaking'}
-			<div class="orb speaking-orb" class:paused={!isPlaying}>
+			<!-- The orb itself is the tap target here too, same as Idle/
+			     Listening (see .mic-orb's doc comment) — a separate small
+			     footer icon for this used to be the only way to start a new
+			     round mid-Speaking, and it was easy to miss entirely (no
+			     label, low-contrast, tucked in a corner). One consistent
+			     "the orb is always the mic" mental model instead. -->
+			<button
+				type="button"
+				class="orb speaking-orb"
+				class:paused={!isPlaying}
+				onclick={toggleMode ? handleMicClick : undefined}
+				onmousedown={toggleMode ? undefined : handleMicDown}
+				onmouseup={toggleMode ? undefined : handleMicUp}
+				onmouseleave={toggleMode ? undefined : handleMicUp}
+				ontouchstart={toggleMode
+					? undefined
+					: (e) => {
+							e.preventDefault();
+							handleMicDown();
+						}}
+				ontouchend={toggleMode
+					? undefined
+					: (e) => {
+							e.preventDefault();
+							handleMicUp();
+						}}
+				aria-label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
+			>
 				<div class="bars">
 					{#each { length: 5 } as _, i (i)}
 						<div class="bar speaking-bar" style:animation-delay="{i * 0.1}s"></div>
 					{/each}
 				</div>
-			</div>
+			</button>
 			{#if turn?.ttsAudioFile && !isPlaying}
 				<!-- Unconditional on !isPlaying, not just shown after a caught
 				     error — see handlePlaybackReady's doc comment on why
@@ -617,24 +716,6 @@
 	<div class="footer">
 		{#if phase !== 'idle'}
 			<div class="footer-row">
-				{#if phase === 'speaking'}
-					<button
-						class="mic-btn-small"
-						aria-label="Interrupt and speak"
-						onmousedown={handleMicDown}
-						onmouseup={handleMicUp}
-						ontouchstart={(e) => {
-							e.preventDefault();
-							handleMicDown();
-						}}
-						ontouchend={(e) => {
-							e.preventDefault();
-							handleMicUp();
-						}}
-					>
-						<Mic size={18} />
-					</button>
-				{/if}
 				<button class="end-call-btn" onclick={handleClose}>
 					<PhoneOff size={16} />
 					End Call
@@ -727,6 +808,11 @@
 		justify-content: center;
 		gap: var(--space-2xl);
 		padding: 0 var(--space-2xl);
+		/* Safety net beyond the transcript bubble's own internal scroll cap
+		   — a long reply + citations + a capped transcript together could
+		   still exceed a short viewport (small phone, landscape). Scrolls
+		   internally instead of clipping past the fixed header/footer. */
+		overflow-y: auto;
 	}
 
 	.orb {
@@ -767,12 +853,16 @@
 		position: relative;
 		width: 148px;
 		height: 148px;
+		padding: 0;
+		cursor: pointer;
 		border-color: var(--color-border-strong);
 	}
 
 	.speaking-orb {
 		width: 128px;
 		height: 128px;
+		padding: 0;
+		cursor: pointer;
 		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
 		animation: pulse-ring 1.8s var(--ease-out-expo) infinite;
 	}
@@ -905,6 +995,11 @@
 	.transcript-bubble {
 		width: 100%;
 		max-width: 300px;
+		/* A long push-to-talk hold can transcribe to several sentences —
+		   capped and internally scrollable so it can't push the orb/reply/
+		   footer around or blow out the fixed-height call screen. */
+		max-height: 96px;
+		overflow-y: auto;
 		background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
@@ -964,18 +1059,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-lg);
-	}
-
-	.mic-btn-small {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 48px;
-		height: 48px;
-		border-radius: var(--radius-full);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-2);
-		color: var(--color-text-dim);
 	}
 
 	.end-call-btn {
