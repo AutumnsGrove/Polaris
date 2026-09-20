@@ -15,6 +15,11 @@
 	type Phase = 'idle' | 'listening' | 'thinking' | 'speaking';
 	let phase = $state<Phase>('idle');
 	let transcribing = $state(false);
+	// What Whisper/whichever STT model actually heard, shown on the
+	// Thinking and Speaking screens so a bad transcription is visible
+	// immediately, in the call itself — not something only discoverable
+	// afterward by leaving Transponder and reading the thread.
+	let lastTranscript = $state('');
 	let elapsedSec = $state(0);
 	let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -80,6 +85,30 @@
 		}
 		if (audioCtx.state === 'suspended') void audioCtx.resume();
 		return audioCtx;
+	}
+
+	// Full teardown of everything getUserMedia/Web Audio touched for one
+	// recording — called from every mediaRecorder.onstop path (send,
+	// cancel, hang-up). Closing the AudioContext here (not just
+	// disconnecting nodes) is deliberate: live testing found the reply
+	// still sounded processed/muffled — "recording booth with a scrubber
+	// on the mic" — even after playback was moved off any AnalyserNode
+	// routing, which points at the OS's own voice-processing audio
+	// session (opened by getUserMedia's echoCancellation/noiseSuppression/
+	// autoGainControl constraints) lingering for the AudioContext's whole
+	// lifetime rather than actually releasing once the mic track stops.
+	// Fully closing it between rounds, not just once at call end, is the
+	// most direct way to make sure nothing from the mic-input session is
+	// still active while the reply plays back.
+	function releaseMicAudio() {
+		micStream?.getTracks().forEach((t) => t.stop());
+		micStream = null;
+		micSourceNode?.disconnect();
+		micSourceNode = null;
+		stopAnalyserLoop();
+		void audioCtx?.close().catch(() => {});
+		audioCtx = null;
+		analyser = null;
 	}
 
 	// Same "play+immediately-pause a silent clip synchronously inside a
@@ -182,13 +211,9 @@
 			if (e.data.size > 0) chunks.push(e.data);
 		};
 		mediaRecorder.onstop = () => {
-			micStream?.getTracks().forEach((t) => t.stop());
-			micStream = null;
-			micSourceNode?.disconnect();
-			micSourceNode = null;
-			stopAnalyserLoop();
 			const durationMs = Date.now() - recordingStartedAt;
 			const blob = new Blob(chunks, { type: recordedMimeType });
+			releaseMicAudio();
 			void transcribeAndSend(blob, durationMs);
 		};
 		mediaRecorder.start();
@@ -213,13 +238,7 @@
 		if (mediaRecorder && mediaRecorder.state === 'recording') {
 			// Drop the recording instead of sending it — same "Cancel" role
 			// as the mockup's Listening-screen cancel link.
-			mediaRecorder.onstop = () => {
-				micStream?.getTracks().forEach((t) => t.stop());
-				micStream = null;
-				micSourceNode?.disconnect();
-				micSourceNode = null;
-				stopAnalyserLoop();
-			};
+			mediaRecorder.onstop = releaseMicAudio;
 			mediaRecorder.stop();
 		}
 		clearInterval(elapsedTimer);
@@ -246,6 +265,7 @@
 				phase = 'idle';
 				return;
 			}
+			lastTranscript = text;
 			// Deliberately skips the composer entirely and sends right away —
 			// see this component's top doc comment. voiceMode: true is the
 			// one thing that makes this a Transponder turn rather than an
@@ -410,13 +430,7 @@
 			// Drop, don't send — same reasoning as cancelCall's override
 			// below. Ending the call mid-recording shouldn't fire off
 			// whatever's been captured so far.
-			mediaRecorder.onstop = () => {
-				micStream?.getTracks().forEach((t) => t.stop());
-				micStream = null;
-				micSourceNode?.disconnect();
-				micSourceNode = null;
-				stopAnalyserLoop();
-			};
+			mediaRecorder.onstop = releaseMicAudio;
 			mediaRecorder.stop();
 		}
 		clearInterval(elapsedTimer);
@@ -425,9 +439,7 @@
 
 	onDestroy(() => {
 		clearInterval(elapsedTimer);
-		if (rafId !== undefined) cancelAnimationFrame(rafId);
-		micStream?.getTracks().forEach((t) => t.stop());
-		audioCtx?.close().catch(() => {});
+		releaseMicAudio();
 		revokePlaybackBlob();
 	});
 
@@ -532,6 +544,12 @@
 				<div class="spinner"></div>
 				<Loader2 size={26} color="var(--color-accent-2)" class="spin" />
 			</div>
+			{#if lastTranscript}
+				<div class="transcript-bubble">
+					<span class="transcript-label">You said</span>
+					{lastTranscript}
+				</div>
+			{/if}
 			{#if toolChips.length > 0}
 				<div class="chip-list">
 					{#each toolChips as item, i (i)}
@@ -563,6 +581,12 @@
 					<Volume2 size={14} />
 					Tap to hear it
 				</button>
+			{/if}
+			{#if lastTranscript}
+				<div class="transcript-bubble">
+					<span class="transcript-label">You said</span>
+					{lastTranscript}
+				</div>
 			{/if}
 			{#if turn?.content}
 				<div class="reply-card">{turn.content}</div>
@@ -871,6 +895,33 @@
 		font-size: 15px;
 		line-height: 1.55;
 		color: var(--color-text);
+	}
+
+	/* What the STT model actually heard — deliberately smaller/dimmer than
+	   .reply-card so it reads as "for reference" rather than competing
+	   with the assistant's own answer, but still fully legible: the whole
+	   point is catching a bad transcription immediately, in the call
+	   itself, not after leaving Transponder to read the thread. */
+	.transcript-bubble {
+		width: 100%;
+		max-width: 300px;
+		background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: var(--space-sm) var(--space-md);
+		font-size: 13px;
+		line-height: 1.45;
+		color: var(--color-text-dim);
+	}
+
+	.transcript-label {
+		display: block;
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-accent);
+		margin-bottom: 2px;
 	}
 
 	.citation-row {
