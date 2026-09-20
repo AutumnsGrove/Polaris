@@ -158,6 +158,21 @@
 			.catch(() => {});
 	}
 
+	// Eases orbScale toward a target instead of snapping straight to it —
+	// see the research note above startAnalyserLoop for why: a documented
+	// Firefox WebRender bug (bugzil.la/1662069, bugzil.la/731113) mis-
+	// renders border-radius circles combined with transform: scale() at
+	// fractional scale factors, most visibly right when the factor
+	// changes — large frame-to-frame jumps in a constantly-changing
+	// fractional value are exactly the trigger condition. Smoothing
+	// doesn't fix the browser bug, but it removes the large discrete
+	// jumps most likely to expose it, and reads as more natural motion
+	// either way.
+	function smoothScale(target: number): number {
+		orbScale += (target - orbScale) * 0.35;
+		return orbScale;
+	}
+
 	function startAnalyserLoop() {
 		if (rafId !== undefined) return;
 		const data = new Uint8Array(analyser!.frequencyBinCount);
@@ -172,7 +187,7 @@
 				levels.push(Math.min(1, sum / bucket / 180));
 			}
 			barLevels = levels.map((l) => Math.max(0.15, l));
-			orbScale = 1 + (levels.reduce((a, b) => a + b, 0) / 5) * 0.22;
+			smoothScale(1 + (levels.reduce((a, b) => a + b, 0) / 5) * 0.22);
 			rafId = requestAnimationFrame(tick);
 		};
 		rafId = requestAnimationFrame(tick);
@@ -242,7 +257,7 @@
 				levels.push(playbackPeaks[Math.max(0, centerIdx - i * barStrideBuckets)] ?? 0.1);
 			}
 			barLevels = levels;
-			orbScale = 1 + (levels.reduce((a, b) => a + b, 0) / 5) * 0.22;
+			smoothScale(1 + (levels.reduce((a, b) => a + b, 0) / 5) * 0.22);
 			rafId = requestAnimationFrame(tick);
 		};
 		rafId = requestAnimationFrame(tick);
@@ -1028,6 +1043,18 @@
 		justify-content: center;
 		background: radial-gradient(circle at 35% 30%, var(--color-surface-3), var(--color-surface) 70%);
 		border: 1px solid var(--color-border-strong);
+		/* Live-caught, confirmed via a documented Firefox WebRender bug
+		   (bugzil.la/1662069, bugzil.la/731113): a border-radius circle
+		   combined with transform: scale() at fractional scale factors can
+		   mis-rasterize — visible as seam/line artifacts along the
+		   circle's axes, worst exactly when the scale factor is changing
+		   (which it constantly is here, every animation frame). will-change
+		   hints the browser to promote this to its own stable GPU layer
+		   and rasterize once, scaling the resulting bitmap smoothly,
+		   instead of re-rasterizing the vector shape at a new fractional
+		   factor every frame — the actual workaround that thread's
+		   reporters found, not a guess. */
+		will-change: transform;
 		/* No transition on transform, deliberately — style:transform here
 		   is already updated by JS on every animation frame (~60fps) while
 		   audio is active. A CSS transition trying to interpolate toward a
