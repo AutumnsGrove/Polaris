@@ -336,6 +336,93 @@ func warnOnErr(op string, err error) {
 // RunShootingStar) — passed through so Emit below can additionally log
 // every tool_call/tool_result into the ordinary events table, the same
 // way gateway/turn.go's own event switch does for real chat.
+// weaverToolClosures builds the five WeaverX tool implementations shared by
+// every Weaver run — a scheduled shooting star (newWeaverToolContext below,
+// which wraps these with its own runID-keyed shooting_star_events/
+// shooting_star_candidates admin trail on top) and an interactive "Talk to
+// Weaver" session (gateway/turn.go's handleTurn, issue #94 — which has no
+// runID/shooting-star admin rollup to maintain, since it's not a scheduled
+// run; its own ordinary per-turn event logging already gives it full
+// observability the normal chat-turn way). Extracted rather than duplicated
+// so the actual store mutations — and the injection-defense seenStars guard
+// below — have exactly one implementation.
+//
+// seenStars is a defense-in-depth backstop against prompt injection: thread
+// content (which can include text originally fetched from the open web by
+// web_search/web_read during a normal chat turn) is the only input to
+// Weaver's reasoning, and its only defense against steering a destructive
+// write is the prose framing in weaver.system. The plan doc's own "Weaver's
+// tools" section already states read_star is "Mandatory before update_star
+// or link_stars, never optional" — this just makes that an enforced
+// invariant instead of a prompt instruction a sufficiently-adversarial
+// thread could talk Weaver out of: update_star/link_stars may only target a
+// star_id this exact run has already surfaced via search_stars/read_star
+// (or just created itself), never one that appears in a tool call with no
+// prior lookup in this run at all.
+func weaverToolClosures(db *store.Store, threadID string) (
+	search func(query string) ([]store.StarSearchResult, error),
+	read func(starID int64) (*store.Star, error),
+	create func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error),
+	update func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error,
+	link func(starIDA, starIDB int64, reasoning string) error,
+) {
+	seenStars := map[int64]bool{}
+	markSeen := func(id int64) { seenStars[id] = true }
+	requireSeen := func(id int64) error {
+		if !seenStars[id] {
+			return fmt.Errorf("star_id %d hasn't been looked up in this run yet — call search_stars/read_star on it first", id)
+		}
+		return nil
+	}
+
+	search = func(query string) ([]store.StarSearchResult, error) {
+		results, err := db.SearchStars(query, 10)
+		for _, r := range results {
+			markSeen(r.ID)
+		}
+		return results, err
+	}
+	read = func(starID int64) (*store.Star, error) {
+		star, err := db.GetStar(starID)
+		if err == nil {
+			markSeen(starID)
+		}
+		return star, err
+	}
+	create = func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error) {
+		id, err := db.CreateStar(store.Star{
+			Title: title, Category: category, Summary: summary, Body: body,
+			Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: "auto",
+		})
+		if err != nil {
+			return 0, err
+		}
+		markSeen(id)
+		warnOnErr("linking star source", db.LinkStarSource(id, threadID))
+		return id, nil
+	}
+	update = func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
+		if err := requireSeen(starID); err != nil {
+			return err
+		}
+		if err := db.UpdateStar(starID, title, summary, body, tags, confidenceClass, isPersonal); err != nil {
+			return err
+		}
+		warnOnErr("linking star source", db.LinkStarSource(starID, threadID))
+		return nil
+	}
+	link = func(starIDA, starIDB int64, reasoning string) error {
+		if err := requireSeen(starIDA); err != nil {
+			return err
+		}
+		if err := requireSeen(starIDB); err != nil {
+			return err
+		}
+		return db.LinkStars(starIDA, starIDB, reasoning)
+	}
+	return
+}
+
 func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.ChatClient, runID int64, threadID, weaverThreadID, turnID string) *tools.Context {
 	categories, err := db.DistinctCategories()
 	if err != nil {
@@ -352,27 +439,7 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 	personName := PersonNameFromStore(db)
 	personPronouns := PersonPronounsFromStore(db)
 
-	// seenStars is a defense-in-depth backstop against prompt injection:
-	// thread content (which can include text originally fetched from the
-	// open web by web_search/web_read during a normal chat turn) is the
-	// only input to Weaver's reasoning, and its only defense against
-	// steering a destructive write is the prose framing in weaver.system.
-	// The plan doc's own "Weaver's tools" section already states read_star
-	// is "Mandatory before update_star or link_stars, never optional" —
-	// this just makes that an enforced invariant instead of a prompt
-	// instruction a sufficiently-adversarial thread could talk Weaver out
-	// of: update_star/link_stars may only target a star_id this exact run
-	// has already surfaced via search_stars/read_star (or just created
-	// itself), never one that appears in a tool call with no prior lookup
-	// in this run at all.
-	seenStars := map[int64]bool{}
-	markSeen := func(id int64) { seenStars[id] = true }
-	requireSeen := func(id int64) error {
-		if !seenStars[id] {
-			return fmt.Errorf("star_id %d hasn't been looked up in this run yet — call search_stars/read_star on it first", id)
-		}
-		return nil
-	}
+	search, read, create, update, link := weaverToolClosures(db, threadID)
 
 	return &tools.Context{
 		Ctx:       reqCtx,
@@ -424,61 +491,42 @@ func newWeaverToolContext(reqCtx context.Context, db *store.Store, client llm.Ch
 		ReadThread:        db.ReadThread,
 
 		WeaverSearchStars: func(query string) ([]store.StarSearchResult, error) {
-			results, err := db.SearchStars(query, 10)
-			for _, r := range results {
-				markSeen(r.ID)
-			}
+			results, err := search(query)
 			args, _ := json.Marshal(map[string]string{"query": query})
 			warnOnErr("recording search_stars event", db.RecordShootingStarEvent(runID, "search_stars", string(args), fmt.Sprintf("%d results", len(results)), 0))
 			return results, err
 		},
 		WeaverReadStar: func(starID int64) (*store.Star, error) {
-			star, err := db.GetStar(starID)
+			star, err := read(starID)
 			args, _ := json.Marshal(map[string]int64{"star_id": starID})
 			resultText := "not found"
 			if err == nil {
-				markSeen(starID)
 				resultText = star.Title
 			}
 			warnOnErr("recording read_star event", db.RecordShootingStarEvent(runID, "read_star", string(args), resultText, 0))
 			return star, err
 		},
 		WeaverCreateStar: func(title, category, summary, body string, tags []string, confidenceClass string, isPersonal bool, reasoning string) (int64, error) {
-			id, err := db.CreateStar(store.Star{
-				Title: title, Category: category, Summary: summary, Body: body,
-				Tags: tags, Confidence: confidenceClass, IsPersonal: isPersonal, Status: "auto",
-			})
+			id, err := create(title, category, summary, body, tags, confidenceClass, isPersonal, reasoning)
 			if err != nil {
 				return 0, err
 			}
-			markSeen(id)
-			warnOnErr("linking star source", db.LinkStarSource(id, threadID))
 			warnOnErr("recording shooting star candidate", db.RecordShootingStarCandidate(runID, title, confidenceClass, "new_star", reasoning, &id))
 			args, _ := json.Marshal(map[string]interface{}{"title": title, "category": category, "is_personal": isPersonal})
 			warnOnErr("recording create_star event", db.RecordShootingStarEvent(runID, "create_star", string(args), fmt.Sprintf("star_id=%d", id), 0))
 			return id, nil
 		},
 		WeaverUpdateStar: func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error {
-			if err := requireSeen(starID); err != nil {
+			if err := update(starID, title, summary, body, tags, confidenceClass, isPersonal, reasoning); err != nil {
 				return err
 			}
-			if err := db.UpdateStar(starID, title, summary, body, tags, confidenceClass, isPersonal); err != nil {
-				return err
-			}
-			warnOnErr("linking star source", db.LinkStarSource(starID, threadID))
 			warnOnErr("recording shooting star candidate", db.RecordShootingStarCandidate(runID, "", confidenceClass, "merged", reasoning, &starID))
 			args, _ := json.Marshal(map[string]interface{}{"star_id": starID, "is_personal": isPersonal})
 			warnOnErr("recording update_star event", db.RecordShootingStarEvent(runID, "update_star", string(args), "updated", 0))
 			return nil
 		},
 		WeaverLinkStars: func(starIDA, starIDB int64, reasoning string) error {
-			if err := requireSeen(starIDA); err != nil {
-				return err
-			}
-			if err := requireSeen(starIDB); err != nil {
-				return err
-			}
-			err := db.LinkStars(starIDA, starIDB, reasoning)
+			err := link(starIDA, starIDB, reasoning)
 			args, _ := json.Marshal(map[string]interface{}{"star_id_a": starIDA, "star_id_b": starIDB, "reasoning": reasoning})
 			// Logged after checking err, with the real outcome — previously
 			// this unconditionally logged "linked" even when db.LinkStars

@@ -334,6 +334,11 @@ export interface Thread {
 	// undefined for every other thread. Drives ChatView.svelte's "back to
 	// routine" header affordance on a pulse's thread view.
 	pulsar_routine_id?: number;
+	// source mirrors store.Thread.Source — "web" for the normal chat UI,
+	// or a caller-supplied label (e.g. "weaver", "pulsar-daily"). Drives
+	// ChatView.svelte's stripped-composer/back-button branch for a Weaver
+	// session (issue #94).
+	source: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -762,4 +767,16 @@ export interface ConstellationWeekItem {
 export interface ConstellationMap {
 	stars: Star[];
 	edges: StarEdgePair[];
+}
+
+// Mirrors store.WeaverThreadSummary — one row of GET
+// /api/constellation/weaver-threads (issue #94's "Weaver sessions" list).
+export interface WeaverThreadSummary {
+	id: string;
+	title: string;
+	updated_at: string;
+	// Distinguishes a scheduled shooting-star run from a manually-started
+	// "Talk to Weaver" session — see the Go struct's own doc comment for
+	// how this is actually derived (there's no direct foreign key for it).
+	is_automatic: boolean;
 }

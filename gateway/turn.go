@@ -132,6 +132,27 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	// isWeaverThread (issue #94, "Talk to Weaver") — a manually-started or
+	// continued Weaver session, as opposed to the background scheduler's
+	// own shooting-star runs (gateway/constellation_weaver.go), which never
+	// go through handleTurn at all. On a brand-new thread this is exactly
+	// msg.Source, same as any other client-supplied source (Pulsar Daily's
+	// "pulsar-daily" is the existing precedent). On a continuation there's
+	// no client-supplied source to trust — the frontend never resends it
+	// on later turns — so this reads the thread's own persisted Source
+	// back via GetThreadRaw, keyed on the root threadID (not
+	// storageThreadID/a fork) since Weaver-ness is a property of the
+	// conversation as a whole, matching RunShootingStar's own root-vs-
+	// variant reasoning. Left false for a ghost turn: an anonymous thread
+	// has no persisted row for GetThreadRaw to read back, and nothing in
+	// the UI ever combines ghost mode with a Weaver session.
+	isWeaverThread := msg.Source == "weaver"
+	if !isNewThread && !anonymous {
+		if rawThread, err := s.db.GetThreadRaw(threadID); err == nil {
+			isWeaverThread = rawThread.Source == "weaver"
+		}
+	}
+
 	requestedModel := msg.Model
 	if requestedModel == "" {
 		requestedModel = s.effectiveDefaultModel(cfg)
@@ -642,6 +663,39 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		agentCtx.EditMemory = s.db.UpdateMemory
 		agentCtx.ForgetMemory = s.db.DeleteMemory
 	}
+	// Issue #94: a Weaver thread runs Weaver's own agent loop instead of
+	// the main assistant's — WeaverRun is the exact same flag
+	// newWeaverToolContext sets for a scheduled shooting star
+	// (gateway/constellation_weaver.go), which is what makes
+	// tools/catalog.go collapse the menu down to Weaver's five tools +
+	// search_chats and makes agent.Run's loadSystemPrompt swap in
+	// weaver.system instead of prompt.md. weaverToolClosures is the same
+	// shared implementation the shooting-star path uses, just without that
+	// path's runID-keyed shooting_star_events/candidates admin trail —
+	// this turn already gets full observability the ordinary way (every
+	// tool_call/tool_result logged to the events table by handleTurn's own
+	// emit/logTurnEvent below, source-agnostic). SearchThreads/
+	// ListRecentThreads/ReadThread are already wired unconditionally above
+	// for a non-anonymous turn, which is what keeps search_chats available
+	// here exactly like it is for a shooting star.
+	if isWeaverThread {
+		categories, err := s.db.DistinctCategories()
+		if err != nil {
+			categories = nil
+		}
+		search, read, create, update, link := weaverToolClosures(s.db, threadID)
+		agentCtx.WeaverRun = true
+		agentCtx.WeaverInteractive = true
+		agentCtx.MaxTurns = weaverMaxTurns
+		agentCtx.WeaverCategoriesInUse = strings.Join(categories, ", ")
+		agentCtx.WeaverPersonName = PersonNameFromStore(s.db)
+		agentCtx.WeaverPersonPronouns = PersonPronounsFromStore(s.db)
+		agentCtx.WeaverSearchStars = search
+		agentCtx.WeaverReadStar = read
+		agentCtx.WeaverCreateStar = create
+		agentCtx.WeaverUpdateStar = update
+		agentCtx.WeaverLinkStars = link
+	}
 	// Left nil (not wired above) unless this turn actually has Deep
 	// Research on — catalog.go's "deep_research" Requires case already
 	// checks ctx.DeepResearch too, so leaving this nil otherwise isn't
@@ -760,7 +814,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				log.Warn("failed to persist pulse title", "thread", threadID, "err", err)
 				logEvent(storageThreadID, "warn", "title", "persisting pulse title failed", map[string]interface{}{"err": err.Error()}, turnID)
 			}
-		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, firstNonEmpty(msg.TitleSeed, msg.Content)); err != nil {
+		} else if title, titleCost, err := s.generateTitle(cfg, modelCfg, firstNonEmpty(msg.TitleSeed, msg.Content), isWeaverThread); err != nil {
 			log.Warn("thread title generation failed", "thread", threadID, "err", err)
 			logEvent(storageThreadID, "warn", "title", "thread title generation failed", map[string]interface{}{"err": err.Error()}, turnID)
 		} else if title != "" {
@@ -1221,7 +1275,7 @@ const maxTitleLen = 60
 // Salvatore..."). The system prompt now says so explicitly with
 // matching examples, and answerLikeTitle below catches whatever slips
 // through anyway.
-func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string) (string, float64, error) {
+func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, userMessage string, weaverThread bool) (string, float64, error) {
 	titleClient := llm.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, modelCfg.Model, modelCfg.Temperature, 300).
 		// AllowFallbacks(true) — see the main turn client's construction
 		// above for why: an escape valve for every pinned provider being
@@ -1238,8 +1292,17 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 		// instead of just raising the budget and hoping it's enough.
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
+	// weaverThread (issue #94) picks WeaverTitleSystem instead — see its
+	// own doc comment for the real bug this avoids: TitleSystem's Q&A/
+	// trivia-tuned heuristics badly misread a Weaver instruction like
+	// "merge the Framework 13 and ThinkPad stars" as a topic to name
+	// rather than an action being asked of Weaver.
+	titleSystem := prompts.Get().Turn.TitleSystem
+	if weaverThread {
+		titleSystem = prompts.Get().Turn.WeaverTitleSystem
+	}
 	prompt := []llm.ChatMessage{
-		{Role: "system", Content: prompts.Get().Turn.TitleSystem},
+		{Role: "system", Content: titleSystem},
 		{Role: "user", Content: userMessage},
 	}
 

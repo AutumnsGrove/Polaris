@@ -266,6 +266,27 @@ export class AppState {
 	// openThread/the sidebar/the URL to ever resolve it against.
 	private ghostThreadId: string | null = null;
 
+	// startingWeaverThread (issue #94, "Talk to Weaver") is true only for
+	// the brief pre-send window on /constellation/weaver/new: currentThread
+	// is still null (no thread exists yet, so its own .source can't be
+	// checked), but ChatView.svelte still needs to know to render the
+	// stripped Weaver composer instead of the normal one. Once the first
+	// message actually sends and completes, currentThread.source ===
+	// 'weaver' becomes the real, persisted source of truth (see
+	// refreshCurrentThreadIfMatches) and this flag stops mattering — it's
+	// reset by newThread() rather than by that transition, so leaving it
+	// true a little longer than strictly necessary is harmless.
+	startingWeaverThread = $state(false);
+	// Set alongside startingWeaverThread by /constellation/weaver/new —
+	// carries Constellation's configured model (constellationState.config
+	// ?.model) over to ChatView.svelte's submit(), which calls
+	// startWeaverThread(text, pendingWeaverModel) for the session's first
+	// message. A plain string field rather than AppState importing
+	// ConstellationState directly, for the same "keep AppState decoupled
+	// from Constellation's own feature-specific state" reasoning
+	// startWeaverThread's own doc comment gives.
+	pendingWeaverModel = $state<string | undefined>(undefined);
+
 	// Set when the user navigates away (openThread to a different thread,
 	// or newThread()) while a turn is still in flight for pendingThreadId.
 	// Only one turn can ever be in flight at a time from this client (busy
@@ -839,6 +860,8 @@ export class AppState {
 		// A leftover ghost session's own id must never carry over into
 		// whatever's opened next — see ghostThreadId's doc comment.
 		this.ghostThreadId = null;
+		this.startingWeaverThread = false;
+		this.pendingWeaverModel = undefined;
 		this.syncURL(null);
 		this.closeSidebarIfMobile();
 	}
@@ -1001,7 +1024,14 @@ export class AppState {
 		// voiceMode: set only by Transponder (see
 		// components/Transponder.svelte) for every turn made during a call
 		// — see gateway/protocol.go's ClientMessage.VoiceMode doc comment.
-		voiceMode?: boolean
+		voiceMode?: boolean,
+		// modelOverride: bypasses this.selectedModel (the chat model picker's
+		// own ambient state) for this one send — only used by
+		// startWeaverThread below, which needs Constellation's own
+		// configured model rather than whatever the main assistant's picker
+		// last had selected. Every other caller leaves this undefined and
+		// gets the normal this.selectedModel behavior, unchanged.
+		modelOverride?: string
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
@@ -1017,7 +1047,39 @@ export class AppState {
 			source,
 			titleSeed,
 			ghostMode,
-			voiceMode
+			voiceMode,
+			modelOverride
+		);
+	}
+
+	// startWeaverThread (issue #94, "Talk to Weaver") starts a brand-new
+	// thread with source: 'weaver' — the same client-supplied-source
+	// mechanism Pulsar Daily's expand-to-chat already uses for
+	// "pulsar-daily" (see dispatch()'s own doc comment on source). Once
+	// gateway/turn.go sees that source on thread creation, it runs
+	// Weaver's own agent loop instead of the main assistant's for this
+	// turn and every later one in the same thread (keyed off the thread's
+	// own persisted source, not anything this client has to keep resending
+	// — see turn.go's isWeaverThread). model is passed in by the caller
+	// (constellationState.config?.model, falling through to undefined —
+	// i.e. this.selectedModel — the same "empty means use the default"
+	// convention store.ConstellationConfig.Model itself already documents)
+	// rather than read from constellationState directly here, to keep
+	// AppState from depending on Constellation's own feature-specific
+	// state module.
+	startWeaverThread(content: string, model?: string) {
+		this.send(
+			content,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			'weaver',
+			undefined,
+			undefined,
+			undefined,
+			model
 		);
 	}
 
@@ -1084,7 +1146,9 @@ export class AppState {
 		// ghostMode: see send()'s doc comment.
 		ghostMode?: boolean,
 		// voiceMode: see send()'s doc comment.
-		voiceMode?: boolean
+		voiceMode?: boolean,
+		// modelOverride: see send()'s doc comment.
+		modelOverride?: string
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1163,7 +1227,7 @@ export class AppState {
 			type: 'message',
 			thread_id: (isGhost ? this.ghostThreadId : this.currentThreadId) ?? undefined,
 			content,
-			model: this.selectedModel,
+			model: modelOverride ?? this.selectedModel,
 			edit_from_id: editFromId,
 			stt_cost_usd: sttCostUsd,
 			user_location: getUserLocation(),

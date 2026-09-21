@@ -5,7 +5,8 @@ import type {
 	ConstellationStarDetail,
 	ConstellationStats,
 	ConstellationWeekItem,
-	Star
+	Star,
+	WeaverThreadSummary
 } from './types';
 import { appState } from './state.svelte';
 
@@ -34,6 +35,10 @@ export class ConstellationState {
 
 	weekItems = $state<ConstellationWeekItem[]>([]);
 	mapData = $state<ConstellationMap | null>(null);
+	// weaverThreads backs the "Weaver sessions" browsable list (issue #94)
+	// — both manual "Talk to Weaver" sessions and the scheduler's own
+	// shooting-star runs.
+	weaverThreads = $state<WeaverThreadSummary[]>([]);
 
 	// libraryLoaded/inboxLoaded/mapLoaded/statsLoaded/configLoaded
 	// distinguish "still fetching" from "fetched, genuinely empty" — same
@@ -52,6 +57,8 @@ export class ConstellationState {
 	inboxError = $state(false);
 	mapLoaded = $state(false);
 	mapError = $state(false);
+	weaverThreadsLoaded = $state(false);
+	weaverThreadsError = $state(false);
 	statsLoaded = $state(false);
 	statsError = $state(false);
 	configLoaded = $state(false);
@@ -145,6 +152,20 @@ export class ConstellationState {
 			this.mapError = true;
 		} finally {
 			this.mapLoaded = true;
+		}
+	}
+
+	async loadWeaverThreads() {
+		this.weaverThreadsLoaded = false;
+		this.weaverThreadsError = false;
+		try {
+			const res = await fetch('/api/constellation/weaver-threads');
+			if (!res.ok) throw new Error('weaver threads fetch failed');
+			this.weaverThreads = (await res.json()) as WeaverThreadSummary[];
+		} catch {
+			this.weaverThreadsError = true;
+		} finally {
+			this.weaverThreadsLoaded = true;
 		}
 	}
 

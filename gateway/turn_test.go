@@ -240,7 +240,7 @@ func TestGenerateTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france")
+	title, _, err := s.generateTitle(cfg, modelCfg, "what is the capital of france", false)
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestGenerateTitle_TruncatesOverlongTitle(t *testing.T) {
 	modelCfg := config.ModelConfig{ID: "test-model", Model: "test/model", Provider: []string{"test"}}
 
 	s := &Server{}
-	title, _, err := s.generateTitle(cfg, modelCfg, "q")
+	title, _, err := s.generateTitle(cfg, modelCfg, "q", false)
 	if err != nil {
 		t.Fatalf("generateTitle returned error: %v", err)
 	}

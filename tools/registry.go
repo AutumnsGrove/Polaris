@@ -160,14 +160,25 @@ type Context struct {
 	ListRecentThreads func(cursor string) (threads []store.ThreadSummary, nextCursor string, err error)
 	ReadThread        func(threadID string) (*store.ThreadReadResult, error)
 
-	// WeaverRun is true only inside a Weaver shooting-star run (see
-	// gateway/constellation_weaver.go) — gates the five weaver_run tools
+	// WeaverRun is true inside any Weaver agent loop — a scheduled
+	// shooting-star run (gateway/constellation_weaver.go) or an
+	// interactive "Talk to Weaver" session (gateway/turn.go's
+	// isWeaverThread, issue #94) — gates the five weaver_run tools
 	// (tools/search_stars.go, read_star.go, create_star.go, update_star.go,
 	// link_stars.go) so they're never offered on a normal chat/pulse turn,
 	// same "requires:" gating shape as pulsar_daily_items/pulsar_wizard
 	// above. The five WeaverX closures below are only ever wired alongside
 	// this being true.
 	WeaverRun bool
+	// WeaverInteractive distinguishes the two WeaverRun cases from each
+	// other for agent/driver.go's loadSystemPrompt: false (a shooting
+	// star) picks prompts.yaml's weaver.system, the silent-background-
+	// extraction framing; true (only ever set by gateway/turn.go) picks
+	// weaver.interactive_system instead, framed as a live conversation
+	// where the person's own messages are direct instructions to act on
+	// rather than raw content to extract facts from. Meaningless unless
+	// WeaverRun is also true.
+	WeaverInteractive bool
 
 	// WeaverSearchStars/WeaverReadStar/WeaverCreateStar/WeaverUpdateStar/
 	// WeaverLinkStars back Weaver's five tools — narrow closures over

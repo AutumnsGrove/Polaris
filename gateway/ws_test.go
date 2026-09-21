@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -893,4 +894,172 @@ func TestWebSocket_UnknownModelFallsBackToDefault(t *testing.T) {
 	if last["type"] != "done" {
 		t.Errorf("last event = %+v, want a normal completion despite the unknown model id", last)
 	}
+}
+
+// weaverToolNames is the exact tool set catalog.go's WeaverRun gate leaves
+// standing: Weaver's own five tools plus search_chats (offered here since
+// the harness's non-anonymous turn always wires SearchThreads) — never
+// think/calculator/web_search/anything else from the main catalog.
+var weaverToolNames = []string{"create_star", "link_stars", "read_star", "search_chats", "search_stars", "update_star"}
+
+// toolBearingRequestToolNames extracts every request body's "tools" array
+// of function names — filtered to only bodies that actually carry a
+// non-empty tools array, since generateTitle/generateSuggestions each build
+// their own toolless completion request and would otherwise pollute the
+// list with an empty entry per turn.
+func toolBearingRequestToolNames(t *testing.T, bodies []string) [][]string {
+	t.Helper()
+	var out [][]string
+	for _, body := range bodies {
+		var req struct {
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("unmarshaling request body: %v", err)
+		}
+		if len(req.Tools) == 0 {
+			continue
+		}
+		names := make([]string, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			names = append(names, tool.Function.Name)
+		}
+		sort.Strings(names)
+		out = append(out, names)
+	}
+	return out
+}
+
+// TestWebSocket_WeaverSourceThread_RestrictsToolsToWeaverSet covers issue
+// #94's "Talk to Weaver": a brand-new thread created with source: "weaver"
+// (the same client-supplied-source mechanism Pulsar Daily's expand-to-chat
+// already uses for "pulsar-daily") must run through Weaver's own agent
+// loop, not the main assistant's — offered() only takes tools/catalog.go's
+// WeaverRun branch when gateway/turn.go's handleTurn actually sets
+// agentCtx.WeaverRun, which previously never happened for any turn coming
+// through the ordinary WebSocket path (only the background scheduler's
+// RunShootingStar set it, via newWeaverToolContext).
+func TestWebSocket_WeaverSourceThread_RestrictsToolsToWeaverSet(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "an answer"}}},
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "the Framework 13 and ThinkPad stars are the same thing, please merge them",
+		"model": "test-model", "source": "weaver",
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+
+	thread, err := h.db.GetThreadRaw(threadID)
+	if err != nil {
+		t.Fatalf("GetThreadRaw: %v", err)
+	}
+	if thread.Source != "weaver" {
+		t.Errorf("thread.Source = %q, want %q", thread.Source, "weaver")
+	}
+
+	mu.Lock()
+	toolSets := toolBearingRequestToolNames(t, requestBodies)
+	mu.Unlock()
+	if len(toolSets) != 1 {
+		t.Fatalf("tool-bearing requests = %d, want exactly 1: %v", len(toolSets), toolSets)
+	}
+	if got := toolSets[0]; !equalStringSlices(got, weaverToolNames) {
+		t.Errorf("offered tools = %v, want exactly %v", got, weaverToolNames)
+	}
+}
+
+// TestWebSocket_WeaverThreadContinuation_StaysRestricted covers the one
+// path shooting stars never exercise (they're always single-shot): a
+// second message into an already-existing Weaver thread. The frontend
+// never resends source on a continuation (see ClientMessage.Source's own
+// doc comment — "only read on thread creation"), so handleTurn must read
+// the thread's own persisted source back from the DB rather than trusting
+// anything on this later message.
+func TestWebSocket_WeaverThreadContinuation_StaysRestricted(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "an answer"}}},
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "first message", "model": "test-model", "source": "weaver",
+	}); err != nil {
+		t.Fatalf("WriteJSON (first turn): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+
+	// No source field here — mirrors the real frontend, which only ever
+	// sets source on the message that creates a brand-new thread.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "thread_id": threadID, "content": "a follow-up", "model": "test-model",
+	}); err != nil {
+		t.Fatalf("WriteJSON (second turn): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	mu.Lock()
+	toolSets := toolBearingRequestToolNames(t, requestBodies)
+	mu.Unlock()
+	if len(toolSets) != 2 {
+		t.Fatalf("tool-bearing requests = %d, want exactly 2 (one per turn): %v", len(toolSets), toolSets)
+	}
+	if got := toolSets[1]; !equalStringSlices(got, weaverToolNames) {
+		t.Errorf("second turn's offered tools = %v, want exactly %v (source-less continuation must still resolve to the thread's own persisted source)", got, weaverToolNames)
+	}
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

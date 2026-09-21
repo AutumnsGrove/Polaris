@@ -194,6 +194,20 @@
 		attachedFiles = [];
 		voiceCostUsd = undefined;
 
+		// The very first message of a new "Talk to Weaver" session (issue
+		// #94) — no thread exists yet, so this must go through
+		// startWeaverThread (which pins source: 'weaver') rather than the
+		// ordinary send(). Every later message in the same thread just
+		// uses send() normally below: the backend re-derives Weaver-ness
+		// from the thread's own persisted source at that point (see
+		// gateway/turn.go's isWeaverThread), not from anything the client
+		// resends. Attachments never apply here — ComposerMenu (the only
+		// way to attach a file) is hidden for a Weaver session.
+		if (appState.startingWeaverThread && !appState.currentThreadId) {
+			appState.startWeaverThread(text, appState.pendingWeaverModel);
+			return;
+		}
+
 		if (files.length === 0) {
 			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research, undefined, undefined, ghostMode);
 			return;
@@ -234,6 +248,17 @@
 	let pulsarBackRoutineId = $derived(
 		currentThread?.pulsar_routine_id != null ? page.url.searchParams.get('pulsar') : null
 	);
+
+	// isWeaverThread (issue #94, "Talk to Weaver") strips this view down to
+	// just a plain timeline + textarea/send composer — no attachments/
+	// focus-mode/deep-research menu, no Transponder call button, no voice
+	// input, none of which apply to a tool-driven Weaver session. True
+	// once a real thread's own persisted source says so (currentThread is
+	// only populated after the first turn completes — see
+	// refreshCurrentThreadIfMatches), OR while composing the very first
+	// message on /constellation/weaver/new, before any thread exists yet
+	// (see appState.startingWeaverThread's own doc comment).
+	let isWeaverThread = $derived(currentThread?.source === 'weaver' || appState.startingWeaverThread);
 
 	// A turn ending in a lone user message with nothing after it is never
 	// a valid "finished" state — dispatch() always pushes the user turn
@@ -334,10 +359,15 @@
 				     else (see .welcome-heading .wordmark) needs this overlay
 				     instead — invisible to interaction (pointer-events: none)
 				     and hidden the instant there's real input, so it never
-				     competes with what's actually being typed. -->
-				<div class="fake-placeholder" aria-hidden="true">
-					Ask <span class="wordmark">Polaris</span>…
-				</div>
+				     competes with what's actually being typed. Skipped
+				     entirely for a Weaver session — "Ask Polaris" would be
+				     actively misleading for a turn that never reaches the
+				     main assistant at all. -->
+				{#if !isWeaverThread}
+					<div class="fake-placeholder" aria-hidden="true">
+						Ask <span class="wordmark">Polaris</span>…
+					</div>
+				{/if}
 			{/if}
 			<textarea
 				rows="1"
@@ -345,7 +375,8 @@
 				onkeydown={onKeydown}
 				onpaste={onPaste}
 				use:autoResize={{ value: input, maxHeight: 200 }}
-				aria-label="Ask Polaris"
+				placeholder={isWeaverThread ? 'Tell Weaver what to fix…' : undefined}
+				aria-label={isWeaverThread ? 'Tell Weaver what to fix' : 'Ask Polaris'}
 			></textarea>
 		</div>
 
@@ -369,18 +400,22 @@
 		{/if}
 
 		<div class="composer-toolbar">
-			<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
+			{#if !isWeaverThread}
+				<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
+			{/if}
 			<div class="toolbar-spacer"></div>
-			<button
-				type="button"
-				class="call-btn"
-				disabled={busyElsewhere}
-				title="Talk to Polaris"
-				onclick={() => (showTransponder = true)}
-			>
-				<MicAudioLines size={16} />
-			</button>
-			<VoiceButton bind:value={input} bind:sttCostUsd={voiceCostUsd} />
+			{#if !isWeaverThread}
+				<button
+					type="button"
+					class="call-btn"
+					disabled={busyElsewhere}
+					title="Talk to Polaris"
+					onclick={() => (showTransponder = true)}
+				>
+					<MicAudioLines size={16} />
+				</button>
+				<VoiceButton bind:value={input} bind:sttCostUsd={voiceCostUsd} />
+			{/if}
 			<button
 				type={appState.busyOnCurrentThread ? 'button' : 'submit'}
 				class="send-btn"
@@ -423,6 +458,10 @@
 			>
 				<ChevronLeft size={18} />
 			</button>
+		{:else if isWeaverThread}
+			<button class="icon-btn" onclick={() => goto('/constellation')} title="Back to Constellation">
+				<ChevronLeft size={18} />
+			</button>
 		{:else if !appState.sidebarOpen}
 			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
 				<PanelLeft size={18} />
@@ -433,7 +472,7 @@
 		{/if}
 	</div>
 	<div class="header-right">
-		{#if appState.turns.length === 0}
+		{#if appState.turns.length === 0 && !isWeaverThread}
 			<!-- Homepage only — turns.length, not !appState.currentThreadId:
 			     a ghost session (issue #67) never sets currentThreadId at
 			     all (see state.svelte.ts's ghostThreadId doc comment), so
@@ -442,7 +481,10 @@
 			     instead of just the empty-composer moment before the first
 			     message, same as a normal thread. Once turns exist, this
 			     row switches to the New-thread/ThreadMenu controls below
-			     instead, so the two never compete for space. -->
+			     instead, so the two never compete for space. Also excluded
+			     for a Weaver session (issue #94) — ghost mode/model
+			     switching are both main-assistant concerns that don't apply
+			     to a tool-driven Weaver turn. -->
 			<button
 				type="button"
 				class="icon-btn"
@@ -484,8 +526,15 @@
 	     empty screen. Switches to the normal scrolling-history layout the
 	     instant the first message is sent. -->
 	<div class="welcome">
-		<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-		<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
+		{#if isWeaverThread}
+			<h1 class="welcome-heading">Talk to <span class="wordmark">Weaver</span></h1>
+			<p class="subtitle wordmark">
+				Tell it what's wrong across your stars — it can search, read, merge, and update them.
+			</p>
+		{:else}
+			<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
+			<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
+		{/if}
 		<div class="welcome-composer">
 			{@render composerForm()}
 		</div>

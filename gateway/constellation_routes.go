@@ -676,6 +676,25 @@ func (s *Server) handleGetConstellationWeek(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, items)
 }
 
+// handleListWeaverThreads backs the "Weaver sessions" browsable history
+// (issue #94, "Talk to Weaver") — every source = 'weaver' thread, manual
+// and scheduled-shooting-star alike, deliberately excluded from the main
+// sidebar (store.ListThreads/ListThreadsPage) the same way pulsar threads
+// are, so without this list they'd otherwise be reachable only by already
+// knowing a thread's own /t/<id> URL.
+func (s *Server) handleListWeaverThreads(w http.ResponseWriter, r *http.Request) {
+	threads, err := s.db.ListWeaverThreads()
+	if err != nil {
+		log.Warn("listing weaver threads failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if threads == nil {
+		threads = []store.WeaverThreadSummary{}
+	}
+	writeJSON(w, threads)
+}
+
 // constellationMap is the full star-map view's payload — every non-
 // disabled star plus every edge between them (see the plan doc's "Map").
 type constellationMap struct {

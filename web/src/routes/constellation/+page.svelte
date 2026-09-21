@@ -18,6 +18,8 @@
 		Library,
 		Map as MapIcon,
 		Maximize2,
+		MessageCircle,
+		History,
 		X
 	} from '@lucide/svelte';
 	import type { Star } from '$lib/types';
@@ -222,6 +224,25 @@
 	<div class="header-right">
 		<button class="icon-btn" title="Search" aria-label="Search" onclick={openSearch}>
 			<Search size={18} />
+		</button>
+		<!-- Issue #94, "Talk to Weaver": folded into the quiet icon-only
+		     header row rather than a standalone hero banner — same visual
+		     language as Search/Settings either side of it. -->
+		<button
+			class="icon-btn"
+			onclick={() => goto('/constellation/weaver/new')}
+			title="Talk to Weaver"
+			aria-label="Talk to Weaver"
+		>
+			<MessageCircle size={18} />
+		</button>
+		<button
+			class="icon-btn"
+			onclick={() => goto('/constellation/weaver')}
+			title="Weaver sessions"
+			aria-label="Weaver sessions"
+		>
+			<History size={18} />
 		</button>
 		<button class="icon-btn" onclick={() => (showSettings = true)} title="Constellation settings">
 			<Settings size={18} />
