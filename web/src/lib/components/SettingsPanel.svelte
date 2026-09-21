@@ -126,7 +126,7 @@
 					<div class="caption">last 30 days &middot; ${usage.total_cost_usd.toFixed(2)} all-time</div>
 				</div>
 
-				<div class="usage-section-label">Cost by source</div>
+				<div class="usage-section-label">Cost by source <span class="usage-section-sublabel">(30d / all-time)</span></div>
 				<div class="usage-stat-group">
 					<div class="usage-stat-row">
 						<span class="label">Polaris</span>
