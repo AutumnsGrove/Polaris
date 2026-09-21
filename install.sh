@@ -522,19 +522,35 @@ if [ "$OS" = "Linux" ]; then
 		info "Installed polaris-update.service/.path/.timer and"
 		info "polaris-codeexec.service/.path to /etc/systemd/system/."
 
-		# Grants update.sh (running unattended, unprivileged, as $USER —
-		# see polaris-update.service's own comment on why it's deliberately
-		# not root) passwordless access to re-sync these same unit files
-		# after a future `git pull` picks up a change to them, without
-		# widening root's reachable surface beyond that one fixed,
-		# reviewable script — see sync-units.sh's header comment and issue
-		# #85. `visudo -cf` validates the fragment's syntax against a
+		# sync-units.sh runs as root (writes into /etc/systemd/system,
+		# calls systemctl) — pointing the sudoers rule straight at its
+		# path inside the git checkout would mean ANY commit that reaches
+		# main, including a malicious one, gets root-executed on every
+		# production host the next `polaris update` run, with no human
+		# review. watcher-sync-verify.sh closes that: it's copied here to
+		# a fixed, root-owned path OUTSIDE the checkout that update.sh's
+		# automated git-pull flow never touches, and it refuses to run
+		# sync-units.sh unless its content still matches the hash pinned
+		# below — see watcher-sync-verify.sh's own header comment for the
+		# full reasoning. The sudoers rule grants NOPASSWD access to this
+		# wrapper's fixed path, never to sync-units.sh directly.
+		sudo mkdir -p /etc/polaris
+		sudo cp "$WATCHER_SRC/watcher-sync-verify.sh" /etc/polaris/watcher-sync-verify.sh
+		sudo chmod 0755 /etc/polaris/watcher-sync-verify.sh
+		sha256sum "$WATCHER_SRC/sync-units.sh" | awk '{print $1}' | \
+			sudo tee /etc/polaris/watcher-sync.sha256 >/dev/null
+		sudo chmod 0444 /etc/polaris/watcher-sync.sha256
+		info "Approved the current compose/watcher/sync-units.sh (pinned its hash"
+		info "to /etc/polaris/watcher-sync.sha256) — re-run install.sh any time"
+		info "that file legitimately changes to re-approve it."
+
+		# `visudo -cf` validates the fragment's syntax against a
 		# throwaway temp file before it ever touches /etc/sudoers.d: a
 		# malformed drop-in there can break `sudo` system-wide for every
 		# user, so this must never be written unchecked.
 		SUDOERS_FRAGMENT="$WATCHER_TMP/polaris-watcher.sudoers"
-		printf '%s ALL=(root) NOPASSWD: %s/compose/watcher/sync-units.sh\n' \
-			"$USER" "$INSTALL_DIR" >"$SUDOERS_FRAGMENT"
+		printf '%s ALL=(root) NOPASSWD: /etc/polaris/watcher-sync-verify.sh\n' \
+			"$USER" >"$SUDOERS_FRAGMENT"
 		if ! command -v visudo >/dev/null 2>&1; then
 			warn "visudo not found — skipping the watcher's self-update sudoers rule."
 			warn "A future fix to compose/watcher/*.service|.path|.timer will need a"
@@ -543,7 +559,7 @@ if [ "$OS" = "Linux" ]; then
 			sudo cp "$SUDOERS_FRAGMENT" /etc/sudoers.d/polaris-watcher
 			sudo chmod 0440 /etc/sudoers.d/polaris-watcher
 			info "Granted the update watcher passwordless sudo for exactly"
-			info "compose/watcher/sync-units.sh (see /etc/sudoers.d/polaris-watcher)."
+			info "/etc/polaris/watcher-sync-verify.sh (see /etc/sudoers.d/polaris-watcher)."
 		else
 			warn "Generated sudoers fragment failed validation — skipping it."
 			warn "The update watcher won't be able to re-sync its own unit files"

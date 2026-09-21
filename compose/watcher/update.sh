@@ -213,13 +213,17 @@ fi
 # scripts run straight out of this checkout already, so `git pull`
 # alone keeps them current, but /etc/systemd/system/*.service|*.path|
 # *.timer are one-time copies from install time and go stale
-# otherwise. Best-effort and non-fatal, same reasoning as the sandbox
-# image pull below: a failure here (e.g. the sudoers rule was never
-# installed, or install.sh predates this feature) shouldn't fail the
+# otherwise. Routed through watcher-sync-verify.sh (a fixed, root-owned
+# path outside this checkout, never sync-units.sh's own checkout path
+# directly) so a malicious commit to sync-units.sh can't get itself
+# root-executed automatically — see that wrapper's header comment.
+# Best-effort and non-fatal, same reasoning as the sandbox image pull
+# below: a failure here (a hash mismatch pending human re-approval, or
+# the sudoers rule/wrapper predating this feature) shouldn't fail the
 # Polaris update itself over a watcher-maintenance step — it just means
 # the watcher units keep running whatever they already have until the
 # next successful sync.
-sudo "$INSTALL_DIR/compose/watcher/sync-units.sh" "$INSTALL_DIR" "$(whoami)" 2>&1 | tee "$CMD_LOG" || \
+sudo /etc/polaris/watcher-sync-verify.sh "$INSTALL_DIR" "$(whoami)" 2>&1 | tee "$CMD_LOG" || \
 	echo "watcher unit re-sync failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
 
 set_pinned_image "$TARGET_IMAGE"
