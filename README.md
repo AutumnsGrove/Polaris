@@ -55,6 +55,8 @@ with citations.
   geolocation for "near me" questions when available (see [SETUP.md](SETUP.md#configuration)).
 - **Voice** — hold a button to record a memo (transcribed via Voxtral), and hear replies read
   aloud in a real voice (Kokoro-82M), streamed sentence by sentence as they're ready.
+- **Transponder** — a full-screen, hands-free call mode: push-to-talk to speak, get a spoken reply
+  back (with sources still visible on screen), and keep going without touching the keyboard.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
   (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
   file processing, and charts styled to match the app's own theme, and can pull in a URL you've
