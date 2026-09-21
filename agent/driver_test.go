@@ -1210,3 +1210,93 @@ func TestRun_ExtraToolCostIncludedInResultCost(t *testing.T) {
 		t.Errorf("result.CostUSD = %v, want 0.015 (0.01 main-loop cost + 0.005 extra tool-handler cost)", result.CostUSD)
 	}
 }
+
+// TestDispatchToolCallsConcurrently_CodeExecRunsSequentially is the
+// regression test for issue #85's dispatch-side fix: a batch containing
+// multiple code_exec calls must run them one at a time, never fanned out
+// like every other tool, so Polaris itself can never produce the fast
+// burst of code-exec-signal/ file transitions that once wedged
+// polaris-codeexec.service via systemd's start-limit (see
+// polaris-codeexec.service's StartLimitIntervalSec comment). This
+// overrides the real code_exec handler for this test process only —
+// tools.Register just overwrites a package-level map entry, and no other
+// test in this package touches "code_exec".
+func TestDispatchToolCallsConcurrently_CodeExecRunsSequentially(t *testing.T) {
+	var mu sync.Mutex
+	inFlight := 0
+	maxInFlight := 0
+
+	tools.Register("code_exec", func(argsJSON string, ctx *tools.Context, callID string) string {
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		mu.Unlock()
+
+		// Wide enough that a real overlap (if dispatch ever fanned these
+		// out like every other tool) would reliably show up as
+		// maxInFlight > 1 rather than being a timing coin-flip.
+		time.Sleep(20 * time.Millisecond)
+
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return "ok"
+	})
+
+	calls := []llm.ToolCall{
+		{ID: "c1", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
+		{ID: "c2", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
+		{ID: "c3", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
+	}
+	ctx := &tools.Context{Ctx: context.Background()}
+
+	results := dispatchToolCallsConcurrently(calls, ctx)
+
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3", len(results))
+	}
+	if maxInFlight != 1 {
+		t.Errorf("max concurrent code_exec handlers in flight = %d, want 1 (code_exec calls must never run concurrently with each other)", maxInFlight)
+	}
+}
+
+// TestDispatchToolCallsConcurrently_CodeExecDoesNotBlockOtherTools checks
+// the other half of the same fix: forcing code_exec calls to run
+// sequentially must not also serialize every OTHER tool in the same
+// batch behind them — only code_exec calls are serialized relative to
+// each other, everything else still dispatches in parallel as before.
+func TestDispatchToolCallsConcurrently_CodeExecDoesNotBlockOtherTools(t *testing.T) {
+	release := make(chan struct{})
+	tools.Register("code_exec", func(argsJSON string, ctx *tools.Context, callID string) string {
+		<-release // blocks until the test explicitly lets it through
+		return "ok"
+	})
+
+	otherDone := make(chan struct{})
+	tools.Register("think", func(argsJSON string, ctx *tools.Context, callID string) string {
+		close(otherDone)
+		return "ok"
+	})
+
+	calls := []llm.ToolCall{
+		{ID: "c1", Function: llm.FunctionCall{Name: "code_exec", Arguments: `{}`}},
+		{ID: "c2", Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"x"}`}},
+	}
+	ctx := &tools.Context{Ctx: context.Background()}
+
+	done := make(chan []toolCallResult)
+	go func() { done <- dispatchToolCallsConcurrently(calls, ctx) }()
+
+	select {
+	case <-otherDone:
+		// The "think" call finished without waiting for the blocked
+		// code_exec call — exactly what should happen.
+	case <-time.After(2 * time.Second):
+		t.Fatal("the non-code_exec call in this batch never ran — code_exec appears to be blocking it")
+	}
+
+	close(release)
+	<-done
+}

@@ -866,29 +866,66 @@ type toolCallResult struct {
 // message history Run builds from them stays deterministic across runs
 // even though the underlying dispatch order isn't.
 //
-// Each call runs in its own goroutine with its own recover: ws.go's panic
-// recovery wraps the whole turn's goroutine, which protects that
-// goroutine's own call stack, but NOT goroutines spawned underneath it —
-// an unrecovered panic in any goroutine crashes the whole process
+// code_exec calls are the one exception: they run sequentially, on their
+// own goroutine, never fanned out alongside each other the way every other
+// tool is. tools.codeExecGlobalLock already makes concurrent calls safe
+// (only one sandbox actually runs at a time, everything else blocks), but
+// safe isn't the same as harmless here — N goroutines all queuing up on
+// that lock still each write and then remove their own request file in
+// code-exec-signal/ back to back the instant the lock frees, which is
+// exactly the kind of fast, genuine burst of DirectoryNotEmpty
+// transitions that once drove polaris-codeexec.path to retrigger
+// polaris-codeexec.service faster than systemd's start-limit tolerates,
+// wedging it (unit-start-limit-hit) until a human noticed — see
+// polaris-codeexec.service's StartLimitIntervalSec comment and issue
+// #85. Dispatching this batch's code_exec calls one at a time, in order,
+// removes that burst at the source instead of only tolerating it once it
+// reaches the host.
+//
+// Each call runs with its own recover regardless of which path it takes:
+// ws.go's panic recovery wraps the whole turn's goroutine, which protects
+// that goroutine's own call stack, but NOT goroutines spawned underneath
+// it — an unrecovered panic in any goroutine crashes the whole process
 // regardless of a recover() elsewhere. Without this, one tool handler
 // panicking (a bug three calls deep) would take down every other in-flight
 // thread on the server instead of just failing that one call.
 func dispatchToolCallsConcurrently(calls []llm.ToolCall, ctx *tools.Context) []toolCallResult {
 	results := make([]toolCallResult, len(calls))
 	var wg sync.WaitGroup
+
+	runOne := func(i int, call llm.ToolCall) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("panic in tool dispatch", "tool", call.Function.Name, "panic", r, "stack", string(debug.Stack()))
+				results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
+			}
+		}()
+		results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx, call.ID)}
+	}
+
+	var codeExecIdx []int
 	for i, call := range calls {
+		if call.Function.Name == "code_exec" {
+			codeExecIdx = append(codeExecIdx, i)
+			continue
+		}
 		wg.Add(1)
 		go func(i int, call llm.ToolCall) {
 			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					log.Error("panic in tool dispatch", "tool", call.Function.Name, "panic", r, "stack", string(debug.Stack()))
-					results[i] = toolCallResult{call: call, result: fmt.Sprintf("error: internal error running %s", call.Function.Name)}
-				}
-			}()
-			results[i] = toolCallResult{call: call, result: tools.Dispatch(call.Function.Name, call.Function.Arguments, ctx, call.ID)}
+			runOne(i, call)
 		}(i, call)
 	}
+
+	if len(codeExecIdx) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, i := range codeExecIdx {
+				runOne(i, calls[i])
+			}
+		}()
+	}
+
 	wg.Wait()
 	return results
 }
