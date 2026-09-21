@@ -9,7 +9,9 @@ triangulate against — it doesn't know things, it knows how to go find out.
 
 **Get started:** [SETUP.md](SETUP.md) has install instructions (one-liner or manual, both Docker)
 and configuration. **Contributing or hacking on it?** See [DEVELOPMENT.md](DEVELOPMENT.md) for
-architecture, frontend dev, the CLI, and deployment internals.
+architecture, frontend dev, the CLI, and deployment internals. **Curious about the trust
+boundaries** (container isolation, the code_exec sandbox, the update watcher's own privilege
+model)? See [SECURITY.md](SECURITY.md).
 
 ## What it does
 

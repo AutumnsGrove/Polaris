@@ -120,3 +120,8 @@ the full set of tunables.
 
 `GET /healthz` is an unauthenticated liveness check (confirms the process is up and the SQLite
 connection is actually reachable) for `Restart=always` or any external uptime monitor to poll.
+
+The container itself never gets Docker/systemd control — `compose/watcher/`'s host-side scripts
+run unprivileged, with one narrow, hash-gated exception for re-syncing their own unit files. See
+[SECURITY.md](SECURITY.md) for the full trust model before changing anything under
+`compose/watcher/` or `tools/code_exec.go`.

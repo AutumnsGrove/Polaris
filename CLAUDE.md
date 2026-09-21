@@ -139,7 +139,10 @@ pattern for new work here, not just the Docker-specific cases above.
 - `compose/polaris/config.yaml.example`, `.env.example` — Docker's config, split across two files
   (compose-level secrets vs. app-level settings) — see README's "Docker install" for why
 - `compose/watcher/` — the host-side systemd units + script that actually pulls/recreates the
-  container; never touches Docker from inside Polaris's own container
+  container; never touches Docker from inside Polaris's own container. `sync-units.sh` re-syncs
+  these unit files onto an already-installed host after a `git pull`, gated by
+  `watcher-sync-verify.sh`'s hash-pin check (root-owned, outside the checkout, see SECURITY.md)
+  so a malicious commit can't get itself root-executed automatically — issue #85.
 - `compose/searxng/settings.yml` — SearXNG config for the bundled Docker instance (JSON output
   pre-enabled, unlike the bare-metal default)
 - `gateway/docker_update.go`, `gateway/docker_ci_status.go` — the Docker-mode HTTP handlers,
