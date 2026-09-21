@@ -522,6 +522,35 @@ if [ "$OS" = "Linux" ]; then
 		info "Installed polaris-update.service/.path/.timer and"
 		info "polaris-codeexec.service/.path to /etc/systemd/system/."
 
+		# Grants update.sh (running unattended, unprivileged, as $USER —
+		# see polaris-update.service's own comment on why it's deliberately
+		# not root) passwordless access to re-sync these same unit files
+		# after a future `git pull` picks up a change to them, without
+		# widening root's reachable surface beyond that one fixed,
+		# reviewable script — see sync-units.sh's header comment and issue
+		# #85. `visudo -cf` validates the fragment's syntax against a
+		# throwaway temp file before it ever touches /etc/sudoers.d: a
+		# malformed drop-in there can break `sudo` system-wide for every
+		# user, so this must never be written unchecked.
+		SUDOERS_FRAGMENT="$WATCHER_TMP/polaris-watcher.sudoers"
+		printf '%s ALL=(root) NOPASSWD: %s/compose/watcher/sync-units.sh\n' \
+			"$USER" "$INSTALL_DIR" >"$SUDOERS_FRAGMENT"
+		if ! command -v visudo >/dev/null 2>&1; then
+			warn "visudo not found — skipping the watcher's self-update sudoers rule."
+			warn "A future fix to compose/watcher/*.service|.path|.timer will need a"
+			warn "fresh install.sh run or a manual copy to take effect."
+		elif visudo -cf "$SUDOERS_FRAGMENT" >/dev/null 2>&1; then
+			sudo cp "$SUDOERS_FRAGMENT" /etc/sudoers.d/polaris-watcher
+			sudo chmod 0440 /etc/sudoers.d/polaris-watcher
+			info "Granted the update watcher passwordless sudo for exactly"
+			info "compose/watcher/sync-units.sh (see /etc/sudoers.d/polaris-watcher)."
+		else
+			warn "Generated sudoers fragment failed validation — skipping it."
+			warn "The update watcher won't be able to re-sync its own unit files"
+			warn "automatically; a future fix to compose/watcher/*.service|.path|.timer"
+			warn "will need a fresh install.sh run or a manual copy to take effect."
+		fi
+
 		sudo systemctl daemon-reload
 		# Enabling --now the .path and .timer is safe at install time even
 		# with nothing pending: .path's PathExists/DirectoryNotEmpty

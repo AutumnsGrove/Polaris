@@ -1,5 +1,19 @@
 [Unit]
 Description=Polaris code_exec sandbox runner (one-shot)
+# A legitimate burst of concurrent code_exec tool calls can trigger
+# polaris-codeexec.path (DirectoryNotEmpty) faster than one invocation
+# finishes — this script's own `flock -n` early-exit path already
+# handles that safely (see codeexec.sh's comment), but without this
+# override systemd's default StartLimitIntervalSec=10/StartLimitBurst=5
+# treats 5 such triggers within 10s as the unit "failing" and
+# permanently disables it (unit-start-limit-hit) until someone notices
+# and runs `systemctl reset-failed` by hand. Confirmed live: exactly
+# this happened on 2026-09-17, stranding a live thread's code_exec
+# call for ~23 hours (issue #85). Disabling the limit entirely is safe
+# here specifically because flock already guarantees at most one real
+# execution ever runs concurrently, regardless of how many times this
+# unit gets started.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

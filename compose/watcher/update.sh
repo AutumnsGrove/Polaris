@@ -206,6 +206,22 @@ if ! timeout 60 git pull --no-rebase origin main 2>&1 | tee "$CMD_LOG"; then
 	exit 1
 fi
 
+# Re-sync the watcher's own systemd unit files (this script's ExecStart
+# target, polaris-codeexec's, etc.) from the checkout `git pull` just
+# updated — see sync-units.sh's own header comment and issue #85 for
+# why a plain `git pull` above isn't enough on its own: the *.sh
+# scripts run straight out of this checkout already, so `git pull`
+# alone keeps them current, but /etc/systemd/system/*.service|*.path|
+# *.timer are one-time copies from install time and go stale
+# otherwise. Best-effort and non-fatal, same reasoning as the sandbox
+# image pull below: a failure here (e.g. the sudoers rule was never
+# installed, or install.sh predates this feature) shouldn't fail the
+# Polaris update itself over a watcher-maintenance step — it just means
+# the watcher units keep running whatever they already have until the
+# next successful sync.
+sudo "$INSTALL_DIR/compose/watcher/sync-units.sh" "$INSTALL_DIR" "$(whoami)" 2>&1 | tee "$CMD_LOG" || \
+	echo "watcher unit re-sync failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
+
 set_pinned_image "$TARGET_IMAGE"
 
 # Scoped to the polaris service specifically (not a bare `docker
