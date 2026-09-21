@@ -615,8 +615,23 @@
 		audioEl.muted = false;
 		audioEl.volume = 1;
 		void audioEl.play().catch((err) => {
+			// Deliberately leaves chunkInFlight true on failure (autoplay
+			// denial, most likely) — live-caught: resetting it to false here
+			// let enqueueChunk's `if (!chunkInFlight)` guard treat the very
+			// next arriving chunk as free to advance, and THAT call's first
+			// line revokes this chunk's still-unplayed blob URL out from
+			// under it, permanently. That cascaded through every chunk in a
+			// reply, one revoked by the next's arrival, leaving only the
+			// LAST chunk to ever arrive still valid — which is what "Tap to
+			// hear it" ended up replaying (only the tail of the answer,
+			// never the beginning), instead of actually resuming from
+			// wherever playback first stalled. Leaving this chunk "in
+			// flight" (loaded but not playing) blocks the queue from
+			// advancing past it — retryPlayback()'s tap (a real user
+			// gesture, so it should succeed) resumes THIS exact chunk, and
+			// handleChunkEnded's normal chain takes over from there once it
+			// actually plays.
 			console.error('call chunk playback failed (manual control still available)', err);
-			chunkInFlight = false;
 		});
 		// Decoded separately, after kicking off play() above — never let
 		// waveform decoding delay actual playback starting.
