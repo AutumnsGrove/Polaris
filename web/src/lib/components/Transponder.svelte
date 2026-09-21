@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import { appState } from '$lib/state.svelte';
 	import { synthesizeStream } from '$lib/speech';
 	import { Mic, PhoneOff, X, Loader2, Volume2 } from '@lucide/svelte';
 	import type { TimelineItem } from '$lib/types';
+	import ToolEvent from './ToolEvent.svelte';
+	import HighlightCarousel from './HighlightCarousel.svelte';
 
 	// Full-screen push-to-talk call UI onto the current thread — see
 	// docs/plans/transponder.md. Not a parallel thread type: it sends over
@@ -25,6 +28,14 @@
 	let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 
 	let toggleMode = $derived(appState.settings.voiceInputMode === 'toggle');
+	// Svelte's transition:fade doesn't automatically respect
+	// prefers-reduced-motion the way this file's own CSS @keyframes
+	// already do (see the .mic-orb/.speaking-orb media query below) —
+	// read once at mount, not reactively, since a user isn't expected to
+	// toggle this OS setting mid-call.
+	const reduceMotion =
+		typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const revealFadeMs = reduceMotion ? 0 : 220;
 	let mediaRecorder: MediaRecorder | null = null;
 	let chunks: BlobPart[] = [];
 	let micStream: MediaStream | null = null;
@@ -44,6 +55,19 @@
 	let assistantIndex = $state<number | null>(null);
 	let speakingTriggered = false;
 	let turn = $derived(assistantIndex !== null ? appState.turns[assistantIndex] : undefined);
+	// "Your Turn" while a pending question's picker is showing —
+	// distinguishes "an action is expected from you" from the plain
+	// "Speaking" label every other reply uses, without a whole extra
+	// Phase value. Shows immediately alongside the reply, same as the
+	// artifact reveal below (#95/#93) — the underlying tool call already
+	// completed back in Thinking, so there's nothing to wait on.
+	let headerLabel = $derived(
+		phase === 'idle'
+			? 'Transponder'
+			: phase === 'speaking' && turn?.pendingQuestion
+				? 'Your Turn'
+				: phase[0].toUpperCase() + phase.slice(1)
+	);
 	let audioEl: HTMLAudioElement | undefined = $state();
 	// Real playback state, driven only by the <audio> element's own
 	// 'playing'/'pause'/'ended' events — see beginSpeaking's doc comment
@@ -421,30 +445,49 @@
 				return;
 			}
 			lastTranscript = text;
-			// If this round interrupted a still-in-flight turn (startRecording
-			// called appState.stopGeneration()), the abort's own 'done' event
-			// — the thing that actually flips appState.busy back to false —
-			// may not have landed yet. appState.send() silently no-ops while
-			// busy is true (only one turn in flight per connection at a
-			// time), so wait for that to clear first rather than dropping
-			// what was just said on the floor.
-			await waitUntilNotBusy();
-			// Deliberately skips the composer entirely and sends right away —
-			// see this component's top doc comment. voiceMode: true is the
-			// one thing that makes this a Transponder turn rather than an
-			// ordinary typed one (nudges the model's answer length/style and
-			// flips threads.used_transponder — see gateway/protocol.go's
-			// ClientMessage.VoiceMode doc comment).
-			appState.send(text, data.cost_usd, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
-			assistantIndex = appState.turns.length - 1;
-			speakingTriggered = false;
-			phase = 'thinking';
+			await beginRound(text, data.cost_usd);
 		} catch (err) {
 			console.error('transcription request failed', err);
 			phase = 'idle';
 		} finally {
 			transcribing = false;
 		}
+	}
+
+	// Shared tail for starting a new call round from a piece of text —
+	// transcribeAndSend's own voice path above, and answerQuestion below
+	// (issue #93's tap-to-answer picker), both just have text to send and
+	// need the exact same handoff into Thinking. Factored out rather than
+	// duplicated since the two are otherwise identical.
+	async function beginRound(text: string, sttCostUsd?: number) {
+		// If this round interrupted a still-in-flight turn (startRecording
+		// called appState.stopGeneration()), the abort's own 'done' event —
+		// the thing that actually flips appState.busy back to false — may
+		// not have landed yet. appState.send() silently no-ops while busy
+		// is true (only one turn in flight per connection at a time), so
+		// wait for that to clear first rather than dropping what was just
+		// said/picked on the floor.
+		await waitUntilNotBusy();
+		// Deliberately skips the composer entirely and sends right away —
+		// see this component's top doc comment. voiceMode: true is the
+		// one thing that makes this a Transponder turn rather than an
+		// ordinary typed one (nudges the model's answer length/style and
+		// flips threads.used_transponder — see gateway/protocol.go's
+		// ClientMessage.VoiceMode doc comment).
+		appState.send(text, sttCostUsd, undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+		assistantIndex = appState.turns.length - 1;
+		speakingTriggered = false;
+		phase = 'thinking';
+	}
+
+	// Tapping a choice on the "Your Turn" picker (issue #93) — sends the
+	// option's exact text, same mechanism AskUserQuestionCard.answer() uses
+	// in normal chat. No transcript to show for this round (nothing was
+	// spoken), so clear lastTranscript rather than leaving a stale "You
+	// said" bubble from a previous round hanging around into this one.
+	function answerQuestion(option: string) {
+		lastTranscript = '';
+		void beginRound(option);
 	}
 
 	function handleMicDown() {
@@ -657,6 +700,26 @@
 			(i): i is ThinkingChip => i.kind === 'tool' || i.kind === 'reasoning'
 		)
 	);
+
+	// "Last call wins" — same convention ChatTurnView.svelte's own
+	// lastHighlightTimelineIndex uses, so a second show/highlight call in
+	// the same turn doesn't get displayed twice or at the wrong position.
+	// show stashes its artifact directly on its own TimelineItem (unlike
+	// highlight, see below), so ToolEvent.svelte's existing 'show' render
+	// branch — image lightbox tier or document-card tier, whichever fits —
+	// can be reused verbatim by just handing it this one item.
+	let lastShowItem = $derived.by(() => {
+		const items = turn?.timeline ?? [];
+		for (let i = items.length - 1; i >= 0; i--) {
+			const it = items[i];
+			if (it.kind === 'tool' && it.tool === 'show' && it.done) return it;
+		}
+		return undefined;
+	});
+	// highlight's cards live on turn.cards (a cumulative, turn-wide
+	// snapshot), not on the timeline item that triggered the call — see
+	// ChatTurnView.svelte's own highlightCards derivation and doc comment.
+	let highlightCards = $derived((turn?.cards ?? []).filter((c) => c.kind === 'highlight'));
 	let chipListEl: HTMLDivElement | undefined = $state();
 	// Keeps the newest chip in view as more stream in — without this, once
 	// the list is taller than its capped max-height, a fresh chip appends
@@ -691,6 +754,22 @@
 		speakGeneration++;
 	});
 
+	// voice_mode_instruction (prompts.yaml) already tells the model to
+	// avoid "reciting citations inline", but that's a request, not a
+	// guarantee — live-caught: a reply came back with real markdown link
+	// syntax ([Investor Relations](https://...)) sitting in turn.content,
+	// and .reply-card renders that content as plain text (see its own doc
+	// comment — deliberately not real markdown, unlike ChatView's), so the
+	// raw brackets/parens/URL show up on screen verbatim even though the
+	// audio itself (synthesized from the same string) never read it
+	// aloud. Strips just the [text](url) -> text shape rather than pulling
+	// in the full marked+DOMPurify pipeline ChatView uses — Transponder's
+	// reply card was never meant to render real markdown, only to avoid
+	// leaking its syntax when the model doesn't fully comply.
+	function stripInlineMarkdownLinks(text: string): string {
+		return text.replace(/\[([^\]]+)\]\((?:[^()\s]+)\)/g, '$1');
+	}
+
 	function citationHost(url: string): string {
 		try {
 			return new URL(url).hostname.replace(/^www\./, '');
@@ -713,7 +792,7 @@
 			<X size={16} />
 		</button>
 		<span class="phase-label" class:accent2={phase === 'thinking'}>
-			{phase === 'idle' ? 'Transponder' : phase[0].toUpperCase() + phase.slice(1)}
+			{headerLabel}
 		</span>
 		{#if phase !== 'idle'}
 			<span class="elapsed">{formatElapsed(elapsedSec)}</span>
@@ -895,7 +974,42 @@
 				</div>
 			{/if}
 			{#if turn?.content}
-				<div class="reply-card">{turn.content}</div>
+				<div class="reply-card">{stripInlineMarkdownLinks(turn.content)}</div>
+			{/if}
+			<!-- issues #95/#93 — sits between the reply and its citations,
+			     same position the operator's mental model expects ("the
+			     artifact IS the point, displayed right where it happened").
+			     Immediate, not gated on playback finishing — the underlying
+			     tool call (show/highlight/ask_user_question) already
+			     completed back in Thinking, well before any of this audio
+			     started, so there's nothing left to wait on. Reuses
+			     ToolEvent.svelte's real 'show' rendering and
+			     HighlightCarousel.svelte verbatim, same as normal chat,
+			     rather than a call-specific reimplementation. -->
+			{#if lastShowItem}
+				<div class="reveal-block" transition:fade={{ duration: revealFadeMs }}>
+					<ToolEvent item={lastShowItem} />
+				</div>
+			{/if}
+			{#if highlightCards.length > 0}
+				<div class="reveal-block" transition:fade={{ duration: revealFadeMs }}>
+					<HighlightCarousel cards={highlightCards} />
+				</div>
+			{/if}
+			{#if turn?.pendingQuestion?.options?.length}
+				<!-- issue #93: large, glanceable tap targets — a shortcut,
+				     not the only path. Holding the orb to speak the answer
+				     instead already works for free, same interrupt path
+				     as any other Speaking-phase round (see startRecording). -->
+				<div class="choice-list" transition:fade={{ duration: revealFadeMs }}>
+					{#each turn.pendingQuestion.options as option, i (option)}
+						<button class="choice-btn" onclick={() => answerQuestion(option)} disabled={appState.busy}>
+							<span class="choice-index">{i + 1}</span>
+							{option}
+						</button>
+					{/each}
+				</div>
+				<div class="choice-hint">Or hold the mic and say your answer</div>
 			{/if}
 			{#if turn?.citations && turn.citations.length > 0}
 				<div class="citation-row">
@@ -1034,6 +1148,22 @@
 		   a short viewport (small phone, landscape). Scrolls internally
 		   instead of clipping past the fixed header/footer. */
 		overflow-y: auto;
+	}
+
+	/* None of .stage's stacked children opt out of flex-shrink, so its
+	   default (1) applies — meaning once #93/#95's picker or a wide chart
+	   pushes total content past the viewport, flexbox's answer is to
+	   proportionally SQUASH every child (the orb included — live-caught:
+	   it visibly flattened into an oval) instead of actually overflowing
+	   into .stage's own overflow-y: auto scroll, which is what was
+	   supposed to handle exactly this case. Content this file already had
+	   before #93/#95 just never happened to run long enough to expose it.
+	   flex-shrink: 0 across the board makes "scroll for more" the only
+	   thing that happens under pressure, never "crush what's already
+	   there" — matches the operator's own framing (afford the space
+	   without overwhelming the rest of the screen). */
+	.stage > * {
+		flex-shrink: 0;
 	}
 
 	.orb {
@@ -1287,6 +1417,122 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-full);
 		padding: 5px 10px;
+	}
+
+	/* Wraps ToolEvent/HighlightCarousel — deliberately wider than the
+	   reply-card/citation-row column (320px), not just 100% of it. A
+	   chart's internal labels read as genuinely cramped at 320px on a
+	   phone-width call screen (live-caught: "squashed"), so this bleeds
+	   out toward .stage's own side padding (var(--space-2xl), 32px)
+	   rather than respecting it, leaving a smaller 16px gutter instead —
+	   plain text benefits far less from the extra width than a dense
+	   chart does, so only this element gets the wider treatment.
+	   justify-content: center matters here specifically — ToolEvent's own
+	   .show-image-button is a plain `display: block`, left-aligned by
+	   default (fine in normal chat's own left-aligned message column, but
+	   Transponder's whole layout is centered), and a narrower chart
+	   (under this block's own width) would otherwise sit flush left
+	   instead of centered under the orb/reply text above it — live-caught,
+	   not a hypothetical. */
+	.reveal-block {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		margin: 0 calc(-1 * (var(--space-2xl) - var(--space-lg)));
+	}
+
+	/* ToolEvent's own .show-image { width: 100% } fills whatever width
+	   it's given regardless of the source image's own aspect ratio — fine
+	   in normal chat, where the column is wide and mostly-landscape charts
+	   read comfortably short. Forcing width:100% here just moved the same
+	   problem to height instead: live-caught, a chart that isn't
+	   particularly wide-and-short ballooned to where it needed scrolling
+	   past the fold to see the rest of the call screen — "so much larger
+	   I'd have to get my hands on my phone". Letterboxing instead — scale
+	   to fit BOTH the available width and a height budget matching
+	   .reply-card's own 280px cap, whichever is the tighter constraint —
+	   keeps every artifact a bounded, predictable size regardless of its
+	   own aspect ratio, the same guarantee .reply-card/.transcript-bubble
+	   already give plain text. .show-image-button (the wrapping <button>)
+	   has to drop its own width:100%/max-width:600px the same way, or it
+	   still reserves the full column width even once the image itself
+	   shrinks to fit the height cap, leaving the image stranded off-center
+	   inside a box wider than it — .reveal-block's justify-content: center
+	   only centers .show-image-button itself, not the image within it. */
+	.reveal-block :global(.show-image-button) {
+		width: auto;
+		max-width: 100%;
+	}
+
+	.reveal-block :global(.show-image) {
+		width: auto;
+		height: auto;
+		max-width: 100%;
+		max-height: 280px;
+	}
+
+	/* issue #93 — deliberately bigger/sparser than AskUserQuestionCard's
+	   own .option-row list (dense, made for a full chat column): this is
+	   the "glanceable, thumb-sized tap target" variant the issue asked
+	   for, not a reused list style. */
+	.choice-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+		width: 100%;
+		max-width: 320px;
+	}
+
+	.choice-btn {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		width: 100%;
+		padding: 15px var(--space-lg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		font-family: var(--font-sans);
+		font-size: 14px;
+		text-align: left;
+		box-sizing: border-box;
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			transform 0.15s var(--ease-out-expo);
+	}
+
+	.choice-btn:hover:not(:disabled) {
+		background: var(--color-surface-3);
+	}
+
+	.choice-btn:active:not(:disabled) {
+		transform: scale(0.99);
+	}
+
+	.choice-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.choice-index {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 24px;
+		height: 24px;
+		border-radius: var(--radius-full);
+		background: var(--color-surface-3);
+		color: var(--color-text-dim);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	.choice-hint {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		text-align: center;
 	}
 
 	.cancel-link {

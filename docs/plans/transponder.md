@@ -11,9 +11,10 @@ weaker mechanical fit than Transponder's literal definition).
 
 **Status: v1 shipped and actively hardened by live testing** — `web/src/lib/components/
 Transponder.svelte` is on main, reachable from the composer's mic-audio-lines icon. Every locked-in
-v1 boundary below held; both Resolved commitments either shipped as specified or were adapted for
-concrete reasons live testing surfaced (see each bullet). Both Not-yet-decided items are still
-correctly deferred, tracked as issues #93/#95. A long tail of real bugs the plan had no way to
+v1 boundary below held; every Resolved commitment either shipped as specified or was adapted for
+concrete reasons live testing surfaced (see each bullet), including the two later ideas tracked as
+issues #93/#95 (call-shaped `ask_user_question`, inline `show`/`highlight` artifacts), now also
+Resolved. A long tail of real bugs the plan had no way to
 predict got fixed along the way — `ChatView` never actually unmounting under the call overlay
 (causing genuine double audio playback, not a quality issue), an `AudioContext` lingering between
 rounds, mic-capture latency ordering, a `justify-content: center` + `overflow: auto` combination
@@ -178,15 +179,48 @@ the existing turn pipeline.
     the `code_exec_wall_time_ms > 0` row just below them). "Transponder calls" slots in there
     identically, no new UI pattern needed.
 
+- **`show`/`highlight` artifacts and a call-shaped `ask_user_question` picker (issues #95 and
+  #93).** Mockups first (`mockups/transponder.html`, frames 5–7). The mockups originally proposed a
+  delayed reveal (extra content fading in only once playback finished) per an early operator
+  note, but real-device testing reversed that: the underlying tool call (`show`/`highlight`/
+  `ask_user_question`) already completed back in Thinking, well before any TTS audio starts, so
+  there's nothing left to actually wait on — the operator preferred seeing it immediately,
+  positioned between the reply card and its citations (matching "the artifact IS the point,
+  displayed right where it happened"). Shipped that way: no gating state at all: the extras just
+  render inside the same `{:else if phase === 'speaking'}` branch as the reply text and citations,
+  alongside them, not behind a timer. (A `revealExtras`/`speakGeneration`-guarded timer was tried
+  first, gated on `isPlaying`/`streamFullyReceived`/the chunk queue all agreeing nothing was left
+  to play — live-caught real bug along the way: it depended on `pendingChunks`/`chunkInFlight`/
+  `streamFullyReceived`, plain non-`$state` variables the file never needed to read reactively
+  before, and the DOM's `pause`-before-`ended` event ordering could let the effect wake on a stale
+  read and never get a second chance — moot now that the whole mechanism was removed in favor of
+  showing immediately.)
+  - `show`'s artifact (its own `TimelineItem`, image-or-doc tier already decided by
+    `ToolEvent.svelte`) is reused verbatim — the last done `show` call in the turn's timeline gets
+    handed straight to `<ToolEvent item={...} />`, no call-specific reimplementation.
+  - `highlight`'s cards live on `turn.cards`, not the timeline item (see `ChatTurnView.svelte`'s
+    own doc comment on why) — same "last call wins" convention, rendered via the real
+    `HighlightCarousel.svelte`.
+  - The picker is new UI (`.choice-list`/`.choice-btn`), deliberately bigger/sparser than
+    `AskUserQuestionCard.svelte`'s dense list rows — large, glanceable, thumb-sized tap targets,
+    per #93's own framing ("a shortcut, not the only path"). Tapping an option and holding the orb
+    to speak an answer both funnel into the same `beginRound()` helper (factored out of
+    `transcribeAndSend`'s tail) that starts the next round; the orb's existing interrupt-from-
+    Speaking path needed no changes to also work from this state. Header label swaps to "Your
+    Turn" for the whole Speaking phase when the turn carries a `pendingQuestion` — no new `Phase`
+    value was needed for any of this; the orb's existing `.paused` dim look (once playback actually
+    finishes) still communicates "nothing more to listen to" on its own, independent of the label.
+  - Scoped to plain single-select only — `multi_select`/`wants_location`/`wants_web_search` still
+    fall back to spoken-only/text-only, matching the issue's own "worth a proper look once this
+    has mileage" framing.
+  - `voice_mode_instruction` (`prompts.yaml`) now tells the model `show`/`highlight` are fine to
+    use in a call and their output will be visible — previously it said nothing about them at all,
+    which is what led to the live-tested case in #95 (the model called `highlight` mid-call and it
+    produced nothing visible).
+
 ## Not-yet-decided
 
-- **A call-shaped `ask_user_question` UI** — filed as issue #93 after live testing surfaced it:
-  right now a clarifying question mid-call just renders as plain spoken reply text, with no way
-  to answer from an options picker without leaving the call screen. Explicitly a later idea, not
-  v1 — see the issue for why.
-- **Special treatment for `show`/`highlight`** — filed as issue #95: those two tools' output is
-  visual, but `voice_mode_instruction` has no idea Transponder's screen can display it. Deferred
-  on purpose — refining the core push-to-talk loop first, not adding frills yet.
+None currently.
 
 ## Why this wasn't decided further before it was built (historical)
 
