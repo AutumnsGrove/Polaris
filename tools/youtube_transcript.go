@@ -29,6 +29,32 @@
 // deployment model. checkYtDlpAvailable degrades this to a clear,
 // actionable error instead of a crash when it's missing, same pattern as
 // the Books tool's Hardcover-token-expiry fallback.
+//
+// 2026-09: yt-dlp's *default* client impersonation (the plain "web"
+// client, i.e. no --extractor-args at all) started tripping YouTube's
+// "Sign in to confirm you're not a bot" interstitial on most videos, even
+// with a fully current yt-dlp — this is a server-side YouTube policy
+// change, not a stale-binary problem, and re-running with a newer yt-dlp
+// alone does not fix it. Confirmed live (both against the exact video
+// that surfaced this and against unrelated videos): pinning
+// --extractor-args "youtube:player_client=web_embedded" — impersonating
+// the client an <iframe> embed uses, rather than the regular watch-page
+// client — reliably avoids that check today, for both manually-uploaded
+// and auto-generated caption tracks. --ignore-no-formats-error is
+// required alongside it: yt-dlp's -j/--skip-download still tries to
+// resolve a downloadable video format even though nothing here ever
+// downloads one, and the web_embedded client only ever exposes
+// thumbnail-image "formats", which would otherwise make every single
+// call exit non-zero before printing the JSON this needs. The one known
+// gap: a video with embedding disabled by its owner (mostly major-label
+// music videos) fails this client entirely with "Video unavailable" —
+// confirmed live against several such videos that no other
+// impersonated client (tried: web, web_safari, web_creator, web_music,
+// android, android_vr, ios, mweb, tv, tv_downgraded, tv_simply,
+// visionos) recovers caption data for those either, since embedding
+// them at all is the thing YouTube is actually blocking, independent of
+// the bot check — that's a real, accepted limitation of the
+// no-cookies approach this tool uses, not a bug in this fix.
 package tools
 
 import (
@@ -227,12 +253,17 @@ func checkYtDlpAvailable(ctx context.Context) error {
 // fetchYtDlpInfo runs `yt-dlp -j --skip-download` to get a video's title
 // and full caption-track listing without downloading anything — a fast,
 // simulate-mode-only call (no --no-simulate needed: nothing here writes
-// a file).
+// a file). player_client=web_embedded and --ignore-no-formats-error are
+// both required to dodge YouTube's bot-check interstitial — see this
+// file's package doc comment for why.
 func fetchYtDlpInfo(ctx context.Context, videoID string) (*ytDlpInfo, error) {
 	runCtx, cancel := context.WithTimeout(ctx, ytDlpTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, ytDlpPath, "--skip-download", "-j", youtubeWatchBaseURL+videoID)
+	cmd := exec.CommandContext(runCtx, ytDlpPath,
+		"--extractor-args", "youtube:player_client=web_embedded",
+		"--ignore-no-formats-error",
+		"--skip-download", "-j", youtubeWatchBaseURL+videoID)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -306,6 +337,11 @@ func fetchYtDlpSubtitle(ctx context.Context, videoID, lang string, isAuto bool) 
 	defer cancel()
 
 	args := []string{
+		// Same player_client/--ignore-no-formats-error pair as
+		// fetchYtDlpInfo above, and required for the same reason — see
+		// this file's package doc comment.
+		"--extractor-args", "youtube:player_client=web_embedded",
+		"--ignore-no-formats-error",
 		"--skip-download",
 		// --no-simulate: --print's own presence elsewhere in this codebase's
 		// yt-dlp invocations is unrelated here, but --skip-download alone
