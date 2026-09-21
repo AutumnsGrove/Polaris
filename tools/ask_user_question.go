@@ -38,6 +38,12 @@ var askUserQuestionDef = llm.ToolDef{
 						"user can always type a different answer instead — options are a convenience, never a " +
 						"restriction on what they can say.",
 				},
+				"multi_select": map[string]interface{}{
+					"type": "boolean",
+					"description": "Optional: set true to let the user pick more than one of `options` in a " +
+						"single reply instead of the default single choice — e.g. when asking which of several " +
+						"topics to cover. Only meaningful when `options` is set; ignored otherwise.",
+				},
 				"wants_location": map[string]interface{}{
 					"type": "boolean",
 					"description": "Set true only when the question is specifically asking where the user " +
@@ -82,6 +88,7 @@ func handleAskUserQuestion(argsJSON string, ctx *Context, callID string) string 
 	var args struct {
 		Question       string   `json:"question"`
 		Options        []string `json:"options"`
+		MultiSelect    bool     `json:"multi_select"`
 		WantsLocation  bool     `json:"wants_location"`
 		WantsWebSearch bool     `json:"wants_web_search"`
 		Plan           *struct {
@@ -104,8 +111,8 @@ func handleAskUserQuestion(argsJSON string, ctx *Context, callID string) string 
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool": "ask_user_question",
 		"args": map[string]interface{}{
-			"question": args.Question, "options": args.Options, "wants_location": args.WantsLocation,
-			"wants_web_search": args.WantsWebSearch,
+			"question": args.Question, "options": args.Options, "multi_select": args.MultiSelect,
+			"wants_location": args.WantsLocation, "wants_web_search": args.WantsWebSearch,
 		},
 		"call_id": callID,
 	})
@@ -118,8 +125,8 @@ func handleAskUserQuestion(argsJSON string, ctx *Context, callID string) string 
 		}
 	}
 	ctx.SetPendingQuestion(&PendingQuestion{
-		Question: args.Question, Options: args.Options, WantsLocation: args.WantsLocation,
-		WantsWebSearch: args.WantsWebSearch, Plan: plan,
+		Question: args.Question, Options: args.Options, MultiSelect: args.MultiSelect,
+		WantsLocation: args.WantsLocation, WantsWebSearch: args.WantsWebSearch, Plan: plan,
 	})
 
 	// Never seen by the model again — the turn ends right after this

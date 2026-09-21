@@ -684,9 +684,15 @@ func (c *Context) SetDailyItemsFinal(f *DailyItemsFinal) {
 // ordinary chat message in the thread, not a live round trip, so there's
 // nothing else to keep alive in memory.
 type PendingQuestion struct {
-	Question      string   `json:"question"`
-	Options       []string `json:"options,omitempty"`
-	WantsLocation bool     `json:"wants_location,omitempty"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	// MultiSelect, when true, lets the user pick more than one of Options
+	// in a single reply (the frontend joins the picks into one
+	// comma-separated answer) instead of the default single tap-to-answer
+	// choice. Only meaningful alongside Options — see ask_user_question.go's
+	// multi_select parameter.
+	MultiSelect   bool `json:"multi_select,omitempty"`
+	WantsLocation bool `json:"wants_location,omitempty"`
 	// WantsWebSearch mirrors WantsLocation's shape for a different missing
 	// capability: set when the model wants to ask whether to turn research
 	// back on for chat mode (NoResearch above) — shows an "enable web

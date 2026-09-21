@@ -16,5 +16,8 @@ api_description: >-
 
   Include `options` (up to 6 short strings) when there's a natural finite set of likely answers,
   e.g. ["Build muscle", "Lose fat", "General health"] — the user can still type something else
-  entirely, options are just a shortcut. Set `wants_location: true` only when the question is
-  specifically about where the user is or wants something near; leave it false otherwise.
+  entirely, options are just a shortcut. Set `multi_select: true` only when more than one of
+  `options` can genuinely apply at once, e.g. ["Chest", "Back", "Legs", "Arms"] for "which muscle
+  groups"; leave it false (the default, single choice) for either/or questions. Set
+  `wants_location: true` only when the question is specifically about where the user is or wants
+  something near; leave it false otherwise.

@@ -28,12 +28,63 @@
 	// instead of tapped, or a shared location) won't match any of them,
 	// which is a real, valid outcome: the resolved view falls back to
 	// showing the raw answer text instead of a false-highlighted option.
-	let matchedOption = $derived(
-		answeredWith !== undefined ? turn.pendingQuestion?.options?.find((o) => o === answeredWith) : undefined
-	);
+	// Multi-select answers are submitted as a ", "-joined string (see
+	// submitSelection below), so matching splits on that same separator —
+	// an option containing a literal ", " could false-miss here, but that's
+	// the same fidelity tradeoff the single-select exact match already made.
+	let matchedOptions = $derived.by(() => {
+		const opts = turn.pendingQuestion?.options ?? [];
+		if (answeredWith === undefined || opts.length === 0) return new Set<string>();
+		if (turn.pendingQuestion?.multi_select) {
+			const parts = answeredWith.split(', ').map((p) => p.trim());
+			return new Set(opts.filter((o) => parts.includes(o)));
+		}
+		const single = opts.find((o) => o === answeredWith);
+		return single !== undefined ? new Set([single]) : new Set<string>();
+	});
 
+	// The part of a multi-select answer that isn't one of the offered
+	// options — i.e. whatever was typed into the "add other" box alongside
+	// any checked ones (see submitMultiSelect). Checked options already get
+	// their own checkmarked row below; without this, that typed addition
+	// reached the model just fine but had nowhere to render in the resolved
+	// card once at least one real option also matched.
+	let extraAnswerText = $derived.by(() => {
+		if (answeredWith === undefined || !turn.pendingQuestion?.multi_select) return undefined;
+		const opts = turn.pendingQuestion?.options ?? [];
+		const extras = answeredWith
+			.split(', ')
+			.map((p) => p.trim())
+			.filter((p) => p && !opts.includes(p));
+		return extras.length > 0 ? extras.join(', ') : undefined;
+	});
+
+	let selected = $state<Set<string>>(new Set());
 	let freeform = $state('');
 	let locatingInProgress = $state(false);
+
+	function toggleOption(option: string) {
+		if (appState.busy) return;
+		const next = new Set(selected);
+		if (next.has(option)) next.delete(option);
+		else next.add(option);
+		selected = next;
+	}
+
+	// Combines checked options with whatever's typed in the freeform "add
+	// other" box into a single answer, instead of the two controls fighting
+	// over the same reply — picking a checkbox AND typing something used to
+	// silently drop the checkbox the moment freeform's own submit fired.
+	// Options come first, in their offered order, with the freeform text
+	// (if any) appended last.
+	function submitMultiSelect() {
+		const opts = turn.pendingQuestion?.options ?? [];
+		const parts = opts.filter((o) => selected.has(o));
+		const extra = freeform.trim();
+		if (extra) parts.push(extra);
+		if (parts.length === 0) return;
+		answer(parts.join(', '));
+	}
 
 	// noResearchOverride lets enableWebSearch() below force research back on
 	// for just this one reply; every other caller falls through to the
@@ -95,12 +146,35 @@
 		{#if turn.pendingQuestion.options?.length}
 			<div class="options">
 				{#each turn.pendingQuestion.options as option, i (option)}
-					<button class="option-row" onclick={() => answer(option)} disabled={appState.busy}>
-						<span class="option-index">{i + 1}</span>
-						<span class="option-text">{option}</span>
-					</button>
+					{#if turn.pendingQuestion.multi_select}
+						<button
+							class="option-row"
+							onclick={() => toggleOption(option)}
+							disabled={appState.busy}
+						>
+							<span class="option-index checkbox" class:checked={selected.has(option)}>
+								{#if selected.has(option)}<Check size={12} />{/if}
+							</span>
+							<span class="option-text">{option}</span>
+						</button>
+					{:else}
+						<button class="option-row" onclick={() => answer(option)} disabled={appState.busy}>
+							<span class="option-index">{i + 1}</span>
+							<span class="option-text">{option}</span>
+						</button>
+					{/if}
 				{/each}
 			</div>
+			{#if turn.pendingQuestion.multi_select}
+				<button
+					class="location-action"
+					onclick={submitMultiSelect}
+					disabled={(selected.size === 0 && !freeform.trim()) || appState.busy}
+				>
+					<Send size={14} />
+					<span>Submit selection{selected.size ? ` (${selected.size})` : ''}</span>
+				</button>
+			{/if}
 		{/if}
 
 		{#if turn.pendingQuestion.wants_location}
@@ -125,17 +199,23 @@
 			class="freeform"
 			onsubmit={(e) => {
 				e.preventDefault();
-				submitFreeform();
+				if (turn.pendingQuestion?.multi_select) submitMultiSelect();
+				else submitFreeform();
 			}}
 		>
 			<input
 				class="freeform-input"
 				type="text"
-				placeholder="Type your own answer…"
+				placeholder={turn.pendingQuestion.multi_select ? 'Add something else… (optional)' : 'Type your own answer…'}
 				bind:value={freeform}
 				disabled={appState.busy}
 			/>
-			<button class="freeform-send" type="submit" disabled={appState.busy || !freeform.trim()}>
+			<button
+				class="freeform-send"
+				type="submit"
+				disabled={appState.busy ||
+					(turn.pendingQuestion.multi_select ? selected.size === 0 && !freeform.trim() : !freeform.trim())}
+			>
 				<Send size={14} />
 			</button>
 		</form>
@@ -167,8 +247,8 @@
 		{#if turn.pendingQuestion.options?.length}
 			<div class="options">
 				{#each turn.pendingQuestion.options as option, i (option)}
-					<div class="option-row" class:picked={option === matchedOption}>
-						{#if option === matchedOption}
+					<div class="option-row" class:picked={matchedOptions.has(option)}>
+						{#if matchedOptions.has(option)}
 							<span class="option-index picked-index"><Check size={12} /></span>
 						{:else}
 							<span class="option-index">{i + 1}</span>
@@ -178,12 +258,18 @@
 				{/each}
 			</div>
 		{/if}
-		{#if matchedOption === undefined}
+		{#if matchedOptions.size === 0}
 			<!-- A freeform reply or a shared location matches none of the
 			     offered options — still worth showing what was actually
 			     answered, rather than leaving the resolved card silent
 			     about it. -->
 			<p class="answered-freeform">Answered: {answeredWith}</p>
+		{:else if extraAnswerText}
+			<!-- Multi-select with at least one real option checked AND
+			     something typed into "add other" — the checked rows above
+			     already show the options, so this is just the typed-in part
+			     that has nowhere else to render. -->
+			<p class="answered-freeform">Also: {extraAnswerText}</p>
 		{/if}
 	</div>
 {/if}
@@ -312,6 +398,19 @@
 	}
 
 	:root[data-theme='light'] .picked-index {
+		color: oklch(98% 0.005 80);
+	}
+
+	.option-index.checkbox {
+		border-radius: var(--radius-sm);
+	}
+
+	.option-index.checkbox.checked {
+		background: var(--color-accent);
+		color: oklch(18% 0.02 75);
+	}
+
+	:root[data-theme='light'] .option-index.checkbox.checked {
 		color: oklch(98% 0.005 80);
 	}
 

@@ -105,6 +105,11 @@ export interface ChartValue {
 export interface PendingQuestion {
 	question: string;
 	options?: string[];
+	// When true, the user can pick more than one of `options` in a single
+	// reply (joined into one comma-separated answer) instead of the default
+	// single tap-to-answer choice. See tools/registry.go's
+	// PendingQuestion.MultiSelect.
+	multi_select?: boolean;
 	wants_location?: boolean;
 	// Set when chat mode (Research off) is active and the model wants to
 	// ask whether to turn research back on for this — shows an "enable web
