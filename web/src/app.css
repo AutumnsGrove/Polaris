@@ -679,6 +679,13 @@ a {
 	margin-top: 0;
 }
 
+.usage-section-sublabel {
+	text-transform: none;
+	letter-spacing: normal;
+	font-weight: 400;
+	opacity: 0.7;
+}
+
 .usage-stat-group {
 	border-radius: var(--radius-lg);
 	background: var(--color-surface-2);
