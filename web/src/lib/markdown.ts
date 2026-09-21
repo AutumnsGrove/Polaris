@@ -9,6 +9,16 @@ import hljs from './highlightjs';
 
 marked.use({
 	renderer: {
+		// GFM strikethrough (~~text~~) renders fine for genuine "this is wrong"
+		// edits, but model output uses it to mark "superseded by a later fact
+		// in the same block" — with two strikethrough runs in one paragraph
+		// (a common shape here) the wavy underlines visually merge and make
+		// the whole span harder to read, not easier. Rendering the inline
+		// content unwrapped (no <del>) keeps the text but drops the strike
+		// styling entirely.
+		del({ tokens }) {
+			return this.parser.parseInline(tokens);
+		},
 		code({ text, lang }) {
 			if (lang && lang.toLowerCase() === 'mermaid') {
 				// Escape ourselves — hljs.highlight() normally does this for
