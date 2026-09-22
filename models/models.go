@@ -130,9 +130,14 @@ var Registry = []config.ModelConfig{
 		Multimodal: true,
 	},
 	{
+		// GPT-6 Luna, released 2026-09-22 alongside GPT-6 Sol — the
+		// low-cost, high-volume member of that same-day family.
+		// Supersedes GPT-5.6 Luna at a lower official API rate
+		// ($0.10/$0.50 per M in/out vs. 5.6's $1.00/$6.00) while
+		// matching its tool-calling and reasoning-effort support.
 		ID:          "luna",
 		Name:        "ChatGPT Luna",
-		Model:       "openai/gpt-5.6-luna",
+		Model:       "openai/gpt-6-luna",
 		Provider:    []string{"openai"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
