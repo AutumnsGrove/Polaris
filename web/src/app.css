@@ -724,6 +724,17 @@ a {
 	color: var(--color-accent-2);
 }
 
+/* .sub nests a row under the one directly above it — a breakout of money
+   already counted in the parent row, not a sibling total (e.g. "Cost by
+   source"'s Verification row under Polaris: Jev spend is already inside
+   Polaris's own number, this just shows how much of it). Indented, smaller,
+   and dimmer so it reads as "part of the row above," not a fourth peer. */
+.usage-stat-row.sub {
+	padding-left: calc(var(--space-lg) + var(--space-lg));
+	font-size: 12px;
+	opacity: 0.75;
+}
+
 @media (max-width: 768px) {
 	.modal-backdrop {
 		align-items: flex-end;

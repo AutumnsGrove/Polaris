@@ -155,6 +155,14 @@
 							)}</span
 						>
 					</div>
+					<div class="usage-stat-row sub">
+						<span class="label">Verification</span>
+						<span class="value"
+							>${usage.verification_cost_usd.period_cost_usd.toFixed(2)} / ${usage.verification_cost_usd.total_cost_usd.toFixed(
+								2
+							)}</span
+						>
+					</div>
 					<div class="usage-stat-row">
 						<span class="label">Pulsar</span>
 						<span class="value"

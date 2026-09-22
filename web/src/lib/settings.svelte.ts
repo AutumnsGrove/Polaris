@@ -34,6 +34,12 @@ export interface UsageStats {
 		pulsar: { period_cost_usd: number; total_cost_usd: number };
 		daily: { period_cost_usd: number; total_cost_usd: number };
 	};
+	// verification_cost_usd is a breakout, not a fourth bucket — how much
+	// of cost_by_source.polaris/.pulsar above (already counted once) was
+	// specifically Jev verification spend (compare_sources and friends).
+	// Never add this into total_cost_usd/period_cost_usd or cost_by_source
+	// a second time — see store.Stats.VerificationCostUSD's doc comment.
+	verification_cost_usd: { period_cost_usd: number; total_cost_usd: number };
 	thread_count: number;
 	turn_count: number;
 	// Distinct threads that have ever had a voice_mode (Transponder call)
