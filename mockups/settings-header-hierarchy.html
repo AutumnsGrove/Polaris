@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polaris settings — header hierarchy options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+	:root {
+		--color-bg: oklch(15% 0.014 65);
+		--color-surface: oklch(19% 0.014 65);
+		--color-surface-2: oklch(23% 0.016 65);
+		--color-surface-3: oklch(28% 0.018 65);
+		--color-border: oklch(30% 0.016 65);
+		--color-border-strong: oklch(40% 0.02 65);
+		--color-text: oklch(93% 0.01 75);
+		--color-text-dim: oklch(64% 0.014 70);
+		--color-accent: oklch(82% 0.17 78);
+		--color-accent-strong: oklch(72% 0.18 74);
+		--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+		--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
+		--color-accent-2: oklch(78% 0.06 235);
+		--radius-sm: 6px;
+		--radius-md: 10px;
+		--radius-lg: 16px;
+		--radius-xl: 22px;
+		--radius-full: 999px;
+		--space-xs: 4px;
+		--space-sm: 8px;
+		--space-md: 12px;
+		--space-lg: 16px;
+		--space-xl: 24px;
+		--space-2xl: 32px;
+		--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
+		--shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+		--font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+		--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		background: oklch(10% 0.012 65);
+		font-family: var(--font-sans);
+		color: var(--color-text);
+		padding: 40px 20px 100px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 28px;
+	}
+
+	.page-head {
+		max-width: 780px;
+		text-align: center;
+	}
+	.page-head h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+	.page-head p { font-size: 13.5px; color: var(--color-text-dim); margin: 0; line-height: 1.5; }
+
+	.tabs {
+		display: flex;
+		gap: var(--space-xs);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		padding: var(--space-xs);
+		position: sticky;
+		top: 16px;
+		z-index: 5;
+		box-shadow: var(--shadow-xs);
+	}
+	.tabs button {
+		font: inherit;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--color-text-dim);
+		background: transparent;
+		border: none;
+		border-radius: calc(var(--radius-md) - 3px);
+		padding: 9px 16px;
+		cursor: pointer;
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo);
+	}
+	.tabs button:hover { color: var(--color-text); }
+	.tabs button.active {
+		background: var(--color-surface-3);
+		color: var(--color-text);
+		box-shadow: var(--shadow-xs);
+	}
+
+	.tab-caption {
+		max-width: 380px;
+		text-align: center;
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+		line-height: 1.5;
+		min-height: 32px;
+	}
+
+	.frame {
+		width: 390px;
+		max-width: 92vw;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-xl);
+		box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+		overflow: hidden;
+	}
+	.frame-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-lg);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.frame-head h2 { font-size: 16px; font-weight: 600; margin: 0; }
+	.frame-head .x { color: var(--color-text-dim); font-size: 18px; }
+	.frame-body { padding: var(--space-lg); }
+
+	.panel { display: none; }
+	.panel.active { display: block; }
+
+	/* shared control atoms, identical across all three options */
+	.settings-group {
+		border-radius: var(--radius-lg);
+		background: var(--color-surface-2);
+		border: 1px solid var(--color-border);
+		overflow: hidden;
+	}
+	.settings-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-md);
+		padding: var(--space-md) var(--space-lg);
+		border-bottom: 1px solid var(--color-border);
+		font-size: 14px;
+	}
+	.settings-row:last-child { border-bottom: none; }
+	.settings-row.stacked { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
+	.row-label { font-size: 14px; font-weight: 500; }
+
+	.theme-toggle {
+		display: flex;
+		gap: var(--space-xs);
+		background: var(--color-bg);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-well);
+		padding: var(--space-xs);
+	}
+	.theme-toggle button {
+		display: flex; align-items: center; gap: var(--space-sm);
+		border: none; background: transparent;
+		border-radius: calc(var(--radius-md) - 3px);
+		padding: var(--space-sm) var(--space-md);
+		font: inherit; font-size: 13px; color: var(--color-text-dim);
+		cursor: pointer;
+	}
+	.theme-toggle button.active { background: var(--color-surface-3); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-xs); }
+	.person-pronoun-toggle { flex-wrap: wrap; }
+
+	.stacked-input, .inline-input {
+		font: inherit; font-size: 13px;
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text);
+		padding: var(--space-xs) var(--space-sm);
+	}
+	.inline-input { width: 140px; }
+	.stacked-input { width: 100%; padding: var(--space-sm) var(--space-md); }
+
+	/* ===================== OPTION A — Weight & Contrast ===================== */
+	#optA .section-label {
+		font-size: 12px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-text);
+		padding: 0 var(--space-xs) var(--space-sm);
+	}
+	#optA .section-block { margin-bottom: var(--space-2xl); }
+	#optA .hint {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		margin: var(--space-sm) 0 0 0;
+		line-height: 1.5;
+	}
+	#optA .hint code { font-family: var(--font-mono); font-size: 11px; }
+
+	/* ===================== OPTION B — Eyebrow + Rule ===================== */
+	#optB .section-block { margin-bottom: 30px; }
+	#optB .section-head {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		padding-bottom: 10px;
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+	#optB .section-eyebrow {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--color-accent);
+		letter-spacing: 0.02em;
+	}
+	#optB .section-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	#optB .section-dek {
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+		line-height: 1.5;
+		margin: 0 0 var(--space-md);
+	}
+
+	/* ===================== OPTION C — Icon Anchor ===================== */
+	#optC .section-block { margin-bottom: var(--space-2xl); }
+	#optC .section-head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: var(--space-md);
+	}
+	#optC .section-icon {
+		width: 26px;
+		height: 26px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-accent);
+	}
+	#optC .section-icon svg { width: 14px; height: 14px; }
+	#optC .section-title {
+		font-size: 14.5px;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	#optC .hint {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		margin: var(--space-sm) 0 0 36px;
+		line-height: 1.5;
+	}
+
+	/* ===================== OPTION D — Gold Icon + Rule (B x C hybrid) ===================== */
+	#optD .section-block { margin-bottom: 30px; }
+	#optD .section-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding-bottom: 10px;
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+	#optD .section-icon {
+		width: 17px;
+		height: 17px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent);
+	}
+	#optD .section-icon svg { width: 17px; height: 17px; }
+	#optD .section-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	#optD .hint {
+		font-size: 12px;
+		color: var(--color-text-dim);
+		margin: var(--space-sm) 0 0 0;
+		line-height: 1.5;
+	}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<h1>Settings header hierarchy — 3 options</h1>
+	<p>Same content, same tokens (app.css), same control components. Only the section-header
+	treatment changes. Root cause: <code style="font-family:var(--font-mono)">.section-label</code>
+	and <code style="font-family:var(--font-mono)">.hint</code> both resolve to
+	<code style="font-family:var(--font-mono)">--color-text-dim</code> today — headers and captions
+	are the same color.</p>
+</div>
+
+<div class="tabs">
+	<button onclick="show('optA', this)">A — Weight &amp; Contrast</button>
+	<button onclick="show('optB', this)">B — Eyebrow &amp; Rule</button>
+	<button onclick="show('optC', this)">C — Icon Anchor</button>
+	<button class="active" onclick="show('optD', this)">D — Gold Icon + Rule (shipped)</button>
+</div>
+
+<div class="tab-caption" id="caption"></div>
+
+<div class="frame">
+	<div class="frame-head">
+		<h2>Settings</h2>
+		<span class="x">✕</span>
+	</div>
+	<div class="frame-body">
+
+		<!-- ============ OPTION A ============ -->
+		<div class="panel" id="optA">
+			<div class="section-block">
+				<div class="section-label">About you</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Name</span>
+						<input class="inline-input" value="Autumn" />
+					</div>
+					<div class="settings-row stacked">
+						<span class="row-label">Pronouns</span>
+						<div class="theme-toggle person-pronoun-toggle">
+							<button>he/him</button>
+							<button class="active">she/her</button>
+							<button>they/them</button>
+							<button>Custom</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">Used by both this assistant and Constellation's Weaver — without it, either has to guess pronouns from context (and can guess wrong).</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-label">Voice</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Mic button</span>
+						<div class="theme-toggle">
+							<button class="active">Tap to toggle</button>
+							<button>Hold to talk</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">"Tap to toggle" starts recording on the first tap and stops on the second — no need to keep a finger down for the whole memo.</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-label">Location</div>
+				<div class="settings-group">
+					<div class="settings-row stacked">
+						<input class="stacked-input" placeholder="e.g. Seattle, WA" />
+					</div>
+				</div>
+				<p class="hint">Used by "near me" questions when the browser can't get your real location. Ignored automatically once a real GPS fix is available.</p>
+			</div>
+		</div>
+
+		<!-- ============ OPTION B ============ -->
+		<div class="panel" id="optB">
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-eyebrow">01</span>
+					<span class="section-title">About you</span>
+				</div>
+				<p class="section-dek">Used by this assistant and Constellation's Weaver to avoid guessing pronouns from context.</p>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Name</span>
+						<input class="inline-input" value="Autumn" />
+					</div>
+					<div class="settings-row stacked">
+						<span class="row-label">Pronouns</span>
+						<div class="theme-toggle person-pronoun-toggle">
+							<button>he/him</button>
+							<button class="active">she/her</button>
+							<button>they/them</button>
+							<button>Custom</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-eyebrow">02</span>
+					<span class="section-title">Voice</span>
+				</div>
+				<p class="section-dek">"Tap to toggle" starts recording on the first tap and stops on the second.</p>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Mic button</span>
+						<div class="theme-toggle">
+							<button class="active">Tap to toggle</button>
+							<button>Hold to talk</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-eyebrow">03</span>
+					<span class="section-title">Location</span>
+				</div>
+				<p class="section-dek">Fallback for "near me" questions when the browser can't get a real fix.</p>
+				<div class="settings-group">
+					<div class="settings-row stacked">
+						<input class="stacked-input" placeholder="e.g. Seattle, WA" />
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- ============ OPTION C ============ -->
+		<div class="panel" id="optC">
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="user"></span>
+					<span class="section-title">About you</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Name</span>
+						<input class="inline-input" value="Autumn" />
+					</div>
+					<div class="settings-row stacked">
+						<span class="row-label">Pronouns</span>
+						<div class="theme-toggle person-pronoun-toggle">
+							<button>he/him</button>
+							<button class="active">she/her</button>
+							<button>they/them</button>
+							<button>Custom</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">Used by both this assistant and Constellation's Weaver — without it, either has to guess pronouns from context.</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="mic"></span>
+					<span class="section-title">Voice</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Mic button</span>
+						<div class="theme-toggle">
+							<button class="active">Tap to toggle</button>
+							<button>Hold to talk</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">"Tap to toggle" starts recording on the first tap and stops on the second.</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="map-pin"></span>
+					<span class="section-title">Location</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row stacked">
+						<input class="stacked-input" placeholder="e.g. Seattle, WA" />
+					</div>
+				</div>
+				<p class="hint">Used by "near me" questions when the browser can't get your real location.</p>
+			</div>
+		</div>
+
+		<!-- ============ OPTION D ============ -->
+		<div class="panel active" id="optD">
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="user"></span>
+					<span class="section-title">About you</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Name</span>
+						<input class="inline-input" value="Autumn" />
+					</div>
+					<div class="settings-row stacked">
+						<span class="row-label">Pronouns</span>
+						<div class="theme-toggle person-pronoun-toggle">
+							<button>he/him</button>
+							<button class="active">she/her</button>
+							<button>they/them</button>
+							<button>Custom</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">Used by both this assistant and Constellation's Weaver — without it, either has to guess pronouns from context (and can guess wrong).</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="mic"></span>
+					<span class="section-title">Voice</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row">
+						<span class="row-label">Mic button</span>
+						<div class="theme-toggle">
+							<button class="active">Tap to toggle</button>
+							<button>Hold to talk</button>
+						</div>
+					</div>
+				</div>
+				<p class="hint">"Tap to toggle" starts recording on the first tap and stops on the second — no need to keep a finger down for the whole memo.</p>
+			</div>
+
+			<div class="section-block">
+				<div class="section-head">
+					<span class="section-icon" data-lucide="map-pin"></span>
+					<span class="section-title">Location</span>
+				</div>
+				<div class="settings-group">
+					<div class="settings-row stacked">
+						<input class="stacked-input" placeholder="e.g. Seattle, WA" />
+					</div>
+				</div>
+				<p class="hint">Used by "near me" questions when the browser can't get your real location. Ignored automatically once a real GPS fix is available.</p>
+			</div>
+		</div>
+
+	</div>
+</div>
+
+<script>
+	lucide.createIcons();
+	const captions = {
+		optA: 'Same structure as today. Headers go full-text-color + bumped weight/size; hints stay dim and small. Lowest-risk fix — pure contrast repair, nothing about the layout changes.',
+		optB: 'Sentence-case headers with a numbered eyebrow and a full-width rule underneath, like chapter breaks in a document. The description becomes a one-line dek read before the controls, not an afterthought below them. Leans into the "quiet, editorial" personality.',
+		optC: 'A small icon anchors each header for fast scanning, especially one-handed on mobile. Reuses icons already imported elsewhere in the codebase (Brain, Wrench, etc.) so the vocabulary stays consistent with Memory/Tools sections.',
+		optD: 'B\'s rule underneath each header, C\'s icon anchor — no boxed chip, no number. Icon sits in the accent gold at the same size as the title text, and the full-width rule is what actually separates one section from the next, not just a color/weight bump.'
+	};
+	function show(id, btn) {
+		document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+		document.getElementById(id).classList.add('active');
+		document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		document.getElementById('caption').textContent = captions[id];
+	}
+	document.getElementById('caption').textContent = captions.optD;
+</script>
+</body>
+</html>
