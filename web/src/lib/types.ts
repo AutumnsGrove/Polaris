@@ -692,6 +692,23 @@ export interface StarSource {
 	thread_created_at: string;
 }
 
+// Mirrors store.StarVersion — a snapshot of a star's content-bearing
+// columns as they stood right before the merge named by version_number
+// overwrote them (see the "See version history" modal in the star detail
+// page).
+export interface StarVersion {
+	id: number;
+	star_id: number;
+	version_number: number;
+	title: string;
+	summary: string;
+	body: string;
+	tags: string[];
+	confidence: string;
+	source: 'weaver' | 'manual_edit' | 'refine' | 'revert';
+	created_at: string;
+}
+
 // Mirrors store.StarEdge — one linked star as seen from a specific star's
 // own detail view (the "other side" of the edge, not both star ids).
 export interface StarEdge {

@@ -405,7 +405,7 @@ func weaverToolClosures(db *store.Store, threadID string) (
 		if err := requireSeen(starID); err != nil {
 			return err
 		}
-		if err := db.UpdateStar(starID, title, summary, body, tags, confidenceClass, isPersonal); err != nil {
+		if err := db.UpdateStar(starID, title, summary, body, tags, confidenceClass, isPersonal, "weaver"); err != nil {
 			return err
 		}
 		warnOnErr("linking star source", db.LinkStarSource(starID, threadID))

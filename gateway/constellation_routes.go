@@ -412,7 +412,7 @@ func (s *Server) handleReviewConstellationStar(w http.ResponseWriter, r *http.Re
 			http.Error(w, "correction is required for refine", http.StatusBadRequest)
 			return
 		}
-		invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction)
+		invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction, "refine")
 		if err != nil {
 			log.Warn("refining star failed", "err", err, "id", id)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -502,7 +502,7 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "cannot edit a rejected star — restore it first", http.StatusConflict)
 		return
 	}
-	invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction)
+	invalidated, err := s.reconcileAndSaveStar(r.Context(), id, req.Correction, "manual_edit")
 	if err != nil {
 		log.Warn("editing star failed", "err", err, "id", id)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -528,6 +528,70 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, star)
 }
 
+// handleGetConstellationStarVersions backs the overflow menu's "See version
+// history" action — every content-merge snapshot for one star, most recent
+// first (store.GetStarVersions).
+func (s *Server) handleGetConstellationStarVersions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid star id", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.getStarOrNotFound(w, id); !ok {
+		return
+	}
+	versions, err := s.db.GetStarVersions(id)
+	if err != nil {
+		log.Warn("getting star versions failed", "err", err, "id", id)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, versions)
+}
+
+// constellationRevertRequest names the snapshot to restore.
+type constellationRevertRequest struct {
+	VersionNumber int `json:"version_number"`
+}
+
+// handleRevertConstellationStar restores a star's content to a prior
+// version — this is a plain replay through store.UpdateStar (source
+// "revert"), so it creates a new version of its own rather than deleting
+// anything; see RevertStarToVersion's doc comment.
+func (s *Server) handleRevertConstellationStar(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid star id", http.StatusBadRequest)
+		return
+	}
+	var req constellationRevertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.VersionNumber <= 0 {
+		http.Error(w, "version_number is required", http.StatusBadRequest)
+		return
+	}
+	if _, ok := s.getStarOrNotFound(w, id); !ok {
+		return
+	}
+	if err := s.db.RevertStarToVersion(id, req.VersionNumber); err != nil {
+		if err == store.ErrStarVersionNotFound {
+			http.Error(w, "version not found", http.StatusNotFound)
+			return
+		}
+		log.Warn("reverting star failed", "err", err, "id", id, "version_number", req.VersionNumber)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	star, ok := s.getStarOrNotFound(w, id)
+	if !ok {
+		return
+	}
+	writeJSON(w, star)
+}
+
 // reconcileAndSaveStar runs the one-off LLM reconciliation pass and
 // persists it — shared by Edit star and Refine, which are visually the
 // same composer sheet over the same mechanism (see the plan doc).
@@ -546,7 +610,7 @@ func (s *Server) handleEditConstellationStar(w http.ResponseWriter, r *http.Requ
 // producing a "confirmed" star whose entire body was the model narrating
 // that the star was wrong, since nothing here or in the caller recognized
 // a flat denial as different from a normal revision.
-func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correction string) (invalidated bool, err error) {
+func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correction, source string) (invalidated bool, err error) {
 	star, err := s.db.GetStar(id)
 	if err != nil {
 		return false, err
@@ -570,7 +634,7 @@ func (s *Server) reconcileAndSaveStar(reqCtx context.Context, id int64, correcti
 	if invalidated {
 		return true, nil
 	}
-	return false, s.db.UpdateStar(id, title, summary, body, star.Tags, star.Confidence, &star.IsPersonal)
+	return false, s.db.UpdateStar(id, title, summary, body, star.Tags, star.Confidence, &star.IsPersonal, source)
 }
 
 // reconcileStarContent is the actual LLM call behind reconcileAndSaveStar

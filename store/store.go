@@ -804,6 +804,28 @@ CREATE TABLE IF NOT EXISTS star_reconcile_events (
 	cost_usd   REAL NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- star_versions snapshots a star's content-bearing columns right before
+-- every real content merge (Store.UpdateStar) overwrites them -- version
+-- N is "what the star looked like going into update N", so reverting to a
+-- version just replays it through UpdateStar again (source 'revert')
+-- rather than deleting rows, keeping this table honestly append-only, the
+-- same way git revert never rewrites history. Plain rename/disable
+-- (RenameStar/SetStarDisabled) don't snapshot here -- scoped to real
+-- content merges only, matching content_updated_at's own scope on stars.
+CREATE TABLE IF NOT EXISTS star_versions (
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	star_id          INTEGER NOT NULL REFERENCES stars(id) ON DELETE CASCADE,
+	version_number   INTEGER NOT NULL,
+	title            TEXT NOT NULL,
+	summary          TEXT NOT NULL,
+	body             TEXT NOT NULL,
+	tags             TEXT NOT NULL,
+	confidence       TEXT NOT NULL,
+	source           TEXT NOT NULL,
+	created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_star_versions_star_id ON star_versions(star_id, version_number);
 `
 
 // migrations adds columns to a threads table created before they existed.

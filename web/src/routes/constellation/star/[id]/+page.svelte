@@ -8,6 +8,7 @@
 	import ConstellationMiniMap from '$lib/components/ConstellationMiniMap.svelte';
 	import ConstellationReconcileSheet from '$lib/components/ConstellationReconcileSheet.svelte';
 	import EditTextModal from '$lib/components/EditTextModal.svelte';
+	import StarVersionHistoryModal from '$lib/components/StarVersionHistoryModal.svelte';
 	import { ArrowLeft, MoreVertical, MessageCircle, Pencil, Link2 } from '@lucide/svelte';
 	import { iconForCategory } from '$lib/categoryIcons';
 	import { colorForCategory } from '$lib/categoryColors';
@@ -18,9 +19,15 @@
 	let detail = $state<ConstellationStarDetail | null>(null);
 	let loading = $state(true);
 	let neighborStars = $state<Star[]>([]);
+	// versionCount: how many times this star has been content-merged, for
+	// the "Update N" badge in meta-row — a plain count of star_versions
+	// rows, not fetched via the full history modal (which loads its own
+	// copy on open) so the badge can show without the modal ever opening.
+	let versionCount = $state(0);
 	let showEdit = $state(false);
 	let showMenu = $state(false);
 	let renaming = $state(false);
+	let showHistory = $state(false);
 	let menuRootEl = $state<HTMLDivElement | null>(null);
 
 	// loadSeq guards against a stale response clobbering a newer one — this
@@ -39,6 +46,8 @@
 		detail = result;
 		loading = false;
 		if (!detail) return;
+		versionCount = (await constellationState.getStarVersions(id)).length;
+		if (seq !== loadSeq) return;
 		// Neighbor stars for the mini-map — every edge, fetched directly
 		// rather than pulling the whole map dataset for what's usually a
 		// small preview (see ConstellationMiniMap's own doc comment).
@@ -114,6 +123,17 @@
 		}
 	}
 
+	function openHistory() {
+		showMenu = false;
+		showHistory = true;
+	}
+
+	function handleReverted(star: Star) {
+		if (!detail) return;
+		detail = { ...detail, star };
+		versionCount += 1;
+	}
+
 	async function toggleDisabled() {
 		if (!detail) return;
 		const result = await constellationState.patchStar(detail.star.id, { disabled: !detail.star.disabled });
@@ -152,6 +172,7 @@
 		{#if showMenu}
 			<div class="menu" role="menu">
 				<button onclick={startRename} role="menuitem">Rename</button>
+				<button onclick={openHistory} role="menuitem">See version history</button>
 				<button onclick={toggleDisabled} role="menuitem"
 					>{detail?.star.disabled ? 'Enable' : 'Disable'}</button
 				>
@@ -186,9 +207,12 @@
 			{/each}
 		</div>
 		<div class="meta-row">
-			Updated {formatDate(detail.star.updated_at)}
+			Star #{detail.star.id} &middot; Updated {formatDate(detail.star.updated_at)}
 			{#if detail.first_discussed_at}
 				&middot; first noted {formatDate(detail.first_discussed_at)}
+			{/if}
+			{#if versionCount > 0}
+				&middot; Update {versionCount}
 			{/if}
 		</div>
 
@@ -245,6 +269,14 @@
 		maxLength={200}
 		onSave={saveRename}
 		onCancel={() => (renaming = false)}
+	/>
+{/if}
+
+{#if showHistory && detail}
+	<StarVersionHistoryModal
+		star={detail.star}
+		onClose={() => (showHistory = false)}
+		onReverted={handleReverted}
 	/>
 {/if}
 

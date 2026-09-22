@@ -132,7 +132,7 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 		t.Errorf("GetStar defaults = %+v, want status=auto, is_personal=false", got)
 	}
 
-	if err := s.UpdateStar(id, "", "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(id, "", "Updated summary", "Updated body", []string{"cloudflare", "workers", "edge"}, "fuzzy", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -146,8 +146,80 @@ func TestStar_CreateGetUpdate(t *testing.T) {
 	if _, err := s.GetStar(999999); err != ErrStarNotFound {
 		t.Fatalf("GetStar(missing) = %v, want ErrStarNotFound", err)
 	}
-	if err := s.UpdateStar(999999, "", "x", "x", nil, "", nil); err != ErrStarNotFound {
+	if err := s.UpdateStar(999999, "", "x", "x", nil, "", nil, "test"); err != ErrStarNotFound {
 		t.Fatalf("UpdateStar(missing id) = %v, want ErrStarNotFound", err)
+	}
+}
+
+func TestStar_UpdateStarSnapshotsVersionsAndReverts(t *testing.T) {
+	s := openTestStore(t)
+	id, err := s.CreateStar(Star{
+		Title: "Cloudflare Workers", Category: "technology", Summary: "v0 summary",
+		Body: "v0 body", Tags: []string{"edge"}, Confidence: "obvious", Status: "auto",
+	})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+
+	// A brand-new star has no versions yet — nothing has overwritten it.
+	versions, err := s.GetStarVersions(id)
+	if err != nil {
+		t.Fatalf("GetStarVersions (before any update): %v", err)
+	}
+	if len(versions) != 0 {
+		t.Errorf("GetStarVersions (before any update) = %+v, want none", versions)
+	}
+
+	if err := s.UpdateStar(id, "", "v1 summary", "v1 body", []string{"edge", "workers"}, "fuzzy", nil, "weaver"); err != nil {
+		t.Fatalf("UpdateStar (1st): %v", err)
+	}
+	if err := s.UpdateStar(id, "", "v2 summary", "v2 body", nil, "fuzzy", nil, "manual_edit"); err != nil {
+		t.Fatalf("UpdateStar (2nd): %v", err)
+	}
+
+	versions, err = s.GetStarVersions(id)
+	if err != nil {
+		t.Fatalf("GetStarVersions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("GetStarVersions = %d entries, want 2", len(versions))
+	}
+	// Most recent first, and each entry captures what the star looked like
+	// going INTO that update, not the result of it.
+	if versions[0].VersionNumber != 2 || versions[0].Summary != "v1 summary" || versions[0].Source != "manual_edit" {
+		t.Errorf("versions[0] = %+v, want version 2 snapshotting v1 summary, source manual_edit", versions[0])
+	}
+	if versions[1].VersionNumber != 1 || versions[1].Summary != "v0 summary" || versions[1].Source != "weaver" {
+		t.Errorf("versions[1] = %+v, want version 1 snapshotting v0 summary, source weaver", versions[1])
+	}
+
+	// Reverting to version 1 (v0's content) must restore that content AND
+	// itself create a new version 3 — a revert replays through UpdateStar
+	// rather than rewriting history.
+	if err := s.RevertStarToVersion(id, 1); err != nil {
+		t.Fatalf("RevertStarToVersion: %v", err)
+	}
+	got, err := s.GetStar(id)
+	if err != nil {
+		t.Fatalf("GetStar (after revert): %v", err)
+	}
+	if got.Summary != "v0 summary" || got.Body != "v0 body" {
+		t.Errorf("GetStar (after revert) = %+v, want v0 content restored", got)
+	}
+
+	versions, err = s.GetStarVersions(id)
+	if err != nil {
+		t.Fatalf("GetStarVersions (after revert): %v", err)
+	}
+	if len(versions) != 3 {
+		t.Fatalf("GetStarVersions (after revert) = %d entries, want 3 (revert is append-only)", len(versions))
+	}
+	if versions[0].VersionNumber != 3 || versions[0].Summary != "v2 summary" || versions[0].Source != "revert" {
+		t.Errorf("versions[0] (after revert) = %+v, want version 3 snapshotting v2 summary, source revert", versions[0])
+	}
+
+	if err := s.RevertStarToVersion(id, 999999); err != ErrStarVersionNotFound {
+		t.Errorf("RevertStarToVersion(missing version) = %v, want ErrStarVersionNotFound", err)
 	}
 }
 
@@ -167,7 +239,7 @@ func TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone(t *testing.T) {
 	// (body/tags/confidence_class/is_personal are all optional in that
 	// tool's schema) actually looks like once JSON-unmarshaled. Every one
 	// of these must be left exactly as they were, not blanked out.
-	if err := s.UpdateStar(id, "", "just a summary fix", "", nil, "", nil); err != nil {
+	if err := s.UpdateStar(id, "", "just a summary fix", "", nil, "", nil, "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err := s.GetStar(id)
@@ -192,7 +264,7 @@ func TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone(t *testing.T) {
 
 	// An explicit, non-nil empty tags slice really does mean "clear every
 	// tag" — distinct from nil, which means "the caller didn't say".
-	if err := s.UpdateStar(id, "", "summary", "", []string{}, "", nil); err != nil {
+	if err := s.UpdateStar(id, "", "summary", "", []string{}, "", nil, "test"); err != nil {
 		t.Fatalf("UpdateStar (explicit empty tags): %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -204,7 +276,7 @@ func TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone(t *testing.T) {
 	}
 
 	// An explicit false really does flip is_personal, distinct from nil.
-	if err := s.UpdateStar(id, "", "summary", "", nil, "", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(id, "", "summary", "", nil, "", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar (explicit is_personal=false): %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -226,7 +298,7 @@ func TestStar_UpdateStarTitle(t *testing.T) {
 	// "" leaves the title untouched — the normal case for both callers
 	// (update_star's title field and Edit/Refine's TITLE: line are each
 	// optional, omitted on most calls).
-	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(id, "", "still enjoys sci-fi", "b", nil, "obvious", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err := s.GetStar(id)
@@ -239,7 +311,7 @@ func TestStar_UpdateStarTitle(t *testing.T) {
 
 	// A non-empty title actually retitles the star — the Edit/Refine
 	// correction sheet's path when a correction changes the star's premise.
-	if err := s.UpdateStar(id, "Reads fantasy novels", "actually fantasy, not sci-fi", "b", nil, "obvious", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(id, "Reads fantasy novels", "actually fantasy, not sci-fi", "b", nil, "obvious", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -270,7 +342,7 @@ func TestStar_NilTagsEncodeAsEmptyArrayNotNull(t *testing.T) {
 	// this stays "[]" because that's what it already was, not because
 	// UpdateStar re-encodes nil itself — TestStar_UpdateStarOmittedFieldsLeaveExistingValuesAlone
 	// is what actually exercises that "leave as-is" contract.
-	if err := s.UpdateStar(id, "", "summary", "body", nil, "obvious", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(id, "", "summary", "body", nil, "obvious", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	if err := s.db.QueryRow(`SELECT tags FROM stars WHERE id = ?`, id).Scan(&tagsJSON); err != nil {
@@ -304,7 +376,7 @@ func TestStar_PersonalCreateAndUpdateDoNotForceProposed(t *testing.T) {
 	if err := s.SetStarStatus(id, "confirmed"); err != nil {
 		t.Fatalf("SetStarStatus: %v", err)
 	}
-	if err := s.UpdateStar(id, "", "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, boolPtr(true)); err != nil {
+	if err := s.UpdateStar(id, "", "Enjoys sci-fi, especially Le Guin", got.Body, got.Tags, got.Confidence, boolPtr(true), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 	got, err = s.GetStar(id)
@@ -731,7 +803,7 @@ func TestGetConstellationWeekFeed_IncludesStarID(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE stars SET created_at = datetime('now', '-30 days') WHERE id = ?`, updatedID); err != nil {
 		t.Fatalf("backdating created_at: %v", err)
 	}
-	if err := s.UpdateStar(updatedID, "", "new summary", "new body", nil, "", boolPtr(false)); err != nil {
+	if err := s.UpdateStar(updatedID, "", "new summary", "new body", nil, "", boolPtr(false), "test"); err != nil {
 		t.Fatalf("UpdateStar: %v", err)
 	}
 

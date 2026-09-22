@@ -6,6 +6,7 @@ import type {
 	ConstellationStats,
 	ConstellationWeekItem,
 	Star,
+	StarVersion,
 	WeaverThreadSummary
 } from './types';
 import { appState } from './state.svelte';
@@ -268,6 +269,29 @@ export class ConstellationState {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ correction })
+			});
+			if (!res.ok) return { error: (await res.text()) || 'Something went wrong — try again.' };
+			return { error: '', star: (await res.json()) as Star };
+		} catch {
+			return { error: 'Could not reach the server — try again.' };
+		}
+	}
+
+	async getStarVersions(id: number): Promise<StarVersion[]> {
+		try {
+			const res = await fetch(`/api/constellation/stars/${id}/versions`);
+			return res.ok ? ((await res.json()) as StarVersion[]) : [];
+		} catch {
+			return [];
+		}
+	}
+
+	async revertStar(id: number, versionNumber: number): Promise<{ error: string; star?: Star }> {
+		try {
+			const res = await fetch(`/api/constellation/stars/${id}/revert`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ version_number: versionNumber })
 			});
 			if (!res.ok) return { error: (await res.text()) || 'Something went wrong — try again.' };
 			return { error: '', star: (await res.json()) as Star };

@@ -34,7 +34,7 @@ type ConstellationConfig struct {
 	// the schema comment on this column in store.go's `schema` const for
 	// why this is a DB column and not an in-process flag.
 	BackfillStartedAt *time.Time `json:"backfill_started_at"`
-	CreatedAt         time.Time `json:"created_at"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // GetConstellationConfig returns the singleton config row, inserting the
@@ -306,7 +306,14 @@ func (s *Store) GetStar(id int64) (*Star, error) {
 // no-op UPDATE against a stale/hallucinated star_id silently "succeeded",
 // so a caller (Weaver's update_star tool included) had no way to tell a
 // real merge from one that touched nothing at all.
-func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool) error {
+//
+// source records who initiated this merge ("weaver", "manual_edit",
+// "refine", or "revert" — see RevertStarToVersion) into the star_versions
+// snapshot this function writes before overwriting the row. The snapshot
+// captures the star's content-bearing columns as they stood *before* this
+// merge, so version N always means "what the star looked like going into
+// update N" (see star_versions' schema comment in store.go).
+func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, source string) error {
 	var tagsArg any
 	if tags != nil {
 		tagsJSON, err := json.Marshal(tags)
@@ -318,6 +325,27 @@ func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string,
 	var personalArg any
 	if isPersonal != nil {
 		personalArg = *isPersonal
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("update star: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Snapshot the pre-update row before it's overwritten below — must run
+	// inside the same transaction as the UPDATE so a crash between the two
+	// can never leave a merge applied with no matching version row, or a
+	// version row logged for a merge that never actually happened.
+	_, err = tx.Exec(
+		`INSERT INTO star_versions (star_id, version_number, title, summary, body, tags, confidence, source)
+		 SELECT id, COALESCE((SELECT MAX(version_number) FROM star_versions WHERE star_id = stars.id), 0) + 1,
+		        title, summary, body, tags, confidence, ?
+		 FROM stars WHERE id = ?`,
+		source, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update star: snapshot version: %w", err)
 	}
 
 	query := `UPDATE stars SET
@@ -339,7 +367,7 @@ func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string,
 		personalArg, personalArg,
 		id,
 	}
-	res, err := s.db.Exec(query, args...)
+	res, err := tx.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("update star: %w", err)
 	}
@@ -350,7 +378,85 @@ func (s *Store) UpdateStar(id int64, title, summary, body string, tags []string,
 	if n == 0 {
 		return ErrStarNotFound
 	}
-	return nil
+	return tx.Commit()
+}
+
+// StarVersion is one star_versions row — a snapshot of a star's
+// content-bearing columns as they stood immediately before the merge named
+// by VersionNumber overwrote them.
+type StarVersion struct {
+	ID            int64     `json:"id"`
+	StarID        int64     `json:"star_id"`
+	VersionNumber int       `json:"version_number"`
+	Title         string    `json:"title"`
+	Summary       string    `json:"summary"`
+	Body          string    `json:"body"`
+	Tags          []string  `json:"tags"`
+	Confidence    string    `json:"confidence"`
+	Source        string    `json:"source"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// GetStarVersions returns every snapshot for a star, most recent first —
+// backs the "See version history" modal.
+func (s *Store) GetStarVersions(starID int64) ([]StarVersion, error) {
+	rows, err := s.db.Query(
+		`SELECT id, star_id, version_number, title, summary, body, tags, confidence, source, created_at
+		 FROM star_versions WHERE star_id = ? ORDER BY version_number DESC`,
+		starID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get star versions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []StarVersion
+	for rows.Next() {
+		var v StarVersion
+		var tagsJSON string
+		if err := rows.Scan(&v.ID, &v.StarID, &v.VersionNumber, &v.Title, &v.Summary, &v.Body, &tagsJSON, &v.Confidence, &v.Source, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("get star versions: %w", err)
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &v.Tags); err != nil {
+			return nil, fmt.Errorf("get star versions: decode tags: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// ErrStarVersionNotFound is returned by RevertStarToVersion when
+// versionNumber doesn't match any star_versions row for that star.
+var ErrStarVersionNotFound = errors.New("star version not found")
+
+// RevertStarToVersion restores a star's content to a prior snapshot by
+// replaying it through UpdateStar (source "revert") — deliberately not a
+// direct UPDATE against star_versions' saved values, so a revert creates a
+// new version of its own rather than rewriting history. See star_versions'
+// schema comment for why this is append-only by design.
+func (s *Store) RevertStarToVersion(starID int64, versionNumber int) error {
+	var v StarVersion
+	var tagsJSON string
+	err := s.db.QueryRow(
+		`SELECT title, summary, body, tags, confidence FROM star_versions WHERE star_id = ? AND version_number = ?`,
+		starID, versionNumber,
+	).Scan(&v.Title, &v.Summary, &v.Body, &tagsJSON, &v.Confidence)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrStarVersionNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("revert star to version: %w", err)
+	}
+	if err := json.Unmarshal([]byte(tagsJSON), &v.Tags); err != nil {
+		return fmt.Errorf("revert star to version: decode tags: %w", err)
+	}
+	// title/body use UpdateStar's "" == "leave as-is" contract, so a
+	// snapshot whose title/body were genuinely blank at the time (never
+	// true in practice — CreateStar/UpdateStar don't allow blank content —
+	// but not worth a special case here) would silently no-op that field
+	// rather than restoring it. Summary has no such contract (UpdateStar
+	// always overwrites it unconditionally), so it needs no guard.
+	return s.UpdateStar(starID, v.Title, v.Summary, v.Body, v.Tags, v.Confidence, nil, "revert")
 }
 
 // SetStarStatus is used by review actions (approve/discard) and by
@@ -1537,7 +1643,7 @@ type WeaverThreadSummary struct {
 // manually-started sessions and the scheduler's own shooting-star runs,
 // deliberately including both rather than filtering to one kind: the whole
 // point of this list is a single place to review everything Weaver has
-// ever done, not just what a person started themselves. fork_root_id = ''
+// ever done, not just what a person started themselves. fork_root_id = ”
 // excludes a variant the same way ListThreads/ListThreadsPage do — a
 // Weaver thread is never edited/retried today, but this guards against
 // ever double-listing one if that changes.
