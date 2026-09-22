@@ -134,8 +134,8 @@ var Registry = []config.ModelConfig{
 			// OpenRouter's live metadata for this model lists six tiers
 			// (none/low/medium/high/xhigh/max), not just the three
 			// ReasoningConfig.Effort's own doc comment mentions — bumped
-			// one step above the model's own "medium" default.
-			Effort: "high",
+			// two steps above the model's own "medium" default.
+			Effort: "xhigh",
 		},
 		Pricing: &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.50},
 	},
