@@ -56,6 +56,13 @@ type AskRequest struct {
 	// meaningful when Anonymous is true; ignored otherwise. Omit it (or
 	// leave it empty) on a ghost thread's first message.
 	History []GhostTurn `json:"history,omitempty"`
+	// WaitVerification mirrors ClientMessage.WaitVerification — a debug/
+	// stress-testing knob only, see its doc comment. When true,
+	// AskResponse.Verification carries the full per-claim result
+	// (including confidence) instead of the caller needing to poll GET
+	// /api/threads/{id} for messages.verification to eventually populate
+	// asynchronously.
+	WaitVerification bool `json:"wait_verification,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -80,6 +87,19 @@ type AskResponse struct {
 	// normal event stream and a WebSocket client never needs it pushed —
 	// it just reads Thread.Title from GET /api/threads.
 	Title string `json:"title,omitempty"`
+	// Verification is only ever populated when the request set
+	// WaitVerification — see its doc comment. Nil otherwise, same as a
+	// normal chat turn where the caller has to wait for the async
+	// "verification" WebSocket event (or reload the thread) instead. This
+	// is the filtered "supported, at/above threshold" view — the same
+	// data a real chat turn's badge would show.
+	Verification []VerificationMark `json:"verification,omitempty"`
+	// VerificationDebug is every claim runVerification actually
+	// considered, unfiltered — choice, confidence, and a Reason for any
+	// claim that couldn't be checked at all — only populated alongside
+	// Verification when WaitVerification was set. See
+	// gateway.ClaimVerification's doc comment.
+	VerificationDebug []ClaimVerification `json:"verification_debug,omitempty"`
 }
 
 // decodeAskRequest reads an AskRequest from either a plain JSON body (the
@@ -113,14 +133,15 @@ func (s *Server) decodeAskRequest(w http.ResponseWriter, r *http.Request) (req A
 	}
 
 	req = AskRequest{
-		Content:      r.FormValue("content"),
-		Model:        r.FormValue("model"),
-		ThreadID:     r.FormValue("thread_id"),
-		Source:       r.FormValue("source"),
-		FocusMode:    r.FormValue("focus_mode"),
-		DeepResearch: formBool(r, "deep_research"),
-		QuickMode:    formBool(r, "quick_mode"),
-		Anonymous:    formBool(r, "anonymous"),
+		Content:          r.FormValue("content"),
+		Model:            r.FormValue("model"),
+		ThreadID:         r.FormValue("thread_id"),
+		Source:           r.FormValue("source"),
+		FocusMode:        r.FormValue("focus_mode"),
+		DeepResearch:     formBool(r, "deep_research"),
+		QuickMode:        formBool(r, "quick_mode"),
+		Anonymous:        formBool(r, "anonymous"),
+		WaitVerification: formBool(r, "wait_verification"),
 	}
 	// history has no natural multipart form-field shape (it's a list of
 	// {role, content} pairs, not a scalar) — accepted as a JSON-encoded
@@ -207,21 +228,24 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	defer s.FinishTurn()
 
 	msg := ClientMessage{
-		Type:         "message",
-		ThreadID:     req.ThreadID,
-		Content:      req.Content,
-		Model:        req.Model,
-		Source:       req.Source,
-		FocusMode:    req.FocusMode,
-		DeepResearch: req.DeepResearch,
-		QuickMode:    req.QuickMode,
-		Attachments:  req.Attachments,
-		Anonymous:    req.Anonymous,
-		History:      req.History,
+		Type:             "message",
+		ThreadID:         req.ThreadID,
+		Content:          req.Content,
+		Model:            req.Model,
+		Source:           req.Source,
+		FocusMode:        req.FocusMode,
+		DeepResearch:     req.DeepResearch,
+		QuickMode:        req.QuickMode,
+		Attachments:      req.Attachments,
+		Anonymous:        req.Anonymous,
+		History:          req.History,
+		WaitVerification: req.WaitVerification,
 	}
 
 	var answer strings.Builder
 	var final ServerEvent
+	var verification []VerificationMark
+	var verificationDebug []ClaimVerification
 	var turnErr string
 
 	// No live WebSocket on this path — nil requestLocation means
@@ -242,6 +266,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			answer.Reset()
 		case "done":
 			final = evt
+		case "verification":
+			verification = evt.Verification
+			verificationDebug = evt.VerificationDebug
 		case "error":
 			turnErr = evt.Message
 		}
@@ -262,16 +289,18 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(AskResponse{
-		ThreadID:      final.ThreadID,
-		Answer:        answer.String(),
-		Citations:     final.Citations,
-		Cards:         final.Cards,
-		Chart:         final.Chart,
-		Suggestions:   final.Suggestions,
-		CostUSD:       final.CostUSD,
-		ContextTokens: final.ContextTokens,
-		DurationMs:    final.DurationMs,
-		Title:         title,
+		ThreadID:          final.ThreadID,
+		Answer:            answer.String(),
+		Citations:         final.Citations,
+		Cards:             final.Cards,
+		Chart:             final.Chart,
+		Suggestions:       final.Suggestions,
+		CostUSD:           final.CostUSD,
+		ContextTokens:     final.ContextTokens,
+		DurationMs:        final.DurationMs,
+		Title:             title,
+		Verification:      verification,
+		VerificationDebug: verificationDebug,
 	})
 }
 

@@ -924,6 +924,9 @@ func lookupViaHardcover(ctx *Context, title, author string) (string, error) {
 		URL:      hardcoverBookURL(book.Slug),
 		ImageURL: book.ImageURL,
 	})
+	if book.Description != "" {
+		ctx.AddEvidence(hardcoverBookURL(book.Slug), book.Description)
+	}
 
 	ranked = capBookCandidates(ranked)
 	enrichSubjectDescriptions(ctx, ranked)
@@ -1222,6 +1225,9 @@ func lookupViaOpenLibrary(ctx *Context, title, author string) (string, error) {
 		URL:      "https://openlibrary.org" + work.Key,
 		ImageURL: coverURL,
 	})
+	if work.Description != "" {
+		ctx.AddEvidence("https://openlibrary.org"+work.Key, work.Description)
+	}
 
 	ranked = capBookCandidates(ranked)
 	enrichSubjectDescriptions(ctx, ranked)

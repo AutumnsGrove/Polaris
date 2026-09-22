@@ -8,6 +8,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -588,16 +589,20 @@ type Context struct {
 
 	// Evidence accumulates URL -> raw extracted text for every page
 	// web_read successfully fetches this turn — a shared prerequisite for
-	// both compare_sources and the future per-claim verification badge
-	// (see docs/plans/source-verification.md), neither of which existed
-	// before this field did; tools.Citation only ever carried title/URL/
-	// site/image, never the actual fetched text. Deliberately the *raw*
-	// extracted text, not FilterExtractedText's LLM-filtered output —
-	// checking a claim against an LLM's own summary would be circular.
-	// evidenceMu guards it for the same parallel-tool-dispatch reason
-	// Citations/Cards need their own mutexes.
+	// both compare_sources and the per-claim verification badge (see
+	// docs/plans/source-verification.md); tools.Citation only ever
+	// carried title/URL/site/image, never the actual fetched text.
+	// Deliberately the *raw* extracted text, not FilterExtractedText's
+	// LLM-filtered output — checking a claim against an LLM's own summary
+	// would be circular. One URL maps to a *slice* of texts, not one
+	// string: a multi-page PDF read across a turn (different `page`
+	// arguments, same URL) needs the union of every page actually read,
+	// not just the last one — an earlier single-string version silently
+	// dropped every page but the last. evidenceMu guards it for the same
+	// parallel-tool-dispatch reason Citations/Cards need their own
+	// mutexes.
 	evidenceMu sync.Mutex
-	evidence   map[string]string
+	evidence   map[string][]string
 
 	// jevCostMu/jevCostUSD track this turn's own running Jev spend,
 	// separately from ExtraCostUSD (which mixes in every other tool's
@@ -943,28 +948,58 @@ func (c *Context) AddCost(usd float64) {
 }
 
 // AddEvidence records the raw extracted text web_read fetched for a URL
-// this turn — see Evidence's doc comment. Overwrites any previous entry for
-// the same URL (a page re-read mid-turn, e.g. a different PDF page) rather
-// than accumulating, since only the latest fetch is what the model actually
-// saw most recently. Safe to call concurrently, same reasoning as
-// AddCitation/AddCard.
+// this turn — see Evidence's doc comment. Appends rather than overwrites, so
+// a multi-page PDF read across the turn (different `page` arguments, same
+// URL) accumulates the union of every page actually read instead of losing
+// all but the last. Skips an exact-duplicate re-read of the same text (e.g.
+// the model re-reading the same page twice) rather than storing it twice.
+// Safe to call concurrently, same reasoning as AddCitation/AddCard.
 func (c *Context) AddEvidence(url, text string) {
 	c.evidenceMu.Lock()
 	defer c.evidenceMu.Unlock()
 	if c.evidence == nil {
-		c.evidence = map[string]string{}
+		c.evidence = map[string][]string{}
 	}
-	c.evidence[url] = text
+	for _, existing := range c.evidence[url] {
+		if existing == text {
+			return
+		}
+	}
+	c.evidence[url] = append(c.evidence[url], text)
 }
 
-// EvidenceForURL returns the raw text stored for url and whether anything
-// was stored at all — false for a URL only ever seen via web_search's
-// snippet, never actually web_read. Safe to call concurrently.
+// EvidenceForURL returns the raw text stored for url — every distinct piece
+// recorded this turn (e.g. every PDF page actually read) joined with blank
+// lines — and whether anything was stored at all. False for a URL only ever
+// seen via web_search's snippet, never actually web_read. Safe to call
+// concurrently.
 func (c *Context) EvidenceForURL(url string) (string, bool) {
 	c.evidenceMu.Lock()
 	defer c.evidenceMu.Unlock()
-	text, ok := c.evidence[url]
-	return text, ok
+	pieces, ok := c.evidence[url]
+	if !ok {
+		return "", false
+	}
+	return strings.Join(pieces, "\n\n"), true
+}
+
+// EvidenceSnapshot returns a copy of every URL's own joined evidence text
+// recorded so far — used by agent.RunSubAgent to fold a finished
+// sub-agent's own web_read/reference_lookup/youtube_transcript evidence
+// back into the parent turn's Context once it returns. Each sub-agent gets
+// its own zero-value Context (see agent/subagent.go's newSubAgentContext
+// doc comment on why), so without this, every citation spawn_researchers
+// surfaces would carry no evidence at all — confirmed live: Deep
+// Research's own citations came back with "no stored evidence for this
+// URL" for every claim until this existed. Safe to call concurrently.
+func (c *Context) EvidenceSnapshot() map[string]string {
+	c.evidenceMu.Lock()
+	defer c.evidenceMu.Unlock()
+	out := make(map[string]string, len(c.evidence))
+	for url, pieces := range c.evidence {
+		out[url] = strings.Join(pieces, "\n\n")
+	}
+	return out
 }
 
 // AddJevCost records real Jev spend against this turn's own running total

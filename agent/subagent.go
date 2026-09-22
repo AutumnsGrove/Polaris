@@ -34,6 +34,17 @@ func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.C
 	if err != nil {
 		return tools.SubAgentReport{}, err
 	}
+	// Fold this sub-agent's own web_read/reference_lookup/
+	// youtube_transcript evidence back into baseCtx before it's
+	// discarded — subCtx.Citations below is the only other thing that
+	// survives past this function returning, and citation-only was
+	// exactly the gap that left every Deep Research citation unverifiable
+	// (see tools.Context.EvidenceSnapshot's doc comment). AddEvidence is
+	// safe to call concurrently, so this is fine even with several
+	// sub-agents in the same fan-out wave finishing around the same time.
+	for url, text := range subCtx.EvidenceSnapshot() {
+		baseCtx.AddEvidence(url, text)
+	}
 	return tools.ParseSubAgentReport(task.Objective, result.Answer, subCtx.Citations), nil
 }
 

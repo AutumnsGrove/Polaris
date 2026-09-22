@@ -10,6 +10,25 @@ export interface Citation {
 	// comment. Rendered by the source list in place of the numbered index
 	// badge when present.
 	image_url?: string;
+	// True when at least one claim citing this URL was checked and found
+	// "found in source" (see VerificationMark, docs/plans/
+	// source-verification-badge.md) — the aggregate mark shown on the
+	// source-list chip. The inline citation chip needs finer precision
+	// than this (which *specific* claim, not just "this URL somewhere") —
+	// see ChatTurn.verification and citations.ts's renderInlineCitations.
+	verified?: boolean;
+}
+
+// One claim/source pair that cleared the "found in source" confidence
+// threshold — mirrors gateway/protocol.go's VerificationMark 1:1.
+// claim_index is the zero-based occurrence of url among the answer's own
+// inline citation links, in document order, used to mark the *specific*
+// chip a claim came from rather than every chip citing that URL.
+export interface VerificationMark {
+	url: string;
+	claim_index: number;
+	choice: string;
+	confidence: number;
 }
 
 // Mirrors store.Attachment — one file included with a user message. Kept
@@ -208,6 +227,21 @@ export type ServerEvent =
 	// see gateway/protocol.go's doc comment. cost_usd here is just this
 	// call's own cost, additive with 'done''s, not a replacement for it.
 	| { type: 'suggestions'; thread_id: string; cost_usd: number; suggestions: string[] }
+	// Sent once, well after 'done', once a per-claim "found in source" pass
+	// over this message's own inline citations finishes — see
+	// gateway/protocol.go's "verification" doc comment and
+	// docs/plans/source-verification-badge.md. May never arrive at all
+	// (Jev not configured, every source's budget cap already hit, nothing
+	// found supported) — treat that as a normal, silent outcome. Targets a
+	// specific message, not just "whatever's pending" like 'suggestions'
+	// does, since the user may have already sent another message by the
+	// time this lands.
+	| {
+			type: 'verification';
+			thread_id: string;
+			assistant_message_id: number;
+			verification: VerificationMark[];
+	  }
 	// The thread just crossed the context-window threshold and was
 	// auto-summarized — content is the summary, shown as a collapsible
 	// timeline note like a tool call, not a normal answer.
@@ -516,6 +550,10 @@ export interface StoredMessage {
 	// ended its turn via ask_user_question — see
 	// store.Store.SetMessagePendingQuestion. '' on every other message.
 	pending_question?: string;
+	// JSON-encoded VerificationMark[], assistant messages only — see
+	// store.Store.SetMessageVerification. "[]" on a message with no
+	// verification pass run, or nothing found supported.
+	verification?: string;
 	created_at: string;
 }
 
@@ -598,6 +636,14 @@ export interface ChatTurn {
 	// a just-sent turn shows a purely cosmetic chip until the server
 	// round-trips a reload (see ChatTurnView.svelte).
 	attachments?: MessageAttachment[];
+	// Per-claim "found in source" marks for this turn's own citations —
+	// set from a reload's StoredMessage.verification, or live once the
+	// 'verification' event arrives (see state.svelte.ts's handleEvent).
+	// citations[].verified (the aggregate) is derived from this whenever
+	// it's updated — see citations.ts's renderInlineCitations for how the
+	// inline chip uses claim_index to mark the *specific* chip a claim
+	// came from.
+	verification?: VerificationMark[];
 }
 
 // Mirrors search/domain_rankings.go's RankState constants.

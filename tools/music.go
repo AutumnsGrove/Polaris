@@ -211,6 +211,9 @@ func lookupSimilarTrack(ctx *Context, artist, track string) (string, error) {
 		URL:      citationURL,
 		ImageURL: fetchDeezerCoverArt(ctx, "track", resolvedArtist, resolvedTrack),
 	})
+	if description != "" {
+		ctx.AddEvidence(citationURL, description)
+	}
 
 	// One card + one description per recommendation actually shown to the
 	// user (same set as formatSimilarTrackResult's list, not some larger
@@ -292,6 +295,9 @@ func lookupAlbumTracks(ctx *Context, artist, album string) (string, error) {
 		URL:      albumURL,
 		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
 	})
+	if description != "" {
+		ctx.AddEvidence(albumURL, description)
+	}
 
 	// One card + one description per recommendation actually shown — ranked
 	// is already capped above, so this and the text list always describe
@@ -396,6 +402,9 @@ func lookupSimilarAlbums(ctx *Context, artist, album string) (string, error) {
 		URL:      albumURL,
 		ImageURL: fetchDeezerCoverArt(ctx, "album", canonicalArtist, album),
 	})
+	if description != "" {
+		ctx.AddEvidence(albumURL, description)
+	}
 
 	// One card + one description per recommendation actually shown — ranked
 	// is already capped above. Concurrent Deezer/Last.fm lookups, same

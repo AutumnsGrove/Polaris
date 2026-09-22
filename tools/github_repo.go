@@ -104,6 +104,12 @@ func handleGitHubRepo(argsJSON string, ctx *Context, callID string) string {
 			result += "\n\nREADME: unavailable (" + err.Error() + ")"
 		} else {
 			result += "\n\n--- README ---\n" + readme
+			// The README is real prose (what the repo does, how to use it)
+			// — a claim about this repo is checkable against it the same
+			// way a web_read'd page is. The stats block above (stars,
+			// commit count) isn't: those are already exact numbers straight
+			// off the API, nothing a claim would need "verifying" against.
+			ctx.AddEvidence(stats.HTMLURL, readme)
 		}
 	}
 

@@ -11,7 +11,21 @@
 	import { marked } from '$lib/markdown';
 	import { renderMermaidIn } from '$lib/mermaid';
 	import DOMPurify from 'dompurify';
-	import { Pencil, RotateCcw, Check, X, Volume2, Loader2, ChevronRight, ChevronLeft, Copy, Link2, Paperclip } from '@lucide/svelte';
+	import {
+		Pencil,
+		RotateCcw,
+		Check,
+		X,
+		Volume2,
+		Loader2,
+		ChevronRight,
+		ChevronLeft,
+		Copy,
+		Link2,
+		Paperclip,
+		CheckCheck,
+		Info
+	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
@@ -83,7 +97,11 @@
 	// no detour through the source list below to find out what a bare
 	// number pointed at.
 	let renderedHtml = $derived(
-		renderInlineCitations(DOMPurify.sanitize(marked.parse(turn.content || '') as string), turn.citations ?? [])
+		renderInlineCitations(
+			DOMPurify.sanitize(marked.parse(turn.content || '') as string),
+			turn.citations ?? [],
+			turn.verification
+		)
 	);
 
 	// Runs after renderedHtml (re)paints proseEl's DOM. Gated on
@@ -328,6 +346,12 @@
 						<span>{turn.citations.length === 1 ? 'Source' : 'Sources'}</span>
 						<ChevronRight size={12} class={sourcesOpen ? 'chevron open' : 'chevron'} />
 					</button>
+					<span
+						class="sources-info"
+						title="A check mark means that specific claim was checked against its source — absence doesn't mean the source is wrong, just not (yet) checked."
+					>
+						<Info size={12} />
+					</span>
 					{#if sourcesOpen}
 						<div class="citations">
 							{#each turn.citations as c, i (c.url)}
@@ -336,7 +360,7 @@
 									href={c.url}
 									target="_blank"
 									rel="noreferrer"
-									title={c.title || c.url}
+									title={c.verified ? `${c.title || c.url} — found in source` : c.title || c.url}
 								>
 									{#if c.image_url}
 										<img class="source-thumb" src={c.image_url} alt="" loading="lazy" />
@@ -344,7 +368,12 @@
 										<span class="source-index">{i + 1}</span>
 									{/if}
 									<span class="source-text">
-										<span class="source-title">{c.title || hostname(c.url)}</span>
+										<span class="source-title">
+											{#if c.verified}
+												<CheckCheck size={11} class="source-verified-icon" />
+											{/if}
+											<span class="source-title-text">{c.title || hostname(c.url)}</span>
+										</span>
 										<span class="source-domain">{hostname(c.url)}</span>
 									</span>
 								</a>
@@ -613,6 +642,19 @@
 		color: var(--color-text);
 	}
 
+	/* Explains what an absent check mark does and doesn't mean — see
+	   docs/plans/source-verification-badge.md's UI section: "no mark"
+	   covers three different real states (not checked, not supported,
+	   below confidence threshold), so it should never read as "this
+	   source is bad." cursor: help, not pointer — this is a tooltip
+	   target, not a click target. */
+	.sources-info {
+		display: inline-flex;
+		align-items: center;
+		color: var(--color-text-dim);
+		cursor: help;
+	}
+
 	.sources-count {
 		display: inline-flex;
 		align-items: center;
@@ -696,6 +738,19 @@
 		box-shadow: var(--shadow-sm);
 	}
 
+	/* The inline chip's own "found in source" mark — see citations.ts's
+	   renderInlineCitations. --color-accent-2 reuses the app's existing
+	   "citation chrome / informational" hue (already .source-index's
+	   color below) rather than introducing a new semantic color. Sized to
+	   sit inside the chip's 11.5px text without changing its height. */
+	.prose :global(.citation-chip .citation-verified-icon) {
+		width: 11px;
+		height: 11px;
+		flex-shrink: 0;
+		margin-right: 3px;
+		color: var(--color-accent-2);
+	}
+
 	.source-index {
 		flex-shrink: 0;
 		display: flex;
@@ -735,11 +790,30 @@
 	}
 
 	.source-title {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		min-width: 0;
 		font-size: 12px;
 		color: var(--color-text);
+	}
+
+	.source-title-text {
+		min-width: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* The source-list chip's own aggregate "found in source" mark — see
+	   ChatTurnView.svelte's .source-chip loop and Citation.verified's doc
+	   comment. Same --color-accent-2 treatment as the inline chip's own
+	   mark above, just via a real Svelte icon component here instead of
+	   raw SVG (this markup isn't DOM-string-injected like the inline
+	   chips are). */
+	.source-title :global(.source-verified-icon) {
+		flex-shrink: 0;
+		color: var(--color-accent-2);
 	}
 
 	.source-domain {

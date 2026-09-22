@@ -174,7 +174,9 @@ func formatDictionaryAPIDev(ctx *Context, e dictionaryAPIDevEntry, word string) 
 		}
 		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+	result := strings.TrimSpace(sb.String())
+	ctx.AddEvidence(sourceURL, result)
+	return result
 }
 
 // --- freedictionaryapi.com (fallback) ---
@@ -245,7 +247,9 @@ func formatFreeDictionaryAPI(ctx *Context, resp freeDictionaryAPIResponse, word 
 		}
 		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+	result := strings.TrimSpace(sb.String())
+	ctx.AddEvidence(sourceURL, result)
+	return result
 }
 
 // dictionaryHTTPGet is a small shared GET helper mirroring

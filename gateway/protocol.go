@@ -150,6 +150,16 @@ type ClientMessage struct {
 	// produces (tool calls were never part of persisted/replayed history
 	// either, so this is exact parity, not a reduced approximation).
 	History []GhostTurn `json:"history,omitempty"`
+	// WaitVerification, when true, runs the per-claim "found in source"
+	// pass (see gateway/verification.go) synchronously before handleTurn
+	// returns instead of in its normal detached post-"done" goroutine, and
+	// AskResponse.Verification (ask.go) carries the full result including
+	// confidence — a debug/stress-testing knob for exercising verification
+	// without needing the WebSocket client's async event round trip. Only
+	// ever set by handleAsk from AskRequest.WaitVerification; the
+	// WebSocket client never sets this — a real chat turn always wants the
+	// non-blocking async path so the answer never stalls behind it.
+	WaitVerification bool `json:"-"`
 }
 
 // GhostTurn is one prior turn of a ghost (Anonymous) thread's client-held
@@ -220,6 +230,17 @@ type GhostTurn struct {
 //	                  wrapping. Never blocks the rest of the turn indefinitely: a client that
 //	                  never replies (denied, tab backgrounded, closed) just times out and the
 //	                  tool falls back to config.yaml's default_location like before.
+//	"verification"  — thread_id + assistant_message_id + verification: sent once, well after
+//	                  "done", once a per-claim "found in source" pass over this message's own
+//	                  inline citations finishes (see docs/plans/source-verification-badge.md and
+//	                  gateway/verification.go). Persisted alongside the assistant message (see
+//	                  store.Message.Verification) so reopening the thread later still shows the
+//	                  same marks. Only carries entries that actually cleared the confidence
+//	                  threshold — a claim/source pair that wasn't checked, wasn't supported, or
+//	                  fell below threshold is simply absent, not sent as an explicit "no" (mirrors
+//	                  "suggestions": may never arrive at all if Jev isn't configured, every source's
+//	                  budget cap was already hit, or nothing was found supported — the frontend
+//	                  should treat that as a normal, silent outcome, not an error).
 //	"error"         — message: something failed
 type ServerEvent struct {
 	Type     string         `json:"type"`
@@ -286,4 +307,31 @@ type ServerEvent struct {
 	// PendingQuestion mirrors store.Message.PendingQuestion for the live
 	// "done" event — see the doc comment above.
 	PendingQuestion *tools.PendingQuestion `json:"pending_question,omitempty"`
+	// Verification is the "verification" event's own payload — see its
+	// doc comment above.
+	Verification []VerificationMark `json:"verification,omitempty"`
+	// VerificationDebug carries every claim's full result — including
+	// ones that didn't clear the confidence threshold, or couldn't be
+	// checked at all — only ever set when the turn that produced this
+	// event had ClientMessage.WaitVerification set. Nil on every real
+	// chat/WebSocket turn; see ask.go's AskRequest.WaitVerification.
+	VerificationDebug []ClaimVerification `json:"verification_debug,omitempty"`
+}
+
+// VerificationMark is one claim/source pair that cleared the "found in
+// source" confidence threshold — see the "verification" ServerEvent doc
+// comment and docs/plans/source-verification-badge.md. ClaimIndex is the
+// zero-based occurrence of URL among this answer's own inline citation
+// links, in document order (first time the URL is cited = 0, second = 1,
+// ...) — the frontend uses it to mark the *specific* chip the claim came
+// from, not every chip citing that URL, since one source can back several
+// claims with different verdicts. Choice is always "supported" today (see
+// gateway/verification.go's doc comment on why only supported-at-threshold
+// entries are ever sent) but kept as a string, not a bool, so a future
+// "contradicted" warning mark doesn't need a wire-format change.
+type VerificationMark struct {
+	URL        string  `json:"url"`
+	ClaimIndex int     `json:"claim_index"`
+	Choice     string  `json:"choice"`
+	Confidence float64 `json:"confidence"`
 }

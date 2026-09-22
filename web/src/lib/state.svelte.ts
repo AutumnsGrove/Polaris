@@ -13,7 +13,8 @@ import type {
 	UploadedAttachment,
 	MessageAttachment,
 	VariantGroup,
-	MessageSearchResult
+	MessageSearchResult,
+	VerificationMark
 } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
@@ -35,6 +36,20 @@ function safeParseObject(json: string): Record<string, any> {
 	} catch {
 		return {};
 	}
+}
+
+// Sets citations[].verified (the aggregate "found in source" mark the
+// source-list chip uses) from marks — true for any citation whose URL has
+// at least one supported claim. citations is left untouched (same array
+// reference) when marks is empty, so callers that always run this don't
+// force an unnecessary re-render. See ChatTurn.verification's doc comment
+// for why claim_index-level precision lives separately, for the inline
+// chip.
+function applyVerification(citations: Citation[] | undefined, marks: VerificationMark[] | undefined): Citation[] | undefined {
+	if (!citations || !marks || marks.length === 0) return citations;
+	const verifiedUrls = new Set(marks.filter((m) => m.choice === 'supported').map((m) => m.url));
+	if (verifiedUrls.size === 0) return citations;
+	return citations.map((c) => (verifiedUrls.has(c.url) ? { ...c, verified: true } : c));
 }
 
 // TEMPORARY instrumentation for chasing the "thread bump-back" bug (see
@@ -611,29 +626,33 @@ export class AppState {
 	}
 
 	private buildTurnsFromMessages(messages: any[], eventsByTurn: Map<string, StoredEvent[]>): ChatTurn[] {
-		return messages.map((m: any) => ({
-			role: m.role,
-			content: m.content,
-			citations: safeParseJSON<Citation>(m.citations),
-			cards: safeParseJSON<Card>(m.cards),
-			chart: m.chart ? (safeParseObject(m.chart) as unknown as ChartSpec) : undefined,
-			pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
-			costUsd: m.cost_usd,
-			durationMs: m.duration_ms || undefined,
-			// Both roles now carry their real DB id — see ChatTurn.id's doc
-			// comment (assistant turns need it too, for read-aloud's
-			// persisted-audio attachment; this used to be user-only before
-			// that existed).
-			id: m.id,
-			ttsAudioFile: m.tts_audio_file_id
-				? `/api/workspace/${this.currentThreadId}/${m.tts_audio_file_id}`
-				: undefined,
-			attachments: safeParseJSON<MessageAttachment>(m.attachments),
-			timeline:
-				m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
-					? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
-					: undefined
-		}));
+		return messages.map((m: any) => {
+			const verification = m.verification ? safeParseJSON<VerificationMark>(m.verification) : undefined;
+			return {
+				role: m.role,
+				content: m.content,
+				citations: applyVerification(safeParseJSON<Citation>(m.citations), verification),
+				verification,
+				cards: safeParseJSON<Card>(m.cards),
+				chart: m.chart ? (safeParseObject(m.chart) as unknown as ChartSpec) : undefined,
+				pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
+				costUsd: m.cost_usd,
+				durationMs: m.duration_ms || undefined,
+				// Both roles now carry their real DB id — see ChatTurn.id's doc
+				// comment (assistant turns need it too, for read-aloud's
+				// persisted-audio attachment; this used to be user-only before
+				// that existed).
+				id: m.id,
+				ttsAudioFile: m.tts_audio_file_id
+					? `/api/workspace/${this.currentThreadId}/${m.tts_audio_file_id}`
+					: undefined,
+				attachments: safeParseJSON<MessageAttachment>(m.attachments),
+				timeline:
+					m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
+						? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
+						: undefined
+			};
+		});
 	}
 
 	async openThread(id: string) {
@@ -1291,6 +1310,26 @@ export class AppState {
 			if (eventThreadId === this.currentThreadId || eventThreadId === this.ghostThreadId) {
 				this.totalCost += e.cost_usd ?? 0;
 				this.suggestions = e.suggestions ?? [];
+			}
+			return;
+		}
+
+		// 'verification' arrives even later than 'suggestions' — same
+		// "already past every in-flight-turn gate" situation, but unlike
+		// suggestions (which just replaces a flat list tied to whatever's
+		// most recent) this has to find the *specific* message it belongs
+		// to: the user may have sent another message, or even navigated to
+		// a different thread, by the time it lands. Never fires for a
+		// ghost turn — gateway/turn.go skips the whole verification pass
+		// for one, since there's no persisted message id to attach marks
+		// to, so no ghostThreadId check is needed here.
+		if (e.type === 'verification') {
+			if (eventThreadId === this.currentThreadId) {
+				const turn = this.turns.find((t) => t.id === e.assistant_message_id);
+				if (turn) {
+					turn.verification = e.verification;
+					turn.citations = applyVerification(turn.citations, e.verification);
+				}
 			}
 			return;
 		}

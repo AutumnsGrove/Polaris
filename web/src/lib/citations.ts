@@ -1,4 +1,14 @@
-import type { Citation } from './types';
+import type { Citation, VerificationMark } from './types';
+
+// lucide's check-check glyph (two overlapping checkmarks), inlined as raw
+// SVG rather than imported from @lucide/svelte — that package is
+// Svelte-component-based and this module does plain DOM string
+// manipulation, not component rendering. Sized/colored entirely by CSS
+// (.citation-chip's :global rule in ChatTurnView.svelte), not inline
+// attributes, so it inherits the chip's currentColor like every other
+// lucide icon in this app.
+const checkCheckIconSVG =
+	'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="citation-verified-icon"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>';
 
 /**
  * Turns the model's inline `[Title](URL)` citations — already rendered to
@@ -26,14 +36,32 @@ import type { Citation } from './types';
  * content of that cell (an item name, a project title) — replacing it with
  * a generic source name like "Github" destroys the one piece of data the
  * row exists to show, with no surrounding sentence to recover it from.
+ *
+ * verification, when present, marks the specific chip a "found in source"
+ * check passed for — see docs/plans/source-verification-badge.md and
+ * VerificationMark's doc comment. Matched by (url, occurrence index): the
+ * same URL can be cited more than once in one answer with different
+ * verdicts, so this walks anchors in document order and only marks the
+ * *nth* occurrence of a URL whose matching claim_index cleared the
+ * threshold, not every chip citing that URL (the source-list chip's own
+ * aggregate mark, Citation.verified, covers "any claim for this URL" —
+ * see ChatTurnView.svelte's .source-chip).
  */
-export function renderInlineCitations(html: string, citations: Citation[]): string {
+export function renderInlineCitations(html: string, citations: Citation[], verification?: VerificationMark[]): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
 
 	const urlToCitation = new Map(citations.map((c) => [c.url, c]));
+	const verifiedClaimIndexes = new Map<string, Set<number>>();
+	for (const mark of verification ?? []) {
+		if (mark.choice !== 'supported') continue;
+		if (!verifiedClaimIndexes.has(mark.url)) verifiedClaimIndexes.set(mark.url, new Set());
+		verifiedClaimIndexes.get(mark.url)!.add(mark.claim_index);
+	}
+
 	const container = document.createElement('div');
 	container.innerHTML = html;
 
+	const occurrenceByUrl = new Map<string, number>();
 	for (const anchor of container.querySelectorAll('a[href]')) {
 		if (anchor.closest('td, th')) continue;
 
@@ -41,12 +69,21 @@ export function renderInlineCitations(html: string, citations: Citation[]): stri
 		const citation = urlToCitation.get(href);
 		if (!citation) continue;
 
+		const occurrence = occurrenceByUrl.get(href) ?? 0;
+		occurrenceByUrl.set(href, occurrence + 1);
+
 		const label = citationLabel(citation);
 		anchor.setAttribute('class', 'citation-chip');
 		anchor.setAttribute('target', '_blank');
 		anchor.setAttribute('rel', 'noreferrer');
-		anchor.setAttribute('title', citation.title || href);
-		anchor.textContent = label;
+		anchor.textContent = '';
+		if (verifiedClaimIndexes.get(href)?.has(occurrence)) {
+			anchor.insertAdjacentHTML('afterbegin', checkCheckIconSVG);
+			anchor.setAttribute('title', `${citation.title || href} — found in source`);
+		} else {
+			anchor.setAttribute('title', citation.title || href);
+		}
+		anchor.appendChild(document.createTextNode(label));
 	}
 
 	return container.innerHTML;

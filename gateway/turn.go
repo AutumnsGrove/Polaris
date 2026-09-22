@@ -1069,6 +1069,79 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			})
 		}()
 	}
+
+	// Per-claim "found in source" verification — same detached,
+	// post-"done" shape as follow-up suggestions above, for the same
+	// reason (never stall the visible answer behind an extra async pass).
+	// Skipped for a ghost turn: the whole point is a persisted mark tied
+	// to a specific message id, and a ghost turn's assistant message is
+	// never persisted at all (assistantMsgID stays 0 — see the
+	// !anonymous guard around where it's set, above), so there'd be
+	// nothing to attach a mark to.
+	if !anonymous && assistantMsgID != 0 && ctx.Err() == nil {
+		runAndReportVerification := func() {
+			// Guards this whole pass regardless of which path below calls
+			// it — the synchronous (WaitVerification) call runs inside
+			// handleAsk's normal net/http handler stack, which already
+			// recovers a top-level panic on its own, but the detached
+			// goroutine path does not (see ws.go's turn goroutine
+			// needing its own recover for the exact same reason). Kept
+			// here, once, rather than duplicated in both call sites below.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic during verification", "thread", threadID, "panic", r)
+				}
+			}()
+			before := agentCtx.JevSpentThisTurn()
+			results := runVerification(agentCtx, result.Answer, result.Citations)
+			if delta := agentCtx.JevSpentThisTurn() - before; delta > 0 {
+				if err := s.db.AddMessageCost(assistantMsgID, delta); err != nil {
+					log.Warn("failed to record verification cost", "err", err)
+				}
+			}
+			marks := filterSupportedMarks(results)
+			if len(marks) > 0 {
+				marksJSON, err := json.Marshal(marks)
+				if err != nil {
+					log.Warn("failed to marshal verification marks", "err", err)
+					return
+				}
+				if err := s.db.SetMessageVerification(assistantMsgID, string(marksJSON)); err != nil {
+					log.Warn("failed to persist verification marks", "err", err)
+					logEvent(storageThreadID, "warn", "verification", "persisting verification marks failed", map[string]interface{}{"err": err.Error()}, turnID)
+					return
+				}
+			}
+			// Sent even when marks is empty when WaitVerification asked
+			// for it — a debug/stress-testing caller needs to tell "ran,
+			// found nothing" apart from "never ran at all", which a
+			// missing event can't distinguish. A real chat turn (never
+			// WaitVerification) keeps the old behavior of staying silent
+			// when there's nothing to show.
+			if len(marks) == 0 && !msg.WaitVerification {
+				return
+			}
+			evt := ServerEvent{
+				Type:               "verification",
+				ThreadID:           threadID,
+				AssistantMessageID: assistantMsgID,
+				Verification:       marks,
+			}
+			if msg.WaitVerification {
+				evt.VerificationDebug = results
+			}
+			send(evt)
+		}
+		if msg.WaitVerification {
+			// Synchronous, not detached — handleAsk (ask.go) blocks on
+			// handleTurn's return and only sees events sent before it
+			// returns, so the debug/stress-testing path can't use the
+			// normal post-"done" async goroutine below at all.
+			runAndReportVerification()
+		} else {
+			go runAndReportVerification()
+		}
+	}
 }
 
 // logTurnEvent persists the subset of streamed turn events worth keeping

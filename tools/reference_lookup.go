@@ -157,6 +157,13 @@ func lookupWikipedia(ctx *Context, query string) (string, error) {
 			return "", fmt.Errorf("no wikipedia article found for %q", query)
 		}
 		ctx.AddCitation(Citation{Title: page.Title, URL: page.FullURL, ImageURL: page.Thumbnail.Source})
+		// Real article text, not a search snippet — the same "worth
+		// checking a claim against" bar web_read's own AddEvidence call
+		// applies (see its doc comment). Confirmed live: this is one of
+		// the model's most common tools for exactly the kind of factual
+		// question source verification targets, so leaving it unwired
+		// left every reference_lookup-backed claim silently unverifiable.
+		ctx.AddEvidence(page.FullURL, page.Extract)
 		return fmt.Sprintf("%s (Wikipedia)\n\n%s", page.Title, page.Extract), nil
 	}
 	return "", fmt.Errorf("no wikipedia article found for %q", query)
@@ -210,6 +217,11 @@ func lookupArxiv(ctx *Context, query string, maxResults int) (string, error) {
 		id := strings.TrimSpace(e.ID)
 		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n\n", i+1, title, id, summary)
 		ctx.AddCitation(Citation{Title: title, URL: id, ImageURL: arxivLogoURL})
+		// The abstract, same "real fetched text, not a snippet" bar as
+		// lookupWikipedia above — a paper's own claim is checkable
+		// against it (e.g. a stated result or finding), even though it's
+		// much shorter than a full paper.
+		ctx.AddEvidence(id, summary)
 	}
 	return sb.String(), nil
 }

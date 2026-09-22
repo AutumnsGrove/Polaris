@@ -194,6 +194,9 @@ func lookupMovieRecommendations(ctx *Context, title, mediaType string, year int)
 		URL:      tmdbPageURL(mediaType, resolved.ID),
 		ImageURL: tmdbPosterURL(resolved.PosterPath),
 	})
+	if overview := strings.TrimSpace(resolved.Overview); overview != "" {
+		ctx.AddEvidence(tmdbPageURL(mediaType, resolved.ID), overview)
+	}
 	for _, r := range recs {
 		ctx.AddCard(Card{
 			Title:    r.displayTitle(mediaType),

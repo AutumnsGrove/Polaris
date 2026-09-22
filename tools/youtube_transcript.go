@@ -131,6 +131,10 @@ func handleYouTubeTranscript(argsJSON string, ctx *Context, callID string) strin
 
 	log.Info("youtube_transcript", "video_id", videoID, "title", title, "chars", len(transcript))
 	ctx.AddCitation(Citation{Title: title, URL: watchURL})
+	// A full real transcript, same "worth checking a claim against" bar
+	// web_read's own AddEvidence call applies — see its doc comment and
+	// reference_lookup.go's matching addition.
+	ctx.AddEvidence(watchURL, transcript)
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "youtube_transcript",
 		"result":    transcript,

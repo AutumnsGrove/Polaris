@@ -191,6 +191,18 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- above), and a message could plausibly carry both a user upload and a
 	-- TTS synthesis. '' for every message with no persisted read-aloud audio.
 	tts_audio_file_id TEXT NOT NULL DEFAULT '',
+	-- verification: JSON-encoded []gateway.VerificationMark — per-claim
+	-- "found in source" results from checking this assistant message's
+	-- own inline citations against the text actually fetched for them
+	-- (see docs/plans/source-verification-badge.md), set via
+	-- SetMessageVerification once the assistant message's ID exists, same
+	-- post-hoc-UPDATE shape as suggestions/cards/chart above — the
+	-- verification pass runs in a detached goroutine after "done" ships,
+	-- so it's never known at AddMessage time. '[]' for user messages and
+	-- for any assistant message with no citations, an unconfigured Jev
+	-- client, or nothing found supported at/above the confidence
+	-- threshold.
+	verification TEXT NOT NULL DEFAULT '[]',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1000,6 +1012,10 @@ var migrations = []string{
 	// be — which is "deepseek" today, but only by coincidence, not by
 	// anything this row actually says.
 	`UPDATE pulsar_daily_config SET architect_model = 'deepseek' WHERE architect_model = 'deepseek-pro'`,
+	// verification — see the schema comment above. Appended at the end
+	// per this file's own established rule (positional user_version
+	// tracking, never insert mid-list).
+	`ALTER TABLE messages ADD COLUMN verification TEXT NOT NULL DEFAULT '[]'`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1171,8 +1187,14 @@ type Message struct {
 	// synthesis for this assistant message — see the schema comment above
 	// messages.tts_audio_file_id and SetMessageTTSAudioFileID. "" for a
 	// message with no persisted read-aloud audio.
-	TTSAudioFileID string    `json:"tts_audio_file_id,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	TTSAudioFileID string `json:"tts_audio_file_id,omitempty"`
+	// Verification is JSON-encoded []gateway.VerificationMark — see the
+	// schema comment above messages.verification and
+	// SetMessageVerification. "[]" for a message with no verification
+	// pass run, or nothing found supported at/above the confidence
+	// threshold.
+	Verification string    `json:"verification"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // Attachment is one file included with a user message — see
@@ -1354,8 +1376,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -2095,7 +2117,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2108,7 +2130,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2127,11 +2149,11 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	var m Message
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.CreatedAt)
+		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt)
 	if err != nil {
 		return Message{}, err
 	}
@@ -2199,6 +2221,34 @@ func (s *Store) SetMessagePendingQuestion(messageID int64, pendingQuestionJSON s
 func (s *Store) SetMessageSuggestions(messageID int64, suggestionsJSON string) error {
 	_, err := s.db.Exec(`UPDATE messages SET suggestions = ? WHERE id = ?`, suggestionsJSON, messageID)
 	return err
+}
+
+// SetMessageVerification records per-claim "found in source" results (see
+// the messages.verification schema comment) after the assistant message was
+// already persisted — same post-hoc-UPDATE shape as SetMessageSuggestions
+// above, since verification runs in its own detached goroutine after "done"
+// ships.
+func (s *Store) SetMessageVerification(messageID int64, verificationJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET verification = ? WHERE id = ?`, verificationJSON, messageID)
+	return err
+}
+
+// AddMessageCost adds delta to a specific message's own cost_usd — used for
+// costs incurred after AddMessage's own cost_usd was already written, e.g.
+// the verification pass's real Jev spend (unlike AddThreadCost, which only
+// bumps the thread total, this needs to land on the exact message the
+// verification belongs to). A no-op, not an error, if the message was
+// deleted in the meantime — a race that just means nobody's looking at the
+// cost anymore, not something worth failing loudly over.
+func (s *Store) AddMessageCost(messageID int64, delta float64) error {
+	res, err := s.db.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		log.Warn("AddMessageCost: message no longer exists, dropping cost", "message_id", messageID, "delta", delta)
+	}
+	return nil
 }
 
 // AddThreadCost adds delta to a thread's running cost total — used for
