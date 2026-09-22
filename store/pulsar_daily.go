@@ -39,12 +39,12 @@ type PulsarDailyConfig struct {
 	// authored task text, so CustomInstructions' "append a steering
 	// sentence to the task" mechanism has nothing to append to — it needs
 	// its own typed field, not a freeform instruction.
-	WeatherLocation string                   `json:"weather_location"`
-	ArchitectModel  string                   `json:"architect_model"`
-	WriterModel     string                   `json:"writer_model"`
-	TimeOfDay       string                   `json:"time_of_day"`
-	CreatedAt       time.Time                `json:"created_at"`
-	LastGeneratedAt *time.Time               `json:"last_generated_at"`
+	WeatherLocation string     `json:"weather_location"`
+	ArchitectModel  string     `json:"architect_model"`
+	WriterModel     string     `json:"writer_model"`
+	TimeOfDay       string     `json:"time_of_day"`
+	CreatedAt       time.Time  `json:"created_at"`
+	LastGeneratedAt *time.Time `json:"last_generated_at"`
 	// Enabled is the Daily-wide on/off switch, checked by the scheduler
 	// before any per-block due-check — off means no edition generates at
 	// all today, not "generate but don't show it". Defaults true (see the

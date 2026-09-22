@@ -272,8 +272,8 @@ func handleCalculator(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
-		"tool": "calculator",
-		"args": map[string]interface{}{"expression": expression},
+		"tool":    "calculator",
+		"args":    map[string]interface{}{"expression": expression},
 		"call_id": callID,
 	})
 

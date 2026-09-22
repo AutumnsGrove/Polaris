@@ -52,7 +52,7 @@ var memoryDef = llm.ToolDef{
 					"description": "The full memory body, only fetched on demand via view. For feedback/project memories, lead with the fact or rule, then a Why: line and a How to apply: line. Required for write; optional for edit (omit to leave unchanged).",
 				},
 				"occurred_at": map[string]interface{}{
-					"type": "string",
+					"type":        "string",
 					"description": "Optional ISO date (YYYY-MM-DD) for when this fact became true or was learned — set it when the date itself matters (a decision, a deadline, a fact that could go stale) and convert relative phrasing (\"yesterday\", \"last week\") to an absolute date using today's date. Omit for durable facts with no meaningful date. Optional for both write and edit; omit on edit to leave unchanged.",
 				},
 			},
