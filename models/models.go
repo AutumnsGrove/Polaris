@@ -45,6 +45,41 @@ var Registry = []config.ModelConfig{
 		Multimodal: true,
 	},
 	{
+		// Genuinely multimodal (input_modalities: text+image+video+audio)
+		// per a live GET /api/v1/models/xiaomi/mimo-v2.6-flash/endpoints
+		// survey on 2026-09-22 — unlike mimo-pro's v2.5 generation above,
+		// this tier isn't text-only. Single provider (Xiaomi itself,
+		// fp8), same shape as the v2.5 entries. Additive alongside the
+		// v2.5 pair above, not a replacement, per this file's existing
+		// convention for version bumps (see deepseek-v41-flash below).
+		ID:          "mimo-v26-flash",
+		Name:        "MiMo v2.6 Flash",
+		Model:       "xiaomi/mimo-v2.6-flash",
+		Provider:    []string{"xiaomi/fp8"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal: true,
+	},
+	{
+		// Same live-endpoint survey as mimo-v26-flash above (2026-09-22):
+		// genuinely multimodal, single Xiaomi/fp8 provider.
+		ID:          "mimo-v26-pro",
+		Name:        "MiMo v2.6 Pro",
+		Model:       "xiaomi/mimo-v2.6-pro",
+		Provider:    []string{"xiaomi/fp8"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal: true,
+	},
+	{
 		// Pinned to GMICloud (fp8 — DeepSeek's own native training/serving
 		// precision, not a downgrade) with StreamLake as a same-tier
 		// fallback, per a live OpenRouter /endpoints price+quantization
