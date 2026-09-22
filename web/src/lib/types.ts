@@ -310,10 +310,16 @@ export interface ToggleableTool {
 	description: string;
 }
 
+export interface ModelPricing {
+	prompt_per_m: number;
+	completion_per_m: number;
+}
+
 export interface ModelOption {
 	id: string;
 	name: string;
 	default: boolean;
+	pricing?: ModelPricing;
 }
 
 export interface Thread {

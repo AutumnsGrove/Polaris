@@ -6,6 +6,13 @@
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
+	import type { ModelPricing } from '$lib/types';
+
+	function formatPricing(pricing: ModelPricing | undefined): string {
+		if (!pricing) return '';
+		if (pricing.prompt_per_m === 0 && pricing.completion_per_m === 0) return 'Free';
+		return `$${pricing.prompt_per_m} / $${pricing.completion_per_m} per M`;
+	}
 
 	// Everything that used to be separate controls (model picker, focus
 	// modes, deep research, attach) is consolidated into one "+"-triggered
@@ -229,7 +236,12 @@
 								{#each appState.models as model (model.id)}
 									<button type="button" class="row-btn" onclick={() => selectModel(model.id)}>
 										<Cpu size={16} />
-										<span class="row-label">{model.name}</span>
+										<span class="row-label">
+											{model.name}
+											{#if model.pricing}
+												<span class="row-description">{formatPricing(model.pricing)}</span>
+											{/if}
+										</span>
 										{#if appState.selectedModel === model.id}<Check size={14} class="row-check" />{/if}
 									</button>
 								{/each}

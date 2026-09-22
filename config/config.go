@@ -349,6 +349,26 @@ type ModelConfig struct {
 	// than the orchestrator itself typically runs on. See
 	// Config.ResearchWorkerModel.
 	ResearchWorker bool `yaml:"research_worker"`
+
+	// Pricing is a static snapshot (USD per million tokens) surfaced in
+	// the model picker so cost is visible before picking a model.
+	// Deliberately not fetched live from OpenRouter: several registry
+	// entries route through a pinned, non-default provider (e.g.
+	// deepseek-pro's gmicloud/fp8+streamlake) whose actual price differs
+	// from whatever OpenRouter's /models endpoint reports as that model's
+	// blended default, and some (deepseek) have real time-of-day pricing
+	// swings — a live number would drift between "the price we actually
+	// pay" and "some other provider/hour's price" with no way for the UI
+	// to tell the difference. Nil means unset/unknown, not free.
+	Pricing *PricingConfig `yaml:"pricing"`
+}
+
+// PricingConfig is a static, hand-maintained snapshot of a model's cost —
+// re-check against OpenRouter's live /api/v1/models pricing when bumping
+// a registry entry's Model string, same as the reasoning-effort tiers.
+type PricingConfig struct {
+	PromptPerM     float64 `yaml:"prompt_per_m"`     // USD per 1M input tokens
+	CompletionPerM float64 `yaml:"completion_per_m"` // USD per 1M output tokens
 }
 
 // ReasoningConfig mirrors OpenRouter's `reasoning` request field

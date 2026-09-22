@@ -38,6 +38,7 @@ var Registry = []config.ModelConfig{
 		// $0.22/$0.66) at comparable uptime (99.99%/99.97%/99.99% at
 		// 30m/5m/1d). See config.ModelConfig.ResearchWorker.
 		ResearchWorker: true,
+		Pricing:        &config.PricingConfig{PromptPerM: 0.14, CompletionPerM: 0.28},
 	},
 	{
 		// Replaces the v2.5 "mimo-pro" entry (2026-09-22), same ID-
@@ -55,6 +56,7 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
+		Pricing:    &config.PricingConfig{PromptPerM: 0.435, CompletionPerM: 0.87},
 	},
 	{
 		// Pinned to GMICloud (fp8 — DeepSeek's own native training/serving
@@ -80,6 +82,7 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
+		Pricing: &config.PricingConfig{PromptPerM: 1.12, CompletionPerM: 3.36},
 	},
 	{
 		// Deprecates the old V4 Flash "deepseek" entry (2026-09-22) —
@@ -128,6 +131,9 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
+		// Off-peak official rate (~79% of the week, see comment above) —
+		// the number that actually applies most of the time.
+		Pricing: &config.PricingConfig{PromptPerM: 0.15, CompletionPerM: 0.60},
 	},
 	{
 		// GPT-6 Luna, released 2026-09-22 alongside GPT-6 Sol — the
@@ -149,6 +155,7 @@ var Registry = []config.ModelConfig{
 			// one step above the model's own "medium" default.
 			Effort: "high",
 		},
+		Pricing: &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.50},
 	},
 	{
 		// Diffusion-based (dLLM), not autoregressive — generates/refines
@@ -169,6 +176,7 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
+		Pricing: &config.PricingConfig{PromptPerM: 0.04, CompletionPerM: 0.15},
 	},
 	{
 		// Replaces nemotron-ultra (2026-09-14): that model's single free
@@ -203,5 +211,6 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
+		Pricing:    &config.PricingConfig{PromptPerM: 0, CompletionPerM: 0},
 	},
 }
