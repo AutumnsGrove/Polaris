@@ -27,6 +27,17 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
+		// Tier 2 Deep Research sub-agent default (see
+		// docs/plans/deep-research-two-tier.md), moved here from the
+		// "deepseek" entry below (2026-09-22). Same live endpoint survey
+		// cited above confirms tool support (supported_parameters
+		// includes "tools"; supports_tool_choice auto/required both
+		// true) and a 1,048,576-token context window, well beyond
+		// deepseek's 384K-token providers -- also meaningfully cheaper
+		// per token ($0.14/$0.28 per M vs. deepseek's $0.15/$0.60 to
+		// $0.22/$0.66) at comparable uptime (99.99%/99.97%/99.99% at
+		// 30m/5m/1d). See config.ModelConfig.ResearchWorker.
+		ResearchWorker: true,
 	},
 	{
 		// Replaces the v2.5 "mimo-pro" entry (2026-09-22), same ID-
@@ -75,11 +86,10 @@ var Registry = []config.ModelConfig{
 		// deepseek/deepseek-v4-flash-0731 with its five-deep Baidu/
 		// DeepInfra/StreamLake/BaseTen/Novita fallback chain — in favor of
 		// V4.1 Flash. Reused the "deepseek" ID (rather than dropping the
-		// separate "deepseek-v41-flash" ID) so existing thread selections,
-		// config.yaml's default_model/model_overrides, and the
-		// ResearchWorker designation below all keep resolving across the
-		// swap, same ID-stability approach as the MiMo v2.6 replacement
-		// above.
+		// separate "deepseek-v41-flash" ID) so existing thread selections
+		// and config.yaml's default_model/model_overrides keep resolving
+		// across the swap, same ID-stability approach as the MiMo v2.6
+		// replacement above.
 		//
 		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash/
 		// endpoints survey (originally 2026-09-12, re-confirmed
@@ -118,14 +128,6 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		// Tier 2 Deep Research sub-agent default (see
-		// docs/plans/deep-research-two-tier.md), carried over from the old
-		// V4 Flash entry this replaces rather than assumed: the same live
-		// endpoint survey above confirms both providers report "tools" in
-		// supported_parameters, with tool_choice "auto" support on both
-		// and full none/auto/required/function support on the Fireworks
-		// fallback. See config.ModelConfig.ResearchWorker.
-		ResearchWorker: true,
 	},
 	{
 		ID:          "luna",
