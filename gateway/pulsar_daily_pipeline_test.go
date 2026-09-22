@@ -48,7 +48,7 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -174,7 +174,7 @@ func TestRunDailyPipeline_ItemizedTopStory(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -241,7 +241,7 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"quote", "on_this_day"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -303,7 +303,7 @@ func TestRunDailyPipeline_CustomBlock(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"quote", "on_this_day", "word_of_day"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 		"custom_blocks": []map[string]string{
@@ -413,7 +413,7 @@ func TestRunDailyPipeline_UnchangedBlockDroppedFromEdition(t *testing.T) {
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"headlines", "quote", "word_of_day", "on_this_day", "sports"},
 		"sports_teams":    "Lakers",
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -484,7 +484,7 @@ func TestHandleGenerateDailyNow(t *testing.T) {
 	h := newTestHarness(t, srv.URL)
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"quote", "on_this_day", "headlines", "trending"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "23:59", // far in the future — only the manual trigger should fire this run
 	})

@@ -58,32 +58,14 @@ var Registry = []config.ModelConfig{
 		Multimodal: true,
 		Pricing:    &config.PricingConfig{PromptPerM: 0.435, CompletionPerM: 0.87},
 	},
-	{
-		// Pinned to GMICloud (fp8 — DeepSeek's own native training/serving
-		// precision, not a downgrade) with StreamLake as a same-tier
-		// fallback, per a live OpenRouter /endpoints price+quantization
-		// survey on 2026-08-29: the official "deepseek" endpoint's price
-		// here doubles on weekday UTC 01:00-04:00 and 06:00-10:00 (see its
-		// `pricing.overrides`), landing at parity with the generic
-		// $1.32/$3.96-per-M-token third-party tier for those hours.
-		// GMICloud/StreamLake sit at ~$1.12/$3.36 per M tokens flat,
-		// all day — cheaper than official even off-peak, with no
-		// fp4-quantized provider actually cheaper than these fp8/native
-		// ones. DeepInfra fp8 prices lower still but caps completions at
-		// 16K tokens (vs 384K+ here) and ran ~90% uptime in the survey —
-		// not viable for this model's reasoning output.
-		ID:          "deepseek-pro",
-		Name:        "DeepSeek V4 Pro",
-		Model:       "deepseek/deepseek-v4-pro-0813",
-		Provider:    []string{"gmicloud/fp8", "streamlake"},
-		Temperature: 0.4,
-		MaxTokens:   32000,
-		Reasoning: &config.ReasoningConfig{
-			Enabled: true,
-			Effort:  "medium",
-		},
-		Pricing: &config.PricingConfig{PromptPerM: 1.12, CompletionPerM: 3.36},
-	},
+	// "deepseek-pro" (DeepSeek V4 Pro, deepseek/deepseek-v4-pro-0813) was
+	// retired 2026-09-22: DeepSeek's own V4.1 Flash release notes state
+	// Flash supersedes Pro for essentially every use case, and at $1.12/
+	// $3.36 per M it cost ~7-8x the "deepseek" entry below ($0.15/$0.60)
+	// for a model its own maker says isn't worth reaching for anymore.
+	// Was also Pulsar Daily's architect_model default — see
+	// store/store.go's schema comment and migration for the retirement
+	// of that reference too.
 	{
 		// Deprecates the old V4 Flash "deepseek" entry (2026-09-22) —
 		// deepseek/deepseek-v4-flash-0731 with its five-deep Baidu/

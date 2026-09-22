@@ -86,7 +86,7 @@
 		customBlocks = customBlocks.filter((b) => b.key !== key);
 	}
 
-	let architectModel = $state(cfg?.architect_model ?? 'deepseek-pro');
+	let architectModel = $state(cfg?.architect_model ?? 'deepseek');
 	let writerModel = $state(cfg?.writer_model ?? 'deepseek');
 	let timeOfDay = $state(cfg?.time_of_day ?? '07:00');
 

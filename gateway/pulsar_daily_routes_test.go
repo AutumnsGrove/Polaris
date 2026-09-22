@@ -29,7 +29,7 @@ func TestHandleGetDailyConfig_CreatesDefaultsOnFirstRead(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if cfg.TimeOfDay != "07:00" || cfg.ArchitectModel != "deepseek-pro" {
+	if cfg.TimeOfDay != "07:00" || cfg.ArchitectModel != "deepseek" {
 		t.Errorf("cfg = %+v, want the column defaults", cfg)
 	}
 }
@@ -54,7 +54,7 @@ func TestHandleUpdateDailyConfig_HappyPath(t *testing.T) {
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"weather", "quote"},
 		"sports_teams":    "",
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "06:30",
 	})
@@ -79,7 +79,7 @@ func TestHandleUpdateDailyConfig_RejectsSportsWithoutTeams(t *testing.T) {
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"sports"},
 		"sports_teams":    "",
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -94,7 +94,7 @@ func TestHandleUpdateDailyConfig_RejectsUnknownBlock(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"top_story"}, // not independently toggleable — see dailyBlockRegistry's doc comment
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -110,7 +110,7 @@ func TestHandleUpdateDailyConfig_CustomInstructionsRoundTrip(t *testing.T) {
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":      []string{"headlines", "local"},
 		"custom_instructions": map[string]string{"headlines": "focus on AI", "local": "Beaverton, OR and also Portland, OR"},
-		"architect_model":     "deepseek-pro",
+		"architect_model":     "deepseek",
 		"writer_model":        "deepseek",
 		"time_of_day":         "07:00",
 	})
@@ -137,7 +137,7 @@ func TestHandleUpdateDailyConfig_RejectsUnknownCustomInstructionBlock(t *testing
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":      []string{"headlines"},
 		"custom_instructions": map[string]string{"nonexistent_block": "whatever"},
-		"architect_model":     "deepseek-pro",
+		"architect_model":     "deepseek",
 		"writer_model":        "deepseek",
 		"time_of_day":         "07:00",
 	})
@@ -153,7 +153,7 @@ func TestHandleUpdateDailyConfig_WeatherLocationRoundTrip(t *testing.T) {
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":   []string{"weather"},
 		"weather_location": "Seattle, WA",
-		"architect_model":  "deepseek-pro",
+		"architect_model":  "deepseek",
 		"writer_model":     "deepseek",
 		"time_of_day":      "07:00",
 	})
@@ -179,7 +179,7 @@ func TestHandleUpdateDailyConfig_CustomBlocksRoundTrip(t *testing.T) {
 		"custom_blocks": []map[string]string{
 			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": "Check NVDA and AAPL closing prices"},
 		},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -205,7 +205,7 @@ func TestHandleUpdateDailyConfig_RejectsCustomBlockCollidingWithBuiltIn(t *testi
 		"custom_blocks": []map[string]string{
 			{"key": "weather", "title": "My Weather", "instructions": "whatever"},
 		},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -223,7 +223,7 @@ func TestHandleUpdateDailyConfig_RejectsIncompleteCustomBlock(t *testing.T) {
 		"custom_blocks": []map[string]string{
 			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": ""},
 		},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -242,7 +242,7 @@ func TestHandleUpdateDailyConfig_RejectsDuplicateCustomBlockKeys(t *testing.T) {
 			{"key": "custom_stocks", "title": "Stock Watchlist", "instructions": "Check NVDA"},
 			{"key": "custom_stocks", "title": "Duplicate", "instructions": "Check AAPL"},
 		},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "07:00",
 	})
@@ -257,7 +257,7 @@ func TestHandleUpdateDailyConfig_RejectsBadTimeOfDay(t *testing.T) {
 
 	resp := putDailyConfig(t, h, map[string]interface{}{
 		"enabled_blocks":  []string{"weather"},
-		"architect_model": "deepseek-pro",
+		"architect_model": "deepseek",
 		"writer_model":    "deepseek",
 		"time_of_day":     "not-a-time",
 	})

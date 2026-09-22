@@ -536,7 +536,7 @@ CREATE TABLE IF NOT EXISTS pulsar_daily_config (
 	-- uses. See the plan doc's "Model tiering" for why these are split:
 	-- architect judges (Stage A diff-verdicts, Stage B ranking), writer
 	-- generates prose (Stage A block content, Stage C elaboration).
-	architect_model TEXT NOT NULL DEFAULT 'deepseek-pro',
+	architect_model TEXT NOT NULL DEFAULT 'deepseek',
 	writer_model TEXT NOT NULL DEFAULT 'deepseek',
 	-- time_of_day: "HH:MM", 24-hour, server-local — same convention and
 	-- same single-operator reasoning as pulsar_routines.time_of_day.
@@ -991,6 +991,15 @@ var migrations = []string{
 	// chat and call view, so this has to be settable on any later turn,
 	// not just fixed at creation).
 	`ALTER TABLE threads ADD COLUMN used_transponder INTEGER NOT NULL DEFAULT 0`,
+	// deepseek-pro was retired from models/models.go's registry
+	// (2026-09-22, see that file's comment) — repoint any already-stored
+	// Pulsar Daily config still pointing at the dead ID to "deepseek"
+	// (V4.1 Flash), the same model CREATE TABLE's own architect_model
+	// default now uses for fresh installs. Without this, ModelByID would
+	// have silently fallen back to whatever cfg.DefaultModel happens to
+	// be — which is "deepseek" today, but only by coincidence, not by
+	// anything this row actually says.
+	`UPDATE pulsar_daily_config SET architect_model = 'deepseek' WHERE architect_model = 'deepseek-pro'`,
 }
 
 func Open(path string) (*Store, error) {
