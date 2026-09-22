@@ -342,9 +342,7 @@
 		align-items: center;
 		gap: 9px;
 		margin-top: var(--space-2xl);
-		padding-bottom: var(--space-xs);
 		margin-bottom: var(--space-xs);
-		border-bottom: 1px solid var(--color-border);
 	}
 	.section-head :global(svg) {
 		color: var(--color-accent);

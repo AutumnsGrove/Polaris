@@ -424,9 +424,7 @@
 		align-items: center;
 		gap: 9px;
 		margin-top: var(--space-2xl);
-		padding-bottom: var(--space-xs);
 		margin-bottom: var(--space-xs);
-		border-bottom: 1px solid var(--color-border);
 	}
 	.section-head :global(svg) {
 		color: var(--color-accent);
@@ -500,25 +498,20 @@
 		color: var(--color-text-dim);
 	}
 
-	/* The rule lives on this outer row (spanning icon + title + the trailing
-	   "New block" button) rather than on .section-head itself — .section-head
-	   loses its own border/margin here so there's one rule under the whole
-	   row, not two competing ones. */
+	/* Puts the icon+title on the left and the trailing "New block" button
+	   on the right of one row — .section-head loses its own top/bottom
+	   margin here since the row handles that spacing instead. */
 	.section-label-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
 		margin-top: var(--space-2xl);
-		padding-bottom: var(--space-xs);
 		margin-bottom: var(--space-xs);
-		border-bottom: 1px solid var(--color-border);
 	}
 	.section-label-row .section-head {
 		margin-top: 0;
-		padding-bottom: 0;
 		margin-bottom: 0;
-		border-bottom: none;
 	}
 
 	.custom-block-title {
