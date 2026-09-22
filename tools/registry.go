@@ -15,6 +15,7 @@ import (
 
 	"polaris/brave"
 	"polaris/embed"
+	"polaris/jev"
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/parallel"
@@ -121,6 +122,23 @@ type Context struct {
 	// spend a credit on purpose, so the cap needs to be real too.
 	TavilyUsageThisMonth func() (int, error)
 	IncrementTavilyUsage func() error
+
+	// Jev backs compare_sources (tools/compare_sources.go) — nil if
+	// OpenRouter itself isn't configured (jev.NewClient's nil-means-
+	// unconfigured convention, same as Brave/Parallel/Tavily above), since
+	// Jev is reached through OpenRouter's beta endpoint using the exact
+	// same api_key that already authenticates the main chat model, not a
+	// separate secret. JevCostThisMonth/LogJevCost back the monthly dollar
+	// cap (store.Store's jev_usage table) — dollar-based, not call-count-
+	// based like Brave/Parallel/Tavily's api_usage, since Jev bills by
+	// token and one heavily-chunked comparison could cost more than a
+	// typical call. LogJevCost is also how Stats.VerificationCostUSD's
+	// breakout gets its data — call it once per real Jev call, after
+	// AddCost/AddJevCost below, same "record only what actually went
+	// through" convention as IncrementBraveUsage.
+	Jev              *jev.Client
+	JevCostThisMonth func() (float64, error)
+	LogJevCost       func(usd float64) error
 
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,
@@ -568,6 +586,27 @@ type Context struct {
 	extraCostMu  sync.Mutex
 	ExtraCostUSD float64
 
+	// Evidence accumulates URL -> raw extracted text for every page
+	// web_read successfully fetches this turn — a shared prerequisite for
+	// both compare_sources and the future per-claim verification badge
+	// (see docs/plans/source-verification.md), neither of which existed
+	// before this field did; tools.Citation only ever carried title/URL/
+	// site/image, never the actual fetched text. Deliberately the *raw*
+	// extracted text, not FilterExtractedText's LLM-filtered output —
+	// checking a claim against an LLM's own summary would be circular.
+	// evidenceMu guards it for the same parallel-tool-dispatch reason
+	// Citations/Cards need their own mutexes.
+	evidenceMu sync.Mutex
+	evidence   map[string]string
+
+	// jevCostMu/jevCostUSD track this turn's own running Jev spend,
+	// separately from ExtraCostUSD (which mixes in every other tool's
+	// extra LLM spend too) — see AddJevCost/JevSpentThisTurn. This is what
+	// compare_sources checks against the $0.01/turn cap before firing
+	// another call, not ExtraCostUSD, which isn't Jev-specific.
+	jevCostMu  sync.Mutex
+	jevCostUSD float64
+
 	// Chart holds this turn's chart, if any tool produced one (see
 	// ChartSpec) — today, only weather.go's deterministic "range" chart
 	// (the standalone visualize tool that once also called SetChart was
@@ -903,6 +942,50 @@ func (c *Context) AddCost(usd float64) {
 	c.ExtraCostUSD += usd
 }
 
+// AddEvidence records the raw extracted text web_read fetched for a URL
+// this turn — see Evidence's doc comment. Overwrites any previous entry for
+// the same URL (a page re-read mid-turn, e.g. a different PDF page) rather
+// than accumulating, since only the latest fetch is what the model actually
+// saw most recently. Safe to call concurrently, same reasoning as
+// AddCitation/AddCard.
+func (c *Context) AddEvidence(url, text string) {
+	c.evidenceMu.Lock()
+	defer c.evidenceMu.Unlock()
+	if c.evidence == nil {
+		c.evidence = map[string]string{}
+	}
+	c.evidence[url] = text
+}
+
+// EvidenceForURL returns the raw text stored for url and whether anything
+// was stored at all — false for a URL only ever seen via web_search's
+// snippet, never actually web_read. Safe to call concurrently.
+func (c *Context) EvidenceForURL(url string) (string, bool) {
+	c.evidenceMu.Lock()
+	defer c.evidenceMu.Unlock()
+	text, ok := c.evidence[url]
+	return text, ok
+}
+
+// AddJevCost records real Jev spend against this turn's own running total
+// and returns the new total — see jevCostUSD's doc comment for why this is
+// separate from AddCost/ExtraCostUSD. Safe to call concurrently.
+func (c *Context) AddJevCost(usd float64) float64 {
+	c.jevCostMu.Lock()
+	defer c.jevCostMu.Unlock()
+	c.jevCostUSD += usd
+	return c.jevCostUSD
+}
+
+// JevSpentThisTurn returns this turn's running Jev spend so far — checked
+// against the per-turn cap before firing another call. Safe to call
+// concurrently.
+func (c *Context) JevSpentThisTurn() float64 {
+	c.jevCostMu.Lock()
+	defer c.jevCostMu.Unlock()
+	return c.jevCostUSD
+}
+
 // AddPendingImageMessage records a synthetic image-carrying message from a
 // view_image "see" call — see PendingImageMessages' doc comment for why
 // this must be flushed only after a tool-call batch's own result messages,
@@ -1083,6 +1166,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"finalize_daily_items":   finalizeDailyItemsDef,
 		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
 		"update_star": updateStarDef, "link_stars": linkStarsDef,
+		"compare_sources": compareSourcesDef,
 	}
 }
 

@@ -269,6 +269,23 @@ CREATE TABLE IF NOT EXISTS ghost_usage (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- jev_usage is a per-call ledger of real Jev (TypeSafe AI) spend — one row
+-- per API call, cost_usd read directly off that call's own response (never
+-- estimated), same shape as ghost_usage above (a per-row ledger with
+-- created_at, not a monthly aggregate) so it can back both a monthly cap
+-- check (SUM WHERE created_at falls in the current calendar month, see
+-- JevCostThisMonth) and Stats.VerificationCostUSD's trailing-N-day breakout
+-- (SUM WHERE created_at >= since, matching every other period-filtered stat
+-- in stats.go). That breakout is a transparency slice into money already
+-- counted once via tools.Context.AddCost -> messages.cost_usd — GetStats
+-- must never add this into TotalCostUSD/PeriodCostUSD a second time. See
+-- docs/plans/source-verification-compare-tool.md's cost-tracking section.
+CREATE TABLE IF NOT EXISTS jev_usage (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	cost_usd REAL NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- search_history backs Atlas's sidebar "Recent searches"/Favorites
 -- sections — the same shape as threads' recency+favorite model, but for
 -- one-shot queries rather than conversations, so it's its own table
@@ -2264,4 +2281,26 @@ func (s *Store) GetAPIUsage(provider string) (int, error) {
 func (s *Store) RecordGhostCost(costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO ghost_usage (cost_usd) VALUES (?)`, costUSD)
 	return err
+}
+
+// LogJevCost appends one row for a real Jev API call's cost — see
+// jev_usage's schema comment. Called after every call that actually went
+// through (never for a call that errored before billing), same convention
+// as IncrementBraveUsage/IncrementParallelUsage only recording completed
+// calls.
+func (s *Store) LogJevCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd) VALUES (?)`, costUSD)
+	return err
+}
+
+// JevCostThisMonth returns total Jev spend for the current calendar month —
+// 0 if nothing's been recorded yet. Checked before firing a new Jev call to
+// enforce the monthly dollar cap, same "check before spending, record after
+// spending succeeds" shape as GetAPIUsage/IncrementAPIUsage.
+func (s *Store) JevCostThisMonth() (float64, error) {
+	var total float64
+	err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
+	).Scan(&total)
+	return total, err
 }

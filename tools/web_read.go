@@ -226,6 +226,14 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	// everything else, where there's no natural page boundary to select by.
 	isPDF := totalPages > 0
 
+	// Raw text, not the filtered/windowed result below — compare_sources
+	// and the future verification badge both need what the page actually
+	// said, not an LLM's own summary of it (checking a claim against a
+	// summary would be circular) or a truncated display window.
+	if strings.TrimSpace(text) != "" {
+		ctx.AddEvidence(args.URL, text)
+	}
+
 	result := text
 	// !ctx.QuickMode: Atlas's Quick Answer (see gateway/ask.go's QuickMode
 	// wiring) trades the filter pass's precision for latency — one fewer

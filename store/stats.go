@@ -39,6 +39,18 @@ type Stats struct {
 	// breakdown — see GetStats.
 	CostBySource CostBySource `json:"cost_by_source"`
 
+	// VerificationCostUSD is how much of the above (already counted once,
+	// inside CostBySource.Polaris/.Pulsar via ctx.AddCost -> messages.
+	// cost_usd) was specifically Jev verification spend — a transparency
+	// breakout, not a fourth additive bucket. Deliberately NOT summed into
+	// TotalCostUSD/PeriodCostUSD or CostBySource a second time; see
+	// jev_usage's schema comment (store.go) and
+	// docs/plans/source-verification-compare-tool.md's cost-tracking
+	// section. Sourced from jev_usage, a per-call ledger, so period
+	// filtering is exact (trailing N days), unlike a calendar-month-only
+	// aggregate would allow.
+	VerificationCostUSD SourceCost `json:"verification_cost_usd"`
+
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
 
@@ -263,6 +275,26 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	stats.PeriodCostUSD += ghostPeriod
 	stats.CostBySource.Polaris.TotalCostUSD += ghostTotal
 	stats.CostBySource.Polaris.PeriodCostUSD += ghostPeriod
+
+	// VerificationCostUSD: a breakout, not an addition — this money is
+	// already inside TotalCostUSD/CostBySource above (it arrived via
+	// tools.Context.AddCost during the turn, same as any other tool's
+	// spend), so unlike ghostTotal/ghostPeriod just above, neither figure
+	// here is added to stats.TotalCostUSD/PeriodCostUSD or CostBySource.
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage`,
+	).Scan(&stats.VerificationCostUSD.TotalCostUSD); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		stats.VerificationCostUSD.PeriodCostUSD = stats.VerificationCostUSD.TotalCostUSD
+	} else {
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE created_at >= ?`, since,
+		).Scan(&stats.VerificationCostUSD.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+	}
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
 	// variant fork isn't a thread the user thinks of as "one of theirs".

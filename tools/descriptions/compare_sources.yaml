@@ -1,0 +1,13 @@
+name: compare_sources
+requires: jev
+category: research
+description: >-
+  check whether two or more of your own cited sources actually agree on a specific fact. Use this
+  when you notice sources might conflict on something specific, not as a routine double-check.
+api_description: >-
+  Check whether two or more sources you've already read this turn (via web_read) actually agree
+  on a specific fact, using a calibrated comparison rather than your own read of them. Give it the
+  URLs and the one specific fact to check — e.g. "What is the launch date?" not a broad topic.
+  Returns a short summary of whether each pair agrees, disagrees, or doesn't overlap enough to
+  compare, with a confidence for each. Use this when you notice sources might conflict on
+  something specific, not as a routine double-check of everything you read.
