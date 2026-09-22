@@ -180,6 +180,17 @@ token-based LLM cost math elsewhere in this codebase.
 5. **Both caps fail closed.** Hitting either cap behaves exactly like `Brave`/`Parallel` being
    `nil` today — skip verification for what's left, log a `warn`, never error the turn or block
    the answer that's already been shown.
+6. **Verification cost breakout (decided, 2026-09-22 — user request, shared with
+   `compare_sources`).** Bundling Jev spend into Polaris/Pulsar's existing totals (via
+   `AddMessageCost` above) is fine, but it should also be visible on its own. This is a
+   transparency breakout, not a second additive bucket — the same `Stats.VerificationCostUSD
+   SourceCost` field designed in `source-verification-compare-tool.md`'s cost-tracking section
+   covers both features. Log each verification call (or each chunk call, for a chunked source) as
+   an `events` row — `source: "verification"`, `message: "jev call finished"`, `cost_usd` in the
+   JSON data blob — read back in `GetStats` the same way `SearchProviderCounts`/
+   `CodeExecWallTimeMS` already unmarshal small per-row JSON blobs. Must not also be added to
+   `Stats.TotalCostUSD`/`PeriodCostUSD` — that money is already counted once, via step 2's
+   `AddMessageCost` landing on `messages.cost_usd`.
 
 ## UI affordances
 
@@ -226,6 +237,15 @@ next to the answer's own LLM cost. This tracks the live spike: 8 fan-out claims 
 ~2k-token real source cost $0.0000876 and took 419ms; a single call stays comfortably under a
 second even with 6–8 questions batched; multiple sources can run concurrently (40-way concurrency
 showed no throttling in testing).
+
+## Settings panel
+
+`Stats.VerificationCostUSD` (see compare-tool doc's cost-tracking section) needs a 4th row in
+`SettingsPanel.svelte`'s "Cost by source" block (lines ~148-174), same `usage-stat-row` markup as
+the existing Polaris/Pulsar/Daily rows, labeled "Verification" — reading
+`usage.verification_cost_usd.period_cost_usd`/`.total_cost_usd` (a sibling field on the JSON
+response, not nested under `cost_by_source`, matching the Go struct shape). Same shared CSS as
+`ConstellationUsageModal.svelte`, so add it there too if that panel should show it.
 
 ## Not tested / open until built
 

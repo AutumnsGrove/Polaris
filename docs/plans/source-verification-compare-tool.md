@@ -128,11 +128,28 @@ machinery; that's entirely internal to the handler.
 `usage.cost` off the real Jev response is exact — no estimation. Wiring:
 
 1. **Per-call, mid-turn**: `ctx.AddCost(usage.cost)` (see step 3 above) — accounted for before the
-   message is persisted, identical to how every other tool with real API spend already works.
+   message is persisted, identical to how every other tool with real API spend already works. This
+   is also what makes Jev spend show up in `Stats.CostBySource.Polaris`/`.Pulsar` automatically —
+   it lands on `messages.cost_usd` like any other tool cost, no special-casing needed for it to be
+   counted in the existing per-source totals.
 2. **Monthly cap**: reuse the `api_cost_usage` table designed in the badge doc (shared across both
    features — one Jev cost ledger, not two) — `IncrementAPICostUsage("jev", usd)` /
    `APICostUsageThisMonth("jev")`, checked before firing, same nil-safe-optional pattern as
    Brave/Parallel.
+3. **Verification cost breakout (decided, 2026-09-22 — user request).** Bundling Jev spend into
+   Polaris/Pulsar's existing totals is fine, but it should also be visible on its own — "how much
+   of that was verification calls specifically." This is a transparency *breakout*, not a fourth
+   additive bucket: the money is already counted once via step 1 above, so it must not also be
+   summed into `Stats.TotalCostUSD`/`PeriodCostUSD` a second time. Log every Jev call as an
+   `events` row (`source: "tool.compare_sources"`, `message: "tool call finished"`, `cost_usd` in
+   the JSON data blob) — the same pattern `store/stats.go`'s `GetStats` already uses for
+   `SearchProviderCounts`/`CodeExecWallTimeMS` (unmarshal a small JSON blob per matching event row,
+   cheap at this data volume). Add a new top-level field, sibling to `CostBySource` (not nested
+   inside it, to avoid disturbing its documented "Polaris + Pulsar sums to the grand total exactly"
+   invariant): `Stats.VerificationCostUSD SourceCost` (period + all-time), summed from those events
+   the same way `CodeExecWallTimeMS` sums start/finish event pairs. The badge feature's async pass
+   (`source-verification-badge.md`) logs the same event shape under its own tool/verification
+   source, so this one field covers both features' Jev spend.
 3. **Per-turn cap: $0.01/turn** (decided) — roughly 10–400x the ~$0.000025–0.0001/call observed
    live for this tool's cluster comparisons. Track a running total across the turn (shared with
    any badge-feature spend if both fire in the same turn) and stop issuing further Jev calls once
