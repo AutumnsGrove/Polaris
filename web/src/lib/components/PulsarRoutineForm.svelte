@@ -3,7 +3,7 @@
 	import { pulsarState, type PulsarRoutineInput } from '$lib/pulsar.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode, PulsarRoutine } from '$lib/types';
-	import { X, Sparkles } from '@lucide/svelte';
+	import { X, Sparkles, CalendarClock } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
 	import { untrack } from 'svelte';
@@ -191,7 +191,7 @@
 				</div>
 			</div>
 
-			<div class="section-label">Schedule</div>
+			<div class="section-head"><CalendarClock size={15} /><span class="section-title">Schedule</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Repeats</span>
@@ -335,13 +335,24 @@
 	   exactly (issue #83's settings-menu unification). Duplicated per-file
 	   for the same reason .switch below is — Svelte scopes component
 	   styles, so there's no shared-import version of this. */
-	.section-label {
-		font-size: 11px;
+	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
+	   + rule treatment, replacing the old all-dim .section-label. */
+	.section-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding-bottom: var(--space-sm);
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.section-head :global(svg) {
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+	.section-title {
+		font-size: 15px;
 		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--color-text-dim);
-		padding: 0 var(--space-xs) var(--space-sm);
+		color: var(--color-text);
 	}
 
 	.settings-group {

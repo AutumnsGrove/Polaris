@@ -1,6 +1,25 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { X, Moon, Sun, RefreshCw, RotateCw, Info, ChevronLeft, Server, Container, Brain, Wrench } from '@lucide/svelte';
+	import {
+		X,
+		Moon,
+		Sun,
+		SunMoon,
+		RefreshCw,
+		RotateCw,
+		Info,
+		ChevronLeft,
+		Server,
+		Container,
+		Brain,
+		Wrench,
+		Cpu,
+		Target,
+		NotepadText,
+		User,
+		Mic,
+		MapPin
+	} from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -262,7 +281,7 @@
 				</div>
 			</div>
 
-			<div class="section-label">Appearance</div>
+			<div class="section-head"><SunMoon size={15} /><span class="section-title">Appearance</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Theme</span>
@@ -283,7 +302,7 @@
 				</div>
 			</div>
 
-			<div class="section-label">Model</div>
+			<div class="section-head"><Cpu size={15} /><span class="section-title">Model</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Default model</span>
@@ -301,7 +320,7 @@
 				Applies to new threads. You can still switch models per-thread from the chat header.
 			</p>
 
-			<div class="section-label">Focus</div>
+			<div class="section-head"><Target size={15} /><span class="section-title">Focus</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Default focus mode</span>
@@ -320,7 +339,7 @@
 				Applied to every new message until changed from the composer's "+" menu.
 			</p>
 
-			<div class="section-label">Custom instructions</div>
+			<div class="section-head"><NotepadText size={15} /><span class="section-title">Custom instructions</span></div>
 			<div class="settings-group">
 				<div class="settings-row stacked">
 					<textarea
@@ -338,7 +357,7 @@
 				preference.
 			</p>
 
-			<div class="section-label">About you</div>
+			<div class="section-head"><User size={15} /><span class="section-title">About you</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Name</span>
@@ -388,7 +407,7 @@
 				pronouns from context (and can guess wrong).
 			</p>
 
-			<div class="section-label">Voice</div>
+			<div class="section-head"><Mic size={15} /><span class="section-title">Voice</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Mic button</span>
@@ -414,7 +433,7 @@
 				behavior.
 			</p>
 
-			<div class="section-label">Location</div>
+			<div class="section-head"><MapPin size={15} /><span class="section-title">Location</span></div>
 			<div class="settings-group">
 				<div class="settings-row stacked">
 					<input
@@ -432,7 +451,7 @@
 				is available.
 			</p>
 
-			<div class="section-label">Memory</div>
+			<div class="section-head"><Brain size={15} /><span class="section-title">Memory</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Enabled</span>
@@ -465,7 +484,7 @@
 				</p>
 			</div>
 
-			<div class="section-label">Tools</div>
+			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Which tools <span class="wordmark">Polaris</span> can use</span>
@@ -479,7 +498,7 @@
 				for a plain chat.
 			</p>
 
-			<div class="section-label">Updates</div>
+			<div class="section-head"><RefreshCw size={15} /><span class="section-title">Updates</span></div>
 			{#if appState.version}
 				<div class="settings-group">
 					<div class="settings-row">
@@ -578,14 +597,33 @@
 	   language instead of N divergent ones). Duplicated here rather than
 	   shared, same reasoning as .switch below: Svelte scopes component
 	   styles per-file, so this is copy-once-per-component by design, not
-	   an oversight. */
-	.section-label {
-		font-size: 11px;
+	   an oversight.
+
+	   .section-label used to be the header treatment (11px uppercase,
+	   --color-text-dim) — the same dim color .hint uses below, so a
+	   header and its own caption text read as one undifferentiated gray
+	   block. .section-head/.section-title (a gold icon + full-text-color
+	   title + a full-width rule) replaces it; see
+	   mockups/settings-header-hierarchy.html option D for the full set of
+	   alternatives this was picked from. */
+	.section-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding-bottom: var(--space-sm);
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.section-head :global(svg) {
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+
+	.section-title {
+		font-size: 15px;
 		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--color-text-dim);
-		padding: 0 var(--space-xs) var(--space-sm);
+		color: var(--color-text);
 	}
 
 	.settings-group {

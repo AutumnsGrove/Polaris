@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState, type PulsarDailyConfigInput } from '$lib/pulsarDaily.svelte';
-	import { X, Sparkles, Plus, Trash2 } from '@lucide/svelte';
+	import { X, Sparkles, Plus, Trash2, Newspaper, PenLine, Cpu, CalendarClock } from '@lucide/svelte';
 	import type { PulsarDailyCustomBlock } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
@@ -205,7 +205,7 @@
 					: "Off — won't generate on its own. \"Generate now\" still works."}
 			</p>
 
-			<div class="section-label">Blocks</div>
+			<div class="section-head"><Newspaper size={15} /><span class="section-title">Blocks</span></div>
 			<div class="settings-group">
 				{#each blockOptions as opt (opt.key)}
 					{@const expanded =
@@ -286,7 +286,7 @@
 			</div>
 
 			<div class="section-label-row">
-				<div class="section-label">Custom blocks</div>
+				<div class="section-head"><PenLine size={15} /><span class="section-title">Custom blocks</span></div>
 				<button type="button" class="wizard-btn" onclick={addCustomBlock}>
 					<Plus size={12} />
 					New general purpose block
@@ -345,7 +345,7 @@
 				</div>
 			{/if}
 
-			<div class="section-label">Models</div>
+			<div class="section-head"><Cpu size={15} /><span class="section-title">Models</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Architect</span>
@@ -369,7 +369,7 @@
 				writes every block's actual content — Stage A/C's prose.
 			</p>
 
-			<div class="section-label">Schedule</div>
+			<div class="section-head"><CalendarClock size={15} /><span class="section-title">Schedule</span></div>
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Generates at</span>
@@ -417,13 +417,24 @@
 	   exactly (issue #83's settings-menu unification). Duplicated per-file
 	   for the same reason .switch below is — Svelte scopes component
 	   styles, so there's no shared-import version of this. */
-	.section-label {
-		font-size: 11px;
+	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
+	   + rule treatment, replacing the old all-dim .section-label. */
+	.section-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding-bottom: var(--space-sm);
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.section-head :global(svg) {
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+	.section-title {
+		font-size: 15px;
 		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--color-text-dim);
-		padding: 0 var(--space-xs) var(--space-sm);
+		color: var(--color-text);
 	}
 
 	.settings-group {
@@ -487,15 +498,23 @@
 		color: var(--color-text-dim);
 	}
 
+	/* The rule lives on this outer row (spanning icon + title + the trailing
+	   "New block" button) rather than on .section-head itself — .section-head
+	   loses its own border/margin here so there's one rule under the whole
+	   row, not two competing ones. */
 	.section-label-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-md);
-		margin-bottom: var(--space-sm);
+		padding-bottom: var(--space-sm);
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
 	}
-	.section-label-row .section-label {
+	.section-label-row .section-head {
 		padding-bottom: 0;
+		margin-bottom: 0;
+		border-bottom: none;
 	}
 
 	.custom-block-title {

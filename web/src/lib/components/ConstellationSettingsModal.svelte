@@ -3,7 +3,7 @@
 	import { appState } from '$lib/state.svelte';
 	import { constellationState, type ConstellationConfigInput } from '$lib/constellation.svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
-	import { X, ChevronRight, Info } from '@lucide/svelte';
+	import { X, ChevronRight, Info, History } from '@lucide/svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 
 	let { onClose }: { onClose: () => void } = $props();
@@ -99,7 +99,7 @@
 			</div>
 		</div>
 
-		<div class="section-label">History</div>
+		<div class="section-head"><History size={15} /><span class="section-title">History</span></div>
 		<div class="settings-group">
 			<button class="usage-link" onclick={() => (showUsage = true)}>
 				<Info size={16} class="usage-icon" />
@@ -204,13 +204,24 @@
 		padding: var(--space-xs) var(--space-sm);
 	}
 
-	.section-label {
-		font-size: 11px;
+	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
+	   + rule treatment, replacing the old all-dim .section-label. */
+	.section-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		padding-bottom: var(--space-sm);
+		margin-bottom: var(--space-md);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.section-head :global(svg) {
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+	.section-title {
+		font-size: 15px;
 		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--color-text-dim);
-		padding: 0 var(--space-xs) var(--space-sm);
+		color: var(--color-text);
 	}
 	.usage-link {
 		display: flex;
