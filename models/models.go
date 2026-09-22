@@ -7,16 +7,18 @@ import "polaris/config"
 // adding a new model happens here, not in config.yaml.
 var Registry = []config.ModelConfig{
 	{
-		// NOT multimodal, despite the naming symmetry with "mimo" below —
-		// confirmed against OpenRouter's own live endpoint metadata
-		// (GET /api/v1/models/xiaomi/mimo-v2.5-pro/endpoints): every
-		// endpoint for this model reports input_modalities: ["text"]
-		// only. Marking it multimodal here previously broke image
-		// uploads entirely, since it's listed first and
-		// Config.MultimodalModel picks the first match.
-		ID:          "mimo-pro",
-		Name:        "MiMo v2.5 Pro",
-		Model:       "xiaomi/mimo-v2.5-pro",
+		// Replaces the v2.5 "mimo" entry (2026-09-22) — same ID kept
+		// stable across the version bump so existing thread selections
+		// and any model_overrides.mimo config keep resolving, same
+		// pattern as deepseek-pro/deepseek's own dated-snapshot bumps
+		// below. Confirmed live via GET /api/v1/models/xiaomi/
+		// mimo-v2.6-flash/endpoints: single Xiaomi/fp8 provider,
+		// genuinely multimodal (input_modalities: text+image+video+
+		// audio) — unlike the old v2.5 Pro tier, this one isn't
+		// text-only.
+		ID:          "mimo",
+		Name:        "MiMo v2.6 Flash",
+		Model:       "xiaomi/mimo-v2.6-flash",
 		Provider:    []string{"xiaomi/fp8"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
@@ -24,17 +26,27 @@ var Registry = []config.ModelConfig{
 			Enabled: true,
 			Effort:  "medium",
 		},
+		Multimodal: true,
+		// Tier 2 Deep Research sub-agent default (see
+		// docs/plans/deep-research-two-tier.md), moved here from the
+		// "deepseek" entry below (2026-09-22). Same live endpoint survey
+		// cited above confirms tool support (supported_parameters
+		// includes "tools"; supports_tool_choice auto/required both
+		// true) and a 1,048,576-token context window, well beyond
+		// deepseek's 384K-token providers -- also meaningfully cheaper
+		// per token ($0.14/$0.28 per M vs. deepseek's $0.15/$0.60 to
+		// $0.22/$0.66) at comparable uptime (99.99%/99.97%/99.99% at
+		// 30m/5m/1d). See config.ModelConfig.ResearchWorker.
+		ResearchWorker: true,
 	},
 	{
-		// Genuinely vision-capable — confirmed against OpenRouter's live
-		// endpoint metadata: input_modalities includes "image" (and
-		// audio/video) across all of this model's providers, unlike
-		// mimo-pro above. Used as the describe-image step for uploads
-		// when the thread's own selected model can't see images itself
-		// (see gateway's resolveAttachment / Config.MultimodalModel).
-		ID:          "mimo",
-		Name:        "MiMo v2.5",
-		Model:       "xiaomi/mimo-v2.5",
+		// Replaces the v2.5 "mimo-pro" entry (2026-09-22), same ID-
+		// stability reasoning as "mimo" above. Same live-endpoint survey:
+		// single Xiaomi/fp8 provider, genuinely multimodal — unlike the
+		// v2.5 Pro tier it replaces, which was text-only.
+		ID:          "mimo-pro",
+		Name:        "MiMo v2.6 Pro",
+		Model:       "xiaomi/mimo-v2.6-pro",
 		Provider:    []string{"xiaomi/fp8"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
@@ -70,75 +82,34 @@ var Registry = []config.ModelConfig{
 		},
 	},
 	{
-		// Five-deep fallback chain: Baidu -> DeepInfra -> StreamLake ->
-		// BaseTen -> Novita, all fp8 (no fp4, per this file's existing
-		// precision policy). Baidu/DeepInfra were the original pair, but a
-		// live incident on 2026-09-06 showed OpenRouter can exhaust both
-		// entries of a two-provider Provider list in a single request —
-		// Baidu and DeepInfra returned 429 tpm_rate_limit_exceeded
-		// simultaneously mid-conversation (a shared/pooled provider tier
-		// saturating under other OpenRouter users' traffic, not this
-		// account hitting its own cap), surfacing OpenRouter's raw error
-		// JSON straight into the chat transcript (see llm.APIError). Three
-		// more rungs were added the same day from a live GET /api/v1/
-		// models/deepseek/deepseek-v4-flash-0731/endpoints query, in
-		// priority order:
-		//   - StreamLake: cheapest input_cache_read of any fp8 provider,
-		//     $0.0028/M vs. Baidu's $0.028/M and DeepInfra's $0.015/M —
-		//     matters because prompt caching, not fresh prompt tokens, is
-		//     where this app's actual DeepSeek spend concentrates. Already
-		//     a known-good fp8 provider here, as deepseek-pro's own
-		//     fallback below.
-		//   - BaseTen: the only other fp8 option with full tool_choice
-		//     support (none/auto/required/function all true — several
-		//     others in the survey only support "auto"), moderate pricing,
-		//     99.84% 1-day uptime.
-		//   - Novita: best observed reliability in the survey (99.99%
-		//     1-day, 100% 5-minute uptime) — added purely as a last-resort
-		//     rung ("just in case"), despite pricier prompt/completion
-		//     rates, since this deep in the chain availability matters more
-		//     than shaving cost further.
-		// The official "deepseek" endpoint remains excluded: its list price
-		// is now higher than every one of these third-party routes even
-		// off-peak.
-		ID:          "deepseek",
-		Name:        "DeepSeek V4 Flash",
-		Model:       "deepseek/deepseek-v4-flash-0731",
-		Provider:    []string{"baidu/fp8", "deepinfra/fp8", "streamlake/fp8", "baseten/fp8", "novita/fp8"},
-		Temperature: 0.4,
-		MaxTokens:   32000,
-		Reasoning: &config.ReasoningConfig{
-			Enabled: true,
-			Effort:  "medium",
-		},
-		// Tier 2 Deep Research sub-agent default (see
-		// docs/plans/deep-research-two-tier.md) — a roster survey found
-		// nothing that clearly beats this model on cost + speed +
-		// confirmed tool-calling reliability for the worker role (MiMo
-		// Pro is disqualified outright: no tools support on its default
-		// route). See config.ModelConfig.ResearchWorker.
-		ResearchWorker: true,
-	},
-	{
-		// Additive alongside "deepseek" above, not a replacement — per a
-		// live GET /api/v1/models/deepseek/deepseek-v4.1-flash/endpoints
-		// survey on 2026-09-12 (released 2026-09-10). Genuinely
-		// multimodal per architecture.input_modalities (["text","image"]),
-		// unlike the V4 Flash/Pro entries above.
+		// Deprecates the old V4 Flash "deepseek" entry (2026-09-22) —
+		// deepseek/deepseek-v4-flash-0731 with its five-deep Baidu/
+		// DeepInfra/StreamLake/BaseTen/Novita fallback chain — in favor of
+		// V4.1 Flash. Reused the "deepseek" ID (rather than dropping the
+		// separate "deepseek-v41-flash" ID) so existing thread selections
+		// and config.yaml's default_model/model_overrides keep resolving
+		// across the swap, same ID-stability approach as the MiMo v2.6
+		// replacement above.
 		//
-		// Unlike deepseek-pro/deepseek above, the official "deepseek" tag
-		// is the primary route here, not excluded — re-checked the
-		// reasoning rather than copying the sibling entries' exclusion.
-		// Its pricing.overrides only double the rate (to $0.30/$1.20 per M,
+		// Per a live GET /api/v1/models/deepseek/deepseek-v4.1-flash/
+		// endpoints survey (originally 2026-09-12, re-confirmed
+		// 2026-09-22). Genuinely multimodal per
+		// architecture.input_modalities (["text","image"]), unlike the V4
+		// Flash entry it replaces.
+		//
+		// Unlike deepseek-pro above, the official "deepseek" tag is the
+		// primary route here, not excluded — re-checked the reasoning
+		// rather than copying deepseek-pro's exclusion. Its
+		// pricing.overrides only double the rate (to $0.30/$1.20 per M,
 		// matching the third-party fp8 tier below) during a narrow weekday
-		// window (01:00-04:00 and 06:00-10:00 UTC, ~21% of the week);
-		// the other ~79% of the time, incl. all weekend, it's $0.15/$0.60
-		// with $0.003/M cache reads — cheaper than every third-party
-		// endpoint in the survey at every hour, not just off-peak. That's
-		// the opposite of deepseek-pro/deepseek's official route, whose
-		// list price loses to third-party even off-peak — a genuinely
-		// different pricing shape per model, not a fixed platform rule, so
-		// don't copy this endpoint's inclusion/exclusion onto other models
+		// window (01:00-04:00 and 06:00-10:00 UTC, ~21% of the week); the
+		// other ~79% of the time, incl. all weekend, it's $0.15/$0.60 with
+		// $0.003/M cache reads — cheaper than every third-party endpoint
+		// in the survey at every hour, not just off-peak. That's the
+		// opposite of deepseek-pro's official route, whose list price
+		// loses to third-party even off-peak — a genuinely different
+		// pricing shape per model, not a fixed platform rule, so don't
+		// copy this endpoint's inclusion/exclusion onto other models
 		// without re-running the survey.
 		// Fireworks is the fallback: flat (no time-of-day pricing),
 		// $0.22/$0.66 per M, 98.98% uptime, 943,718-token max completion —
@@ -146,7 +117,7 @@ var Registry = []config.ModelConfig{
 		// Novita, etc., all $0.30/$1.20) on price while staying reliable,
 		// so it's a better second rung than reusing deepseek-pro's known-
 		// good fp8 providers here.
-		ID:          "deepseek-v41-flash",
+		ID:          "deepseek",
 		Name:        "DeepSeek V4.1 Flash",
 		Model:       "deepseek/deepseek-v4.1-flash",
 		Provider:    []string{"deepseek", "fireworks"},
