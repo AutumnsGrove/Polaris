@@ -284,24 +284,26 @@ read directly off each response, is the source of truth; nothing needs to be com
 
 ## UI affordances
 
-**What "using Jev for this" actually gets us:** not a new visual language, but a quiet, factual
-qualifier on citations that already exist. The house style has an explicit precedent against
-adding a new icon for this kind of thing — `app.css`'s comment on `--color-personal` mentions an
-earlier mockup pass (`mockups/constellation-personal-star-options.html`) that deliberately chose
-"color-shift + text badge, no icon" over an icon option, and PRODUCT.md's "calm over clever" rules
-out anything that reads as chrome for its own sake. So: no new checkmark/shield/seal icon glyph.
+**What "using Jev for this" actually gets us:** a quiet, factual qualifier on citations that
+already exist, in the same two places they already render. Decided icon: **lucide's `check-check`**
+(`@lucide/svelte`, already a dependency) — two overlapping checkmarks, distinct at a glance from a
+single-check "sent"/"done" glyph elsewhere in the app, colored with the existing `--color-accent-2`
+(already the app's "citation chrome / informational" hue, so this reuses an existing semantic
+rather than introducing a new one) rather than a new color. A mockup (light + dark, both panels
+built from the real `app.css` token values, with a tweak to toggle the badge on/off for
+comparison) was published to compare placement before wiring this into Svelte — see the artifact
+link shared alongside this doc update.
 
-**Two places it can attach, both already in `ChatTurnView.svelte`:**
+**Two places it attaches, both already in `ChatTurnView.svelte`:**
 - **The inline citation chip** (`web/src/lib/citations.ts`'s `renderInlineCitations`, the
-  Claude.ai-style "claim (The Hollywood Reporter)" chip riding along the actual sentence) — this
-  is the most precise place, since it's tied to one specific claim. A verified chip gets a subtle
-  treatment change (e.g. the existing `--color-accent-2` used elsewhere for citation chrome, at
-  slightly higher weight, or a small dot using the existing `.badge` shape/spacing tokens) — not a
-  new color, not an icon, just a small shift using tokens already in the palette.
-- **The source-list chip** (`.source-chip` in the collapsible "N Sources" footer) — this is the
-  aggregate view, since one source can back several claims with mixed verdicts. Shows a summary
-  state: all its cited claims supported, none checked (verification skipped/failed/still running),
-  or mixed.
+  Claude.ai-style "claim (The Hollywood Reporter)" chip riding along the actual sentence) — the
+  most precise placement, tied to one specific claim. The `check-check` glyph sits inline before
+  the chip's label text, same `--color-accent-2`, sized to sit comfortably inside the existing
+  `.prose :global(.citation-chip)` pill (11.5px text) without changing the chip's height.
+- **The source-list chip** (`.source-chip` in the collapsible "N Sources" footer) — the aggregate
+  view, since one source can back several claims with mixed verdicts. The glyph sits inline right
+  after `.source-title`, same treatment, so both locations read as the same mark rather than two
+  different ones.
 
 **Verdict → visual, deliberately asymmetric:**
 - `supported` at/above the confidence threshold → the one visible positive mark. Ship this first;
