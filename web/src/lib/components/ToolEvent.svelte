@@ -36,7 +36,8 @@
 		ScanEye,
 		Paperclip,
 		History,
-		Download
+		Download,
+		Scale
 	} from '@lucide/svelte';
 	import ShootingStar from './icons/ShootingStar.svelte';
 
@@ -125,6 +126,7 @@
 		// "waiting for a reply" placeholder result (accurate only at the
 		// instant the call happened, not after it's been answered).
 		if (item.tool === 'ask_user_question') return `Asked: ${item.args?.question ?? ''}`;
+		if (item.tool === 'compare_sources') return `Comparing sources: ${item.args?.question ?? ''}`;
 		if (item.tool === 'memory') {
 			// Mirrors tools/memory.go's handleMemory, which only ever logs
 			// {action, name} (never description/content — those can be
@@ -301,6 +303,8 @@
 				<History size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'stars'}
 				<ShootingStar size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'compare_sources'}
+				<Scale size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}
