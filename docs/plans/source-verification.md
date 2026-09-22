@@ -134,12 +134,12 @@ a real saved thread).
    nuance, not just keyword overlap (see "Live spike results"). Choice beats Noul here because
    "the page doesn't mention it" and "the page says the opposite" are different failures. Pages
    near/over the 32k-token window get a clean `400 max_tokens_exceeded`, not silent truncation —
-   confirmed live — so real code needs to pre-check token count and chunk before calling, e.g.
-   picking the top chunks per claim with the existing `tools.Context.Embed` client, or fanning out
-   one question per chunk and taking the max.
+   confirmed live — so real code needs to pre-check token count and chunk before calling. See
+   "Chunking design" and "PDF handling" below.
 4. **Emit a `verification` WS event** after the answer, keyed by URL + claim offset, and persist it
    next to `messages.citations`. The frontend adds the mark to already-rendered chips, so the
-   answer itself is never delayed.
+   answer itself is never delayed. See "Cost tracking" below for how the async cost lands on the
+   message row after the fact.
 5. **Gate on confidence.** Show the mark only when `choice == supported` and confidence is at or
    above a threshold tuned live. Everything else shows nothing. Confirmed live that confidence
    actually varies with claim difficulty (0.35–1.0 observed, not pinned to 1.0), so this gate does
@@ -151,6 +151,178 @@ a real saved thread).
 **Wording matters.** "Verified" suggests the claim is *true*. What this actually checks is "the
 cited page says this," so something like "found in source" is more honest, and fits "calm over
 clever."
+
+## Chunking design
+
+Most single pages won't actually need this. `web_read`'s own existing caps
+(`tools/web_read.go`) put realistic evidence text well under Jev's 32k-token window before any
+chunking logic runs at all: `maxExtractedChars` (12,000 chars, ~3k tokens) is what the model sees
+per page window, and `maxFilterInputChars` (100,000 chars, ~25k tokens) is the largest raw slice
+any existing LLM pass already gets handed. If verification evidence reuses a similarly-sized
+bound, chunking only matters for genuinely long pages (long Wikipedia articles, doc sites,
+multi-page reads) or PDFs — see below.
+
+One correction to the live spike: the ~18k/~40k-token pass/fail boundary I measured used
+repetitive filler text (~7 chars/token), denser than real English (~4 chars/token) — don't reuse
+that char count as a budget; re-derive it from a conservative chars-per-token estimate (round
+down, e.g. 3.5) and target ~24–26k tokens, not the full 32k, to leave headroom for the fan-out
+questions' own instructions/criteria overhead (measured live: ~1.3k tokens added by 8 questions'
+worth of instructions on top of the source text).
+
+1. **Size-check before ever calling Jev.** Estimate `(evidence text) + (all pending claims'
+   instructions/criteria for that source)` against the budget above.
+2. **Below budget → exactly what's tested and working: one call, all of that source's claims as
+   parallel Choice questions.** Proven live: 8 claims, 419ms, ~$0.00009.
+3. **Above budget → split into chunks, not claims.** Jev takes one `state` per call, so a chunk
+   means a separate call — but each call still carries *all* of that source's pending claims as
+   parallel questions, reusing the same fan-out pattern rather than one call per claim-chunk pair.
+   For a source needing K chunks and M claims, that's K calls (parallelizable — the live 20-way
+   concurrent burst showed no throttling), not K×M.
+   - **Chunk boundaries: split on paragraph breaks**, not fixed offsets — cutting a claim's
+     supporting sentence in half is worse than an uneven chunk size. Target ~6–8k tokens per
+     chunk with a few hundred tokens of overlap at each boundary, so a fact sitting right at a
+     seam isn't invisible to either side.
+   - **Chunk selection: lexical/keyword overlap by default, not embeddings.** `tools.Context.Embed`
+     (`embed/embed.go`) is explicitly scoped narrow in its own doc comment — "one method, one
+     purpose... a failure here should just disable that one signal" — for the query-similarity
+     feature, and it's `nil` whenever Ollama isn't configured, a real fraction of deployments.
+     Making chunk selection *depend* on it would mean verification silently degrades on those
+     deployments. Score each chunk by word/n-gram overlap with the claim text instead (no
+     dependency, always available), take the top chunks per claim, union across all of a source's
+     claims to decide which chunks need a call at all. `Embed`, when configured, is a fine
+     optional upgrade over the lexical scorer — never a requirement.
+4. **Reduce per-claim across chunk results.** Most chunks of a long page will legitimately say
+   `not_addressed` about any given claim — that's expected, not a signal. If any chunk returns
+   `supported` at/above the confidence threshold, that's the claim's answer. Else if any chunk
+   returns `contradicted` above threshold, use that. Else `not_addressed`. If two chunks disagree
+   at high confidence (one `supported`, one `contradicted` — a real possible case for a page that
+   changes its mind mid-article, or a chunking artifact), show no badge at all rather than guess
+   which chunk wins; that disagreement is worth surfacing only after live tuning.
+
+## PDF handling
+
+PDFs are actually the easier case, not the harder one, because `web_read` already extracts them
+per-page (`tools/web_read.go`'s `ExtractPDFPage`/`pdfPageText`) with the same `maxExtractedChars`
+cap applied per page — each page is already a natural, pre-made chunk, no paragraph-splitting
+logic needed.
+
+- **Verify only the pages the model actually read, not the whole PDF.** A citation to a PDF URL
+  may only ever have had one or a few of its pages fetched (the model paginates page-by-page via
+  `web_read`'s "call again with page: N+1" hint) — evidence for that citation is the union of
+  pages actually read during the turn, stored as `URL → []pageText`, not the full document. This
+  is a deliberate scope choice: verifying against pages the model never consulted would be
+  checking a different question ("does *anything* in this PDF support the claim") than the one
+  this feature is actually answering ("did the page the model used support what it said") — and
+  it keeps cost bounded automatically, since a 300-page PDF where only 3 pages were read only
+  ever produces 3 chunks' worth of Jev calls, not 300.
+  - **This also means very long PDFs need no special-case chunking logic at all** — reuse the same
+    "one call per chunk, all pending claims for that source in that call" pattern from Chunking
+    design above, with "page" standing in for "chunk." A page near `maxExtractedChars` (12,000
+    chars, ~3k tokens) is comfortably inside Jev's window on its own; only an unusual page
+    (huge table, dense reference list) would need the token pre-check to catch it.
+- **Scanned/image-only PDFs.** There's no OCR anywhere in this codebase today (`web_read.go`'s PDF
+  path is pure text extraction, `pdfPageRawText`/`GetPlainText`) — a scanned page returns empty or
+  near-empty text. Evidence for that citation is then empty, and verification must degrade
+  silently (no Jev call, no badge) rather than send an empty or near-empty `state` and risk a
+  meaningless answer. Worth a quick live check of what Jev actually returns for a near-empty
+  state before shipping, since it wasn't part of this spike.
+- **A PDF citation with no page anchor at all** (link points at the bare PDF URL, but multiple
+  pages were read across the turn) — evidence is the concatenated set of pages actually read for
+  that URL this turn, chunked exactly like a long HTML page would be.
+
+## Cost tracking — this needs to be exact, not estimated
+
+The user's requirement here is explicit: no cent of Jev spend without it being tracked precisely.
+Two things make that easier than it is for the LLM chat path: **Jev's OpenRouter response already
+returns the real, exact dollar cost of that specific call** — `usage.cost` was present and
+correct in every live test (e.g. `"cost": 0.000011382`, `"cost": 4.8678e-05`) — so there's no
+estimation step at all, unlike token-based LLM cost math elsewhere in this codebase. That number,
+read directly off each response, is the source of truth; nothing needs to be computed or guessed.
+
+**Where it needs to be wired, concretely:**
+
+1. **Per-call, log it immediately.** Every Jev call's `logEvent(..., "cost_usd": <usage.cost>)`
+   the moment the response comes back — before any aggregation — so there's an audit trail even
+   if the goroutine driving verification dies partway through a multi-chunk source. This mirrors
+   how `gateway/turn.go` already logs `cost_usd` for title generation and compaction.
+2. **Land on the message it belongs to.** Because verification is deliberately async/post-answer
+   (see step 4 above — the point is to never delay the visible answer), the message row's
+   `cost_usd` is already written by `AddMessage` by the time verification finishes. This is
+   different from `ctx.AddCost` (`tools/registry.go`), which only works for cost incurred *during*
+   the turn, before persistence. Verification needs a new store method — something like
+   `AddMessageCost(msgID int64, usd float64) error` doing `UPDATE messages SET cost_usd = cost_usd
+   + ? WHERE id = ?` — called once after a source (or the whole turn's) verification finishes.
+   Make it a no-op, not an error, if the message was deleted in the meantime (thread deleted mid-
+   flight): check rows-affected, don't fail loudly over a race that just means nobody's looking at
+   the cost anymore.
+3. **A real dollar cap, not a call-count cap.** `api_usage` (`store/store.go`) only tracks calendar-
+   month **call counts** — right for Brave/Parallel/Tavily, whose free tiers are call-count-based,
+   wrong for Jev, which bills by token and where one long, heavily-chunked PDF could cost far more
+   than one ordinary call. This needs its own table, e.g.:
+   ```sql
+   CREATE TABLE IF NOT EXISTS api_cost_usage (
+       provider TEXT NOT NULL,
+       month TEXT NOT NULL,
+       cost_usd REAL NOT NULL DEFAULT 0,
+       PRIMARY KEY (provider, month)
+   );
+   ```
+   with `IncrementAPICostUsage(provider string, usd float64) (float64, error)` (upsert, same
+   `strftime('%Y-%m', 'now')` pattern as `IncrementAPIUsage`) and `APICostUsageThisMonth(provider
+   string) (float64, error)`, checked before firing calls for a new source the same way
+   `BraveUsageThisMonth` is checked today.
+4. **A per-turn ceiling too, checked live, not just monthly.** A single pathological turn (many
+   sources, several needing chunking) could otherwise spend disproportionately before the monthly
+   cap ever notices. Track a running total across the goroutine driving one turn's verification
+   and stop issuing further Jev calls once it crosses a small ceiling (e.g. an order of magnitude
+   above the ~$0.0001–0.001/turn observed live — this exact number is a call for whoever's paying
+   the bill, not something to lock in here); sources/claims past that point just get no badge,
+   same graceful-degradation story as a missing key or an outage.
+5. **Both caps fail closed.** Hitting either cap should behave exactly like `Brave`/`Parallel`
+   being `nil` today — skip verification for what's left, log a `warn`, never error the turn or
+   block the answer that's already been shown.
+
+## UI affordances
+
+**What "using Jev for this" actually gets us:** not a new visual language, but a quiet, factual
+qualifier on citations that already exist. The house style has an explicit precedent against
+adding a new icon for this kind of thing — `app.css`'s comment on `--color-personal` mentions an
+earlier mockup pass (`mockups/constellation-personal-star-options.html`) that deliberately chose
+"color-shift + text badge, no icon" over an icon option, and PRODUCT.md's "calm over clever" rules
+out anything that reads as chrome for its own sake. So: no new checkmark/shield/seal icon glyph.
+
+**Two places it can attach, both already in `ChatTurnView.svelte`:**
+- **The inline citation chip** (`web/src/lib/citations.ts`'s `renderInlineCitations`, the
+  Claude.ai-style "claim (The Hollywood Reporter)" chip riding along the actual sentence) — this
+  is the most precise place, since it's tied to one specific claim. A verified chip gets a subtle
+  treatment change (e.g. the existing `--color-accent-2` used elsewhere for citation chrome, at
+  slightly higher weight, or a small dot using the existing `.badge` shape/spacing tokens) — not a
+  new color, not an icon, just a small shift using tokens already in the palette.
+- **The source-list chip** (`.source-chip` in the collapsible "N Sources" footer) — this is the
+  aggregate view, since one source can back several claims with mixed verdicts. Shows a summary
+  state: all its cited claims supported, none checked (verification skipped/failed/still running),
+  or mixed.
+
+**Verdict → visual, deliberately asymmetric:**
+- `supported` at/above the confidence threshold → the one visible positive mark. Ship this first;
+  it's the safe direction (a missed badge costs nothing, a wrongly-shown one costs trust).
+- `contradicted`, `partially_supported`, `not_addressed`, or below-threshold `supported` → **no
+  mark, indistinguishable from "not yet checked."** This is deliberate, not a gap to fill later:
+  a `contradicted` mark is much more editorially loaded than a `supported` one (it's telling the
+  user their own model may have gotten something wrong), and the live spike's own caution applies
+  — a false "your source disagrees" is worse than staying quiet. Worth a v2 once the `supported`
+  path has been live for a while and the false-positive rate is actually known, not before.
+- Because "no mark" covers three different real states (not checked yet, checked and inconclusive,
+  checked and found wanting), the "Sources" toggle header needs one small explanatory affordance
+  — a tooltip or an info glyph next to the count — saying roughly "a mark means this specific claim
+  was checked against its source," so absence never gets read as "this source is bad."
+
+**Motion/timing:** verification finishes after the answer is already shown (0.4–0.8s single-call,
+more for a chunked source, but never blocking). No loading spinner or pending state on the source
+chip while it's in flight — PRODUCT.md rules out motion that exists to look impressive rather than
+inform, and a badge that quietly appears once ready is calmer than one that visibly ticks through
+a "checking..." state for something this fast. If a source is going to take genuinely long (a big
+chunked PDF), it's fine for its mark to simply arrive a beat later than its neighbors', unannounced.
 
 ## Cost / latency back-of-envelope
 
