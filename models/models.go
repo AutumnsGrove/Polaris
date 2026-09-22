@@ -7,52 +7,16 @@ import "polaris/config"
 // adding a new model happens here, not in config.yaml.
 var Registry = []config.ModelConfig{
 	{
-		// NOT multimodal, despite the naming symmetry with "mimo" below —
-		// confirmed against OpenRouter's own live endpoint metadata
-		// (GET /api/v1/models/xiaomi/mimo-v2.5-pro/endpoints): every
-		// endpoint for this model reports input_modalities: ["text"]
-		// only. Marking it multimodal here previously broke image
-		// uploads entirely, since it's listed first and
-		// Config.MultimodalModel picks the first match.
-		ID:          "mimo-pro",
-		Name:        "MiMo v2.5 Pro",
-		Model:       "xiaomi/mimo-v2.5-pro",
-		Provider:    []string{"xiaomi/fp8"},
-		Temperature: 0.4,
-		MaxTokens:   32000,
-		Reasoning: &config.ReasoningConfig{
-			Enabled: true,
-			Effort:  "medium",
-		},
-	},
-	{
-		// Genuinely vision-capable — confirmed against OpenRouter's live
-		// endpoint metadata: input_modalities includes "image" (and
-		// audio/video) across all of this model's providers, unlike
-		// mimo-pro above. Used as the describe-image step for uploads
-		// when the thread's own selected model can't see images itself
-		// (see gateway's resolveAttachment / Config.MultimodalModel).
+		// Replaces the v2.5 "mimo" entry (2026-09-22) — same ID kept
+		// stable across the version bump so existing thread selections
+		// and any model_overrides.mimo config keep resolving, same
+		// pattern as deepseek-pro/deepseek's own dated-snapshot bumps
+		// below. Confirmed live via GET /api/v1/models/xiaomi/
+		// mimo-v2.6-flash/endpoints: single Xiaomi/fp8 provider,
+		// genuinely multimodal (input_modalities: text+image+video+
+		// audio) — unlike the old v2.5 Pro tier, this one isn't
+		// text-only.
 		ID:          "mimo",
-		Name:        "MiMo v2.5",
-		Model:       "xiaomi/mimo-v2.5",
-		Provider:    []string{"xiaomi/fp8"},
-		Temperature: 0.4,
-		MaxTokens:   32000,
-		Reasoning: &config.ReasoningConfig{
-			Enabled: true,
-			Effort:  "medium",
-		},
-		Multimodal: true,
-	},
-	{
-		// Genuinely multimodal (input_modalities: text+image+video+audio)
-		// per a live GET /api/v1/models/xiaomi/mimo-v2.6-flash/endpoints
-		// survey on 2026-09-22 — unlike mimo-pro's v2.5 generation above,
-		// this tier isn't text-only. Single provider (Xiaomi itself,
-		// fp8), same shape as the v2.5 entries. Additive alongside the
-		// v2.5 pair above, not a replacement, per this file's existing
-		// convention for version bumps (see deepseek-v41-flash below).
-		ID:          "mimo-v26-flash",
 		Name:        "MiMo v2.6 Flash",
 		Model:       "xiaomi/mimo-v2.6-flash",
 		Provider:    []string{"xiaomi/fp8"},
@@ -65,9 +29,11 @@ var Registry = []config.ModelConfig{
 		Multimodal: true,
 	},
 	{
-		// Same live-endpoint survey as mimo-v26-flash above (2026-09-22):
-		// genuinely multimodal, single Xiaomi/fp8 provider.
-		ID:          "mimo-v26-pro",
+		// Replaces the v2.5 "mimo-pro" entry (2026-09-22), same ID-
+		// stability reasoning as "mimo" above. Same live-endpoint survey:
+		// single Xiaomi/fp8 provider, genuinely multimodal — unlike the
+		// v2.5 Pro tier it replaces, which was text-only.
+		ID:          "mimo-pro",
 		Name:        "MiMo v2.6 Pro",
 		Model:       "xiaomi/mimo-v2.6-pro",
 		Provider:    []string{"xiaomi/fp8"},
