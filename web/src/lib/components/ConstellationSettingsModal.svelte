@@ -171,7 +171,8 @@
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
 		overflow: hidden;
-		margin-bottom: var(--space-xl);
+		/* Tight on purpose — see SettingsPanel.svelte's identical comment. */
+		margin-bottom: var(--space-xs);
 	}
 	.settings-row {
 		display: flex;
@@ -210,8 +211,9 @@
 		display: flex;
 		align-items: center;
 		gap: 9px;
-		padding-bottom: var(--space-sm);
-		margin-bottom: var(--space-md);
+		margin-top: var(--space-2xl);
+		padding-bottom: var(--space-xs);
+		margin-bottom: var(--space-xs);
 		border-bottom: 1px solid var(--color-border);
 	}
 	.section-head :global(svg) {
