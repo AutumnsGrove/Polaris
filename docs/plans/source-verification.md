@@ -21,6 +21,19 @@ answers with probabilities in a single parallel pass.
 - `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer $TYPESAFE_API_KEY`, model
   `jev-latest`. Also on Cloudflare Workers AI as `typesafe/jev`. Plain JSON over HTTP, so no Go
   SDK is needed (TypeSafe only ships Python/JS SDKs).
+- **It's also on OpenRouter, in beta** (`typesafe/jev-1.13`, `typesafe/jev-latest`) — this is the
+  path that matters for Polaris. `compose/polaris/config.yaml.example` already wires an
+  `openrouter.api_key`/`base_url` for the chat model, so this could reuse that exact same key
+  instead of adding a second secret, second env var, and second Docker
+  `docker-compose.yml`/`config.yaml.example` passthrough line. Requests still go through a
+  System One-shaped JSON call, not `/chat/completions` — `web_search`-style tool wiring doesn't
+  apply. **The exact request path is unconfirmed**: search results describe an alpha endpoint at
+  `openrouter.ai/api/alpha/decisions`; a fetched OpenRouter doc page describes
+  `openrouter.ai/api/v1/systemone` with the OpenRouter key as a plain bearer token. A `curl` to
+  both paths without a key returned an identical generic `401 No cookie auth credentials found`
+  from both, which doesn't distinguish a real route from a 404 caught by the same handler — so
+  this needs a live check with a real `OPENROUTER_API_KEY` before any code is written, per
+  CLAUDE.md's "verify on real hardware" rule below.
 - Three question types: **Noul** (probability that yes/no is yes), **Choice** (one of up to 255
   named options, with per-option probabilities + confidence), **Score** (ordered levels).
 - Questions in one request are "evaluated in parallel and in isolation against the same state."
