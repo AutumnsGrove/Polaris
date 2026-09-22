@@ -143,7 +143,11 @@ var Registry = []config.ModelConfig{
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
 			Enabled: true,
-			Effort:  "medium",
+			// OpenRouter's live metadata for this model lists six tiers
+			// (none/low/medium/high/xhigh/max), not just the three
+			// ReasoningConfig.Effort's own doc comment mentions — bumped
+			// one step above the model's own "medium" default.
+			Effort: "high",
 		},
 	},
 	{
