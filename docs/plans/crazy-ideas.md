@@ -103,7 +103,7 @@ its own `docs/plans/` doc.
 
 `web_read`'s PDF path (`tools/web_read.go`) is pure text extraction — no OCR anywhere in this
 codebase, so a scanned/image-only PDF returns empty or near-empty text today, and the model just
-never sees it. Came up while scoping `docs/plans/source-verification.md`'s Jev PDF handling (a
+never sees it. Came up while scoping `docs/plans/source-verification-badge.md`'s Jev PDF handling (a
 scanned page can't be verified against a source it never read in the first place). Worth
 revisiting on its own — not scoped here — since it'd help `web_read` generally, not just
 verification.
