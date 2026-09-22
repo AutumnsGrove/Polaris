@@ -158,8 +158,8 @@
 					<div class="usage-stat-row sub">
 						<span class="label">Verification</span>
 						<span class="value"
-							>${usage.verification_cost_usd.period_cost_usd.toFixed(2)} / ${usage.verification_cost_usd.total_cost_usd.toFixed(
-								2
+							>${usage.verification_cost_usd.period_cost_usd.toFixed(4)} / ${usage.verification_cost_usd.total_cost_usd.toFixed(
+								4
 							)}</span
 						>
 					</div>
