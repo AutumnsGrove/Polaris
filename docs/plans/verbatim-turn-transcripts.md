@@ -1,6 +1,15 @@
 # Verbatim turn transcripts (replacing reconstructed history)
 
-**Status:** proposal, 2026-09-23. Nothing implemented yet.
+**Status:** approved 2026-09-23, in progress. Decisions below are settled (see "Decisions").
+
+## Phases
+
+1. **Measure cache hits** (issue #107): per-message `prompt_tokens`/`cache_read_tokens`, summed per
+   thread on read, and shown as a hit % in the thread menu next to thread cost.
+2. **Stable system prompt**: date-only preamble; the time of day moves into a new `current_time`
+   tool the model calls when it actually needs it.
+3. **Verbatim transcripts**: persist each turn's exact wire messages, replay them as-is, remove the
+   `full_turn_history` setting, default `context_window_tokens` to 200K.
 
 ## The problem
 
@@ -38,7 +47,7 @@ Request for turn N+1 (`agent.Run`, `agent/driver.go:491`):
 | 2 | Earlier turns are rebuilt instead of replayed | `store.EffectiveHistory`, `loadHistoryWithToolResults` | Turn N's history entry is not what turn N sent (see the next table). The prefix match ends at `user_N` at best. |
 | 3 | `modeReinforcement` is appended as an extra user message but never stored | `agent/driver.go:502` | The next turn's rebuilt history doesn't include it, so the prefix diverges right after `user_N`. |
 | 4 | `turnMessage` augmentations are sent but never stored (attachment pointer notes, the Pulsar previous report) | `gateway/turn.go` ~L340–470 | The stored user message ≠ the sent user message, so the prefix diverges *at* `user_N`. The model also loses the attachment note on every later turn. |
-| 5 | `{memories}` index in the system prompt | `applyMemoriesPlaceholder` | Full miss on the turn after any memory write. This one is acceptable (see Open questions). |
+| 5 | `{memories}` index in the system prompt | `applyMemoriesPlaceholder` | Full miss on the turn after any memory write. Accepted (see Decisions). |
 | 6 | Mode toggles change the system prompt and/or the tool list | `loadSystemPrompt`, `tools.Defs` | Full miss whenever focus, voice, deep research or no-research is toggled. Acceptable because it's user-initiated. |
 
 ### How rebuilt history differs from what was sent
@@ -100,11 +109,9 @@ a cache hit**. Only the final answer and the new message are uncached. That's th
 
 ### 4. Make the system prompt stable across turns
 
-- **Move the timestamp out of the system prompt and into the user message**, e.g. a first line like
-  `[Sent Tuesday, September 23, 2026, 15:04 EDT]` on `turnMessage`. It's stored in the transcript,
-  so it never changes afterward, and the model also learns *when* each earlier turn was asked
-  (a real gain for "latest"-type follow-ups days later). prompt.md gets one sentence saying the
-  newest stamp is "now".
+- **Drop the time of day from the preamble, keep the date.** The system prompt then changes at
+  most once a day. A new `current_time` tool returns the exact local time (and timezone) for the
+  rare question that needs it, e.g. "is X open right now" or "how long until...".
 - **Mode instructions** (focus/voice/deep/no-research): keep them in the system prompt so they
   still apply from the first turn. Stop sending `modeReinforcement` as a separate unstored message;
   append it to the stored `turnMessage` instead. It then stays near the end, where it has the most
@@ -112,17 +119,14 @@ a cache hit**. Only the final answer and the new message are uncached. That's th
 
 ### 5. Delete the patches
 
-- `gateway/history_replay.go` (entire file), except the legacy fallback if it's kept (see Open
-  questions).
 - The `full_turn_history` setting: `settings.go`, the `SettingsPanel.svelte` toggle,
   `settings.svelte.ts`, `ClientMessage.FullTurnHistoryOverride`, `AskRequest.FullTurnHistory`.
 - `effectiveContextWindowTokens`. `config.ContextWindowTokens` defaults to **200 000** (config.go
   plus both `config.yaml.example` files). The smallest registry window is Mercury 2.5 at 260K.
-- `appendCitedSources`, `polarisNoteMarker`, `StripFakeSourcesNote` and its call in `turn.go`, and
-  `appendPendingQuestionOptions`, from the live-turn path. `EffectiveHistory` stays for
-  `search_chats`' `ReadThread`, a flat read of *another* thread, where a plain source list is still
-  useful. It no longer needs the "Polaris note" framing because it never goes back into the model
-  as its own words.
+- `gateway/history_replay.go` shrinks to the legacy-turn fallback only: always on for turns without
+  a transcript, no longer behind a setting. `appendCitedSources` and `StripFakeSourcesNote` stay
+  while legacy turns can still show up in history, and apply only to those turns. New turns never
+  carry the note, so there's nothing new for the model to imitate.
 - prompt.md's "Earlier turns" section shrinks to a line or two.
 
 ### 6. Compaction gets cheaper, too
@@ -147,21 +151,18 @@ is typically 30–80K tokens of tool output (`web_read` is capped at 12K chars p
 The one real cost increase is DB size: a researched turn stores roughly 50–300 KB of transcript.
 SQLite handles this fine, but backups grow.
 
-## Open questions (decisions for the operator)
+## Decisions
 
-1. **Legacy threads:** keep today's rebuild as a fallback for turns with no stored transcript
-   (recommended: invisible, one cache miss per old thread), or treat them as answer-only and delete
-   `history_replay.go` outright?
-2. **`view_image` data URLs in stored transcripts:** store them verbatim (exact replay, but base64
-   images re-sent every turn), or store a text placeholder (small and cheap, at the cost of one
-   mid-transcript cache miss on turns that viewed an image)? Recommendation: placeholder.
-3. **Memory index:** leave it in the system prompt (a cache miss only on the turn after a memory
-   write, recommended), or snapshot it per thread?
-4. **Ghost threads:** these keep a client-held, answer-only history. Leave as-is (recommended,
-   since they're deliberately ephemeral), or have the server hand the client an opaque transcript blob?
-5. **Reasoning passback** (OpenRouter `reasoning_details`) is out of scope here. Today it isn't
-   passed back even *within* a turn. That's a separate follow-up worth a spike against DeepSeek
-   V4.1.
+1. **Legacy threads:** turns stored before this change (no `transcript`) keep being rebuilt the old
+   way (tool calls replayed from the events log, answer plus sources note). Every new turn is
+   stored and replayed verbatim, including new turns on an old thread.
+2. **`view_image`:** store whatever the model actually got. A "see" call's image message is kept
+   verbatim, and a "describe" call's text result is kept as text. The transcript is exactly what
+   was sent, so the cache prefix holds.
+3. **Memory index:** stays in the system prompt. A cache miss on the turn after a memory write is
+   acceptable.
+4. **Ghost threads:** unchanged (client-held, answer-only history).
+5. **Reasoning passback** (OpenRouter `reasoning_details`): out of scope, separate follow-up.
 
 ## Verification plan
 
@@ -170,7 +171,5 @@ SQLite handles this fine, but backups grow.
   whole design rests on, so it gets a test that fails if anything re-introduces a rebuild step.
 - Live: `dev/fakeopenrouter`'s `/_control/calls` to diff consecutive requests in a real running
   server.
-- Measure first: `llm.ChatResponse` already parses `CacheReadTokens`/`CacheWriteTokens`, but
-  nothing records them. Summing them per turn onto the "turn completed" event is a small change
-  that can ship ahead of everything else. It gives a real before/after hit rate from the potato
-  instead of a guess, and it confirms breaker #1 on live data.
+- Measure first: phase 1 (issue #107) ships ahead of the rest, so the potato gives a real
+  before/after hit rate. The per-turn numbers also go on the "turn completed" event.
