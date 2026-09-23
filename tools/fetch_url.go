@@ -1,7 +1,8 @@
 // fetch_url downloads a URL the model has already been shown (a
 // web_search/web_read citation, or an image_search card) into this
 // thread's code_exec workspace, so code_exec can process real files
-// (images, CSVs, Parquet, SQLite, ...) it otherwise has no way to reach
+// (images, CSVs, Parquet, SQLite, PDFs, ...) it otherwise has no way to
+// reach
 // — see docs/plans/fetch-and-workspace-tools.md. The sandbox itself
 // stays --network none permanently (code-execution.md's "Network access
 // from executed code"); this tool is the one and only host-side,
@@ -26,6 +27,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,7 +59,23 @@ var fetchURLAllowedMIME = map[string]bool{
 	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true,
 	"text/csv": true, "text/plain": true, "application/json": true,
 	"text/xml": true, "application/xml": true,
+	// application/pdf is checked against the real magic bytes
+	// (fetchURLPDFMagic), not just trusted off the header/sniff the way
+	// every other entry here is — see fetchURLContentAllowed. PDF parsers
+	// are real attack surface per this file's own package doc comment, so
+	// a mislabeled non-PDF sliding through on a spoofed Content-Type isn't
+	// acceptable for this one format the way it might be for, say, text/plain.
+	"application/pdf": true,
 }
+
+// fetchURLPDFMagic is the standard PDF file signature ("%PDF-") every
+// real PDF starts with — checked in addition to (not instead of) the
+// declared/sniffed content type before a file claiming to be
+// application/pdf is allowed into the workspace, since http.DetectContentType
+// happily returns application/pdf for anything starting with these same
+// bytes but a malformed or truncated download wouldn't, and a remote
+// Content-Type header can claim anything regardless of the real bytes.
+var fetchURLPDFMagic = []byte("%PDF-")
 
 // fetchURLAllowedExt is consulted only when the content-type check
 // above lands on the generic application/octet-stream — a handful of
@@ -68,6 +86,15 @@ var fetchURLAllowedMIME = map[string]bool{
 // every other fetch.
 var fetchURLAllowedExt = map[string]bool{
 	".parquet": true, ".sqlite": true, ".sqlite3": true, ".db": true,
+	// .pdf is here too for servers that force-download PDFs under an
+	// explicit "Content-Type: application/octet-stream" header (a real,
+	// fairly common pattern) rather than the honest application/pdf —
+	// that header, when present and non-empty, wins over
+	// http.DetectContentType's own sniff (see fetchURLBytes), so without
+	// this entry such a PDF would never reach the magic-byte check at
+	// all. Still gated on the real "%PDF-" bytes below, same as the
+	// application/pdf path — the extension alone is never sufficient.
+	".pdf": true,
 }
 
 var fetchURLDef = llm.ToolDef{
@@ -179,9 +206,9 @@ func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 		return result
 	}
 
-	if !fetchURLContentAllowed(mimeType, args.Filename) {
+	if !fetchURLContentAllowed(mimeType, args.Filename, data) {
 		result := fmt.Sprintf("error: content type %q isn't in the allowed set for fetch_url "+
-			"(images, csv/json/text/xml, or a .parquet/.sqlite file)", mimeType)
+			"(images, csv/json/text/xml, pdf, or a .parquet/.sqlite file)", mimeType)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "fetch_url", "result": result, "call_id": callID})
 		return result
 	}
@@ -220,13 +247,27 @@ func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 // "; charset=..." suffix from a real Content-Type header) against
 // fetchURLAllowedMIME, falling back to fetchURLAllowedExt only for the
 // generic application/octet-stream — see those maps' doc comments.
-func fetchURLContentAllowed(mimeType, filename string) bool {
+// application/pdf gets one further check beyond the allowlist: the actual
+// bytes must start with the real "%PDF-" magic (fetchURLPDFMagic), since a
+// remote Content-Type header can claim application/pdf for anything — see
+// fetchURLAllowedMIME's doc comment on why PDFs alone get this extra check.
+func fetchURLContentAllowed(mimeType, filename string, data []byte) bool {
 	base := strings.TrimSpace(strings.SplitN(mimeType, ";", 2)[0])
+	if base == "application/pdf" {
+		return bytes.HasPrefix(data, fetchURLPDFMagic)
+	}
 	if fetchURLAllowedMIME[base] {
 		return true
 	}
 	if base == "application/octet-stream" {
-		return fetchURLAllowedExt[strings.ToLower(filepath.Ext(filename))]
+		ext := strings.ToLower(filepath.Ext(filename))
+		if !fetchURLAllowedExt[ext] {
+			return false
+		}
+		if ext == ".pdf" {
+			return bytes.HasPrefix(data, fetchURLPDFMagic)
+		}
+		return true
 	}
 	return false
 }

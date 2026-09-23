@@ -217,6 +217,79 @@ func TestHandleFetchURL_OctetStreamRejectedForUnknownExtension(t *testing.T) {
 	}
 }
 
+func TestHandleFetchURL_PDFSuccessWritesWorkspaceFile(t *testing.T) {
+	pdfBytes := "%PDF-1.4\nfake-but-magic-byte-correct-pdf-content"
+	srv := fakeCSVServer(t, pdfBytes, "application/pdf")
+	workspaceRoot := t.TempDir()
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = workspaceRoot
+	ctx.ThreadID = "thread-1"
+	ctx.AddCitation(Citation{Title: "paper", URL: srv.URL})
+
+	result := handleFetchURL(`{"url":"`+srv.URL+`","filename":"paper.pdf"}`, ctx, "call-1")
+	if !strings.Contains(result, `"paper.pdf"`) {
+		t.Errorf("result = %q, want a success message naming paper.pdf", result)
+	}
+
+	written, err := os.ReadFile(filepath.Join(workspaceRoot, "thread-1", "paper.pdf"))
+	if err != nil {
+		t.Fatalf("expected paper.pdf to exist in the workspace: %v", err)
+	}
+	if string(written) != pdfBytes {
+		t.Errorf("written file = %q, want the fetched PDF bytes verbatim", string(written))
+	}
+}
+
+func TestHandleFetchURL_PDFRejectedWithoutRealMagicBytes(t *testing.T) {
+	// A server can claim application/pdf for anything — the real "%PDF-"
+	// signature must still be present, or this is rejected regardless of
+	// the declared Content-Type. See fetchURLAllowedMIME's doc comment.
+	srv := fakeCSVServer(t, "not actually a pdf", "application/pdf")
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = t.TempDir()
+	ctx.ThreadID = "thread-1"
+	ctx.AddCitation(Citation{Title: "x", URL: srv.URL})
+
+	result := handleFetchURL(`{"url":"`+srv.URL+`","filename":"fake.pdf"}`, ctx, "call-1")
+	if !strings.Contains(result, "isn't in the allowed set") {
+		t.Errorf("result = %q, want a disallowed-content-type error", result)
+	}
+	if _, err := os.Stat(filepath.Join(ctx.CodeExecWorkspaceDir, "thread-1", "fake.pdf")); err == nil {
+		t.Error("a mislabeled non-PDF should not have been written to the workspace")
+	}
+}
+
+func TestHandleFetchURL_OctetStreamPDFAllowedWithRealMagicBytes(t *testing.T) {
+	// Some servers force-download PDFs under application/octet-stream
+	// instead of the honest application/pdf — still requires the real
+	// magic bytes, same as the application/pdf path.
+	pdfBytes := "%PDF-1.4\nfake-but-magic-byte-correct-pdf-content"
+	srv := fakeCSVServer(t, pdfBytes, "application/octet-stream")
+	workspaceRoot := t.TempDir()
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = workspaceRoot
+	ctx.ThreadID = "thread-1"
+	ctx.AddCitation(Citation{Title: "x", URL: srv.URL})
+
+	result := handleFetchURL(`{"url":"`+srv.URL+`","filename":"report.pdf"}`, ctx, "call-1")
+	if !strings.Contains(result, `"report.pdf"`) {
+		t.Errorf("result = %q, want a success message naming report.pdf", result)
+	}
+}
+
+func TestHandleFetchURL_OctetStreamPDFRejectedWithoutRealMagicBytes(t *testing.T) {
+	srv := fakeCSVServer(t, "not actually a pdf", "application/octet-stream")
+	ctx := newTestContext()
+	ctx.CodeExecWorkspaceDir = t.TempDir()
+	ctx.ThreadID = "thread-1"
+	ctx.AddCitation(Citation{Title: "x", URL: srv.URL})
+
+	result := handleFetchURL(`{"url":"`+srv.URL+`","filename":"fake.pdf"}`, ctx, "call-1")
+	if !strings.Contains(result, "isn't in the allowed set") {
+		t.Errorf("result = %q, want a disallowed-content-type error", result)
+	}
+}
+
 func TestHandleFetchURL_SizeCapExceeded(t *testing.T) {
 	huge := strings.Repeat("a", maxFetchURLBytes+1)
 	srv := fakeCSVServer(t, huge, "text/plain")
