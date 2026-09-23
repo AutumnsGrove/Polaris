@@ -145,8 +145,10 @@ func (s *Server) handleListConstellationStars(w http.ResponseWriter, r *http.Req
 // factor in here too" as an open question — answered yes, since
 // --force-recreate kills a turn's goroutine outright rather than draining
 // it (confirmed live: an update landed mid-response and the turn simply
-// never finished). Still deliberately not covering Pulsar Daily's own
-// generation runs, which don't go through handleTurn/markTurnInFlight.
+// never finished). A Daily generation run gets the same treatment for the
+// same reason — Stage A-D can take several minutes of real research calls
+// (see startDailyGenerationIfIdle's doc comment), all of it lost the
+// instant the container recreates out from under it.
 func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 	constellationBusy, err := s.db.HasInFlightShootingStarRun()
 	if err != nil {
@@ -154,7 +156,7 @@ func (s *Server) handleServerBusy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns()})
+	writeJSON(w, map[string]bool{"busy": constellationBusy || s.HasInFlightTurns() || s.dailyGenerationRunning.Load()})
 }
 
 // handleSearchConstellationStars backs the Library's search box —

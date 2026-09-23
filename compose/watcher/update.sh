@@ -269,21 +269,22 @@ fi
 timeout 300 docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest 2>&1 | tee "$CMD_LOG" || \
 	echo "code_exec sandbox image pull failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
 
-# Wait for any in-flight Constellation shooting-star run OR chat turn to
-# finish before recreating the container out from under it — issue #57
-# started this for just the shooting-star case (caught live: an update
-# landed exactly mid-batch, only harmless because the batch happened to
-# finish in the few seconds before the recreate actually ran); extended to
-# cover an ordinary chat turn too after the same thing happened to a live
-# conversation — --force-recreate kills the turn's goroutine outright
-# rather than draining it, so whatever the model was mid-generating never
-# finishes or gets saved. Polled over the container's own already-exposed
-# port (gateway/constellation_routes.go's handleServerBusy) rather than
-# needing DB access from the host. WAIT_MAX_SECONDS caps this at 5 minutes
-# so a run that's genuinely stuck (or the endpoint being unreachable for
-# any reason) can never block an update forever — curl failing counts as
-# "not busy" and proceeds immediately, same reasoning as not blocking on
-# an unreachable healthcheck below.
+# Wait for any in-flight Constellation shooting-star run, chat turn, or
+# Pulsar Daily generation to finish before recreating the container out
+# from under it — issue #57 started this for just the shooting-star case
+# (caught live: an update landed exactly mid-batch, only harmless because
+# the batch happened to finish in the few seconds before the recreate
+# actually ran); extended to cover an ordinary chat turn and a Daily
+# generation too, since --force-recreate kills either's goroutine outright
+# rather than draining it — a live conversation cut off mid-answer, or
+# several minutes of real research calls (Stage A-D) thrown away, in
+# either case with nothing saved. Polled over the container's own
+# already-exposed port (gateway/constellation_routes.go's handleServerBusy)
+# rather than needing DB access from the host. WAIT_MAX_SECONDS caps this
+# at 5 minutes so a run that's genuinely stuck (or the endpoint being
+# unreachable for any reason) can never block an update forever — curl
+# failing counts as "not busy" and proceeds immediately, same reasoning as
+# not blocking on an unreachable healthcheck below.
 WAIT_MAX_SECONDS=300
 WAIT_INTERVAL=5
 waited=0
@@ -294,10 +295,10 @@ while true; do
 	*) break ;;
 	esac
 	if [ "$waited" -ge "$WAIT_MAX_SECONDS" ]; then
-		echo "a Constellation run or chat turn is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
+		echo "a Constellation run, chat turn, or Daily generation is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
 		break
 	fi
-	echo "a Constellation run or chat turn is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
+	echo "a Constellation run, chat turn, or Daily generation is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
 	sleep "$WAIT_INTERVAL"
 	waited=$((waited + WAIT_INTERVAL))
 done

@@ -92,6 +92,44 @@ func TestHandleServerBusy_ReflectsInFlightChatTurn(t *testing.T) {
 	}
 }
 
+// TestHandleServerBusy_ReflectsInFlightDailyGeneration covers the third
+// leg: a Pulsar Daily generation run (Stage A-D, several minutes of real
+// research calls per startDailyGenerationIfIdle's doc comment) is tracked
+// by dailyGenerationRunning, not markTurnInFlight — it doesn't go through
+// handleTurn at all — so /api/busy needs to read it directly.
+func TestHandleServerBusy_ReflectsInFlightDailyGeneration(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	getBusy := func() bool {
+		resp, err := http.Get(h.url("/api/busy"))
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Busy bool `json:"busy"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		return body.Busy
+	}
+
+	if getBusy() {
+		t.Error("busy = true with no generation running, want false")
+	}
+
+	h.srvObj.dailyGenerationRunning.Store(true)
+	if !getBusy() {
+		t.Error("busy = false with a Daily generation marked running, want true")
+	}
+
+	h.srvObj.dailyGenerationRunning.Store(false)
+	if getBusy() {
+		t.Error("busy = true after the generation finished, want false")
+	}
+}
+
 func TestHandleGetConstellationConfig_CreatesDefaultsOnFirstRead(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 

@@ -125,7 +125,10 @@ type Server struct {
 	// same story — but neither of those checks the other's flag on its
 	// own, so a manual click landing in the same instant the scheduler's
 	// tick decides today's edition is due would otherwise start two
-	// concurrent pipelines with nothing to stop it.
+	// concurrent pipelines with nothing to stop it. Also read directly by
+	// handleServerBusy, as the third leg of the Docker update watcher's
+	// pre-restart wait (compose/watcher/update.sh) — a Daily run doesn't
+	// go through handleTurn/markTurnInFlight, so it needs its own check.
 	dailyGenerationRunning atomic.Bool
 
 	// devMode is staticFS == nil (see New's doc comment) — true exactly
