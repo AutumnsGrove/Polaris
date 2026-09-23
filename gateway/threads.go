@@ -138,6 +138,14 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort, same as the variant's own cost above: a failed sum just
+	// leaves the menu's cache-hit row at 0, not worth failing the load.
+	if prompt, cached, err := s.db.ThreadCacheUsage(effectiveID); err != nil {
+		log.Warn("summing thread cache usage failed", "thread", id, "err", err)
+	} else {
+		thread.PromptTokens, thread.CacheReadTokens = prompt, cached
+	}
+
 	variants, err := s.buildVariantsMap(id, effectiveID)
 	if err != nil {
 		// Non-fatal — the thread itself loaded fine, it just won't show

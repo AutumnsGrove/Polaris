@@ -472,6 +472,12 @@ type Result struct {
 	// research calls within a single LLM round-trip, so the two diverge.
 	// Exposed for cmd/benchmark.go's tracking DB (research_calls column).
 	ResearchCalls int
+	// PromptTokens/CacheReadTokens are this turn's input tokens summed
+	// across every LLM call the loop made, and how many of those the
+	// provider served from its prompt cache — see issue #107. Unlike
+	// ContextTokens (the LAST call's size only), these are totals.
+	PromptTokens    int
+	CacheReadTokens int
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -507,6 +513,18 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 
 	toolDefs := tools.Defs(ctx)
 	var totalCost float64
+	// promptTokens/cacheReadTokens sum every LLM call this loop makes (a
+	// tool-calling turn makes several), so the caller can report what
+	// fraction of this turn's input was served from the provider's prompt
+	// cache — issue #107. Only the loop's own calls: a tool's side call
+	// (web_read's filter pass, a spawned sub-agent) has its own unrelated
+	// prefix and would just blur the number.
+	var promptTokens, cacheReadTokens int
+	finish := func(r *Result) *Result {
+		r.PromptTokens = promptTokens
+		r.CacheReadTokens = cacheReadTokens
+		return r
+	}
 	var answer strings.Builder
 
 	maxTurns := ctx.MaxTurns
@@ -550,17 +568,19 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			// report $0.00 despite having made real, paid LLM calls first.
 			// Callers that only check err and ignore result on failure are
 			// unaffected either way.
-			return &Result{
+			return finish(&Result{
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
 				Chart:         ctx.Chart,
 				CostUSD:       totalCost + ctx.ExtraCostUSD,
 				TurnCount:     turn + 1,
 				ResearchCalls: researchCalls,
-			}, err
+			}), err
 		}
 		sniff.flush()
 		totalCost += resp.CostUSD
+		promptTokens += resp.PromptTokens
+		cacheReadTokens += resp.CacheReadTokens
 		// Live-only running total, not persisted (logTurnEvent has no case
 		// for it) and not additive — the footer used to sit at $0.00 for
 		// the entire turn, only learning the real spend from "done" once
@@ -612,7 +632,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			}
 			// Plain content = the final answer. It was already streamed
 			// token-by-token via the onChunk callback above.
-			return &Result{
+			return finish(&Result{
 				Answer:        resp.Content,
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
@@ -621,7 +641,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 				TurnCount:     turn + 1,
 				ResearchCalls: researchCalls,
-			}, nil
+			}), nil
 		}
 
 		emitCommentary(ctx, resp.Content)
@@ -664,7 +684,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// happen in practice, but keeps the precedence sane if it ever did).
 		if ctx.WizardFinal != nil {
 			ctx.Emit("token", map[string]interface{}{"content": ctx.WizardFinal.Prompt})
-			return &Result{
+			return finish(&Result{
 				Answer:        ctx.WizardFinal.Prompt,
 				Citations:     ctx.Citations,
 				Cards:         ctx.Cards,
@@ -674,7 +694,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				TurnCount:     turn + 1,
 				ResearchCalls: researchCalls,
 				WizardFinal:   ctx.WizardFinal,
-			}, nil
+			}), nil
 		}
 
 		// finalize_daily_items was called — same early-exit shape as
@@ -687,7 +707,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		if ctx.DailyItemsFinal != nil {
 			flattened := flattenDailyItems(ctx.DailyItemsFinal.Items)
 			ctx.Emit("token", map[string]interface{}{"content": flattened})
-			return &Result{
+			return finish(&Result{
 				Answer:          flattened,
 				Citations:       ctx.Citations,
 				Cards:           ctx.Cards,
@@ -697,7 +717,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				TurnCount:       turn + 1,
 				ResearchCalls:   researchCalls,
 				DailyItemsFinal: ctx.DailyItemsFinal,
-			}, nil
+			}), nil
 		}
 
 		// ask_user_question was called — end the turn now instead of
@@ -715,7 +735,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 			// from the persisted message instead — the question would be
 			// invisible in the very session that just asked it.
 			ctx.Emit("token", map[string]interface{}{"content": ctx.PendingQuestion.Question})
-			return &Result{
+			return finish(&Result{
 				Answer:          ctx.PendingQuestion.Question,
 				Citations:       ctx.Citations,
 				Cards:           ctx.Cards,
@@ -725,7 +745,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 				TurnCount:       turn + 1,
 				ResearchCalls:   researchCalls,
 				PendingQuestion: ctx.PendingQuestion,
-			}, nil
+			}), nil
 		}
 
 		for _, r := range results {
@@ -771,17 +791,19 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// Same reasoning as the main loop's error return above — don't
 		// discard the cost the loop itself already accrued just because
 		// this final forced wrap-up call failed too.
-		return &Result{
+		return finish(&Result{
 			Citations:     ctx.Citations,
 			Cards:         ctx.Cards,
 			Chart:         ctx.Chart,
 			CostUSD:       totalCost + ctx.ExtraCostUSD,
 			TurnCount:     maxTurns + 1,
 			ResearchCalls: researchCalls,
-		}, err
+		}), err
 	}
 	wrapSniff.flush()
 	totalCost += resp.CostUSD
+	promptTokens += resp.PromptTokens
+	cacheReadTokens += resp.CacheReadTokens
 
 	answerText := resp.Content
 	if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {
@@ -810,7 +832,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	// Rewriting it into placeholder text here would silently defeat that
 	// downstream check for every caller, not just the ones lacking it.
 
-	return &Result{
+	return finish(&Result{
 		Answer:        answerText,
 		Citations:     ctx.Citations,
 		Cards:         ctx.Cards,
@@ -819,7 +841,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		ContextTokens: resp.PromptTokens + resp.CompletionTokens,
 		TurnCount:     maxTurns + 1, // every loop iteration ran, plus this forced wrap-up call
 		ResearchCalls: researchCalls,
-	}, nil
+	}), nil
 }
 
 // emitCommentary sends whatever a turn said before deciding to call a tool

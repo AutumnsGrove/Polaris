@@ -212,6 +212,10 @@ export type ServerEvent =
 			// message row a persisted audio file attaches to.
 			assistant_message_id?: number;
 			context_tokens?: number;
+			// This turn's summed input tokens and prompt-cache reads — see
+			// gateway/protocol.go's ServerEvent.PromptTokens (issue #107).
+			prompt_tokens?: number;
+			cache_read_tokens?: number;
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
 			duration_ms?: number;
@@ -362,6 +366,9 @@ export interface Thread {
 	model: string;
 	cost_usd: number;
 	context_tokens: number;
+	// All-time summed input / prompt-cache-read tokens (issue #107).
+	prompt_tokens?: number;
+	cache_read_tokens?: number;
 	favorite: boolean;
 	// focus_mode/deep_research/no_research are this thread's sticky turn
 	// config, alongside model above — read back into the composer on open

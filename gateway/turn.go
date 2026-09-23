@@ -920,6 +920,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			logEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 
+		if err := s.db.SetMessageCacheUsage(assistantMsgID, result.PromptTokens, result.CacheReadTokens); err != nil {
+			log.Warn("failed to record cache usage", "err", err)
+			logEvent(storageThreadID, "warn", "turn", "recording cache usage failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+
 		if len(result.Cards) > 0 {
 			if cardsJSON, err := json.Marshal(result.Cards); err != nil {
 				log.Warn("failed to marshal cards, message persisted without them", "err", err)
@@ -998,6 +1003,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"context_tokens": contextTokens,
 		"citations":      len(result.Citations),
 		"stopped":        ctx.Err() != nil,
+		// Summed across the turn's LLM calls — see agent.Result. The
+		// before/after evidence for docs/plans/verbatim-turn-transcripts.md.
+		"prompt_tokens":     result.PromptTokens,
+		"cache_read_tokens": result.CacheReadTokens,
 	}, turnID)
 
 	send(ServerEvent{
@@ -1011,6 +1020,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		CostUSD:            totalCost,
 		ContextTokens:      contextTokens,
 		DurationMs:         durationMs,
+		PromptTokens:       result.PromptTokens,
+		CacheReadTokens:    result.CacheReadTokens,
 		PendingQuestion:    result.PendingQuestion,
 	})
 

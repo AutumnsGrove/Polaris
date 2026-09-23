@@ -86,6 +86,10 @@ type AskResponse struct {
 	// DurationMs is how long agent.Run took to produce the answer — see
 	// ServerEvent.DurationMs's doc comment in protocol.go.
 	DurationMs int64 `json:"duration_ms,omitempty"`
+	// PromptTokens/CacheReadTokens — see ServerEvent's doc comment on the
+	// same fields (issue #107).
+	PromptTokens    int `json:"prompt_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
 	// Title is the thread's current title — the LLM-generated one if
 	// this turn's generateTitle call succeeded (new threads only), or
 	// otherwise the truncated-question placeholder CreateThread set.
@@ -306,6 +310,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		CostUSD:           final.CostUSD,
 		ContextTokens:     final.ContextTokens,
 		DurationMs:        final.DurationMs,
+		PromptTokens:      final.PromptTokens,
+		CacheReadTokens:   final.CacheReadTokens,
 		Title:             title,
 		Verification:      verification,
 		VerificationDebug: verificationDebug,

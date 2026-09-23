@@ -1263,3 +1263,47 @@ func TestStripFakeSourcesNote(t *testing.T) {
 		t.Errorf("StripFakeSourcesNote(%q) = %q, want the note stripped back off", withRealNote, got)
 	}
 }
+
+// Issue #107's thread-level hit % is summed from per-message rows on read,
+// so a fork has to carry its shared prefix's usage along with the messages
+// themselves — otherwise an edited thread's hit % would silently reset to
+// only what the fork itself generated.
+func TestThreadCacheUsage_SumsMessagesAndSurvivesFork(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	for i, usage := range [][2]int{{1000, 0}, {3000, 1000}} {
+		if _, err := s.AddMessage("root", "user", "q", "[]", "[]", 0, ""); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		id, err := s.AddMessage("root", "assistant", "a", "[]", "[]", 0, "")
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		if err := s.SetMessageCacheUsage(id, usage[0], usage[1]); err != nil {
+			t.Fatalf("SetMessageCacheUsage %d: %v", i, err)
+		}
+	}
+
+	prompt, cached, err := s.ThreadCacheUsage("root")
+	if err != nil {
+		t.Fatalf("ThreadCacheUsage: %v", err)
+	}
+	if prompt != 4000 || cached != 1000 {
+		t.Fatalf("ThreadCacheUsage(root) = %d/%d, want 4000/1000", prompt, cached)
+	}
+
+	// Fork before the second answer: only the first turn's usage carries.
+	forkID, err := s.ForkThread("root", "root", 3)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	prompt, cached, err = s.ThreadCacheUsage(forkID)
+	if err != nil {
+		t.Fatalf("ThreadCacheUsage(fork): %v", err)
+	}
+	if prompt != 1000 || cached != 0 {
+		t.Fatalf("ThreadCacheUsage(fork) = %d/%d, want 1000/0", prompt, cached)
+	}
+}

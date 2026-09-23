@@ -203,6 +203,15 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- client, or nothing found supported at/above the confidence
 	-- threshold.
 	verification TEXT NOT NULL DEFAULT '[]',
+	-- prompt_tokens/cache_read_tokens: the turn's input tokens summed
+	-- across every LLM call agent.Run made, and how many of those the
+	-- provider served from its prompt cache (issue #107). Assistant
+	-- messages only, 0 elsewhere and on every turn from before this
+	-- existed. Per-message rather than a running thread counter, same as
+	-- cost_usd's own audit trail: the thread-level hit % is summed on read
+	-- (see ThreadCacheUsage), so a fork's copied prefix counts too.
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1016,6 +1025,9 @@ var migrations = []string{
 	// per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE messages ADD COLUMN verification TEXT NOT NULL DEFAULT '[]'`,
+	// prompt_tokens/cache_read_tokens — see the schema comment above.
+	`ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1108,7 +1120,12 @@ type Thread struct {
 	// ContextTokens is exposed to the frontend for the context-usage %
 	// display. CompactedSummary/CompactedThroughID are internal —
 	// history-building only, never sent to the frontend.
-	ContextTokens      int    `json:"context_tokens"`
+	ContextTokens int `json:"context_tokens"`
+	// PromptTokens/CacheReadTokens are the thread's all-time summed input
+	// and prompt-cache-read tokens (issue #107) — not columns on threads
+	// itself, filled in by handleGetThread via ThreadCacheUsage.
+	PromptTokens       int    `json:"prompt_tokens"`
+	CacheReadTokens    int    `json:"cache_read_tokens"`
 	CompactedSummary   string `json:"-"`
 	CompactedThroughID int64  `json:"-"`
 	// Source is informational only (see schema comment in Open) — "web"
@@ -1376,8 +1393,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -2259,6 +2276,25 @@ func withLegacyAttachmentFallback(attachmentsJSON, filename, contentType, worksp
 		return attachmentsJSON
 	}
 	return string(encoded)
+}
+
+// SetMessageCacheUsage records a turn's summed prompt tokens and how many
+// of them were prompt-cache reads — see the prompt_tokens schema comment.
+// Post-hoc UPDATE, same shape as SetMessageDuration below.
+func (s *Store) SetMessageCacheUsage(messageID int64, promptTokens, cacheReadTokens int) error {
+	_, err := s.db.Exec(`UPDATE messages SET prompt_tokens = ?, cache_read_tokens = ? WHERE id = ?`, promptTokens, cacheReadTokens, messageID)
+	return err
+}
+
+// ThreadCacheUsage sums prompt_tokens/cache_read_tokens over every message
+// in threadID — the all-time thread-level hit rate issue #107 asks for,
+// computed on read so it can't drift from the messages it summarizes.
+func (s *Store) ThreadCacheUsage(threadID string) (promptTokens, cacheReadTokens int, err error) {
+	err = s.db.QueryRow(
+		`SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(cache_read_tokens), 0) FROM messages WHERE thread_id = ?`,
+		threadID,
+	).Scan(&promptTokens, &cacheReadTokens)
+	return promptTokens, cacheReadTokens, err
 }
 
 // SetMessageDuration records how long agent.Run took to produce a given
