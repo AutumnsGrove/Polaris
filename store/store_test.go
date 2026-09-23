@@ -1186,3 +1186,53 @@ func TestEffectiveHistory_IncludesPendingQuestionOptions(t *testing.T) {
 		}
 	}
 }
+
+// TestEffectiveHistory_IncludesCitedSources: a follow-up turn used to see
+// only the prior answer's prose, never the source list the user saw under
+// it — the model then doubted its own cited answer and re-ran searches it
+// had already done. Also checks the list is capped (citations include
+// every search hit) and never attached to a user message.
+func TestEffectiveHistory_IncludesCitedSources(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "a thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	var cits []string
+	for i := 0; i < maxHistorySources+3; i++ {
+		cits = append(cits, fmt.Sprintf(`{"title":"Source %d","url":"https://example.com/%d"}`, i, i))
+	}
+	if _, err := s.AddMessage("t1", "user", "q", `[{"title":"x","url":"https://user.example"}]`, "[]", 0, "turn1"); err != nil {
+		t.Fatalf("AddMessage(user): %v", err)
+	}
+	if _, err := s.AddMessage("t1", "assistant", "answer", "["+strings.Join(cits, ",")+"]", "[]", 0, "turn1"); err != nil {
+		t.Fatalf("AddMessage(assistant): %v", err)
+	}
+	thread, err := s.GetThreadRaw("t1")
+	if err != nil {
+		t.Fatalf("GetThreadRaw: %v", err)
+	}
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	entries := EffectiveHistory(thread, msgs, 0)
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	if entries[0].Content != "q" {
+		t.Errorf("user entry = %q, want it untouched", entries[0].Content)
+	}
+	got := entries[1].Content
+	if !strings.HasPrefix(got, "answer\n\n[Polaris note") {
+		t.Errorf("assistant entry = %q, want the answer followed by the sources note", got)
+	}
+	if !strings.Contains(got, "Source 0 — https://example.com/0") || strings.Contains(got, fmt.Sprintf("example.com/%d\n", maxHistorySources)) {
+		t.Errorf("assistant entry = %q, want the first %d sources only", got, maxHistorySources)
+	}
+	if !strings.Contains(got, "...and 3 more") {
+		t.Errorf("assistant entry = %q, want the overflow counted", got)
+	}
+	if entries[1].TurnID != "turn1" {
+		t.Errorf("TurnID = %q, want turn1", entries[1].TurnID)
+	}
+}

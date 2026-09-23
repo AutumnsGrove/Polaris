@@ -114,6 +114,32 @@ func (s *Store) ListEvents(threadID string, limit int) ([]Event, error) {
 	return scanEvents(rows)
 }
 
+// ToolEventsForThread returns every tool call started/finished event
+// logged under threadID, oldest first — the raw material gateway's
+// loadHistory rebuilds earlier turns' tool calls and results from when the
+// full-turn-history setting is on. Unlike ListEvents, deliberately
+// unlimited: a long researched thread easily passes ListEvents' 500-row
+// default, and silently dropping the newest turns' results (ORDER BY id
+// ASC LIMIT keeps the oldest) would be exactly backwards for this use.
+// A retry/edit fork already carries its source turns' events under its own
+// thread id (see ForkThread's events copy), so no cross-thread lookup is
+// needed here.
+func (s *Store) ToolEventsForThread(threadID string) ([]Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, turn_id, created_at
+		 FROM events
+		 WHERE thread_id = ? AND turn_id != '' AND source LIKE 'tool.%'
+		   AND message IN ('tool call started', 'tool call finished')
+		 ORDER BY id ASC`,
+		threadID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 // ListRecentEvents returns the most recent events across every thread
 // (and thread-less ones like startup/self-update), newest first — for a
 // global "what's been happening" view instead of one specific thread's.

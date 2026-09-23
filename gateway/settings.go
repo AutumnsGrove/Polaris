@@ -57,6 +57,13 @@ const (
 	// too — see store.go's migration comment for the one-time data copy.
 	settingPersonName     = "person_name"
 	settingPersonPronouns = "person_pronouns"
+	// settingFullTurnHistory stores "true" to replay every earlier turn's
+	// tool calls and results to the model on follow-ups, not just its
+	// answers — see loadHistoryWithToolResults. Off (unset, or anything
+	// else) by default: it makes every follow-up in a researched thread
+	// cost noticeably more, so it's opt-in rather than a silent change to
+	// what existing threads spend.
+	settingFullTurnHistory = "full_turn_history"
 )
 
 // maxPersonNameChars/maxPersonPronounsChars mirror the settings-panel
@@ -177,6 +184,21 @@ func PersonPronounsFromStore(db *store.Store) string {
 	return val
 }
 
+// FullTurnHistoryFromStore reads the full_turn_history setting — see
+// settingFullTurnHistory. Unlike MemoryEnabledFromStore, a nil db, a read
+// error, or an unset value all default to false: this setting only ever
+// adds cost, so failing open means failing to the cheaper behavior.
+func FullTurnHistoryFromStore(db *store.Store) bool {
+	if db == nil {
+		return false
+	}
+	val, err := db.GetSetting(settingFullTurnHistory)
+	if err != nil {
+		return false
+	}
+	return val == "true"
+}
+
 // ThemeFromStore reads the theme setting for tools.Context.UITheme (see
 // tools.CodeExecThemePrompt) — same "default rather than fail" reasoning
 // as MemoryEnabledFromStore/CustomInstructionsFromStore above. A nil db, a
@@ -238,11 +260,13 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"theme":                 theme,
-		"default_model":         s.effectiveDefaultModel(cfg),
-		"default_focus_mode":    all[settingDefaultFocusMode],
-		"voice_input_mode":      voiceInputMode,
-		"context_window_tokens": cfg.ContextWindowTokens,
+		"theme":              theme,
+		"default_model":      s.effectiveDefaultModel(cfg),
+		"default_focus_mode": all[settingDefaultFocusMode],
+		"voice_input_mode":   voiceInputMode,
+		// Effective, not raw config — see effectiveContextWindowTokens.
+		"context_window_tokens": effectiveContextWindowTokens(cfg.ContextWindowTokens, FullTurnHistoryFromStore(s.db)),
+		"full_turn_history":     FullTurnHistoryFromStore(s.db),
 		"disabled_tools":        disabledTools,
 		// toggleable_tools is static catalog data (name + description), not
 		// a per-user setting — sent alongside so the settings panel can
@@ -267,6 +291,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		CustomInstructions *string   `json:"custom_instructions"`
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
+		FullTurnHistory    *bool     `json:"full_turn_history"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -405,6 +430,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "person pronouns changed", map[string]interface{}{"pronouns": *req.PersonPronouns}, "")
+	}
+
+	if req.FullTurnHistory != nil {
+		val := "false"
+		if *req.FullTurnHistory {
+			val = "true"
+		}
+		if err := s.db.SetSetting(settingFullTurnHistory, val); err != nil {
+			log.Warn("saving full_turn_history setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving full_turn_history setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "full turn history changed", map[string]interface{}{"full_turn_history": *req.FullTurnHistory}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

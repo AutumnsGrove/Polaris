@@ -261,6 +261,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// A ghost thread has no persisted row for loadHistory to reconstruct
 	// from (see the Anonymous doc comment on ClientMessage) — its own
 	// client-held transcript, replayed on every turn, stands in instead.
+	// Read once per turn so the history shape and the compaction threshold
+	// below can't disagree if the setting flips mid-turn.
+	fullTurnHistory := !anonymous && FullTurnHistoryFromStore(s.db)
+	contextWindowTokens := effectiveContextWindowTokens(cfg.ContextWindowTokens, fullTurnHistory)
+
 	var history []llm.ChatMessage
 	if anonymous {
 		history = make([]llm.ChatMessage, len(msg.History))
@@ -269,7 +274,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	} else {
 		var err error
-		history, err = s.loadHistory(storageThreadID, 0)
+		if fullTurnHistory {
+			history, err = s.loadHistoryWithToolResults(storageThreadID, replayBudgetChars(contextWindowTokens))
+		} else {
+			history, err = s.loadHistory(storageThreadID, 0)
+		}
 		if err != nil {
 			logEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
@@ -935,7 +944,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// a single incognito conversation isn't expected to run long enough to
 	// need it.
 	contextTokens := result.ContextTokens
-	if !anonymous && result.ContextTokens >= cfg.ContextWindowTokens {
+	if !anonymous && result.ContextTokens >= contextWindowTokens {
 		if summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
 			logEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
@@ -1503,6 +1512,21 @@ func estimateTokens(s string) int {
 // transaction with the new message's insert, but the LLM must still see
 // history as if the edit had already happened).
 func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMessage, error) {
+	entries, err := s.historyEntries(threadID, excludeFromID)
+	if err != nil {
+		return nil, err
+	}
+	history := make([]llm.ChatMessage, len(entries))
+	for i, e := range entries {
+		history[i] = llm.ChatMessage{Role: e.Role, Content: e.Content}
+	}
+	return history, nil
+}
+
+// historyEntries is loadHistory's thread/message read, split out so
+// loadHistoryWithToolResults (see history_replay.go) can reach each
+// entry's TurnID, which llm.ChatMessage has no field for.
+func (s *Server) historyEntries(threadID string, excludeFromID int64) ([]store.HistoryEntry, error) {
 	// GetThreadRaw, not the public GetThread — threadID here is always
 	// storageThreadID, which is legitimately a hidden fork's own id for
 	// an edit/retry turn, and the public GetThread now deliberately
@@ -1516,10 +1540,5 @@ func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMe
 		return nil, err
 	}
 
-	entries := store.EffectiveHistory(thread, msgs, excludeFromID)
-	history := make([]llm.ChatMessage, len(entries))
-	for i, e := range entries {
-		history[i] = llm.ChatMessage{Role: e.Role, Content: e.Content}
-	}
-	return history, nil
+	return store.EffectiveHistory(thread, msgs, excludeFromID), nil
 }

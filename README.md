@@ -85,6 +85,9 @@ with citations.
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
+- **Follow-ups that remember the research** — later turns see the sources behind earlier answers;
+  an opt-in setting also replays every earlier search result and page read, so follow-ups don't
+  re-search (costs more per turn, and raises the auto-compaction limit to 200K tokens).
 - **Ghost threads** — an incognito mode that persists nothing about the conversation (no
   thread/message rows), gone the moment it ends. Its real cost still counts toward your regular
   usage totals, so spend never goes unaccounted for. Available over the WebSocket chat client and

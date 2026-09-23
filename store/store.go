@@ -1577,6 +1577,11 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 type HistoryEntry struct {
 	Role    string
 	Content string
+	// TurnID is the source message's own turn_id ("" for the synthetic
+	// compaction-summary entry) — lets gateway's loadHistory find that
+	// turn's logged tool calls/results when the full-turn-history setting
+	// asks for them to be replayed too (see ToolEventsForThread).
+	TurnID string
 }
 
 // EffectiveHistory reconstructs a thread's prior turns exactly the way
@@ -1607,9 +1612,61 @@ func EffectiveHistory(thread *Thread, msgs []Message, excludeFromID int64) []His
 		if excludeFromID != 0 && m.ID >= excludeFromID {
 			continue
 		}
-		history = append(history, HistoryEntry{Role: m.Role, Content: appendPendingQuestionOptions(m.Content, m.PendingQuestion)})
+		content := appendPendingQuestionOptions(m.Content, m.PendingQuestion)
+		if m.Role == "assistant" {
+			content = appendCitedSources(content, m.Citations)
+		}
+		history = append(history, HistoryEntry{Role: m.Role, Content: content, TurnID: m.TurnID})
 	}
 	return history
+}
+
+// maxHistorySources caps how many of one answer's citations
+// appendCitedSources lists — a turn's Citations include every web_search
+// hit, not just pages actually read, so a research-heavy turn can carry
+// dozens. The first N are enough for the model to recognize what it
+// already looked at; the rest collapse into a count.
+const maxHistorySources = 25
+
+// appendCitedSources folds an assistant message's stored citations into
+// the text its history entry carries. Before this, a follow-up turn saw
+// only the prior answer's prose — the "N Sources" list the user sees under
+// it (store.Message.Citations) never reached the model, so it read its own
+// earlier, confidently-cited answer with no trace of where any of it came
+// from. Seen live: the model's reasoning on a follow-up questioned whether
+// its previous turn had fabricated its claims, then re-ran searches it had
+// already done. Same "decode only the fields history needs" shape as
+// appendPendingQuestionOptions (store can't import tools.Citation).
+// Framed as an app-added note, not as part of the answer, so the model
+// doesn't learn to write a trailing source list itself — prompt.md's
+// "Earlier turns" section says the same.
+func appendCitedSources(content, citationsJSON string) string {
+	if citationsJSON == "" {
+		return content
+	}
+	var cits []struct {
+		Title string `json:"title"`
+		URL   string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(citationsJSON), &cits); err != nil || len(cits) == 0 {
+		return content
+	}
+	var sb strings.Builder
+	sb.WriteString(content)
+	sb.WriteString("\n\n[Polaris note, not part of the answer above — sources found or read while researching it:\n")
+	for i, c := range cits {
+		if i == maxHistorySources {
+			fmt.Fprintf(&sb, "- ...and %d more\n", len(cits)-maxHistorySources)
+			break
+		}
+		title := strings.TrimSpace(c.Title)
+		if title == "" {
+			title = c.URL
+		}
+		fmt.Fprintf(&sb, "- %s — %s\n", title, c.URL)
+	}
+	sb.WriteString("]")
+	return sb.String()
 }
 
 // appendPendingQuestionOptions folds an ask_user_question call's suggested
