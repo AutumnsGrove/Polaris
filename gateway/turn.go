@@ -261,14 +261,6 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// A ghost thread has no persisted row for loadHistory to reconstruct
 	// from (see the Anonymous doc comment on ClientMessage) — its own
 	// client-held transcript, replayed on every turn, stands in instead.
-	// Read once per turn so the history shape and the compaction threshold
-	// below can't disagree if the setting flips mid-turn.
-	fullTurnHistory := !anonymous && FullTurnHistoryFromStore(s.db)
-	if msg.FullTurnHistoryOverride != nil {
-		fullTurnHistory = !anonymous && *msg.FullTurnHistoryOverride
-	}
-	contextWindowTokens := effectiveContextWindowTokens(cfg.ContextWindowTokens, fullTurnHistory)
-
 	var history []llm.ChatMessage
 	if anonymous {
 		history = make([]llm.ChatMessage, len(msg.History))
@@ -277,11 +269,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	} else {
 		var err error
-		if fullTurnHistory {
-			history, err = s.loadHistoryWithToolResults(storageThreadID)
-		} else {
-			history, err = s.loadHistory(storageThreadID, 0)
-		}
+		history, err = s.loadHistory(storageThreadID)
 		if err != nil {
 			logEvent(storageThreadID, "error", "turn", "loading history failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
@@ -920,6 +908,24 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			logEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 		}
 
+		// The turn's exact wire messages, so the next turn replays them
+		// verbatim — see loadHistory. The closing assistant message is
+		// synced to the answer actually persisted above (StripFakeSourcesNote
+		// may have trimmed it): that message was generated, never sent, so
+		// no cached prefix depends on its original bytes. A failure here
+		// isn't fatal: loadHistory rebuilds a transcript-less turn the
+		// legacy way.
+		if n := len(result.Transcript); n > 0 {
+			result.Transcript[n-1].Content = result.Answer
+			if transcriptJSON, err := llm.EncodeTranscript(result.Transcript); err != nil {
+				log.Warn("failed to encode turn transcript", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "encoding transcript failed", map[string]interface{}{"err": err.Error()}, turnID)
+			} else if err := s.db.SetMessageTranscript(assistantMsgID, transcriptJSON); err != nil {
+				log.Warn("failed to record turn transcript", "err", err)
+				logEvent(storageThreadID, "warn", "turn", "recording transcript failed", map[string]interface{}{"err": err.Error()}, turnID)
+			}
+		}
+
 		if err := s.db.SetMessageCacheUsage(assistantMsgID, result.PromptTokens, result.CacheReadTokens); err != nil {
 			log.Warn("failed to record cache usage", "err", err)
 			logEvent(storageThreadID, "warn", "turn", "recording cache usage failed", map[string]interface{}{"err": err.Error()}, turnID)
@@ -965,7 +971,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// a single incognito conversation isn't expected to run long enough to
 	// need it.
 	contextTokens := result.ContextTokens
-	if !anonymous && result.ContextTokens >= contextWindowTokens {
+	if !anonymous && result.ContextTokens >= cfg.ContextWindowTokens {
 		if summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID); err != nil {
 			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
 			logEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
@@ -1446,7 +1452,7 @@ func sanitizeGeneratedTitle(raw string) string {
 
 // regenerateTitle is generateTitle's whole-thread counterpart: instead of
 // titling just the opening question, it reads the full conversation
-// (history, exactly as loadHistory reconstructs it — a compacted summary
+// (history as loadAnswerHistory builds it — a compacted summary
 // included, same as a normal turn would see) and titles that as a whole.
 // Used by the "Regenerate title" menu action, not by the automatic
 // once-per-thread path in handleTurn.
@@ -1484,10 +1490,10 @@ func (s *Server) regenerateTitle(cfg *config.Config, modelCfg config.ModelConfig
 
 // compactThread summarizes every message up to and including throughID,
 // via one extra (non-streamed, not shown as a normal answer) LLM call,
-// and records that summary so loadHistory substitutes it for the raw
+// and records that summary so history loading substitutes it for the raw
 // messages it covers on every subsequent turn.
 func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID int64) (summary string, cost float64, err error) {
-	history, err := s.loadHistory(threadID, 0)
+	history, err := s.loadAnswerHistory(threadID)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1527,32 +1533,10 @@ func estimateTokens(s string) int {
 	return len(s) / 4
 }
 
-// loadHistory reconstructs prior turns as ChatMessage pairs so a
-// resumed/continued thread has full context. If the thread has been
-// auto-compacted, everything at or below compacted_through_id is replaced
-// by a single summary message instead of being sent in full.
-//
-// excludeFromID, if nonzero, additionally skips every message with id >=
-// excludeFromID — the retry/edit path's way of getting a "post-edit" view
-// of history without the old messages having actually been deleted yet
-// (see handleTurn: the physical delete is deferred to a single atomic
-// transaction with the new message's insert, but the LLM must still see
-// history as if the edit had already happened).
-func (s *Server) loadHistory(threadID string, excludeFromID int64) ([]llm.ChatMessage, error) {
-	entries, err := s.historyEntries(threadID, excludeFromID)
-	if err != nil {
-		return nil, err
-	}
-	history := make([]llm.ChatMessage, len(entries))
-	for i, e := range entries {
-		history[i] = llm.ChatMessage{Role: e.Role, Content: e.Content}
-	}
-	return history, nil
-}
-
-// historyEntries is loadHistory's thread/message read, split out so
-// loadHistoryWithToolResults (see history_replay.go) can reach each
-// entry's TurnID, which llm.ChatMessage has no field for.
+// historyEntries is the thread/message read behind loadHistory and
+// loadAnswerHistory (see history_replay.go) — split out so they can reach
+// each entry's TurnID/Transcript, which llm.ChatMessage has no field for.
+// excludeFromID is passed straight through to store.EffectiveHistory.
 func (s *Server) historyEntries(threadID string, excludeFromID int64) ([]store.HistoryEntry, error) {
 	// GetThreadRaw, not the public GetThread — threadID here is always
 	// storageThreadID, which is legitimately a hidden fork's own id for

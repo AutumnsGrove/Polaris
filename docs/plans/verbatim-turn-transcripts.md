@@ -1,6 +1,6 @@
 # Verbatim turn transcripts (replacing reconstructed history)
 
-**Status:** approved 2026-09-23, in progress. Decisions below are settled (see "Decisions").
+**Status:** implemented 2026-09-23 (all three phases). Decisions below are settled (see "Decisions").
 
 ## Phases
 
@@ -78,9 +78,10 @@ request is that list plus the new message.
 ### 1. `agent.Run` returns its transcript
 
 Add `Result.Transcript []llm.ChatMessage`: every message `Run` appended after `history`, plus the
-final assistant message. That covers the user message, tool-call assistant messages (commentary
-text included, original IDs, original batching), tool results (untruncated), nudges, the wrap-up
-prompt and the final answer. It is simply `messages[len(history)+1:]` plus
+final assistant message. That covers the user message, tool-call assistant messages (original IDs,
+original batching), tool results (untruncated), nudges, image messages, the wrap-up prompt and the
+final answer. Pre-tool-call commentary is streamed to the UI but was never part of the in-turn
+request, so it's (correctly) not in the transcript either: the transcript is what was sent. It is simply `messages[len(history)+1:]` plus
 `{Role: "assistant", Content: answer}`, collected at each return point. For `ask_user_question`
 and the finalize tools, the final assistant message holds the text shown to the user, which gives
 the valid shape `assistant(tool_calls) → tool → assistant(text) → user(next reply)`.
@@ -113,9 +114,9 @@ a cache hit**. Only the final answer and the new message are uncached. That's th
   most once a day. A new `current_time` tool returns the exact local time (and timezone) for the
   rare question that needs it, e.g. "is X open right now" or "how long until...".
 - **Mode instructions** (focus/voice/deep/no-research): keep them in the system prompt so they
-  still apply from the first turn. Stop sending `modeReinforcement` as a separate unstored message;
-  append it to the stored `turnMessage` instead. It then stays near the end, where it has the most
-  effect, and it becomes part of the stable transcript.
+  still apply from the first turn. `modeReinforcement` stays a separate message right after the user
+  message, and it is now saved as part of the turn's transcript like everything else. It's still
+  near the end, where it has the most effect, and it no longer breaks the prefix on the next turn.
 
 ### 5. Delete the patches
 
@@ -129,13 +130,13 @@ a cache hit**. Only the final answer and the new message are uncached. That's th
   carry the note, so there's nothing new for the model to imitate.
 - prompt.md's "Earlier turns" section shrinks to a line or two.
 
-### 6. Compaction gets cheaper, too
+### 6. Compaction (follow-up, not done)
 
-`compactThread` currently sends a different system prompt plus an answer-only history, so it never
-hits the cache and summarizes only answers. Instead, send the **exact turn prefix** (same system
-prompt, same tools, same transcript) plus a final user message with the compaction instruction.
-That is almost entirely cache reads, and the summary can draw on the actual sources. The same
-change works for `generateSuggestions` and `regenerateTitle` if wanted.
+`compactThread` and `regenerateTitle` still use an answers-only view (`loadAnswerHistory`) under
+their own system prompt, same as before. A cheaper compaction would send the exact turn prefix
+(same system prompt, same tools) plus a final instruction, so nearly all of it is cache reads and
+the summary can draw on the actual sources. Left for later: it needs the side call to carry the
+main turn's tools list without the model treating it as an invitation to call one.
 
 ## Cost
 

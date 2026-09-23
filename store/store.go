@@ -212,6 +212,14 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- (see ThreadCacheUsage), so a fork's copied prefix counts too.
 	prompt_tokens INTEGER NOT NULL DEFAULT 0,
 	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+	-- transcript: JSON-encoded exact wire messages this turn sent (see
+	-- llm.EncodeTranscript and agent.Result.Transcript) — the model-facing
+	-- user message through the final answer, tool calls/results
+	-- untruncated. Assistant messages only. loadHistory replays it
+	-- verbatim so later turns share a byte-identical, cacheable prefix
+	-- (docs/plans/verbatim-turn-transcripts.md); '' for every turn from
+	-- before this existed, which falls back to the older reconstruction.
+	transcript TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1028,6 +1036,8 @@ var migrations = []string{
 	// prompt_tokens/cache_read_tokens — see the schema comment above.
 	`ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
+	// transcript — see the schema comment above.
+	`ALTER TABLE messages ADD COLUMN transcript TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1210,8 +1220,12 @@ type Message struct {
 	// SetMessageVerification. "[]" for a message with no verification
 	// pass run, or nothing found supported at/above the confidence
 	// threshold.
-	Verification string    `json:"verification"`
-	CreatedAt    time.Time `json:"created_at"`
+	Verification string `json:"verification"`
+	// Transcript is the turn's exact wire messages (see the schema
+	// comment) — history-building only, never sent to the frontend: it
+	// can run to hundreds of KB for a researched turn.
+	Transcript string    `json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Attachment is one file included with a user message — see
@@ -1393,8 +1407,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, transcript, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, transcript, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1596,9 +1610,12 @@ type HistoryEntry struct {
 	Content string
 	// TurnID is the source message's own turn_id ("" for the synthetic
 	// compaction-summary entry) — lets gateway's loadHistory find that
-	// turn's logged tool calls/results when the full-turn-history setting
-	// asks for them to be replayed too (see ToolEventsForThread).
+	// turn's logged tool calls/results to rebuild a turn from before
+	// transcripts existed (see ToolEventsForThread).
 	TurnID string
+	// Transcript is the source message's stored wire transcript ('' for
+	// user messages and pre-transcript turns) — see Message.Transcript.
+	Transcript string
 }
 
 // EffectiveHistory reconstructs a thread's prior turns exactly the way
@@ -1633,7 +1650,7 @@ func EffectiveHistory(thread *Thread, msgs []Message, excludeFromID int64) []His
 		if m.Role == "assistant" {
 			content = appendCitedSources(content, m.Citations)
 		}
-		history = append(history, HistoryEntry{Role: m.Role, Content: content, TurnID: m.TurnID})
+		history = append(history, HistoryEntry{Role: m.Role, Content: content, TurnID: m.TurnID, Transcript: m.Transcript})
 	}
 	return history
 }
@@ -2217,7 +2234,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2230,7 +2247,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2283,6 +2300,14 @@ func withLegacyAttachmentFallback(attachmentsJSON, filename, contentType, worksp
 // Post-hoc UPDATE, same shape as SetMessageDuration below.
 func (s *Store) SetMessageCacheUsage(messageID int64, promptTokens, cacheReadTokens int) error {
 	_, err := s.db.Exec(`UPDATE messages SET prompt_tokens = ?, cache_read_tokens = ? WHERE id = ?`, promptTokens, cacheReadTokens, messageID)
+	return err
+}
+
+// SetMessageTranscript records a turn's exact wire transcript — see the
+// transcript schema comment. Post-hoc UPDATE, same shape as
+// SetMessageCacheUsage.
+func (s *Store) SetMessageTranscript(messageID int64, transcriptJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET transcript = ? WHERE id = ?`, transcriptJSON, messageID)
 	return err
 }
 

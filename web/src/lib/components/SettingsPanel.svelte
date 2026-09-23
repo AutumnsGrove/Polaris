@@ -18,8 +18,7 @@
 		NotepadText,
 		User,
 		Mic,
-		MapPin,
-		History
+		MapPin
 	} from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
@@ -492,27 +491,6 @@
 					it's saved across conversations.
 				</p>
 			</div>
-
-			<div class="section-head"><History size={15} /><span class="section-title">Conversation context</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Give the model full results across turns</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={appState.settings.fullTurnHistory}
-							onchange={(e) => appState.settings.setFullTurnHistory(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
-				</div>
-			</div>
-			<p class="hint">
-				Follow-ups always see earlier answers and the sources behind them. With this on, they
-				also see every earlier search result and page read, so <span class="wordmark">Polaris</span>
-				doesn't have to look things up again. Each turn costs more, and a long thread reaches the
-				auto-compaction limit sooner (the limit rises to 200K tokens while this is on).
-			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>
 			<div class="settings-group">

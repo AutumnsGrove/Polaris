@@ -160,15 +160,6 @@ type ClientMessage struct {
 	// WebSocket client never sets this — a real chat turn always wants the
 	// non-blocking async path so the answer never stalls behind it.
 	WaitVerification bool `json:"-"`
-	// FullTurnHistoryOverride, when non-nil, replaces
-	// FullTurnHistoryFromStore(s.db) for this turn only — same "debug knob,
-	// API-only, WebSocket client never sets this" shape as WaitVerification
-	// above. Without it, exercising the full_turn_history setting via
-	// /api/ask meant actually flipping the operator's real settings row
-	// first (affecting the live chat client too) and remembering to flip
-	// it back after. Only ever set by handleAsk/handleAskStream from
-	// AskRequest.FullTurnHistory.
-	FullTurnHistoryOverride *bool `json:"-"`
 }
 
 // GhostTurn is one prior turn of a ghost (Anonymous) thread's client-held

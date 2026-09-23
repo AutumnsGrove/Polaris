@@ -385,7 +385,7 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, err := s.loadHistory(effectiveID, 0)
+	history, err := s.loadAnswerHistory(effectiveID)
 	if err != nil {
 		log.Warn("loading thread history failed", "thread", id, "err", err)
 		s.db.LogEvent(id, "error", "thread", "loading thread history for title regeneration failed", map[string]interface{}{"err": err.Error()}, "")

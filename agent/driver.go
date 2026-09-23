@@ -487,6 +487,17 @@ type Result struct {
 	// ContextTokens (the LAST call's size only), these are totals.
 	PromptTokens    int
 	CacheReadTokens int
+	// Transcript is every message this turn put on the wire, in order,
+	// after the replayed history — the model-facing user message (with any
+	// attachment notes or Pulsar report folded in), mode reinforcement,
+	// each tool-call round exactly as the provider returned it (commentary,
+	// original call IDs, batching), every tool result untruncated, nudges,
+	// image messages — plus the final answer as a closing assistant
+	// message. gateway persists it so the next turn replays these exact
+	// bytes instead of reconstructing them, which is what lets the
+	// provider's prefix cache cover the whole conversation (see
+	// docs/plans/verbatim-turn-transcripts.md).
+	Transcript []llm.ChatMessage
 }
 
 // Run executes one turn of the agent loop: given prior conversation
@@ -529,9 +540,15 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	// (web_read's filter pass, a spawned sub-agent) has its own unrelated
 	// prefix and would just blur the number.
 	var promptTokens, cacheReadTokens int
+	// turnStart is where this turn's own messages begin — everything
+	// before it is the system prompt plus replayed history.
+	turnStart := 1 + len(history)
 	finish := func(r *Result) *Result {
 		r.PromptTokens = promptTokens
 		r.CacheReadTokens = cacheReadTokens
+		transcript := make([]llm.ChatMessage, 0, len(messages)-turnStart+1)
+		transcript = append(transcript, messages[turnStart:]...)
+		r.Transcript = append(transcript, llm.ChatMessage{Role: "assistant", Content: r.Answer})
 		return r
 	}
 	var answer strings.Builder

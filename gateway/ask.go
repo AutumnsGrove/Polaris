@@ -63,13 +63,6 @@ type AskRequest struct {
 	// /api/threads/{id} for messages.verification to eventually populate
 	// asynchronously.
 	WaitVerification bool `json:"wait_verification,omitempty"`
-	// FullTurnHistory mirrors ClientMessage.FullTurnHistoryOverride — a
-	// *bool, not bool, so omitting it means "use the operator's real
-	// full_turn_history setting" rather than silently forcing it off.
-	// Lets a caller A/B the setting per-request (e.g. comparing a
-	// follow-up's trace/cost with and against the shared operator
-	// setting) without mutating PUT /api/settings for every other client.
-	FullTurnHistory *bool `json:"full_turn_history,omitempty"`
 }
 
 // AskResponse is the full result of one turn, assembled from the same
@@ -239,19 +232,18 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	defer s.FinishTurn()
 
 	msg := ClientMessage{
-		Type:                    "message",
-		ThreadID:                req.ThreadID,
-		Content:                 req.Content,
-		Model:                   req.Model,
-		Source:                  req.Source,
-		FocusMode:               req.FocusMode,
-		DeepResearch:            req.DeepResearch,
-		QuickMode:               req.QuickMode,
-		Attachments:             req.Attachments,
-		Anonymous:               req.Anonymous,
-		History:                 req.History,
-		WaitVerification:        req.WaitVerification,
-		FullTurnHistoryOverride: req.FullTurnHistory,
+		Type:             "message",
+		ThreadID:         req.ThreadID,
+		Content:          req.Content,
+		Model:            req.Model,
+		Source:           req.Source,
+		FocusMode:        req.FocusMode,
+		DeepResearch:     req.DeepResearch,
+		QuickMode:        req.QuickMode,
+		Attachments:      req.Attachments,
+		Anonymous:        req.Anonymous,
+		History:          req.History,
+		WaitVerification: req.WaitVerification,
 	}
 
 	var answer strings.Builder
@@ -358,18 +350,17 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 	defer s.FinishTurn()
 
 	msg := ClientMessage{
-		Type:                    "message",
-		ThreadID:                req.ThreadID,
-		Content:                 req.Content,
-		Model:                   req.Model,
-		Source:                  req.Source,
-		FocusMode:               req.FocusMode,
-		DeepResearch:            req.DeepResearch,
-		QuickMode:               req.QuickMode,
-		Attachments:             req.Attachments,
-		Anonymous:               req.Anonymous,
-		History:                 req.History,
-		FullTurnHistoryOverride: req.FullTurnHistory,
+		Type:         "message",
+		ThreadID:     req.ThreadID,
+		Content:      req.Content,
+		Model:        req.Model,
+		Source:       req.Source,
+		FocusMode:    req.FocusMode,
+		DeepResearch: req.DeepResearch,
+		QuickMode:    req.QuickMode,
+		Attachments:  req.Attachments,
+		Anonymous:    req.Anonymous,
+		History:      req.History,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")

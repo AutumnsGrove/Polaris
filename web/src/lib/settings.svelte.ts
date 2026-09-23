@@ -116,13 +116,6 @@ export class SettingsState {
 	// touched this setting behaves exactly as before it existed.
 	memoryEnabled = $state(true);
 
-	// Replays every earlier turn's tool calls and results to the model on
-	// follow-ups, not just its answers (see gateway/history_replay.go's
-	// loadHistoryWithToolResults). Off by default — it costs more per turn
-	// and also raises the compaction threshold, which is why toggling it
-	// re-reads contextWindowTokens from the server below.
-	fullTurnHistory = $state(false);
-
 	// Free-text operator steering substituted into prompt.md's
 	// {custom_instructions} placeholder on every turn (see
 	// gateway/settings.go's settingCustomInstructions and
@@ -155,7 +148,7 @@ export class SettingsState {
 	// Context-usage display, next to thread cost. contextWindowTokens is
 	// the auto-compaction threshold from config.yaml (loaded once via
 	// load()) — the denominator for the % shown in +page.svelte.
-	contextWindowTokens = $state(100_000);
+	contextWindowTokens = $state(200_000);
 
 	// Self-update progress. Deliberately owned here, not as local state in
 	// SettingsPanel.svelte — that component unmounts entirely whenever the
@@ -230,11 +223,10 @@ export class SettingsState {
 		this.defaultModel = data.default_model ?? '';
 		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
 		this.voiceInputMode = data.voice_input_mode === 'hold' ? 'hold' : 'toggle';
-		this.contextWindowTokens = data.context_window_tokens ?? 100_000;
+		this.contextWindowTokens = data.context_window_tokens ?? 200_000;
 		this.toggleableTools = data.toggleable_tools ?? [];
 		this.disabledTools = data.disabled_tools ?? [];
 		this.memoryEnabled = data.memory_enabled ?? true;
-		this.fullTurnHistory = data.full_turn_history ?? false;
 		this.customInstructions = data.custom_instructions ?? '';
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
@@ -288,16 +280,6 @@ export class SettingsState {
 	async setMemoryEnabled(enabled: boolean) {
 		this.memoryEnabled = enabled;
 		await this.put({ memory_enabled: enabled });
-	}
-
-	// Re-fetches after saving because the server, not this client, owns
-	// the effective compaction threshold this toggle changes (see
-	// effectiveContextWindowTokens) — the context-usage % should switch
-	// denominators right away, not on the next page load.
-	async setFullTurnHistory(enabled: boolean) {
-		this.fullTurnHistory = enabled;
-		await this.put({ full_turn_history: enabled });
-		await this.load();
 	}
 
 	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —

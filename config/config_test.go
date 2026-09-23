@@ -52,8 +52,8 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Backup.RetentionDays != 30 {
 		t.Errorf("Backup.RetentionDays = %d, want 30", cfg.Backup.RetentionDays)
 	}
-	if cfg.ContextWindowTokens != 100_000 {
-		t.Errorf("ContextWindowTokens = %d, want 100000", cfg.ContextWindowTokens)
+	if cfg.ContextWindowTokens != 200_000 {
+		t.Errorf("ContextWindowTokens = %d, want 200000", cfg.ContextWindowTokens)
 	}
 	if cfg.MaxAgentTurns != 50 {
 		t.Errorf("MaxAgentTurns = %d, want 50", cfg.MaxAgentTurns)

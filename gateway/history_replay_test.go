@@ -1,13 +1,18 @@
 package gateway
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	"polaris/llm"
 )
 
-// seedResearchedThread builds a two-turn thread whose first turn ran a
-// web_search and a web_read, logged exactly the way logTurnEvent does.
+// seedResearchedThread builds a two-turn thread from before transcripts
+// existed (no messages.transcript) whose first turn ran a web_search and a
+// web_read, logged exactly the way logTurnEvent does — the legacy shape
+// loadHistory still has to rebuild.
 func seedResearchedThread(t *testing.T, h *testHarness) *Server {
 	t.Helper()
 	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
@@ -33,13 +38,13 @@ func seedResearchedThread(t *testing.T, h *testHarness) *Server {
 	return &Server{db: h.db}
 }
 
-func TestLoadHistoryWithToolResults_ReplaysCallsBeforeTheirAnswer(t *testing.T) {
+func TestLoadHistory_LegacyTurnReplaysCallsBeforeTheirAnswer(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	s := seedResearchedThread(t, h)
 
-	history, err := s.loadHistoryWithToolResults("t1")
+	history, err := s.loadHistory("t1")
 	if err != nil {
-		t.Fatalf("loadHistoryWithToolResults: %v", err)
+		t.Fatalf("loadHistory: %v", err)
 	}
 	// user, (call+result)x2, answer, user, answer
 	if len(history) != 8 {
@@ -72,7 +77,7 @@ func TestLoadHistoryWithToolResults_ReplaysCallsBeforeTheirAnswer(t *testing.T) 
 	}
 }
 
-// TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows is
+// TestLoadHistory_LegacyTurnsStayIdenticalAsThreadGrows is
 // the property prompt caching actually needs: an earlier version decided
 // per request which turns' calls fit a budget, which meant turn 1's own
 // reconstructed shape could change once turn 3 showed up competing for the
@@ -80,13 +85,13 @@ func TestLoadHistoryWithToolResults_ReplaysCallsBeforeTheirAnswer(t *testing.T) 
 // conversation, not just the newest turn. Unconditional replay has no
 // per-request decision left to make, so the prefix covering turn 1 must be
 // byte-for-byte the same before and after a new turn is appended.
-func TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows(t *testing.T) {
+func TestLoadHistory_LegacyTurnsStayIdenticalAsThreadGrows(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	s := seedResearchedThread(t, h)
 
-	before, err := s.loadHistoryWithToolResults("t1")
+	before, err := s.loadHistory("t1")
 	if err != nil {
-		t.Fatalf("loadHistoryWithToolResults (before): %v", err)
+		t.Fatalf("loadHistory (before): %v", err)
 	}
 	// turn1's slice: user, (call+result)x2, answer — everything before
 	// turn2's own "how does its pricing compare" question.
@@ -101,9 +106,9 @@ func TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows(t *te
 		t.Fatalf("AddMessage: %v", err)
 	}
 
-	after, err := s.loadHistoryWithToolResults("t1")
+	after, err := s.loadHistory("t1")
 	if err != nil {
-		t.Fatalf("loadHistoryWithToolResults (after): %v", err)
+		t.Fatalf("loadHistory (after): %v", err)
 	}
 	turn1After := after[:6]
 
@@ -117,19 +122,52 @@ func TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows(t *te
 	}
 }
 
-func TestEffectiveContextWindowTokens(t *testing.T) {
-	cases := []struct {
-		configured int
-		full       bool
-		want       int
-	}{
-		{100_000, false, 100_000},
-		{100_000, true, fullTurnHistoryContextWindowTokens},
-		{300_000, true, 300_000}, // never lowers an operator's own larger threshold
+// A turn with a stored transcript replays it as-is — the model-facing user
+// message it opens with stands in for the bare stored one, and its tool
+// round keeps the provider's own call ids and batching — while an older
+// turn in the same thread still gets the legacy rebuild.
+func TestLoadHistory_ReplaysStoredTranscriptVerbatim(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	s := seedResearchedThread(t, h)
+
+	turn3 := []llm.ChatMessage{
+		{Role: "user", Content: "and the context window?\n\n[Attached file: spec.pdf]"},
+		{Role: "assistant", Content: "Checking both.", ToolCalls: []llm.ToolCall{
+			{ID: "functions.web_read:0", Type: "function", Function: llm.FunctionCall{Name: "web_read", Arguments: `{"url":"https://a"}`}},
+			{ID: "functions.web_read:1", Type: "function", Function: llm.FunctionCall{Name: "web_read", Arguments: `{"url":"https://b"}`}},
+		}},
+		{Role: "tool", ToolCallID: "functions.web_read:0", Content: strings.Repeat("a", 30_000)},
+		{Role: "tool", ToolCallID: "functions.web_read:1", Content: "b"},
+		{Role: "assistant", Content: "256K for both."},
 	}
-	for _, c := range cases {
-		if got := effectiveContextWindowTokens(c.configured, c.full); got != c.want {
-			t.Errorf("effectiveContextWindowTokens(%d, %v) = %d, want %d", c.configured, c.full, got, c.want)
-		}
+	if _, err := h.db.AddMessage("t1", "user", "and the context window?", "[]", "[]", 0, "turn3"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	id, err := h.db.AddMessage("t1", "assistant", "256K for both.", `[{"title":"A","url":"https://a"}]`, "[]", 0, "turn3")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	encoded, err := llm.EncodeTranscript(turn3)
+	if err != nil {
+		t.Fatalf("EncodeTranscript: %v", err)
+	}
+	if err := h.db.SetMessageTranscript(id, encoded); err != nil {
+		t.Fatalf("SetMessageTranscript: %v", err)
+	}
+
+	history, err := s.loadHistory("t1")
+	if err != nil {
+		t.Fatalf("loadHistory: %v", err)
+	}
+	// Legacy turns 1-2 (8 messages, see the test above), then turn 3's
+	// transcript and nothing else — no second copy of its user message,
+	// no source note on its answer.
+	if len(history) != 8+len(turn3) {
+		t.Fatalf("got %d messages, want %d: %+v", len(history), 8+len(turn3), history)
+	}
+	want, _ := json.Marshal(turn3)
+	got, _ := json.Marshal(history[8:])
+	if string(got) != string(want) {
+		t.Fatalf("turn 3 not replayed verbatim:\nwant %s\ngot  %s", want, got)
 	}
 }
