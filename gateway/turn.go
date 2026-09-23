@@ -800,6 +800,19 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		return
 	}
 
+	// Seen live (issue found via a real potato thread, full_turn_history
+	// on): once a thread's replayed history carries a few of
+	// appendCitedSources' injected "[Polaris note...]" blocks, the model
+	// sometimes imitates the exact format in its own answer — despite
+	// prompt.md explicitly telling it not to. A prompt instruction alone
+	// isn't a reliable enough guard against a model copying a formatting
+	// convention it's been shown repeatedly in-context, so this strips any
+	// such trailing block mechanically before the answer is used for
+	// anything (persistence, title/suggestion generation, verification) —
+	// belt-and-suspenders alongside the prompt instruction, not a
+	// replacement for it.
+	result.Answer = store.StripFakeSourcesNote(result.Answer)
+
 	// One-time LLM-generated thread title, replacing the truncated
 	// placeholder set above — on a brand-new thread's first turn, or on
 	// an edit/retry of that first turn (isFirstMessageEdit), since in

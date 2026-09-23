@@ -1628,6 +1628,12 @@ func EffectiveHistory(thread *Thread, msgs []Message, excludeFromID int64) []His
 // already looked at; the rest collapse into a count.
 const maxHistorySources = 25
 
+// polarisNoteMarker is the exact literal text appendCitedSources always
+// opens its injected note with — shared with StripFakeSourcesNote below,
+// which needs to recognize precisely this string to tell a real injected
+// note apart from ordinary answer text that happens to mention sources.
+const polarisNoteMarker = "\n\n[Polaris note, not part of the answer above — sources found or read while researching it:\n"
+
 // appendCitedSources folds an assistant message's stored citations into
 // the text its history entry carries. Before this, a follow-up turn saw
 // only the prior answer's prose — the "N Sources" list the user sees under
@@ -1639,7 +1645,8 @@ const maxHistorySources = 25
 // appendPendingQuestionOptions (store can't import tools.Citation).
 // Framed as an app-added note, not as part of the answer, so the model
 // doesn't learn to write a trailing source list itself — prompt.md's
-// "Earlier turns" section says the same.
+// "Earlier turns" section says the same. See StripFakeSourcesNote for the
+// defense when a model imitates this format anyway.
 func appendCitedSources(content, citationsJSON string) string {
 	if citationsJSON == "" {
 		return content
@@ -1653,7 +1660,7 @@ func appendCitedSources(content, citationsJSON string) string {
 	}
 	var sb strings.Builder
 	sb.WriteString(content)
-	sb.WriteString("\n\n[Polaris note, not part of the answer above — sources found or read while researching it:\n")
+	sb.WriteString(polarisNoteMarker)
 	for i, c := range cits {
 		if i == maxHistorySources {
 			fmt.Fprintf(&sb, "- ...and %d more\n", len(cits)-maxHistorySources)
@@ -1667,6 +1674,25 @@ func appendCitedSources(content, citationsJSON string) string {
 	}
 	sb.WriteString("]")
 	return sb.String()
+}
+
+// StripFakeSourcesNote removes a trailing block from answer that imitates
+// appendCitedSources' own injected note, if the model wrote one into its
+// own output. Seen live: once a thread's replayed history carries a few
+// real injected notes (full_turn_history mode replays several turns'
+// worth at once), the model sometimes copies the exact format into its
+// own answer despite prompt.md telling it not to — and unlike the real
+// note, a model-written one is fake positioning (its "sources" are
+// whatever the model already cited inline, not a system-verified list),
+// so it must never reach the stored message or a later turn's replayed
+// history, or the mimicry compounds. Matches on the literal marker text,
+// not fuzzy detection — a genuine answer has no legitimate reason to ever
+// contain this exact string.
+func StripFakeSourcesNote(answer string) string {
+	if idx := strings.Index(answer, polarisNoteMarker); idx != -1 {
+		return strings.TrimRight(answer[:idx], "\n")
+	}
+	return answer
 }
 
 // appendPendingQuestionOptions folds an ask_user_question call's suggested

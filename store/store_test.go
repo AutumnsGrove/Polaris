@@ -1236,3 +1236,30 @@ func TestEffectiveHistory_IncludesCitedSources(t *testing.T) {
 		t.Errorf("TurnID = %q, want turn1", entries[1].TurnID)
 	}
 }
+
+// TestStripFakeSourcesNote: seen live on a real thread with
+// full_turn_history on — once the model had seen appendCitedSources'
+// injected note a few times in its own replayed history, it imitated the
+// exact format in its own answer despite prompt.md telling it not to.
+// This is the mechanical backstop: strip a trailing block matching that
+// format before the answer is ever stored or replayed again.
+func TestStripFakeSourcesNote(t *testing.T) {
+	clean := "This is a perfectly normal answer with [a real link](https://example.com) in it."
+	if got := StripFakeSourcesNote(clean); got != clean {
+		t.Errorf("StripFakeSourcesNote(%q) = %q, want it untouched", clean, got)
+	}
+
+	faked := clean + polarisNoteMarker + "- Some Source — https://example.com/fake\n]"
+	if got := StripFakeSourcesNote(faked); got != clean {
+		t.Errorf("StripFakeSourcesNote(%q) = %q, want %q", faked, got, clean)
+	}
+
+	// A real injected note (the one appendCitedSources itself produces)
+	// must also come off cleanly — this is what a model-generated
+	// imitation looks like once it's fed back in as this turn's own
+	// history for the turn after it.
+	withRealNote := appendCitedSources("The real answer.", `[{"title":"X","url":"https://example.com/x"}]`)
+	if got := StripFakeSourcesNote(withRealNote); got != "The real answer." {
+		t.Errorf("StripFakeSourcesNote(%q) = %q, want the note stripped back off", withRealNote, got)
+	}
+}
