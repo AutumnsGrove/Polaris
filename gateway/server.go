@@ -10,6 +10,7 @@
 package gateway
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"io/fs"
@@ -173,7 +174,7 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 	return s
 }
 
-func (s *Server) Handler() http.Handler { return csrfProtect(s.mux, s.devMode) }
+func (s *Server) Handler() http.Handler { return gzipMiddleware(csrfProtect(s.mux, s.devMode)) }
 
 // viteDevServerOrigin is the fixed host:port vite.config.ts pins the
 // frontend dev server to (see that file's own comment on why 45173
@@ -183,6 +184,65 @@ func (s *Server) Handler() http.Handler { return csrfProtect(s.mux, s.devMode) }
 // vite's own proxy config forwards /api and /ws to this backend on its
 // separate port. Only trusted when devMode is true.
 const viteDevServerOrigin = "localhost:45173"
+
+// gzipMiddleware compresses every response the client says it can accept
+// (Accept-Encoding: gzip — every browser, always), except /ws: a
+// websocket upgrade needs the underlying ResponseWriter's Hijacker, which
+// gzipResponseWriter doesn't implement, and compression is meaningless
+// for a connection that's about to stop being HTTP anyway (the WS
+// protocol has its own optional per-message-deflate, unrelated to this).
+//
+// This matters far more here than in a typical local-network app: single-
+// operator, primarily used from a phone over Tailscale (see CLAUDE.md), so
+// "the client" is very often a cellular connection relayed through a DERP
+// server rather than a fast LAN link. A long thread's full message history
+// or Constellation's star list is plain JSON text — gzip typically shrinks
+// that 70-85%, which is a bandwidth-bound load turning into a much smaller
+// one, not a CPU-bound problem this fixes.
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ws" || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+	})
+}
+
+// gzipResponseWriter wraps http.ResponseWriter so a handler's normal
+// w.Write calls transparently flow through gzip.Writer first. It forwards
+// Flush so the two streaming handlers that need it — handleAskStream and
+// handleSpeakStream, both of which type-assert w.(http.Flusher) and 500 if
+// that fails — keep working under compression instead of buffering their
+// whole response and defeating the point of streaming.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (grw *gzipResponseWriter) Write(b []byte) (int, error) {
+	return grw.gz.Write(b)
+}
+
+// WriteHeader must drop any Content-Length the handler already set:
+// that length describes the uncompressed body, and shipping it alongside
+// gzip'd bytes on the wire produces a response the client will truncate
+// or hang trying to read past.
+func (grw *gzipResponseWriter) WriteHeader(status int) {
+	grw.Header().Del("Content-Length")
+	grw.ResponseWriter.WriteHeader(status)
+}
+
+func (grw *gzipResponseWriter) Flush() {
+	grw.gz.Flush()
+	if f, ok := grw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
 
 // csrfProtect rejects a cross-origin state-changing request by comparing
 // the browser-supplied Origin header against the request's own Host.
