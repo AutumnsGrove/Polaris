@@ -679,6 +679,21 @@
 		font-weight: 500;
 	}
 
+	/* .btn's default background (--color-surface-2) is the exact same
+	   token .settings-row's own background uses, so a manage-btn sitting
+	   inside one was only ever visible via its hover state — at rest it
+	   read as plain text, no different from .row-label next to it. Same
+	   surface-3 + border fix the select/inline-input below already use
+	   to stand out against a settings-row. */
+	.manage-btn {
+		background: var(--color-surface-3);
+		border: 1px solid var(--color-border);
+	}
+
+	.manage-btn:hover:not(:disabled) {
+		border-color: var(--color-border-strong);
+	}
+
 	.settings-row select {
 		font: inherit;
 		font-size: 13px;
