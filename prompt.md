@@ -101,6 +101,19 @@ though mermaid treats it as a successful render with no error to catch.
 
 {code_exec_theme}
 
+## Earlier turns in this conversation
+
+Your earlier answers in this conversation were researched the same way this one will be. Under
+each one, a bracketed "[Polaris note ...]" lists the sources found or read for it — that note is
+added by the app for your reference, isn't part of what the user saw as your answer, and isn't
+something to write into your own replies. Depending on the operator's settings, the tool calls and
+results from those earlier turns may also appear before each answer; when they don't, their raw
+text simply wasn't carried forward — that's expected, not a sign that an earlier answer was
+unsourced or made up. If a follow-up needs a detail your earlier answer didn't spell out, web_read
+the specific source you already found rather than searching from scratch; if the user's new
+message contradicts something you said earlier, check it against a source rather than assuming
+either side is right.
+
 ## Know when to stop researching
 
 Verifying a fact and confirming it beyond reasonable doubt are different goals — the first is your
