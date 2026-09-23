@@ -436,6 +436,21 @@ func (s *Server) IsTurnInFlight(threadID string) bool {
 	return s.inFlightThreads[threadID] > 0
 }
 
+// HasInFlightTurns reports whether ANY turn is running right now, across
+// every thread — chat, ask, or pulse alike, since markTurnInFlight covers
+// handleTurn's every caller (see its own doc comment). Backs
+// handleServerBusy's pre-restart wait: a self-update recreating the
+// container mid-turn kills that turn's goroutine outright (--force-recreate
+// doesn't drain connections), same failure mode handleConstellationBusy
+// already existed to prevent for a shooting-star run — see issue #57,
+// which explicitly left "should an in-flight chat turn factor in here too"
+// as an open question this answers.
+func (s *Server) HasInFlightTurns() bool {
+	s.inFlightMu.Lock()
+	defer s.inFlightMu.Unlock()
+	return len(s.inFlightThreads) > 0
+}
+
 // AbortActiveTurns tells every turn still registered (i.e. still running
 // after WaitForActiveTurns' deadline expired) that it's being cut off,
 // before cmd/run.go actually exits the process. Without this, a turn that
@@ -527,7 +542,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/constellation/config", s.handleGetConstellationConfig)
 	s.mux.HandleFunc("PUT /api/constellation/config", s.handleUpdateConstellationConfig)
 	s.mux.HandleFunc("GET /api/constellation/stats", s.handleGetConstellationStats)
-	s.mux.HandleFunc("GET /api/constellation/busy", s.handleConstellationBusy)
+	s.mux.HandleFunc("GET /api/busy", s.handleServerBusy)
 	s.mux.HandleFunc("GET /api/constellation/stars", s.handleListConstellationStars)
 	s.mux.HandleFunc("GET /api/constellation/stars/search", s.handleSearchConstellationStars)
 	s.mux.HandleFunc("GET /api/constellation/stars/{id}", s.handleGetConstellationStar)

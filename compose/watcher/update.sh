@@ -269,31 +269,35 @@ fi
 timeout 300 docker pull ghcr.io/autumnsgrove/polaris-sandbox:latest 2>&1 | tee "$CMD_LOG" || \
 	echo "code_exec sandbox image pull failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
 
-# Wait for any in-flight Constellation shooting-star run to finish before
-# recreating the container out from under it — issue #57, caught live: an
-# update landed exactly mid-batch, only harmless because the batch
-# happened to finish in the few seconds before the recreate actually ran.
-# Polled over the container's own already-exposed port (gateway/
-# constellation_routes.go's handleConstellationBusy) rather than needing
-# DB access from the host. WAIT_MAX_SECONDS caps this at 5 minutes so a
-# run that's genuinely stuck (or the endpoint being unreachable for any
-# reason) can never block an update forever — curl failing counts as "not
-# busy" and proceeds immediately, same reasoning as not blocking on an
-# unreachable healthcheck below.
+# Wait for any in-flight Constellation shooting-star run OR chat turn to
+# finish before recreating the container out from under it — issue #57
+# started this for just the shooting-star case (caught live: an update
+# landed exactly mid-batch, only harmless because the batch happened to
+# finish in the few seconds before the recreate actually ran); extended to
+# cover an ordinary chat turn too after the same thing happened to a live
+# conversation — --force-recreate kills the turn's goroutine outright
+# rather than draining it, so whatever the model was mid-generating never
+# finishes or gets saved. Polled over the container's own already-exposed
+# port (gateway/constellation_routes.go's handleServerBusy) rather than
+# needing DB access from the host. WAIT_MAX_SECONDS caps this at 5 minutes
+# so a run that's genuinely stuck (or the endpoint being unreachable for
+# any reason) can never block an update forever — curl failing counts as
+# "not busy" and proceeds immediately, same reasoning as not blocking on
+# an unreachable healthcheck below.
 WAIT_MAX_SECONDS=300
 WAIT_INTERVAL=5
 waited=0
 while true; do
-	BUSY_RESPONSE="$(curl -s --max-time 5 http://127.0.0.1:8899/api/constellation/busy 2>/dev/null || true)"
+	BUSY_RESPONSE="$(curl -s --max-time 5 http://127.0.0.1:8899/api/busy 2>/dev/null || true)"
 	case "$BUSY_RESPONSE" in
 	*'"busy":true'*) ;;
 	*) break ;;
 	esac
 	if [ "$waited" -ge "$WAIT_MAX_SECONDS" ]; then
-		echo "a Constellation run is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
+		echo "a Constellation run or chat turn is still in progress after ${WAIT_MAX_SECONDS}s — proceeding with the restart anyway" >&2
 		break
 	fi
-	echo "a Constellation run is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
+	echo "a Constellation run or chat turn is in progress, waiting for it to finish before restarting (${waited}s/${WAIT_MAX_SECONDS}s)..."
 	sleep "$WAIT_INTERVAL"
 	waited=$((waited + WAIT_INTERVAL))
 done

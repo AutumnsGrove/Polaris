@@ -12,11 +12,11 @@ import (
 	"polaris/store"
 )
 
-func TestHandleConstellationBusy_ReflectsInFlightRun(t *testing.T) {
+func TestHandleServerBusy_ReflectsInFlightShootingStarRun(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
 	getBusy := func() bool {
-		resp, err := http.Get(h.url("/api/constellation/busy"))
+		resp, err := http.Get(h.url("/api/busy"))
 		if err != nil {
 			t.Fatalf("GET: %v", err)
 		}
@@ -48,6 +48,47 @@ func TestHandleConstellationBusy_ReflectsInFlightRun(t *testing.T) {
 	}
 	if getBusy() {
 		t.Error("busy = true after the run finished, want false")
+	}
+}
+
+// TestHandleServerBusy_ReflectsInFlightChatTurn covers the gap
+// handleConstellationBusy's original doc comment left open (issue #57): a
+// self-update's --force-recreate kills an in-flight chat turn's goroutine
+// outright, same as it would a shooting-star run, so /api/busy must report
+// busy for one too — not just Constellation's own runs. markTurnInFlight/
+// clearTurnInFlight (called by handleTurn's every caller — WS, ask, pulse)
+// are exercised directly here rather than driving a real turn end-to-end,
+// since HasInFlightTurns only ever reads that same bookkeeping.
+func TestHandleServerBusy_ReflectsInFlightChatTurn(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	getBusy := func() bool {
+		resp, err := http.Get(h.url("/api/busy"))
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Busy bool `json:"busy"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		return body.Busy
+	}
+
+	if getBusy() {
+		t.Error("busy = true with no turns at all, want false")
+	}
+
+	h.srvObj.markTurnInFlight("some-thread-id")
+	if !getBusy() {
+		t.Error("busy = false with a marked in-flight turn, want true")
+	}
+
+	h.srvObj.clearTurnInFlight("some-thread-id")
+	if getBusy() {
+		t.Error("busy = true after the turn cleared, want false")
 	}
 }
 
