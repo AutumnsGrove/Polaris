@@ -9,8 +9,14 @@ magic-byte allowlist and a 20MB size cap are enforced before anything touches di
 `fetchURLContentAllowed`/`fetchURLBytes`). Live-verified end to end against a real running
 `polaris` (Docker mode) + real SearXNG + `dev/fakeopenrouter`: `image_search` → `fetch_url` (by
 `card_index`) → `show` rendered a real fetched photo inline, workspace file written with the exact
-fetched bytes. `read_attachment`'s extension (offering it whenever the workspace holds a PDF, not
-just this turn's upload) is **not yet implemented** — still open, tracked separately.
+fetched bytes. **PDF added to the allowlist (2026-09-23)** — `application/pdf` (and
+`.pdf`-extensioned `application/octet-stream`, the same force-download pattern already handled for
+`.parquet`/`.sqlite`) is now accepted, gated on the real `%PDF-` magic bytes rather than the
+declared Content-Type alone, since a remote header can claim anything — see `fetchURLPDFMagic`'s
+doc comment in `tools/fetch_url.go`. `read_attachment`'s extension (offering it whenever the
+workspace holds a PDF, not just this turn's upload) is **not yet implemented** — still open,
+tracked separately; a `fetch_url`-downloaded PDF today can only be read via `code_exec` opening the
+raw bytes itself, not via `read_attachment`'s page/search UX.
 
 This doc covers the "get untrusted external content safely to the model" half of the code-execution
 work: how a file actually gets from the web into somewhere `code_exec` or `read_attachment` can use

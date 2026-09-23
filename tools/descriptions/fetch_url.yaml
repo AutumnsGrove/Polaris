@@ -2,12 +2,13 @@ name: fetch_url
 category: compute
 description: >-
   download a URL you've already been shown as a citation (or an image_search result) into your
-  code_exec workspace, so code_exec can actually process it. Content-type and size checked
-  server-side; the sandbox itself never gets network access. Docker-only, same as code_exec.
+  code_exec workspace, so code_exec can actually process it — images, CSV/JSON/XML, Parquet,
+  SQLite, or PDF. Content-type and size checked server-side; the sandbox itself never gets network
+  access. Docker-only, same as code_exec.
 api_description: >-
   Fetch a URL you've already been shown as a citation this conversation (from web_search, web_read,
   or another citing tool), or an image_search result by card_index, and save it into your workspace
-  under the filename you choose — so code_exec can load a real image, CSV, JSON, Parquet, or SQLite
-  file instead of only synthesizing data from scratch. Rejects a URL that wasn't actually shown to
-  you, and rejects content whose type isn't a plausible image/data format regardless of source.
+  under the filename you choose — so code_exec can load a real image, CSV, JSON, Parquet, SQLite, or
+  PDF file instead of only synthesizing data from scratch. Rejects a URL that wasn't actually shown
+  to you, and rejects content whose type isn't a plausible image/data format regardless of source.
 requires: docker_only
