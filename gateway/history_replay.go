@@ -32,18 +32,6 @@ func effectiveContextWindowTokens(configured int, fullTurnHistory bool) int {
 	return configured
 }
 
-// replayBudgetChars bounds how much replayed tool-result text one turn's
-// history may carry: half the compaction threshold, at ~4 chars/token
-// (same heuristic as estimateTokens). A single Deep Research turn can log
-// dozens of ~12K-char web_reads, so without a ceiling one such turn could
-// push the very next request past the model's real context window
-// outright — failing the turn, not just compacting early. Half leaves the
-// other half for the system prompt, the answers themselves, and the new
-// turn's own research.
-func replayBudgetChars(contextWindowTokens int) int {
-	return contextWindowTokens * 4 / 2
-}
-
 // replayedCall is one tool call rebuilt from the events log, paired with
 // the result it returned.
 type replayedCall struct {
@@ -65,9 +53,25 @@ type replayedCall struct {
 // kept: each result is already capped at store's maxEventDataBytes, and
 // events past their 90-day retention (store.PruneEvents) are simply gone —
 // those turns fall back to answer-plus-sources, same as with this setting
-// off. Newest turns are filled first up to budgetChars; once a turn's
-// results don't fit, that turn and every older one are replayed without
-// them rather than cut off mid-turn.
+// off. Every turn's calls are replayed unconditionally, no per-turn or
+// shared-budget filtering — an earlier version tried to cap how much
+// replayed text one request could carry, but any filtering rule re-decided
+// per request (even one keyed only on a turn's own size, evaluated fresh
+// each time) makes an EARLIER turn's reconstructed shape something that
+// can still depend on what a LATER request looks like, or on nothing
+// changing about the ordering/logic in between. That's the wrong property
+// to build on top of: providers that cache on an exact-prefix match
+// (DeepSeek included) invalidate the entire cached prefix the moment one
+// earlier message differs by so much as a byte, so a history-reconstruction
+// step whose output isn't guaranteed identical between two requests that
+// share the same earlier turns defeats caching for the whole conversation,
+// not just the newest turn. Unconditional replay has no decision to make,
+// so there's nothing to make differently — the reconstructed prefix for a
+// stable run of earlier turns is byte-identical every time, by
+// construction. The real ceiling on how large this can get is
+// handleTurn's own auto-compaction check (against
+// effectiveContextWindowTokens) — same backstop that already exists for
+// organic context growth, not a second bespoke limit layered on top of it.
 //
 // Tool call IDs are regenerated rather than reused: the logged call_id is
 // whatever the provider issued at the time, and sub-agent calls
@@ -77,7 +81,7 @@ type replayedCall struct {
 // own result — never a multi-call batch — so there's no batch boundary to
 // reconstruct and the wire protocol's "every tool_calls message is
 // followed by all of its results" rule holds by construction.
-func (s *Server) loadHistoryWithToolResults(threadID string, budgetChars int) ([]llm.ChatMessage, error) {
+func (s *Server) loadHistoryWithToolResults(threadID string) ([]llm.ChatMessage, error) {
 	entries, err := s.historyEntries(threadID, 0)
 	if err != nil {
 		return nil, err
@@ -88,33 +92,12 @@ func (s *Server) loadHistoryWithToolResults(threadID string, budgetChars int) ([
 	}
 	callsByTurn := groupToolEventsByTurn(events)
 
-	// Decide newest-first which turns' calls fit the budget, then emit in
-	// chronological order.
-	include := make(map[int]bool)
-	remaining := budgetChars
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
-		if e.Role != "assistant" || e.TurnID == "" {
-			continue
-		}
-		calls := callsByTurn[e.TurnID]
-		if len(calls) == 0 {
-			continue
-		}
-		size := 0
-		for _, c := range calls {
-			size += len(c.args) + len(c.result)
-		}
-		if size > remaining {
-			break
-		}
-		remaining -= size
-		include[i] = true
-	}
-
 	history := make([]llm.ChatMessage, 0, len(entries))
 	for i, e := range entries {
-		if include[i] {
+		// A turn's user and assistant entries share the same TurnID (see
+		// EffectiveHistory) — gating on Role here is what keeps a turn's
+		// calls from being replayed twice, once per entry sharing that id.
+		if e.Role == "assistant" && e.TurnID != "" {
 			for n, c := range callsByTurn[e.TurnID] {
 				id := fmt.Sprintf("replay_%d_%d", i, n)
 				history = append(history,

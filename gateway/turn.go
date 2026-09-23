@@ -278,7 +278,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	} else {
 		var err error
 		if fullTurnHistory {
-			history, err = s.loadHistoryWithToolResults(storageThreadID, replayBudgetChars(contextWindowTokens))
+			history, err = s.loadHistoryWithToolResults(storageThreadID)
 		} else {
 			history, err = s.loadHistory(storageThreadID, 0)
 		}

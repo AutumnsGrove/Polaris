@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -36,7 +37,7 @@ func TestLoadHistoryWithToolResults_ReplaysCallsBeforeTheirAnswer(t *testing.T) 
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	s := seedResearchedThread(t, h)
 
-	history, err := s.loadHistoryWithToolResults("t1", 1_000_000)
+	history, err := s.loadHistoryWithToolResults("t1")
 	if err != nil {
 		t.Fatalf("loadHistoryWithToolResults: %v", err)
 	}
@@ -71,25 +72,48 @@ func TestLoadHistoryWithToolResults_ReplaysCallsBeforeTheirAnswer(t *testing.T) 
 	}
 }
 
-func TestLoadHistoryWithToolResults_OverBudgetFallsBackToAnswersOnly(t *testing.T) {
+// TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows is
+// the property prompt caching actually needs: an earlier version decided
+// per request which turns' calls fit a budget, which meant turn 1's own
+// reconstructed shape could change once turn 3 showed up competing for the
+// same budget — breaking any provider's exact-prefix cache for the whole
+// conversation, not just the newest turn. Unconditional replay has no
+// per-request decision left to make, so the prefix covering turn 1 must be
+// byte-for-byte the same before and after a new turn is appended.
+func TestLoadHistoryWithToolResults_EarlierTurnsStayIdenticalAsThreadGrows(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 	s := seedResearchedThread(t, h)
 
-	history, err := s.loadHistoryWithToolResults("t1", 10)
+	before, err := s.loadHistoryWithToolResults("t1")
 	if err != nil {
-		t.Fatalf("loadHistoryWithToolResults: %v", err)
+		t.Fatalf("loadHistoryWithToolResults (before): %v", err)
 	}
-	if len(history) != 4 {
-		t.Fatalf("got %d messages, want 4 (no replayed calls): %+v", len(history), history)
+	// turn1's slice: user, (call+result)x2, answer — everything before
+	// turn2's own "how does its pricing compare" question.
+	turn1Before := before[:6]
+
+	if _, err := h.db.AddMessage("t1", "user", "and after that?", "[]", "[]", 0, "turn3"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
 	}
-	for _, m := range history {
-		if len(m.ToolCalls) > 0 || m.Role == "tool" {
-			t.Errorf("replayed %+v despite a budget too small for it", m)
+	h.db.LogEvent("t1", "info", "tool.web_search", "tool call started", map[string]interface{}{"args": map[string]interface{}{"query": "a third, much larger turn"}, "call_id": "c"}, "turn3")
+	h.db.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": strings.Repeat("x", 50_000), "call_id": "c"}, "turn3")
+	if _, err := h.db.AddMessage("t1", "assistant", "sure", "[]", "[]", 0, "turn3"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	after, err := s.loadHistoryWithToolResults("t1")
+	if err != nil {
+		t.Fatalf("loadHistoryWithToolResults (after): %v", err)
+	}
+	turn1After := after[:6]
+
+	if len(turn1Before) != len(turn1After) {
+		t.Fatalf("turn 1's reconstructed shape changed length: %d before, %d after", len(turn1Before), len(turn1After))
+	}
+	for i := range turn1Before {
+		if !reflect.DeepEqual(turn1Before[i], turn1After[i]) {
+			t.Errorf("turn 1 entry %d changed once turn 3 was added:\nbefore: %+v\nafter:  %+v", i, turn1Before[i], turn1After[i])
 		}
-	}
-	// The sources note still rides along either way.
-	if !strings.Contains(history[1].Content, "https://example.com/k28") {
-		t.Errorf("history[1] = %q, want its sources note even without replayed results", history[1].Content)
 	}
 }
 
