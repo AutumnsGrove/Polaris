@@ -37,7 +37,12 @@
 		Paperclip,
 		History,
 		Download,
-		Scale
+		Scale,
+		StarPlus,
+		Merge,
+		Link2,
+		ScrollText,
+		Telescope
 	} from '@lucide/svelte';
 	import ShootingStar from './icons/ShootingStar.svelte';
 
@@ -127,6 +132,19 @@
 		// instant the call happened, not after it's been answered).
 		if (item.tool === 'ask_user_question') return `Asked: ${item.args?.question ?? ''}`;
 		if (item.tool === 'compare_sources') return `Comparing sources: ${item.args?.question ?? ''}`;
+		// Weaver's five star-library tools (see docs/plans/constellation.md's
+		// "Weaver's tools") — each call is otherwise indistinguishable in the
+		// timeline (bare tool name, no icon), so these surface the actual
+		// star content/id being touched rather than just "create_star" etc.
+		if (item.tool === 'create_star') return `Creating star: "${item.args?.title ?? ''}"`;
+		if (item.tool === 'update_star') {
+			const starId = item.args?.star_id;
+			const summary = item.args?.summary as string | undefined;
+			return summary ? `Updating star #${starId}: "${summary}"` : `Updating star #${starId}`;
+		}
+		if (item.tool === 'link_stars') return `Linking stars #${item.args?.star_id_a} ↔ #${item.args?.star_id_b}`;
+		if (item.tool === 'read_star') return `Reading star #${item.args?.star_id}`;
+		if (item.tool === 'search_stars') return `Searching stars: "${item.args?.query ?? ''}"`;
 		if (item.tool === 'memory') {
 			// Mirrors tools/memory.go's handleMemory, which only ever logs
 			// {action, name} (never description/content — those can be
@@ -305,6 +323,16 @@
 				<ShootingStar size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'compare_sources'}
 				<Scale size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'create_star'}
+				<StarPlus size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'update_star'}
+				<Merge size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'link_stars'}
+				<Link2 size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'read_star'}
+				<ScrollText size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'search_stars'}
+				<Telescope size={13} color="var(--color-accent-2)" />
 			{:else}
 				<FileText size={13} color="var(--color-accent-2)" />
 			{/if}
