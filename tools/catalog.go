@@ -17,7 +17,7 @@ import (
 // requests/restarts (see config.go's OpenRouter provider-pinning comment
 // for why: prompt-prefix caching depends on this).
 var catalogOrder = []string{
-	"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
+	"think", "calculator", "current_time", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
 	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "stars", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars", "compare_sources",
@@ -200,6 +200,9 @@ var catalogDefaults = map[string]catalogEntry{
 			"involves a computed number (a ratio, a percentage, a sum, a date/time delta) instead of doing the " +
 			"arithmetic yourself in free text — LLMs are unreliable at mental math, and this tool removes that " +
 			"failure class entirely."},
+	"current_time": {Name: "current_time", Description: "check the exact current time of day.",
+		APIDescription: "Get the exact current local time (hour, minute, second, timezone and UTC offset). Your system " +
+			"prompt only tells you today's date, not the time. Call this when the answer depends on the time right now."},
 	"web_search": {Name: "web_search", Category: "research", Description: "search the web via a private SearXNG instance.",
 		APIDescription: "Search the web via SearXNG for current information, facts, or sources."},
 	"web_read": {Name: "web_read", Category: "research", Description: "fetch a URL and extract its content.",

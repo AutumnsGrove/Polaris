@@ -1,0 +1,10 @@
+name: current_time
+description: >-
+  check the exact current time of day. The system prompt only carries today's date, so the model
+  calls this when an answer actually depends on the time right now.
+api_description: >-
+  Get the exact current local time (hour, minute, second, timezone and UTC offset). Your system
+  prompt only tells you today's date, not the time. Call this when the answer depends on the time
+  right now: whether something is open or live, how long until or since an event today, what time
+  it is somewhere else, or "this morning/tonight" style questions. Don't call it for date-only
+  questions, since you already know today's date.

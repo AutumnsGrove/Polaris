@@ -388,19 +388,28 @@ func applyCodeExecThemePlaceholder(prompt string, ctx *tools.Context) string {
 const deepResearchTurnMultiplier = 2
 const deepResearchCheckInMultiplier = 2
 
-// currentContextPreamble grounds the model in real wall-clock time, computed
-// fresh on every turn — without this, a model has no way to know "today"
-// beyond its training cutoff, and will confidently answer with a stale
-// date or search for news anchored to the wrong week. Prepended ahead of
-// the rest of the system prompt so it's the first thing the model reads.
+// currentContextPreamble grounds the model in today's real date — without
+// this, a model has no way to know "today" beyond its training cutoff, and
+// will confidently answer with a stale date or search for news anchored to
+// the wrong week. Prepended ahead of the rest of the system prompt so it's
+// the first thing the model reads.
+//
+// Date only, never the time of day: this is byte ~30 of every request, and
+// providers cache on an exact-prefix match, so a minute-resolution clock
+// here meant no two turns more than a minute apart ever shared a cached
+// prefix — every follow-up paid full price for its whole history. A date
+// changes once a day; the current_time tool covers the questions that
+// genuinely need the time (see tools/current_time.go and
+// docs/plans/verbatim-turn-transcripts.md).
 func currentContextPreamble() string {
 	now := time.Now()
 	return fmt.Sprintf(
-		"Current date and time: %s (timezone: %s). Treat this as ground truth for anything "+
-			"relative — \"today\", \"this week\", \"latest\", \"currently\", how old something is "+
-			"— rather than any date you might otherwise assume from training. If it conflicts with "+
-			"a date implied by the user or a search result, trust this line.\n\n",
-		now.Format("Monday, January 2, 2006, 15:04"), now.Location(),
+		"Today's date: %s (timezone: %s). Treat this as ground truth for anything relative — "+
+			"\"today\", \"this week\", \"latest\", \"currently\", how old something is — rather "+
+			"than any date you might otherwise assume from training. If it conflicts with a date implied "+
+			"by the user or a search result, trust this line. You aren't given the time of day; call "+
+			"current_time if an answer depends on it.\n\n",
+		now.Format("Monday, January 2, 2006"), now.Location(),
 	)
 }
 
