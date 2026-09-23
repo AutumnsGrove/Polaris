@@ -264,6 +264,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// Read once per turn so the history shape and the compaction threshold
 	// below can't disagree if the setting flips mid-turn.
 	fullTurnHistory := !anonymous && FullTurnHistoryFromStore(s.db)
+	if msg.FullTurnHistoryOverride != nil {
+		fullTurnHistory = !anonymous && *msg.FullTurnHistoryOverride
+	}
 	contextWindowTokens := effectiveContextWindowTokens(cfg.ContextWindowTokens, fullTurnHistory)
 
 	var history []llm.ChatMessage
