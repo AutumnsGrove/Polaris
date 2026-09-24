@@ -30,6 +30,15 @@ type TTSClient struct {
 // syntheses that just hadn't finished yet.
 const ttsTimeout = 45 * time.Second
 
+// maxTTSResponseBytes bounds a response read from OpenRouter's
+// /audio/speech endpoint — same "never trust a remote Content-Length
+// header" reasoning tools/web_read.go and friends apply to arbitrary
+// fetched content. Higher than the other packages' 10MB convention since
+// this response is genuinely large audio, not a small JSON payload — an
+// MP3 of even a long multi-paragraph answer read aloud comfortably fits
+// under this.
+const maxTTSResponseBytes = 40 << 20 // 40MB
+
 func NewTTSClient(baseURL, apiKey, model, voice, format, provider string) *TTSClient {
 	if format == "" {
 		format = "mp3"
@@ -121,9 +130,12 @@ func (c *TTSClient) SpeakWithFormat(text, format string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	audio, err := io.ReadAll(resp.Body)
+	audio, err := io.ReadAll(io.LimitReader(resp.Body, maxTTSResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading TTS response: %w", err)
+	}
+	if len(audio) > maxTTSResponseBytes {
+		return nil, fmt.Errorf("TTS response exceeds %d byte limit", maxTTSResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("TTS server returned %d: %s", resp.StatusCode, string(audio))

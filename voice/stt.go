@@ -22,6 +22,14 @@ import (
 
 var log = logger.WithPrefix("voice")
 
+// maxSTTResponseBytes bounds a response read from OpenRouter's
+// /audio/transcriptions endpoint — same "never trust a remote
+// Content-Length header" reasoning tools/web_read.go and friends apply to
+// arbitrary fetched content, applied here to a third-party API response
+// instead of assuming it's always small. A transcription's JSON response
+// is normally a few KB at most.
+const maxSTTResponseBytes = 10 << 20 // 10MB
+
 type STTClient struct {
 	baseURL       string
 	apiKey        string
@@ -107,9 +115,12 @@ func (c *STTClient) transcribeWithModel(audioBytes []byte, format, model string)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSTTResponseBytes+1))
 	if err != nil {
 		return TranscribeResult{}, fmt.Errorf("reading STT response: %w", err)
+	}
+	if len(respBody) > maxSTTResponseBytes {
+		return TranscribeResult{}, fmt.Errorf("STT response exceeds %d byte limit", maxSTTResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return TranscribeResult{}, fmt.Errorf("STT server returned %d: %s", resp.StatusCode, string(respBody))
