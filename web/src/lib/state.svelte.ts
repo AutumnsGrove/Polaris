@@ -96,7 +96,19 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 			// gets closed out by closeOpenReasoning once something else
 			// interrupts it.
 			timeline.push({ kind: 'reasoning', content: data.content ?? '', done: true });
-		} else if (evt.source === 'compaction' && evt.message === 'thread auto-compacted') {
+		} else if (evt.source === 'compaction' && evt.message === 'compaction notice shown') {
+			// 'compaction notice shown', not 'thread auto-compacted' — the
+			// latter is the backend's untagged audit row (it feeds the
+			// Auto-compactions stat in store/stats.go) and is written with an
+			// empty turn_id, so it never lands in a turn's event slice and
+			// never reaches here. The rendered note is the row the *next*
+			// turn writes when it actually shows the notice, which is why
+			// this reads the summary off a different message than the live
+			// 'compacted' ServerEvent's name suggests. No cost is applied
+			// here: the compaction's cost is already inside the thread's
+			// stored cost_usd, which openThread assigns to totalCost
+			// wholesale — adding this row's cost_usd too would double-count
+			// it on every reload.
 			timeline.push({ kind: 'compacted', summary: data.summary ?? '' });
 		} else if (evt.source.startsWith('tool.')) {
 			const tool = evt.source.slice('tool.'.length);
@@ -1477,7 +1489,20 @@ export class AppState {
 				break;
 
 			case 'compacted':
+				// Arrives at the START of the turn after the one that
+				// triggered it, not during the turn that did — compaction is
+				// detached from that turn's "done" (see gateway/turn.go), so
+				// this is the first moment there's a live client to tell.
+				// Same delayed-carrier shape as 'suggestions'/'verification',
+				// and cost_usd is the compaction call's own spend, added to
+				// the running total exactly like 'done''s — it is not part of
+				// any "done" event, since it hadn't happened when that
+				// shipped. Unlike those two this needs no special placement
+				// above the in-flight gate: it belongs to the turn that is
+				// genuinely in flight right now, so the gate it sits behind
+				// is exactly the right one.
 				this.closeOpenReasoning(turn);
+				this.totalCost += e.cost_usd ?? 0;
 				turn.timeline = [...(turn.timeline ?? []), { kind: 'compacted', summary: e.content }];
 				break;
 

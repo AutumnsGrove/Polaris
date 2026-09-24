@@ -1,7 +1,16 @@
 # Auto-compaction: verification, timing, and prompt quality
 
-Working notes for GitHub issue #109. Status: **investigation in progress** — nothing
-implemented yet. This file is the shared scratchpad; it is not user-facing docs.
+Working notes for GitHub issue #109.
+
+Status: **steps 2 + 3 are implemented** (detach + pending-notice delivery, Design A — see
+"Step 2 + 3: what was built" below, which replaces the original plan text). **Steps 1 and 4
+— the live verification pass and the summary-quality/prompt iteration — are still
+outstanding** and still need the end-to-end harness described in "Step 1". Nothing in this
+file has been validated on real hardware yet; per CLAUDE.md, review + unit tests are not
+enough for this, and the unit tests added here deliberately cover the handoff mechanics
+only, not whether the compaction itself is good.
+
+This file is the shared scratchpad; it is not user-facing docs.
 
 ## Why this exists
 
@@ -15,21 +24,32 @@ in the spirit of CLAUDE.md's "Verify on real hardware, not just review or mocked
 
 ## Code map (verified, not assumed)
 
+Line numbers below were re-checked after steps 2 + 3 landed.
+
 | Piece | Location |
 | --- | --- |
-| Threshold check, post-turn | `gateway/turn.go:973-988` |
-| `compactThread` (extra non-streamed LLM call) | `gateway/turn.go:1495` |
-| `Store.CompactThread` (persist summary + dual cost ledger) | `store/store.go:2187` |
-| `EffectiveHistory` (summary substitution) | `store/store.go:1633` |
+| Threshold decision + detached fire | `gateway/turn.go:1006`, `:1078` |
+| Notice surface (top of next turn) | `gateway/turn.go:296` |
+| `compactThread` (extra non-streamed LLM call) | `gateway/turn.go:1581` |
+| `Store.CompactThread` (persist summary + dual cost ledger + arm notice) | `store/store.go:2242` |
+| `Store.TakeCompactionNotice` (read-and-clear, one-shot) | `store/store.go:2276` |
+| In-flight guard (F5) | `gateway/server.go:490` |
+| `EffectiveHistory` (summary substitution) | `store/store.go:1681` |
 | `loadHistory` (normal turn prompt) | `gateway/history_replay.go:56` |
 | `loadAnswerHistory` (used by `compactThread`) | `gateway/history_replay.go:129` |
-| `compacted` live event emit/log | `gateway/turn.go:980-985` |
-| `compacted` frontend live handler | `web/src/lib/state.svelte.ts:1479` |
+| `compacted` live event emit + notice log | `gateway/turn.go:296-305` |
+| `thread auto-compacted` audit row (stats only, untagged) | `gateway/turn.go:1105` |
+| `compacted` frontend live handler | `web/src/lib/state.svelte.ts:1491` |
 | `compacted` frontend replay (`buildTimelineFromEvents`) | `web/src/lib/state.svelte.ts:99` |
 | `compacted` display component | `web/src/lib/components/ToolEvent.svelte:216` |
+| Auto-compactions stat (counts the untagged audit row) | `store/stats.go:540` |
 | Prompt text | `prompts.yaml:339` (`compaction_system`) + fallback `prompts/prompts.go:456` |
 
-## Lifecycle, as it runs today
+## Lifecycle, as it ran BEFORE steps 2 + 3
+
+Kept because F1–F7 below refer to it — the triggering turn used to do all of this
+synchronously, inside the `"done"` critical path. See "Step 2 + 3: what was built" for the
+current shape.
 
 1. A turn runs; `agent.Result.ContextTokens` is the **last** LLM call's
    `prompt_tokens + completion_tokens` (not a sum — `agent/driver.go:446,667`).
@@ -174,32 +194,94 @@ Baseline-first: grab one or two forced runs **before** changing any code, so the
 latency and summary-quality comparison is real. (This ordering is now moot if steps
 2+3 land first; note it explicitly in whatever harness does the live pass.)
 
-## Step 2 + 3: implementation plan (Design A)
+## Step 2 + 3: what was built (Design A)
 
-1. **Detach compaction from the `done` critical path.** Fire `compactThread` in a
-   goroutine after `"done"` ships, same shape as the follow-up-suggestions and
-   verification goroutines (mandatory `recover()`; the WS turn goroutine has no
-   `net/http` panic net). Do **not** fold `compactCost` into the triggering turn's
-   `totalCost`/`"done"` event any more (F2).
-2. **Guard against double-fire** (F5): a per-thread in-flight marker so two fast turns
-   can't produce interleaved `CompactThread` writes.
-3. **Persist a pending notice.** `Store.CompactThread` sets a `compacted_pending_notice`
-   flag (new `threads` column via the idempotent `ALTER TABLE` list at
-   `store/store.go:886`), cleared once shown.
-4. **Surface on the next turn.** In `handleTurn`, right after `loadHistory` succeeds
-   (`gateway/turn.go:272`): if the flag is set, emit + `logEvent` `"compacted"` with the
-   summary and `cost_usd`, tagged to **this** turn's `turnID` (so live and replay agree),
-   then clear the flag.
-5. **Frontend.** `compacted` handler adds `e.cost_usd` to `totalCost`, like the
-   `suggestions` case (`web/src/lib/state.svelte.ts:1479`).
-6. **Fork behavior** (F4): decide whether the pending flag is copied by `ForkThread`.
-   Leaning no — a fresh variant should build its own history; a notice belonging to the
-   root's compacted prefix shouldn't surface under an unrelated fork. Must be called out
-   in a test either way.
+The original six-step plan is below the decisions, kept for the record. What actually
+shipped, and the places it diverged from that plan:
+
+1. **Detached.** `compactThread` now fires in a goroutine after `"done"` ships, with the
+   mandatory `recover()`, same shape as the suggestions goroutine. `result.CostUSD +=
+   compactCost` is gone; `totalCost` no longer includes compaction spend (F2).
+2. **Per-thread in-flight guard.** `Server.compactingMu`/`compactingThreads` +
+   `tryBeginCompaction`/`endCompaction` (`gateway/server.go`), keyed by **storage**
+   thread id (that's the row `CompactThread` writes, and it differs from the
+   client-facing root on an edit/retry turn). In-memory on purpose — a persisted claim
+   would wedge a thread permanently after a crash mid-compaction (F5).
+3. **Pending notice persisted.** Two new appended `threads` columns:
+   `compacted_pending_notice` (the flag) and `compacted_pending_cost` (accumulated with
+   `+=`, not overwritten). `CompactThread` arms both in the same transaction that writes
+   the summary.
+   - *Correction to the plan:* the plan implied one column. It's two, and the summary is
+     **not** duplicated into the notice — it's read from the existing `compacted_summary`,
+     which is the current effective one. Only the cost needs its own home (both
+     `threads.cost_usd` and the through-message's `cost_usd` have already absorbed it by
+     the time anyone reads the notice). Accumulating rather than overwriting is what makes
+     a second compaction that lands before any turn collects the first a *lag* rather
+     than money that silently vanishes.
+4. **Surfaced on the next turn.** `store.TakeCompactionNotice` — read-and-clear in one
+   transaction, so two turns can't announce or charge the same compaction twice. Called in
+   `handleTurn` right after `loadHistory`; on `ok`, emits the `"compacted"` event and logs
+   a `"compaction notice shown"` row tagged to **this** turn's `turnID`.
+5. **Frontend.** `compacted` handler adds `e.cost_usd` to `totalCost`, like `suggestions`.
+   Replay reads the note off `"compaction notice shown"`. Added the missing
+   `cost_usd?: number` to the `ServerEvent` `compacted` variant in `web/src/lib/types.ts`
+   — `svelte-check` caught this; vitest alone did not, since the field is runtime-only.
+6. **Forks don't inherit** (F4): confirmed and now documented at `ForkThread`'s inset —
+   no copy of `compacted_summary`/`compacted_through_id`/`context_tokens` or the pending
+   pair. A copied notice would describe the *root's* prefix (with a through_id meaningless
+   in the fork's new id space) and charge its cost to a session that never triggered it.
+
+### The thing the plan missed: a third consumer of the event name
+
+`store/stats.go:540` counts `source='compaction' AND message='thread auto-compacted'` rows
+for the user-facing **Auto-compactions** figure (`SettingsPanel.svelte`, `polaris stats`).
+That row was the same one the frontend rendered as the timeline note, so moving the note
+to the *next* turn's `turnID` would have made it double-render on replay.
+
+Resolution: the audit row stays exactly as it was — one per compaction, now written with
+an **empty `turnID`** from the detached goroutine, which makes it invisible to
+`buildTimelineFromEvents` (that function is fed only a turn's own event slice) while
+keeping the stat's count identical. The *rendered* note is a separate
+`"compaction notice shown"` row written by the announcing turn. `thread auto-compacted`'s
+`turn_id` therefore changed from "the triggering turn" to ""; safe because compaction has
+never actually fired in production, so no existing row needed to keep rendering.
+
+### Tests added
+
+- `store`: `TakeCompactionNotice_ConsumesExactlyOnce`, `_NothingPending`,
+  `CompactThread_PendingCostAccumulates`, `ForkThread_DoesNotInheritCompactionState`.
+- `gateway`: `TryBeginCompaction_SerializesPerThread`; and
+  `TestWebSocket_SurfacesPendingCompactionNotice`, which drives a real second turn over
+  the WS and asserts the live frame (content, `cost_usd`), that it arrives *before* the
+  first token, that the notice is consumed, and that the replay row carries a non-empty
+  `turn_id`.
+- `web`: the notice's cost landing in `totalCost` (+ the missing-`cost_usd` NaN guard),
+  and a replay test pinning the note to the *announcing* turn and asserting
+  `totalCost` is **not** incremented from the stored row (it's already inside the thread's
+  `cost_usd`, so adding it would double-count on every reload).
+
+Each was verified by reverting its fix and confirming the test fails.
+
+### Still open (steps 1 + 4)
+
+The live pass. Nothing above has run against a real model, real searches, or a real
+browser. The specific things only that pass can answer: whether the note renders sanely
+actually-arriving at turn start (unit tests assert the data, not the look), the real
+latency the next turn pays when it collects a notice, and — step 4 — whether the summary
+preserves tool-derived facts. `compactThread` still builds from `loadAnswerHistory` (F6),
+so it never sees tool-call structure; that remains the leading suspect if summaries turn
+out lossy.
+
+Note the baseline-first instruction in Step 1 is now **moot for latency**: steps 2 + 3
+already landed, so there is no pre-change build to measure against. Whoever runs the live
+pass should either (a) measure the *new* triggering-turn latency against a normal turn
+(the detached call should now contribute ~0), or (b) `git stash` this work if a true
+before/after is wanted.
 
 ## Decisions pending
 
-- **Notice state for step 3:** exact column name/semantics, and confirm the no-copy
-  fork decision (F4).
-- **In-flight guard shape for step 2** (F5).
 - **Live verification owner:** which end-to-end harness runs step 1 + step 4.
+- **Where the notice's cost lands on reload vs. live** (F2, third bullet) — unchanged and
+  accepted: live it arrives on the next turn, on reload it's already inside the triggering
+  turn's `cost_usd`. The *session* total is correct in both; only the per-turn attribution
+  differs, and it self-corrects on reload.

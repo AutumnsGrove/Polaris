@@ -322,6 +322,50 @@ describe('AppState.handleEvent', () => {
 		expect(state.suggestions).toEqual([]);
 	});
 
+	// Auto-compaction is detached from the turn that triggers it (see
+	// gateway/turn.go), so its cost can't ride along on that turn's 'done'
+	// and its note can't be shown at the moment it actually happens — there
+	// may be no live client at all when it finishes. It arrives instead at
+	// the top of the thread's NEXT turn, on its own 'compacted' event,
+	// carrying the summarization call's own cost.
+	it("a 'compacted' event at the top of the next turn adds its cost and shows the note", () => {
+		state.send('hello');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		fireEvent(state, { type: 'done', thread_id: 't1', cost_usd: 0.002 });
+
+		// A new turn begins; the notice lands before anything else it does.
+		state.send('a follow-up');
+		fireEvent(state, {
+			type: 'compacted',
+			thread_id: 't1',
+			content: 'summary of the earlier exchange',
+			cost_usd: 0.007
+		});
+
+		// 0.002 from 'done' plus 0.007 from the compaction — counted once
+		// each, which is the whole reason the cost moved off 'done'.
+		expect(state.totalCost).toBeCloseTo(0.009);
+		const turn = (state as any).pendingTurn;
+		expect(turn.timeline).toEqual([
+			{ kind: 'compacted', summary: 'summary of the earlier exchange' }
+		]);
+	});
+
+	// The same NaN footgun the 'done' handler documents: a missing cost_usd
+	// (an older cached bundle talking to a newer backend, or the reverse)
+	// must degrade to zero, not poison every later addition for the rest of
+	// the session.
+	it("a 'compacted' event with no cost_usd does not poison the running total", () => {
+		state.send('hello');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		fireEvent(state, { type: 'done', thread_id: 't1', cost_usd: 0.002 });
+		state.send('a follow-up');
+		fireEvent(state, { type: 'compacted', thread_id: 't1', content: 'a summary' });
+
+		expect(Number.isNaN(state.totalCost)).toBe(false);
+		expect(state.totalCost).toBeCloseTo(0.002);
+	});
+
 	it('done does not overwrite cost/thread if the user navigated to a different thread first', () => {
 		state.send('hello');
 		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
@@ -417,6 +461,57 @@ describe('AppState.openThread', () => {
 			citations: [{ title: 'France', url: 'https://example.com' }],
 			done: true
 		});
+	});
+
+	// The replay half of the compaction notice, and the assertion that pins
+	// live/replay agreement: the notice belongs to the turn that ANNOUNCED
+	// it, not the turn that triggered it. The backend writes the rendered
+	// row under a distinct message name (gateway/turn.go's "compaction
+	// notice shown") precisely so this matcher can't also pick up the
+	// untagged "thread auto-compacted" audit row that feeds stats.go.
+	it('reconstructs a compaction notice onto the turn that announced it, not the one that triggered it', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (url.endsWith('/events')) {
+					return Promise.resolve({
+						ok: true,
+						json: async () => [
+							{ id: 1, level: 'info', source: 'compaction', message: 'compaction notice shown', data: '{"summary":"summary of the earlier exchange","cost_usd":0.007}', turn_id: 'turn-2', created_at: '' }
+						]
+					});
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0.01,
+						context_tokens: 10,
+						messages: [
+							{ id: 1, role: 'user', content: 'q1', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-1' },
+							{ id: 2, role: 'assistant', content: 'a1', citations: '[]', suggestions: '[]', cost_usd: 0.003, turn_id: 'turn-1' },
+							{ id: 3, role: 'user', content: 'q2', citations: '[]', suggestions: '[]', cost_usd: 0, turn_id: 'turn-2' },
+							{ id: 4, role: 'assistant', content: 'a2', citations: '[]', suggestions: '[]', cost_usd: 0.007, turn_id: 'turn-2' }
+						]
+					})
+				});
+			})
+		);
+
+		await state.openThread('t1');
+
+		// The triggering turn carries no note of its own. It did under the
+		// old synchronous scheme, which is exactly the live/replay
+		// divergence this design removes.
+		expect(state.turns[1].timeline ?? []).toEqual([]);
+		expect(state.turns[3].timeline).toEqual([
+			{ kind: 'compacted', summary: 'summary of the earlier exchange' }
+		]);
+
+		// The compaction's cost is already inside the thread's stored
+		// cost_usd (CompactThread adds it to both ledgers), so the notice
+		// row's own cost_usd must NOT be added on top — doing so would
+		// double-count it on every single reload.
+		expect(state.totalCost).toBeCloseTo(0.01);
 	});
 
 	it('reconstructs persisted reasoning bursts as done reasoning items', async () => {

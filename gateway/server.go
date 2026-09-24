@@ -107,6 +107,17 @@ type Server struct {
 	inFlightMu      sync.Mutex
 	inFlightThreads map[string]int
 
+	// compactingMu/compactingThreads track which threads have an
+	// auto-compaction summarization call in flight right now — see
+	// tryBeginCompaction's doc comment for the race this closes. Same
+	// map+single-mutex shape as inFlightThreads above, but keyed by the
+	// STORAGE thread id rather than the client-facing root: compaction
+	// writes to storageThreadID (a fork's own id on an edit/retry turn —
+	// see handleTurn's doc comment), and it's that row the guard needs to
+	// protect from two concurrent CompactThread writes.
+	compactingMu      sync.Mutex
+	compactingThreads map[string]bool
+
 	// wizardMu/wizardSessions hold every in-progress "help me write the
 	// prompt" wizard interview's conversation history (see
 	// pulsar_wizard.go) — pure in-memory state, never persisted, matching
@@ -153,25 +164,26 @@ func New(cfg *config.Config, cfgPath string, db *store.Store, staticFS fs.FS, ve
 	}
 
 	s := &Server{
-		cfg:             cfg,
-		cfgPath:         cfgPath,
-		version:         version,
-		db:              db,
-		searxng:         search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
-		blocklist:       blocklist,
-		foursquare:      places.NewFoursquareClient(cfg.Foursquare.APIKey),
-		tavily:          tavily.NewClient(cfg.Tavily.APIKey),
-		brave:           brave.NewClient(cfg.Brave.APIKey),
-		parallel:        parallel.NewClient(cfg.Parallel.APIKey),
-		jev:             jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
-		embed:           embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
-		stt:             voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
-		tts:             voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
-		mux:             http.NewServeMux(),
-		turnSends:       make(map[int64]func(ServerEvent)),
-		inFlightThreads: make(map[string]int),
-		wizardSessions:  make(map[string]*wizardSession),
-		devMode:         staticFS == nil,
+		cfg:               cfg,
+		cfgPath:           cfgPath,
+		version:           version,
+		db:                db,
+		searxng:           search.NewSearXNGClient(cfg.SearXNG.BaseURL, blocklist).WithDomainRankings(cfg.DomainRankingsFile),
+		blocklist:         blocklist,
+		foursquare:        places.NewFoursquareClient(cfg.Foursquare.APIKey),
+		tavily:            tavily.NewClient(cfg.Tavily.APIKey),
+		brave:             brave.NewClient(cfg.Brave.APIKey),
+		parallel:          parallel.NewClient(cfg.Parallel.APIKey),
+		jev:               jev.NewClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey),
+		embed:             embed.NewClient(cfg.Ollama.BaseURL, cfg.Ollama.EmbedModel),
+		stt:               voice.NewSTTClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.STTModel, cfg.Voice.STTFallbackModel),
+		tts:               voice.NewTTSClient(cfg.OpenRouter.BaseURL, cfg.OpenRouter.APIKey, cfg.Voice.TTSModel, cfg.Voice.TTSVoice, cfg.Voice.TTSFormat, cfg.Voice.TTSProvider),
+		mux:               http.NewServeMux(),
+		turnSends:         make(map[int64]func(ServerEvent)),
+		inFlightThreads:   make(map[string]int),
+		compactingThreads: make(map[string]bool),
+		wizardSessions:    make(map[string]*wizardSession),
+		devMode:           staticFS == nil,
 	}
 	s.routes(staticFS)
 	return s
@@ -452,6 +464,43 @@ func (s *Server) HasInFlightTurns() bool {
 	s.inFlightMu.Lock()
 	defer s.inFlightMu.Unlock()
 	return len(s.inFlightThreads) > 0
+}
+
+// tryBeginCompaction claims threadID's compaction slot, returning false if
+// one is already running for it. endCompaction releases the claim.
+//
+// Compaction is detached from the turn that triggers it (see handleTurn's
+// compaction block), which introduces a race the old synchronous version
+// could not have: two turns arriving close together on a thread that has
+// just crossed the threshold each see ContextTokens >= the limit and each
+// fire their own summarization call. Two concurrent CompactThread writes
+// would interleave, and — worse — the second one summarizes a history the
+// first has already begun replacing, so it can summarize a summary and
+// store a through_id that no longer lines up with what it actually read.
+// The claim makes the second turn's attempt a no-op, which is the same
+// benign one-turn lag as a compaction that simply hadn't finished yet: the
+// thread still compacts, just on the next turn that crosses the threshold
+// instead of twice at once.
+//
+// Deliberately in-memory, not a threads column: this guards a single
+// process's live goroutines, and a claim that outlived the process (a
+// crash mid-compaction) would wedge the thread permanently if it were
+// persisted. A restarted process simply has no compaction running, which
+// is the truth.
+func (s *Server) tryBeginCompaction(threadID string) bool {
+	s.compactingMu.Lock()
+	defer s.compactingMu.Unlock()
+	if s.compactingThreads[threadID] {
+		return false
+	}
+	s.compactingThreads[threadID] = true
+	return true
+}
+
+func (s *Server) endCompaction(threadID string) {
+	s.compactingMu.Lock()
+	defer s.compactingMu.Unlock()
+	delete(s.compactingThreads, threadID)
 }
 
 // AbortActiveTurns tells every turn still registered (i.e. still running

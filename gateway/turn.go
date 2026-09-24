@@ -275,6 +275,35 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 			return
 		}
+
+		// Announce a compaction that completed since this thread's last
+		// turn — the delivery half of the detached compaction goroutine
+		// below (see its comment for why the notice can't be sent at the
+		// moment it actually happens). Taken, not read: a second turn must
+		// not announce — or charge — the same compaction twice, so
+		// TakeCompactionNotice clears it in the same transaction it reads
+		// it in.
+		//
+		// Emitted here, tagged with THIS turn's turnID, so the live event
+		// and the row a reload replays land on the same turn's timeline.
+		// The summary comes first in the timeline because it arrives before
+		// anything else this turn does, which is also how it reads: the
+		// history this turn was built from is already the compacted one.
+		//
+		// Never for a ghost turn — nothing is persisted to compact, so
+		// nothing can be pending, and the anonymous branch above never even
+		// loaded a thread row to take a notice from.
+		if summary, compactCost, ok, noticeErr := s.db.TakeCompactionNotice(storageThreadID); noticeErr != nil {
+			// Not fatal to the turn: the summary is only a notice, and the
+			// compacted history it describes is already in `history` above.
+			log.Warn("failed to take pending compaction notice", "thread", threadID, "err", noticeErr)
+		} else if ok {
+			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary, CostUSD: compactCost})
+			logEvent(storageThreadID, "info", "compaction", "compaction notice shown", map[string]interface{}{
+				"summary":  summary,
+				"cost_usd": compactCost,
+			}, turnID)
+		}
 	}
 
 	// Persist the user message before running the agent, not after — so
@@ -970,29 +999,20 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// Never runs for a ghost turn — nothing persisted to compact into, and
 	// a single incognito conversation isn't expected to run long enough to
 	// need it.
+	//
+	// Decided here, fired in the detached goroutine after "done" below —
+	// see that goroutine for why the call itself no longer runs inline.
 	contextTokens := result.ContextTokens
-	if !anonymous && result.ContextTokens >= cfg.ContextWindowTokens {
-		if summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID); err != nil {
-			log.Warn("auto-compaction failed", "thread", threadID, "err", err)
-			logEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
-		} else {
-			contextTokens = estimateTokens(summary)
-			send(ServerEvent{Type: "compacted", ThreadID: threadID, Content: summary})
-			logEvent(storageThreadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
-				"through_message_id": assistantMsgID,
-				"cost_usd":           compactCost,
-				"summary":            summary,
-			}, turnID)
-			result.CostUSD += compactCost
-		}
-	}
+	needsCompaction := !anonymous && result.ContextTokens >= cfg.ContextWindowTokens
 
 	// Total cost added to the thread this turn: the agent's LLM/tool spend
-	// plus any STT cost from a voice memo, plus compaction's own cost if
-	// it just ran — all persisted above, so the frontend's running total
-	// should reflect all of them. Follow-up suggestions are deliberately
-	// excluded: that call hasn't run yet (see below), and its cost ships
-	// separately in the "suggestions" event once it does.
+	// plus any STT cost from a voice memo. Note what is NOT here any more —
+	// compaction's own cost. It is still persisted to both ledgers by
+	// CompactThread, but it is spent by a detached call that outlives this
+	// turn, so folding it into this turn's totalCost would put money in the
+	// "done" event for a call that hadn't run yet. It ships instead on the
+	// "compacted" event of the thread's next turn, the same delayed-carrier
+	// shape as "suggestions" below.
 	totalCost := result.CostUSD + msg.SttCostUSD
 	// The one write a ghost turn ever makes — see ghost_usage's schema
 	// comment. Every other persistence path above was skipped by its own
@@ -1030,6 +1050,72 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		CacheReadTokens:    result.CacheReadTokens,
 		PendingQuestion:    result.PendingQuestion,
 	})
+
+	// Auto-compaction, detached for the same reason as the suggestions
+	// goroutine just below: it is a second full LLM round-trip the user
+	// never asked to watch, and running it inline made every
+	// threshold-crossing turn — already the slowest ones — pay it before
+	// the input re-enabled. Mandatory recover() for the same reason too:
+	// this runs outside any net/http stack that would catch a panic.
+	//
+	// Nothing is announced from here, and that is the whole point of the
+	// pending-notice dance. There may be no live client at all (a POST
+	// /api/ask turn, an Atlas quick answer, a Pulsar pulse), and even when
+	// there is, the turn this belongs to has already ended — a "compacted"
+	// event now would land on a finished turn's timeline. So the completed
+	// compaction arms a flag on the thread row instead (see
+	// CompactThread/TakeCompactionNotice) and the thread's NEXT turn
+	// announces it, with that turn's own turnID, which is what keeps live
+	// and reloaded rendering identical. That next turn is also where the
+	// cost finally reaches the frontend's running total.
+	//
+	// The context_tokens the user sees therefore lags by one turn: the
+	// "done" above already reported this turn's real, pre-compaction count,
+	// and nothing here can revise it. CompactThread has already written the
+	// smaller estimate to the DB, so a reload in between shows the reduced
+	// number early; either way the next turn's "done" carries a real count
+	// measured against the compacted history, and the two converge.
+	if needsCompaction {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic during auto-compaction", "thread", threadID, "panic", r)
+				}
+			}()
+			if !s.tryBeginCompaction(storageThreadID) {
+				// A compaction for this thread is already running — see
+				// tryBeginCompaction's doc comment. Skipping is that
+				// method's intended one-turn lag, not dropped work: this
+				// thread is already being summarized, and the turn after
+				// next will find it still over the threshold if the result
+				// wasn't enough.
+				return
+			}
+			defer s.endCompaction(storageThreadID)
+
+			summary, compactCost, err := s.compactThread(client, storageThreadID, assistantMsgID)
+			if err != nil {
+				log.Warn("auto-compaction failed", "thread", threadID, "err", err)
+				logEvent(storageThreadID, "warn", "compaction", "auto-compaction failed", map[string]interface{}{"err": err.Error()}, turnID)
+				return
+			}
+			// Logged with an empty turnID, deliberately. This row is the
+			// durable "a compaction happened" record — store/stats.go counts
+			// exactly these for the user-facing Auto-compactions figure, so
+			// it must be written once per compaction whether or not anyone
+			// is around to be told. It is untagged because
+			// buildTimelineFromEvents only ever matches a turn's own slice:
+			// tagging it here would render a second, duplicate note on the
+			// *triggering* turn's timeline, contradicting the notice the
+			// next turn shows. The rendered note is the "compaction notice
+			// shown" row that turn writes (see the surface block above).
+			logEvent(storageThreadID, "info", "compaction", "thread auto-compacted", map[string]interface{}{
+				"through_message_id": assistantMsgID,
+				"cost_usd":           compactCost,
+				"summary":            summary,
+			}, "")
+		}()
+	}
 
 	// Follow-up suggestions, Perplexity-style — generated in a detached
 	// goroutine, after "done" already shipped, so the turn footer and

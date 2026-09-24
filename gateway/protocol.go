@@ -211,9 +211,18 @@ type GhostTurn struct {
 //	                  the running total the same as "done"'s — not a replacement for it. May never
 //	                  arrive if generation fails or the answer was stopped early; the frontend
 //	                  should treat "no suggestions" as a normal, silent outcome, not an error.
-//	"compacted"     — thread_id + content: the thread just crossed the context-window threshold
-//	                  and was auto-summarized; content is the summary, shown as a collapsible
-//	                  timeline note like a tool call, not a normal answer
+//	"compacted"     — thread_id + content + cost_usd: this thread was auto-summarized after
+//	                  crossing the context-window threshold; content is the summary, shown as a
+//	                  collapsible timeline note like a tool call, not a normal answer.
+//	                  Sent at the START of the turn AFTER the one that triggered it, not during
+//	                  that turn: compaction itself is detached from the triggering turn's "done"
+//	                  (it is a second LLM call nobody asked to watch), and there may be no live
+//	                  client at all when it finishes — a bare POST /api/ask turn, an Atlas quick
+//	                  answer, a Pulsar pulse. The completed compaction arms a flag on the thread
+//	                  row and the next turn announces it. cost_usd is the summarization call's
+//	                  own spend, added to the running total exactly like "done"'s — it is not
+//	                  included in any "done" event, since it hadn't run when that shipped. Never
+//	                  arrives at all for a thread whose compaction no next turn ever collects.
 //	"done" (continued)  — PendingQuestion, when non-nil, means this turn ended with
 //	                  ask_user_question instead of a normal finished answer (see
 //	                  tools.PendingQuestion, store.Message.PendingQuestion) — the frontend should

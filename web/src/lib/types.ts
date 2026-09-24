@@ -246,10 +246,15 @@ export type ServerEvent =
 			assistant_message_id: number;
 			verification: VerificationMark[];
 	  }
-	// The thread just crossed the context-window threshold and was
-	// auto-summarized — content is the summary, shown as a collapsible
-	// timeline note like a tool call, not a normal answer.
-	| { type: 'compacted'; thread_id?: string; content: string }
+	// The thread was auto-summarized after crossing the context-window
+	// threshold — content is the summary, shown as a collapsible timeline
+	// note like a tool call, not a normal answer. Arrives at the START of
+	// the turn AFTER the one that triggered it (compaction is detached
+	// from that turn's 'done' — see gateway/protocol.go), and cost_usd is
+	// the summarization call's own spend, added to the running total the
+	// same way 'done''s is. It is not part of any 'done' event, since it
+	// hadn't happened when that shipped.
+	| { type: 'compacted'; thread_id?: string; content: string; cost_usd?: number }
 	// nearby_search or weather wants a live GPS fix for this turn and none
 	// of the cheaper sources (query text, the cookie from last time) had
 	// one — see gateway/protocol.go's doc comment. Reply with a

@@ -108,7 +108,33 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- opened yet — flipped by the same open path continued_in_assistant
 	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
 	-- for any non-pulsar thread.
-	seen INTEGER NOT NULL DEFAULT 0
+	seen INTEGER NOT NULL DEFAULT 0,
+	-- compacted_pending_notice/compacted_pending_cost: a one-shot handoff
+	-- between the turn that compacted this thread and the next turn that
+	-- runs on it. Compaction is detached from the triggering turn's own
+	-- "done" (it used to run synchronously before "done" shipped, making
+	-- the user wait out a whole extra LLM round-trip for a summary they
+	-- never asked to watch), so its cost can no longer ride along on that
+	-- turn's cost_usd — and there is no live client listening at the moment
+	-- it finishes for a bare POST /api/ask turn or a pulse. Instead the
+	-- completed compaction marks itself here, and the NEXT turn on this
+	-- thread takes the marker, announces the summary to whoever is
+	-- listening then, and clears it. See gateway/turn.go's compaction
+	-- block and TakeCompactionNotice.
+	--
+	-- The summary itself is NOT duplicated here — it's already
+	-- compacted_summary above, which is the current effective one. Only the
+	-- cost (which has no other home: threads.cost_usd and the through
+	-- message's cost_usd have both already absorbed it by the time anyone
+	-- reads this) and the "unannounced" flag need storing.
+	compacted_pending_notice INTEGER NOT NULL DEFAULT 0,
+	-- Accumulated with +=, not overwritten: if two compactions somehow land
+	-- before a turn takes the notice (a detached compaction that was still
+	-- in flight when a turn read the flag as clear, then finished after),
+	-- both costs still reach the session total exactly once. See the
+	-- compaction in-flight guard in gateway/server.go for the case that
+	-- actually keeps this rare.
+	compacted_pending_cost REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -1038,6 +1064,15 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
 	// transcript — see the schema comment above.
 	`ALTER TABLE messages ADD COLUMN transcript TEXT NOT NULL DEFAULT ''`,
+	// compacted_pending_notice/compacted_pending_cost — see the schema
+	// comment above. Appended at the end per this file's own established
+	// rule (positional user_version tracking, never insert mid-list).
+	// An existing thread defaults to "nothing pending", which is right: it
+	// may well have compacted under the old synchronous scheme, but that
+	// compaction already announced itself live, and re-announcing it on the
+	// next turn would show a summary the user has already seen.
+	`ALTER TABLE threads ADD COLUMN compacted_pending_notice INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE threads ADD COLUMN compacted_pending_cost REAL NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1399,6 +1434,19 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 		return "", err
 	}
 
+	// compacted_summary/compacted_through_id/context_tokens and the
+	// compacted_pending_* pair are all deliberately left at their defaults
+	// here, not copied — a fork is a fresh variant that rebuilds its own
+	// history from the raw messages it copied, which is defensible on its
+	// own (a variant may well diverge from a summary of a prefix it now
+	// shares only partially). The pending-notice columns make that decision
+	// load-bearing rather than incidental: the notice describes the ROOT's
+	// compaction, with a through_id that means nothing in this fork's id
+	// space (forked messages get entirely new autoincrement ids), so
+	// copying it would surface a summary under an unrelated variant — and,
+	// worse, charge its cost to a session that never triggered it. Edit/
+	// retry therefore surfaces no notice, and the compaction cost is
+	// announced on whichever thread actually compacts.
 	if _, err := tx.Exec(
 		`INSERT INTO threads (id, title, model, source, fork_root_id, fork_at_index) VALUES (?, '', ?, ?, ?, ?)`,
 		forkID, model, source, rootID, atIndex,
@@ -2184,6 +2232,13 @@ func (s *Store) SetContextTokens(threadID string, tokens int) error {
 // the thread's running total like any other LLM call, and to the
 // throughID message's own cost_usd too, so GetStats (which sums messages)
 // sees it — same both-ledgers rule as AddTurnCost.
+//
+// It also arms the one-shot pending notice (see the threads schema comment
+// on compacted_pending_notice) so the thread's next turn can announce this
+// compaction and add its cost to the live session total. Both updates are
+// in this same transaction on purpose: a reader that saw the notice armed
+// but the summary not yet written would announce the previous summary
+// while charging the new cost.
 func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -2192,8 +2247,10 @@ func (s *Store) CompactThread(threadID, summary string, throughID int64, cost fl
 	defer tx.Rollback()
 	if _, err := tx.Exec(
 		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
-		 context_tokens = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
-		summary, throughID, cost, contextTokensEstimate, threadID,
+		 context_tokens = ?, compacted_pending_notice = 1,
+		 compacted_pending_cost = compacted_pending_cost + ?,
+		 updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
+		summary, throughID, cost, contextTokensEstimate, cost, threadID,
 	); err != nil {
 		return err
 	}
@@ -2201,6 +2258,70 @@ func (s *Store) CompactThread(threadID, summary string, throughID int64, cost fl
 		return err
 	}
 	return tx.Commit()
+}
+
+// TakeCompactionNotice consumes the pending-compaction marker armed by
+// CompactThread, returning the current summary and the cost of the
+// compaction(s) that armed it. ok is false when nothing is pending, which
+// is the overwhelmingly common case — a turn on a thread that hasn't just
+// been compacted.
+//
+// Read-and-clear in one transaction, rather than a SELECT the caller
+// follows with a Clear: announcing the same compaction twice would
+// double-count its cost in the frontend's running session total, and two
+// turns racing on the same thread (a pulse firing while the user types,
+// say) is exactly the shape that would produce it. The UPDATE's own
+// `WHERE compacted_pending_notice = 1` is what makes the take exclusive —
+// only one of two concurrent callers can be the one that flips it back.
+func (s *Store) TakeCompactionNotice(threadID string) (summary string, cost float64, ok bool, err error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", 0, false, err
+	}
+	defer tx.Rollback()
+
+	var pending int
+	if err := tx.QueryRow(
+		`SELECT compacted_summary, compacted_pending_cost, compacted_pending_notice FROM threads WHERE id = ?`,
+		threadID,
+	).Scan(&summary, &cost, &pending); err != nil {
+		if err == sql.ErrNoRows {
+			// A thread row that's gone (deleted mid-turn) has no notice to
+			// give, and isn't an error the caller should surface to the user.
+			return "", 0, false, nil
+		}
+		return "", 0, false, err
+	}
+	if pending == 0 {
+		return "", 0, false, nil
+	}
+
+	res, err := tx.Exec(
+		`UPDATE threads SET compacted_pending_notice = 0, compacted_pending_cost = 0
+		 WHERE id = ? AND compacted_pending_notice = 1`, threadID,
+	)
+	if err != nil {
+		return "", 0, false, err
+	}
+	// Defensive, not load-bearing: Open's SetMaxOpenConns(1) already means no
+	// other goroutine can run a statement between the SELECT above and this
+	// UPDATE, since this transaction holds the pool's only connection for
+	// both. This only fires if that serialization ever stops holding (a
+	// second connection, a second process) — and if it does, dropping the
+	// notice here is what keeps the compaction cost from being announced and
+	// charged twice, which is strictly better than the alternative.
+	if n, err := res.RowsAffected(); err != nil {
+		return "", 0, false, err
+	} else if n == 0 {
+		if err := tx.Commit(); err != nil {
+			return "", 0, false, err
+		}
+		return "", 0, false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return "", 0, false, err
+	}
+	return summary, cost, true, nil
 }
 
 // GetSetting returns the stored value for key, or "" if unset — callers
