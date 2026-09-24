@@ -5,8 +5,66 @@ import (
 	"testing"
 	"time"
 
+	"polaris/llm"
+	"polaris/llm/llmtest"
 	"polaris/store"
 )
+
+// TestCompactThread_EndsOnAUserTurn is the regression test for the bug that
+// made auto-compaction fail silently for its entire existence. The prompt it
+// builds is [system] + the whole conversation, and the conversation always
+// ends on an assistant message (a turn's own answer is the last thing
+// persisted before that turn triggers compaction). Handed an array ending
+// there, the model reads it as its own turn to continue rather than a thing
+// to summarize and returns essentially nothing — measured live against
+// deepseek-v4.1-flash: 1 character of content ending on an assistant turn,
+// a real summary once a trailing user turn was appended. The empty response
+// then tripped compactThread's empty-summary guard, so the thread never
+// compacted and nothing was ever announced: the failure looked exactly like
+// "it didn't fire". generateTitle hit the same wall and appends
+// title_regenerate_task for the same reason.
+func TestCompactThread_EndsOnAUserTurn(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	if err := h.db.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := h.db.AddMessage("t1", "user", "what is the tallest mountain in Japan?", "[]", "[]", 0, ""); err != nil {
+		t.Fatalf("AddMessage(user): %v", err)
+	}
+	msgID, err := h.db.AddMessage("t1", "assistant", "Mount Fuji, at 3,776 m.", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage(assistant): %v", err)
+	}
+
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{{Resp: &llm.ChatResponse{Content: "a summary of the exchange"}}},
+	}
+	s := &Server{db: h.db}
+	if _, _, err := s.compactThread(mock, "t1", msgID); err != nil {
+		t.Fatalf("compactThread: %v", err)
+	}
+	if len(mock.Calls) != 1 {
+		t.Fatalf("got %d LLM calls, want 1", len(mock.Calls))
+	}
+
+	msgs := mock.Calls[0].Messages
+	if len(msgs) < 2 {
+		t.Fatalf("prompt has %d messages, want at least a system turn and the history", len(msgs))
+	}
+	// The hazard this guards is real, not hypothetical: the message right
+	// before the task turn is the assistant's own answer. If that ever stops
+	// being true, this test's premise has changed and the task turn below
+	// may no longer be needed — better to fail here than to keep a
+	// once-meaningful prompt fragment around on faith.
+	if prev := msgs[len(msgs)-2]; prev.Role != "assistant" {
+		t.Errorf("second-to-last message role = %q, want %q — the history is expected to end on the assistant's answer", prev.Role, "assistant")
+	}
+	if last := msgs[len(msgs)-1]; last.Role != "user" {
+		t.Errorf("last message role = %q, want %q — a prompt ending on the assistant turn makes the model continue it and return no usable summary", last.Role, "user")
+	} else if strings.TrimSpace(last.Content) == "" {
+		t.Error("trailing user task turn is empty, so it cannot redirect the model")
+	}
+}
 
 // TestTryBeginCompaction_SerializesPerThread covers the race that
 // detaching compaction introduces (F5 in docs/plans/auto-compaction.md):

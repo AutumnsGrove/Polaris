@@ -80,9 +80,9 @@ type Set struct {
 	} `yaml:"agent"`
 
 	Turn struct {
-		SuggestionsSystem     string `yaml:"suggestions_system"`
-		SuggestionsTask       string `yaml:"suggestions_task"`
-		TitleSystem           string `yaml:"title_system"`
+		SuggestionsSystem string `yaml:"suggestions_system"`
+		SuggestionsTask   string `yaml:"suggestions_task"`
+		TitleSystem       string `yaml:"title_system"`
 		// WeaverTitleSystem (issue #94, "Talk to Weaver") replaces
 		// TitleSystem's Q&A-tuned framing for a Weaver thread's opening
 		// message — TitleSystem's own topic-naming heuristics (built for
@@ -97,6 +97,7 @@ type Set struct {
 		TitleRegenerateSystem string `yaml:"title_regenerate_system"`
 		TitleRegenerateTask   string `yaml:"title_regenerate_task"`
 		CompactionSystem      string `yaml:"compaction_system"`
+		CompactionTask        string `yaml:"compaction_task"`
 		MemoryChatSystem      string `yaml:"memory_chat_system"`
 		MemoryExportPrompt    string `yaml:"memory_export_prompt"`
 		MemoryImportSystem    string `yaml:"memory_import_system"`
@@ -457,6 +458,9 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
 		"fully replace the conversation history, so omitting something means it's gone for good. Write " +
 		"it as plain prose, not a transcript."
+
+	d.Turn.CompactionTask = "Now write that summary of the conversation above. Output only the " +
+		"summary itself — no preamble, no commentary, no headings."
 
 	d.Turn.MemoryChatSystem = "You are managing Polaris's saved memories directly, on the Memory settings page — " +
 		"this is not a general conversation, and the user isn't asking a question to be answered in prose. " +
@@ -969,6 +973,9 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.Turn.CompactionSystem == "" {
 		s.Turn.CompactionSystem = defaults.Turn.CompactionSystem
+	}
+	if s.Turn.CompactionTask == "" {
+		s.Turn.CompactionTask = defaults.Turn.CompactionTask
 	}
 	// MemoryChatSystem was missing from this fallback list entirely until
 	// now — a real gap: an installed prompts.yaml predating this prompt's

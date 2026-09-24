@@ -1587,6 +1587,20 @@ func (s *Server) compactThread(client llm.ChatClient, threadID string, throughID
 		{Role: "system", Content: prompts.Get().Turn.CompactionSystem},
 	}
 	prompt = append(prompt, history...)
+	// The trailing task turn is load-bearing, not decoration. `history` is
+	// the whole conversation as the LLM saw it, so it always ends on an
+	// ASSISTANT message — a turn's own answer is the last thing persisted
+	// before compaction is triggered by that turn. Handed an array that ends
+	// there, the model reads it as its own turn to continue rather than as
+	// something to summarize, and returns essentially nothing: measured live
+	// against deepseek-v4.1-flash, the same prompt produced 1 character of
+	// content ending on an assistant turn, and a real summary once this user
+	// turn was appended. That empty response then trips the guard below and
+	// aborts the compaction, which is why auto-compaction had never once
+	// succeeded in production — it failed silently and looked like it had
+	// simply not fired. generateTitle hit the identical wall and fixes it the
+	// same way (see its doc comment); title_regenerate_task is the precedent.
+	prompt = append(prompt, llm.ChatMessage{Role: "user", Content: prompts.Get().Turn.CompactionTask})
 
 	resp, err := client.ChatCompletionStreaming(context.Background(), prompt, func(string) {}, nil)
 	if err != nil {

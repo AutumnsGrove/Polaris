@@ -342,6 +342,15 @@ turn:
     conversation history, so omitting something means it's gone for good. Write it as plain prose,
     not a transcript.
 
+  # A trailing USER turn, not optional and not cosmetic — see compactThread's
+  # doc comment. History always ends on an assistant message, and a model
+  # handed a prompt that ends there reads it as "keep going" and emits
+  # essentially nothing (measured live on deepseek-v4.1-flash: 1 character of
+  # content, vs. a real summary once this turn is appended). Same fix, and
+  # same reasoning, as title_regenerate_task above.
+  compaction_task: |-
+    Now write that summary of the conversation above. Output only the summary itself — no preamble, no commentary, no headings.
+
   # %s is the current memory index (see tools.MemoryIndexPrompt) — see
   # gateway/memories.go's handleMemoryChat.
   memory_chat_system: |-

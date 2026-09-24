@@ -2,13 +2,19 @@
 
 Working notes for GitHub issue #109.
 
-Status: **steps 2 + 3 are implemented** (detach + pending-notice delivery, Design A — see
-"Step 2 + 3: what was built" below, which replaces the original plan text). **Steps 1 and 4
-— the live verification pass and the summary-quality/prompt iteration — are still
-outstanding** and still need the end-to-end harness described in "Step 1". Nothing in this
-file has been validated on real hardware yet; per CLAUDE.md, review + unit tests are not
-enough for this, and the unit tests added here deliberately cover the handoff mechanics
-only, not whether the compaction itself is good.
+Status: **steps 2 + 3 implemented and live-verified; the "never fired" mystery is solved
+and fixed.** See "ROOT CAUSE FOUND (step 1, live)" below — compaction was firing all along
+and failing silently on a prompt-shape bug, now fixed and confirmed working end to end
+against a real model through `POST /api/ask`.
+
+**Still open: step 4, summary *quality* over time.** The mechanics work and one real
+summary was inspected and looked good, but that's a sample size of one, on a short
+conversation, with a deliberately tiny threshold. The question this file opened with —
+whether the summary preserves tool-derived facts across a long research-heavy thread —
+is still unanswered, and still needs the harness described in "Step 1" (real searches,
+a real model, a browser). `compactThread` builds from `loadAnswerHistory` (F6), so it
+never sees tool-call structure; that remains the leading suspect if summaries turn out
+lossy.
 
 This file is the shared scratchpad; it is not user-facing docs.
 
@@ -43,7 +49,7 @@ Line numbers below were re-checked after steps 2 + 3 landed.
 | `compacted` frontend replay (`buildTimelineFromEvents`) | `web/src/lib/state.svelte.ts:99` |
 | `compacted` display component | `web/src/lib/components/ToolEvent.svelte:216` |
 | Auto-compactions stat (counts the untagged audit row) | `store/stats.go:540` |
-| Prompt text | `prompts.yaml:339` (`compaction_system`) + fallback `prompts/prompts.go:456` |
+| Prompt text (`compaction_system` + trailing `compaction_task`) | `prompts.yaml:339`, fallback `prompts/prompts.go:460` |
 
 ## Lifecycle, as it ran BEFORE steps 2 + 3
 
@@ -193,6 +199,44 @@ Test plan (for whoever runs it):
 Baseline-first: grab one or two forced runs **before** changing any code, so the
 latency and summary-quality comparison is real. (This ordering is now moot if steps
 2+3 land first; note it explicitly in whatever harness does the live pass.)
+
+## ROOT CAUSE FOUND (step 1, live): the summary prompt ended on an assistant turn
+
+The mystery at the top of this file — "has **never fired in production**" — is solved, and it
+was never about the threshold. Compaction was firing. It was **failing silently, every
+time**.
+
+`compactThread` builds `[system] + loadAnswerHistory(...)`. History always ends on an
+**assistant** message: a turn's own answer is the last thing persisted before that turn's
+threshold check triggers compaction. A model handed a prompt that ends there reads it as
+its own turn to continue rather than as something to summarize, and returns essentially
+nothing. Measured live against `deepseek-v4.1-flash` (streaming, `effort: medium`):
+
+| Prompt ends on | reasoning tokens | **content** |
+| --- | --- | --- |
+| assistant (what compaction sent) | 0 | **1 char** |
+| user | 894 | **169 chars** |
+
+One character of content then trips `compactThread`'s empty-summary guard, so the
+compaction is skipped, the thread never compacts, and the only trace is a
+`warn compaction auto-compaction failed` row — which reads as "it didn't fire" rather than
+"it fired and failed". This predates steps 2 + 3 entirely: the old synchronous path had the
+same prompt shape and the same guard.
+
+`generateTitle` documents this exact hazard and already fixes it by appending a trailing
+task turn (`title_regenerate_task`). Compaction simply never got the same treatment.
+
+**Fix:** a `compaction_task` prompt (a trailing **user** turn) appended in `compactThread`,
+mirroring `title_regenerate_task`. Added to `prompts.yaml`, the `prompts.Set` struct, the
+compiled-in defaults, and the blank-field fallback merge. Regression test:
+`TestCompactThread_EndsOnAUserTurn`, which asserts both that the task turn is last *and*
+that the message before it is the assistant answer (so the test fails loudly if the
+premise ever changes).
+
+Verified live, end to end, through the real server (`POST /api/ask`, real model): a real
+752-char summary landed, `compacted_pending_notice` armed, the next turn emitted
+`compaction notice shown` under its own `turn_id` and cleared the flag, and the
+`thread auto-compacted` audit row was written untagged with the stats count intact.
 
 ## Step 2 + 3: what was built (Design A)
 
