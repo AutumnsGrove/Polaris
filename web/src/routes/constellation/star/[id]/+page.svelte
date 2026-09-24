@@ -97,7 +97,14 @@
 
 	async function submitEdit(text: string) {
 		if (!detail) return { error: 'Star not loaded.' };
+		const seq = loadSeq;
 		const result = await constellationState.editStar(detail.star.id, text);
+		// Superseded — the user navigated to a different star while this
+		// PATCH was in flight (this component instance is reused across
+		// param changes, see loadSeq's own doc comment above). Applying it
+		// now would merge this star's updated fields into whatever star is
+		// actually on screen, producing a corrupted hybrid `detail`.
+		if (seq !== loadSeq) return { error: '' };
 		if (result.star) detail = { ...detail, star: result.star };
 		return { error: result.error };
 	}
@@ -110,7 +117,9 @@
 
 	async function saveRename(newTitle: string) {
 		if (!detail) return;
+		const seq = loadSeq;
 		const result = await constellationState.patchStar(detail.star.id, { title: newTitle });
+		if (seq !== loadSeq) return; // superseded — see submitEdit's doc comment
 		if (result.star) {
 			detail = { ...detail, star: result.star };
 			renaming = false;
@@ -136,13 +145,15 @@
 
 	async function toggleDisabled() {
 		if (!detail) return;
+		const seq = loadSeq;
 		const result = await constellationState.patchStar(detail.star.id, { disabled: !detail.star.disabled });
+		showMenu = false;
+		if (seq !== loadSeq) return; // superseded — see submitEdit's doc comment
 		if (result.star) {
 			detail = { ...detail, star: result.star };
 		} else {
 			appState.showToast(result.error || "Couldn't update that star");
 		}
-		showMenu = false;
 	}
 </script>
 
