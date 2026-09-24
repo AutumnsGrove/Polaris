@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -134,3 +135,102 @@ func TestGetStats_SearchProviderCounts(t *testing.T) {
 	}
 }
 
+// CacheUsage counts each turn once even after an edit/retry fork has
+// copied its assistant row (usage columns and all) into a new variant —
+// a plain SUM over messages would inflate the shared prefix per variant.
+func TestGetStats_CacheUsageCountsForkedTurnsOnce(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	for i, usage := range [][2]int{{10_000, 2_000}, {20_000, 18_000}} {
+		turnID := "turn-" + strconv.Itoa(i)
+		if _, err := s.AddMessage("root", "user", "q", "[]", "[]", 0, turnID); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		id, err := s.AddMessage("root", "assistant", "a", "[]", "[]", 0, turnID)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		if err := s.SetMessageCacheUsage(id, usage[0], usage[1]); err != nil {
+			t.Fatalf("SetMessageCacheUsage: %v", err)
+		}
+	}
+	// A retry of turn 2 copies turn 1's rows into the fork.
+	if _, err := s.ForkThread("root", "root", 2); err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	got := stats.CacheUsage
+	if got.TotalPromptTokens != 30_000 || got.TotalCacheReadTokens != 20_000 {
+		t.Fatalf("CacheUsage totals = %d/%d, want 30000/20000 (turn 1 counted once despite the fork)", got.TotalPromptTokens, got.TotalCacheReadTokens)
+	}
+	if got.PeriodPromptTokens != got.TotalPromptTokens || got.PeriodCacheReadTokens != got.TotalCacheReadTokens {
+		t.Fatalf("period %+v should equal totals when periodDays is 0", got)
+	}
+}
+
+// The 30-day and all-time costs must come from one ledger counted once
+// per real message — they used to come from two (threads.cost_usd vs. a
+// raw SUM of messages.cost_usd) that disagreed: a retry fork's copied
+// prefix was counted again per variant in the 30-day figure (seen live:
+// $0.03 "last 30 days" against $0.02 "all-time"), and late costs landed
+// on only one ledger each.
+func TestGetStats_CostCountsForksOnceAndLateCostsOnBothLedgers(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	var answerIDs []int64
+	for i, cost := range []float64{0.01, 0.02} {
+		turnID := "turn-" + strconv.Itoa(i)
+		if _, err := s.AddMessage("root", "user", "q", "[]", "[]", 0, turnID); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		id, err := s.AddMessage("root", "assistant", "a", "[]", "[]", cost, turnID)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		answerIDs = append(answerIDs, id)
+	}
+	// Suggestions/verification spend after the fact, on turn 1.
+	if err := s.AddTurnCost("root", answerIDs[0], 0.004); err != nil {
+		t.Fatalf("AddTurnCost: %v", err)
+	}
+	// A retry of turn 2: the fork copies turn 1, then pays for its own reply.
+	forkID, err := s.ForkThread("root", "root", 2)
+	if err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+	if _, err := s.AddMessage(forkID, "user", "q", "[]", "[]", 0, "turn-retry"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if _, err := s.AddMessage(forkID, "assistant", "a2", "[]", "[]", 0.03, "turn-retry"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	// Real spend: 0.01 + 0.004 + 0.02 + 0.03 — turn 1 once, not once per variant.
+	const want = 0.064
+	for _, days := range []int{0, 30} {
+		stats, err := s.GetStats(days)
+		if err != nil {
+			t.Fatalf("GetStats(%d): %v", days, err)
+		}
+		if math.Abs(stats.TotalCostUSD-want) > 1e-9 || math.Abs(stats.PeriodCostUSD-want) > 1e-9 {
+			t.Errorf("GetStats(%d): total $%.4f, period $%.4f, want both $%.4f", days, stats.TotalCostUSD, stats.PeriodCostUSD, want)
+		}
+	}
+
+	// The thread menu's running total saw the late cost too.
+	thread, err := s.GetThreadRaw("root")
+	if err != nil {
+		t.Fatalf("GetThreadRaw: %v", err)
+	}
+	if math.Abs(thread.CostUSD-0.034) > 1e-9 {
+		t.Errorf("root thread cost = $%.4f, want $0.0340", thread.CostUSD)
+	}
+}

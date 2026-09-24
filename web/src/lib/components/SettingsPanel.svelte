@@ -18,8 +18,7 @@
 		NotepadText,
 		User,
 		Mic,
-		MapPin,
-		History
+		MapPin
 	} from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
@@ -93,6 +92,13 @@
 			: 0
 	);
 	let toolErrorRate = $derived(toolCallTotal > 0 ? (toolErrorTotal / toolCallTotal) * 100 : 0);
+
+	// Prompt-cache hit rate — the deployment-wide version of ThreadMenu's
+	// per-thread "Cache hits" row. "—" when no turn has recorded usage in
+	// that window, rather than a misleading 0%.
+	function cacheHitPercent(prompt: number | undefined, cached: number | undefined): string {
+		return prompt ? `${Math.round(((cached ?? 0) / prompt) * 100)}%` : '—';
+	}
 	let wrapupRate = $derived(
 		appState.settings.usage && appState.settings.usage.turn_count > 0
 			? (appState.settings.usage.max_turns_wrapup_count / appState.settings.usage.turn_count) * 100
@@ -218,6 +224,15 @@
 
 				<div class="usage-section-label">Health</div>
 				<div class="usage-stat-group">
+					{#if usage.cache_usage}
+						<div class="usage-stat-row">
+							<span class="label">Prompt cache hits</span>
+							<span class="value"
+								>{cacheHitPercent(usage.cache_usage.period_prompt_tokens, usage.cache_usage.period_cache_read_tokens)}
+								({cacheHitPercent(usage.cache_usage.total_prompt_tokens, usage.cache_usage.total_cache_read_tokens)} all-time)</span
+							>
+						</div>
+					{/if}
 					<div class="usage-stat-row warn">
 						<span class="label">Ran out of turn budget</span>
 						<span class="value">{usage.max_turns_wrapup_count} ({wrapupRate.toFixed(1)}% of turns)</span>
@@ -492,27 +507,6 @@
 					it's saved across conversations.
 				</p>
 			</div>
-
-			<div class="section-head"><History size={15} /><span class="section-title">Conversation context</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Give the model full results across turns</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={appState.settings.fullTurnHistory}
-							onchange={(e) => appState.settings.setFullTurnHistory(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
-				</div>
-			</div>
-			<p class="hint">
-				Follow-ups always see earlier answers and the sources behind them. With this on, they
-				also see every earlier search result and page read, so <span class="wordmark">Polaris</span>
-				doesn't have to look things up again. Each turn costs more, and a long thread reaches the
-				auto-compaction limit sooner (the limit rises to 200K tokens while this is on).
-			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>
 			<div class="settings-group">

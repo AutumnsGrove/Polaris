@@ -123,6 +123,6 @@ code_exec:
 service:
   label: "polaris"
 
-context_window_tokens: 100000
+context_window_tokens: 200000
 max_agent_turns: 50
 default_model: "deepseek"

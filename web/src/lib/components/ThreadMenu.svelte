@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, RefreshCw, Trash2, TriangleAlert, Gauge, Coins, Star } from '@lucide/svelte';
+	import { MoreHorizontal, Pencil, RefreshCw, Trash2, TriangleAlert, Gauge, Coins, Star, Zap } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import EditTextModal from './EditTextModal.svelte';
@@ -48,6 +48,14 @@
 		appState.settings.contextWindowTokens > 0
 			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
 			: 0
+	);
+
+	// Share of this thread's input tokens the provider served from its
+	// prompt cache (issue #107) — null until any turn has reported usage,
+	// so a thread from before tracking existed shows "—" instead of a
+	// misleading 0%.
+	let cacheHitPercent = $derived(
+		appState.promptTokens > 0 ? Math.round((appState.cacheReadTokens / appState.promptTokens) * 100) : null
 	);
 
 	let open = $state(false);
@@ -180,6 +188,11 @@
 					<Coins size={14} />
 					<span>Thread cost</span>
 					<span class="info-value">${appState.totalCost.toFixed(4)}</span>
+				</div>
+				<div class="info-row">
+					<Zap size={14} />
+					<span>Cache hits</span>
+					<span class="info-value">{cacheHitPercent === null ? '—' : `${cacheHitPercent}%`}</span>
 				</div>
 				<div class="info-row dates">
 					<span>Started {formatDate(createdAt)}</span>

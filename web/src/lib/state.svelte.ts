@@ -216,6 +216,13 @@ export class AppState {
 	// (the auto-compaction threshold) is the denominator for the % shown
 	// next to it in +page.svelte.
 	contextTokens = $state(0);
+	// Thread-level prompt-cache totals (issue #107) — summed input tokens
+	// and how many of those were cache reads, all-time across the thread's
+	// turns, shown as a hit % in ThreadMenu next to thread cost. Loaded with
+	// the thread, then accumulated from each "done" event the same way
+	// totalCost is.
+	promptTokens = $state(0);
+	cacheReadTokens = $state(0);
 
 	// Follow-up suggestions for the most recent answer — persisted on the
 	// last assistant message (see StoredMessage.suggestions), so openThread
@@ -713,6 +720,8 @@ export class AppState {
 		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
+		this.promptTokens = data.prompt_tokens ?? 0;
+		this.cacheReadTokens = data.cache_read_tokens ?? 0;
 		this.variants = data.variants ?? {};
 		// Sticky turn config — see threadFocusMode's doc comment above.
 		// data.model falls back to the current selection rather than ''
@@ -842,6 +851,8 @@ export class AppState {
 		const eventsByTurn = await this.fetchEventsByTurn(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
+		this.promptTokens = data.prompt_tokens ?? 0;
+		this.cacheReadTokens = data.cache_read_tokens ?? 0;
 		this.variants = data.variants ?? {};
 		const messages = data.messages ?? [];
 		this.turns = this.buildTurnsFromMessages(messages, eventsByTurn);
@@ -875,6 +886,8 @@ export class AppState {
 		this.turns = [];
 		this.totalCost = 0;
 		this.contextTokens = 0;
+		this.promptTokens = 0;
+		this.cacheReadTokens = 0;
 		this.suggestions = [];
 		// A leftover ghost session's own id must never carry over into
 		// whatever's opened next — see ghostThreadId's doc comment.
@@ -1544,6 +1557,8 @@ export class AppState {
 					// the same as a real new thread's first turn.
 					this.totalCost += e.cost_usd ?? 0;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
+					this.promptTokens += e.prompt_tokens ?? 0;
+					this.cacheReadTokens += e.cache_read_tokens ?? 0;
 					this.suggestions = [];
 				} else if (stillWatching) {
 					this.currentThreadId = e.thread_id;
@@ -1554,6 +1569,8 @@ export class AppState {
 					// session — this exact bug shipped once already.
 					this.totalCost += e.cost_usd ?? 0;
 					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
+					this.promptTokens += e.prompt_tokens ?? 0;
+					this.cacheReadTokens += e.cache_read_tokens ?? 0;
 					// Cleared here, not filled in — follow-up suggestions are
 					// a separate LLM call the backend now runs after "done"
 					// ships (see protocol.go's doc comment on the "suggestions"

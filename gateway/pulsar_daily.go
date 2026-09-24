@@ -127,6 +127,7 @@ const dailySportsNoGamesMarker = "NO_GAMES_TODAY"
 // short digest card.
 var dailyResearchDisabledTools = map[string]bool{
 	"calculator":         true,
+	"current_time":       true,
 	"nearby_search":      true,
 	"youtube_transcript": true,
 	"weather":            true,

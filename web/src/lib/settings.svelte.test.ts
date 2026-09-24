@@ -27,7 +27,7 @@ describe('SettingsState.load', () => {
 		await settings.load();
 		// load() returns early on !res.ok — defaults untouched.
 		expect(settings.theme).toBe('dark');
-		expect(settings.contextWindowTokens).toBe(100_000);
+		expect(settings.contextWindowTokens).toBe(200_000);
 	});
 
 	it('applies voice_input_mode from the server, defaulting to toggle for anything else', async () => {

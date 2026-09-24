@@ -1191,7 +1191,7 @@ func emitToolError(ctx *Context, tool string, args map[string]interface{}, resul
 // next call instead of only at the process's original init() time.
 func toolDefsByName() map[string]llm.ToolDef {
 	return map[string]llm.ToolDef{
-		"think": thinkDef, "calculator": calculatorDef, "web_search": webSearchDef, "web_read": webReadDef,
+		"think": thinkDef, "calculator": calculatorDef, "current_time": currentTimeDef, "web_search": webSearchDef, "web_read": webReadDef,
 		"nearby_search": nearbySearchDef, "youtube_transcript": youtubeTranscriptDef, "weather": weatherDef,
 		"reference_lookup": referenceLookupDef, "github_repo": githubRepoDef, "github_activity": githubActivityDef, "dictionary": dictionaryDef,
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "code_exec": codeExecDef, "fetch_url": fetchURLDef,

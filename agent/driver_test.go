@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -1299,4 +1300,18 @@ func TestDispatchToolCallsConcurrently_CodeExecDoesNotBlockOtherTools(t *testing
 
 	close(release)
 	<-done
+}
+
+// The preamble is byte ~30 of every request, and providers cache on an
+// exact-prefix match — a clock time here means no two turns more than a
+// minute apart ever share a cached prefix. See currentContextPreamble's
+// doc comment; the time of day lives behind the current_time tool instead.
+func TestCurrentContextPreamble_DateOnly(t *testing.T) {
+	p := currentContextPreamble()
+	if clock := regexp.MustCompile(`\d{1,2}:\d{2}`).FindString(p); clock != "" {
+		t.Fatalf("preamble carries a time of day (%q), which breaks cross-turn prompt caching:\n%s", clock, p)
+	}
+	if !strings.Contains(p, time.Now().Format("January 2, 2006")) {
+		t.Fatalf("preamble is missing today's date:\n%s", p)
+	}
 }

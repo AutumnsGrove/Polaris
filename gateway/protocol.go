@@ -160,15 +160,6 @@ type ClientMessage struct {
 	// WebSocket client never sets this — a real chat turn always wants the
 	// non-blocking async path so the answer never stalls behind it.
 	WaitVerification bool `json:"-"`
-	// FullTurnHistoryOverride, when non-nil, replaces
-	// FullTurnHistoryFromStore(s.db) for this turn only — same "debug knob,
-	// API-only, WebSocket client never sets this" shape as WaitVerification
-	// above. Without it, exercising the full_turn_history setting via
-	// /api/ask meant actually flipping the operator's real settings row
-	// first (affecting the live chat client too) and remembering to flip
-	// it back after. Only ever set by handleAsk/handleAskStream from
-	// AskRequest.FullTurnHistory.
-	FullTurnHistoryOverride *bool `json:"-"`
 }
 
 // GhostTurn is one prior turn of a ghost (Anonymous) thread's client-held
@@ -204,7 +195,8 @@ type GhostTurn struct {
 //	"user_message"  — user_message_id: the persisted ID of the user message that started this
 //	                  turn, sent as soon as it's saved (even if the turn later errors) so the
 //	                  frontend can retry/edit from it
-//	"done"          — thread_id + cost_usd + context_tokens + duration_ms: turn complete,
+//	"done"          — thread_id + cost_usd + context_tokens + duration_ms + prompt_tokens +
+//	                  cache_read_tokens: turn complete,
 //	                  persisted, safe to re-enable input; duration_ms is how long agent.Run took
 //	                  (see store.Message.DurationMs), shown next to cost in the turn footer.
 //	                  Deliberately does NOT wait on follow-up suggestions — those are a separate
@@ -313,6 +305,12 @@ type ServerEvent struct {
 	// always takes measurably more than 0ms, so there's no legitimate zero
 	// value being silently dropped.
 	DurationMs int64 `json:"duration_ms,omitempty"`
+	// PromptTokens/CacheReadTokens are this turn's summed input tokens and
+	// how many were prompt-cache reads, on "done" (see agent.Result's doc
+	// comment and issue #107). No omitempty, same NaN-poisoning reasoning
+	// as CostUSD above: the frontend adds these into running thread totals.
+	PromptTokens    int `json:"prompt_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
 	// PendingQuestion mirrors store.Message.PendingQuestion for the live
 	// "done" event — see the doc comment above.
 	PendingQuestion *tools.PendingQuestion `json:"pending_question,omitempty"`

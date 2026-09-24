@@ -203,6 +203,23 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- client, or nothing found supported at/above the confidence
 	-- threshold.
 	verification TEXT NOT NULL DEFAULT '[]',
+	-- prompt_tokens/cache_read_tokens: the turn's input tokens summed
+	-- across every LLM call agent.Run made, and how many of those the
+	-- provider served from its prompt cache (issue #107). Assistant
+	-- messages only, 0 elsewhere and on every turn from before this
+	-- existed. Per-message rather than a running thread counter, same as
+	-- cost_usd's own audit trail: the thread-level hit % is summed on read
+	-- (see ThreadCacheUsage), so a fork's copied prefix counts too.
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+	-- transcript: JSON-encoded exact wire messages this turn sent (see
+	-- llm.EncodeTranscript and agent.Result.Transcript) — the model-facing
+	-- user message through the final answer, tool calls/results
+	-- untruncated. Assistant messages only. loadHistory replays it
+	-- verbatim so later turns share a byte-identical, cacheable prefix
+	-- (docs/plans/verbatim-turn-transcripts.md); '' for every turn from
+	-- before this existed, which falls back to the older reconstruction.
+	transcript TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1016,6 +1033,11 @@ var migrations = []string{
 	// per this file's own established rule (positional user_version
 	// tracking, never insert mid-list).
 	`ALTER TABLE messages ADD COLUMN verification TEXT NOT NULL DEFAULT '[]'`,
+	// prompt_tokens/cache_read_tokens — see the schema comment above.
+	`ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`,
+	// transcript — see the schema comment above.
+	`ALTER TABLE messages ADD COLUMN transcript TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1108,7 +1130,12 @@ type Thread struct {
 	// ContextTokens is exposed to the frontend for the context-usage %
 	// display. CompactedSummary/CompactedThroughID are internal —
 	// history-building only, never sent to the frontend.
-	ContextTokens      int    `json:"context_tokens"`
+	ContextTokens int `json:"context_tokens"`
+	// PromptTokens/CacheReadTokens are the thread's all-time summed input
+	// and prompt-cache-read tokens (issue #107) — not columns on threads
+	// itself, filled in by handleGetThread via ThreadCacheUsage.
+	PromptTokens       int    `json:"prompt_tokens"`
+	CacheReadTokens    int    `json:"cache_read_tokens"`
 	CompactedSummary   string `json:"-"`
 	CompactedThroughID int64  `json:"-"`
 	// Source is informational only (see schema comment in Open) — "web"
@@ -1193,8 +1220,12 @@ type Message struct {
 	// SetMessageVerification. "[]" for a message with no verification
 	// pass run, or nothing found supported at/above the confidence
 	// threshold.
-	Verification string    `json:"verification"`
-	CreatedAt    time.Time `json:"created_at"`
+	Verification string `json:"verification"`
+	// Transcript is the turn's exact wire messages (see the schema
+	// comment) — history-building only, never sent to the frontend: it
+	// can run to hundreds of KB for a researched turn.
+	Transcript string    `json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Attachment is one file included with a user message — see
@@ -1376,8 +1407,8 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 	}
 
 	if _, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at)
-		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, transcript, created_at)
+		 SELECT ?, role, content, citations, suggestions, cost_usd, turn_id, duration_ms, attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, prompt_tokens, cache_read_tokens, transcript, created_at
 		 FROM messages WHERE thread_id = ? ORDER BY id ASC LIMIT ?`,
 		forkID, srcID, atIndex,
 	); err != nil {
@@ -1579,9 +1610,12 @@ type HistoryEntry struct {
 	Content string
 	// TurnID is the source message's own turn_id ("" for the synthetic
 	// compaction-summary entry) — lets gateway's loadHistory find that
-	// turn's logged tool calls/results when the full-turn-history setting
-	// asks for them to be replayed too (see ToolEventsForThread).
+	// turn's logged tool calls/results to rebuild a turn from before
+	// transcripts existed (see ToolEventsForThread).
 	TurnID string
+	// Transcript is the source message's stored wire transcript ('' for
+	// user messages and pre-transcript turns) — see Message.Transcript.
+	Transcript string
 }
 
 // EffectiveHistory reconstructs a thread's prior turns exactly the way
@@ -1616,7 +1650,7 @@ func EffectiveHistory(thread *Thread, msgs []Message, excludeFromID int64) []His
 		if m.Role == "assistant" {
 			content = appendCitedSources(content, m.Citations)
 		}
-		history = append(history, HistoryEntry{Role: m.Role, Content: content, TurnID: m.TurnID})
+		history = append(history, HistoryEntry{Role: m.Role, Content: content, TurnID: m.TurnID, Transcript: m.Transcript})
 	}
 	return history
 }
@@ -2146,15 +2180,27 @@ func (s *Store) SetContextTokens(threadID string, tokens int) error {
 // every message at or below throughID, instead of the full raw text.
 // Deliberately does NOT touch the messages table: the visible transcript
 // stays the complete, true record, only what's sent back to the model
-// shrinks. cost is the summarization call's own cost, added to the
-// thread's running total like any other LLM call.
+// shrinks — apart from cost: the summarization call's own cost is added to
+// the thread's running total like any other LLM call, and to the
+// throughID message's own cost_usd too, so GetStats (which sums messages)
+// sees it — same both-ledgers rule as AddTurnCost.
 func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
-	_, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(
 		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
 		 context_tokens = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		summary, throughID, cost, contextTokensEstimate, threadID,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, cost, throughID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetSetting returns the stored value for key, or "" if unset — callers
@@ -2200,7 +2246,7 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2213,7 +2259,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2259,6 +2305,33 @@ func withLegacyAttachmentFallback(attachmentsJSON, filename, contentType, worksp
 		return attachmentsJSON
 	}
 	return string(encoded)
+}
+
+// SetMessageCacheUsage records a turn's summed prompt tokens and how many
+// of them were prompt-cache reads — see the prompt_tokens schema comment.
+// Post-hoc UPDATE, same shape as SetMessageDuration below.
+func (s *Store) SetMessageCacheUsage(messageID int64, promptTokens, cacheReadTokens int) error {
+	_, err := s.db.Exec(`UPDATE messages SET prompt_tokens = ?, cache_read_tokens = ? WHERE id = ?`, promptTokens, cacheReadTokens, messageID)
+	return err
+}
+
+// SetMessageTranscript records a turn's exact wire transcript — see the
+// transcript schema comment. Post-hoc UPDATE, same shape as
+// SetMessageCacheUsage.
+func (s *Store) SetMessageTranscript(messageID int64, transcriptJSON string) error {
+	_, err := s.db.Exec(`UPDATE messages SET transcript = ? WHERE id = ?`, transcriptJSON, messageID)
+	return err
+}
+
+// ThreadCacheUsage sums prompt_tokens/cache_read_tokens over every message
+// in threadID — the all-time thread-level hit rate issue #107 asks for,
+// computed on read so it can't drift from the messages it summarizes.
+func (s *Store) ThreadCacheUsage(threadID string) (promptTokens, cacheReadTokens int, err error) {
+	err = s.db.QueryRow(
+		`SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(cache_read_tokens), 0) FROM messages WHERE thread_id = ?`,
+		threadID,
+	).Scan(&promptTokens, &cacheReadTokens)
+	return promptTokens, cacheReadTokens, err
 }
 
 // SetMessageDuration records how long agent.Run took to produce a given
@@ -2316,30 +2389,38 @@ func (s *Store) SetMessageVerification(messageID int64, verificationJSON string)
 	return err
 }
 
-// AddMessageCost adds delta to a specific message's own cost_usd — used for
-// costs incurred after AddMessage's own cost_usd was already written, e.g.
-// the verification pass's real Jev spend (unlike AddThreadCost, which only
-// bumps the thread total, this needs to land on the exact message the
-// verification belongs to). A no-op, not an error, if the message was
-// deleted in the meantime — a race that just means nobody's looking at the
-// cost anymore, not something worth failing loudly over.
-func (s *Store) AddMessageCost(messageID int64, delta float64) error {
-	res, err := s.db.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
+// AddTurnCost records spend incurred after a turn's AddMessage already
+// ran (follow-up suggestions, the verification pass, a title
+// regeneration) on both ledgers at once: the thread's running total (what
+// the thread menu shows) and the assistant message's own cost_usd (what
+// GetStats sums, since it's the only one with a timestamp for the
+// 30-day window). Updating only one of them used to leave the two
+// disagreeing: suggestion and title-regeneration spend was invisible to
+// the 30-day figure, verification spend to the all-time one.
+//
+// messageID 0 means "the thread's latest assistant message" — for a
+// thread-level action (title regeneration) that has no turn of its own.
+// A message that no longer exists just drops the message half; the thread
+// total still gets it.
+func (s *Store) AddTurnCost(threadID string, messageID int64, delta float64) error {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		log.Warn("AddMessageCost: message no longer exists, dropping cost", "message_id", messageID, "delta", delta)
+	defer tx.Rollback()
+	if messageID == 0 {
+		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ?
+			WHERE id = (SELECT MAX(id) FROM messages WHERE thread_id = ? AND role = 'assistant')`, delta, threadID)
+	} else {
+		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
 	}
-	return nil
-}
-
-// AddThreadCost adds delta to a thread's running cost total — used for
-// costs incurred after AddMessage's own cost_usd bump already ran, e.g.
-// follow-up suggestions generated post-"done" (see SetMessageSuggestions).
-func (s *Store) AddThreadCost(threadID string, delta float64) error {
-	_, err := s.db.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID)
-	return err
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetMessageAttachment records the display filename/content-type for a

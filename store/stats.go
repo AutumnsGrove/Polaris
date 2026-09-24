@@ -7,6 +7,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -96,6 +97,23 @@ type Stats struct {
 	// #44) as the settings panel's "how much is this actually being
 	// used" number for the tool that took its place.
 	CodeExecWallTimeMS int64 `json:"code_exec_wall_time_ms"`
+
+	// CacheUsage is the deployment-wide prompt-cache health stat — how
+	// much of every turn's input the provider served from its prompt
+	// cache (issue #107's per-thread hit %, rolled up across everything).
+	// Raw token sums rather than a percentage, so the frontend can show
+	// "—" instead of a misleading 0% when nothing's been recorded yet.
+	CacheUsage CacheUsage `json:"cache_usage"`
+}
+
+// CacheUsage pairs summed prompt tokens with how many of them were
+// prompt-cache reads, for the trailing period and all time. See
+// Stats.CacheUsage.
+type CacheUsage struct {
+	PeriodPromptTokens    int `json:"period_prompt_tokens"`
+	PeriodCacheReadTokens int `json:"period_cache_read_tokens"`
+	TotalPromptTokens     int `json:"total_prompt_tokens"`
+	TotalCacheReadTokens  int `json:"total_cache_read_tokens"`
 }
 
 // SourceCost is one bucket's period/all-time cost — see
@@ -135,18 +153,12 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		since = time.Now().AddDate(0, 0, -periodDays).UTC().Format("2006-01-02 15:04:05")
 	}
 
-	if err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(cost_usd), 0) FROM threads WHERE disabled = 0`,
-	).Scan(&stats.TotalCostUSD); err != nil {
-		return nil, err
-	}
-
 	// TurnCount counts distinct turn_id among assistant messages, not raw
 	// message rows — a turn is one user/assistant pair (plus whatever tool
 	// calls happened between them), and only the assistant side carries
 	// duration_ms, so counting from there avoids double-counting the pair
 	// as two turns.
-	messageQuery := `SELECT COALESCE(SUM(cost_usd), 0),
+	messageQuery := `SELECT
 		COUNT(DISTINCT CASE WHEN role = 'assistant' AND turn_id != '' THEN turn_id END),
 		COALESCE(AVG(CASE WHEN role = 'assistant' AND duration_ms > 0 THEN duration_ms END), 0)
 		FROM messages`
@@ -162,70 +174,47 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// Scan outright rather than just losing precision.
 	var avgTurnDurationMs float64
 	if err := s.db.QueryRow(messageQuery, messageArgs...).Scan(
-		&stats.PeriodCostUSD, &stats.TurnCount, &avgTurnDurationMs,
+		&stats.TurnCount, &avgTurnDurationMs,
 	); err != nil {
 		return nil, err
 	}
 	stats.AvgTurnDurationMs = int64(avgTurnDurationMs)
 
-	// CostBySource's Polaris/Pulsar halves mirror TotalCostUSD/
-	// PeriodCostUSD's own two different source columns exactly (threads.
-	// cost_usd for all-time, messages.cost_usd joined through threads for
-	// the period) — so "Polaris + Pulsar" always sums back to the plain
-	// total/period figures above, not a second, subtly different number.
-	totalBySourceRows, err := s.db.Query(
-		`SELECT source, COALESCE(SUM(cost_usd), 0) FROM threads WHERE disabled = 0 GROUP BY source`,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for totalBySourceRows.Next() {
-		var source string
-		var cost float64
-		if err := totalBySourceRows.Scan(&source, &cost); err != nil {
-			totalBySourceRows.Close()
-			return nil, err
-		}
+	// Polaris/Pulsar spend, all-time and period, both from the same
+	// messages query — they used to come from two different ledgers
+	// (threads.cost_usd for all-time, messages.cost_usd for the period),
+	// which disagreed often enough that the 30-day figure could exceed the
+	// all-time one: each ledger missed spend the other had, and ForkThread
+	// copies a shared prefix's messages (cost_usd included) into every
+	// edit/retry variant, so a plain SUM counted a retried thread's
+	// earlier turns once per variant. See AddTurnCost for the first half
+	// of that fix.
+	//
+	// Each real message is counted once: fork copies share role and
+	// turn_id (every turn gets a fresh one), and pre-turn_id legacy rows
+	// fall back to created_at+content, which a copy also keeps. MAX, since
+	// a late cost (suggestions, verification) only ever lands on the
+	// original row. Deleted threads count too: that money was really spent.
+	if err := s.costBySource("", func(source string, cost float64) {
 		if source == "pulsar" {
 			stats.CostBySource.Pulsar.TotalCostUSD += cost
 		} else {
 			stats.CostBySource.Polaris.TotalCostUSD += cost
 		}
-	}
-	if err := totalBySourceRows.Err(); err != nil {
+	}); err != nil {
 		return nil, err
 	}
-	totalBySourceRows.Close()
-
-	periodBySourceQuery := `SELECT threads.source, COALESCE(SUM(messages.cost_usd), 0)
-		FROM messages JOIN threads ON messages.thread_id = threads.id`
-	periodBySourceArgs := []interface{}{}
-	if since != "" {
-		periodBySourceQuery += ` WHERE messages.created_at >= ?`
-		periodBySourceArgs = append(periodBySourceArgs, since)
-	}
-	periodBySourceQuery += ` GROUP BY threads.source`
-	periodBySourceRows, err := s.db.Query(periodBySourceQuery, periodBySourceArgs...)
-	if err != nil {
-		return nil, err
-	}
-	for periodBySourceRows.Next() {
-		var source string
-		var cost float64
-		if err := periodBySourceRows.Scan(&source, &cost); err != nil {
-			periodBySourceRows.Close()
-			return nil, err
-		}
+	if err := s.costBySource(since, func(source string, cost float64) {
 		if source == "pulsar" {
 			stats.CostBySource.Pulsar.PeriodCostUSD += cost
 		} else {
 			stats.CostBySource.Polaris.PeriodCostUSD += cost
 		}
-	}
-	if err := periodBySourceRows.Err(); err != nil {
+	}); err != nil {
 		return nil, err
 	}
-	periodBySourceRows.Close()
+	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD
+	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD
 
 	// Daily's cost never touches threads/messages at all (see
 	// pulsar_daily_editions' own doc comment) — a separate query, not a
@@ -294,6 +283,30 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		).Scan(&stats.VerificationCostUSD.PeriodCostUSD); err != nil {
 			return nil, err
 		}
+	}
+
+	// CacheUsage: one row per turn_id, not per message — ForkThread copies
+	// a shared prefix's assistant rows (usage columns included) into every
+	// edit/retry fork, so a plain SUM would count each retried thread's
+	// earlier turns once per variant. MAX within a turn_id is just "the"
+	// value, since every copy carries identical numbers. Deleted threads
+	// still count: this is about requests the provider actually served.
+	cacheQuery := `SELECT COALESCE(SUM(p), 0), COALESCE(SUM(c), 0) FROM (
+		SELECT MAX(prompt_tokens) AS p, MAX(cache_read_tokens) AS c FROM messages
+		WHERE role = 'assistant' AND turn_id != '' AND prompt_tokens > 0%s
+		GROUP BY turn_id)`
+	if err := s.db.QueryRow(fmt.Sprintf(cacheQuery, "")).Scan(
+		&stats.CacheUsage.TotalPromptTokens, &stats.CacheUsage.TotalCacheReadTokens,
+	); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		stats.CacheUsage.PeriodPromptTokens = stats.CacheUsage.TotalPromptTokens
+		stats.CacheUsage.PeriodCacheReadTokens = stats.CacheUsage.TotalCacheReadTokens
+	} else if err := s.db.QueryRow(fmt.Sprintf(cacheQuery, " AND created_at >= ?"), since).Scan(
+		&stats.CacheUsage.PeriodPromptTokens, &stats.CacheUsage.PeriodCacheReadTokens,
+	); err != nil {
+		return nil, err
 	}
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
@@ -491,4 +504,33 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	}
 
 	return stats, nil
+}
+
+// costBySource sums message spend per threads.source, counting every real
+// message once (see GetStats' comment on fork copies), optionally limited
+// to messages created at or after since. add is called once per source.
+func (s *Store) costBySource(since string, add func(source string, cost float64)) error {
+	where, args := "", []interface{}{}
+	if since != "" {
+		where, args = "WHERE m.created_at >= ?", append(args, since)
+	}
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT source, COALESCE(SUM(cost), 0) FROM (
+		SELECT MAX(t.source) AS source, MAX(m.cost_usd) AS cost
+		FROM messages m JOIN threads t ON t.id = m.thread_id
+		%s
+		GROUP BY m.role, m.turn_id, CASE WHEN m.turn_id = '' THEN m.created_at || m.content END)
+		GROUP BY source`, where), args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var source string
+		var cost float64
+		if err := rows.Scan(&source, &cost); err != nil {
+			return err
+		}
+		add(source, cost)
+	}
+	return rows.Err()
 }

@@ -87,7 +87,7 @@ func TestDefs_ReturnsAllTwelveToolsWhenAllKeysConfigured(t *testing.T) {
 		names[d.Function.Name] = true
 	}
 	for _, want := range []string{
-		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "current_time", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies",
 		"image_search", "view_image", "highlight",
 	} {
@@ -95,8 +95,8 @@ func TestDefs_ReturnsAllTwelveToolsWhenAllKeysConfigured(t *testing.T) {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 17 {
-		t.Errorf("got %d tool defs, want exactly 17", len(defs))
+	if len(defs) != 18 {
+		t.Errorf("got %d tool defs, want exactly 18", len(defs))
 	}
 }
 
@@ -113,7 +113,7 @@ func TestDefs_ExcludesMusicAndMoviesWithoutKeys(t *testing.T) {
 		t.Error("Defs() included movies with no TMDBAPIKey configured")
 	}
 	for _, want := range []string{
-		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "current_time", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "books",
 		"image_search", "view_image", "highlight",
 	} {
@@ -121,8 +121,8 @@ func TestDefs_ExcludesMusicAndMoviesWithoutKeys(t *testing.T) {
 			t.Errorf("Defs() missing %q, got %v", want, names)
 		}
 	}
-	if len(defs) != 15 {
-		t.Errorf("got %d tool defs, want exactly 15", len(defs))
+	if len(defs) != 16 {
+		t.Errorf("got %d tool defs, want exactly 16", len(defs))
 	}
 }
 
@@ -131,7 +131,7 @@ func TestDefs_OrderIsStable(t *testing.T) {
 	ctx.LastFMAPIKey = "test-key"
 	ctx.TMDBAPIKey = "test-key"
 	want := []string{
-		"think", "calculator", "web_search", "web_read", "nearby_search", "youtube_transcript",
+		"think", "calculator", "current_time", "web_search", "web_read", "nearby_search", "youtube_transcript",
 		"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies",
 		"image_search", "view_image", "highlight",
 	}

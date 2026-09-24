@@ -138,6 +138,14 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort, same as the variant's own cost above: a failed sum just
+	// leaves the menu's cache-hit row at 0, not worth failing the load.
+	if prompt, cached, err := s.db.ThreadCacheUsage(effectiveID); err != nil {
+		log.Warn("summing thread cache usage failed", "thread", id, "err", err)
+	} else {
+		thread.PromptTokens, thread.CacheReadTokens = prompt, cached
+	}
+
 	variants, err := s.buildVariantsMap(id, effectiveID)
 	if err != nil {
 		// Non-fatal — the thread itself loaded fine, it just won't show
@@ -377,7 +385,7 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, err := s.loadHistory(effectiveID, 0)
+	history, err := s.loadAnswerHistory(effectiveID)
 	if err != nil {
 		log.Warn("loading thread history failed", "thread", id, "err", err)
 		s.db.LogEvent(id, "error", "thread", "loading thread history for title regeneration failed", map[string]interface{}{"err": err.Error()}, "")
@@ -413,7 +421,7 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cost > 0 {
-		if err := s.db.AddThreadCost(effectiveID, cost); err != nil {
+		if err := s.db.AddTurnCost(effectiveID, 0, cost); err != nil {
 			log.Warn("recording title regeneration cost failed", "thread", id, "err", err)
 		}
 	}

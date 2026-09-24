@@ -66,6 +66,9 @@ func printStats(s *store.Stats) {
 	fmt.Printf("threads: %d, turns: %d (%s)\n", s.ThreadCount, s.TurnCount, period)
 	fmt.Printf("avg turn duration: %.1fs\n", float64(s.AvgTurnDurationMs)/1000)
 	fmt.Printf("auto-compactions: %d (%s)\n", s.CompactionCount, period)
+	fmt.Printf("prompt cache hits: %s (%s), %s total\n",
+		cacheHitPercent(s.CacheUsage.PeriodPromptTokens, s.CacheUsage.PeriodCacheReadTokens), period,
+		cacheHitPercent(s.CacheUsage.TotalPromptTokens, s.CacheUsage.TotalCacheReadTokens))
 	fmt.Printf("code_exec wall time: %.1fs (%s)\n", float64(s.CodeExecWallTimeMS)/1000, period)
 
 	fmt.Printf("\ntool calls (%s):\n", period)
@@ -116,4 +119,14 @@ func printStats(s *store.Stats) {
 		fmt.Printf("  (%.1f%% of turns ran out of turn budget)", float64(s.MaxTurnsWrapupCount)/float64(s.TurnCount)*100)
 	}
 	fmt.Println()
+}
+
+// cacheHitPercent renders a prompt-cache hit rate, or "n/a" when no turn in
+// that window recorded usage — same "no misleading 0%" rule as the settings
+// panel's Health row.
+func cacheHitPercent(prompt, cached int) string {
+	if prompt == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.0f%%", float64(cached)/float64(prompt)*100)
 }

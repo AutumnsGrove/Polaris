@@ -21,6 +21,7 @@
 		NotebookText,
 		Lightbulb,
 		Calculator,
+		Clock,
 		FileSearch,
 		MapPin,
 		Captions,
@@ -109,6 +110,7 @@
 		if (item.tool === 'web_search') return `Searching: ${item.args?.query ?? ''}`;
 		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
 		if (item.tool === 'weather') return `Weather: ${item.args?.location ?? ''}`;
+		if (item.tool === 'current_time') return 'Checking the time';
 		if (item.tool === 'reference_lookup') return `Looking up: ${item.args?.query ?? ''}`;
 		if (item.tool === 'spawn_researchers') {
 			const count = item.args?.task_count;
@@ -289,6 +291,8 @@
 				<Lightbulb size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'calculator'}
 				<Calculator size={13} color="var(--color-accent-2)" />
+			{:else if item.tool === 'current_time'}
+				<Clock size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'web_read'}
 				<FileSearch size={13} color="var(--color-accent-2)" />
 			{:else if item.tool === 'nearby_search'}

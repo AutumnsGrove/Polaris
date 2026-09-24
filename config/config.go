@@ -304,6 +304,12 @@ type Config struct {
 	// the model summarizes everything so far, and future turns continue
 	// from that summary instead of the full raw history. Also the
 	// denominator for the context-usage % shown next to thread cost.
+	// Defaults to 200K: history replays every earlier turn verbatim, tool
+	// results included (see gateway's loadHistory), so a researched thread
+	// grows much faster than an answers-only one would. 200K sits under
+	// every registry model's real window (the smallest, Mercury 2.5, is
+	// 260K per OpenRouter's /models as of 2026-09) — re-check that if a
+	// smaller-window model is ever added to models/models.go.
 	ContextWindowTokens int `yaml:"context_window_tokens"`
 
 	// MaxAgentTurns bounds one turn's tool-use loop (search/read/nearby_search
@@ -516,7 +522,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 		cfg.Voice.TTSProvider = "Together"
 	}
 	if cfg.ContextWindowTokens <= 0 {
-		cfg.ContextWindowTokens = 100_000
+		cfg.ContextWindowTokens = 200_000
 	}
 	if cfg.MaxAgentTurns <= 0 {
 		cfg.MaxAgentTurns = 50
