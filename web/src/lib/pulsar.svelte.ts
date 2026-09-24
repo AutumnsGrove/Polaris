@@ -36,6 +36,20 @@ export class PulsarState {
 	// by id (see routineById below).
 	loaded = $state(false);
 
+	// *Error flags — same "leave previously-loaded data in place, flag it
+	// instead of clearing it" convention as constellation.svelte.ts's own
+	// libraryError/etc. A transient network blip (this class's own
+	// existing comments already call out "phone over Tailscale" as a real
+	// case) shouldn't wipe the routines list, the unread badges, or a
+	// routine's pulse history out from under whoever's looking at it —
+	// especially now that /pulsar/[id]'s $effect (not just onMount)
+	// re-fires these loaders on every routine-to-routine navigation, not
+	// just once per page load.
+	routinesError = $state(false);
+	archivedRoutinesError = $state(false);
+	unreadCountsError = $state(false);
+	currentPulsesError = $state(false);
+
 	// The currently-viewed routine's pulse history — /pulsar/[id] loads
 	// this via loadPulses(). Not merged into routines/archivedRoutines
 	// above since a pulse list can be long-ish and has nothing to do with
@@ -49,36 +63,45 @@ export class PulsarState {
 	totalUnread = $derived(Object.values(this.unreadCounts).reduce((sum, n) => sum + n, 0));
 
 	async loadRoutines() {
+		this.routinesError = false;
 		try {
 			const res = await fetch('/api/pulsar/routines');
-			this.routines = res.ok ? ((await res.json()) ?? []) : [];
+			if (!res.ok) throw new Error('routines fetch failed');
+			this.routines = (await res.json()) ?? [];
 		} catch {
 			// Network failure (offline, DNS, TLS — a real case for "phone
-			// over Tailscale") — same empty-list fallback as a non-ok
-			// response, just via a different failure path. Without this
+			// over Tailscale") or a non-ok response — leave whatever was
+			// previously loaded in place rather than clearing it out from
+			// under whoever's looking at it; routinesError lets the UI show
+			// a distinct "couldn't refresh" state instead of rendering this
+			// the same as a genuinely empty routine list. Without this
 			// catch, a rejected fetch() promise here is unhandled: nothing
 			// downstream awaits loadRoutines() with its own try/catch.
-			this.routines = [];
+			this.routinesError = true;
 		} finally {
 			this.loaded = true;
 		}
 	}
 
 	async loadArchivedRoutines() {
+		this.archivedRoutinesError = false;
 		try {
 			const res = await fetch('/api/pulsar/routines?archived=true');
-			this.archivedRoutines = res.ok ? ((await res.json()) ?? []) : [];
+			if (!res.ok) throw new Error('archived routines fetch failed');
+			this.archivedRoutines = (await res.json()) ?? [];
 		} catch {
-			this.archivedRoutines = [];
+			this.archivedRoutinesError = true;
 		}
 	}
 
 	async loadUnreadCounts() {
+		this.unreadCountsError = false;
 		try {
 			const res = await fetch('/api/pulsar/unread');
-			this.unreadCounts = res.ok ? ((await res.json()) ?? {}) : {};
+			if (!res.ok) throw new Error('unread counts fetch failed');
+			this.unreadCounts = (await res.json()) ?? {};
 		} catch {
-			this.unreadCounts = {};
+			this.unreadCountsError = true;
 		}
 	}
 
@@ -96,11 +119,13 @@ export class PulsarState {
 
 	async loadPulses(routineId: number) {
 		this.currentPulsesLoading = true;
+		this.currentPulsesError = false;
 		try {
 			const res = await fetch(`/api/pulsar/routines/${routineId}/pulses`);
-			this.currentPulses = res.ok ? ((await res.json()) ?? []) : [];
+			if (!res.ok) throw new Error('pulses fetch failed');
+			this.currentPulses = (await res.json()) ?? [];
 		} catch {
-			this.currentPulses = [];
+			this.currentPulsesError = true;
 		} finally {
 			this.currentPulsesLoading = false;
 		}
