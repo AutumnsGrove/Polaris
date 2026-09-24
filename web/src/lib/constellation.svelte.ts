@@ -67,6 +67,14 @@ export class ConstellationState {
 	configLoaded = $state(false);
 	configError = $state(false);
 
+	// stats is written by both loadLibrary (the default, all-time-scoped
+	// snapshot used for the Library's inbox-count banner) and loadStats
+	// (a period-scoped snapshot for ConstellationUsageModal) — bumped by
+	// both so whichever call started later always wins, instead of the
+	// slower one landing afterward and silently swapping the Usage
+	// modal's displayed period out from under whoever still has it open.
+	private statsSeq = 0;
+
 	// loadLibrary fetches everything the Library screen (screen 1) needs
 	// in one go: the three non-inbox sections, the digest banner, and
 	// stats (for the inbox-count banner) — all independent reads, so
@@ -74,6 +82,7 @@ export class ConstellationState {
 	async loadLibrary() {
 		this.libraryLoaded = false;
 		this.libraryError = false;
+		const statsSeq = ++this.statsSeq;
 		try {
 			const [library, aboutYou, rejected, digest, stats] = await Promise.all([
 				fetchSection('library'),
@@ -86,7 +95,7 @@ export class ConstellationState {
 			this.aboutYouStars = aboutYou;
 			this.rejectedStars = rejected;
 			this.digest = digest;
-			this.stats = stats;
+			if (statsSeq === this.statsSeq) this.stats = stats;
 		} catch {
 			// Network failure (offline/DNS/TLS) — leave whatever was
 			// previously loaded in place rather than clearing it out from
@@ -207,8 +216,10 @@ export class ConstellationState {
 	async loadStats(periodDays?: number) {
 		this.statsLoaded = false;
 		this.statsError = false;
+		const statsSeq = ++this.statsSeq;
 		try {
-			this.stats = await fetchStats(periodDays);
+			const stats = await fetchStats(periodDays);
+			if (statsSeq === this.statsSeq) this.stats = stats;
 		} catch {
 			this.statsError = true;
 		} finally {
