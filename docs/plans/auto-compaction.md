@@ -2,19 +2,49 @@
 
 Working notes for GitHub issue #109.
 
-Status: **steps 2 + 3 implemented and live-verified; the "never fired" mystery is solved
-and fixed.** See "ROOT CAUSE FOUND (step 1, live)" below — compaction was firing all along
-and failing silently on a prompt-shape bug, now fixed and confirmed working end to end
-against a real model through `POST /api/ask`.
+Status: **steps 1-4 all implemented, independently reviewed, and live-verified.** See
+"ROOT CAUSE FOUND (step 1, live)" below for the "never fired" fix, and "Step 4: prompt
+hill-climbing (independent review pass)" at the end of this file for the compression/noise
+findings and fix. `go build`/`vet`/`test -race`/`svelte-check`/vitest all clean as of the
+last edit.
 
-**Still open: step 4, summary *quality* over time.** The mechanics work and one real
-summary was inspected and looked good, but that's a sample size of one, on a short
-conversation, with a deliberately tiny threshold. The question this file opened with —
-whether the summary preserves tool-derived facts across a long research-heavy thread —
-is still unanswered, and still needs the harness described in "Step 1" (real searches,
-a real model, a browser). `compactThread` builds from `loadAnswerHistory` (F6), so it
-never sees tool-call structure; that remains the leading suspect if summaries turn out
-lossy.
+## Step 4: prompt hill-climbing (independent review pass, same day)
+
+A second pass (not the same session that built steps 2+3) re-tested the live mechanics end
+to end against the real backend/real model before trusting the commit messages, then pushed
+further on step 4 specifically: ran a second turn on the same thread (forcing a
+*re*-compaction, not just a first one) and inspected the resulting summary for two things —
+whether tool-derived noise leaks in, and whether repeated compaction actually shrinks older
+content or just keeps re-transcribing it.
+
+Two real bugs found, both live-reproduced, both fixed in `compaction_system`/
+`compaction_task` (`prompts.yaml` + `prompts/prompts.go`):
+
+1. **Tool noise.** A `nearby_search` call's raw POI list (random shop names near the actual
+   subject) bled into the summary's "sources looked at" note, verbatim, with zero relevance
+   to anything the assistant actually told the user. Fixed by explicitly telling the model:
+   preserve what the assistant *reported*, never a raw dump of everything a tool call merely
+   surfaced.
+2. **No compression instruction — the more serious one.** The old prompt's only guidance was
+   "preserve every fact... omitting something means it's gone for good," which is exactly
+   the framing that makes a model re-transcribe the *prior* summary nearly word-for-word
+   before appending new content, rather than folding old + new into something more compact.
+   Live-confirmed: recompacting a two-turn thread under the old prompt produced a summary
+   that was almost the first summary's exact text plus a new paragraph — i.e. compaction
+   size would grow roughly linearly with conversation length forever, which defeats the
+   entire point of having a context-size control. Fixed by explicitly telling the model,
+   when the conversation already opens with a prior summary, to produce ONE new updated
+   summary that compresses older/now-peripheral detail to make room for what's new — not to
+   preserve the old wording and just append.
+
+Re-verified live after the fix: a two-topic recompaction (weather+population, then a
+follow-up question) produced a *smaller* summary than the old prompt's single-topic first
+summary, with the POI noise gone and every fact/URL still intact.
+
+F6 (`compactThread` builds from `loadAnswerHistory`, never sees raw tool-call structure) is
+no longer the leading quality risk in practice — the assistant's own prose answer already
+carries citations/URLs inline, and both live tests show they survive compaction faithfully.
+Left as a known simplification, not a bug.
 
 This file is the shared scratchpad; it is not user-facing docs.
 

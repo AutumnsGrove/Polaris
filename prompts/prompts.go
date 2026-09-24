@@ -454,12 +454,24 @@ parentheses/colons/pipes in it (A["Step 1 (init)"]) or the diagram fails to pars
 		"not just a restatement of the first message. Name the topic, don't answer or continue the " +
 		"conversation. Output only the title, nothing else."
 
-	d.Turn.CompactionSystem = "Summarize the following conversation concisely but completely: preserve " +
-		"every fact, decision, name, number, and cited URL that might matter later. This summary will " +
-		"fully replace the conversation history, so omitting something means it's gone for good. Write " +
-		"it as plain prose, not a transcript."
+	d.Turn.CompactionSystem = "Summarize the conversation below so this summary can fully replace it: " +
+		"every later turn will see only this text, never the original messages. Preserve every fact, " +
+		"decision, name, number, date, and cited URL that could plausibly matter to a future turn — " +
+		"including anything the assistant told the user backed by a source. Do NOT carry forward a raw " +
+		"list of every search result, map pin, or page the assistant merely looked at; only what it " +
+		"actually reported to the user. Write it as plain prose organized roughly chronologically by " +
+		"topic, not a transcript and not bullet points.\n\n" +
+		"If the conversation above opens with \"(Summary of earlier conversation...)\", a prior summary " +
+		"is already in play. Your job is to produce ONE new summary that folds everything since then " +
+		"into it — not to preserve that old summary's exact wording and simply append to it. Compress " +
+		"older, now-peripheral detail to make room for what's new, the way a real memory of an older " +
+		"exchange naturally thins while a recent one stays sharp: a standing fact worth keeping (a " +
+		"decision, a number, a name, a preference) should still be there many rounds from now, but a " +
+		"passing detail that no longer serves the conversation's current shape doesn't need to survive " +
+		"verbatim again. Never reset this compression — each new summary replaces the last one " +
+		"entirely, it doesn't accumulate on top of it."
 
-	d.Turn.CompactionTask = "Now write that summary of the conversation above. Output only the " +
+	d.Turn.CompactionTask = "Now write the single updated summary described above. Output only the " +
 		"summary itself — no preamble, no commentary, no headings."
 
 	d.Turn.MemoryChatSystem = "You are managing Polaris's saved memories directly, on the Memory settings page — " +
