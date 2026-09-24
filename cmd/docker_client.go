@@ -19,6 +19,23 @@ import (
 // always a tiny JSON object in practice.
 const maxAPIResponseBytes = 10 << 20 // 10MB
 
+// readCappedJSON reads resp.Body up to maxAPIResponseBytes and unmarshals
+// it into v — shared by every thin-client call in this package that hits
+// the local container's own REST API (runDockerModeCall here, plus
+// backup.go's runDockerBackupCreate/List/ListRemote), since a fourth
+// near-identical inline copy is exactly what this codebase's three-strikes
+// rule says to extract instead of repeating again.
+func readCappedJSON(resp *http.Response, v interface{}) error {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+	if len(body) > maxAPIResponseBytes {
+		return fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
+	}
+	return json.Unmarshal(body, v)
+}
+
 // dockerLocalBaseURL is where the Docker deployment's own polaris
 // process listens on the host — docker-compose.yml publishes
 // 127.0.0.1:${POLARIS_PORT:-8899}:8899, so this SSH CLI (running on
@@ -61,13 +78,6 @@ func runDockerModeCall(endpoint string) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
-	if err != nil {
-		return fmt.Errorf("reading response from %s: %w", url, err)
-	}
-	if len(respBody) > maxAPIResponseBytes {
-		return fmt.Errorf("response from %s exceeds %d byte limit", url, maxAPIResponseBytes)
-	}
 	var body struct {
 		Success        bool   `json:"success"`
 		Log            string `json:"log"`
@@ -75,7 +85,7 @@ func runDockerModeCall(endpoint string) error {
 		AlreadyRunning bool   `json:"already_running"`
 		Restarting     bool   `json:"restarting"`
 	}
-	if err := json.Unmarshal(respBody, &body); err != nil {
+	if err := readCappedJSON(resp, &body); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 

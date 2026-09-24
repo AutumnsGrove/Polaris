@@ -57,7 +57,7 @@ func runDockerSearch(query, model string) error {
 		var errBody struct {
 			Error string `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
+		_ = readCappedJSON(resp, &errBody)
 		if errBody.Error != "" {
 			return fmt.Errorf("%s", errBody.Error)
 		}
@@ -65,7 +65,7 @@ func runDockerSearch(query, model string) error {
 	}
 
 	var ask gateway.AskResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ask); err != nil {
+	if err := readCappedJSON(resp, &ask); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 

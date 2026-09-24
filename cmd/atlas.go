@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,12 +70,12 @@ func runDockerAtlasSearch(query string, maxResults, page int, category string) e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes))
 		return fmt.Errorf("search failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var out search.SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := readCappedJSON(resp, &out); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", u, err)
 	}
 

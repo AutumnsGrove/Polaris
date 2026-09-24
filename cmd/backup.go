@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -218,11 +217,11 @@ func runDockerBackupCreate() error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes))
 		return fmt.Errorf("backup failed: %s", strings.TrimSpace(string(body)))
 	}
 	var info backup.Info
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := readCappedJSON(resp, &info); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 	fmt.Printf("created backup %s (%s)\n", info.Name, humanSize(info.SizeBytes))
@@ -238,11 +237,11 @@ func runDockerBackupList() error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes))
 		return fmt.Errorf("listing backups failed: %s", strings.TrimSpace(string(body)))
 	}
 	var infos []backup.Info
-	if err := json.NewDecoder(resp.Body).Decode(&infos); err != nil {
+	if err := readCappedJSON(resp, &infos); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 	printBackupList(infos)
@@ -263,11 +262,11 @@ func runDockerBackupListRemote() error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes))
 		return fmt.Errorf("listing r2 backups failed: %s", strings.TrimSpace(string(body)))
 	}
 	var objects []r2.Object
-	if err := json.NewDecoder(resp.Body).Decode(&objects); err != nil {
+	if err := readCappedJSON(resp, &objects); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 	printRemoteBackupList(objects)

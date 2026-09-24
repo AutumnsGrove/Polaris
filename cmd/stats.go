@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -45,7 +44,7 @@ func runDockerStats(days int) error {
 	}
 
 	var s store.Stats
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+	if err := readCappedJSON(resp, &s); err != nil {
 		return fmt.Errorf("decoding stats response: %w", err)
 	}
 

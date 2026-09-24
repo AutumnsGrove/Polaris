@@ -6,7 +6,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -63,7 +62,7 @@ func runConstellationBackfill(cmd *cobra.Command, args []string) error {
 		var errBody struct {
 			Error string `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
+		_ = readCappedJSON(resp, &errBody)
 		if errBody.Error != "" {
 			return fmt.Errorf("%s", errBody.Error)
 		}
@@ -73,7 +72,7 @@ func runConstellationBackfill(cmd *cobra.Command, args []string) error {
 	var body struct {
 		Processed int `json:"processed"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := readCappedJSON(resp, &body); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 	fmt.Printf("done — processed %d thread(s)\n", body.Processed)
