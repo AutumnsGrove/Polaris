@@ -2180,15 +2180,27 @@ func (s *Store) SetContextTokens(threadID string, tokens int) error {
 // every message at or below throughID, instead of the full raw text.
 // Deliberately does NOT touch the messages table: the visible transcript
 // stays the complete, true record, only what's sent back to the model
-// shrinks. cost is the summarization call's own cost, added to the
-// thread's running total like any other LLM call.
+// shrinks — apart from cost: the summarization call's own cost is added to
+// the thread's running total like any other LLM call, and to the
+// throughID message's own cost_usd too, so GetStats (which sums messages)
+// sees it — same both-ledgers rule as AddTurnCost.
 func (s *Store) CompactThread(threadID, summary string, throughID int64, cost float64, contextTokensEstimate int) error {
-	_, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(
 		`UPDATE threads SET compacted_summary = ?, compacted_through_id = ?, cost_usd = cost_usd + ?,
 		 context_tokens = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`,
 		summary, throughID, cost, contextTokensEstimate, threadID,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, cost, throughID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetSetting returns the stored value for key, or "" if unset — callers
@@ -2377,30 +2389,38 @@ func (s *Store) SetMessageVerification(messageID int64, verificationJSON string)
 	return err
 }
 
-// AddMessageCost adds delta to a specific message's own cost_usd — used for
-// costs incurred after AddMessage's own cost_usd was already written, e.g.
-// the verification pass's real Jev spend (unlike AddThreadCost, which only
-// bumps the thread total, this needs to land on the exact message the
-// verification belongs to). A no-op, not an error, if the message was
-// deleted in the meantime — a race that just means nobody's looking at the
-// cost anymore, not something worth failing loudly over.
-func (s *Store) AddMessageCost(messageID int64, delta float64) error {
-	res, err := s.db.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
+// AddTurnCost records spend incurred after a turn's AddMessage already
+// ran (follow-up suggestions, the verification pass, a title
+// regeneration) on both ledgers at once: the thread's running total (what
+// the thread menu shows) and the assistant message's own cost_usd (what
+// GetStats sums, since it's the only one with a timestamp for the
+// 30-day window). Updating only one of them used to leave the two
+// disagreeing: suggestion and title-regeneration spend was invisible to
+// the 30-day figure, verification spend to the all-time one.
+//
+// messageID 0 means "the thread's latest assistant message" — for a
+// thread-level action (title regeneration) that has no turn of its own.
+// A message that no longer exists just drops the message half; the thread
+// total still gets it.
+func (s *Store) AddTurnCost(threadID string, messageID int64, delta float64) error {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		log.Warn("AddMessageCost: message no longer exists, dropping cost", "message_id", messageID, "delta", delta)
+	defer tx.Rollback()
+	if messageID == 0 {
+		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ?
+			WHERE id = (SELECT MAX(id) FROM messages WHERE thread_id = ? AND role = 'assistant')`, delta, threadID)
+	} else {
+		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
 	}
-	return nil
-}
-
-// AddThreadCost adds delta to a thread's running cost total — used for
-// costs incurred after AddMessage's own cost_usd bump already ran, e.g.
-// follow-up suggestions generated post-"done" (see SetMessageSuggestions).
-func (s *Store) AddThreadCost(threadID string, delta float64) error {
-	_, err := s.db.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID)
-	return err
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetMessageAttachment records the display filename/content-type for a

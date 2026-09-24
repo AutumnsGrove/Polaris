@@ -421,7 +421,7 @@ func (s *Server) handleRegenerateTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cost > 0 {
-		if err := s.db.AddThreadCost(effectiveID, cost); err != nil {
+		if err := s.db.AddTurnCost(effectiveID, 0, cost); err != nil {
 			log.Warn("recording title regeneration cost failed", "thread", id, "err", err)
 		}
 	}
