@@ -248,3 +248,25 @@ func (s *Server) handlePulsarUnreadCounts(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, byString)
 }
+
+// handleGetPulsarStats mirrors handleGetConstellationStats
+// (constellation_routes.go) exactly — same ?period_days query param, same
+// validation, same shape of call into the store.
+func (s *Server) handleGetPulsarStats(w http.ResponseWriter, r *http.Request) {
+	periodDays := 0
+	if v := r.URL.Query().Get("period_days"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			http.Error(w, "period_days must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		periodDays = n
+	}
+	stats, err := s.db.GetPulsarStats(periodDays)
+	if err != nil {
+		log.Warn("getting pulsar stats failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, stats)
+}

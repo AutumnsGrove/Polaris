@@ -7,7 +7,8 @@
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import PulsarRoutineForm from '$lib/components/PulsarRoutineForm.svelte';
 	import PulsarUnreadBadge from '$lib/components/PulsarUnreadBadge.svelte';
-	import { PanelLeft, Plus, Archive } from '@lucide/svelte';
+	import PulsarUsageModal from '$lib/components/PulsarUsageModal.svelte';
+	import { PanelLeft, Plus, Archive, Info } from '@lucide/svelte';
 	import type { PulsarRoutine } from '$lib/types';
 
 	onMount(() => {
@@ -17,6 +18,7 @@
 	});
 
 	let showForm = $state(false);
+	let showUsage = $state(false);
 
 	function scheduleSummary(r: PulsarRoutine): string {
 		const time = formatTime(r.time_of_day);
@@ -57,10 +59,15 @@
 		{/if}
 		<h1 class="page-title"><span class="wordmark">Pulsar</span></h1>
 	</div>
-	<button class="btn btn-accent" onclick={() => (showForm = true)}>
-		<Plus size={16} />
-		New <span class="wordmark">Pulsar</span>
-	</button>
+	<div class="header-right">
+		<button class="icon-btn" onclick={() => (showUsage = true)} title="Pulsar usage" aria-label="Pulsar usage">
+			<Info size={18} />
+		</button>
+		<button class="btn btn-accent" onclick={() => (showForm = true)}>
+			<Plus size={16} />
+			New <span class="wordmark">Pulsar</span>
+		</button>
+	</div>
 </header>
 
 <div class="content">
@@ -123,6 +130,10 @@
 	/>
 {/if}
 
+{#if showUsage}
+	<PulsarUsageModal onClose={() => (showUsage = false)} />
+{/if}
+
 <style>
 	.header {
 		display: flex;
@@ -138,6 +149,12 @@
 		align-items: center;
 		gap: var(--space-md);
 		min-width: 0;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
 	}
 
 	.page-title {

@@ -6,8 +6,10 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -294,6 +296,190 @@ func (s *Store) UnreadPulseCounts() (map[int64]int, error) {
 		counts[id] = n
 	}
 	return counts, rows.Err()
+}
+
+// PulsarStats is Pulsar's own activity/cost/tuning summary — a dedicated
+// surface mirroring ConstellationStats (store/constellation.go), not
+// folded into the main Stats/CostBySource breakdown. Stats.CostBySource
+// .Pulsar already gives the one-line total, but nothing today answers
+// "which tools are pulses actually calling" or "how often is a pulse
+// failing outright" the way GetStats does for the main chat surface —
+// and a pulse runs unsupervised on a schedule, so a stuck or misfiring
+// routine is easier to miss than a live turn would be.
+type PulsarStats struct {
+	PeriodDays int `json:"period_days"`
+
+	TotalCostUSD  float64 `json:"total_cost_usd"`
+	PeriodCostUSD float64 `json:"period_cost_usd"`
+
+	ActiveRoutineCount   int `json:"active_routine_count"`
+	ArchivedRoutineCount int `json:"archived_routine_count"`
+
+	// PulseCount/FailedPulseCount are both period-scoped (unlike
+	// ConstellationStats.ShootingStarCount, which is always all-time) —
+	// "how's Pulsar doing lately" is exactly what a trailing-window
+	// failure rate is for, and periodDays=0 still answers the all-time
+	// question when that's what's asked.
+	PulseCount       int `json:"pulse_count"`
+	FailedPulseCount int `json:"failed_pulse_count"`
+
+	// ToolCallCounts/ToolErrorCounts mirror Stats' own fields exactly
+	// (same events-table shape, same "tool.*" source convention), just
+	// scoped to threads.source = 'pulsar' — see GetPulsarStats.
+	ToolCallCounts  map[string]int `json:"tool_call_counts"`
+	ToolErrorCounts map[string]int `json:"tool_error_counts"`
+
+	// CheckInCount/StaleStreakCount/MaxTurnsWrapupCount mirror Stats' own
+	// research-loop steering fields (see agent/driver.go's emitNudge),
+	// scoped to pulsar pulses only.
+	CheckInCount        int `json:"check_in_count"`
+	StaleStreakCount    int `json:"stale_streak_count"`
+	MaxTurnsWrapupCount int `json:"max_turns_wrapup_count"`
+}
+
+// GetPulsarStats aggregates on demand from pulsar_routines and the same
+// threads/events tables GetStats reads — no running counters, same "cheap
+// enough to scan fresh every request" reasoning as stats.go's own doc
+// comment. periodDays of 0 means all time.
+func (s *Store) GetPulsarStats(periodDays int) (*PulsarStats, error) {
+	stats := &PulsarStats{
+		PeriodDays:      periodDays,
+		ToolCallCounts:  map[string]int{},
+		ToolErrorCounts: map[string]int{},
+	}
+
+	var since string
+	if periodDays > 0 {
+		since = time.Now().AddDate(0, 0, -periodDays).UTC().Format("2006-01-02 15:04:05")
+	}
+
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pulsar_routines WHERE archived_at IS NULL`).Scan(&stats.ActiveRoutineCount); err != nil {
+		return nil, fmt.Errorf("pulsar stats: active routine count: %w", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pulsar_routines WHERE archived_at IS NOT NULL`).Scan(&stats.ArchivedRoutineCount); err != nil {
+		return nil, fmt.Errorf("pulsar stats: archived routine count: %w", err)
+	}
+
+	// Cost: the same fork-safe "count each real message once" query
+	// GetStats uses for CostBySource.Pulsar, reused here rather than a
+	// third copy of it.
+	if err := s.costBySource("", func(source string, cost float64) {
+		if source == "pulsar" {
+			stats.TotalCostUSD = cost
+		}
+	}); err != nil {
+		return nil, fmt.Errorf("pulsar stats: total cost: %w", err)
+	}
+	if err := s.costBySource(since, func(source string, cost float64) {
+		if source == "pulsar" {
+			stats.PeriodCostUSD = cost
+		}
+	}); err != nil {
+		return nil, fmt.Errorf("pulsar stats: period cost: %w", err)
+	}
+
+	pulseQuery := `SELECT COUNT(*) FROM threads WHERE source = 'pulsar' AND disabled = 0 AND fork_root_id = ''`
+	pulseArgs := []interface{}{}
+	if since != "" {
+		pulseQuery += ` AND created_at >= ?`
+		pulseArgs = append(pulseArgs, since)
+	}
+	if err := s.db.QueryRow(pulseQuery, pulseArgs...).Scan(&stats.PulseCount); err != nil {
+		return nil, fmt.Errorf("pulsar stats: pulse count: %w", err)
+	}
+
+	// A "failed" pulse is any pulsar thread that logged at least one
+	// source='turn' level='error' event — the same event firePulse's own
+	// turnErr check watches for live (see gateway/pulsar_scheduler.go),
+	// just counted after the fact instead of during the fire. Distinct
+	// thread_id, not raw COUNT(*): a single turn can log more than one
+	// error event on its way to failing, and this answers "how many
+	// pulses failed," not "how many error events fired."
+	failedQuery := `SELECT COUNT(DISTINCT e.thread_id) FROM events e
+		JOIN threads t ON t.id = e.thread_id
+		WHERE t.source = 'pulsar' AND e.source = 'turn' AND e.level = 'error'`
+	failedArgs := []interface{}{}
+	if since != "" {
+		failedQuery += ` AND e.created_at >= ?`
+		failedArgs = append(failedArgs, since)
+	}
+	if err := s.db.QueryRow(failedQuery, failedArgs...).Scan(&stats.FailedPulseCount); err != nil {
+		return nil, fmt.Errorf("pulsar stats: failed pulse count: %w", err)
+	}
+
+	// Tool calls/errors: same shape as GetStats' own toolQuery, joined to
+	// threads and scoped to source = 'pulsar' instead of scanning every
+	// event in the deployment.
+	toolQuery := `SELECT e.source, e.level, COUNT(*) FROM events e
+		JOIN threads t ON t.id = e.thread_id
+		WHERE t.source = 'pulsar' AND e.source LIKE 'tool.%' AND e.message = 'tool call finished'`
+	toolArgs := []interface{}{}
+	if since != "" {
+		toolQuery += ` AND e.created_at >= ?`
+		toolArgs = append(toolArgs, since)
+	}
+	toolQuery += ` GROUP BY e.source, e.level`
+	toolRows, err := s.db.Query(toolQuery, toolArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("pulsar stats: tool call counts: %w", err)
+	}
+	defer toolRows.Close()
+	for toolRows.Next() {
+		var source, level string
+		var count int
+		if err := toolRows.Scan(&source, &level, &count); err != nil {
+			return nil, fmt.Errorf("pulsar stats: tool call counts: %w", err)
+		}
+		tool := strings.TrimPrefix(source, "tool.")
+		stats.ToolCallCounts[tool] += count
+		if level == "warn" {
+			stats.ToolErrorCounts[tool] += count
+		}
+	}
+	if err := toolRows.Err(); err != nil {
+		return nil, fmt.Errorf("pulsar stats: tool call counts: %w", err)
+	}
+
+	// Nudge kind lives inside the JSON data blob, same as GetStats' own
+	// nudgeQuery — see its doc comment for why this isn't a GROUP BY.
+	nudgeQuery := `SELECT e.data FROM events e
+		JOIN threads t ON t.id = e.thread_id
+		WHERE t.source = 'pulsar' AND e.source = 'agent.nudge'`
+	nudgeArgs := []interface{}{}
+	if since != "" {
+		nudgeQuery += ` AND e.created_at >= ?`
+		nudgeArgs = append(nudgeArgs, since)
+	}
+	nudgeRows, err := s.db.Query(nudgeQuery, nudgeArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("pulsar stats: nudge counts: %w", err)
+	}
+	defer nudgeRows.Close()
+	for nudgeRows.Next() {
+		var dataJSON string
+		if err := nudgeRows.Scan(&dataJSON); err != nil {
+			return nil, fmt.Errorf("pulsar stats: nudge counts: %w", err)
+		}
+		var d struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal([]byte(dataJSON), &d); err != nil {
+			continue
+		}
+		switch d.Kind {
+		case "check_in":
+			stats.CheckInCount++
+		case "stale_streak":
+			stats.StaleStreakCount++
+		case "max_turns_wrapup":
+			stats.MaxTurnsWrapupCount++
+		}
+	}
+	if err := nudgeRows.Err(); err != nil {
+		return nil, fmt.Errorf("pulsar stats: nudge counts: %w", err)
+	}
+
+	return stats, nil
 }
 
 // rowsAffectedOrNotFound is the shared "did this UPDATE actually match a

@@ -1,4 +1,4 @@
-import type { FocusMode, PulsarPulse, PulsarRoutine } from './types';
+import type { FocusMode, PulsarPulse, PulsarRoutine, PulsarStats } from './types';
 
 // PulsarRoutineInput is what the create/edit form (PulsarRoutineForm.svelte)
 // submits — same shape for both POST (create) and PATCH (edit), matching
@@ -56,6 +56,18 @@ export class PulsarState {
 	// rendering the routines list itself.
 	currentPulses = $state<PulsarPulse[]>([]);
 	currentPulsesLoading = $state(false);
+
+	// stats backs PulsarUsageModal — a period-scoped snapshot (cost,
+	// pulse/failure counts, tool calls, nudges), same shape/reasoning as
+	// constellation.svelte.ts's own stats field. statsSeq guards against
+	// a slow request landing after a faster, more recent one (e.g. the
+	// modal reopening with a different period before the first load
+	// resolved) — same stale-response pattern used throughout this
+	// codebase's other loaders.
+	stats = $state<PulsarStats | null>(null);
+	statsLoaded = $state(false);
+	statsError = $state(false);
+	private statsSeq = 0;
 
 	// totalUnread backs the sidebar's global Orbit-icon badge — count
 	// across every routine combined, per the plan doc's "Amber indicator
@@ -128,6 +140,23 @@ export class PulsarState {
 			this.currentPulsesError = true;
 		} finally {
 			this.currentPulsesLoading = false;
+		}
+	}
+
+	async loadStats(periodDays?: number) {
+		this.statsLoaded = false;
+		this.statsError = false;
+		const statsSeq = ++this.statsSeq;
+		try {
+			const qs = periodDays ? `?period_days=${periodDays}` : '';
+			const res = await fetch(`/api/pulsar/stats${qs}`);
+			if (!res.ok) throw new Error('stats fetch failed');
+			const stats = (await res.json()) as PulsarStats;
+			if (statsSeq === this.statsSeq) this.stats = stats;
+		} catch {
+			this.statsError = true;
+		} finally {
+			this.statsLoaded = true;
 		}
 	}
 

@@ -815,6 +815,22 @@ export interface ConstellationStats {
 	needs_retry_count: number;
 }
 
+// Mirrors store.PulsarStats — GET /api/pulsar/stats.
+export interface PulsarStats {
+	period_days: number;
+	total_cost_usd: number;
+	period_cost_usd: number;
+	active_routine_count: number;
+	archived_routine_count: number;
+	pulse_count: number;
+	failed_pulse_count: number;
+	tool_call_counts: Record<string, number>;
+	tool_error_counts: Record<string, number>;
+	check_in_count: number;
+	stale_streak_count: number;
+	max_turns_wrapup_count: number;
+}
+
 // Mirrors gateway/constellation_routes.go's constellationDigest — GET
 // /api/constellation/digest. show is false when both counts are zero (the
 // Library banner renders nothing in that case, per the plan doc's "no
