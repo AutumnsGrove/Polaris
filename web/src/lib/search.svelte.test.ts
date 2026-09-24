@@ -126,6 +126,62 @@ describe('SearchState.search — next-page prefetch', () => {
 		expect(state.hasMore).toBe(false); // corrected — "Next" should now be disabled
 	});
 
+	it('a slow-resolving call riding a shared prefetch cannot clobber a later, faster cache hit', async () => {
+		// Regression test for a real race: search()'s cache-hit branch used
+		// to return without bumping searchSeq. If an earlier call is still
+		// awaiting an in-flight prefetch promise for the same page (the
+		// `inFlight` branch below) when a *later* call for a different,
+		// already-cached page hits the synchronous cache-hit path, that
+		// later call's results/page used to get silently overwritten once
+		// the earlier, slow call finally resolved — because its own seq
+		// check compared against a searchSeq the cache hit never touched.
+		let resolvePage2: (() => void) | undefined;
+		const page2Gate = new Promise<void>((resolve) => {
+			resolvePage2 = resolve;
+		});
+
+		const fetchSpy = vi.fn((url: string) => {
+			if (url.includes('/api/search-history')) {
+				return Promise.resolve({ ok: true, json: async () => [] });
+			}
+			const match = /[?&]page=(\d+)/.exec(url);
+			const page = match ? Number(match[1]) : 1;
+			if (page === 1) {
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({ results: [{ url: 'https://a.com' }], page: 1, has_more: true })
+				});
+			}
+			// Page 2 (the prefetch AND the later goToPage(2) that rides it)
+			// hangs until the test explicitly lets it through.
+			return page2Gate.then(() => ({
+				ok: true,
+				json: async () => ({ results: [{ url: 'https://b.com' }], page: 2, has_more: false })
+			}));
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		await state.search('rust async runtime');
+		expect(state.page).toBe(1);
+
+		// goToPage(2): no cache yet, rides the still-pending prefetch promise.
+		const slowPage2 = state.search('rust async runtime', { record: false, page: 2 });
+
+		// Before that resolves, the page-1 cache hit fires (a fast
+		// Previous click landing while the slow Next is still in flight).
+		await state.search('rust async runtime', { record: false, page: 1 });
+		expect(state.page).toBe(1);
+		expect(state.results).toEqual([{ url: 'https://a.com' }]);
+
+		// Now let the slow page-2 call finally resolve.
+		resolvePage2!();
+		await slowPage2;
+
+		// It must not have clobbered the page-1 view the user is now on.
+		expect(state.page).toBe(1);
+		expect(state.results).toEqual([{ url: 'https://a.com' }]);
+	});
+
 	it('goToPage onto an already-prefetched page serves from cache with no extra request', async () => {
 		const fetchSpy = fakeFetchByPage({
 			1: { results: [{ url: 'https://a.com' }], has_more: true },

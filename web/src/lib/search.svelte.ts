@@ -85,6 +85,18 @@ export class SearchState {
 
 		const cached = this.pageCache.get(page);
 		if (cached) {
+			// Supersede any earlier search()/goToPage call still waiting on a
+			// network fetch or a shared prefetch promise it's riding (see the
+			// `inFlight` await below) — without bumping searchSeq here too,
+			// that earlier call's own `seq !== this.searchSeq` guard never
+			// fires (searchSeq was never touched by a cache hit), so once it
+			// finally resolves it silently overwrites what this synchronous
+			// cache hit just put on screen with a stale page. Real scenario:
+			// Next (real fetch, rides an in-flight prefetch promise) then a
+			// fast Previous (cache hit, returns instantly) — without this,
+			// the slow Next call lands afterward and snaps the view back to
+			// the page the user just navigated away from.
+			++this.searchSeq;
 			this.results = cached.results;
 			this.lastQuery = trimmed;
 			this.page = page;
