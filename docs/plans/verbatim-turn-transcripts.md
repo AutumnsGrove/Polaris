@@ -174,3 +174,21 @@ SQLite handles this fine, but backups grow.
   server.
 - Measure first: phase 1 (issue #107) ships ahead of the rest, so the potato gives a real
   before/after hit rate. The per-turn numbers also go on the "turn completed" event.
+
+## Live results (2026-09-24)
+
+A full dev-stack run (vite + `go run . run --dev` + local SearXNG) against real OpenRouter with
+the default `deepseek` model (DeepSeek V4.1 Flash), driven through the actual frontend with
+Playwright at phone width. Numbers are from `messages.prompt_tokens`/`cache_read_tokens`.
+
+| Turn | What happened | Input from cache | Cost |
+|---|---|---|---|
+| 1. Research question | 2 `web_search`, 4 `web_read`, cited answer | 74% (within its own tool loop) | $0.0124 |
+| 2. "Quote what those pages said about cached pricing" | No tool calls; quoted the page text turn 1 read | 93% | $0.0024 |
+| 3. "What time is it?" | Called `current_time` | 97% | $0.0006 |
+| Retry of turn 2 (fork) | Fork carried turn 1's transcript; no tool calls | 98% | $0.0029 |
+
+The thread menu showed "Cache hits 84%" and "Context 9%" against the 200K window. In turn 2 and
+its retry, the model's reasoning referred to its specific earlier reads, including which part of a
+page a truncated read had missed. That is the opposite of the old "I can see I cited it but can't
+see it" confusion.
