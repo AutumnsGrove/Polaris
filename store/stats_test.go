@@ -134,3 +134,42 @@ func TestGetStats_SearchProviderCounts(t *testing.T) {
 	}
 }
 
+
+// CacheUsage counts each turn once even after an edit/retry fork has
+// copied its assistant row (usage columns and all) into a new variant —
+// a plain SUM over messages would inflate the shared prefix per variant.
+func TestGetStats_CacheUsageCountsForkedTurnsOnce(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("root", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	for i, usage := range [][2]int{{10_000, 2_000}, {20_000, 18_000}} {
+		turnID := "turn-" + strconv.Itoa(i)
+		if _, err := s.AddMessage("root", "user", "q", "[]", "[]", 0, turnID); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		id, err := s.AddMessage("root", "assistant", "a", "[]", "[]", 0, turnID)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		if err := s.SetMessageCacheUsage(id, usage[0], usage[1]); err != nil {
+			t.Fatalf("SetMessageCacheUsage: %v", err)
+		}
+	}
+	// A retry of turn 2 copies turn 1's rows into the fork.
+	if _, err := s.ForkThread("root", "root", 2); err != nil {
+		t.Fatalf("ForkThread: %v", err)
+	}
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	got := stats.CacheUsage
+	if got.TotalPromptTokens != 30_000 || got.TotalCacheReadTokens != 20_000 {
+		t.Fatalf("CacheUsage totals = %d/%d, want 30000/20000 (turn 1 counted once despite the fork)", got.TotalPromptTokens, got.TotalCacheReadTokens)
+	}
+	if got.PeriodPromptTokens != got.TotalPromptTokens || got.PeriodCacheReadTokens != got.TotalCacheReadTokens {
+		t.Fatalf("period %+v should equal totals when periodDays is 0", got)
+	}
+}

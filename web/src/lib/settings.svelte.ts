@@ -59,6 +59,15 @@ export interface UsageStats {
 	// Total wall-clock time code_exec has spent running sandboxed scripts —
 	// see store.Stats.CodeExecWallTimeMS' doc comment.
 	code_exec_wall_time_ms: number;
+	// Summed prompt tokens and prompt-cache reads, one count per turn —
+	// see store.Stats.CacheUsage. Optional so an older backend without it
+	// just hides the row instead of breaking the panel.
+	cache_usage?: {
+		period_prompt_tokens: number;
+		period_cache_read_tokens: number;
+		total_prompt_tokens: number;
+		total_cache_read_tokens: number;
+	};
 }
 
 // Mirrors store.Memory (store/memory.go) — the full row, content included,

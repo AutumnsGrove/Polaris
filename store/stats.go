@@ -7,6 +7,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -96,6 +97,23 @@ type Stats struct {
 	// #44) as the settings panel's "how much is this actually being
 	// used" number for the tool that took its place.
 	CodeExecWallTimeMS int64 `json:"code_exec_wall_time_ms"`
+
+	// CacheUsage is the deployment-wide prompt-cache health stat — how
+	// much of every turn's input the provider served from its prompt
+	// cache (issue #107's per-thread hit %, rolled up across everything).
+	// Raw token sums rather than a percentage, so the frontend can show
+	// "—" instead of a misleading 0% when nothing's been recorded yet.
+	CacheUsage CacheUsage `json:"cache_usage"`
+}
+
+// CacheUsage pairs summed prompt tokens with how many of them were
+// prompt-cache reads, for the trailing period and all time. See
+// Stats.CacheUsage.
+type CacheUsage struct {
+	PeriodPromptTokens    int `json:"period_prompt_tokens"`
+	PeriodCacheReadTokens int `json:"period_cache_read_tokens"`
+	TotalPromptTokens     int `json:"total_prompt_tokens"`
+	TotalCacheReadTokens  int `json:"total_cache_read_tokens"`
 }
 
 // SourceCost is one bucket's period/all-time cost — see
@@ -294,6 +312,30 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		).Scan(&stats.VerificationCostUSD.PeriodCostUSD); err != nil {
 			return nil, err
 		}
+	}
+
+	// CacheUsage: one row per turn_id, not per message — ForkThread copies
+	// a shared prefix's assistant rows (usage columns included) into every
+	// edit/retry fork, so a plain SUM would count each retried thread's
+	// earlier turns once per variant. MAX within a turn_id is just "the"
+	// value, since every copy carries identical numbers. Deleted threads
+	// still count: this is about requests the provider actually served.
+	cacheQuery := `SELECT COALESCE(SUM(p), 0), COALESCE(SUM(c), 0) FROM (
+		SELECT MAX(prompt_tokens) AS p, MAX(cache_read_tokens) AS c FROM messages
+		WHERE role = 'assistant' AND turn_id != '' AND prompt_tokens > 0%s
+		GROUP BY turn_id)`
+	if err := s.db.QueryRow(fmt.Sprintf(cacheQuery, "")).Scan(
+		&stats.CacheUsage.TotalPromptTokens, &stats.CacheUsage.TotalCacheReadTokens,
+	); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		stats.CacheUsage.PeriodPromptTokens = stats.CacheUsage.TotalPromptTokens
+		stats.CacheUsage.PeriodCacheReadTokens = stats.CacheUsage.TotalCacheReadTokens
+	} else if err := s.db.QueryRow(fmt.Sprintf(cacheQuery, " AND created_at >= ?"), since).Scan(
+		&stats.CacheUsage.PeriodPromptTokens, &stats.CacheUsage.PeriodCacheReadTokens,
+	); err != nil {
+		return nil, err
 	}
 
 	// Same disabled/fork_root_id filter ListThreads uses — a hidden
