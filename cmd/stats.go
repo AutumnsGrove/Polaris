@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -33,7 +34,8 @@ func runStats(cmd *cobra.Command, args []string) error {
 // only correct source.
 func runDockerStats(days int) error {
 	url := fmt.Sprintf("%s/api/stats?days=%d", dockerLocalBaseURL(), days)
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("reaching the local polaris server at %s: %w (is the container running? try `docker compose ps`)", url, err)
 	}
