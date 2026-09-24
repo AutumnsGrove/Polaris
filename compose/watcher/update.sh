@@ -223,7 +223,13 @@ fi
 # Polaris update itself over a watcher-maintenance step — it just means
 # the watcher units keep running whatever they already have until the
 # next successful sync.
-sudo /etc/polaris/watcher-sync-verify.sh "$INSTALL_DIR" "$(whoami)" 2>&1 | tee "$CMD_LOG" || \
+#
+# timeout 60: every other external command boundary in this script (git
+# pull, docker compose pull/up, the sandbox image pull) is bounded so a
+# stalled connection can't wedge the flock forever — this one was missing
+# that same guard. systemctl daemon-reload/restart and a couple of file
+# copies should never take anywhere close to 60s in practice.
+timeout 60 sudo /etc/polaris/watcher-sync-verify.sh "$INSTALL_DIR" "$(whoami)" 2>&1 | tee "$CMD_LOG" || \
 	echo "watcher unit re-sync failed (non-fatal, continuing update): $(truncate_detail "$(cat "$CMD_LOG")")" >&2
 
 set_pinned_image "$TARGET_IMAGE"

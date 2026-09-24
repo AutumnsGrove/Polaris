@@ -22,4 +22,16 @@ ExecStart=@INSTALL_DIR@/compose/watcher/update.sh
 
 # Generous but bounded — a slow registry pull on the potato's uplink
 # shouldn't hang forever, but shouldn't get cut off mid-pull either.
-TimeoutStartSec=600
+#
+# Must exceed the *sum* of update.sh's own internal timeouts, not just
+# the slowest single one: watcher-sync-verify (60s) + docker compose pull
+# (300s) + the sandbox image pull (300s) + the busy-wait for an in-flight
+# turn/run (300s) + docker compose up (60s) + the healthcheck poll (120s)
+# = 1140s worst case if every step happens to hit its own cap at once. A
+# 600s budget here would let systemd SIGKILL the script mid-run well
+# before any of its own timeouts fire, bypassing write_result/rollback
+# entirely and leaving update-signal/requested never removed — the update
+# would look stuck "in progress" forever instead of reporting the
+# failure it was designed to report. 1800s leaves real headroom above the
+# 1140s worst case.
+TimeoutStartSec=1800
