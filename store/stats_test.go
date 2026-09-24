@@ -72,6 +72,17 @@ func TestGetStats_CostBySource(t *testing.T) {
 		t.Fatalf("UpsertDailyEdition: %v", err)
 	}
 
+	if err := s.CreateThread("web-thread-2", "Chat", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread (for weaver run): %v", err)
+	}
+	runID, err := s.StartShootingStarRun("web-thread-2", 0)
+	if err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+	if err := s.RecordShootingStarEvent(runID, "create_star", "{}", "ok", 0.04); err != nil {
+		t.Fatalf("RecordShootingStarEvent: %v", err)
+	}
+
 	stats, err := s.GetStats(0)
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
@@ -85,16 +96,26 @@ func TestGetStats_CostBySource(t *testing.T) {
 	if stats.CostBySource.Daily.TotalCostUSD != 0.03 {
 		t.Errorf("Daily.TotalCostUSD = %v, want 0.03", stats.CostBySource.Daily.TotalCostUSD)
 	}
-	// Polaris + Pulsar must sum back to the plain (unsplit) total, not a
-	// second, subtly different number computed a different way.
-	if got, want := stats.CostBySource.Polaris.TotalCostUSD+stats.CostBySource.Pulsar.TotalCostUSD, stats.TotalCostUSD; got != want {
-		t.Errorf("Polaris+Pulsar = %v, want stats.TotalCostUSD = %v", got, want)
+	if stats.CostBySource.Constellation.TotalCostUSD != 0.04 {
+		t.Errorf("Constellation.TotalCostUSD = %v, want 0.04", stats.CostBySource.Constellation.TotalCostUSD)
+	}
+	// Polaris + Pulsar + Daily + Constellation must sum back to the plain
+	// (unsplit) total, not a second, subtly different number computed a
+	// different way — and Daily specifically must NOT be silently
+	// excluded (see CostBySource's own doc comment on why that used to
+	// look like the breakdown didn't add up).
+	if got, want := stats.CostBySource.Polaris.TotalCostUSD+stats.CostBySource.Pulsar.TotalCostUSD+
+		stats.CostBySource.Daily.TotalCostUSD+stats.CostBySource.Constellation.TotalCostUSD, stats.TotalCostUSD; got != want {
+		t.Errorf("Polaris+Pulsar+Daily+Constellation = %v, want stats.TotalCostUSD = %v", got, want)
 	}
 	if stats.CostBySource.Polaris.PeriodCostUSD != 0.01 || stats.CostBySource.Pulsar.PeriodCostUSD != 0.02 {
 		t.Errorf("period costs = %+v, want 0.01/0.02", stats.CostBySource)
 	}
 	if stats.CostBySource.Daily.PeriodCostUSD != 0.03 {
 		t.Errorf("Daily.PeriodCostUSD = %v, want 0.03 (today's edition, within a 30-day window)", stats.CostBySource.Daily.PeriodCostUSD)
+	}
+	if stats.CostBySource.Constellation.PeriodCostUSD != 0.04 {
+		t.Errorf("Constellation.PeriodCostUSD = %v, want 0.04", stats.CostBySource.Constellation.PeriodCostUSD)
 	}
 }
 

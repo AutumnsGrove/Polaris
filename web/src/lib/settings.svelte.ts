@@ -20,19 +20,22 @@ export interface UsageStats {
 	period_days: number;
 	total_cost_usd: number;
 	period_cost_usd: number;
-	// cost_by_source splits both totals above three ways — see
-	// store.Stats.CostBySource's doc comment. Daily is a wholly separate
-	// cost path (Pulsar Daily editions), never a thread at all, so it was
-	// previously invisible in total_cost_usd/period_cost_usd above.
-	// polaris includes ghost-mode (incognito thread) turns' spend, folded
-	// in directly (and into total_cost_usd/period_cost_usd above too) —
-	// a ghost thread is just an incognito regular chat, not a separate
-	// subsystem the way pulsar/daily are, so there's no separate bucket
-	// for it.
+	// cost_by_source splits both totals above four ways — see
+	// store.Stats.CostBySource's doc comment. Daily (Pulsar Daily
+	// editions) and constellation (Weaver runs + Refine/Edit calls) are
+	// both wholly separate cost paths that never touch a thread at all,
+	// but total_cost_usd/period_cost_usd above are still the real,
+	// complete sum across all four — every row here always adds back up
+	// to the headline figure exactly. polaris includes ghost-mode
+	// (incognito thread) turns' spend, folded in directly — a ghost
+	// thread is just an incognito regular chat, not a separate subsystem
+	// the way pulsar/daily/constellation are, so there's no separate
+	// bucket for it.
 	cost_by_source: {
 		polaris: { period_cost_usd: number; total_cost_usd: number };
 		pulsar: { period_cost_usd: number; total_cost_usd: number };
 		daily: { period_cost_usd: number; total_cost_usd: number };
+		constellation: { period_cost_usd: number; total_cost_usd: number };
 	};
 	// verification_cost_usd is a breakout, not a fourth bucket — how much
 	// of cost_by_source.polaris/.pulsar above (already counted once) was

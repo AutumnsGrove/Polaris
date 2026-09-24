@@ -75,8 +75,8 @@
 			<div class="separate-note">
 				<Info size={15} class="note-icon" />
 				<span>
-					Separate from Polaris's own usage — this cost never appears in the main Usage panel's
-					total, and vice versa.
+					This cost is also counted in the main Usage panel's total, as its own "Constellation"
+					row — this panel just adds the star/tool/review breakdown that one doesn't have room for.
 				</span>
 			</div>
 		{/if}

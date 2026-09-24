@@ -26,18 +26,22 @@ type Stats struct {
 	TotalCostUSD  float64 `json:"total_cost_usd"`
 	PeriodCostUSD float64 `json:"period_cost_usd"`
 
-	// CostBySource splits TotalCostUSD/PeriodCostUSD three ways — Polaris
+	// CostBySource splits TotalCostUSD/PeriodCostUSD four ways — Polaris
 	// (regular chat, every threads.source other than "pulsar", plus
 	// ghost-mode turns' spend from ghost_usage — see GetStats — since a
 	// ghost thread is just an incognito regular chat, not a distinct
-	// subsystem the way Pulsar/Daily are), Pulsar (routine pulses,
-	// threads.source = "pulsar"), and Daily (Pulsar Daily editions). Daily
-	// is a wholly separate cost path (pulsar_daily_editions.cost_usd) —
-	// it's never a thread at all, so it was previously invisible in both
-	// totals above; this is the first place its cost is surfaced anywhere
-	// in Stats. Ghost's spend, unlike Daily's, is folded directly into
-	// TotalCostUSD/PeriodCostUSD too (via Polaris), not just this
-	// breakdown — see GetStats.
+	// subsystem the way Pulsar/Daily/Constellation are), Pulsar (routine
+	// pulses, threads.source = "pulsar"), Daily (Pulsar Daily editions),
+	// and Constellation (Weaver runs plus Refine/Edit's one-off calls —
+	// see store.ConstellationStats, the same two tables). Daily and
+	// Constellation are both wholly separate cost paths that never touch
+	// threads/messages at all, so every field here — including
+	// TotalCostUSD/PeriodCostUSD themselves — is the real, complete sum
+	// across all four; previously Daily/Constellation were silently
+	// excluded from the grand total while still appearing as their own
+	// breakdown rows in the settings panel, which looked like the
+	// breakdown didn't add up to the headline figure (a real, reported
+	// point of confusion) even though every number involved was correct.
 	CostBySource CostBySource `json:"cost_by_source"`
 
 	// VerificationCostUSD is how much of the above (already counted once,
@@ -124,16 +128,16 @@ type SourceCost struct {
 }
 
 // CostBySource is Stats.TotalCostUSD/PeriodCostUSD broken down by where
-// the cost actually came from. Polaris + Pulsar always sums back to the
-// plain total/period figures exactly (Daily is deliberately excluded from
-// both, same as always — see GetStats). There's no separate "ghost"
-// bucket: ghost-mode spend is folded straight into Polaris, the same
-// source a ghost thread would have been tagged if it were persisted —
-// see GetStats.
+// the cost actually came from. Polaris + Pulsar + Daily + Constellation
+// always sums back to the plain total/period figures exactly — see
+// GetStats. There's no separate "ghost" bucket: ghost-mode spend is
+// folded straight into Polaris, the same source a ghost thread would
+// have been tagged if it were persisted — see GetStats.
 type CostBySource struct {
-	Polaris SourceCost `json:"polaris"`
-	Pulsar  SourceCost `json:"pulsar"`
-	Daily   SourceCost `json:"daily"`
+	Polaris       SourceCost `json:"polaris"`
+	Pulsar        SourceCost `json:"pulsar"`
+	Daily         SourceCost `json:"daily"`
+	Constellation SourceCost `json:"constellation"`
 }
 
 // GetStats aggregates Stats over the trailing periodDays days (0 or
@@ -213,8 +217,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	}); err != nil {
 		return nil, err
 	}
-	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD
-	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD
 
 	// Daily's cost never touches threads/messages at all (see
 	// pulsar_daily_editions' own doc comment) — a separate query, not a
@@ -239,12 +241,48 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		}
 	}
 
+	// Constellation's cost never touches threads/messages either — the
+	// same two tables GetConstellationStats sums (shooting_star_events
+	// for Weaver's own runs, star_reconcile_events for Refine/Edit's
+	// one-off calls — see its own doc comment for why two tables).
+	// Period-filtered by created_at, same as everything above except
+	// Daily.
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events`,
+	).Scan(&stats.CostBySource.Constellation.TotalCostUSD); err != nil {
+		return nil, err
+	}
+	var reconcileTotal float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events`,
+	).Scan(&reconcileTotal); err != nil {
+		return nil, err
+	}
+	stats.CostBySource.Constellation.TotalCostUSD += reconcileTotal
+	if since == "" {
+		stats.CostBySource.Constellation.PeriodCostUSD = stats.CostBySource.Constellation.TotalCostUSD
+	} else {
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM shooting_star_events WHERE created_at >= ?`, since,
+		).Scan(&stats.CostBySource.Constellation.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+		var reconcilePeriod float64
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM star_reconcile_events WHERE created_at >= ?`, since,
+		).Scan(&reconcilePeriod); err != nil {
+			return nil, err
+		}
+		stats.CostBySource.Constellation.PeriodCostUSD += reconcilePeriod
+	}
+
 	// Ghost-mode spend never touches threads/messages at all (see
-	// ghost_usage's own doc comment) — but unlike Daily, it isn't its own
-	// subsystem with its own bucket; a ghost thread is just an incognito
-	// regular chat, so its cost is added straight into both the grand
-	// totals above and CostBySource.Polaris, the same place it would have
-	// landed had the thread been persisted normally.
+	// ghost_usage's own doc comment) — but unlike Daily/Constellation, it
+	// isn't its own subsystem with its own bucket; a ghost thread is just
+	// an incognito regular chat, so its cost is folded straight into
+	// CostBySource.Polaris, the same place it would have landed had the
+	// thread been persisted normally. The grand total below picks it up
+	// from there, not as a separate addition.
 	var ghostTotal, ghostPeriod float64
 	if err := s.db.QueryRow(
 		`SELECT COALESCE(SUM(cost_usd), 0) FROM ghost_usage`,
@@ -260,10 +298,20 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 			return nil, err
 		}
 	}
-	stats.TotalCostUSD += ghostTotal
-	stats.PeriodCostUSD += ghostPeriod
 	stats.CostBySource.Polaris.TotalCostUSD += ghostTotal
 	stats.CostBySource.Polaris.PeriodCostUSD += ghostPeriod
+
+	// TotalCostUSD/PeriodCostUSD: the true, complete grand total across
+	// every real spend path — computed last, once every bucket above
+	// (including ghost's fold-in) is finalized, so the settings panel's
+	// "Cost by source" breakdown always sums back to this number exactly.
+	// Previously this was Polaris+Pulsar only, with Daily silently
+	// excluded — see CostBySource's own doc comment for why that looked
+	// like the breakdown didn't add up.
+	stats.TotalCostUSD = stats.CostBySource.Polaris.TotalCostUSD + stats.CostBySource.Pulsar.TotalCostUSD +
+		stats.CostBySource.Daily.TotalCostUSD + stats.CostBySource.Constellation.TotalCostUSD
+	stats.PeriodCostUSD = stats.CostBySource.Polaris.PeriodCostUSD + stats.CostBySource.Pulsar.PeriodCostUSD +
+		stats.CostBySource.Daily.PeriodCostUSD + stats.CostBySource.Constellation.PeriodCostUSD
 
 	// VerificationCostUSD: a breakout, not an addition — this money is
 	// already inside TotalCostUSD/CostBySource above (it arrived via

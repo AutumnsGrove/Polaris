@@ -27,6 +27,7 @@
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
+	import PulsarUsageModal from './PulsarUsageModal.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -44,6 +45,7 @@
 	// Usage is a wholly separate component/data fetch (see
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
+	let showPulsarUsage = $state(false);
 
 	// "About you" pronoun presets — same segmented-control-plus-custom
 	// pattern Constellation's own settings modal used before this moved
@@ -92,6 +94,38 @@
 			: 0
 	);
 	let toolErrorRate = $derived(toolCallTotal > 0 ? (toolErrorTotal / toolCallTotal) * 100 : 0);
+
+	// round2 + the two headline totals below exist so the big "$X.XX" at
+	// the top of this panel always equals the sum of the four rows
+	// literally printed underneath it in "Cost by source" — a real,
+	// reported point of confusion otherwise: usage.total_cost_usd/
+	// period_cost_usd are exact floats (store.Stats.TotalCostUSD is the
+	// true sum of all four unrounded buckets), but four independently-
+	// rounded-to-cents rows can round to a sum a cent off from that exact
+	// total rounded on its own (e.g. 0.994 total displays as $0.99, but
+	// 0.337+0.331+0.326 displays as $0.34+$0.33+$0.33 = $1.00) — visually
+	// "doesn't add up" even though every individual figure is correct.
+	// Rounding each row first and summing those makes the headline
+	// consistent with what's actually on screen, by construction.
+	function round2(n: number): number {
+		return Math.round(n * 100) / 100;
+	}
+	let headlinePeriodCostUSD = $derived(
+		appState.settings.usage
+			? round2(appState.settings.usage.cost_by_source.polaris.period_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.pulsar.period_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.daily.period_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.constellation.period_cost_usd)
+			: 0
+	);
+	let headlineTotalCostUSD = $derived(
+		appState.settings.usage
+			? round2(appState.settings.usage.cost_by_source.polaris.total_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.pulsar.total_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.daily.total_cost_usd) +
+					round2(appState.settings.usage.cost_by_source.constellation.total_cost_usd)
+			: 0
+	);
 
 	// Prompt-cache hit rate — the deployment-wide version of ThreadMenu's
 	// per-thread "Cache hits" row. "—" when no turn has recorded usage in
@@ -148,8 +182,8 @@
 			{:else}
 				{@const usage = appState.settings.usage}
 				<div class="usage-big-cost">
-					<div class="amount">${usage.period_cost_usd.toFixed(2)}</div>
-					<div class="caption">last 30 days &middot; ${usage.total_cost_usd.toFixed(2)} all-time</div>
+					<div class="amount">${headlinePeriodCostUSD.toFixed(2)}</div>
+					<div class="caption">last 30 days &middot; ${headlineTotalCostUSD.toFixed(2)} all-time</div>
 				</div>
 
 				<div class="usage-section-label">Cost by source <span class="usage-section-sublabel">(30d / all-time)</span></div>
@@ -184,6 +218,14 @@
 							>${usage.cost_by_source.daily.period_cost_usd.toFixed(2)} / ${usage.cost_by_source.daily.total_cost_usd.toFixed(
 								2
 							)}</span
+						>
+					</div>
+					<div class="usage-stat-row">
+						<span class="label">Constellation</span>
+						<span class="value"
+							>${usage.cost_by_source.constellation.period_cost_usd.toFixed(
+								2
+							)} / ${usage.cost_by_source.constellation.total_cost_usd.toFixed(2)}</span
 						>
 					</div>
 				</div>
@@ -252,12 +294,20 @@
 				</div>
 
 				<p class="hint">Run <code>polaris stats</code> for the full per-tool breakdown.</p>
-				<!-- Constellation's own spend is deliberately not folded into
-				     the totals above — a separate surface, own data fetch, own
-				     panel (see docs/plans/constellation.md's "Cost tracking and
-				     observability"). This is just a nav shortcut into it. -->
+				<!-- Constellation's cost is now counted in the totals above
+				     (the "Constellation" row in Cost by source) — this shortcut
+				     is just for the richer star/tool/review breakdown
+				     ConstellationUsageModal has room for and this panel doesn't. -->
 				<button class="constellation-usage-link" onclick={() => (showConstellationUsage = true)}>
 					&rarr; Constellation usage
+				</button>
+				<!-- Same reasoning as the Constellation shortcut just above —
+				     Pulsar's cost is already in the "Pulsar" row above; this is
+				     just a shortcut to PulsarUsageModal's own tool-call/
+				     failure-rate/nudge breakdown, which this panel has no room
+				     for. -->
+				<button class="constellation-usage-link" onclick={() => (showPulsarUsage = true)}>
+					&rarr; Pulsar usage
 				</button>
 			{/if}
 		{:else if showMemoryImport}
@@ -600,6 +650,10 @@
 
 {#if showConstellationUsage}
 	<ConstellationUsageModal onClose={() => (showConstellationUsage = false)} />
+{/if}
+
+{#if showPulsarUsage}
+	<PulsarUsageModal onClose={() => (showPulsarUsage = false)} />
 {/if}
 
 <style>
