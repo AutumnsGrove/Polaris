@@ -520,7 +520,24 @@ export class SettingsState {
 				const res = await fetch('/api/version', { cache: 'no-store' });
 				if (res.ok) {
 					const newVersion = (await res.json()).version ?? '';
-					const versionChanged = !baseline || (newVersion && newVersion !== baseline);
+					// !baseline alone (a failed capture at the top of this
+					// function, not "no restart happened") used to count as
+					// "changed" unconditionally — so a transient network blip
+					// at exactly the wrong moment made the very next
+					// successful poll look like a version change even though
+					// it was still the OLD binary answering with its OLD
+					// version, reloading straight back onto it and silently
+					// reporting success. That's the exact "double-click
+					// needed" bug this whole function exists to prevent, just
+					// triggered from a missing baseline instead of a fast
+					// restart. Requiring sawDowntime too when there's no
+					// baseline to compare against means this can still
+					// recover (a real restart always causes at least one
+					// failed/non-ok poll first), just not on the very first
+					// answer after the blip.
+					const versionChanged = baseline
+						? !!newVersion && newVersion !== baseline
+						: sawDowntime;
 					const restartConfirmed = this.updateKind === 'restart' && sawDowntime;
 					if (versionChanged || restartConfirmed) {
 						if (isBusy()) {

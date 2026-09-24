@@ -261,6 +261,67 @@ describe('SettingsState.pushUpdate restart handling', () => {
 		expect(reloadSpy).toHaveBeenCalledOnce();
 	});
 
+	it('does not reload on the first answer after a failed baseline capture unless it actually saw downtime', async () => {
+		// Regression test for a real gap in the !baseline handling: if the
+		// very first /api/version call (waitForServerAndReload's own
+		// baseline) fails — a plain network blip, not evidence of a real
+		// restart — treating "no baseline" as automatically "changed" meant
+		// the very next successful poll reloaded immediately even if it was
+		// still the OLD process answering with its OLD version. That's the
+		// exact "reload onto the still-old binary" bug this function exists
+		// to prevent, just triggered from a missing baseline instead of a
+		// fast restart.
+		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+
+		let versionCalls = 0;
+		const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
+			if (url === '/api/update') {
+				return { ok: true, json: async () => ({ success: true, log: 'build successful', restarting: true }) };
+			}
+			if (url === '/api/update/status') {
+				return { ok: true, json: async () => ({}) };
+			}
+			if (url === '/api/version') {
+				versionCalls++;
+				if (versionCalls === 1) throw new Error('network blip capturing the baseline');
+				// Still the pre-update process, same version every poll —
+				// no restart has actually happened yet.
+				return { ok: true, json: async () => ({ version: 'r100.aaaaaaa' }) };
+			}
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal('fetch', fetchSpy);
+
+		const settings = new SettingsState();
+		const done = settings.pushUpdate();
+
+		for (let i = 0; i < 5; i++) {
+			await vi.advanceTimersByTimeAsync(1500);
+		}
+		expect(reloadSpy).not.toHaveBeenCalled();
+		expect(settings.updateState).toBe('restarting');
+
+		// Now the real restart lands: a poll sees the server down, then a
+		// later one sees it back up with a genuinely new version.
+		fetchSpy.mockImplementation(async (url: string) => {
+			if (url === '/api/update/status') return { ok: true, json: async () => ({}) };
+			if (url === '/api/version') throw new Error('down for the actual restart');
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		await vi.advanceTimersByTimeAsync(1500);
+		expect(reloadSpy).not.toHaveBeenCalled();
+
+		fetchSpy.mockImplementation(async (url: string) => {
+			if (url === '/api/update/status') return { ok: true, json: async () => ({}) };
+			if (url === '/api/version') return { ok: true, json: async () => ({ version: 'r101.bbbbbbb' }) };
+			throw new Error(`unexpected fetch: ${url}`);
+		});
+		await vi.advanceTimersByTimeAsync(1500);
+		await done;
+
+		expect(reloadSpy).toHaveBeenCalledOnce();
+	});
+
 	it('surfaces a failed restart command instead of waiting out the full 2 minutes', async () => {
 		const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
 
