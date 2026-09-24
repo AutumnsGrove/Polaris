@@ -60,6 +60,8 @@ export class ConstellationState {
 	mapError = $state(false);
 	weaverThreadsLoaded = $state(false);
 	weaverThreadsError = $state(false);
+	weekLoaded = $state(false);
+	weekError = $state(false);
 	statsLoaded = $state(false);
 	statsError = $state(false);
 	configLoaded = $state(false);
@@ -140,11 +142,23 @@ export class ConstellationState {
 	}
 
 	async loadWeek() {
+		this.weekLoaded = false;
+		this.weekError = false;
 		try {
 			const res = await fetch('/api/constellation/week');
-			this.weekItems = res.ok ? ((await res.json()) as ConstellationWeekItem[]) : [];
+			if (!res.ok) throw new Error('week fetch failed');
+			this.weekItems = (await res.json()) as ConstellationWeekItem[];
 		} catch {
-			this.weekItems = [];
+			// Leave weekItems as whatever was already loaded, same
+			// "don't clear good data on a transient failure" reasoning as
+			// loadLibrary above — this was the one loader in this class
+			// missing the Loaded/Error flag pair every sibling has, which
+			// meant a failed fetch here was silently indistinguishable from
+			// a real "nothing happened this week", and there was no loading
+			// state at all.
+			this.weekError = true;
+		} finally {
+			this.weekLoaded = true;
 		}
 	}
 

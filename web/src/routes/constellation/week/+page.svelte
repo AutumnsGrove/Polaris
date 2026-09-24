@@ -39,7 +39,11 @@
 </p>
 
 <div class="content">
-	{#if constellationState.weekItems.length === 0}
+	{#if !constellationState.weekLoaded}
+		<p class="constellation-empty">Loading…</p>
+	{:else if constellationState.weekError && constellationState.weekItems.length === 0}
+		<p class="constellation-empty">Couldn't load this week's activity — check your connection and try again.</p>
+	{:else if constellationState.weekItems.length === 0}
 		<p class="constellation-empty">Nothing yet this week.</p>
 	{:else}
 		<div class="week-list">
