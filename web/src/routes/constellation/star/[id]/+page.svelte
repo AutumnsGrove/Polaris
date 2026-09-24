@@ -138,7 +138,15 @@
 	}
 
 	function handleReverted(star: Star) {
-		if (!detail) return;
+		// showHistory isn't reset by load() (see its own effect above), so
+		// the modal can stay open across a navigation to a different star
+		// while its own revert() call is still in flight — by the time it
+		// resolves and calls this, `detail` may already belong to a
+		// different star than the one that was actually reverted. Star
+		// identity is the natural staleness check here (unlike loadSeq,
+		// which this callback has no direct access to): a genuine revert
+		// always returns the same star id it was called with.
+		if (!detail || detail.star.id !== star.id) return;
 		detail = { ...detail, star };
 		versionCount += 1;
 	}
