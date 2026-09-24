@@ -38,6 +38,17 @@ const wizardSessionTTL = 30 * time.Minute
 type wizardSession struct {
 	history   []llm.ChatMessage
 	createdAt time.Time
+	// busy is true while a turn on this session is actually running
+	// agent.Run — checked and set together under s.wizardMu in
+	// handleWizardTurn, same "reject rather than race" shape ws.go's own
+	// `current != nil` check uses for a connection's in-flight turn. Without
+	// it, handleWizardTurn used to read session.history, release the lock
+	// for the (possibly slow) agent.Run call, then write the result back —
+	// two concurrent turns on the same session_id (a double-submit; the
+	// frontend disabling its own button is a courtesy, not a guarantee, same
+	// caveat ws.go's own doc comment makes) would both start from the same
+	// history and the second write would silently clobber the first's turn.
+	busy bool
 	// dailyBlockTitle: set for a Pulsar Daily block-instruction interview
 	// (see wizardStartRequest.DailyBlockTitle) and carried across every
 	// turn in this session, since only the start request actually
@@ -142,6 +153,14 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		delete(s.wizardSessions, req.SessionID)
 		ok = false
 	}
+	if ok && session.busy {
+		s.wizardMu.Unlock()
+		http.Error(w, "a response is already in progress for this wizard session — please wait for it to finish", http.StatusConflict)
+		return
+	}
+	if ok {
+		session.busy = true
+	}
 	s.wizardMu.Unlock()
 	if !ok {
 		http.Error(w, "this wizard session has expired — start over", http.StatusGone)
@@ -149,15 +168,19 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.runWizardTurn(r.Context(), session.history, message, session.dailyBlockTitle, session.isCustomDailyBlock)
+
+	s.wizardMu.Lock()
+	session.busy = false
+	if err == nil {
+		session.history = result.history
+	}
+	s.wizardMu.Unlock()
+
 	if err != nil {
 		log.Warn("pulsar wizard turn failed", "session", req.SessionID, "err", err)
 		http.Error(w, "the wizard hit an error — try again", http.StatusInternalServerError)
 		return
 	}
-
-	s.wizardMu.Lock()
-	session.history = result.history
-	s.wizardMu.Unlock()
 
 	writeJSON(w, wizardResponse{SessionID: req.SessionID, Question: result.question, Final: result.final, Answer: result.answer})
 }
