@@ -103,7 +103,13 @@ export class ConstellationState {
 		try {
 			this.inboxStars = await fetchSection('inbox');
 		} catch {
-			this.inboxStars = [];
+			// Leave inboxStars as whatever was already loaded — same
+			// reasoning as loadLibrary's catch above. Clearing it here used
+			// to make a revisit's failed refresh show "0 proposed" in the
+			// header (routes/constellation/inbox/+page.svelte reads
+			// inboxStars.length unconditionally) right next to the "couldn't
+			// load" error message, instead of the real, still-accurate count
+			// from the last successful load.
 			this.inboxError = true;
 		} finally {
 			this.inboxLoaded = true;
