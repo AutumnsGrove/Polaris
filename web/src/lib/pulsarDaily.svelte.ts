@@ -66,12 +66,27 @@ export class PulsarDailyState {
 		}
 	}
 
+	// Bumped at the top of every loadEdition call — +page.svelte's
+	// goPrevious/goNext/goToday each await this and then read this.edition/
+	// editionState straight back off, with nothing stopping a second call
+	// from starting before the first resolves (a fast click on one nav
+	// button, then another, before the page's own re-render disables
+	// anything). Without this, whichever fetch happened to resolve LAST
+	// won regardless of which was requested last — e.g. Previous (slow,
+	// fetching yesterday) then Today (fast, fetching latest) could still
+	// have Previous's now-stale response land afterward and silently snap
+	// the view back to yesterday moments after Today already resolved.
+	// Same pattern as search.svelte.ts's searchSeq / AppState's various
+	// seq guards elsewhere in this codebase.
+	private editionSeq = 0;
+
 	// loadEdition fetches "latest", a specific "YYYY-MM-DD", or the
 	// edition strictly before/after one (for the "← Previous"/"Next →"
 	// nav — via LatestDailyEdition/NextDailyEdition's semantics, which
 	// correctly skip a missed day rather than 404ing on it).
 	async loadEdition(date: string, mode: 'exact' | 'before' | 'after' = 'exact') {
 		this.editionState = 'loading';
+		const seq = ++this.editionSeq;
 		const path =
 			mode === 'before'
 				? `/api/pulsar/daily/editions/${date}/previous`
@@ -80,6 +95,7 @@ export class PulsarDailyState {
 					: `/api/pulsar/daily/editions/${date}`;
 		try {
 			const res = await fetch(path);
+			if (seq !== this.editionSeq) return; // superseded by a newer nav
 			if (res.status === 404) {
 				this.edition = null;
 				this.editionState = 'not-found';
@@ -91,8 +107,10 @@ export class PulsarDailyState {
 				return;
 			}
 			this.edition = (await res.json()) as PulsarDailyEdition;
+			if (seq !== this.editionSeq) return; // superseded while decoding the body
 			this.editionState = 'loaded';
 		} catch {
+			if (seq !== this.editionSeq) return;
 			// A rejected fetch() (offline/DNS/TLS) previously left
 			// editionState stuck at 'loading' forever — the initial
 			// Promise.all in /daily's onMount had no catch, so a failed
