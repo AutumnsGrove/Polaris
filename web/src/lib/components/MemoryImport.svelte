@@ -56,12 +56,15 @@
 	async function submitImport() {
 		const text = dump.trim();
 		if (!text || appState.settings.importBusy) return;
-		await appState.settings.importMemories(text);
-		// Cleared only on success (importMessage set, dump survives a
-		// failed attempt) — losing a long pasted dump to a network hiccup
-		// would mean re-copying it from wherever it came from all over
-		// again.
-		if (appState.settings.importMessage) {
+		const ok = await appState.settings.importMemories(text);
+		// Cleared only on a genuine success, not on whether importMessage
+		// happens to be non-empty — that's an LLM-generated summary and
+		// could in principle come back empty on a real success, which used
+		// to look identical to a failure and leave the dump sitting there.
+		// Losing a long pasted dump to a network hiccup would mean
+		// re-copying it from wherever it came from all over again, so a
+		// real failure still preserves it.
+		if (ok) {
 			dump = '';
 			attachedFilename = '';
 		}

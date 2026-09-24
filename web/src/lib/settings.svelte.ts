@@ -708,7 +708,14 @@ export class SettingsState {
 	// gateway/memory_import.go's handleMemoryImport) and returns a summary
 	// plus the fully refreshed list, same response shape
 	// sendMemoryInstruction gets from its own endpoint.
-	async importMemories(dump: string) {
+	// Returns whether the import actually succeeded — MemoryImport.svelte
+	// uses this (not importMessage's truthiness) to decide whether to clear
+	// the pasted dump, since the server's own summary is LLM-generated and
+	// could in principle come back as an empty string on a genuine success
+	// (the model's final reply having no text), which would otherwise look
+	// identical to a failure and leave a successfully-imported dump sitting
+	// in the box.
+	async importMemories(dump: string): Promise<boolean> {
 		this.importBusy = true;
 		this.importMessage = '';
 		try {
@@ -719,13 +726,15 @@ export class SettingsState {
 			});
 			if (!res.ok) {
 				this.importMessage = "Couldn't parse that — try pasting the whole export again.";
-				return;
+				return false;
 			}
 			const data = await res.json();
 			this.importMessage = data.message ?? '';
 			this.memories = data.memories ?? this.memories;
+			return true;
 		} catch {
 			this.importMessage = 'Could not reach the server — try again.';
+			return false;
 		} finally {
 			this.importBusy = false;
 		}
