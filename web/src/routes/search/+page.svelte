@@ -111,7 +111,11 @@
 		localRankOverrides = { ...localRankOverrides, [r.url]: state };
 
 		const ok = await searchState.setDomainRanking(domain, state);
-		if (!ok) {
+		// Only revert if nothing newer (a second click on this same result
+		// before this request resolved) has already moved the override past
+		// what this call set — otherwise a slow, now-stale failure would
+		// stomp a later, possibly-already-succeeded choice.
+		if (!ok && localRankOverrides[r.url] === state) {
 			// Revert — don't leave the UI showing a state that isn't actually
 			// persisted, since the whole point of this control is that it
 			// applies everywhere search happens, not just visually here.

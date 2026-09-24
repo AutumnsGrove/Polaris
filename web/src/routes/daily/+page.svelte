@@ -195,11 +195,24 @@
 	// do about it until the user moves on anyway.
 	let atEarliestEdition = $state(false);
 
+	// pulsarDailyState.loadEdition's own editionSeq guard protects its
+	// *store* fields (.edition/.editionState) from a stale response, but
+	// each nav function below also writes local state (viewedDate,
+	// atEarliestEdition) after its own await — with nothing tying that
+	// write back to whichever nav click actually issued it. navSeq closes
+	// that gap: a superseded call's post-await code bails out instead of
+	// re-deriving local state from whatever the *winning* call already
+	// left behind (e.g. a stale double-click on Previous re-clearing an
+	// atEarliestEdition a newer, faster-resolving call had just set).
+	let navSeq = 0;
+
 	async function goPrevious() {
 		if (!viewedDate) return;
+		const mySeq = ++navSeq;
 		const priorEdition = pulsarDailyState.edition;
 		const priorDate = viewedDate;
 		await pulsarDailyState.loadEdition(viewedDate, 'before');
+		if (mySeq !== navSeq) return; // superseded by a newer nav click
 		if (pulsarDailyState.edition) {
 			viewedDate = pulsarDailyState.edition.date;
 			atEarliestEdition = false;
@@ -220,13 +233,17 @@
 	// after this one" query existed to walk forward one step at a time).
 	async function goNext() {
 		if (!viewedDate || viewedDate === latestDate) return;
+		const mySeq = ++navSeq;
 		await pulsarDailyState.loadEdition(viewedDate, 'after');
+		if (mySeq !== navSeq) return;
 		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
 		atEarliestEdition = false;
 	}
 
 	async function goToday() {
+		const mySeq = ++navSeq;
 		await pulsarDailyState.loadEdition('latest');
+		if (mySeq !== navSeq) return;
 		if (pulsarDailyState.edition) viewedDate = pulsarDailyState.edition.date;
 		atEarliestEdition = false;
 	}
