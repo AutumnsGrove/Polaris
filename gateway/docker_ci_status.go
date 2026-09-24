@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -108,12 +109,19 @@ func publishWorkflowInProgress(ctx context.Context, token string) (bool, error) 
 		return false, fmt.Errorf("github actions api status %d", resp.StatusCode)
 	}
 
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
+	if err != nil {
+		return false, fmt.Errorf("reading workflow runs response: %w", err)
+	}
+	if len(respBody) > maxAPIResponseBytes {
+		return false, fmt.Errorf("workflow runs response exceeds %d byte limit", maxAPIResponseBytes)
+	}
 	var body struct {
 		WorkflowRuns []struct {
 			Status string `json:"status"` // "queued" | "in_progress" | "completed"
 		} `json:"workflow_runs"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(respBody, &body); err != nil {
 		return false, fmt.Errorf("decoding workflow runs response: %w", err)
 	}
 	if len(body.WorkflowRuns) == 0 {

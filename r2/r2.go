@@ -43,6 +43,14 @@ const (
 // brave/parallel/tavily's clients send.
 const unsignedPayload = "UNSIGNED-PAYLOAD"
 
+// maxResponseBytes bounds how much of an error body or list response this
+// package ever buffers in memory — same local-constant convention as
+// brave/parallel/tavily's own copies. Deliberately not applied to
+// Download's actual object body (see that method's own streaming-to-disk
+// comment) — this only covers the small, bounded-by-nature responses:
+// R2's own error messages and a bucket listing's XML.
+const maxResponseBytes = 10 << 20 // 10MB
+
 // Client talks to a single R2 bucket over its S3-compatible API. Construct
 // with NewClient, which returns nil if any required field is empty —
 // callers check for nil to know whether R2 mirroring is configured at all,
@@ -125,7 +133,7 @@ func (c *Client) Upload(ctx context.Context, key, path string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		return fmt.Errorf("r2 upload failed (status %d): %s", resp.StatusCode, string(body))
 	}
 	return nil
@@ -146,7 +154,7 @@ func (c *Client) Download(ctx context.Context, key, destPath string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		return fmt.Errorf("r2 download failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -192,7 +200,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		return fmt.Errorf("r2 delete failed (status %d): %s", resp.StatusCode, string(body))
 	}
 	return nil
@@ -220,10 +228,13 @@ func (c *Client) List(ctx context.Context) ([]Object, error) {
 		if err != nil {
 			return nil, fmt.Errorf("r2 list request failed: %w", err)
 		}
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 		resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("reading r2 list response: %w", err)
+		}
+		if len(body) > maxResponseBytes {
+			return nil, fmt.Errorf("r2 list response exceeds %d byte limit", maxResponseBytes)
 		}
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("r2 list failed (status %d): %s", resp.StatusCode, string(body))

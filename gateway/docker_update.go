@@ -8,12 +8,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// maxAPIResponseBytes bounds how much of a third-party API response this
+// package ever buffers in memory — same convention as tools/registry.go's
+// constant of the same name and brave/parallel/tavily's own local copies
+// (this package can't import tools's without creating an import cycle,
+// since some tools reach into gateway). GHCR and the GitHub Actions API
+// are trusted enough not to abuse this deliberately, but a response this
+// size is never legitimate JSON either way, so there's no reason to trust
+// a Content-Length header over an explicit cap.
+const maxAPIResponseBytes = 10 << 20 // 10MB
 
 // dockerImageRepo is the GHCR repository this build checks for updates
 // against — must match docker-compose.yml's `image:` default
@@ -280,10 +291,17 @@ func ghcrAnonymousToken(ctx context.Context, repo string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token request failed (status %d)", resp.StatusCode)
 	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("reading token response: %w", err)
+	}
+	if len(respBody) > maxAPIResponseBytes {
+		return "", fmt.Errorf("token response exceeds %d byte limit", maxAPIResponseBytes)
+	}
 	var body struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(respBody, &body); err != nil {
 		return "", fmt.Errorf("decoding token response: %w", err)
 	}
 	if body.Token == "" {

@@ -3,10 +3,21 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
 )
+
+// maxAPIResponseBytes bounds how much of the local container's own
+// response this CLI ever buffers in memory — same convention as
+// tools/registry.go's constant of the same name, duplicated locally
+// since that one is unexported. The response here always comes from a
+// Polaris process on 127.0.0.1 that this same codebase controls, so the
+// risk this guards against is remote, but there's still no reason to
+// trust an unbounded Content-Length over an explicit cap for what's
+// always a tiny JSON object in practice.
+const maxAPIResponseBytes = 10 << 20 // 10MB
 
 // dockerLocalBaseURL is where the Docker deployment's own polaris
 // process listens on the host — docker-compose.yml publishes
@@ -50,6 +61,13 @@ func runDockerModeCall(endpoint string) error {
 	}
 	defer resp.Body.Close()
 
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("reading response from %s: %w", url, err)
+	}
+	if len(respBody) > maxAPIResponseBytes {
+		return fmt.Errorf("response from %s exceeds %d byte limit", url, maxAPIResponseBytes)
+	}
 	var body struct {
 		Success        bool   `json:"success"`
 		Log            string `json:"log"`
@@ -57,7 +75,7 @@ func runDockerModeCall(endpoint string) error {
 		AlreadyRunning bool   `json:"already_running"`
 		Restarting     bool   `json:"restarting"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(respBody, &body); err != nil {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 
