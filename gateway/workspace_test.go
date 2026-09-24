@@ -1,11 +1,15 @@
 package gateway
 
 import (
+	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +77,51 @@ func TestHandleGetWorkspaceFile_PathTraversalRejected(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) == "do not serve me" {
 		t.Errorf("path traversal served a file outside the workspace root: %q", string(body))
+	}
+}
+
+// TestHandleGetWorkspaceFile_EncodedTraversalRejected reproduces (pre-fix)
+// and guards against (post-fix) a real path traversal: the old check
+// validated target against `filepath.Join(root, threadID)` — an
+// intermediate "base" itself built from the untrusted threadID, not the
+// real root — so it checked nothing when threadID alone had already
+// escaped root. net/http's own ServeMux collapses a literal ".." path
+// segment before routing (see TestHandleGetWorkspaceFile_PathTraversalRejected),
+// but a percent-encoded "%2e%2e" only decodes to ".." AFTER {thread_id}
+// has already matched it as one opaque segment, bypassing that collapse
+// entirely — confirmed live: GET /api/workspace/%2e%2e/secret.txt served a
+// file one level above the workspace root under the old check. Uses a raw
+// socket, not http.Get, since Go's http.Client may normalize the request
+// URL client-side before ever sending it — this needs to prove the
+// server itself resists a raw, adversarial request line.
+func TestHandleGetWorkspaceFile_EncodedTraversalRejected(t *testing.T) {
+	h := newTestHarness(t, "")
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	setWorkspaceDir(t, h, workspaceDir)
+
+	secretPath := filepath.Join(filepath.Dir(workspaceDir), "secret.txt")
+	if err := os.WriteFile(secretPath, []byte("do not serve me"), 0o644); err != nil {
+		t.Fatalf("writing secret file: %v", err)
+	}
+
+	u, _ := url.Parse(h.srv.URL)
+	attempts := []string{
+		"/api/workspace/%2e%2e/secret.txt",
+		"/api/workspace/..%2fsecret.txt/x",
+		"/api/workspace/foo%2f..%2f..%2fsecret.txt/x",
+		"/api/workspace/%2e%2e%2f%2e%2e%2fsecret.txt/x",
+	}
+	for _, path := range attempts {
+		conn, err := net.Dial("tcp", u.Host)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, u.Host)
+		resp, _ := io.ReadAll(bufio.NewReader(conn))
+		conn.Close()
+		if strings.Contains(string(resp), "do not serve me") {
+			t.Errorf("path %q served the secret file! response:\n%s", path, string(resp))
+		}
 	}
 }
 

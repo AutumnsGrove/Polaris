@@ -45,10 +45,24 @@ func (s *Server) handleGetWorkspaceFile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	base := filepath.Join(cfg.CodeExec.WorkspaceDir, threadID)
-	target := filepath.Join(base, filename)
-	rel, err := filepath.Rel(base, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	// rel is checked against root (the real, trusted workspace directory),
+	// never against the intermediate `filepath.Join(root, threadID)` —
+	// threadID AND filename both come straight from the URL here (unlike
+	// tools/view_image.go's resolveWorkspaceFilePath, where ctx.ThreadID is
+	// always a server-generated UUID and only the relPath half is
+	// attacker-influenced), so validating target against an
+	// attacker-built intermediate base checks nothing: base itself could
+	// already have escaped root via threadID alone (e.g. thread_id
+	// "%2e%2e", which net/http's own ".." path-cleaning does NOT catch —
+	// that only collapses a literal ".." segment in the raw request path,
+	// not a percent-encoded one that decodes to ".." only after routing
+	// matches {thread_id} as a single segment). Confirmed live: GET
+	// /api/workspace/%2e%2e/secret.txt served a file one level above the
+	// workspace root under the old base-relative check.
+	root := cfg.CodeExec.WorkspaceDir
+	target := filepath.Join(root, threadID, filename)
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		http.NotFound(w, r)
 		return
 	}
