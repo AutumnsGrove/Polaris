@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { fly } from 'svelte/transition';
@@ -12,19 +11,27 @@
 	let routineId = $derived(Number(page.params.id));
 	let routine = $derived(pulsarState.routineById(routineId));
 
+	// loadSeq guards against a stale response clobbering a newer one — this
+	// component instance is reused across param changes (see the $effect
+	// below), same reasoning as constellation/star/[id]'s own loadSeq.
+	let loadSeq = 0;
+
 	// Polls while any pulse in this routine's history is still running —
 	// same "no live push for a scheduler-fired turn" gap
 	// appState.threadTurnInProgress exists for on the thread-view side
 	// (see its doc comment), just scoped to a whole list here instead of
 	// one thread.
 	//
-	// onMount's callback here is deliberately synchronous (the loading
-	// itself is kicked off as a detached async call inside it) — an
-	// async onMount callback's return value is a Promise, which Svelte
-	// does NOT treat as a teardown function, only a plain function
-	// return is; returning the cleanup from an async callback would be
-	// silently ignored and leak this interval forever.
-	onMount(() => {
+	// $effect (not onMount) so navigating from one routine's detail page to
+	// another reloads this routine's own pulse history instead of leaving
+	// the previous routine's list on screen — SvelteKit reuses this
+	// component across param changes on the same route, so onMount alone
+	// would only fire once, the same pitfall constellation/star/[id]'s own
+	// doc comment describes.
+	$effect(() => {
+		const id = routineId;
+		const seq = ++loadSeq;
+
 		// Both lists, not just one — the routine being viewed could be
 		// either active or archived (its detail/pulse-history view is
 		// identical either way, per the plan doc's "Routine lifecycle": an
@@ -32,12 +39,14 @@
 		// directly (a reload, a shared link) with nothing preloaded yet.
 		void (async () => {
 			await Promise.all([pulsarState.loadRoutines(), pulsarState.loadArchivedRoutines()]);
-			await pulsarState.loadPulses(routineId);
+			if (seq !== loadSeq) return;
+			await pulsarState.loadPulses(id);
 		})();
 
 		const pollTimer = setInterval(() => {
+			if (seq !== loadSeq) return;
 			if (pulsarState.currentPulses.some((p) => p.in_progress)) {
-				void pulsarState.loadPulses(routineId);
+				void pulsarState.loadPulses(id);
 			}
 		}, 4000);
 
