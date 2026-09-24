@@ -27,6 +27,12 @@ type Client struct {
 	http    *http.Client
 }
 
+// maxResponseBytes bounds a response read from Parallel's API — same
+// "never trust a remote Content-Length header" reasoning tools/web_read.go
+// and friends apply to arbitrary fetched content, applied here to a paid
+// third-party API response instead of assuming it's always small.
+const maxResponseBytes = 10 << 20 // 10MB
+
 // NewClient returns nil if apiKey is empty — callers check for nil to
 // know whether Parallel is configured at all, mirroring
 // tavily.NewClient's optional-dependency pattern.
@@ -122,9 +128,12 @@ func (c *Client) Search(ctx context.Context, query string, maxResults int) (*Sea
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading parallel response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("parallel response exceeds %d byte limit", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("parallel error (status %d): %s", resp.StatusCode, string(body))

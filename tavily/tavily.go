@@ -28,6 +28,14 @@ type Client struct {
 	http    *http.Client
 }
 
+// maxResponseBytes bounds a response read from Tavily's API — same "never
+// trust a remote Content-Length header" reasoning tools/web_read.go and
+// friends apply to arbitrary fetched content, applied here to a paid
+// third-party API response instead of assuming it's always small. Generous
+// enough for a real Extract call's full page content, which is this
+// endpoint's actual purpose, unlike Search's much smaller result listings.
+const maxResponseBytes = 10 << 20 // 10MB
+
 // NewClient returns nil if apiKey is empty — callers check for nil to
 // know whether Tavily is configured at all, mirroring
 // places.NewFoursquareClient's optional-dependency pattern.
@@ -97,9 +105,12 @@ func (c *Client) Extract(ctx context.Context, rawURL string, advanced bool) (tex
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("reading tavily response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return "", fmt.Errorf("tavily response exceeds %d byte limit", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("tavily error (status %d): %s", resp.StatusCode, string(body))
@@ -177,9 +188,12 @@ func (c *Client) Search(ctx context.Context, query string, maxResults int, domai
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading tavily response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("tavily response exceeds %d byte limit", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("tavily error (status %d): %s", resp.StatusCode, string(body))

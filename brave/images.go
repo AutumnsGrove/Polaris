@@ -80,9 +80,12 @@ func (c *Client) SearchImages(ctx context.Context, query string, count int) (*Im
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading brave image search response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("brave image search response exceeds %d byte limit", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brave image search error (status %d): %s", resp.StatusCode, string(body))

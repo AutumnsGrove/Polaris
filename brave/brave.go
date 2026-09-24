@@ -50,6 +50,12 @@ const maxOffset = 9
 // the exact same number rather than two consts drifting apart.
 const MonthlyCap = 1000
 
+// maxResponseBytes bounds a response read from Brave's API — same "never
+// trust a remote Content-Length header" reasoning tools/web_read.go and
+// friends apply to arbitrary fetched content, applied here to a paid
+// third-party API response instead of assuming it's always small.
+const maxResponseBytes = 10 << 20 // 10MB
+
 type Client struct {
 	apiKey  string
 	baseURL string
@@ -145,9 +151,12 @@ func (c *Client) Search(ctx context.Context, query string, offset int) (*SearchR
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading brave response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("brave response exceeds %d byte limit", maxResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brave error (status %d): %s", resp.StatusCode, string(body))
