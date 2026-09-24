@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -366,10 +367,28 @@ func weaverToolClosures(db *store.Store, threadID string) (
 	update func(starID int64, title, summary, body string, tags []string, confidenceClass string, isPersonal *bool, reasoning string) error,
 	link func(starIDA, starIDB int64, reasoning string) error,
 ) {
+	// seenStarsMu guards seenStars against concurrent tool dispatch:
+	// agent.Run's dispatchToolCallsConcurrently fans out every non-
+	// code_exec tool call from one model turn across goroutines (OpenRouter
+	// is asked for parallel_tool_calls: true — see llm/client.go), so two
+	// Weaver tool calls batched in the same turn (e.g. two search_stars, or
+	// search_stars + read_star) hit this map concurrently. An unsynchronized
+	// Go map write under concurrent access is a runtime "fatal error:
+	// concurrent map writes" — unlike a normal panic, that bypasses
+	// dispatchToolCallsConcurrently's own per-call recover() entirely and
+	// crashes the whole process, not just this one shooting star.
+	var seenStarsMu sync.Mutex
 	seenStars := map[int64]bool{}
-	markSeen := func(id int64) { seenStars[id] = true }
+	markSeen := func(id int64) {
+		seenStarsMu.Lock()
+		defer seenStarsMu.Unlock()
+		seenStars[id] = true
+	}
 	requireSeen := func(id int64) error {
-		if !seenStars[id] {
+		seenStarsMu.Lock()
+		seen := seenStars[id]
+		seenStarsMu.Unlock()
+		if !seen {
 			return fmt.Errorf("star_id %d hasn't been looked up in this run yet — call search_stars/read_star on it first", id)
 		}
 		return nil
