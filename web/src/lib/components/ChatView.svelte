@@ -187,6 +187,20 @@
 	}
 
 	async function submit() {
+		// Re-entrancy guard: the send button's own `disabled={uploading}`
+		// only stops a second *click*, but onKeydown below calls submit()
+		// straight from the textarea's Enter handler with no such check.
+		// Without this, a fast second Enter fired while an earlier
+		// attachment upload is still in flight races ahead of it —
+		// appState.send() isn't called (and appState.busy isn't set) until
+		// after the await below, so the second, upload-free submit() can
+		// call send() and flip busy=true first; when the first call's
+		// upload then finishes and it finally calls send(), the this.busy
+		// check there silently drops it — losing the first message and its
+		// attachment, while the accidental second message goes through
+		// instead.
+		if (uploading) return;
+
 		const text = input;
 		const files = attachedFiles;
 		const sttCostUsd = voiceCostUsd;
