@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
-	import { X, Info } from '@lucide/svelte';
+	import { X } from '@lucide/svelte';
 
 	let { onClose }: { onClose: () => void } = $props();
 
@@ -87,15 +87,6 @@
 					<span class="value">{s.stale_streak_count}</span>
 				</div>
 			</div>
-
-			<div class="separate-note">
-				<Info size={15} class="note-icon" />
-				<span>
-					This cost is also counted in the main Usage panel's total, as its own "Pulsar" row —
-					this panel just adds the tool-call/failure-rate/nudge breakdown that one doesn't have
-					room for.
-				</span>
-			</div>
 		{/if}
 	</div>
 </div>
@@ -109,21 +100,5 @@
 		font-size: 13.5px;
 		color: var(--color-text-dim);
 		padding: var(--space-2xl) 0;
-	}
-	.separate-note {
-		display: flex;
-		gap: var(--space-md);
-		padding: var(--space-md);
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		font-size: 11.5px;
-		line-height: 1.5;
-		color: var(--color-text-dim);
-		margin-top: var(--space-lg);
-	}
-	.separate-note :global(.note-icon) {
-		color: var(--color-text-dim);
-		flex-shrink: 0;
 	}
 </style>
