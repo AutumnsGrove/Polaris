@@ -51,10 +51,12 @@
 
 	async function act(action: 'approve' | 'discard') {
 		if (!detail || acting) return;
+		const seq = loadSeq;
 		acting = true;
 		error = '';
 		const result = await constellationState.reviewStar(detail.star.id, action);
 		acting = false;
+		if (seq !== loadSeq) return; // superseded — see submitRefine's doc comment
 		if (result.error) {
 			error = result.error;
 			return;
@@ -64,6 +66,7 @@
 
 	async function submitRefine(text: string) {
 		if (!detail) return { error: 'Star not loaded.' };
+		const seq = loadSeq;
 		const result = await constellationState.reviewStar(detail.star.id, 'refine', text);
 		// Refine deliberately stays on this screen instead of navigating back
 		// to the inbox list (unlike approve/discard in act() above) — the
@@ -73,7 +76,15 @@
 		// directly rather than calling load(), which would flip `loading`
 		// back to true and flash the whole view to "Loading…" for what
 		// should read as an in-place update.
-		if (!result.error) detail = await constellationState.loadStarDetail(detail.star.id);
+		//
+		// seq guard: this component instance is reused across param changes
+		// (see loadSeq's own doc comment) — two sequential awaits here is a
+		// wide window for the user to navigate to a different star and have
+		// this stale response clobber it once it finally resolves.
+		if (!result.error) {
+			const refreshed = await constellationState.loadStarDetail(detail.star.id);
+			if (seq === loadSeq) detail = refreshed;
+		}
 		return { error: result.error };
 	}
 </script>
