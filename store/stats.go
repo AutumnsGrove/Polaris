@@ -344,11 +344,11 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer toolRows.Close()
 	for toolRows.Next() {
 		var source, level string
 		var count int
 		if err := toolRows.Scan(&source, &level, &count); err != nil {
-			toolRows.Close()
 			return nil, err
 		}
 		tool := strings.TrimPrefix(source, "tool.")
@@ -360,7 +360,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err := toolRows.Err(); err != nil {
 		return nil, err
 	}
-	toolRows.Close()
 
 	// provider lives inside the JSON data blob (see gateway/turn.go's
 	// logTurnEvent), same "cheap enough to unmarshal per-row" reasoning as
@@ -378,10 +377,10 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer providerRows.Close()
 	for providerRows.Next() {
 		var dataJSON string
 		if err := providerRows.Scan(&dataJSON); err != nil {
-			providerRows.Close()
 			return nil, err
 		}
 		var d struct {
@@ -397,7 +396,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err := providerRows.Err(); err != nil {
 		return nil, err
 	}
-	providerRows.Close()
 
 	// CodeExecWallTimeMS: call_id (inside the JSON data blob, same as
 	// provider above) pairs a "tool call started" row with its matching
@@ -418,11 +416,11 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer codeExecRows.Close()
 	codeExecStarted := map[string]time.Time{}
 	for codeExecRows.Next() {
 		var message, dataJSON, createdAtStr string
 		if err := codeExecRows.Scan(&message, &dataJSON, &createdAtStr); err != nil {
-			codeExecRows.Close()
 			return nil, err
 		}
 		var d struct {
@@ -451,7 +449,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err := codeExecRows.Err(); err != nil {
 		return nil, err
 	}
-	codeExecRows.Close()
 
 	// Nudge kind lives inside the JSON data blob, not a column — cheap
 	// enough to unmarshal per-row at this data volume rather than reach
@@ -467,10 +464,10 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer nudgeRows.Close()
 	for nudgeRows.Next() {
 		var dataJSON string
 		if err := nudgeRows.Scan(&dataJSON); err != nil {
-			nudgeRows.Close()
 			return nil, err
 		}
 		var d struct {
@@ -491,7 +488,6 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	if err := nudgeRows.Err(); err != nil {
 		return nil, err
 	}
-	nudgeRows.Close()
 
 	compactionQuery := `SELECT COUNT(*) FROM events WHERE source = 'compaction' AND message = 'thread auto-compacted'`
 	compactionArgs := []interface{}{}
