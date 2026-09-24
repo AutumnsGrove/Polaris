@@ -235,9 +235,12 @@ func fetchWeather(ctx context.Context, lat, lon float64, forecastDays int, inclu
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading weather response: %w", err)
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, fmt.Errorf("weather response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("open-meteo error (status %d): %s", resp.StatusCode, string(body))

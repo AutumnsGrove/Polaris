@@ -272,9 +272,12 @@ func dictionaryHTTPGet(ctx context.Context, rawURL string) ([]byte, int, error) 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, 0, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	return body, resp.StatusCode, nil
 }

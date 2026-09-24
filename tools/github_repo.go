@@ -337,9 +337,12 @@ func githubHTTPGet(ctx context.Context, rawURL, token string) ([]byte, http.Head
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading github response: %w", err)
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, nil, fmt.Errorf("github response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -382,9 +385,12 @@ func fetchGitHubReadme(ctx context.Context, owner, repo, token string) (string, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("reading readme response: %w", err)
+	}
+	if len(body) > maxAPIResponseBytes {
+		return "", fmt.Errorf("readme exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("no README found")

@@ -667,9 +667,12 @@ func fetchFromWayback(ctx context.Context, rawURL string, blocklist *search.Bloc
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return "", "", "", "", 0, fmt.Errorf("reading wayback response: %w", err)
+	}
+	if len(body) > maxAPIResponseBytes {
+		return "", "", "", "", 0, fmt.Errorf("wayback response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 
 	var avail struct {

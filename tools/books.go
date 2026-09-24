@@ -457,9 +457,12 @@ func hardcoverQuery(ctx *Context, query string, variables map[string]interface{}
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 
 	var parsed struct {
@@ -991,9 +994,12 @@ func resolveOpenLibraryWork(ctx *Context, title, author string) (*openLibraryWor
 		return nil, fmt.Errorf("resolving book on open library: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("open library status %d", resp.StatusCode)
@@ -1053,9 +1059,12 @@ func fetchOpenLibrarySubjectWorks(ctx *Context, subject string) ([]openLibrarySu
 		return nil, fmt.Errorf("fetching subject %q: %w", subject, err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("open library subject %q status %d", subject, resp.StatusCode)
@@ -1169,9 +1178,12 @@ func fetchOpenLibraryWorkDescription(ctx *Context, workKey string) (string, erro
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return "", err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return "", fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("open library work %q status %d", workKey, resp.StatusCode)

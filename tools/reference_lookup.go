@@ -243,9 +243,12 @@ func referenceHTTPGet(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxAPIResponseBytes {
+		return nil, fmt.Errorf("response exceeds %d byte limit", maxAPIResponseBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))

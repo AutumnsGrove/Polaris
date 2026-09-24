@@ -911,8 +911,8 @@ func fetchDeezerCoverArt(ctx *Context, kind, artist, title string) string {
 		return ""
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes+1))
+	if err != nil || len(body) > maxAPIResponseBytes || resp.StatusCode != http.StatusOK {
 		return ""
 	}
 
