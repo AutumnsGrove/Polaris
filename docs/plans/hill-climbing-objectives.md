@@ -432,15 +432,39 @@ implemented, but nothing left undecided that would block starting.
    patterns, cost tracking, tracking-DB conventions) rather than routing everything through
    `Suite`.
 
-## Remaining implementation-time details (not blocking, decide as they come up)
+## Part 6 — Second Q&A round: implementation details, resolved (2026-09-25)
 
-- Exact per-category split of the ~250 cases.
-- Command name and CLI shape for the new sibling command.
-- Whether `jev/jev.go` needs `Noul`/`Score` question types added (currently only `AskChoice`/
-  Choice exists) — likely yes, at least for a Score-shaped quality tier where Choice's flat option
-  set doesn't fit.
-- Where fixtures/cases live on disk — the original assumption (a gitignored `dev/fixtures/` or
-  similar, since synthetic cases built from real code knowledge may still reference real
-  operator-specific context) still stands unless raised again.
-- Confidence thresholds for Jev-backed checks — tune empirically once real cases exist, same as
-  `verifySource`'s own threshold was tuned from live spikes rather than guessed up front.
+Four of the five previously-deferred details were worth locking now too, while still in planning:
+
+1. **Per-category split of ~250, weighted toward factual/cited:** ~90 factual/cited (Jev-graded
+   correctness + citation support), ~60 format-only (titles/suggestions/compaction), ~60
+   agent-loop behavior (tool-selection + context-rot/compaction fixtures), ~40 injection
+   resistance. Heavier on factual/cited since it's closest to the existing benchmark's own
+   purpose, just running on cheap fixtures instead of live agent turns.
+
+2. **Command: `polaris eval`**, mirroring `polaris benchmark`'s own flag conventions —
+   `--category` in place of `--suite`, plus `--n`/`--seed`/`--db`/`--out` reused as-is per
+   `cmd/benchmark.go`'s existing shape, so it reads as the obvious sibling rather than a
+   differently-flavored tool.
+
+3. **Choice only for v1** — every check identified so far (correctness, citation support,
+   pairwise, format/policy) is naturally a flat multi-choice. `jev/jev.go` stays as-is (only
+   `AskChoice`); adding `Noul`/`Score` support is deferred until a real case actually needs an
+   ordered-tier judgment rather than built speculatively.
+
+4. **Fixtures: committed to the repo**, not gitignored. This actually resolves a tension with Part
+   5 #6's earlier "gitignored, since synthetic cases might reference real operator context"
+   framing — that caveat was written for a mined-from-real-transcripts corpus; since the ~250
+   cases are synthetic-first (deliberately constructed edge cases, not real conversation excerpts),
+   there's nothing personal to protect, and committing them alongside the code they test matches
+   `benchmark/`'s own convention for its bundled fixtures. **One carve-out**: if the tone/style
+   calibration skim of real transcripts (Part 5 #6) pulls in any actual excerpt as a reference
+   case rather than just informing how a synthetic case is written, that specific excerpt should
+   still be handled like real user data (not committed) — the committed-by-default rule is for the
+   synthetic corpus itself, not for anything lifted verbatim from a real conversation.
+
+**Left deliberately open:** confidence thresholds for Jev-backed checks. Unlike the four above,
+this isn't a design choice to debate — it's a number that needs real Jev responses against real
+cases to set sensibly. `verifySource`'s own threshold was tuned the same way, from live spike data
+rather than guessed up front (see `docs/plans/source-verification.md`'s "Live spike results").
+Tune it once the ~250 cases exist and Jev has actually graded them, not before.
