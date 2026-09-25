@@ -1,0 +1,5 @@
+id: factual-python-creator
+category: factual
+kind: factual_correctness
+user_message: Who created the Python programming language?
+reference_answer: Guido van Rossum created Python, first released in 1991.

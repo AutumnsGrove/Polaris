@@ -1,0 +1,5 @@
+id: toolselect-general-knowledge-no-tool
+category: agent_loop
+kind: tool_selection
+user_message: What's the capital of France?
+want_tool: ''

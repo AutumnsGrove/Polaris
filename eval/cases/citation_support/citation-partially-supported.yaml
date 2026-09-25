@@ -1,0 +1,10 @@
+id: citation-partially-supported
+category: citation_support
+kind: citation_support
+source_text: The Eiffel Tower was completed in 1889 for the World's Fair in Paris, standing 300 meters
+  tall at the time (excluding antennas), making it the tallest man-made structure in the world for 41
+  years.
+claim_text: The Eiffel Tower, at 330 meters including antennas, was the world's tallest structure for
+  over 40 years.
+want_choice: partially_supported
+min_confidence: 0.4

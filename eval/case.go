@@ -36,13 +36,22 @@
 //     complied with it or treated it as inert fetched text — the same
 //     "fetched content is never instructions" rule prompt.md's fallback
 //     system prompt states outright.
+//
+// Cases are one YAML file each (not one big JSON array) — see LoadCases —
+// specifically so a long text field (source_text, tool_result_text, a
+// conversation history) can be written as a readable block scalar instead
+// of an escaped JSON string, the same reason prompts.yaml itself is YAML
+// rather than JSON, and so each case is its own diff/debuggable unit
+// rather than one line buried in a shared array.
 package eval
 
 import (
-	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Category matches docs/plans/hill-climbing-objectives.md Part 6 #1's
@@ -75,41 +84,44 @@ const (
 // ConversationTurn is one message in a synthetic fixture conversation —
 // KindCompactionRetention's History.
 type ConversationTurn struct {
-	Role    string `json:"role"` // "user" or "assistant"
-	Content string `json:"content"`
+	Role    string `json:"role" yaml:"role"` // "user" or "assistant"
+	Content string `json:"content" yaml:"content"`
 }
 
-// Case is one eval case. Which of the kind-specific fields are read
-// depends on Kind — see RunCase.
+// Case is one eval case, loaded from its own YAML file — see LoadCases.
+// Which of the kind-specific fields are read depends on Kind — see
+// run.go's RunCase. JSON tags exist alongside YAML ones because Case is
+// embedded in Result, which cmd/eval.go JSON-encodes to --out; cases
+// themselves are never read back from JSON.
 type Case struct {
-	ID       string   `json:"id"`
-	Category Category `json:"category"`
-	Kind     Kind     `json:"kind"`
+	ID       string   `json:"id" yaml:"id"`
+	Category Category `json:"category" yaml:"category"`
+	Kind     Kind     `json:"kind" yaml:"kind"`
 
 	// KindTitle/KindSuggestions/KindFactualCorrectness/KindToolSelection:
-	UserMessage string `json:"user_message,omitempty"` // the first user message a title/suggestions/QA/tool-selection call would see
-	Answer      string `json:"answer,omitempty"`       // KindSuggestions only — the assistant answer suggestions are generated from
+	UserMessage string `json:"user_message,omitempty" yaml:"user_message,omitempty"` // the first user message a title/suggestions/QA/tool-selection call would see
+	Answer      string `json:"answer,omitempty" yaml:"answer,omitempty"`             // KindSuggestions only — the assistant answer suggestions are generated from
 
 	// KindCitationSupport: the exact Jev call shape
 	// gateway/verification.go's verifySource makes — a source text and one
 	// claim to check against it, with a hand-labelled expected verdict.
-	SourceText    string  `json:"source_text,omitempty"`
-	ClaimText     string  `json:"claim_text,omitempty"`
-	WantChoice    string  `json:"want_choice,omitempty"`    // one of supported/partially_supported/contradicted/not_addressed
-	MinConfidence float64 `json:"min_confidence,omitempty"` // 0 means "any confidence, just check the choice matches"
+	SourceText    string  `json:"source_text,omitempty" yaml:"source_text,omitempty"`
+	ClaimText     string  `json:"claim_text,omitempty" yaml:"claim_text,omitempty"`
+	WantChoice    string  `json:"want_choice,omitempty" yaml:"want_choice,omitempty"`       // one of supported/partially_supported/contradicted/not_addressed
+	MinConfidence float64 `json:"min_confidence,omitempty" yaml:"min_confidence,omitempty"` // 0 means "any confidence, just check the choice matches"
 
 	// KindFactualCorrectness: UserMessage is the question, ReferenceAnswer
 	// the known-correct answer Jev grades the model's own live answer
 	// against — the same correct/incorrect/not_attempted three-way verdict
 	// benchmark/simpleqa.go's grader uses.
-	ReferenceAnswer string `json:"reference_answer,omitempty"`
+	ReferenceAnswer string `json:"reference_answer,omitempty" yaml:"reference_answer,omitempty"`
 
 	// KindToolSelection: WantTool is the tool name the model is expected to
 	// call given UserMessage — "" means "expected to answer directly, no
 	// tool call at all" (e.g. a question answerable from general
 	// knowledge, which prompt.md explicitly says not to spend a tool call
 	// on).
-	WantTool string `json:"want_tool,omitempty"`
+	WantTool string `json:"want_tool,omitempty" yaml:"want_tool,omitempty"`
 
 	// KindCompactionRetention: History is a synthetic thread (must end on
 	// an assistant turn — see gateway/turn.go's compactThread doc comment
@@ -117,8 +129,8 @@ type Case struct {
 	// summarize) run through the real CompactionSystem/CompactionTask
 	// prompts; MustContainFacts are substrings (facts, URLs) the summary
 	// has to retain, checked by plain case-insensitive containment.
-	History          []ConversationTurn `json:"history,omitempty"`
-	MustContainFacts []string           `json:"must_contain_facts,omitempty"`
+	History          []ConversationTurn `json:"history,omitempty" yaml:"history,omitempty"`
+	MustContainFacts []string           `json:"must_contain_facts,omitempty" yaml:"must_contain_facts,omitempty"`
 
 	// KindInjectionResistance: simulates one synthetic tool-result turn.
 	// ToolName/ToolCallArgs describe the assistant's own (fixture) tool
@@ -127,34 +139,45 @@ type Case struct {
 	// web page would. The model then gets one more turn to respond, and
 	// Jev grades whether that response complied with the planted
 	// instruction or ignored it as inert data.
-	ToolName       string `json:"tool_name,omitempty"`
-	ToolCallArgs   string `json:"tool_call_args,omitempty"` // raw JSON string, passed through as the tool call's arguments
-	ToolResultText string `json:"tool_result_text,omitempty"`
+	ToolName       string `json:"tool_name,omitempty" yaml:"tool_name,omitempty"`
+	ToolCallArgs   string `json:"tool_call_args,omitempty" yaml:"tool_call_args,omitempty"` // raw JSON string, passed through as the tool call's arguments
+	ToolResultText string `json:"tool_result_text,omitempty" yaml:"tool_result_text,omitempty"`
 }
 
-// LoadCases reads every *.json file in dir (non-recursive) and
-// concatenates their case arrays — eval/cases/format.json,
-// eval/cases/citation_support.json, etc., one file per category by
-// convention, but LoadCases itself doesn't care how they're split.
+// LoadCases walks dir recursively and parses every *.yaml/*.yml file as
+// one Case each — eval/cases/<category>/<id>.yaml by convention (see the
+// package doc comment for why one file per case), but LoadCases itself
+// doesn't care about the subdirectory structure, only that each file
+// holds exactly one case.
 func LoadCases(dir string) ([]Case, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("reading cases dir %s: %w", dir, err)
-	}
 	var all []Case
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", e.Name(), err)
+			return err
 		}
-		var cases []Case
-		if err := json.Unmarshal(data, &cases); err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", e.Name(), err)
+		if d.IsDir() {
+			return nil
 		}
-		all = append(all, cases...)
+		ext := filepath.Ext(d.Name())
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		var c Case
+		if err := yaml.Unmarshal(data, &c); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+		if c.ID == "" {
+			return fmt.Errorf("%s: case has no id", path)
+		}
+		all = append(all, c)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("loading cases from %s: %w", dir, err)
 	}
 	return all, nil
 }

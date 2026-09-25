@@ -29,7 +29,7 @@ var (
 var evalCmd = &cobra.Command{
 	Use:   "eval",
 	Short: "Run the cheap prompt/Jev eval harness (docs/plans/hill-climbing-objectives.md) against committed fixture cases",
-	Long: "Runs a sample of eval/cases/*.json through their own single-prompt or single-Jev-call\n" +
+	Long: "Runs a sample of eval/cases/**/*.yaml through their own single-prompt or single-Jev-call\n" +
 		"pipeline (see eval/run.go) and reports pass/fail — the cheap, repeatable inner loop\n" +
 		"docs/plans/hill-climbing-objectives.md calls for, sitting alongside `polaris benchmark`\n" +
 		"rather than replacing it: benchmark runs a full paid agent turn per question; eval runs one\n" +
@@ -46,7 +46,7 @@ var evalCmd = &cobra.Command{
 
 func init() {
 	evalCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (used only for API keys/URLs)")
-	evalCmd.Flags().StringVar(&evalCasesDir, "cases", "eval/cases", "directory of *.json case files")
+	evalCmd.Flags().StringVar(&evalCasesDir, "cases", "eval/cases", "directory of *.yaml case files, one case per file, searched recursively")
 	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support, factual, agent_loop, injection); omit to run every case")
 	evalCmd.Flags().IntVar(&evalN, "n", 0, "number of cases to sample (0 = run every matching case)")
 	evalCmd.Flags().Int64Var(&evalSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run, pass an explicit value to reproduce one")

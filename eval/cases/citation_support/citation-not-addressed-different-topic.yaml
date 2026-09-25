@@ -1,0 +1,8 @@
+id: citation-not-addressed-different-topic
+category: citation_support
+kind: citation_support
+source_text: Python's asyncio module provides infrastructure for writing single-threaded concurrent code
+  using coroutines, multiplexing I/O access over sockets and other resources.
+claim_text: Go's goroutines are more lightweight than OS threads.
+want_choice: not_addressed
+min_confidence: 0.6

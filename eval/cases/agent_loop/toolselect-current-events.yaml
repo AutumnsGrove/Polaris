@@ -1,0 +1,5 @@
+id: toolselect-current-events
+category: agent_loop
+kind: tool_selection
+user_message: What's the latest news on NASA's Artemis program?
+want_tool: web_search

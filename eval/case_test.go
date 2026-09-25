@@ -8,7 +8,7 @@ func TestLoadCases_RealFixtures(t *testing.T) {
 		t.Fatalf("LoadCases: %v", err)
 	}
 	if len(cases) == 0 {
-		t.Fatal("loaded zero cases from eval/cases — expected the committed format.json/citation_support.json fixtures")
+		t.Fatal("loaded zero cases from eval/cases — expected the committed *.yaml fixtures under its category subdirectories")
 	}
 
 	seen := map[string]bool{}

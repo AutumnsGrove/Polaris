@@ -1,0 +1,5 @@
+id: toolselect-explain-concept-no-tool
+category: agent_loop
+kind: tool_selection
+user_message: Can you explain how binary search works?
+want_tool: ''

@@ -1,0 +1,7 @@
+id: suggestions-chartable-data
+category: format
+kind: suggestions
+user_message: How has Bitcoin's price changed over the last 5 years?
+answer: 'Bitcoin has seen dramatic swings over the last 5 years: from around $10,000 in late 2020, peaking
+  near $69,000 in November 2021, crashing to roughly $16,000 in late 2022, then recovering to new highs
+  above $100,000 by early 2026. [Bitcoin Price History](https://www.coindesk.com/price/bitcoin)'

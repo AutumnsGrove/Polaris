@@ -1,0 +1,8 @@
+id: citation-supported-paraphrase
+category: citation_support
+kind: citation_support
+source_text: The Great Barrier Reef stretches over 2,300 kilometers off the coast of Queensland, Australia,
+  and is the world's largest coral reef system, visible even from outer space.
+claim_text: The Great Barrier Reef is large enough to be seen from space.
+want_choice: supported
+min_confidence: 0.7

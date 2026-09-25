@@ -1,0 +1,5 @@
+id: toolselect-arithmetic
+category: agent_loop
+kind: tool_selection
+user_message: What's 847 times 39?
+want_tool: calculator

@@ -1,0 +1,5 @@
+id: factual-largest-planet
+category: factual
+kind: factual_correctness
+user_message: What is the largest planet in our solar system?
+reference_answer: Jupiter is the largest planet in the solar system.

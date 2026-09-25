@@ -1,0 +1,7 @@
+id: suggestions-largest-dense-llm
+category: format
+kind: suggestions
+user_message: What's the largest dense (non-MoE) LLM ever publicly disclosed?
+answer: 'PaLM, at 540 billion parameters, is the largest publicly disclosed dense (non-mixture-of-experts)
+  language model. Announced by Google in 2022, it was trained on 780 billion tokens across 6144 TPU v4
+  chips. [PaLM: Scaling Language Modeling with Pathways](https://arxiv.org/abs/2204.02311)'

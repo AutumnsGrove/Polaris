@@ -1,0 +1,5 @@
+id: factual-speed-of-light
+category: factual
+kind: factual_correctness
+user_message: What is the speed of light in a vacuum, approximately?
+reference_answer: About 299,792 kilometers per second (roughly 186,000 miles per second).

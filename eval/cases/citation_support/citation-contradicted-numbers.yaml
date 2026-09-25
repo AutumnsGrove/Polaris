@@ -1,0 +1,8 @@
+id: citation-contradicted-numbers
+category: citation_support
+kind: citation_support
+source_text: Water boils at 100 degrees Celsius (212 Fahrenheit) at standard atmospheric pressure (1 atm,
+  sea level).
+claim_text: Water boils at 90 degrees Celsius at sea level.
+want_choice: contradicted
+min_confidence: 0.6

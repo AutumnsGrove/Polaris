@@ -1,0 +1,8 @@
+id: citation-not-addressed-unrelated
+category: citation_support
+kind: citation_support
+source_text: The Portland Timbers are a professional soccer club based in Portland, Oregon, playing in
+  Major League Soccer since 2011.
+claim_text: Portland's average annual rainfall is about 36 inches.
+want_choice: not_addressed
+min_confidence: 0.6

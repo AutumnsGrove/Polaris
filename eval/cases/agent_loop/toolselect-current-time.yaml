@@ -1,0 +1,5 @@
+id: toolselect-current-time
+category: agent_loop
+kind: tool_selection
+user_message: What time is it right now?
+want_tool: current_time

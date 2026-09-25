@@ -1,0 +1,24 @@
+id: compaction-retains-key-facts
+category: agent_loop
+kind: compaction_retention
+history:
+- role: user
+  content: What's the best way to learn Rust as someone who already knows Go?
+- role: assistant
+  content: Since you already know Go, focus on Rust's ownership/borrowing model first — that's the biggest
+    conceptual jump. The official book (https://doc.rust-lang.org/book/) is the standard starting point.
+    Rustlings (https://github.com/rust-lang/rustlings) gives hands-on exercises. Once ownership clicks,
+    the rest (traits, generics, error handling with Result) will feel familiar coming from Go's interfaces
+    and explicit error returns.
+- role: user
+  content: Is there a good project idea to practice with?
+- role: assistant
+  content: A CLI tool is a good first project — something like a simple grep clone or a todo-list manager.
+    It forces you to deal with ownership around string slices and error handling early, without the added
+    complexity of async or web frameworks. Once comfortable, a small web server with axum (https://github.com/tokio-rs/axum)
+    is a natural next step.
+must_contain_facts:
+- doc.rust-lang.org/book
+- rustlings
+- ownership
+- axum

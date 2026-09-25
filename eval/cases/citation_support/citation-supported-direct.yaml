@@ -1,0 +1,8 @@
+id: citation-supported-direct
+category: citation_support
+kind: citation_support
+source_text: Zig 0.16.0 was released on September 2026. Major changes include I/O as an Interface, a new
+  ELF linker, and LLVM 21 support.
+claim_text: Zig 0.16.0 introduces I/O as an Interface.
+want_choice: supported
+min_confidence: 0.7

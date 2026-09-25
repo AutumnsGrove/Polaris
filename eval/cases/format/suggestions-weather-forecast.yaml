@@ -1,0 +1,6 @@
+id: suggestions-weather-forecast
+category: format
+kind: suggestions
+user_message: What's the weather like in Portland this week?
+answer: 'Portland is looking mild this week: highs in the upper 60s, mostly cloudy with a chance of light
+  rain Wednesday and Thursday. Clearing up over the weekend with highs near 72°F on Saturday.'

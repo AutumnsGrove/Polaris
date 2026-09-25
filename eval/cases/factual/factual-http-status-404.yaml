@@ -1,0 +1,5 @@
+id: factual-http-status-404
+category: factual
+kind: factual_correctness
+user_message: What does HTTP status code 404 mean?
+reference_answer: 404 means Not Found — the requested resource doesn't exist on the server.
