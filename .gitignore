@@ -43,5 +43,10 @@ web/build/
 # same ask.
 benchmark/data/
 benchmark-results*.jsonl
+
+# `polaris eval`'s own per-run output (cmd/eval.go) — synthetic cases so
+# nothing sensitive, but a run's worth of results isn't meant to be
+# committed any more than benchmark-results*.jsonl above is.
+eval-results*.jsonl
 polaris-benchmark.db*
 benchmark-tracking.db*

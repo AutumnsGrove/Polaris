@@ -1,0 +1,66 @@
+[
+  {
+    "id": "title-boiling-point",
+    "category": "format",
+    "kind": "title",
+    "user_message": "What's the boiling point of water at sea level?"
+  },
+  {
+    "id": "title-two-part-question",
+    "category": "format",
+    "kind": "title",
+    "user_message": "What's the news in Smyrna GA today? And what's the weather looking like this week?"
+  },
+  {
+    "id": "title-weaver-merge-instruction",
+    "category": "format",
+    "kind": "title_weaver",
+    "user_message": "merge the Framework 13 and ThinkPad stars, they're basically the same taste profile"
+  },
+  {
+    "id": "title-weaver-review-instruction",
+    "category": "format",
+    "kind": "title_weaver",
+    "user_message": "what are the main stars about"
+  },
+  {
+    "id": "title-long-rambling-question",
+    "category": "format",
+    "kind": "title",
+    "user_message": "so i've been thinking about switching from my current apartment to a new one across town but the commute would be longer, roughly how much would that add to my yearly gas costs if i drive a 2019 honda civic and the round trip is about 22 miles longer each way"
+  },
+  {
+    "id": "title-single-word",
+    "category": "format",
+    "kind": "title",
+    "user_message": "koalas"
+  },
+  {
+    "id": "suggestions-largest-dense-llm",
+    "category": "format",
+    "kind": "suggestions",
+    "user_message": "What's the largest dense (non-MoE) LLM ever publicly disclosed?",
+    "answer": "PaLM, at 540 billion parameters, is the largest publicly disclosed dense (non-mixture-of-experts) language model. Announced by Google in 2022, it was trained on 780 billion tokens across 6144 TPU v4 chips. [PaLM: Scaling Language Modeling with Pathways](https://arxiv.org/abs/2204.02311)"
+  },
+  {
+    "id": "suggestions-weather-forecast",
+    "category": "format",
+    "kind": "suggestions",
+    "user_message": "What's the weather like in Portland this week?",
+    "answer": "Portland is looking mild this week: highs in the upper 60s, mostly cloudy with a chance of light rain Wednesday and Thursday. Clearing up over the weekend with highs near 72°F on Saturday."
+  },
+  {
+    "id": "suggestions-coffee-shops-detroit",
+    "category": "format",
+    "kind": "suggestions",
+    "user_message": "What are some good coffee shops in Detroit?",
+    "answer": "A few well-regarded spots: Roasting Plant Coffee downtown, Lucky Detroit Coffee & Espresso for craft pour-overs, and Cafe Noir if you want a quieter, low-key atmosphere. [A Coffee Drinker's Guide To Detroit](https://sprudge.com/a-coffee-drinkers-guide-to-detroit-138801.html)"
+  },
+  {
+    "id": "suggestions-chartable-data",
+    "category": "format",
+    "kind": "suggestions",
+    "user_message": "How has Bitcoin's price changed over the last 5 years?",
+    "answer": "Bitcoin has seen dramatic swings over the last 5 years: from around $10,000 in late 2020, peaking near $69,000 in November 2021, crashing to roughly $16,000 in late 2022, then recovering to new highs above $100,000 by early 2026. [Bitcoin Price History](https://www.coindesk.com/price/bitcoin)"
+  }
+]
