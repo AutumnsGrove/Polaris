@@ -357,8 +357,7 @@ Each finding should be one specific, well-scoped claim backed by the URLs that a
 	d.Agent.EmptyAnswerRetry = "Your last turn produced no answer and no tool call — you likely spent your " +
 		"whole response reasoning privately without ever committing to output. Stop reasoning silently: " +
 		"either call a tool now if you genuinely need more information, or write out your answer directly " +
-		"starting with \"Explanation:\" right now. Do not repeat the same private reasoning again without " +
-		"producing visible output."
+		"right now. Do not repeat the same private reasoning again without producing visible output."
 
 	d.Agent.QuerySimilarityWarning = "Your last %d search queries were semantically almost identical to each " +
 		"other — rephrasing the same question won't surface anything new. Either answer now with what " +

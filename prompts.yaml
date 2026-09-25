@@ -220,9 +220,8 @@ agent:
   empty_answer_retry: >-
     Your last turn produced no answer and no tool call — you likely spent your whole response
     reasoning privately without ever committing to output. Stop reasoning silently: either call a
-    tool now if you genuinely need more information, or write out your answer directly starting
-    with "Explanation:" right now. Do not repeat the same private reasoning again without producing
-    visible output.
+    tool now if you genuinely need more information, or write out your answer directly right now.
+    Do not repeat the same private reasoning again without producing visible output.
 
   # Sent when several research calls in a row surfaced zero new citations —
   # %d order: consecutive stale calls, then total sources gathered.
