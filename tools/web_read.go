@@ -162,7 +162,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_read: recording tavily usage failed", "url", args.URL, "err", incErr)
 			}
 		}
-		text = tavilyText
+		text = stripBoilerplateLines(tavilyText)
 		title = args.URL
 		fallbackUsed = "tavily (forced)"
 	} else {
@@ -193,7 +193,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 			} else if used >= tavilyMonthlyCap {
 				log.Warn("web_read: tavily monthly cap reached, skipping fallback", "url", args.URL, "used", used, "cap", tavilyMonthlyCap)
 			} else if tavilyText, tErr := ctx.Tavily.Extract(ctx.Ctx, args.URL, true); tErr == nil && !looksEmpty(tavilyText) {
-				text = tavilyText
+				text = stripBoilerplateLines(tavilyText)
 				totalPages = 0
 				err = nil
 				fallbackUsed = "tavily"
@@ -708,6 +708,11 @@ var paywallMarkers = []string{
 	"to continue reading this article",
 	"sign in to continue reading",
 	"register to continue reading",
+	// Medium's actual current paywall label — found live via
+	// docs/plans/hill-climbing-tier1.md's item #2 real-world sanity check;
+	// present verbatim in a real member-only post's Tavily-extracted text,
+	// and not covered by any of the markers above.
+	"member-only story",
 }
 
 func looksLikePaywall(text string) bool {
@@ -725,6 +730,46 @@ func looksLikePaywall(text string) bool {
 // because it only exists after client-side JS runs.
 func looksEmpty(text string) bool {
 	return len(strings.TrimSpace(text)) < minViableExtractedChars
+}
+
+// boilerplateLineMinChars is the length below which a line of Tavily's
+// output is presumed to be site chrome (nav labels, footer menu items,
+// cookie-banner boilerplate) rather than article prose — see
+// stripBoilerplateLines. Found live via docs/plans/hill-climbing-tier1.md's
+// item #2 real-world check: a real Bloomberg article fetched through
+// Tavily's `advanced` extraction came back as 173 lines/5.3KB, almost all
+// one-to-three-word nav labels ("About", "Careers", "### Products"...)
+// repeated twice (mobile+desktop nav blocks), with only 6-7 genuine
+// article sentences buried inside. 80 chars keeps every real sentence
+// found in that sample (all 150+ chars) while cutting the nav lines
+// (nearly all under 40 chars) — deliberately loose rather than tuned
+// tight, since this is filtering already-succeeded content to reduce
+// noise, not gating success/failure the way looksEmpty does.
+const boilerplateLineMinChars = 80
+
+// stripBoilerplateLines drops short lines from raw Tavily output, presumed
+// nav/footer/cookie-banner chrome (see boilerplateLineMinChars). Only
+// meaningful for Tavily's result: fetchAndExtract's own goquery-based path
+// already excludes exactly this via tag removal
+// (doc.Find("script, style, nav, footer, header, ...").Remove(), above) on
+// real HTML structure, which Tavily's already-rendered plain text has no
+// equivalent of — this does the same job at the text-line level instead.
+// Returns raw unchanged if filtering would leave too little to be useful
+// (minViableExtractedChars): this reduces noise in content that already
+// succeeded, it must never turn a real extraction into an empty one.
+func stripBoilerplateLines(raw string) string {
+	lines := strings.Split(raw, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if len(strings.TrimSpace(ln)) >= boilerplateLineMinChars {
+			kept = append(kept, ln)
+		}
+	}
+	filtered := strings.Join(kept, "\n")
+	if len(strings.TrimSpace(filtered)) < minViableExtractedChars {
+		return raw
+	}
+	return filtered
 }
 
 // FilterExtractedText runs a small, cheap LLM pass over already-extracted

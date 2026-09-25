@@ -517,6 +517,41 @@ func TestLooksEmpty(t *testing.T) {
 	}
 }
 
+// TestStripBoilerplateLines_RealBloombergShape mirrors a real Tavily
+// `advanced` extraction of a paywalled Bloomberg article (captured live via
+// docs/plans/hill-climbing-tier1.md's item #2 check): dozens of short nav
+// lines surrounding a couple of genuine article sentences, with no HTML tags
+// left for goquery-style removal to key off since Tavily hands back already-
+// rendered plain text.
+func TestStripBoilerplateLines_RealBloombergShape(t *testing.T) {
+	nav := strings.Repeat("About\nCareers\n### Products\nBloomberg Law\nBloomberg Tax\n", 10)
+	article := "Goldman Sachs Group Inc.'s Lindsay Rosner says the bank's asset management arm is underweight on the biggest artificial intelligence borrowers as a flood of issuance washes over the market.\n" +
+		"\"We believe there will be a lot of hyperscaler issuance,\" Rosner said in a Thursday interview on Bloomberg TV, adding that for that sector at large the firm remains underweight."
+	raw := nav + article + "\n" + nav
+
+	got := stripBoilerplateLines(raw)
+
+	if !strings.Contains(got, "Goldman Sachs") {
+		t.Errorf("stripBoilerplateLines dropped the real article sentence: %q", got)
+	}
+	if strings.Contains(got, "Careers") {
+		t.Errorf("stripBoilerplateLines kept a nav line it should have cut: %q", got)
+	}
+	if len(got) >= len(raw) {
+		t.Errorf("stripBoilerplateLines didn't reduce noise: got %d chars, raw was %d", len(got), len(raw))
+	}
+}
+
+func TestStripBoilerplateLines_KeepsRawWhenFilteringWouldGutIt(t *testing.T) {
+	// A short, legitimate article shouldn't be nuked just because its own
+	// paragraph breaks make some lines land under boilerplateLineMinChars.
+	raw := "Short headline.\n\nA brief update: markets were flat today."
+	got := stripBoilerplateLines(raw)
+	if got != raw {
+		t.Errorf("stripBoilerplateLines(%q) = %q, want unchanged (filtered result would be too short to be useful)", raw, got)
+	}
+}
+
 func TestIsPDF_ByContentType(t *testing.T) {
 	resp := &http.Response{Header: http.Header{"Content-Type": []string{"application/pdf"}}}
 	if !isPDF(resp, "https://example.com/download") {
