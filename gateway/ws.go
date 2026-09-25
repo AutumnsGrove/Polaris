@@ -129,31 +129,83 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// just never touches it.
 	var locationBroker connLocationBroker
 
-	// ghostWorkspaceIDs collects every ghost (Anonymous) thread id seen on
-	// this connection — client-minted (see protocol.go's Anonymous doc
-	// comment), never a server-generated id, since a ghost thread's own
-	// turns all carry the same id from the client's first message onward.
-	// handleTurn's tools.Context still keys code_exec/attachment workspace
-	// directories off this id (turn.go's ThreadID field) even in ghost
-	// mode, since that's a filesystem resource, not a store.Store row —
-	// cleaned up here on connection close instead, best-effort, so a full
-	// incognito session doesn't leave uploaded files/exec output behind
-	// indefinitely. Only appended from this loop's own goroutine, never
-	// read until the deferred cleanup below runs after it returns, so no
-	// locking is needed. A turn's own goroutine can still be running past
-	// that point (see the "Deliberately NOT cancelling `current`" comment
-	// below) — same best-effort tolerance this file already accepts for a
-	// disconnect racing an in-flight turn elsewhere.
-	var ghostWorkspaceIDs []string
+	// ghostThreadIDs collects every still-ghost thread id seen on this
+	// connection — real, server-resolved thread ids now (a ghost thread is
+	// a fully real row from its first turn, see store.go's ghost schema
+	// comment), not the client-minted ones the old design used. Fed by
+	// noteGhostThread, which handleTurn calls once it has resolved this
+	// turn's ghost status (covers both a brand-new ghost thread's creation
+	// turn and every continuation turn, de-duped by id). Feeds two
+	// separate cleanups below: the code_exec/attachment workspace
+	// directory purge (a filesystem resource, not a store.Store row,
+	// so it needs its own cleanup regardless of what happens to the row),
+	// and the new DB delete-sweep for any thread that's still ghost (i.e.
+	// was never promoted) when this connection goes away. Only ever
+	// mutated from this loop's own goroutine, read only after the read
+	// loop below has already returned, so no locking is needed for the
+	// slice itself.
+	var ghostThreadIDs []string
+	noteGhostThread := func(threadID string) {
+		for _, id := range ghostThreadIDs {
+			if id == threadID {
+				return
+			}
+		}
+		ghostThreadIDs = append(ghostThreadIDs, threadID)
+	}
+
+	// connWG tracks every goroutine this connection's turns spawn that can
+	// still be writing to the database after handleTurn itself returns —
+	// the top-level turn goroutine below, plus every detached compaction/
+	// suggestions/verification enrichment handleTurn spawns via
+	// trackBackground. The disconnect-sweep defer below Waits on this
+	// before deleting an abandoned ghost thread, so a still-running write
+	// can never race a delete out from under it (or resurrect a row
+	// moments after it's gone). Tracking is unconditional — every turn on
+	// this connection, not just ghost ones — since a continuation turn's
+	// ghost status isn't known until partway through handleTurn runs;
+	// gating the tracking itself on ghost-ness would be circular. Cost is
+	// negligible: this file's own existing invariant is at most one
+	// top-level turn in flight per connection, so Wait() returns instantly
+	// whenever nothing's outstanding.
+	var connWG sync.WaitGroup
+	trackBackground := func(fn func()) {
+		connWG.Add(1)
+		go func() {
+			defer connWG.Done()
+			fn()
+		}()
+	}
+
+	// Wait out every in-flight write for this connection's ghost threads,
+	// then — for each one still actually tagged ghost (i.e. never
+	// promoted; GetThreadRaw is re-checked here rather than trusting
+	// ghostThreadIDs' membership alone, since a promote could have landed
+	// after the id was first noted) — hard-delete the row and purge its
+	// code_exec/attachment workspace directory (a filesystem resource,
+	// not a store.Store row, so it needs its own cleanup independent of
+	// the DB delete). Checking ghost status before doing either is what
+	// keeps a promoted thread's workspace directory (still live/in-use)
+	// from being deleted out from under it — the DB delete alone is
+	// already race-safe via DeleteThreadPermanently's `ghost = 1`
+	// condition, but os.RemoveAll has no such guard of its own.
 	defer func() {
-		if len(ghostWorkspaceIDs) == 0 {
+		if len(ghostThreadIDs) == 0 {
 			return
 		}
+		connWG.Wait()
 		workspaceDir := s.liveConfig().CodeExec.WorkspaceDir
-		if workspaceDir == "" {
-			return
-		}
-		for _, id := range ghostWorkspaceIDs {
+		for _, id := range ghostThreadIDs {
+			thread, err := s.db.GetThreadRaw(id)
+			if err != nil || !thread.Ghost {
+				continue // promoted (or already gone) — leave it alone entirely
+			}
+			if err := s.db.DeleteThreadPermanently(id); err != nil {
+				log.Warn("failed to delete abandoned ghost thread", "thread", id, "err", err)
+			}
+			if workspaceDir == "" {
+				continue
+			}
 			if err := os.RemoveAll(filepath.Join(workspaceDir, id)); err != nil {
 				log.Warn("failed to clean up ghost thread workspace directory", "thread", id, "err", err)
 			}
@@ -199,19 +251,6 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if msg.Anonymous && msg.ThreadID != "" {
-			alreadySeen := false
-			for _, id := range ghostWorkspaceIDs {
-				if id == msg.ThreadID {
-					alreadySeen = true
-					break
-				}
-			}
-			if !alreadySeen {
-				ghostWorkspaceIDs = append(ghostWorkspaceIDs, msg.ThreadID)
-			}
-		}
-
 		if msg.Type == "location_response" {
 			locationBroker.deliver(msg.UserLocation)
 			continue
@@ -244,9 +283,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			cancelMu.Unlock()
 			s.FinishTurn() // matches the TryStartTurn above — this turn never actually starts
 			log.Warn("rejected a new turn while one was already in flight on this connection", "thread", msg.ThreadID)
-			if !msg.Anonymous {
-				s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
-			}
+			s.db.LogEvent(msg.ThreadID, "warn", "ws", "rejected concurrent turn on the same connection", nil, "")
 			send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "a response is already in progress on this connection — please wait for it to finish"})
 			continue
 		}
@@ -267,7 +304,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		sendID := s.registerTurnSend(send)
 
+		connWG.Add(1)
 		go func(ctx context.Context, cancel context.CancelFunc, msg ClientMessage) {
+			defer connWG.Done()
 			defer cancel()
 			defer s.FinishTurn()
 			defer s.unregisterTurnSend(sendID)
@@ -294,13 +333,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic in turn goroutine", "thread", msg.ThreadID, "panic", r)
-					if !msg.Anonymous {
-						s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
-					}
+					s.db.LogEvent(msg.ThreadID, "error", "turn", "panic during turn", map[string]interface{}{"panic": fmt.Sprint(r)}, "")
 					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
 				}
 			}()
-			s.handleTurn(ctx, msg, send, requestLocation)
+			s.handleTurn(ctx, msg, send, requestLocation, trackBackground, noteGhostThread)
 		}(turnCtx, cancel, msg)
 	}
 }

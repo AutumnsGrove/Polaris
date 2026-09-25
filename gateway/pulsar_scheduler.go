@@ -307,7 +307,7 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 		if evt.Type == "error" {
 			turnErr = evt.Message
 		}
-	}, nil)
+	}, nil, nil, nil)
 
 	if turnErr != "" {
 		log.Warn("pulsar pulse failed", "routine", r.ID, "name", r.Name, "err", turnErr)

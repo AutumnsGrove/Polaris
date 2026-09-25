@@ -286,19 +286,25 @@ export class AppState {
 	private pendingUserTurn: ChatTurn | null = null;
 	private pendingThreadId: string | null = null;
 	private pendingIsNewThread = false;
-	// True while the in-flight turn belongs to a ghost (Anonymous) session
-	// — see dispatch()'s ghostMode handling and handleEvent's 'done'/
-	// 'user_message' cases, both of which skip their normal
-	// currentThreadId-adoption/sidebar-refresh side effects for one, since
-	// nothing about a ghost thread exists server-side to refresh from.
+	// True while the in-flight turn belongs to a ghost session — see
+	// dispatch()'s ghostMode handling and handleEvent's 'done'/
+	// 'user_message' cases, which skip the sidebar/URL-visible side
+	// effects a still-ghost thread shouldn't trigger (see isGhostThread's
+	// doc comment for why the thread itself is otherwise a fully real,
+	// server-persisted one now).
 	private pendingGhost = false;
-	// This ghost session's own client-minted thread id (see gateway/
-	// protocol.go's Anonymous doc comment) — lazily created by dispatch()
-	// on the session's first message, reused for every later message in
-	// the same session, and reset by newThread(). Deliberately never
-	// assigned to currentThreadId: a ghost thread has no persisted row for
-	// openThread/the sidebar/the URL to ever resolve it against.
-	private ghostThreadId: string | null = null;
+	// True for as long as the currently open thread is still tagged ghost
+	// server-side (see store.go's ghost schema comment) — a ghost thread
+	// is a fully real, persisted thread from its very first turn under
+	// the full-fidelity redesign, just excluded from the sidebar/URL/
+	// chat-search while unpromoted, and it withholds memory/chat_search
+	// tool access for as long as this stays true. Set from the 'done'
+	// handler once a turn resolves, cleared by newThread()/openThread()
+	// (abandoning) and by a successful promote() (see below) — nothing
+	// else needs to touch it, since the server independently re-derives
+	// real ghost status per turn from its own DB row regardless of what
+	// this flag says.
+	isGhostThread = $state(false);
 
 	// startingWeaverThread (issue #94, "Talk to Weaver") is true only for
 	// the brief pre-send window on /constellation/weaver/new: currentThread
@@ -430,11 +436,13 @@ export class AppState {
 			return;
 		}
 
-		// A ghost thread's id never resolves here (openThread's 404 handling
-		// no-ops gracefully) — a dropped/reconnected socket mid-ghost-turn
+		// A still-ghost thread's id 404s through openThread just like a
+		// genuinely missing one (GetThread excludes it — see store.go's
+		// ghost schema comment) — openThread's own 404 handling already
+		// no-ops gracefully, so a dropped/reconnected socket mid-ghost-turn
 		// loses that turn the same way a refresh would, consistent with
-		// ghost mode's "dies on disconnect" design (see gateway/protocol.go's
-		// Anonymous doc comment).
+		// ghost mode's "discarded unless promoted" design (see
+		// gateway/protocol.go's Anonymous doc comment).
 		await this.openThread(threadId);
 		this.busy = false;
 		this.pendingTurn = null;
@@ -722,13 +730,17 @@ export class AppState {
 		});
 		this.currentThreadId = id;
 		this.currentThread = data as Thread;
-		// A stale ghost session's id must never leak into whichever real
+		// A stale ghost session's flag must never leak into whichever
 		// thread is opened next — dispatch()'s stickiness check (see
-		// ghostThreadId's doc comment) would otherwise treat this real,
-		// just-opened thread's very next message as a ghost turn too,
-		// using the OLD session's id. newThread() already resets this for
-		// "start fresh"; opening an existing thread needs the same reset.
-		this.ghostThreadId = null;
+		// isGhostThread's doc comment) would otherwise treat this thread's
+		// very next message as a ghost turn too. Harmless in practice here
+		// (GetThread, which this fetch just succeeded against, already
+		// excludes an unpromoted ghost thread's id — see store.go's ghost
+		// schema comment — so id could never actually BE one), but reset
+		// unconditionally anyway rather than relying on that as the only
+		// guard. newThread() already resets this for "start fresh"; opening
+		// an existing thread needs the same reset.
+		this.isGhostThread = false;
 		this.syncURL(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
@@ -901,9 +913,9 @@ export class AppState {
 		this.promptTokens = 0;
 		this.cacheReadTokens = 0;
 		this.suggestions = [];
-		// A leftover ghost session's own id must never carry over into
-		// whatever's opened next — see ghostThreadId's doc comment.
-		this.ghostThreadId = null;
+		// A leftover ghost session's flag must never carry over into
+		// whatever's opened next — see isGhostThread's doc comment.
+		this.isGhostThread = false;
 		this.startingWeaverThread = false;
 		this.pendingWeaverModel = undefined;
 		this.syncURL(null);
@@ -984,6 +996,27 @@ export class AppState {
 		const res = await fetch(`/api/threads/${id}`);
 		if (!res.ok || this.currentThreadId !== id) return; // stale — navigated away mid-request
 		this.currentThread = (await res.json()) as Thread;
+	}
+
+	// Promotes the currently open ghost thread into a permanent one — see
+	// gateway/threads.go's handlePromoteThread. A one-line UPDATE
+	// server-side (the row/messages/events already exist in full, per
+	// store.go's ghost schema comment), so this just flips the local
+	// isGhostThread flag and refreshes the sidebar/header views that were
+	// withheld while it was still ghost, rather than needing to re-fetch
+	// or reconstruct anything.
+	async promote() {
+		if (!this.currentThreadId || !this.isGhostThread) return;
+		const id = this.currentThreadId;
+		const res = await fetch(`/api/threads/${id}/promote`, { method: 'POST' });
+		if (!res.ok) {
+			this.showToast("Couldn't save this chat — please try again");
+			return;
+		}
+		this.isGhostThread = false;
+		this.syncURL(id);
+		void this.loadThreads();
+		void this.refreshCurrentThreadIfMatches(id);
 	}
 
 	// Writes through a selector change (model/focus mode/deep research/
@@ -1200,34 +1233,18 @@ export class AppState {
 		this.suggestions = [];
 
 		// Ghost mode (issue #67) is sticky for the whole session, not just
-		// whatever this one call happened to pass: this.ghostThreadId being
-		// already set means an earlier message in this same session went
-		// ghost, and every later turn MUST stay ghost too regardless of
-		// which UI control fired it — a real bug caught live, not just a
-		// theoretical one: the follow-up suggestion chips' own click
-		// handler (appState.send(suggestion), ChatView.svelte) never passes
-		// ghostMode at all, so without this, clicking a suggestion mid-
-		// ghost-conversation silently produced a fully persisted turn under
-		// a brand-new real thread id — exactly the kind of leak this whole
-		// feature exists to prevent. newThread() is the only thing that
-		// clears ghostThreadId, so this can't accidentally stay stuck across
-		// an unrelated later session.
-		const isGhost = !!ghostMode || this.ghostThreadId !== null;
-
-		// Mint this session's own client-held thread id the first time it's
-		// used (a ghost thread has no persisted row for the server to
-		// assign one against the way a normal new thread's id comes back),
-		// and build the wire history from this session's own turns array —
-		// everything already on screen, since nothing about a ghost session
-		// is ever fetched back from a thread row the way loadHistory/
-		// openThread normally would. Must run before the push below, which
-		// is this turn's own not-yet-answered pair — those don't belong in
-		// "history so far".
-		let ghostHistory: { role: 'user' | 'assistant'; content: string }[] | undefined;
-		if (isGhost) {
-			if (!this.ghostThreadId) this.ghostThreadId = crypto.randomUUID();
-			ghostHistory = this.turns.map((t) => ({ role: t.role, content: t.content }));
-		}
+		// whatever this one call happened to pass: this.isGhostThread
+		// being already true means an earlier turn on this same thread
+		// went ghost, and every later turn MUST stay ghost too regardless
+		// of which UI control fired it — a real bug caught live, not just
+		// a theoretical one: the follow-up suggestion chips' own click
+		// handler (appState.send(suggestion), ChatView.svelte) never
+		// passes ghostMode at all, so without this, clicking a suggestion
+		// mid-ghost-conversation would silently drop back to a normal
+		// turn. newThread()/openThread() are the only things that clear
+		// isGhostThread, so this can't accidentally stay stuck across an
+		// unrelated later session.
+		const isGhost = !!ghostMode || this.isGhostThread;
 
 		this.turns.push({
 			role: 'user',
@@ -1249,13 +1266,13 @@ export class AppState {
 		// literal that was pushed.
 		this.pendingUserTurn = this.turns[this.turns.length - 2];
 		this.pendingTurn = this.turns[this.turns.length - 1];
-		// A ghost turn's pendingThreadId is this session's own client-minted
-		// id (already known above), not currentThreadId — currentThreadId is
-		// deliberately never set for a ghost session (see ghostThreadId's
-		// doc comment), but handleEvent's "still tracking this turn" gate
-		// (eventThreadId !== pendingThreadId) needs a real, matching id to
-		// compare every streamed event against regardless.
-		this.pendingThreadId = isGhost ? this.ghostThreadId : this.currentThreadId;
+		// A ghost thread now gets a real, server-assigned id exactly like
+		// any other brand-new thread (see store.go's ghost schema comment)
+		// — no client-minted id needed — so this needs no isGhost branch:
+		// null on a brand-new thread (ghost or not), learned from the first
+		// streamed event via the "brand-new thread just learned its id"
+		// block at the top of handleEvent below.
+		this.pendingThreadId = this.currentThreadId;
 		this.pendingIsNewThread = this.currentThreadId === null;
 		this.pendingGhost = isGhost;
 		this.pendingAbandoned = false;
@@ -1269,7 +1286,7 @@ export class AppState {
 
 		this.socket.send({
 			type: 'message',
-			thread_id: (isGhost ? this.ghostThreadId : this.currentThreadId) ?? undefined,
+			thread_id: this.currentThreadId ?? undefined,
 			content,
 			model: modelOverride ?? this.selectedModel,
 			edit_from_id: editFromId,
@@ -1286,7 +1303,6 @@ export class AppState {
 			source,
 			title_seed: titleSeed,
 			anonymous: isGhost || undefined,
-			history: ghostHistory,
 			voice_mode: voiceMode || undefined
 		});
 	}
@@ -1313,9 +1329,13 @@ export class AppState {
 		// which "done" below still gates on stillWatching — so a refresh
 		// partway through the very first answer still reopens this thread
 		// instead of losing it entirely (there'd be no ID to recover by).
+		// Withheld for a ghost turn: the address bar must stay off this
+		// thread's real id for as long as it's still unpromoted (a ghost
+		// thread does have one now — see store.go's ghost schema comment —
+		// it just isn't meant to be individually addressable yet).
 		if (this.pendingIsNewThread && this.pendingThreadId === null && eventThreadId) {
 			this.pendingThreadId = eventThreadId;
-			this.syncURL(eventThreadId);
+			if (!this.pendingGhost) this.syncURL(eventThreadId);
 		}
 
 		// 'suggestions' arrives well after 'done', which already cleared
@@ -1326,13 +1346,7 @@ export class AppState {
 		// directly instead, same as swapVariant/openThread do, and handle
 		// it here before that gate would otherwise drop it.
 		if (e.type === 'suggestions') {
-			// A ghost turn's own thread never becomes currentThreadId (see
-			// ghostThreadId's doc comment), so its own id is checked
-			// separately here — otherwise a ghost session's follow-up
-			// suggestions would always compare false and get silently
-			// dropped, even though the backend still generates and streams
-			// them live (see gateway/turn.go's suggestions goroutine).
-			if (eventThreadId === this.currentThreadId || eventThreadId === this.ghostThreadId) {
+			if (eventThreadId === this.currentThreadId) {
 				this.totalCost += e.cost_usd ?? 0;
 				this.suggestions = e.suggestions ?? [];
 			}
@@ -1344,10 +1358,7 @@ export class AppState {
 		// suggestions (which just replaces a flat list tied to whatever's
 		// most recent) this has to find the *specific* message it belongs
 		// to: the user may have sent another message, or even navigated to
-		// a different thread, by the time it lands. Never fires for a
-		// ghost turn — gateway/turn.go skips the whole verification pass
-		// for one, since there's no persisted message id to attach marks
-		// to, so no ghostThreadId check is needed here.
+		// a different thread, by the time it lands.
 		if (e.type === 'verification') {
 			if (eventThreadId === this.currentThreadId) {
 				const turn = this.turns.find((t) => t.id === e.assistant_message_id);
@@ -1374,9 +1385,10 @@ export class AppState {
 			// instead of waiting for "done", so a brand-new thread appears
 			// (and an existing one jumps to the top) within one round trip
 			// of hitting send, not after the whole answer streams in. Skipped
-			// entirely for a ghost turn — there's no thread row to have been
-			// persisted, and refreshing the sidebar for it would be pure
-			// waste (it could never appear there).
+			// for a ghost turn — the thread row is real now, but still
+			// excluded from ListThreads while unpromoted (see store.go's
+			// ghost schema comment), so refreshing the sidebar for it would
+			// be pure waste (it could never appear there yet).
 			if (!this.pendingGhost) void this.loadThreads();
 			return;
 		}
@@ -1568,25 +1580,13 @@ export class AppState {
 					pendingThreadId: this.pendingThreadId,
 					eventThreadId: e.thread_id
 				});
-				if (wasGhost) {
-					// Ghost mode (issue #67): never adopt this turn's thread
-					// id as currentThreadId, and never refresh variants/the
-					// current thread/the sidebar — none of that exists
-					// server-side for a session that was never persisted
-					// (see gateway/protocol.go's Anonymous doc comment).
-					// currentThreadId staying null (never resolving to the
-					// ghost thread's real id) is exactly what keeps this
-					// session invisible to the sidebar/URL/GetThread — see
-					// stillWatching itself, which would otherwise treat a
-					// ghost turn as "still watching" too and try to adopt it
-					// the same as a real new thread's first turn.
-					this.totalCost += e.cost_usd ?? 0;
-					if (e.context_tokens !== undefined) this.contextTokens = e.context_tokens;
-					this.promptTokens += e.prompt_tokens ?? 0;
-					this.cacheReadTokens += e.cache_read_tokens ?? 0;
-					this.suggestions = [];
-				} else if (stillWatching) {
+				if (stillWatching) {
+					// There's always a real id now, ghost or not — see
+					// store.go's ghost schema comment — so this adopts
+					// unconditionally rather than branching on wasGhost the
+					// way the old client-minted-id design had to.
 					this.currentThreadId = e.thread_id;
+					this.isGhostThread = wasGhost;
 					// ?? 0 guards against a missing cost_usd (e.g. an older
 					// cached frontend bundle talking to a newer backend, or
 					// vice versa) turning totalCost into a sticky NaN that
@@ -1604,33 +1604,40 @@ export class AppState {
 					// 'suggestions' case below and render underneath the
 					// footer that's already visible.
 					this.suggestions = [];
-					// An edit/retry that just finished may have forked a new
-					// variant into existence — ServerEvent carries no
-					// variants field (openThread/swapVariant are the only
-					// other places appState.variants gets set), so without
-					// this the switcher stayed invisible until the thread
-					// was closed and reopened, even though the fork existed
-					// correctly server-side the whole time. Harmless no-op
-					// for a plain send: the variants map just comes back
-					// the same as before.
-					void this.refreshVariants(e.thread_id);
-					// A brand-new thread's first turn (or a first-message
-					// edit) just got its one-time LLM-generated title
-					// persisted server-side (see gateway/turn.go's
-					// isNewThread/isFirstMessageEdit title-gating block) —
-					// but currentThread itself was never populated for this
-					// flow (dispatch()/send() only ever set currentThreadId,
-					// not currentThread; only openThread() does that,
-					// normally on navigating to an *existing* thread). Without
-					// this, ChatView.svelte's header (which reads
-					// appState.currentThread.title, not the sidebar's
-					// already-refreshed `threads` list, to also cover a
-					// pulsar thread the list excludes) silently kept showing
-					// no title at all until the thread was closed and
-					// reopened, even though the real title existed server-side
-					// the whole time. Harmless no-op on every other turn: the
-					// row comes back the same as before.
-					void this.refreshCurrentThreadIfMatches(e.thread_id);
+					// Both of these hit /api/threads/{id}, which 404s for a
+					// still-ghost thread (see store.go's ghost schema
+					// comment) — skipped while ghost rather than firing a
+					// request that could only ever come back empty.
+					if (!wasGhost) {
+						// An edit/retry that just finished may have forked a
+						// new variant into existence — ServerEvent carries no
+						// variants field (openThread/swapVariant are the only
+						// other places appState.variants gets set), so
+						// without this the switcher stayed invisible until
+						// the thread was closed and reopened, even though the
+						// fork existed correctly server-side the whole time.
+						// Harmless no-op for a plain send: the variants map
+						// just comes back the same as before.
+						void this.refreshVariants(e.thread_id);
+						// A brand-new thread's first turn (or a first-message
+						// edit) just got its one-time LLM-generated title
+						// persisted server-side (see gateway/turn.go's
+						// isNewThread/isFirstMessageEdit title-gating block)
+						// — but currentThread itself was never populated for
+						// this flow (dispatch()/send() only ever set
+						// currentThreadId, not currentThread; only
+						// openThread() does that, normally on navigating to
+						// an *existing* thread). Without this,
+						// ChatView.svelte's header (which reads
+						// appState.currentThread.title, not the sidebar's
+						// already-refreshed `threads` list, to also cover a
+						// pulsar thread the list excludes) silently kept
+						// showing no title at all until the thread was closed
+						// and reopened, even though the real title existed
+						// server-side the whole time. Harmless no-op on every
+						// other turn: the row comes back the same as before.
+						void this.refreshCurrentThreadIfMatches(e.thread_id);
+					}
 				}
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;

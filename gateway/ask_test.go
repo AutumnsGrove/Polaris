@@ -254,23 +254,17 @@ func TestHandleAskStream_EmptyContent_ReturnsBadRequest(t *testing.T) {
 	}
 }
 
-// TestHandleAsk_Ghost_PersistsNothingButRecordsCost is the ghost-mode
-// (issue #67) hardening this test guards: setting Anonymous over
-// POST /api/ask must behave exactly like a ghost turn over /ws — the
-// caller still gets back a real answer and a generated ThreadID, but
-// GetThread for that id comes back empty (no thread/message row was ever
-// written) — while the turn's real, billed cost still counts toward the
-// regular Polaris totals via the new ghost_usage table (a ghost thread is
-// an incognito regular chat, not a separate subsystem, so its spend isn't
-// broken out into its own bucket the way Pulsar Daily's is).
-func TestHandleAsk_Ghost_PersistsNothingButRecordsCost(t *testing.T) {
+// TestHandleAsk_Ghost_PersistsAsGhostTaggedThread is the full-fidelity
+// ghost-thread-promotion redesign's hardening test: setting Anonymous over
+// POST /api/ask must behave exactly like a ghost turn over /ws — a fully
+// real thread/message row from the very first turn, just tagged ghost=1,
+// so GetThread (the public, list-safe lookup) still comes back empty for
+// it, but GetThreadRaw and GetMessages show the real persisted content and
+// its cost lands on the thread normally rather than in the historical-only
+// ghost_usage ledger.
+func TestHandleAsk_Ghost_PersistsAsGhostTaggedThread(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "The capital of France is Paris.")
 	h := newTestHarness(t, srv.URL)
-
-	statsBefore, err := h.db.GetStats(0)
-	if err != nil {
-		t.Fatalf("GetStats (before): %v", err)
-	}
 
 	resp, out := postAsk(t, h, AskRequest{Content: "what is the capital of france", Model: "test-model", Anonymous: true})
 
@@ -284,40 +278,37 @@ func TestHandleAsk_Ghost_PersistsNothingButRecordsCost(t *testing.T) {
 		t.Fatal("ThreadID is empty, want a generated thread id even for a ghost turn")
 	}
 	if out.CostUSD <= 0 {
-		t.Errorf("CostUSD = %v, want > 0 — a ghost turn still costs real money, it just isn't tied to a thread", out.CostUSD)
+		t.Errorf("CostUSD = %v, want > 0", out.CostUSD)
 	}
 
 	if _, err := h.db.GetThread(out.ThreadID); err == nil {
-		t.Error("GetThread succeeded for a ghost turn's id, want it to have never been persisted")
+		t.Error("GetThread succeeded for an unpromoted ghost thread's id, want it excluded like a genuinely missing one")
 	}
-	if msgs, err := h.db.GetMessages(out.ThreadID); err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	} else if len(msgs) != 0 {
-		t.Errorf("GetMessages returned %d rows for a ghost thread, want 0", len(msgs))
-	}
-
-	statsAfter, err := h.db.GetStats(0)
+	rawThread, err := h.db.GetThreadRaw(out.ThreadID)
 	if err != nil {
-		t.Fatalf("GetStats (after): %v", err)
+		t.Fatalf("GetThreadRaw: %v", err)
 	}
-	// The whole point: a ghost turn's cost must still land in the regular
-	// totals — both the plain grand total and the Polaris bucket — even
-	// though nothing about the turn itself was ever a thread.
-	if got := statsAfter.TotalCostUSD - statsBefore.TotalCostUSD; got <= 0 {
-		t.Errorf("TotalCostUSD grew by %v, want > 0", got)
+	if !rawThread.Ghost {
+		t.Error("GetThreadRaw's Ghost = false, want true for an unpromoted ghost thread")
 	}
-	if got := statsAfter.CostBySource.Polaris.TotalCostUSD - statsBefore.CostBySource.Polaris.TotalCostUSD; got <= 0 {
-		t.Errorf("CostBySource.Polaris.TotalCostUSD grew by %v, want > 0", got)
+	if rawThread.CostUSD <= 0 {
+		t.Errorf("thread CostUSD = %v, want > 0 — cost should land on the thread like any other, not a separate ledger", rawThread.CostUSD)
+	}
+	msgs, err := h.db.GetMessages(out.ThreadID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Errorf("GetMessages returned %d rows, want 2 (user + assistant)", len(msgs))
 	}
 }
 
-// TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory exercises a
-// second ghost turn on the same (client-tracked) thread id, carrying the
-// first turn's exchange back in History — mirroring how a ghost thread
-// continues over /ws (state.svelte.ts's own client-held transcript, per
-// ClientMessage.History's doc comment), since there's no persisted row
-// this endpoint could otherwise reconstruct a continuation's history from.
-func TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory(t *testing.T) {
+// TestHandleAsk_Ghost_ContinuationStaysGhostUntilPromoted exercises a
+// second turn on the same ghost thread id — a plain continuation, no
+// client-held history needed anymore, since the thread's own persisted
+// row (tagged ghost) is what a continuation now loads history from, same
+// as any other thread.
+func TestHandleAsk_Ghost_ContinuationStaysGhostUntilPromoted(t *testing.T) {
 	srv := fakeLLMServer(t, "any", "Second answer.")
 	h := newTestHarness(t, srv.URL)
 
@@ -327,14 +318,9 @@ func TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory(t *testing.T) {
 	}
 
 	_, second := postAsk(t, h, AskRequest{
-		Content:   "second question",
-		Model:     "test-model",
-		ThreadID:  first.ThreadID,
-		Anonymous: true,
-		History: []GhostTurn{
-			{Role: "user", Content: "first question"},
-			{Role: "assistant", Content: first.Answer},
-		},
+		Content:  "second question",
+		Model:    "test-model",
+		ThreadID: first.ThreadID,
 	})
 
 	if second.ThreadID != first.ThreadID {
@@ -344,6 +330,25 @@ func TestHandleAsk_Ghost_ContinuationReplaysCallerHeldHistory(t *testing.T) {
 		t.Errorf("Answer = %q, want %q", second.Answer, "Second answer.")
 	}
 	if _, err := h.db.GetThread(second.ThreadID); err == nil {
-		t.Error("GetThread succeeded after a ghost continuation, want it to still have never been persisted")
+		t.Error("GetThread succeeded for a still-unpromoted ghost thread, want it excluded")
+	}
+	rawThread, err := h.db.GetThreadRaw(second.ThreadID)
+	if err != nil {
+		t.Fatalf("GetThreadRaw: %v", err)
+	}
+	if !rawThread.Ghost {
+		t.Error("GetThreadRaw's Ghost = false after a plain continuation, want it to still read true off the persisted row")
+	}
+	if msgs, err := h.db.GetMessages(second.ThreadID); err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	} else if len(msgs) != 4 {
+		t.Errorf("GetMessages returned %d rows, want 4 (two turns)", len(msgs))
+	}
+
+	if err := h.db.PromoteGhostThread(second.ThreadID); err != nil {
+		t.Fatalf("PromoteGhostThread: %v", err)
+	}
+	if _, err := h.db.GetThread(second.ThreadID); err != nil {
+		t.Errorf("GetThread failed after promotion: %v, want it to now succeed like any normal thread", err)
 	}
 }

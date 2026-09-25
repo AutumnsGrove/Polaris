@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- the sidebar's pinned Favorites section (see ListThreads). Purely a
 	-- display flag, unrelated to disabled/soft-delete.
 	favorite INTEGER NOT NULL DEFAULT 0,
+	-- ghost: issue #67's ghost/incognito mode. A ghost thread is a fully
+	-- real thread from its very first turn — real messages/events/title/
+	-- cost, nothing special-cased in the persistence path — the only
+	-- differences while this is 1 are: (a) excluded from ListThreads/
+	-- ListThreadsPage/SearchMessages/GetThread/ReadThread, so it doesn't
+	-- look persisted from the UI or a tool's perspective, and (b) memory/
+	-- chat_search/stars/custom-instructions tool access is withheld for
+	-- the turn (see gateway/turn.go's ghost-gated tools.Context wiring).
+	-- POST /api/threads/{id}/promote (PromoteGhostThread) clears this with
+	-- one UPDATE — nothing else needs to change, since every gate above
+	-- re-checks this column fresh each turn rather than trusting anything
+	-- the client says past the thread's creation turn. If a WebSocket
+	-- session ends (disconnect or server crash) while a thread is still
+	-- tagged ghost, the whole row — and its messages/events, via the
+	-- ON DELETE CASCADE FKs below — is hard-deleted instead of soft-
+	-- deleted like disabled above; see DeleteThreadPermanently,
+	-- DeleteAllGhostThreads, and gateway/ws.go's disconnect cleanup.
+	ghost INTEGER NOT NULL DEFAULT 0,
 	-- fork_root_id/fork_at_index/active_variant_id implement message
 	-- variants (editing or regenerating a reply no longer destroys the
 	-- old one — see ForkThread's doc comment for the full model). A
@@ -305,19 +323,18 @@ CREATE TABLE IF NOT EXISTS api_usage (
 	PRIMARY KEY (provider, month)
 );
 
--- ghost_usage is the one thing a ghost-mode (issue #67, Anonymous) turn
--- ever leaves behind. handleTurn skips every other store.Store write for
--- such a turn — no thread/message/event rows, see gateway/turn.go's
--- Anonymous branches — which means a ghost turn's real, billed LLM spend
--- (result.CostUSD, computed exactly the same way as any other turn) had
--- nowhere to land and simply evaporated. This table exists solely to catch
--- that: one row per completed ghost turn, cost_usd and created_at only,
--- deliberately nothing that could identify the thread, its content, or the
--- model used — recording any of that would reintroduce exactly the trail
--- ghost mode exists to avoid. GetStats folds this straight into Polaris's
--- regular cost totals (a ghost thread is an incognito regular chat, not a
--- separate subsystem, so its spend belongs in the same bucket a persisted
--- thread's would have) — see RecordGhostCost and stats.go's GetStats.
+-- ghost_usage is historical-only, as of the full-fidelity ghost-thread
+-- redesign (see the ghost column's schema comment above). It used to be
+-- the one thing a ghost-mode (issue #67) turn ever left behind, back when
+-- handleTurn skipped every other store.Store write for such a turn — no
+-- thread/message/event rows — which meant a ghost turn's real, billed LLM
+-- spend had nowhere else to land. A ghost thread now bills cost through
+-- the normal AddMessage/AddTurnCost path like any other thread, so
+-- nothing writes new rows here anymore; old rows are kept and still
+-- folded into Polaris's regular cost totals by GetStats (a ghost thread
+-- was always an incognito regular chat, not a separate subsystem, so its
+-- spend belongs in the same bucket a persisted thread's would have) — see
+-- RecordGhostCost and stats.go's GetStats.
 CREATE TABLE IF NOT EXISTS ghost_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,
@@ -1073,6 +1090,12 @@ var migrations = []string{
 	// next turn would show a summary the user has already seen.
 	`ALTER TABLE threads ADD COLUMN compacted_pending_notice INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE threads ADD COLUMN compacted_pending_cost REAL NOT NULL DEFAULT 0`,
+	// ghost — see the schema comment above. Appended at the end per this
+	// file's own established rule (positional user_version tracking, never
+	// insert mid-list). An existing thread defaults to "not ghost", which is
+	// right: this flag only ever matters for a brand-new thread's creation
+	// turn going forward.
+	`ALTER TABLE threads ADD COLUMN ghost INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1196,6 +1219,10 @@ type Thread struct {
 	PulsarRoutineID *int64    `json:"pulsar_routine_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	// Ghost mirrors threads.ghost — see its schema comment. Internal-only:
+	// gateway/turn.go reads this off GetThreadRaw to re-derive ghost status
+	// per turn, but it's never sent to the frontend.
+	Ghost bool `json:"-"`
 }
 
 type Message struct {
@@ -1283,6 +1310,78 @@ func (s *Store) CreateThread(id, title, model, source string) error {
 		id, title, model, source,
 	)
 	return err
+}
+
+// CreateGhostThread is CreateThread's ghost-mode twin (issue #67) — same
+// insert, with ghost set to 1 atomically at creation time rather than a
+// second UPDATE after the fact, so there is no window where a ghost
+// thread is briefly a normal, listed one. Kept as its own function
+// instead of adding a `ghost bool` parameter to CreateThread so the
+// existing call sites (gateway/constellation_weaver.go's Weaver threads,
+// which are never ghost) don't need to change.
+func (s *Store) CreateGhostThread(id, title, model, source string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO threads (id, title, model, source, ghost) VALUES (?, ?, ?, ?, 1)`,
+		id, title, model, source,
+	)
+	return err
+}
+
+// PromoteGhostThread clears a thread's ghost flag — the only DB-side
+// effect of "promoting" a ghost session, since the row/messages/events
+// already exist in full (see the ghost column's schema comment).
+// Unconditional (not `AND ghost = 1`), so calling this twice — a
+// double-click, a retried request — is a harmless no-op rather than a
+// confusing second 404.
+func (s *Store) PromoteGhostThread(id string) error {
+	_, err := s.db.Exec(`UPDATE threads SET ghost = 0 WHERE id = ?`, id)
+	return err
+}
+
+// DeleteThreadPermanently hard-deletes a thread iff it is still tagged
+// ghost — the `ghost = 1` condition is what makes this race-free against
+// a concurrent promote with no read-then-write window: either the row is
+// still ghost and this deletes it (messages/events cascade via their
+// existing `ON DELETE CASCADE` FKs), or it was promoted moments earlier
+// and this WHERE matches nothing, leaving the now-permanent thread
+// untouched. Only call this after waiting out any goroutine that might
+// still be writing to this thread — see gateway/ws.go's connWG.
+func (s *Store) DeleteThreadPermanently(id string) error {
+	_, err := s.db.Exec(`DELETE FROM threads WHERE id = ? AND ghost = 1`, id)
+	return err
+}
+
+// DeleteAllGhostThreads hard-deletes every thread still tagged ghost —
+// cmd/run.go's startup sweep for the crash/force-quit case, where the
+// graceful WS-disconnect cleanup (gateway/ws.go) never ran. Returns the
+// deleted ids too, not just a count, so the caller can also clean up
+// their code_exec workspace directories the same way ws.go's own
+// disconnect cleanup does — a leftover ghost thread's workspace dir has
+// no other owner to reclaim it once its row is gone.
+func (s *Store) DeleteAllGhostThreads() ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM threads WHERE ghost = 1`)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if _, err := s.db.Exec(`DELETE FROM threads WHERE ghost = 1`); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // SetThreadConfig writes through a thread's sticky turn config (model,
@@ -1566,18 +1665,19 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 	return indices, rows.Err()
 }
 
-// GetThread looks up a thread by id. A disabled (soft-deleted) thread or a
-// hidden variant (fork_root_id set — see ForkThread) is excluded — same
-// sql.ErrNoRows a caller gets for an id that never existed at all, so a
-// stale tab/bookmark pointed at a deleted thread (or a variant id, which
-// was never meant to be addressable on its own) fails the same way as a
-// bad id. Internal callers that need to read a variant thread directly
-// use GetThreadRaw instead.
+// GetThread looks up a thread by id. A disabled (soft-deleted) thread, a
+// hidden variant (fork_root_id set — see ForkThread), or a still-ghost
+// thread (see the ghost schema comment) is excluded — same sql.ErrNoRows
+// a caller gets for an id that never existed at all, so a stale tab/
+// bookmark pointed at a deleted thread (or an unpromoted ghost session's
+// id, which isn't meant to be individually addressable until promoted)
+// fails the same way as a bad id. Internal callers that need to read a
+// variant or ghost thread directly use GetThreadRaw instead.
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
 		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, created_at, updated_at
-		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, id,
+		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = '' AND ghost = 0`, id,
 	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -1585,17 +1685,19 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 	return &t, nil
 }
 
-// GetThreadRaw looks up any thread by id, including a hidden variant or a
-// disabled one — for internal use (loadHistory, ForkThread) where the id
-// in hand is known to be legitimate (resolved via EffectiveThreadID, not
-// taken from an untrusted request), not the public GetThread's job of
-// rejecting ids that shouldn't be individually addressable.
+// GetThreadRaw looks up any thread by id, including a hidden variant, a
+// disabled one, or a still-ghost one — for internal use (loadHistory,
+// ForkThread, gateway/turn.go's per-turn ghost/Weaver-status read-back)
+// where the id in hand is known to be legitimate (resolved via
+// EffectiveThreadID or the turn's own threadID, not taken from an
+// untrusted request), not the public GetThread's job of rejecting ids
+// that shouldn't be individually addressable.
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, ghost, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.Ghost, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,7 +1729,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	rows, err := s.db.Query(
 		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, created_at, updated_at
 		 FROM threads
-		 WHERE disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
+		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -1826,6 +1928,14 @@ func (s *Store) ReadThread(threadID string) (*ThreadReadResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A still-ghost thread must look entirely absent to this tool, same as
+	// a genuinely missing id — see the ghost schema comment. Otherwise a
+	// normal turn's chat_search/read_thread call could read back a live
+	// incognito session's content if it somehow had the id in hand (e.g.
+	// leaked via an earlier tool result before the session was promoted).
+	if thread.Ghost {
+		return nil, sql.ErrNoRows
+	}
 	msgs, err := s.GetMessages(threadID)
 	if err != nil {
 		return nil, err
@@ -1923,7 +2033,7 @@ func decodeThreadCursor(cursor string) (updatedAtStr, id string, err error) {
 // per-thread context for a model reasoning over "what have I been asking
 // about lately" without a separate query per thread.
 func (s *Store) ListThreadsPage(cursor string) (threads []ThreadSummary, nextCursor string, err error) {
-	where := "disabled = 0 AND fork_root_id = '' AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)"
+	where := "disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)"
 	args := []interface{}{}
 	if cursor != "" {
 		cursorUpdatedAt, cursorID, derr := decodeThreadCursor(cursor)
@@ -2055,6 +2165,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		 JOIN threads root ON root.id = COALESCE(NULLIF(t.fork_root_id, ''), t.id)
 		 WHERE messages_fts MATCH ?
 		   AND root.disabled = 0
+		   AND root.ghost = 0
 		   AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		   AND root.source != 'pulsar'
 		   AND root.source != 'weaver'
@@ -2616,12 +2727,12 @@ func (s *Store) GetAPIUsage(provider string) (int, error) {
 	return count, err
 }
 
-// RecordGhostCost appends one anonymous row for a ghost-mode turn's cost —
-// see ghost_usage's schema comment for why this is the only place that
-// spend survives at all. Called for both a completed turn's total cost and
-// a failed turn's partial spend (gateway/turn.go), since either way real
-// money was billed and a ghost turn has no event log to fall back on the
-// way a normal thread's failure does.
+// RecordGhostCost is historical-only as of the full-fidelity ghost-thread
+// redesign — a ghost thread now bills cost through the normal AddMessage/
+// AddTurnCost path like any other thread (gateway/turn.go no longer calls
+// this), since the row/messages themselves are real from turn one. Old
+// rows are kept and still folded into GetStats' totals (see ghost_usage's
+// schema comment); nothing writes new ones anymore.
 func (s *Store) RecordGhostCost(costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO ghost_usage (cost_usd) VALUES (?)`, costUSD)
 	return err

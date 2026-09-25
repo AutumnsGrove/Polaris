@@ -232,6 +232,30 @@ func (s *Server) handleSwapVariant(w http.ResponseWriter, r *http.Request) {
 	s.handleGetThread(w, r)
 }
 
+// handlePromoteThread clears an unpromoted ghost thread's ghost flag —
+// see store.go's ghost schema comment. The row, its messages, and its
+// events already exist in full (a ghost thread is a fully real thread
+// from its very first turn), so this is a one-line UPDATE, not a
+// reconstruction: nothing else needs to change, since gateway/turn.go
+// re-derives ghost status fresh every turn straight off this column
+// rather than trusting anything the client says past a thread's creation
+// turn. Idempotent (PromoteGhostThread isn't conditioned on ghost = 1),
+// so a double-click or a retried request is a harmless no-op, not a
+// confusing second 404. Responds with the same shape as GetThread, same
+// convention as handleSwapVariant above, so the frontend can adopt the
+// now-permanent thread's state directly from this call.
+func (s *Server) handlePromoteThread(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if err := s.db.PromoteGhostThread(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.db.LogEvent(id, "info", "thread", "ghost thread promoted to permanent", nil, "")
+
+	s.handleGetThread(w, r)
+}
+
 func (s *Server) isKnownVariant(rootID, variantID string) (bool, error) {
 	if variantID == rootID {
 		return true, nil

@@ -1052,6 +1052,268 @@ func TestWebSocket_WeaverThreadContinuation_StaysRestricted(t *testing.T) {
 	}
 }
 
+// TestWebSocket_GhostThread_DisconnectDeletesUnpromotedThread is the
+// hardening test for the full-fidelity ghost-thread-promotion redesign's
+// riskiest new mechanism: connWG's ordering guarantee. It combines
+// TestWebSocket_DisconnectDoesNotTruncateInFlightTurn's "close the socket
+// while the LLM call is genuinely still in flight" setup with a ghost
+// turn, to prove two things at once — the write still completes in full
+// after disconnect (same as any other thread), and only THEN does the
+// thread get hard-deleted, rather than the delete racing (or worse,
+// preceding) the still-in-flight write.
+func TestWebSocket_GhostThread_DisconnectDeletesUnpromotedThread(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isFirst := false
+		once.Do(func() { isFirst = true; close(started) })
+		if isFirst {
+			<-release
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+
+		content := "n/a"
+		if isFirst {
+			content = "Hello, ghost world!"
+		}
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": content}}},
+		})
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		flusher.Flush()
+		fmt.Fprint(w, "data: [DONE]\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "hi", "model": "test-model", "anonymous": true,
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var threadID string
+	for threadID == "" {
+		var evt map[string]interface{}
+		if err := conn.ReadJSON(&evt); err != nil {
+			t.Fatalf("reading events before disconnect: %v", err)
+		}
+		if evt["type"] == "user_message" {
+			threadID, _ = evt["thread_id"].(string)
+		}
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake LLM server never received the request")
+	}
+
+	// The row must already exist, tagged ghost, before disconnect — the
+	// point of this test is what happens to it AFTER, not whether ghost
+	// turns persist at all (see TestHandleAsk_Ghost_PersistsAsGhostTaggedThread
+	// for that).
+	rawThread, err := h.db.GetThreadRaw(threadID)
+	if err != nil {
+		t.Fatalf("GetThreadRaw before disconnect: %v", err)
+	}
+	if !rawThread.Ghost {
+		t.Fatal("thread not tagged ghost before disconnect")
+	}
+
+	conn.Close()
+
+	// The fake LLM handler is still deliberately parked on <-release at
+	// this point — meaning the turn goroutine's AddMessage call hasn't
+	// run yet, and connWG.Wait() inside the disconnect-sweep defer (which
+	// fires the instant conn.Close() makes the server's ReadJSON error)
+	// must therefore still be blocked on it too. Checking state HERE,
+	// deliberately before releasing the LLM call, is what makes the
+	// ordering assertion below non-racy: unlike polling after release is
+	// closed (where the write and the delete can both complete within
+	// microseconds of each other, too fast for any poll interval to
+	// reliably catch the in-between state), this window is held open for
+	// as long as the test wants.
+	time.Sleep(150 * time.Millisecond)
+	if _, err := h.db.GetThreadRaw(threadID); err != nil {
+		t.Fatalf("GetThreadRaw while the write is still genuinely in flight: %v, want the thread to still exist — the disconnect-sweep must not have raced ahead of connWG.Wait()", err)
+	}
+	if msgs, err := h.db.GetMessages(threadID); err != nil {
+		t.Fatalf("GetMessages while the write is still in flight: %v", err)
+	} else if len(msgs) != 1 {
+		t.Fatalf("messages = %+v while the write is still in flight, want exactly 1 (the user message only — the assistant answer hasn't been generated yet)", msgs)
+	}
+
+	close(release) // let the fake LLM server finish streaming the answer
+
+	// Now confirm the thread (and, via cascade, its messages) gets
+	// hard-deleted once connWG.Wait() unblocks and the disconnect-sweep
+	// actually runs — the write completed first (this thread would not
+	// exist at all right now if it hadn't, given the check above), so
+	// this deletion is real cleanup of an unpromoted ghost thread, not a
+	// race against a write that never happened.
+	deadline := time.Now().Add(5 * time.Second)
+	var stillExists bool
+	for time.Now().Before(deadline) {
+		_, err = h.db.GetThreadRaw(threadID)
+		stillExists = err == nil
+		if !stillExists {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if stillExists {
+		t.Error("thread still exists after disconnect, want it hard-deleted since it was never promoted")
+	}
+	if msgs, err := h.db.GetMessages(threadID); err != nil {
+		t.Fatalf("GetMessages after delete: %v", err)
+	} else if len(msgs) != 0 {
+		t.Errorf("GetMessages returned %d rows after the thread was deleted, want 0 (cascade)", len(msgs))
+	}
+}
+
+// TestWebSocket_GhostThread_PromotedSurvivesDisconnect confirms the other
+// side of DeleteThreadPermanently's race-safety: a thread promoted before
+// the connection disconnects must survive, not get swept up by the same
+// cleanup that would have deleted it had it stayed ghost.
+func TestWebSocket_GhostThread_PromotedSurvivesDisconnect(t *testing.T) {
+	srv := fakeLLMServer(t, "any", "Hello, promoted world!")
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "hi", "model": "test-model", "anonymous": true,
+	}); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	last := events[len(events)-1]
+	if last["type"] != "done" {
+		t.Fatalf("last event = %+v, want type=done", last)
+	}
+	threadID, _ := last["thread_id"].(string)
+	if threadID == "" {
+		t.Fatal("done event carried no thread_id")
+	}
+
+	if err := h.db.PromoteGhostThread(threadID); err != nil {
+		t.Fatalf("PromoteGhostThread: %v", err)
+	}
+
+	conn.Close()
+
+	// Give the (now-irrelevant, since nothing in ghostThreadIDs for this
+	// connection is still ghost) disconnect-sweep defer time to run and
+	// confirm it left the now-permanent thread alone.
+	time.Sleep(200 * time.Millisecond)
+
+	thread, err := h.db.GetThread(threadID)
+	if err != nil {
+		t.Fatalf("GetThread after promote+disconnect: %v, want it to survive", err)
+	}
+	if thread.Ghost {
+		t.Error("thread still tagged ghost after promotion")
+	}
+	if msgs, err := h.db.GetMessages(threadID); err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	} else if len(msgs) != 2 {
+		t.Errorf("GetMessages returned %d rows, want 2 (user + assistant), want the promoted thread's content intact", len(msgs))
+	}
+}
+
+// TestWebSocket_GhostThread_RegainsMemoryAndChatSearchOncePromoted is the
+// user-facing follow-up requirement's hardening test: promotion must
+// restore memory/chat_search tool access on the very next turn with zero
+// extra client signaling — the client doesn't need to (and, per
+// protocol.go's Anonymous doc comment, isn't trusted to) tell the server
+// "I'm not ghost anymore" on that next turn; the server re-derives ghost
+// status fresh off the thread's own persisted row every time.
+func TestWebSocket_GhostThread_RegainsMemoryAndChatSearchOncePromoted(t *testing.T) {
+	var mu sync.Mutex
+	var requestBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		requestBodies = append(requestBodies, string(body))
+		mu.Unlock()
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{"delta": map[string]interface{}{"content": "an answer"}}},
+		})
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n", chunk)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: %s\n", `{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`)
+		fmt.Fprint(w, "data: [DONE]\n")
+	}))
+	defer srv.Close()
+
+	h := newTestHarness(t, srv.URL)
+	conn := dialWS(t, h)
+
+	// Turn 1: ghost. Memory is on by default (MemoryEnabledFromStore's
+	// nil-db/unset-setting fallback), so its absence here is entirely
+	// down to ghost gating, not the operator having turned it off.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "hi", "model": "test-model", "anonymous": true,
+	}); err != nil {
+		t.Fatalf("WriteJSON (turn 1): %v", err)
+	}
+	events := readEventsUntilDone(t, conn, 5*time.Second)
+	threadID, _ := events[len(events)-1]["thread_id"].(string)
+	if threadID == "" {
+		t.Fatal("turn 1's done event carried no thread_id")
+	}
+
+	if err := h.db.PromoteGhostThread(threadID); err != nil {
+		t.Fatalf("PromoteGhostThread: %v", err)
+	}
+
+	// Turn 2: a plain continuation — no anonymous field at all, matching
+	// how a real promoted client would behave, though turn.go ignores it
+	// either way for a continuation.
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "message", "content": "follow-up", "model": "test-model", "thread_id": threadID,
+	}); err != nil {
+		t.Fatalf("WriteJSON (turn 2): %v", err)
+	}
+	readEventsUntilDone(t, conn, 5*time.Second)
+
+	mu.Lock()
+	toolSets := toolBearingRequestToolNames(t, requestBodies)
+	mu.Unlock()
+	if len(toolSets) != 2 {
+		t.Fatalf("tool-bearing requests = %d, want exactly 2 (one per turn): %v", len(toolSets), toolSets)
+	}
+	if contains(toolSets[0], "memory") || contains(toolSets[0], "search_chats") {
+		t.Errorf("turn 1 (still ghost) offered tools = %v, want memory/search_chats withheld", toolSets[0])
+	}
+	if !contains(toolSets[1], "memory") {
+		t.Errorf("turn 2 (promoted) offered tools = %v, want memory present", toolSets[1])
+	}
+	if !contains(toolSets[1], "search_chats") {
+		t.Errorf("turn 2 (promoted) offered tools = %v, want search_chats present", toolSets[1])
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

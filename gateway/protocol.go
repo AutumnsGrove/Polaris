@@ -132,24 +132,21 @@ type ClientMessage struct {
 	// scheduler-only, same as the PulsarRoutineID/Name pair above.
 	PulsarPreviousReport   string `json:"-"`
 	PulsarPreviousReportAt string `json:"-"`
-	// Anonymous is the composer's ghost-mode toggle (issue #67) — set only
-	// on a brand-new thread's first message (ghost mode is new-thread-only,
-	// never flipped mid-conversation). When true, handleTurn skips every
-	// store.Store write for this turn (no thread/message/cost/event rows —
-	// see turn.go's Anonymous branches), which also means the turn never
-	// becomes visible to Constellation's Weaver or search_chats, since both
-	// only ever read persisted content. It additionally suppresses the
-	// memory tool and the {custom_instructions} prompt placeholder — see
-	// turn.go's tools.Context construction.
+	// Anonymous is the composer's ghost-mode toggle (issue #67) — trusted
+	// only on a brand-new thread's first message (ghost mode is new-
+	// thread-only, never flipped mid-conversation). A ghost thread is a
+	// fully real thread from that first turn on — real messages/events/
+	// title/cost, nothing skipped — tagged via CreateGhostThread instead
+	// of CreateThread. Every *continuation* turn ignores this field
+	// entirely and re-derives ghost status server-side from the thread's
+	// own persisted `ghost` column (GetThreadRaw) instead, which is what
+	// makes promoting a ghost thread (clearing that column) sufficient on
+	// its own to restore normal behavior with no further client
+	// signaling — see turn.go's `ghost` resolution and store.go's ghost
+	// schema comment. Still suppresses the memory tool and the
+	// {custom_instructions} prompt placeholder for as long as the thread
+	// stays tagged ghost — see turn.go's tools.Context construction.
 	Anonymous bool `json:"anonymous,omitempty"`
-	// History is a ghost thread's own running transcript, held client-side
-	// and replayed on every turn — the server has no persisted row to
-	// reconstruct it from the way loadHistory normally does, since nothing
-	// about a ghost thread is ever written to store.Store. Only meaningful
-	// when Anonymous is true. Same {role, content} shape loadHistory itself
-	// produces (tool calls were never part of persisted/replayed history
-	// either, so this is exact parity, not a reduced approximation).
-	History []GhostTurn `json:"history,omitempty"`
 	// WaitVerification, when true, runs the per-claim "found in source"
 	// pass (see gateway/verification.go) synchronously before handleTurn
 	// returns instead of in its normal detached post-"done" goroutine, and
@@ -160,13 +157,6 @@ type ClientMessage struct {
 	// WebSocket client never sets this — a real chat turn always wants the
 	// non-blocking async path so the answer never stalls behind it.
 	WaitVerification bool `json:"-"`
-}
-
-// GhostTurn is one prior turn of a ghost (Anonymous) thread's client-held
-// transcript — see ClientMessage.History.
-type GhostTurn struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

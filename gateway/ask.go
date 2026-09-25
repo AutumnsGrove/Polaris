@@ -41,21 +41,14 @@ type AskRequest struct {
 	// decodeAskRequest — in which case this is populated automatically
 	// and doesn't need to be set directly.
 	Attachments []AttachmentRef `json:"attachments,omitempty"`
-	// Anonymous mirrors ClientMessage.Anonymous — starts (or continues) a
-	// ghost thread (issue #67): nothing about this turn is persisted
-	// anywhere (no thread/message/event rows), and its real LLM cost is
-	// only ever recorded in aggregate via store.Store's ghost_usage table,
-	// never tied back to this request's thread or content — see
+	// Anonymous mirrors ClientMessage.Anonymous — starts a ghost thread
+	// (issue #67) on a brand-new thread's first message. See
 	// ClientMessage.Anonymous's doc comment in protocol.go for the full
-	// semantics, including why History (below) is required to continue one.
+	// semantics: a ghost thread is a fully real, persisted thread tagged
+	// with a flag, not an unwritten one, so a continuation turn just
+	// passes ThreadID like any other and needs no history replayed by
+	// the caller.
 	Anonymous bool `json:"anonymous,omitempty"`
-	// History mirrors ClientMessage.History — a ghost thread's prior turns,
-	// held and replayed by the caller itself, since nothing about a ghost
-	// thread is ever written to store.Store for this endpoint to load a
-	// continuation's history from the way ThreadID normally does. Only
-	// meaningful when Anonymous is true; ignored otherwise. Omit it (or
-	// leave it empty) on a ghost thread's first message.
-	History []GhostTurn `json:"history,omitempty"`
 	// WaitVerification mirrors ClientMessage.WaitVerification — a debug/
 	// stress-testing knob only, see its doc comment. When true,
 	// AskResponse.Verification carries the full per-claim result
@@ -147,18 +140,6 @@ func (s *Server) decodeAskRequest(w http.ResponseWriter, r *http.Request) (req A
 		Anonymous:        formBool(r, "anonymous"),
 		WaitVerification: formBool(r, "wait_verification"),
 	}
-	// history has no natural multipart form-field shape (it's a list of
-	// {role, content} pairs, not a scalar) — accepted as a JSON-encoded
-	// string under the same field name instead, so a ghost thread that
-	// also wants to attach a file inline isn't forced to give up either
-	// capability.
-	if h := r.FormValue("history"); h != "" {
-		if err := json.Unmarshal([]byte(h), &req.History); err != nil {
-			http.Error(w, "invalid \"history\" field: must be a JSON array of {role,content}", http.StatusBadRequest)
-			return AskRequest{}, false
-		}
-	}
-
 	// r.MultipartForm.File["file"] rather than r.FormFile("file") — the
 	// latter only ever returns the first part under that key, which is
 	// how this stayed single-file-only even after ClientMessage/AskRequest
@@ -242,7 +223,6 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		QuickMode:        req.QuickMode,
 		Attachments:      req.Attachments,
 		Anonymous:        req.Anonymous,
-		History:          req.History,
 		WaitVerification: req.WaitVerification,
 	}
 
@@ -276,7 +256,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		case "error":
 			turnErr = evt.Message
 		}
-	}, nil)
+	}, nil, nil, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	if turnErr != "" {
@@ -360,7 +340,6 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		QuickMode:    req.QuickMode,
 		Attachments:  req.Attachments,
 		Anonymous:    req.Anonymous,
-		History:      req.History,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -408,7 +387,7 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		// chat client already does.
 		_ = enc.Encode(evt)
 		flusher.Flush()
-	}, nil)
+	}, nil, nil, nil)
 	sendMu.Lock()
 	done = true
 	sendMu.Unlock()

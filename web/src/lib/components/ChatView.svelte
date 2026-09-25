@@ -19,6 +19,7 @@
 		MessageCirclePlus,
 		ChevronLeft,
 		Ghost,
+		BookmarkPlus,
 		MicAudioLines
 	} from '@lucide/svelte';
 	import { autoResize } from '$lib/actions/autoResize';
@@ -487,18 +488,17 @@
 	</div>
 	<div class="header-right">
 		{#if appState.turns.length === 0 && !isWeaverThread}
-			<!-- Homepage only — turns.length, not !appState.currentThreadId:
-			     a ghost session (issue #67) never sets currentThreadId at
-			     all (see state.svelte.ts's ghostThreadId doc comment), so
-			     that check alone would keep this row (and the ghost toggle
-			     below) showing for its entire multi-turn conversation
-			     instead of just the empty-composer moment before the first
-			     message, same as a normal thread. Once turns exist, this
-			     row switches to the New-thread/ThreadMenu controls below
-			     instead, so the two never compete for space. Also excluded
-			     for a Weaver session (issue #94) — ghost mode/model
-			     switching are both main-assistant concerns that don't apply
-			     to a tool-driven Weaver turn. -->
+			<!-- Homepage only — gated on turns.length, not
+			     !appState.currentThreadId: a ghost thread DOES get a real
+			     currentThreadId now (see state.svelte.ts's isGhostThread doc
+			     comment), same as any other thread, so that check alone
+			     would let this row and the New-thread/ThreadMenu controls
+			     below both try to render at once for a ghost session's
+			     first turn onward. turns.length is what actually means
+			     "still the empty-composer moment", same as a normal thread.
+			     Also excluded for a Weaver session (issue #94) — ghost
+			     mode/model switching are both main-assistant concerns that
+			     don't apply to a tool-driven Weaver turn. -->
 			<button
 				type="button"
 				class="icon-btn"
@@ -513,7 +513,20 @@
 			</button>
 			<ModeToggle mode="assistant" />
 		{/if}
-		{#if appState.currentThreadId}
+		{#if appState.currentThreadId && appState.isGhostThread}
+			<!-- Still ghost: no ThreadMenu (nothing to rename/favorite/
+			     delete on a thread the sidebar doesn't even show yet — see
+			     store.go's ghost schema comment) — just the one action that
+			     matters, keeping this conversation for good. -->
+			<button
+				class="icon-btn"
+				onclick={() => appState.promote()}
+				title="Save this chat permanently"
+				aria-label="Save this chat permanently"
+			>
+				<BookmarkPlus size={17} />
+			</button>
+		{:else if appState.currentThreadId}
 			<button
 				class="icon-btn"
 				onclick={() => appState.newThread()}

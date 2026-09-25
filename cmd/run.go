@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -84,6 +85,26 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	if err := gateway.PruneOldAttachments(cfg.Attachments.Dir, attachmentMaxAge); err != nil {
 		log.Warn("pruning old attachments failed", "err", err)
+	}
+	// Catches the crash/force-quit case gateway/ws.go's graceful
+	// disconnect cleanup can't: a ghost thread (see store.go's ghost
+	// schema comment) that was never promoted before the process died
+	// mid-session has no WebSocket disconnect to trigger its delete, so
+	// it would otherwise sit in the database indefinitely — a real,
+	// un-anonymized incognito session's content left behind by exactly
+	// the failure mode ghost mode exists to avoid. Best-effort, same
+	// non-fatal shape as its two neighbors above.
+	if ghostIDs, err := db.DeleteAllGhostThreads(); err != nil {
+		log.Warn("sweeping leftover ghost threads failed", "err", err)
+	} else if len(ghostIDs) > 0 {
+		log.Info("swept leftover ghost threads from an ungraceful shutdown", "count", len(ghostIDs))
+		if cfg.CodeExec.WorkspaceDir != "" {
+			for _, id := range ghostIDs {
+				if err := os.RemoveAll(filepath.Join(cfg.CodeExec.WorkspaceDir, id)); err != nil {
+					log.Warn("failed to clean up leftover ghost thread workspace directory", "thread", id, "err", err)
+				}
+			}
+		}
 	}
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
