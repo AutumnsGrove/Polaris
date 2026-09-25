@@ -264,6 +264,89 @@ command rather than another `Suite` implementation.
 band (2b) — fine as a default working set, with the explicit caveat that small prompt tweaks need
 paired-diff reading of individual cases, not just the aggregate score, to be trusted.
 
+## Part 4 — Jev as grader, not an LLM judge
+
+Raised mid-research: use TypeSafe AI's Jev ("System One") as the harness's grader instead of
+another chat LLM. Worth taking seriously — Polaris already has a live, tested Jev integration
+(`jev/jev.go`, wired into `gateway/verification.go`'s source-verification badge/compare-sources
+tool; see `docs/plans/source-verification.md` for the full spike writeup), so this isn't a new
+dependency, just a new use of one already trusted with real production traffic.
+
+**What it actually is** ([TypeSafe AI](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+[Tom's Hardware](https://www.tomshardware.com/tech-industry/artificial-intelligence/typesafe-ais-jev-offers-an-alternative-to-llms-that-claims-to-be-193x-faster-and-445x-cheaper-system-one-type-model-is-bespoke-for-probabilistic-decision-making)):
+not an LLM — it never generates text. You send a `state` (source text, or several named sources)
+plus a fixed set of typed questions (**Choice**: one of up to 255 named options; **Noul**: yes/no
+probability; **Score**: ordered levels), evaluated in parallel and in isolation, and get back
+calibrated probabilities + a confidence value per question. It's trained with what TypeSafe calls
+RLCD (reinforcement learning for calibrated decisions) specifically so that "80% confident" means
+right about 80% of the time — a property no chat LLM's self-reported confidence has. Pricing:
+**$0.042/MTok input, output free** — for grading (short structured output) that's not "cheaper
+than an LLM judge," it's close to free. Polaris's own live spike
+(`docs/plans/source-verification.md`) already confirmed sub-second latency, confidence that
+genuinely varies with difficulty (0.35-1.0 observed, not pinned to 1.0), clean structured errors
+instead of silent failures, and injection resistance against text embedded in the evaluated state.
+
+### Where it's a strong fit — arguably better than an LLM judge
+
+Most of the harness's grading needs turn out to be classification-shaped, which is exactly Jev's
+shape:
+
+- **SimpleQA/BrowseComp-style correctness grading** (CORRECT/INCORRECT/NOT_ATTEMPTED) is a 3-option
+  Choice question, verbatim — `state` = question + reference answer + candidate answer, `criteria`
+  = the three verdicts. This could directly replace `cmd/benchmark.go`'s current same-model LLM
+  grader. It also sidesteps the self-preference-bias problem structurally, not just by policy: Jev
+  is never in the same model family as any subject model, for any of the 6 configured models at
+  once, with no per-subject judge assignment needed (see 2d in Part 2 above — that whole open
+  question mostly evaporates if Jev is the grader).
+- **Citation precision/recall / groundedness** (Part 1d/1c) — this is *exactly* what
+  `verifySource` already does: "does this source support this claim." Directly reusable pattern
+  for scoring the web_read-extraction and citation-discipline metrics from the companion doc.
+- **Pairwise model comparison** (the Arena-shaped side-interest, 2c) — put both candidate answers
+  in as a two-entry `SourceState` array (`{source: "response_a", text: ...}`,
+  `{source: "response_b", text: ...}`) and ask a Choice question with criteria
+  `{response_a, response_b, tie}`. A 100-question tournament across the 6-model roster would cost
+  a rounding error, all-in.
+- **Format/policy classification** — "does this suggestion read as a genuine follow-up rather than
+  a restatement," "did the model comply with an instruction planted in fetched content," "should
+  this memory-import candidate line clear the keep bar" are all Choice/Noul-shaped.
+- Bonus, outside the eval harness itself: the same pattern could replace the substring-based
+  paywall/empty-page heuristics (hill-climbing.md Tier 1 #2) *in production*, not just in an eval —
+  "is this page paywalled" against real page text is the same shape as the verification tool
+  already runs live.
+
+### Where it isn't the right tool
+
+- **No rationale.** Output is a probability distribution over pre-declared options plus a
+  confidence number — never prose. Fine for a scoreboard/regression gate; useless for the
+  error-analysis phase (2a) where the point is reading real transcripts and writing down *what*
+  went wrong in your own words before you know what to classify. That phase still wants a human or
+  an LLM narrating, not a classifier.
+- **Needs the option set enumerated up front.** Genuinely open-ended aesthetic judgment ("does
+  this sound like Polaris," "is this well-written") can be forced into a Score question (tiers:
+  excellent/good/mediocre/poor), but the calibration guarantee is weaker there than for a factual
+  support/contradiction judgment — "80% confident this is good writing" is a fuzzier claim than
+  "80% confident this source supports this claim." Don't expect the same trustworthiness from both.
+- **32k-token context window** (per Cloudflare's listing). Fine for grading short outputs
+  (titles, suggestions, single claims); a concern for long-thread compaction quality or long
+  Deep-Research answers, which would need the same chunk-and-reduce approach `verifySource`
+  already uses for its own budget.
+- **Only `AskChoice` exists in `jev/jev.go` today** — Noul and Score are documented in the API
+  (`docs/plans/source-verification.md`) but not yet implemented in the Go client. Using either
+  needs a small client extension first.
+- **Early access, ~10 days old as of this writing** (launched 2026-09-15) — a real, if modest,
+  supply-chain/continuity caveat worth being eyes-open about for something meant to anchor a
+  recurring "curriculum," separate from whether it's technically the right shape for the job.
+
+### Net read
+
+Worth adopting as the **default grader for every classification-shaped check** — which, once
+broken down, is most of the harness's checks including the two most bias-prone and most expensive
+ones (correctness grading and pairwise model comparison). Keep a cheap LLM judge in reserve
+specifically for the minority of checks that need free-text criteria too open-ended to enumerate,
+and for the error-analysis reading pass itself. This also simplifies the Part 2/2d "judge model
+assignment per subject" open question down to "which of the few non-classification checks still
+need an LLM judge, and which model for those" rather than a judge-per-subject matrix.
+
 ## Sources
 
 - [Anthropic: Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
@@ -279,6 +362,9 @@ paired-diff reading of individual cases, not just the aggregate score, to be tru
 - Statistical power in LLM evals: [tianpan.co — Your LLM Eval Is Lying to You](https://tianpan.co/blog/2026/04/15/statistical-power-llm-evals), [dev.to — Eval Set Sizing](https://dev.to/gabrielanhaia/eval-set-sizing-the-statistical-power-math-behind-llm-ab-tests-4gpc)
 - Pairwise vs. pointwise reliability: [arXiv:2504.14716 — Pairwise or Pointwise? Evaluating Feedback Protocols for Bias in LLM-Based Evaluation](https://arxiv.org/abs/2504.14716)
 - RAG/citation metrics: [FutureAGI — RAG Evaluation Metrics 2026](https://futureagi.com/blog/rag-evaluation-metrics-2025/), [Deepchecks — Top RAG Metrics](https://deepchecks.com/top-rag-metrics-for-enhanced-performance/)
+- [TypeSafe AI — Introducing System One Models & Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev)
+- [Tom's Hardware — TypeSafe AI's Jev offers an alternative to LLMs](https://www.tomshardware.com/tech-industry/artificial-intelligence/typesafe-ais-jev-offers-an-alternative-to-llms-that-claims-to-be-193x-faster-and-445x-cheaper-system-one-type-model-is-bespoke-for-probabilistic-decision-making)
+- `docs/plans/source-verification.md` (this repo) — Polaris's own live spike of Jev, cost/latency/confidence findings
 
 ## Open questions for the Q&A pass (not answered here)
 
@@ -288,8 +374,10 @@ paired-diff reading of individual cases, not just the aggregate score, to be tru
 2. Hard token ceiling for the fixed prompt+tools floor, or just "trend it down, no fixed number"?
 3. Which categories from Part 3's menu matter most for a first pass — everything, or a narrower
    start?
-4. Judge model assignments per subject model (family-diversity constraint from 2d) across the
-   6-model roster.
+4. Jev vs. LLM judge per check — Part 4 argues Jev for every classification-shaped check
+   (correctness grading, pairwise comparison, citation support, format/policy checks) and an LLM
+   judge only for the open-ended minority; confirm that split, and which model covers the
+   LLM-judge minority.
 5. Where the harness lives (reuse `benchmark.Suite` vs. a new sibling) and whether it's a new
    `cmd/` subcommand.
 6. How much manual error-analysis time (2a) to spend reading real transcripts before locking the
