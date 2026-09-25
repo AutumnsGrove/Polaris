@@ -35,6 +35,8 @@ agent:
 
     {person}
 
+    {custom_instructions}
+
     There is no separate "reply" tool. Once you have enough information (or the question needs none),
     just answer directly in plain text — that ends the research phase and streams straight to the user.
 

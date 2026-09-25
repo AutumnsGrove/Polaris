@@ -3,6 +3,7 @@ package prompts
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -49,6 +50,23 @@ func TestGet_MissingFileFallsBackToDefaults(t *testing.T) {
 	}
 	if got.Vision.DescribeImage != defaults.Vision.DescribeImage {
 		t.Errorf("DescribeImage = %q, want the built-in default", got.Vision.DescribeImage)
+	}
+}
+
+// TestGet_PulsarWizardMissingFileFallsBackToDefaults guards a real bug:
+// fillDefaults never merged PulsarWizard.System/OpenerTask at all, so a
+// missing or corrupted prompts.yaml sent gateway/pulsar_wizard.go's
+// interview an empty system prompt instead of degrading to the built-in
+// default like every other prompt does.
+func TestGet_PulsarWizardMissingFileFallsBackToDefaults(t *testing.T) {
+	withPromptsFile(t, "")
+
+	got := Get()
+	if got.PulsarWizard.System == "" || got.PulsarWizard.System != defaults.PulsarWizard.System {
+		t.Errorf("PulsarWizard.System = %q, want the built-in default", got.PulsarWizard.System)
+	}
+	if got.PulsarWizard.OpenerTask == "" || got.PulsarWizard.OpenerTask != defaults.PulsarWizard.OpenerTask {
+		t.Errorf("PulsarWizard.OpenerTask = %q, want the built-in default", got.PulsarWizard.OpenerTask)
 	}
 }
 
@@ -102,6 +120,68 @@ func TestGet_RealPromptsYAML_WeaverSectionLoads(t *testing.T) {
 	}
 	if got.Weaver.RevisitInstruction == "" {
 		t.Error("real prompts.yaml's weaver.revisit_instruction loaded empty")
+	}
+}
+
+// TestDefaults_MatchRealPromptsYAML guards against prompts.yaml and
+// buildDefaults() drifting apart. prompts.yaml is edited directly (hot-
+// reloaded, no rebuild) for day-to-day prompt tuning, so it's the one that
+// actually reflects what's live — but buildDefaults() is what a corrupted,
+// deleted, or pre-upgrade prompts.yaml falls back to, and it only gets
+// touched by hand. A prompts.yaml edit that isn't mirrored into
+// prompts.go leaves the fallback silently serving stale prompts. This
+// found 10 real mismatches (fixed alongside adding this test) the first
+// time it ran, including one field, PulsarWizard.System/OpenerTask, that
+// fillDefaults never merged from defaults at all — a missing prompts.yaml
+// would have sent that wizard call an empty system prompt.
+func TestDefaults_MatchRealPromptsYAML(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(orig)
+		mu.Lock()
+		cached = nil
+		mu.Unlock()
+	})
+	mu.Lock()
+	cached = nil
+	mu.Unlock()
+
+	got := Get()
+	diffStringFields(t, "Set", reflect.ValueOf(*got), reflect.ValueOf(defaults))
+}
+
+// diffStringFields walks two identically-shaped structs (string and
+// map[string]string leaves only — everything prompts.Set actually
+// contains) and reports every leaf where they disagree.
+func diffStringFields(t *testing.T, path string, got, want reflect.Value) {
+	t.Helper()
+	switch got.Kind() {
+	case reflect.Struct:
+		for i := 0; i < got.NumField(); i++ {
+			name := got.Type().Field(i).Name
+			diffStringFields(t, path+"."+name, got.Field(i), want.Field(i))
+		}
+	case reflect.String:
+		if got.String() != want.String() {
+			t.Errorf("%s: prompts.yaml and buildDefaults() have drifted — update buildDefaults() to match the live prompts.yaml value:\n--- prompts.yaml ---\n%s\n--- buildDefaults() ---\n%s", path, got.String(), want.String())
+		}
+	case reflect.Map:
+		for _, k := range got.MapKeys() {
+			gv, wv := got.MapIndex(k), want.MapIndex(k)
+			if !wv.IsValid() {
+				t.Errorf("%s[%v]: present in prompts.yaml but missing from buildDefaults()", path, k)
+				continue
+			}
+			if gv.String() != wv.String() {
+				t.Errorf("%s[%v]: prompts.yaml and buildDefaults() have drifted — update buildDefaults() to match the live prompts.yaml value:\n--- prompts.yaml ---\n%s\n--- buildDefaults() ---\n%s", path, k, gv.String(), wv.String())
+			}
+		}
 	}
 }
 
