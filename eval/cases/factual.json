@@ -1,0 +1,30 @@
+[
+  {
+    "id": "factual-largest-planet",
+    "category": "factual",
+    "kind": "factual_correctness",
+    "user_message": "What is the largest planet in our solar system?",
+    "reference_answer": "Jupiter is the largest planet in the solar system."
+  },
+  {
+    "id": "factual-python-creator",
+    "category": "factual",
+    "kind": "factual_correctness",
+    "user_message": "Who created the Python programming language?",
+    "reference_answer": "Guido van Rossum created Python, first released in 1991."
+  },
+  {
+    "id": "factual-speed-of-light",
+    "category": "factual",
+    "kind": "factual_correctness",
+    "user_message": "What is the speed of light in a vacuum, approximately?",
+    "reference_answer": "About 299,792 kilometers per second (roughly 186,000 miles per second)."
+  },
+  {
+    "id": "factual-http-status-404",
+    "category": "factual",
+    "kind": "factual_correctness",
+    "user_message": "What does HTTP status code 404 mean?",
+    "reference_answer": "404 means Not Found — the requested resource doesn't exist on the server."
+  }
+]

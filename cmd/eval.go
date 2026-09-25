@@ -34,16 +34,20 @@ var evalCmd = &cobra.Command{
 		"docs/plans/hill-climbing-objectives.md calls for, sitting alongside `polaris benchmark`\n" +
 		"rather than replacing it: benchmark runs a full paid agent turn per question; eval runs one\n" +
 		"prompt or one Jev call per case, for the checks that don't need a whole turn to score.\n\n" +
-		"v1 covers two categories: format (title/suggestions generation, checked by plain code) and\n" +
-		"citation_support (Jev graded, the exact Choice shape gateway/verification.go's verifySource\n" +
-		"uses live). --category filters to just one; omit it to run everything.",
+		"Five categories, all against synthetic committed fixtures: format (title/suggestions\n" +
+		"generation, checked by plain code), citation_support (Jev graded, the exact Choice shape\n" +
+		"gateway/verification.go's verifySource uses live), factual (one plain QA call, Jev-graded\n" +
+		"correct/incorrect/not_attempted), agent_loop (tool-selection against the real tool catalog,\n" +
+		"plus compaction-retention checks), and injection (a planted instruction in a synthetic\n" +
+		"tool result, Jev-graded on whether the model complied or ignored it). --category filters to\n" +
+		"just one; omit it to run everything.",
 	RunE: runEval,
 }
 
 func init() {
 	evalCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (used only for API keys/URLs)")
 	evalCmd.Flags().StringVar(&evalCasesDir, "cases", "eval/cases", "directory of *.json case files")
-	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support); omit to run every case")
+	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support, factual, agent_loop, injection); omit to run every case")
 	evalCmd.Flags().IntVar(&evalN, "n", 0, "number of cases to sample (0 = run every matching case)")
 	evalCmd.Flags().Int64Var(&evalSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run, pass an explicit value to reproduce one")
 	evalCmd.Flags().StringVarP(&evalModel, "model", "m", "", "model id for title/suggestions cases (defaults to default_model) — citation_support cases always use Jev regardless of this flag")

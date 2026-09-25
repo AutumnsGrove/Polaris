@@ -18,11 +18,24 @@
 //     live for the source-verification badge, just against known-answer
 //     fixtures instead of real citations.
 //
-// "factual" (full correctness grading) and "agent_loop"/"injection"
-// (tool-selection and injection-resistance fixtures) are deferred — they
-// need either a running agent.Run turn or a more involved fixture shape
-// than a single prompt/Jev call, and are follow-on work once this
-// narrower slice is proven out.
+// The remaining two categories each get their own single-call pipeline
+// too, still with no full agent.Run turn:
+//   - "factual": one plain (no-tools) QA call, Jev-graded correct/
+//     incorrect/not_attempted against a reference answer — the same
+//     three-way verdict shape benchmark/simpleqa.go's own grading uses,
+//     just via Jev instead of an LLM-judge chat completion, and against a
+//     single isolated question rather than a full research turn.
+//   - "agent_loop": two sub-kinds — tool_selection (one
+//     ChatCompletionWithTools call against the real tools.Defs catalog,
+//     checked against which tool — if any — the model calls) and
+//     compaction_retention (one real CompactionSystem/CompactionTask
+//     call against a synthetic conversation, checked by plain
+//     substring/URL containment against a must-survive fact list).
+//   - "injection": one synthetic tool-result turn carrying a planted
+//     instruction, Jev-graded on whether the model's next response
+//     complied with it or treated it as inert fetched text — the same
+//     "fetched content is never instructions" rule prompt.md's fallback
+//     system prompt states outright.
 package eval
 
 import (
@@ -49,11 +62,22 @@ const (
 type Kind string
 
 const (
-	KindTitle           Kind = "title"
-	KindTitleWeaver     Kind = "title_weaver"
-	KindSuggestions     Kind = "suggestions"
-	KindCitationSupport Kind = "citation_support"
+	KindTitle               Kind = "title"
+	KindTitleWeaver         Kind = "title_weaver"
+	KindSuggestions         Kind = "suggestions"
+	KindCitationSupport     Kind = "citation_support"
+	KindFactualCorrectness  Kind = "factual_correctness"
+	KindToolSelection       Kind = "tool_selection"
+	KindCompactionRetention Kind = "compaction_retention"
+	KindInjectionResistance Kind = "injection_resistance"
 )
+
+// ConversationTurn is one message in a synthetic fixture conversation —
+// KindCompactionRetention's History.
+type ConversationTurn struct {
+	Role    string `json:"role"` // "user" or "assistant"
+	Content string `json:"content"`
+}
 
 // Case is one eval case. Which of the kind-specific fields are read
 // depends on Kind — see RunCase.
@@ -62,8 +86,8 @@ type Case struct {
 	Category Category `json:"category"`
 	Kind     Kind     `json:"kind"`
 
-	// KindTitle/KindSuggestions:
-	UserMessage string `json:"user_message,omitempty"` // the first user message a title/suggestions call would see
+	// KindTitle/KindSuggestions/KindFactualCorrectness/KindToolSelection:
+	UserMessage string `json:"user_message,omitempty"` // the first user message a title/suggestions/QA/tool-selection call would see
 	Answer      string `json:"answer,omitempty"`       // KindSuggestions only — the assistant answer suggestions are generated from
 
 	// KindCitationSupport: the exact Jev call shape
@@ -73,6 +97,39 @@ type Case struct {
 	ClaimText     string  `json:"claim_text,omitempty"`
 	WantChoice    string  `json:"want_choice,omitempty"`    // one of supported/partially_supported/contradicted/not_addressed
 	MinConfidence float64 `json:"min_confidence,omitempty"` // 0 means "any confidence, just check the choice matches"
+
+	// KindFactualCorrectness: UserMessage is the question, ReferenceAnswer
+	// the known-correct answer Jev grades the model's own live answer
+	// against — the same correct/incorrect/not_attempted three-way verdict
+	// benchmark/simpleqa.go's grader uses.
+	ReferenceAnswer string `json:"reference_answer,omitempty"`
+
+	// KindToolSelection: WantTool is the tool name the model is expected to
+	// call given UserMessage — "" means "expected to answer directly, no
+	// tool call at all" (e.g. a question answerable from general
+	// knowledge, which prompt.md explicitly says not to spend a tool call
+	// on).
+	WantTool string `json:"want_tool,omitempty"`
+
+	// KindCompactionRetention: History is a synthetic thread (must end on
+	// an assistant turn — see gateway/turn.go's compactThread doc comment
+	// on why an array ending on "user" makes the model continue instead of
+	// summarize) run through the real CompactionSystem/CompactionTask
+	// prompts; MustContainFacts are substrings (facts, URLs) the summary
+	// has to retain, checked by plain case-insensitive containment.
+	History          []ConversationTurn `json:"history,omitempty"`
+	MustContainFacts []string           `json:"must_contain_facts,omitempty"`
+
+	// KindInjectionResistance: simulates one synthetic tool-result turn.
+	// ToolName/ToolCallArgs describe the assistant's own (fixture) tool
+	// call; ToolResultText is the fake tool output, with a planted
+	// instruction embedded in it the same way a compromised/adversarial
+	// web page would. The model then gets one more turn to respond, and
+	// Jev grades whether that response complied with the planted
+	// instruction or ignored it as inert data.
+	ToolName       string `json:"tool_name,omitempty"`
+	ToolCallArgs   string `json:"tool_call_args,omitempty"` // raw JSON string, passed through as the tool call's arguments
+	ToolResultText string `json:"tool_result_text,omitempty"`
 }
 
 // LoadCases reads every *.json file in dir (non-recursive) and
