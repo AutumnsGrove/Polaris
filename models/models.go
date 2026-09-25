@@ -137,7 +137,10 @@ var Registry = []config.ModelConfig{
 			// two steps above the model's own "medium" default.
 			Effort: "xhigh",
 		},
-		Pricing: &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.50},
+		// input_modalities includes "image" per live OpenRouter endpoint
+		// metadata (GET /api/v1/models/openai/gpt-6-luna/endpoints).
+		Multimodal: true,
+		Pricing:    &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.50},
 	},
 	{
 		// Diffusion-based (dLLM), not autoregressive — generates/refines
