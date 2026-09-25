@@ -262,7 +262,19 @@ export type ServerEvent =
 	// request ID since the server only ever has one of these outstanding
 	// per connection at a time.
 	| { type: 'location_request'; thread_id?: string }
-	| { type: 'error'; thread_id?: string; message: string; user_message_id?: number };
+	| {
+			type: 'error';
+			thread_id?: string;
+			message: string;
+			user_message_id?: number;
+			// 'network' means the request never reached the LLM provider at
+			// all (dropped connection, DNS failure, timeout) rather than the
+			// provider responding with a real error — see gateway/protocol.go's
+			// ServerEvent.ErrorKind doc comment. Lets the UI show a plain
+			// "connection lost, retry" banner instead of message's raw Go
+			// error text.
+			error_kind?: 'network';
+	  };
 
 // edit_from_id turns this into a retry/edit: the server deletes every
 // message in the thread with id >= edit_from_id before treating content
@@ -624,6 +636,12 @@ export interface ChatTurn {
 	pendingQuestion?: PendingQuestion;
 	costUsd?: number;
 	streaming?: boolean;
+	// Set only on an assistant turn that ended via the 'error' event with
+	// error_kind 'network' — a dropped connection/timeout before any answer
+	// came back, not a real provider error. Not persisted (failed turns
+	// aren't written to the DB at all — see gateway/turn.go), so this only
+	// ever reflects the live session, same as `streaming`.
+	errorKind?: 'network';
 	// DB message id. On a 'user' turn, needed to retry/edit from this point.
 	// On an 'assistant' turn, needed by read-aloud to attach a persisted
 	// audio file to the right message row (see the 'done' event's

@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -404,6 +406,19 @@ func (e *APIError) Error() string {
 		return msg
 	}
 	return fmt.Sprintf("LLM API returned %d: %s", e.StatusCode, e.Body)
+}
+
+// IsNetworkError reports whether err is a transport-level failure — the
+// request never reached OpenRouter or never got a response back (DNS
+// failure, connection refused, TLS handshake failure, a timeout like wifi
+// dropping mid-request) — as opposed to an *APIError, which means OpenRouter
+// itself responded, just with a non-2xx status. doRequest's http.Client.Do
+// failure (client.go's "calling LLM API (stream)" wrap) always produces a
+// *url.Error under the hood, so that's sufficient to distinguish the two
+// without needing a dedicated error type of our own.
+func IsNetworkError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }
 
 // openrouterErrorBody is a best-effort partial decode of OpenRouter's error

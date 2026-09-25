@@ -1672,7 +1672,14 @@ export class AppState {
 			case 'error':
 				this.closeOpenReasoning(turn);
 				turn.streaming = false;
-				if (!turn.content) turn.content = `Error: ${e.message}`;
+				if (e.error_kind === 'network') {
+					// No raw Go error text on this turn — ChatTurnView
+					// renders its own "connection lost" banner off errorKind
+					// instead of turn.content.
+					turn.errorKind = 'network';
+				} else if (!turn.content) {
+					turn.content = `Error: ${e.message}`;
+				}
 				this.busy = false;
 				this.pendingTurn = null;
 				this.pendingUserTurn = null;

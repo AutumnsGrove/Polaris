@@ -291,7 +291,16 @@ type ServerEvent struct {
 	CostUSD       float64 `json:"cost_usd"`
 	ContextTokens int     `json:"context_tokens"`
 	Message       string  `json:"message,omitempty"`
-	UserMessageID int64   `json:"user_message_id,omitempty"`
+	// ErrorKind classifies an "error" event's Message for the frontend —
+	// currently only ever "network" (see llm.IsNetworkError), meaning the
+	// request never reached the LLM provider at all (dropped wifi, DNS
+	// failure, timeout) rather than the provider responding with a real
+	// error (rate limit, bad request). Lets the UI offer a plain "connection
+	// lost, retry" banner instead of surfacing Message's raw Go error text
+	// (which reads like "read tcp 10.0.0.5:1234->...: operation timed out" —
+	// meaningless, and leaks a local IP, to someone just trying to retry).
+	ErrorKind     string `json:"error_kind,omitempty"`
+	UserMessageID int64  `json:"user_message_id,omitempty"`
 	// AssistantMessageID is the persisted id of the assistant reply this
 	// turn just wrote, sent on "done" — without it, a freshly-generated
 	// turn's ChatTurn.id stays undefined for the rest of the session (only

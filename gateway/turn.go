@@ -786,7 +786,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			partialCost = result.CostUSD
 		}
 		logEvent(storageThreadID, "error", "turn", "turn failed", map[string]interface{}{"err": err.Error(), "model": modelCfg.ID, "cost_usd": partialCost}, turnID)
-		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error()})
+		errorKind := ""
+		if llm.IsNetworkError(err) {
+			errorKind = "network"
+		}
+		send(ServerEvent{Type: "error", ThreadID: threadID, UserMessageID: userMsgID, Message: err.Error(), ErrorKind: errorKind})
 		return
 	}
 	// No error, but no answer either — same reasoning-exhaustion failure
