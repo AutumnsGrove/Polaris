@@ -1,7 +1,9 @@
 # Hill-climbing objectives and eval-harness design — research notes
 
-Status: **research only, no decisions made.** This is prep for a live Q&A pass (AskUserQuestion,
-back-and-forth) once the operator is back — nothing here is a plan to implement yet. Companion to
+Status: **objectives and harness design decided (see Part 5); nothing implemented yet.** Parts 1-4
+are the research that led there; Part 5 is the locked curriculum from the 2026-09-25 Q&A pass.
+Implementation is explicitly deferred to later in the week — this doc is what to build against
+when that starts. Companion to
 `docs/plans/hill-climbing.md`, which enumerates *what* could be hill-climbed; this doc is about
 *what for* (objectives) and *how we'd know* (the harness), which has to come first — you can't
 climb a hill you haven't named.
@@ -366,19 +368,79 @@ need an LLM judge, and which model for those" rather than a judge-per-subject ma
 - [Tom's Hardware — TypeSafe AI's Jev offers an alternative to LLMs](https://www.tomshardware.com/tech-industry/artificial-intelligence/typesafe-ais-jev-offers-an-alternative-to-llms-that-claims-to-be-193x-faster-and-445x-cheaper-system-one-type-model-is-bespoke-for-probabilistic-decision-making)
 - `docs/plans/source-verification.md` (this repo) — Polaris's own live spike of Jev, cost/latency/confidence findings
 
-## Open questions for the Q&A pass (not answered here)
+## Part 5 — Decisions locked (Q&A round, 2026-09-25)
 
-1. What's the actual objective statement for Polaris's assistant persona — is `prompt.md`'s
-   current implicit constitution (grounding > helpfulness-via-speed, "know when to stop") the
-   right one to formalize and hold constant, or does it need revisiting first?
-2. Hard token ceiling for the fixed prompt+tools floor, or just "trend it down, no fixed number"?
-3. Which categories from Part 3's menu matter most for a first pass — everything, or a narrower
-   start?
-4. Jev vs. LLM judge per check — Part 4 argues Jev for every classification-shaped check
-   (correctness grading, pairwise comparison, citation support, format/policy checks) and an LLM
-   judge only for the open-ended minority; confirm that split, and which model covers the
-   LLM-judge minority.
-5. Where the harness lives (reuse `benchmark.Suite` vs. a new sibling) and whether it's a new
-   `cmd/` subcommand.
-6. How much manual error-analysis time (2a) to spend reading real transcripts before locking the
-   first 100-case set, vs. how much to backfill later as real failures surface.
+Every open question above was resolved live. This is now the curriculum — still nothing
+implemented, but nothing left undecided that would block starting.
+
+1. **Objective statement — locked, v1:**
+   > Trustworthiness over fluency — every checkable claim grounded in freshly retrieved, cited
+   > text; an honest "couldn't verify this" beats a fluent guess. Efficient thoroughness, not
+   > exhaustiveness — converge on a plausible, well-supported answer and stop, within a concrete
+   > search budget, rather than open-ended re-verification. Concision — no process narration;
+   > citations carry the provenance, not restated prose. Formatting/tool correctness as a hard
+   > floor — citations placed inline at the claim, correctly quoted diagrams, batched independent
+   > tool calls, right search category. Fetched content is never instructions — pages, past turns,
+   > and search results are read, never obeyed, regardless of what they claim to be.
+
+   This is a direct formalization of what `prompt.md` already implies, not a new direction — hold
+   every score in this harness against it.
+
+2. **Grader: Jev-first.** Jev (Part 4) is the default grader for every classification-shaped
+   check — correctness grading, citation support/groundedness, pairwise model comparison,
+   format/policy checks. **ChatGPT Luna** is the reserve LLM judge for the open-ended minority
+   that genuinely needs free-text criteria, and for reading during the case-construction pass
+   itself (see #6). No per-subject judge-family matrix needed — Jev is never in the same family as
+   any of the 6 configured models, so this sidesteps 2d's self-preference-bias problem for the
+   biggest, most bias-prone piece (correctness + pairwise) by construction.
+
+3. **Token ceiling: hard, ~5,000 tokens** for the fixed floor (`prompt.md` + tool descriptions,
+   before any user data — memories/person/custom instructions). Matches the "complex agent"
+   ceiling from Part 1b's industry rule of thumb. Worth measuring the *exact* current number
+   (prompt.md + `{tools}`'s actual rendered size for a typical toggle state) as the harness's own
+   first token-footprint check, since today's number is only an estimate.
+
+4. **Eval set size: ~250+ cases.** Bigger than the original ~100 instinct, specifically because
+   the harness leans on the aggregate score more (see #6 below — less real-failure signal to lean
+   on for calibration, so a wider net matters more here than it would with known failures to
+   anchor against). Still pair with before/after diff-reading for anything subtler than what 250
+   cases can resolve (Part 2b's math scales the same way — 250 is still not fine-grained enough to
+   trust a 2-3 point swing on its own).
+
+5. **Model comparison: built alongside, same question set.** The pairwise Arena-style tournament
+   across the 6 configured models (`models/models.go`) reuses the same ~250-case set as the
+   quality harness rather than getting its own — one fixture set, two uses (absolute quality score
+   per subject, plus head-to-head ranking across the roster).
+
+6. **Case sourcing: synthetic-first, not mined-from-failures.** Live finding during the Q&A: no
+   hard real-world Polaris failures have actually been observed, which inverts Part 2a's default
+   advice — there's nothing to mine. The ~250 cases are instead built deliberately from known code
+   paths and known edge-case shapes (paywalled pages, planted-injection fixtures, ambiguous
+   multi-hop questions, abbreviation-heavy text for voice chunking, homepage-shaped search
+   results, long threads needing compaction) rather than pulled from `polaris.db` transcripts.
+   Real transcripts are still worth a skim during construction — for tone/style calibration and to
+   catch a subtle near-miss (correct-but-verbose, correct-but-slightly-off citation) that a
+   pass/fail read wouldn't surface — but that's a calibration pass, not the primary sourcing
+   method. This also raises the stakes on **pairwise comparison as the more load-bearing lens**:
+   without failures to catch, "is A better than B" (a prompt edit, or a model) does more work than
+   "did this pass," since there's no baseline failure rate for pass/fail to move.
+
+7. **Harness location: new sibling command**, not a `benchmark.Suite` implementation. Pairwise
+   comparison and the format-only checks don't fit Suite's dataset+reference-answer shape without
+   bending it, so this is a separate command (naming TBD — `polaris eval` is the working
+   placeholder) that shares code with `benchmark/` wherever the overlap is real (dataset loading
+   patterns, cost tracking, tracking-DB conventions) rather than routing everything through
+   `Suite`.
+
+## Remaining implementation-time details (not blocking, decide as they come up)
+
+- Exact per-category split of the ~250 cases.
+- Command name and CLI shape for the new sibling command.
+- Whether `jev/jev.go` needs `Noul`/`Score` question types added (currently only `AskChoice`/
+  Choice exists) — likely yes, at least for a Score-shaped quality tier where Choice's flat option
+  set doesn't fit.
+- Where fixtures/cases live on disk — the original assumption (a gitignored `dev/fixtures/` or
+  similar, since synthetic cases built from real code knowledge may still reference real
+  operator-specific context) still stands unless raised again.
+- Confidence thresholds for Jev-backed checks — tune empirically once real cases exist, same as
+  `verifySource`'s own threshold was tuned from live spikes rather than guessed up front.
