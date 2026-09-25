@@ -1,0 +1,39 @@
+name: Frontend check and test
+
+# go-ci.yml builds web/ (go:embed needs web/build/ to exist) but never runs
+# vitest or svelte-check, and only triggers on Go-path changes — so a
+# frontend-only PR got no CI at all. This is the counterpart for web/.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'web/**'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: install dependencies
+        working-directory: web
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm install --frozen-lockfile
+
+      - name: svelte-check
+        working-directory: web
+        run: pnpm run check
+
+      - name: vitest
+        working-directory: web
+        run: pnpm run test
