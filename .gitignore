@@ -6,6 +6,7 @@ config.yaml
 # `go build ./dev/...` (or plain `go build ./...` from repo root) writes a
 # same-named binary here for dev/fakeopenrouter, same as /polaris above.
 /fakeopenrouter
+/fixtures_export
 logs/
 attachments/
 .update.lock
@@ -13,6 +14,12 @@ web/node_modules/
 web/.svelte-kit/
 dev/searxng/data/
 dev/.stack/
+
+# dev/fixtures_export's output — real chat history/pages pulled from a
+# polaris.db (dev or, more usefully, a copy of the potato's production
+# one, see docs/plans/hill-climbing.md). This is the operator's own
+# personal usage data; it must never be committed.
+dev/fixtures/
 
 # Docker Compose install — real config/secrets, gitignored the same way
 # their bare-metal equivalents are (see compose/polaris/config.yaml.example).
