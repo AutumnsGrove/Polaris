@@ -22,11 +22,6 @@ const LINK_DISTANCE = 70;
 const CHARGE_STRENGTH = -90;
 const COLLIDE_RADIUS = 26;
 const CLUSTER_STRENGTH = 0.12;
-// Minimum halo radius (a lone star in its own category still reads as a
-// cluster) and the margin added beyond the farthest member, so a dot right
-// at the edge doesn't render flush against the glow's boundary.
-const MIN_CLUSTER_RADIUS = 34;
-const CLUSTER_HALO_PAD = 22;
 
 export interface LayoutNode {
 	id: number;
@@ -41,22 +36,10 @@ export interface LayoutEdge {
 	reasoning: string;
 }
 
-export interface ClusterLabel {
-	category: string;
-	x: number;
-	y: number;
-	// radius: how far this category's halo glow extends — the centroid-to-
-	// farthest-member distance plus a fixed pad, not a fixed constant, so a
-	// tightly-packed category doesn't get an oversized halo and a spread-out
-	// one doesn't get clipped. See CLUSTER_HALO_PAD below.
-	radius: number;
-}
-
 export interface LayoutResult {
 	nodes: LayoutNode[];
 	nodeById: Map<number, LayoutNode>;
 	edges: LayoutEdge[];
-	clusterLabels: ClusterLabel[];
 }
 
 export interface LayoutOptions {
@@ -77,7 +60,7 @@ export function layoutStars(
 	options: Partial<LayoutOptions> = {}
 ): LayoutResult {
 	const opts = { ...DEFAULT_OPTIONS, ...options };
-	if (stars.length === 0) return { nodes: [], nodeById: new Map(), edges: [], clusterLabels: [] };
+	if (stars.length === 0) return { nodes: [], nodeById: new Map(), edges: [] };
 
 	const sorted = [...stars].sort((a, b) => a.id - b.id);
 	const nodes: LayoutNode[] = sorted.map((star) => ({ id: star.id, star, x: 0, y: 0 }));
@@ -175,28 +158,5 @@ export function layoutStars(
 		.filter((e) => nodeById.has(e.star_a_id) && nodeById.has(e.star_b_id))
 		.map((e) => ({ starAId: e.star_a_id, starBId: e.star_b_id, reasoning: e.reasoning }));
 
-	// clusterLabels: the centroid of each category's actual (post-
-	// normalize) node positions — not the pre-simulation anchor points
-	// above, which the link/charge forces routinely pull nodes away from.
-	// Only emitted once there's more than one category, matching the
-	// mockup's intent (a single-category library doesn't need a label
-	// pointing at everything on screen).
-	const clusterLabels: ClusterLabel[] = [];
-	if (categories.length > 1) {
-		for (const cat of categories) {
-			const inCat = nodes.filter((n) => n.star.category === cat);
-			if (inCat.length === 0) continue;
-			const cx2 = inCat.reduce((sum, n) => sum + n.x, 0) / inCat.length;
-			const cy2 = inCat.reduce((sum, n) => sum + n.y, 0) / inCat.length;
-			const farthest = Math.max(...inCat.map((n) => Math.hypot(n.x - cx2, n.y - cy2)));
-			clusterLabels.push({
-				category: cat,
-				x: cx2,
-				y: cy2,
-				radius: Math.max(MIN_CLUSTER_RADIUS, farthest + CLUSTER_HALO_PAD)
-			});
-		}
-	}
-
-	return { nodes, nodeById, edges, clusterLabels };
+	return { nodes, nodeById, edges };
 }
