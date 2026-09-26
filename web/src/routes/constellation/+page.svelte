@@ -394,16 +394,6 @@
 						{/if}
 					{/each}
 				</svg>
-				{#each mapLayout.clusterLabels as cluster (cluster.category)}
-					<div
-						class="cluster-label"
-						style="left: {cluster.x}px; top: {cluster.y -
-							cluster.radius -
-							8}px; transform: translate(-50%, -50%) scale({1 / zoomTransform.k});"
-					>
-						{cluster.category}
-					</div>
-				{/each}
 				{#each mapLayout.nodes as node (node.id)}
 					<button
 						class="map-node"
@@ -670,21 +660,6 @@
 		stroke: var(--star-color);
 		stroke-width: 1;
 		opacity: 0.35;
-	}
-	.cluster-label {
-		position: absolute;
-		/* transform (translate + counter-zoom scale) is set inline — see the
-		   template — since it depends on the live zoom level, not something
-		   plain CSS can express. */
-		transform-origin: center;
-		font-size: 10px;
-		font-weight: 600;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		color: var(--color-text-dim);
-		opacity: 0.7;
-		pointer-events: none;
-		white-space: nowrap;
 	}
 	.map-node {
 		position: absolute;
