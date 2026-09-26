@@ -90,10 +90,10 @@ with citations.
 - **Follow-ups that remember the research** — later turns see the sources behind earlier answers;
   an opt-in setting also replays every earlier search result and page read, so follow-ups don't
   re-search (costs more per turn, and raises the auto-compaction limit to 200K tokens).
-- **Ghost threads** — an incognito mode that persists nothing about the conversation (no
-  thread/message rows), gone the moment it ends. Its real cost still counts toward your regular
-  usage totals, so spend never goes unaccounted for. Available over the WebSocket chat client and
-  `POST /api/ask`/`/api/ask/stream`.
+- **Ghost threads** — an incognito mode, hidden from the sidebar/search and without memory/chat-
+  search tool access, that's deleted the moment it ends unless you promote it into a regular
+  thread. Its real cost still counts toward your regular usage totals, so spend never goes
+  unaccounted for. Available over the WebSocket chat client and `POST /api/ask`/`/api/ask/stream`.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
   of a bare text chip.
 - **Settings panel** — theme, default model, the Memory list above, and a one-click
