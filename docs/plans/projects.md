@@ -95,27 +95,56 @@ project-linked thread is still an ordinary thread in every other respect (favori
 searchable); `project_id` is purely an additional attribute, the same way `pulsar_routine_id` sits
 alongside without changing what "a thread" means.
 
-## Workspace: `ctx.WorkspaceKey`
+## Workspace: read-only shared originals, private working copies
 
-Four call sites currently key a thread's workspace directory directly off `ctx.ThreadID`:
-`tools/code_exec.go:143` (`filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)`) and `:158` (the
-host-side mirror), `tools/view_image.go`'s `resolveWorkspaceFilePath`, and `tools/fetch_url.go`'s
-equivalent write path. `gateway/workspace.go`'s `handleGetWorkspaceFile` serves whatever directory
-name it's given in the URL and doesn't need to know about projects at all — its path-traversal
-defense (validated against `root`, not the `root/threadID` intermediate — see the doc comment
-above `handleGetWorkspaceFile`) is agnostic to what the segment means.
+**Superseded design note:** an earlier draft of this plan had every thread in a project share one
+mutable directory outright (a single `ctx.WorkspaceKey` swapped in for `ctx.ThreadID`). That
+allows exactly the collision this codebase has already been burned by once — two independent
+actors (here, two threads' turns instead of two `docker compose up -d` runs) mutating the same
+file with no isolation. The design below replaces it entirely: **originals stay read-only, a
+thread only ever writes to its own copy, and joining the shared pool is a deliberate action, never
+an automatic one.**
 
-Cleanest fix, per issue #119: add one field, `ctx.WorkspaceKey`, computed once per turn in
-`gateway/turn.go` alongside `agentCtx.ThreadID` — the thread's `project_id` when set, else
-`ctx.ThreadID` itself. All four tool call sites read `ctx.WorkspaceKey` instead of `ctx.ThreadID`
-directly; nothing branches on "is this a project thread" in more than one place. Any code that
-mints a citation/workspace URL (`tools/show.go`, code_exec's chart-output path) uses the same key,
-so a citation link naturally points at the shared project directory rather than a directory
-scoped to whichever thread happened to generate the file.
+Every thread keeps its own private, read-write workspace exactly as it does today —
+`<CodeExecWorkspaceDir>/<ThreadID>/`, untouched by any of this. A project gets a second directory,
+`<CodeExecWorkspaceDir>/<projectID>/`, that is *never* the target of an ordinary write:
 
-Practical effect: every thread in a project shares one directory on disk
-(`<CodeExecWorkspaceDir>/<projectID>/`), so a file uploaded or generated in thread A is visible to
-`code_exec`/`view_image`/`fetch_url` from thread B in the same project without re-uploading.
+- **`code_exec`'s sandbox mounts both directories** when the thread has a `project_id`: the
+  thread's own directory read-write (as always), and the project's directory **read-only**
+  alongside it. `codeExecRequest` (`tools/code_exec.go:155`) gains a second field —
+  `ProjectHostWorkspaceDir string`, set only when the thread has a project — and the host-side
+  watcher (`compose/watcher/codeexec.sh`) adds a second bind mount for it with `:ro`. This is what
+  actually enforces "editing gets a copy, not the original": the mount itself refuses the write: a
+  script that reads `project/router-configs.txt`, changes it, and tries to save back to that same
+  path fails outright, so the model's only path to persisting a change is writing somewhere inside
+  its own writable directory. No copy-tracking logic needed — the filesystem does it for free.
+- **Reads fall through two tiers.** `resolveWorkspaceFilePath` (`tools/view_image.go:270`) and
+  `gateway/workspace.go`'s `handleGetWorkspaceFile` both currently resolve a single
+  `<CodeExecWorkspaceDir>/<ThreadID>/<relPath>`. Both gain a fallback: if the path doesn't exist
+  under the thread's own directory and the thread has a `project_id`, retry under
+  `<CodeExecWorkspaceDir>/<projectID>/<relPath>` instead, with the same `filepath.Rel`
+  path-traversal check against *that* root. `handleGetWorkspaceFile` is a `*Server` method, so the
+  one new piece of plumbing it needs — looking up the URL's `thread_id`'s `project_id` — is a
+  single `s.db` query, not new wiring.
+- **New files never land in the shared directory by default.** `fetch_url` writes a download into
+  the thread's own directory, same as any non-project thread today; a `code_exec` chart/report
+  goes to the thread's own directory too. A file attached through a thread's composer mid-chat
+  behaves the same way — it's the thread's own file, not automatically shared.
+- **Promoting a file into the shared pool is one explicit tool: `save_to_project(filename)`.**
+  Takes a file already present in the calling thread's own workspace and copies it into the
+  project's shared directory — works regardless of how that file got there (an upload, a
+  `fetch_url` download, a `code_exec` output), so it's one primitive instead of a fetch_url-only
+  flag that would leave code_exec-generated files with no equivalent path. Only offered when the
+  thread has a `project_id` (same `catalog.go`-style `Requires` gating `code_exec` already uses for
+  `docker_only`). If a file of that name already exists in the project directory, it's saved under
+  an auto-incremented name (`router-configs-2.txt`) rather than silently overwritten — a later
+  thread's promote can never quietly destroy an earlier thread's contribution to the shared pool —
+  and the tool's result names whatever it actually got saved as, so the model can mention it if
+  relevant.
+- **Uploading directly through the project detail view's own "Shared workspace" card stays a
+  separate, always-explicit path** straight into the project directory — that one was already a
+  deliberate "add this to the project" action, not a mid-conversation default, so it's unaffected
+  by any of the above.
 
 ## Prompt assembly: project instructions + opener
 
@@ -132,14 +161,17 @@ operator's standing instructions):
 ## Project: <project name>
 <project's custom_instructions>
 
-Shared workspace: file1.csv, chart_q3.png, notes.md
+Shared workspace (read-only originals — save_to_project to add to them): file1.csv, chart_q3.png, notes.md
 ```
 
 The file list is names only (the same "let the model `ls`/`code_exec` its way in rather than
 eagerly describing every file" call already made for single-file attachments in
 `docs/plans/workspace-store-unification.md` — more apt here, not less, since a shared project
-workspace accumulates files across many threads over time). This is a small, contained change at
-one call site — no edits to `agent/driver.go`'s placeholder machinery or `prompts.yaml`.
+workspace accumulates files across many threads over time). Calling the shared files out as
+read-only originals in the opener itself matters more here than it did in the old single-directory
+design: the model needs to know upfront that editing one of these means saving a copy into its own
+workspace, not that the edit silently vanishes. This is a small, contained change at one call site
+— no edits to `agent/driver.go`'s placeholder machinery or `prompts.yaml`.
 
 ## Pinning to the sidebar
 
@@ -244,21 +276,22 @@ Deleting a project is a real `DELETE FROM projects WHERE id = ?`, not a soft-dis
 `disabled` column on the table at all (see schema above). Alongside it:
 - `UPDATE threads SET project_id = NULL WHERE project_id = ?` — every thread that belonged to the
   project falls back to being an ordinary, ungrouped thread, fully intact (messages, cost history,
-  favorites status — nothing about the thread itself changes).
-- The project's shared workspace directory (`<CodeExecWorkspaceDir>/<projectID>/`) is removed from
-  disk — those files were the shared context for a project that no longer exists, and orphaned
-  threads have no other claim on them (per-thread workspace addressing resumes via
-  `ctx.WorkspaceKey` falling back to `ctx.ThreadID`, which was never that directory to begin with).
+  favorites status, and — since a thread's own workspace was never the project's directory to
+  begin with — every file it ever created or had promoted a copy of stays exactly where it was).
+- The project's shared directory (`<CodeExecWorkspaceDir>/<projectID>/`) is removed from disk —
+  those were the shared, read-only originals for a project that no longer exists. Nothing else on
+  disk is affected: no thread's own workspace lived inside that directory.
 
 ## Thread ↔ project mutability
 
 A thread can move between projects (or in/out of having one at all) at any point after creation —
 not fixed at creation time. Surfaced as a "Move to project" action in `ThreadMenu.svelte`, the same
-place Favorite/Promote/Delete already live. Moving a thread does **not** move or copy any files —
-its `ctx.WorkspaceKey` simply resolves differently on the next turn (the new project's shared
-directory, or back to the thread's own directory if removed from a project). Worth calling out
-plainly in the move-thread UI copy so it isn't a silent surprise the first time someone moves a
-thread that had generated files.
+place Favorite/Promote/Delete already live. Moving a thread changes nothing about its own files at
+all — its own directory was never the project's directory. The only effect is on its *next* turn's
+`code_exec` call: the read-only project mount attached is whichever project (if any) the thread
+currently belongs to. A thread that already promoted a file into its old project's shared
+directory via `save_to_project` doesn't take that file with it when moved — the file stays with
+the project it was promoted into, same as leaving a shared drive behind when you change teams.
 
 ## UI structure
 
@@ -330,9 +363,12 @@ list, plus "Remove from project" when the thread already has one).
 ## v1 scope
 
 - `projects` table + `threads.project_id` migration.
-- `ctx.WorkspaceKey` refactor across the four tool call sites + citation-URL minting.
+- The read-only shared-workspace mount: `codeExecRequest`'s second `ProjectHostWorkspaceDir`
+  field + `codeexec.sh`'s `:ro` mount, the two-tier read fallback in
+  `resolveWorkspaceFilePath`/`handleGetWorkspaceFile`, and the new `save_to_project` tool.
 - Project custom instructions concatenated into `{custom_instructions}` at turn-context build,
-  plus the shared-workspace file-name opener.
+  plus the shared-workspace file-name opener (calling out that the listed files are read-only
+  originals).
 - Five per-project settings — default focus mode, default model, memory mode (Default/None only),
   Constellation visibility, chat-search exclusion — plus the purely cosmetic color tag.
 - Favorite/pin toggle gating sidebar visibility, same mechanism as `threads.favorite`.
@@ -352,8 +388,12 @@ list, plus "Remove from project" when the thread already has one).
 - **Hard per-project cost limits/budget enforcement** — `default_model` only seeds a new thread's
   starting model choice, same as the global default already does; it's a convenience default, not
   a cap, and a thread can still switch models freely afterward exactly as it can today.
-- **Moving/copying workspace files between projects** — a thread that changes projects leaves its
-  old project's files behind entirely (see "Thread ↔ project mutability").
+- **Moving/copying workspace files between projects** — a thread that changes projects leaves
+  anything it promoted into its old project's shared directory behind entirely (see "Thread ↔
+  project mutability"); there's no "move these shared files to the new project too" step.
+- **Any UI surfacing of `save_to_project`** beyond the tool call itself — v1 doesn't add a citation
+  badge or explicit "promoted" indicator anywhere in the thread view; the tool's own result text
+  (naming what got saved and under what name) is the only confirmation.
 
 ## Next steps
 
@@ -361,8 +401,11 @@ list, plus "Remove from project" when the thread already has one).
    `store/projects.go` for CRUD (`CreateProject`, `GetProject`, `ListProjects`, `UpdateProject`,
    `DeleteProject` — the last one performing the orphan-and-cleanup sequence above in one
    transaction).
-2. `ctx.WorkspaceKey` plumbing: add the field to `tools.Context`, compute it once in
-   `gateway/turn.go`, retarget the four call sites named above.
+2. Shared-workspace plumbing: `ProjectHostWorkspaceDir` on `codeExecRequest` +
+   `codeexec.sh`'s second `:ro` mount, the two-tier fallback in `resolveWorkspaceFilePath` and
+   `handleGetWorkspaceFile`, and the new `save_to_project` tool (with its own
+   `tools/descriptions/*.yaml` entry and `docker_only`-style `Requires` gate on the thread having
+   a `project_id`).
 3. Turn-context wiring: concatenate project instructions + opener into
    `agentCtx.CustomInstructions`; seed a new thread's `Model`/`FocusMode` from the project's
    defaults when set; extend the memory-wiring gate with `memory_mode != "none"`; add the
@@ -372,7 +415,8 @@ list, plus "Remove from project" when the thread already has one).
    project detail view (omnibox, "New thread" button, settings panel), sidebar section (favorited
    projects only), thread-header project indicator, `ThreadMenu` "Move to project."
 5. Live-verify per this repo's own standing practice (`CLAUDE.md`'s "Verify on real hardware, not
-   just review or mocked tests") — specifically: two threads in the same project actually sharing
-   a `code_exec`-written file without re-upload, a moved thread's workspace key actually changing
-   on its next turn, and the Constellation opt-out actually excluding a project's threads from a
-   live Weaver poll.
+   just review or mocked tests") — specifically: a `code_exec` write attempt against a project's
+   read-only mount actually fails instead of silently succeeding, `save_to_project` actually makes
+   a promoted file visible to a sibling thread's next turn, a moved thread's next `code_exec` call
+   actually mounts its new project instead of its old one, and the Constellation opt-out actually
+   excludes a project's threads from a live Weaver poll.
