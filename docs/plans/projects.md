@@ -134,13 +134,25 @@ Every thread keeps its own private, read-write workspace exactly as it does toda
   Takes a file already present in the calling thread's own workspace and copies it into the
   project's shared directory — works regardless of how that file got there (an upload, a
   `fetch_url` download, a `code_exec` output), so it's one primitive instead of a fetch_url-only
-  flag that would leave code_exec-generated files with no equivalent path. Only offered when the
-  thread has a `project_id` (same `catalog.go`-style `Requires` gating `code_exec` already uses for
-  `docker_only`). If a file of that name already exists in the project directory, it's saved under
-  an auto-incremented name (`router-configs-2.txt`) rather than silently overwritten — a later
-  thread's promote can never quietly destroy an earlier thread's contribution to the shared pool —
-  and the tool's result names whatever it actually got saved as, so the model can mention it if
-  relevant.
+  flag that would leave code_exec-generated files with no equivalent path. If a file of that name
+  already exists in the project directory, it's saved under an auto-incremented name
+  (`router-configs-2.txt`) rather than silently overwritten — a later thread's promote can never
+  quietly destroy an earlier thread's contribution to the shared pool — and the tool's result names
+  whatever it actually got saved as, so the model can mention it if relevant.
+
+  **Structurally absent from ordinary threads, not just refused at call time.** `tools.Context`
+  gains a `ProjectID string` field (empty when the thread has none), set alongside `ThreadID` in
+  `gateway/turn.go`'s per-turn context build — the same field the memory-mode and
+  Constellation/chat-search gates above already read. `save_to_project`'s catalog entry
+  (`tools/catalog.go`) gets a new `Requires: "project_workspace"` case in `offered()`:
+  `return ctx.ProjectID != ""`, the exact same shape as the existing `docker_only` →
+  `ctx.CodeExecEnabled` and `memory_store` → `ctx.WriteMemory != nil` cases just above it in that
+  switch. A non-project thread never sees `save_to_project` in its offered tool list at all — the
+  model can't attempt it, get a rejection, and retry; it simply isn't a tool that thread has, the
+  same way `code_exec` isn't a tool a bare-metal install's threads have. `catalog_test.go`'s
+  existing table-driven `offered()` tests (`"docker_only" cases`, `"chat_search" cases`) are the
+  precedent to extend with `save_to_project`'s own "excluded without a project" / "offered with
+  ctx.ProjectID set" pair.
 - **Uploading directly through the project detail view's own "Shared workspace" card stays a
   separate, always-explicit path** straight into the project directory — that one was already a
   deliberate "add this to the project" action, not a mid-conversation default, so it's unaffected
@@ -401,11 +413,13 @@ list, plus "Remove from project" when the thread already has one).
    `store/projects.go` for CRUD (`CreateProject`, `GetProject`, `ListProjects`, `UpdateProject`,
    `DeleteProject` — the last one performing the orphan-and-cleanup sequence above in one
    transaction).
-2. Shared-workspace plumbing: `ProjectHostWorkspaceDir` on `codeExecRequest` +
-   `codeexec.sh`'s second `:ro` mount, the two-tier fallback in `resolveWorkspaceFilePath` and
-   `handleGetWorkspaceFile`, and the new `save_to_project` tool (with its own
-   `tools/descriptions/*.yaml` entry and `docker_only`-style `Requires` gate on the thread having
-   a `project_id`).
+2. Shared-workspace plumbing: add `ctx.ProjectID` to `tools.Context`, set it in
+   `gateway/turn.go` alongside `ThreadID`; `ProjectHostWorkspaceDir` on `codeExecRequest` +
+   `codeexec.sh`'s second `:ro` mount; the two-tier fallback in `resolveWorkspaceFilePath` and
+   `handleGetWorkspaceFile`; the new `save_to_project` tool with its own
+   `tools/descriptions/*.yaml` entry and a new `Requires: "project_workspace"` case in
+   `catalog.go`'s `offered()` (`return ctx.ProjectID != ""`) so it's absent from the tool list
+   entirely on a non-project thread, not just refused when called.
 3. Turn-context wiring: concatenate project instructions + opener into
    `agentCtx.CustomInstructions`; seed a new thread's `Model`/`FocusMode` from the project's
    defaults when set; extend the memory-wiring gate with `memory_mode != "none"`; add the
@@ -418,5 +432,7 @@ list, plus "Remove from project" when the thread already has one).
    just review or mocked tests") — specifically: a `code_exec` write attempt against a project's
    read-only mount actually fails instead of silently succeeding, `save_to_project` actually makes
    a promoted file visible to a sibling thread's next turn, a moved thread's next `code_exec` call
-   actually mounts its new project instead of its old one, and the Constellation opt-out actually
-   excludes a project's threads from a live Weaver poll.
+   actually mounts its new project instead of its old one, an ordinary non-project thread's
+   offered-tools list genuinely has no `save_to_project` entry in it at all (not just a call that
+   errors), and the Constellation opt-out actually excludes a project's threads from a live Weaver
+   poll.
