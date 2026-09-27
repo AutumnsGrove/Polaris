@@ -1,6 +1,6 @@
 # Crazy ideas — brainstorm parking lot
 
-**Added: 2026-09-19 (`3b6da09`); last updated 2026-09-22 (`421949e`).** Living parking-lot doc, not
+**Added: 2026-09-19 (`3b6da09`); last updated 2026-09-27.** Living parking-lot doc, not
 a single-status plan — each entry below carries its own verdict (green-lit/liked/shelved/rejected)
 and gets a pointer added once it graduates to its own `docs/plans/<name>.md`, per "None of these
 have design docs yet" below.
@@ -101,6 +101,44 @@ recurring Pulsar routine for a monthly check-in.
 approach, what "monthly check-in" pulls forward from the previous run so it doesn't re-litigate
 already-categorized spend) but no open design objection surfaced. Next real step, once picked up:
 its own `docs/plans/` doc.
+
+### Oracle mode
+
+An opt-in settings toggle that hands every turn's steering decisions to Jev instead of the
+composer's manual pickers. Today the operator manually sets focus mode (`ComposerMenu.svelte`'s
+picker, one of the `FocusModeBrief`/`Academic`/`News`/... constants in `agent/driver.go`), whether
+research is on at all (`tools.Context.NoResearch`), and whether deep research is on
+(`tools.Context.DeepResearch`) — three independent decisions made by hand, per thread, every time.
+Oracle mode asks Jev to make all three from the prompt text alone, before the turn's system prompt
+is even built (`agent/driver.go`'s `loadSystemPrompt`/`gateway/turn.go`'s turn setup), then proceeds
+exactly like today with those fields pre-filled instead of composer-set.
+
+**Why Jev specifically, not another LLM call**: this is a pure classification decision over a fixed,
+small option set — exactly Jev's shape (`jev/jev.go`, already live in `gateway/verification.go`'s
+source-verification badge). A **Choice** question ("which focus mode fits this prompt, or none")
+with the 8 `agent.focus_modes` names plus "off" as the option set, and two **Noul** (yes/no
+probability) questions for "does this need research at all" and "does this need deep, multi-angle
+research" — three Jev questions, evaluated in parallel, for a fraction of a cent per turn. Same
+economics argument as the hill-climbing doc's Jev-as-grader pitch, just spent on steering a real
+turn instead of grading a benchmark.
+
+**Origin note, for the record**: this one came to the operator in a dream — mid-2026-09-27, no
+prior brainstorm session prompted it, unlike every other entry in this doc.
+
+**Verdict: liked, entirely opt-in, may never see real use — build it anyway because Jev is worth
+having more surface area for.** Real design questions before this is buildable:
+- Does a Jev misclassification (research turned off for a question that actually needed it, say)
+  get silently corrected — same `ask_user_question`-with-`wants_web_search` escape hatch
+  `no_research_instruction` already gives the model for a manually-set chat mode — or does Oracle
+  mode need its own, more permissive fallback since nobody chose the constraint on purpose here?
+- Whether this only fires on a thread's first message (classify once, sticky for the thread, same
+  as `persistThreadConfig`'s existing model) or re-classifies every turn (cheap enough to do either,
+  given Jev's per-call cost, but a mid-thread flip in focus mode/research access could be confusing
+  without some visible indicator that Oracle mode just changed something).
+- Whether this ever extends past the three fields above to include model selection — floated in
+  the same breath but a materially bigger step (needs a Choice question over the whole
+  `models.Registry` roster, and picking a *bad* model automatically is a worse failure mode than
+  picking a bad focus mode) — probably a v2 question, not v1.
 
 ## Shelved
 
