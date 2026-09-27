@@ -407,16 +407,25 @@
 						<span class="dot"></span>
 					</button>
 				{/each}
-				{#if selectedNode}
-					<button
-						class="star-label-chip"
-						style="left: {selectedNode.x}px; top: {selectedNode.y}px;"
-						onclick={(event) => handleStarClick(selectedNode, event)}
-					>
-						{selectedNode.star.title}
-					</button>
-				{/if}
 			</div>
+			{#if selectedNode}
+				<!-- Positioned in screen space (via zoomTransform.applyX/Y) rather than
+				     living inside .zoom-canvas: that div's own transform: scale(k) would
+				     blow the chip's font/padding up right along with the map at high zoom
+				     instead of just moving it, since a CSS transform scales an element's
+				     entire rendered content, not just its position. Computing screen
+				     coordinates here keeps the chip's on-screen size constant (matching
+				     the CSS's plain 12px) while it still tracks the star through pan/zoom. -->
+				<button
+					class="star-label-chip"
+					style="left: {zoomTransform.applyX(selectedNode.x)}px; top: {zoomTransform.applyY(
+						selectedNode.y
+					)}px;"
+					onclick={(event) => handleStarClick(selectedNode, event)}
+				>
+					{selectedNode.star.title}
+				</button>
+			{/if}
 		</div>
 		<button class="fit-btn" class:visible={isZoomedOrPanned} onclick={resetZoom} title="Reset view">
 			<Maximize2 size={14} />
