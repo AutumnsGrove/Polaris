@@ -235,6 +235,7 @@ svg.icon.sm { width: 13px; height: 13px; }
 	color: var(--color-text-dim);
 }
 .chip.on { background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.chip.chip-icon { padding: 5px; }
 .field-label { font-size: 12.5px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .hint { font-size: 12px; color: var(--color-text-dim); margin-top: 4px; }
 select, .textinput {
@@ -475,6 +476,16 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 			<circle cx="7" cy="18" r="2.2"/>
 			<circle cx="11" cy="12" r="2.2"/>
 		</g>
+		<!-- Per-mode icon (matches web/src/lib/focusModes.ts's Microscope for
+		     'researcher') — shown alone, no text, once a specific mode is
+		     picked; i-sliders above stays reserved for the row LABEL
+		     ("Default focus mode"), not the selected value. -->
+		<g id="i-microscope" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M5.5 20h8"/>
+			<path d="M9.5 20v-2.5a4 4 0 014-4h.3"/>
+			<path d="M9 13.5L6.3 6.8a1.8 1.8 0 013.3-1.4L13 13"/>
+			<path d="M12 8.5l3.2-1.2"/>
+		</g>
 		<g id="i-orbit" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
 			<circle cx="12" cy="12" r="3"/>
 			<ellipse cx="12" cy="12" rx="9.5" ry="4.2" transform="rotate(-30 12 12)"/>
@@ -507,19 +518,19 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<h1>Projects</h1>
 					<p>Shared instructions and files for threads that belong together.</p>
 				</div>
-				<button class="btn btn-accent"><svg class="icon"><use href="#i-plus"/></svg> New project</button>
+				<button class="btn btn-accent"><svg class="icon" viewBox="0 0 24 24"><use href="#i-plus"/></svg> New project</button>
 			</div>
 			<div class="project-grid">
 
 				<div class="project-card" style="--tag:var(--swatch-tech)">
 					<div class="row-top">
 						<div class="name">Home network rebuild</div>
-						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg></button>
+						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
 					</div>
 					<div class="desc">ISP outage notes, router configs, the mesh-vs-AP debate.</div>
 					<div class="chips">
-						<span class="chip on"><svg class="icon sm"><use href="#i-sliders"/></svg>Researcher</span>
-						<span class="chip on"><svg class="icon sm"><use href="#i-cpu"/></svg>Sonnet</span>
+						<span class="chip on chip-icon" title="Researcher focus"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-microscope"/></svg></span>
+						<span class="chip on"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-cpu"/></svg>Sonnet</span>
 					</div>
 					<div class="meta"><span>7 threads</span><span>updated 2d ago</span></div>
 				</div>
@@ -527,11 +538,11 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				<div class="project-card" style="--tag:var(--swatch-space)">
 					<div class="row-top">
 						<div class="name">Theros one-shot prep</div>
-						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg></button>
+						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
 					</div>
 					<div class="desc">Session notes, NPC voices, the loot table I keep forgetting to finish.</div>
 					<div class="chips">
-						<span class="chip on"><svg class="icon sm"><use href="#i-orbit"/></svg>Weaver off</span>
+						<span class="chip on"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-orbit"/></svg>Weaver off</span>
 					</div>
 					<div class="meta"><span>12 threads</span><span>updated yesterday</span></div>
 				</div>
@@ -539,12 +550,12 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				<div class="project-card" style="--tag:var(--swatch-finance)">
 					<div class="row-top">
 						<div class="name">Budget after bankruptcy</div>
-						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#i-star"/></svg></button>
+						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
 					</div>
 					<div class="desc">Rebuilding from zero — statements, the payoff order, what's actually working.</div>
 					<div class="chips">
-						<span class="chip on"><svg class="icon sm"><use href="#i-brain"/></svg>No memory</span>
-						<span class="chip on"><svg class="icon sm"><use href="#i-searchoff"/></svg>Search-hidden</span>
+						<span class="chip on"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-brain"/></svg>No memory</span>
+						<span class="chip on"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-searchoff"/></svg>Search-hidden</span>
 					</div>
 					<div class="meta"><span>4 threads</span><span>updated 5d ago</span></div>
 				</div>
@@ -552,7 +563,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				<div class="project-card" style="--tag:var(--swatch-career)">
 					<div class="row-top">
 						<div class="name">Coding reference</div>
-						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#i-star"/></svg></button>
+						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
 					</div>
 					<div class="desc">Go idioms, the SQLite migration pattern, snippets worth not re-deriving.</div>
 					<div class="chips"></div>
@@ -560,7 +571,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				</div>
 
 				<div class="project-card new">
-					<svg class="icon" style="width:22px;height:22px;margin-bottom:8px;"><use href="#i-plus"/></svg>
+					<svg class="icon" style="width:22px;height:22px;margin-bottom:8px;" viewBox="0 0 24 24"><use href="#i-plus"/></svg>
 					Start a new project
 				</div>
 
@@ -575,9 +586,9 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 		<p class="stage-caption">An omnibox up top starts a thread the instant you send — same as claude.ai's own project page — with a separate "New thread" button for opening a blank composer instead. Settings on the right use the same five icons as the hub cards.</p>
 		<div class="screen">
 			<div class="detail-header">
-				<button class="btn" style="padding:8px;"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+				<button class="btn" style="padding:8px;"><svg class="icon" viewBox="0 0 24 24"><use href="#i-chevron-left"/></svg></button>
 				<div class="titles">
-					<h1>Home network rebuild <svg class="icon" fill="currentColor" style="width:13px;height:13px;color:var(--color-accent);"><use href="#i-star"/></svg></h1>
+					<h1>Home network rebuild <svg class="icon" fill="currentColor" style="width:13px;height:13px;color:var(--color-accent);" viewBox="0 0 24 24"><use href="#i-star"/></svg></h1>
 					<div class="desc">ISP outage notes, router configs, the mesh-vs-AP debate.</div>
 				</div>
 			</div>
@@ -587,13 +598,13 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				<div class="omnibox">
 					<textarea rows="2" placeholder="Ask something, or start a new thread in Home network rebuild…"></textarea>
 					<div class="omnibox-toolbar">
-						<span class="chip"><svg class="icon sm"><use href="#i-cpu"/></svg>Sonnet</span>
-						<span class="chip"><svg class="icon sm"><use href="#i-sliders"/></svg>Researcher</span>
-						<button class="send"><svg class="icon" style="width:15px;height:15px;"><use href="#i-send"/></svg></button>
+						<span class="chip"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-cpu"/></svg>Sonnet</span>
+						<span class="chip chip-icon" title="Researcher focus"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-microscope"/></svg></span>
+						<button class="send"><svg class="icon" style="width:15px;height:15px;" viewBox="0 0 24 24"><use href="#i-send"/></svg></button>
 					</div>
 				</div>
 				<div class="newthread-row">
-					<button class="btn"><svg class="icon"><use href="#i-plus"/></svg> New thread</button>
+					<button class="btn"><svg class="icon" viewBox="0 0 24 24"><use href="#i-plus"/></svg> New thread</button>
 				</div>
 
 				<div class="detail-body">
@@ -640,7 +651,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 							<h2>Project settings</h2>
 
 							<div class="setting-row">
-								<span class="field-label"><svg class="icon sm"><use href="#i-sliders"/></svg>Default focus mode</span>
+								<span class="field-label"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-sliders"/></svg>Default focus mode</span>
 								<select>
 									<option>Inherit global default (Off)</option>
 									<option selected>Researcher — cross-check sources, dig deeper</option>
@@ -651,7 +662,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 							</div>
 
 							<div class="setting-row">
-								<span class="field-label"><svg class="icon sm"><use href="#i-cpu"/></svg>Default model</span>
+								<span class="field-label"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-cpu"/></svg>Default model</span>
 								<select>
 									<option>Inherit global default</option>
 									<option selected>Claude Sonnet 5</option>
@@ -661,7 +672,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 							</div>
 
 							<div class="setting-row">
-								<span class="field-label"><svg class="icon sm"><use href="#i-brain"/></svg>Memory mode</span>
+								<span class="field-label"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-brain"/></svg>Memory mode</span>
 								<div class="segmented">
 									<button aria-current="true">Default</button>
 									<button>None</button>
@@ -671,14 +682,14 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 
 							<div class="setting-row">
 								<div class="row-top">
-									<span class="field-label" style="margin:0;"><svg class="icon sm"><use href="#i-orbit"/></svg>Let Weaver read this project</span>
+									<span class="field-label" style="margin:0;"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-orbit"/></svg>Let Weaver read this project</span>
 									<div class="switch on"></div>
 								</div>
 							</div>
 
 							<div class="setting-row">
 								<div class="row-top">
-									<span class="field-label" style="margin:0;"><svg class="icon sm"><use href="#i-searchoff"/></svg>Exclude from chat search</span>
+									<span class="field-label" style="margin:0;"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-searchoff"/></svg>Exclude from chat search</span>
 									<div class="switch"></div>
 								</div>
 							</div>
@@ -721,12 +732,12 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="mini-sidebar">
 						<div class="wordmark">Polaris</div>
 
-						<div class="section-label"><svg class="icon"><use href="#i-folder"/></svg>Projects</div>
+						<div class="section-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Projects</div>
 						<div class="proj-row"><span class="dot" style="background:var(--swatch-tech)"></span>Home network rebuild <span class="chev">›</span></div>
 						<div class="proj-row"><span class="dot" style="background:var(--swatch-space)"></span>Theros one-shot prep <span class="chev">›</span></div>
 						<div class="sidebar-footnote">2 pinned — 2 more in the Projects hub</div>
 
-						<div class="section-label" style="margin-top:var(--space-lg);"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg>Favorites</div>
+						<div class="section-label" style="margin-top:var(--space-lg);"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg>Favorites</div>
 						<div class="thread-row-mini">Comparing mortgage refi offers</div>
 
 						<div class="section-label" style="margin-top:var(--space-lg);">Recents</div>
@@ -739,7 +750,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="mock-chatheader">
 						<div class="titleblock">
 							<span class="t">Comparing mesh vs. a wired backhaul AP</span>
-							<span class="project-pill"><svg class="icon sm"><use href="#i-folder"/></svg>Home network rebuild</span>
+							<span class="project-pill"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Home network rebuild</span>
 						</div>
 						<div class="menu-wrap">
 							<button class="btn" style="padding:7px 9px;">
@@ -751,11 +762,11 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 									Rename
 								</div>
 								<div class="menu-item">
-									<svg class="icon" fill="currentColor"><use href="#i-star"/></svg>
+									<svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg>
 									Favorite
 								</div>
 								<div class="menu-item" style="position:relative;">
-									<svg class="icon"><use href="#i-folder"/></svg>
+									<svg class="icon" viewBox="0 0 24 24"><use href="#i-folder"/></svg>
 									Move to project
 									<span class="arrow">›</span>
 									<div class="submenu">

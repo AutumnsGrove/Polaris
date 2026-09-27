@@ -268,12 +268,20 @@ Hub cards and the settings panel share one icon vocabulary instead of plain-text
 recognizing a project's non-default settings on the hub grid trains the same visual read used
 inside its detail view. Reuses icons already established elsewhere in the app rather than
 inventing new ones: `Brain` (memory mode — already `MemorySettings.svelte`'s icon), `Cpu` (default
-model — already imported in `ComposerMenu.svelte`), `SlidersHorizontal` (default focus mode — same
-icon `ComposerMenu.svelte` already uses for its own mode-config affordance), `Orbit` (Constellation
-visibility — already `Sidebar.svelte`'s nav icon for `/constellation`), a search-with-slash mark
-(chat-search exclusion), and a filled `Star` for the favorite/pin toggle (already the exact icon
-Favorites uses). A hub card shows a small icon-led chip only for settings that differ from their
-default — a project left entirely at defaults shows no chips at all, keeping the common case quiet.
+model — already imported in `ComposerMenu.svelte`), `SlidersHorizontal` (the *default focus mode*
+row's own label, i.e. "this row configures a mode" — same icon `ComposerMenu.svelte` already uses
+for its own mode-config affordance), `Orbit` (Constellation visibility — already `Sidebar.svelte`'s
+nav icon for `/constellation`), a search-with-slash mark (chat-search exclusion), and a filled
+`Star` for the favorite/pin toggle (already the exact icon Favorites uses). A hub card shows a
+small icon-led chip only for settings that differ from their default — a project left entirely at
+defaults shows no chips at all, keeping the common case quiet.
+
+Once a specific focus mode is actually selected (not just "this row exists"), its chip drops
+`SlidersHorizontal` for that mode's own icon from `FOCUS_MODES` (`web/src/lib/focusModes.ts` —
+`Microscope` for Researcher, `Zap` for Brief, and so on) and shows no text label at all — each mode
+already has a distinct icon in that list, so naming it again in words is redundant once you
+recognize the glyph. Same treatment on the omnibox's mode chip in the project detail view. A
+tooltip (`title="Researcher focus"`) covers the one moment that glyph isn't yet memorized.
 
 ### `/projects` hub
 
