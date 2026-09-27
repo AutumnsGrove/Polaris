@@ -20,6 +20,7 @@ import (
 	"polaris/agent"
 	"polaris/config"
 	"polaris/llm"
+	"polaris/prompts"
 	"polaris/store"
 	"polaris/tools"
 )
@@ -242,8 +243,7 @@ func generateDailyPickBlock(reqCtx context.Context, client llm.ChatClient, key, 
 	task = appendCustomInstruction(task, customInstruction)
 	task = appendPickHistoryExclusion(task, history)
 	resp, err := client.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
-		{Role: "system", Content: "You are writing one short card for a personal daily digest page. Be " +
-			"concise, concrete, and skimmable — 2-4 sentences, no headers, no restating the task."},
+		{Role: "system", Content: prompts.Get().PulsarDaily.PickBlockSystem},
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
@@ -491,10 +491,7 @@ type dailyVerdict struct {
 // returns a structured verdict.
 func dailyDiffJudge(reqCtx context.Context, client llm.ChatClient, title, yesterday, today string) (dailyVerdict, float64, error) {
 	messages := []llm.ChatMessage{
-		{Role: "system", Content: fmt.Sprintf("You are comparing yesterday's and today's content for one "+
-			"block of a personal daily digest page, titled %q. Decide whether today's content represents a "+
-			"meaningfully new development, or says nothing yesterday's didn't already say. Always respond "+
-			"by calling record_verdict — never plain text.", title)},
+		{Role: "system", Content: fmt.Sprintf(prompts.Get().PulsarDaily.DiffJudgeSystem, title)},
 		{Role: "user", Content: "Yesterday:\n" + yesterday + "\n\nToday:\n" + today},
 	}
 	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{dailyVerdictToolDef}, func(string) {}, nil)
@@ -576,10 +573,7 @@ func dailyElectTopStory(reqCtx context.Context, client llm.ChatClient, candidate
 		},
 	}
 	messages := []llm.ChatMessage{
-		{Role: "system", Content: "You are electing today's lead story for a personal daily digest page, " +
-			"from a short list of candidates each independently flagged as a notable development today. " +
-			"Pick whichever is genuinely the biggest/most significant — not by list order. Always respond " +
-			"by calling elect_top_story — never plain text."},
+		{Role: "system", Content: prompts.Get().PulsarDaily.TopStoryElectorSystem},
 		{Role: "user", Content: b.String()},
 	}
 	resp, err := client.ChatCompletionWithTools(reqCtx, messages, []llm.ToolDef{toolDef}, func(string) {}, nil)

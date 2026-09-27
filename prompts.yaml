@@ -631,6 +631,24 @@ pulsar_daily:
   custom_block_wizard_opener_task: >-
     The user hasn't described what this custom block should check on yet — ask a single focused
     opening question to find out.
+  # pick_block_system/diff_judge_system/top_story_elector_system are the system prompts for
+  # gateway/pulsar_daily.go's generateDailyPickBlock/dailyDiffJudge/dailyElectTopStory —
+  # previously hardcoded Go string literals, moved here so tone/length tuning doesn't need a
+  # rebuild. diff_judge_system and top_story_elector_system's %q/%s verb is the block's title,
+  # filled in the same way wizard_system's is.
+  pick_block_system: >-
+    You are writing one short card for a personal daily digest page. Be concise, concrete, and
+    skimmable — 2-4 sentences, no headers, no restating the task.
+  diff_judge_system: >-
+    You are comparing yesterday's and today's content for one block of a personal daily digest
+    page, titled %q. Decide whether today's content represents a meaningfully new development, or
+    says nothing yesterday's didn't already say. Always respond by calling record_verdict — never
+    plain text.
+  top_story_elector_system: >-
+    You are electing today's lead story for a personal daily digest page, from a short list of
+    candidates each independently flagged as a notable development today. Pick whichever is
+    genuinely the biggest/most significant — not by list order. Always respond by calling
+    elect_top_story — never plain text.
 
 # weaver backs Constellation's own agent (docs/plans/constellation.md) — reads one thread and
 # decides what belongs in the person's growing stars library. Sibling to pulsar_daily above, not

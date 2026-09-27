@@ -139,6 +139,16 @@ type Set struct {
 		// the block's own title, same as WizardSystem.
 		CustomBlockWizardSystem     string `yaml:"custom_block_wizard_system"`
 		CustomBlockWizardOpenerTask string `yaml:"custom_block_wizard_opener_task"`
+		// PickBlockSystem/DiffJudgeSystem/TopStoryElectorSystem back
+		// gateway/pulsar_daily.go's generateDailyPickBlock/dailyDiffJudge/
+		// dailyElectTopStory — previously hardcoded Go string literals
+		// (issue #117). DiffJudgeSystem carries one %q verb (the block's
+		// title, same fmt.Sprintf substitution as WizardSystem's %s
+		// above); PickBlockSystem/TopStoryElectorSystem are plain, no
+		// per-call substitution.
+		PickBlockSystem       string `yaml:"pick_block_system"`
+		DiffJudgeSystem       string `yaml:"diff_judge_system"`
+		TopStoryElectorSystem string `yaml:"top_story_elector_system"`
 	} `yaml:"pulsar_daily"`
 
 	Vision struct {
@@ -630,6 +640,19 @@ Once you have enough, call finalize_pulsar_prompt with the finished instruction 
 Important: steer the user toward ONE clear focus rather than a sprawling multi-story digest in a single block (e.g. "today's top 5-6 stories across every beat") — a block that tries to cover too much becomes an unwieldy Top Story candidate if it's ever elected, and a vaguer read day to day. If they genuinely do want multiple distinct items (e.g. a watchlist of several stocks, several games), that's fine — just make sure the instructions tell the block to keep each one a clean, separately summarizable item (a short title + a few sentences + a source, one per story) rather than one long merged narrative, since the block's own generation step is built to report distinct items independently, not blend them together.
 Once you have enough, call finalize_pulsar_prompt with the finished instructions in its ` + "`" + `prompt` + "`" + ` field, written the way you'd hand them to the block right now (e.g. "Check today's closing prices for NVDA and AAPL and report them"), not a description of what the block will do. Leave ` + "`" + `name` + "`" + ` empty — it isn't meaningful here. If the user replies after you've already finalized once (asking to change something), treat it as a revision request and call finalize_pulsar_prompt again with the updated draft.`
 
+	d.PulsarDaily.PickBlockSystem = "You are writing one short card for a personal daily digest page. Be " +
+		"concise, concrete, and skimmable — 2-4 sentences, no headers, no restating the task."
+
+	d.PulsarDaily.DiffJudgeSystem = "You are comparing yesterday's and today's content for one block of a " +
+		"personal daily digest page, titled %q. Decide whether today's content represents a meaningfully " +
+		"new development, or says nothing yesterday's didn't already say. Always respond by calling " +
+		"record_verdict — never plain text."
+
+	d.PulsarDaily.TopStoryElectorSystem = "You are electing today's lead story for a personal daily digest " +
+		"page, from a short list of candidates each independently flagged as a notable development today. " +
+		"Pick whichever is genuinely the biggest/most significant — not by list order. Always respond by " +
+		"calling elect_top_story — never plain text."
+
 	d.PulsarDaily.CustomBlockWizardOpenerTask = "The user hasn't described what this custom block should " +
 		"check on yet — ask a single focused opening question to find out."
 
@@ -844,6 +867,15 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarDaily.CustomBlockWizardOpenerTask == "" {
 		s.PulsarDaily.CustomBlockWizardOpenerTask = defaults.PulsarDaily.CustomBlockWizardOpenerTask
+	}
+	if s.PulsarDaily.PickBlockSystem == "" {
+		s.PulsarDaily.PickBlockSystem = defaults.PulsarDaily.PickBlockSystem
+	}
+	if s.PulsarDaily.DiffJudgeSystem == "" {
+		s.PulsarDaily.DiffJudgeSystem = defaults.PulsarDaily.DiffJudgeSystem
+	}
+	if s.PulsarDaily.TopStoryElectorSystem == "" {
+		s.PulsarDaily.TopStoryElectorSystem = defaults.PulsarDaily.TopStoryElectorSystem
 	}
 	return &s
 }
