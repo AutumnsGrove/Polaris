@@ -1,9 +1,13 @@
 # Hill-climbing objectives and eval-harness design — research notes
 
-Status: **objectives and harness design decided (see Part 5); nothing implemented yet.** Parts 1-4
-are the research that led there; Part 5 is the locked curriculum from the 2026-09-25 Q&A pass.
-Implementation is explicitly deferred to later in the week — this doc is what to build against
-when that starts. Companion to
+**Added: 2026-09-25 (`74f917a`).**
+
+Status: **objectives and harness design decided (Part 5); Tier 2 partially built, most of the
+curriculum still open.** Parts 1-4 are the research that led there; Part 5 is the locked
+curriculum from the 2026-09-25 Q&A pass. `polaris eval` (Tier 2) shipped the same day
+(`5ef47e1`/`77cee8c`/`d954c25`) covering all 4 planned categories, but at 33 cases total — Part
+5's "~250+ cases" target, the pairwise Arena-style model-comparison tournament, and the exact
+current prompt-token-footprint measurement are all still undone. Companion to
 `docs/plans/hill-climbing.md`, which enumerates *what* could be hill-climbed; this doc is about
 *what for* (objectives) and *how we'd know* (the harness), which has to come first — you can't
 climb a hill you haven't named.

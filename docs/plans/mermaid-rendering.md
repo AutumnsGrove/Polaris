@@ -1,5 +1,10 @@
 # Mermaid rendering — investigation + plan
 
+**Added: 2026-09-06 (`51d5eee`).**
+
+**Status: shipped (2026-09-06, `2606fb1`, "Render mermaid diagrams inline with copy/source
+toggle") — see `web/src/lib/mermaid.ts` and `ChatTurnView.svelte`.**
+
 Rendering ` ```mermaid ` code fences as live diagrams in assistant replies. **No tool call
 involved** — the model just writes a mermaid fence and the frontend renders it, the same way
 GitHub/Obsidian render mermaid in markdown. This doc records why that's the right shape versus a

@@ -1,8 +1,12 @@
 # Source verification with Jev — overview
 
-**Status: investigation + open questions resolved, live-spiked twice (2026-09-22). Not built.**
-This is now an umbrella doc: shared API context and general findings live here; the two concrete
-features each have their own focused plan, since they ship independently:
+**Added: 2026-09-22 (`fa0dec8`).**
+
+**Status: both features shipped.** `compare_sources` landed 2026-09-22 (`ccf3393`) and the
+per-claim badge landed the same day (`8d99a96`) — see each doc's own Status line below. This
+doc's investigation/API-context findings are kept as shared background, not open questions.
+This is an umbrella doc: shared API context and general findings live here; the two concrete
+features each have their own focused plan, since they shipped independently:
 
 - **[source-verification-compare-tool.md](source-verification-compare-tool.md)** — `compare_sources`,
   a mid-turn tool letting the model check whether two of its own cited sources actually agree.

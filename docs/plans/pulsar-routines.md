@@ -1,5 +1,10 @@
 # Pulsar — recurring routines, v1 plan
 
+**Added: 2026-09-03 (`bd0b837`).**
+
+**Status: shipped (2026-09-03, `4d71b76`, "Add Pulsar scheduler, pulse firing, and routine REST
+API") — see `gateway/pulsar_scheduler.go`, `gateway/pulsar_wizard.go`, `store/pulsar.go`.**
+
 Pulsar is a new primitive: a saved prompt that fires on a schedule instead of when you type
 it, running through the exact same agent/turn pipeline as any other message. Named for the
 astronomical object, not just for the celestial register Polaris/Atlas already sit in — a

@@ -1,6 +1,9 @@
 # Themed/special daily editions
 
-**Status: designed, not yet implemented.** Answers issue #37's design questions (how a
+**Added: 2026-09-12 (`4a8b97f`).**
+
+**Status: designed, not yet implemented** (confirmed still open — issue #37 is still open as of
+2026-09-27). Answers issue #37's design questions (how a
 day-specific template is configured, scheduled, and rendered) with concrete decisions against the
 real Stage A-D pipeline in `gateway/pulsar_daily.go`. A mockup of the alternate layout lives at
 `mockups/daily-special-edition.html`. Confirmed in a live discussion: single special day for v1

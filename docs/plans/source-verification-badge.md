@@ -1,8 +1,12 @@
 # Per-claim "found in source" badge
 
-**Status: fully speced, live-spiked, not built. Ships after
-[source-verification-compare-tool.md](source-verification-compare-tool.md)** — bigger surface
-area: evidence map, claim extraction, a new WS event, a migration, async cost tracking, two
+**Added: 2026-09-22 (`421949e`).**
+
+**Status: shipped (2026-09-22, `8d99a96`, "Add per-claim 'found in source' verification badge
+(issue #104)") — see `gateway/verification.go` and `ChatTurnView.svelte`'s citation-chip
+`.verified`/`.source-verified-icon` handling.** Shipped after
+[source-verification-compare-tool.md](source-verification-compare-tool.md) as planned — bigger
+surface area: evidence map, claim extraction, a new WS event, a migration, async cost tracking, two
 frontend spots.
 
 See [source-verification.md](source-verification.md) for shared context: what Jev is, the API

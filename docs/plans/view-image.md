@@ -1,5 +1,7 @@
 # view_image: letting the model actually look at an image
 
+**Added: 2026-09-13 (`9671c3f`).**
+
 **Status: shipped (2026-09-13) for both sources.** `card_index` (an `image_search` result) and
 `path` (a file in the thread's `code_exec` workspace — currently only code_exec itself writes
 there; `fetch_url`, once `docs/plans/fetch-and-workspace-tools.md` ships, will be the second

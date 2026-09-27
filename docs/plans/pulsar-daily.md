@@ -1,9 +1,18 @@
 # Pulsar Daily — v1 plan (living doc, mid-design)
 
-**Status: still in active design/mockup discussion — this doc captures what's been decided so
-far and gets expanded as more of it firms up. Not ready to build from yet.** See
-`mockups/pulsar-daily.html` for the current visual mockup (open it in a browser; resize the
-window to see the mobile behavior).
+**Added: 2026-09-04 (`fa3bcbc`).**
+
+**Status: shipped.** The Stage A-D generation pipeline landed 2026-09-05 (`750f00d`, "Add Pulsar
+Daily Stage A-D generation pipeline") and is live in `gateway/pulsar_daily.go`/
+`gateway/pulsar_daily_routes.go`/`store/pulsar_daily.go`, per CLAUDE.md's "Pulsar and Pulsar Daily"
+section. The "still in active design/mockup discussion, not ready to build from yet" line below is
+stale — kept as the historical record of the pre-build design discussion, most of which shipped as
+described. See `mockups/pulsar-daily.html` for the mockup this was built against (open it in a
+browser; resize the window to see the mobile behavior). One known gap: three of this pipeline's
+system prompts (the pick-block writer, the yesterday/today diff judge, the top-story elector) are
+still hardcoded Go string literals in `gateway/pulsar_daily.go` rather than living in `prompts.yaml`
+alongside its other prompts — tracked as
+[issue #117](https://github.com/AutumnsGrove/Polaris/issues/117).
 
 **2026-09-14 update:** every `visualize` mention below is now `code_exec` (+`show` to display the
 result) — `visualize` itself was removed entirely (see issue #44 and

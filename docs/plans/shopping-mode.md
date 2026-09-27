@@ -1,5 +1,10 @@
 # Shopping Mode — v1 plan
 
+**Added: 2026-09-09 (`5a4ec90`).**
+
+**Status: shipped (2026-09-10, `a2245bb`, "Add Shopping Mode: highlight tool + Shopper focus
+mode") — see `tools/highlight.go` and `FocusModeShopper` in `agent/driver.go`.**
+
 A shopping-flavored surface built entirely out of pieces that already exist: `web_search`/
 `web_read` for discovery (no new fetcher, no scraper), a new focus mode for steering, and one new,
 deliberately generic tool — `highlight` — whose only job is to turn links the model already

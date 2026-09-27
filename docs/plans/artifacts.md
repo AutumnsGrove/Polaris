@@ -1,5 +1,7 @@
 # Artifacts: a universal name and viewer for anything `show` surfaces
 
+**Added: 2026-09-15 (`03e86ca`).**
+
 **Status: shipped and live-verified (2026-09-15, `03e86ca`).** Reframes `show` (shipped
 2026-09-14, `docs/plans/show.md`) from an images-only inline viewer into the universal "here's
 something I made" surface, covering code_exec-generated charts, generated reports, and — as a

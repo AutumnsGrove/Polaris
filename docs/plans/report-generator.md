@@ -1,5 +1,7 @@
 # Report generator
 
+**Added: 2026-09-12 (`484cd87`).**
+
 **Status: superseded — see `docs/plans/artifacts.md`.** This doc's core direction (a dedicated
 `generate_report` Go tool doing its own `spawn_researchers` fan-out + a forced synthesis pass) was
 reconsidered before any of it was built and rejected as unnecessary orchestration weight, once

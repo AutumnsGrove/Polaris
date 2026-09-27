@@ -1,5 +1,7 @@
 # Constellation
 
+**Added: 2026-09-10 (`54261e7`).**
+
 **Status: implemented and shipped.** Schema, Weaver's five tools, the scheduler, backfill CLI,
 review UI, personal-star handling, and cost auditability are all real code — see `store/constellation.go`,
 `gateway/constellation_*.go`, `tools/{search,read,create,update,link}_star*.go`,

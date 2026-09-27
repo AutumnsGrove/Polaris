@@ -1,5 +1,10 @@
 # Crazy ideas — brainstorm parking lot
 
+**Added: 2026-09-19 (`3b6da09`); last updated 2026-09-22 (`421949e`).** Living parking-lot doc, not
+a single-status plan — each entry below carries its own verdict (green-lit/liked/shelved/rejected)
+and gets a pointer added once it graduates to its own `docs/plans/<name>.md`, per "None of these
+have design docs yet" below.
+
 Not a plan for any one feature — a running list of out-there directions surfaced by looking at
 what Polaris already has lying around (mirrors how Constellation itself started: `search_chats`
 turned up "what do I actually use you for," and the Weaver idea fell out of noticing `stars`+

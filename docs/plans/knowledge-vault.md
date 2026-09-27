@@ -1,5 +1,7 @@
 # Knowledge vault — very early brainstorm, not scoped yet
 
+**Added: 2026-09-09 (`21316bb`).**
+
 **Status: superseded — shipped as Constellation.** This brainstorm's "Option D" UI direction and
 personal-facts framing became `docs/plans/constellation.md` (see that doc's own "Status:
 implemented and shipped" line), not a separate feature. `store/constellation.go`,
