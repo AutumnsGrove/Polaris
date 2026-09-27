@@ -2,7 +2,8 @@
 
 **Added: 2026-09-25 (`ec4b0b1`).**
 
-Status: **item #2, step 1 only; items #1 and #3-8 untouched.** This is a handoff doc, written
+Status: **item #2, step 1 only; items #1 and #3-8 untouched.** Tracked as
+[issue #116](https://github.com/AutumnsGrove/Polaris/issues/116). This is a handoff doc, written
 after a status-check found that `polaris eval` (issues #110/#111, `eval/`) only ever covered Tier 2
 of `docs/plans/hill-climbing.md`'s two-tier split — Tier 1 (deterministic code, offline fixtures,
 zero model calls) was untouched at the time of writing. In the same commit that added this doc,
