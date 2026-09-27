@@ -1,10 +1,15 @@
 # Sandboxed code execution
 
-**Status: research/planning only — issue #42 asked for exactly that, not a design commitment.**
-This doc answers #42's open questions with a recommendation, and covers #44 (code-generated charts)
-as a follow-on section, since #44 explicitly depends on whatever ships here. No application code
-has been written for either issue. Revised after a live discussion that corrected two things in
-the first pass of this doc — see "What changed from the first draft" below.
+**Added: 2026-09-12 (`52c1068`).**
+
+**Status: shipped (2026-09-13, `5e55f8f`, "Ship code_exec: sandboxed Python via a host-side signal
+handoff") — see `tools/code_exec.go`.** This doc was originally research/planning only — issue #42
+asked for exactly that, not a design commitment — answering #42's open questions with a
+recommendation, and covering #44 (code-generated charts) as a follow-on section since #44
+explicitly depended on whatever shipped here. Both issues are closed out by shipped code now; the
+design below is kept as the historical record of the reasoning, not an open proposal. Revised
+after a live discussion that corrected two things in the first pass of this doc — see "What
+changed from the first draft" below.
 
 ## The constraints that decide almost everything else
 

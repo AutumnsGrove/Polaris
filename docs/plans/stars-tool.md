@@ -1,11 +1,12 @@
 # A `stars` tool for the main assistant
 
-**Status: decision made, not yet implemented — deferred pending a quality check.** Issue #56
-shelved itself pending a design call on personal-star/memory overlap; this doc made that call
-(below), then got revised on 2026-09-12 once two of its own premises changed (also below). Holding
-off on `tools/stars.go` until the full re-processed personal-only star library has been eyeballed
-for quality — no point building a search tool over content whose reliability hasn't been confirmed
-yet. No application code has been written.
+**Added: 2026-09-12 (`97896ca`).**
+
+**Status: shipped (2026-09-17, `7d1d970`, "Add a stars tool for the main assistant (issue #56)")
+— see `tools/stars.go`.** The quality-check gate this doc originally deferred behind was cleared;
+`tools/stars.go` implements the revised scope below (whole library, no `is_personal` filter).
+Issue #56 shelved itself pending a design call on personal-star/memory overlap; this doc made that
+call (below), then got revised on 2026-09-12 once two of its own premises changed (also below).
 
 ## 2026-09-12 revision: the "non-personal stars only" scope no longer exists
 

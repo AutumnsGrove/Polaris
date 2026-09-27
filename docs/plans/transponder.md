@@ -1,5 +1,7 @@
 # Transponder — v1 plan (living doc, mid-design)
 
+**Added: 2026-09-20 (`dc43c80`).**
+
 **Name locked in.** A transponder is a device that receives a signal and automatically replies to
 it — spacecraft, aircraft, and satellites all carry them. That's push-to-talk mode almost
 literally: transmit, and something automatically replies. It sits in the same "night sky, not

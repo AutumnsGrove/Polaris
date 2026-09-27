@@ -1,8 +1,18 @@
 # Workspace/attachment store unification
 
-**Status: designed (2026-09-15).** Implementation still blocked on `docs/plans/docker-only.md`
-landing — this design assumes every deployment has a workspace directory, which is only true once
-bare-metal is gone. Once unblocked, this is buildable as-is; nothing below is a placeholder.
+**Added: 2026-09-14 (`afd6942`), finalized 2026-09-15 (`d901925`).**
+
+**Status: shipped (2026-09-15, `94ef0a3`, "Unify attachments into the persistent code_exec
+workspace (#68)") — landed the same day as, and right after, `docs/plans/docker-only.md`'s
+collapse, once that landing made "every deployment has a workspace directory" actually true.**
+`resolveAttachment` now moves a staged upload into the thread's durable workspace directory under
+a generated short filename — the same directory `code_exec`/`fetch_url` already write into —
+instead of eagerly extracting PDF text or running a synthetic vision-model description call.
+`read_attachment` was retired outright as part of this (`code_exec` already fully subsumes paging/
+searching any workspace file); `messages.workspace_file_id` records the addressable filename so
+the 📎 chip is a real download link into `/api/workspace/:thread_id/:filename`. Live-verified end
+to end against a real running server. Nothing below is a placeholder — this is the design that
+shipped, not a still-open proposal.
 
 ## The observation that started this
 

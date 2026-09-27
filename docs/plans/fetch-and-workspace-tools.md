@@ -1,5 +1,7 @@
 # Fetch tool, persistent workspace, and read_attachment's extension
 
+**Added: 2026-09-13 (`9671c3f`).**
+
 **Status: `fetch_url` shipped and live-verified (2026-09-14)** — `tools/fetch_url.go`,
 `tools/descriptions/fetch_url.yaml`, wired into `catalog.go` under the same `docker_only` gate as
 `code_exec`. Both provenance paths from the design below are implemented: a `url` checked against
@@ -96,6 +98,15 @@ per-thread directory `code_exec` always mounts (see `code-execution.md`'s "File 
 section). `fetch_url` and `code_exec` share one workspace concept, not two.
 
 ## `read_attachment`'s extension
+
+**Update (2026-09-15, `94ef0a3`): this didn't happen — `read_attachment` was retired outright.**
+Once attachments moved into the persistent code_exec workspace
+(`docs/plans/workspace-store-unification.md`), `code_exec`'s own file access already covered
+paging/searching a workspace PDF, so extending `read_attachment` rather than deleting it would
+have been duplicate surface. `pdfPageText`/`searchPDFPages` live on in `tools/web_read.go` for a
+*fetched* page's own PDF handling; `tools/read_attachment.go` and its tool definition are gone.
+The section below is kept for the historical record of the original per-turn-only design, not as
+a live proposal.
 
 `read_attachment` (`tools/read_attachment.go`) is PDF-specific — its actual machinery
 (`pdfPageText`, `searchPDFPages`) only knows how to page through or literal-search a PDF, nothing

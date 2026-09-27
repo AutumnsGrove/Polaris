@@ -1,5 +1,7 @@
 # Atlas — v1 plan
 
+**Added: 2026-08-17 (`fe2aaca`).**
+
 Atlas is a self-hosted "local Kagi" search results page for Polaris, built on the existing
 SearXNG instance. This is a new, visually distinct product living inside the same Go
 binary/SvelteKit app as the chat assistant, not a reskin of it — connected by a mode toggle in

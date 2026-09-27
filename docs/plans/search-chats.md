@@ -1,5 +1,10 @@
 # Search previous chats — v1 plan
 
+**Added: 2026-09-09 (`f5b4d0b`).**
+
+**Status: shipped (2026-09-09, `8bbcf4f`, "Implement search_chats: search/read past conversations
+(#26)") — see `tools/search_chats.go`.**
+
 Implements [#26 "Add a tool to search prior chats"](https://github.com/AutumnsGrove/Polaris/issues/26):
 a tool letting Polaris search the user's own prior conversation history, and — the specific ask
 that motivated writing this doc — **link back to the actual thread it found**, so "did I already

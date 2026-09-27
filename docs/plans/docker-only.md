@@ -1,11 +1,19 @@
 # Docker-only: converging on a single deployment model
 
-**Status: designed, not yet implemented.** Filed against issue #61, which this doc **supersedes
-the direction of** — #61 was opened 2026-09-13 (before code_exec was fully working) and its one
-comment argued for the opposite conclusion (keep bare-metal primary, use Docker only narrowly as a
-capability). Revisited 2026-09-14 with code_exec now real and durable: the decision is full
-convergence, not the narrow middle path. #61's body/title should be rewritten to reflect this
-rather than left as a stale "still deciding" issue — see "Tracking" below.
+**Added: 2026-09-14 (`afd6942`).**
+
+**Status: shipped.** The bare-metal-to-Docker collapse landed 2026-09-15 (`7cf05e1`..`1cc9a1f`:
+code_exec's gate became a pure capability check, every `isDockerComposeInstall()` branch in
+`cmd/`/`gateway/` collapsed, `procmgr/`/`updater/` deleted, `install.sh` stripped down to the
+Docker path only), then continued being hardened by real deployment testing through 2026-09-24
+(`9524764`/`c6bd624`/`c48e6e3`/`e3d193f` — issue #85's watcher/sync-units fixes). See CLAUDE.md's
+"Install and production are Docker-only; local dev is bare-metal Go" section for the current,
+settled shape. Filed against issue #61, which this doc **superseded the direction of** — #61 was
+opened 2026-09-13 (before code_exec was fully working) and its one comment argued for the opposite
+conclusion (keep bare-metal primary, use Docker only narrowly as a capability). Revisited
+2026-09-14 with code_exec now real and durable: the decision was full convergence, not the narrow
+middle path. #61's body/title should be rewritten to reflect this rather than left as a stale
+"still deciding" issue — see "Tracking" below.
 
 Second, dependent doc: `docs/plans/workspace-store-unification.md` — unifying attachments and
 code_exec's per-thread workspace into one storage mechanism only becomes clean once every

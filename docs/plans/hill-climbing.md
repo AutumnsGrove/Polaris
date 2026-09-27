@@ -1,8 +1,15 @@
 # Hill-climbing opportunities — plan
 
-Status: **planning only, nothing implemented.** Written from a code survey on 2026-09-25; every
-"today it does X" claim below cites the file it came from, but none of the proposed metrics have
-been run yet — no baseline numbers exist for any of them.
+**Added: 2026-09-25 (`74f917a`).**
+
+Status: **partially started.** Written from a code survey on 2026-09-25; every "today it does X"
+claim below cites the file it came from. Since then: Tier 2 (`polaris eval`, issues #110/#111)
+shipped the same day this doc was added and has grown to 33 cases across its 4 categories — still
+well short of `docs/plans/hill-climbing-objectives.md`'s locked ~250+-case target, and no pairwise
+model-comparison tournament or token-ceiling baseline yet. Tier 1 got one real data point —
+`ec4b0b1` live-checked item #2's paywall/empty heuristics against real Bloomberg/Medium URLs and
+shipped a fix (`tools/paywall_livecheck_test.go`) — but items #1 and #3-8 are untouched; see
+`docs/plans/hill-climbing-tier1.md` for the up-to-date Tier 1 status.
 
 ## Why this exists
 

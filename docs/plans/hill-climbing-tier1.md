@@ -1,10 +1,18 @@
 # Hill-climbing Tier 1 — handoff for review + implementation
 
-Status: **nothing implemented yet.** This is a handoff doc, written after a status-check
-found that `polaris eval` (issues #110/#111, `eval/`) only ever covered Tier 2 of
-`docs/plans/hill-climbing.md`'s two-tier split — Tier 1 (deterministic code, offline
-fixtures, zero model calls) is completely untouched. Read `docs/plans/hill-climbing.md`'s
-"Tier 1" section first; this doc is the concrete build plan against it, not a restatement.
+**Added: 2026-09-25 (`ec4b0b1`).**
+
+Status: **item #2, step 1 only; items #1 and #3-8 untouched.** This is a handoff doc, written
+after a status-check found that `polaris eval` (issues #110/#111, `eval/`) only ever covered Tier 2
+of `docs/plans/hill-climbing.md`'s two-tier split — Tier 1 (deterministic code, offline fixtures,
+zero model calls) was untouched at the time of writing. In the same commit that added this doc,
+item #2's suggested step 1 (a live sanity check of `looksLikePaywall` against real paywalled pages)
+was actually run and turned into a real fix — see `tools/paywall_livecheck_test.go` and the
+`stripBoilerplateLines`/`paywallMarkers` changes in `tools/web_read.go`. That's real progress, but
+it's a manual live-check gated behind the `livecheck` build tag, not the automated scoring harness
+item #2 (or any of items #1, #3-8) describes below — none of that has been built. Read
+`docs/plans/hill-climbing.md`'s "Tier 1" section first; this doc is the concrete build plan
+against it, not a restatement.
 
 ## Why this is a separate track from `polaris eval`
 

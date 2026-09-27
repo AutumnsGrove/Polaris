@@ -1,5 +1,7 @@
 # Highlight tool expansions — v1 plan
 
+**Added: 2026-09-10 (`08fb655`).**
+
 **Status: shipped.** Media/places/GitHub-repo spotlighting via `highlight`, the paged-carousel
 rendering (issue #75), and the `web_read` JSON-LD extraction path (§4) all landed on `main` — see
 `ff3e89e` ("Expand highlight tool to places and GitHub repos (#49)") through `bdfcdff` ("Polish

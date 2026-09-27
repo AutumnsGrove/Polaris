@@ -1,5 +1,7 @@
 # Deep Research — two-tier plan
 
+**Added: 2026-09-02 (`0660233`).**
+
 **Status: implemented and shipped.** Tier 1 (Researcher focus mode) and Tier 2 (multi-agent Deep
 Research: plan-confirmation step, `spawn_researchers`/`subagent_report`, session budget, and
 synthesis pass) are both real code on `main` — see `agent/driver.go`'s Researcher focus-mode

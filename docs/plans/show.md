@@ -1,5 +1,7 @@
 # show: a big, inline artifact viewer — one step above highlight
 
+**Added: 2026-09-13 (`768f5be`).**
+
 **Status: shipped and live-verified (2026-09-14); generalized 2026-09-15, see
 `docs/plans/artifacts.md`.** This doc's own "Open items" section predicted a future artifact kind
 needing the lightbox to branch on content type — that's exactly what happened: `show` no longer

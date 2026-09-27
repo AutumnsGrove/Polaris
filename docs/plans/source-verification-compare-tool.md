@@ -1,8 +1,11 @@
 # `compare_sources` — mid-turn cross-source conflict tool
 
-**Status: fully speced, live-spiked, not built. Ships before the badge feature (see
-[source-verification.md](source-verification.md)) — smaller surface area, no schema/WS/frontend
-changes.**
+**Added: 2026-09-22 (`421949e`).**
+
+**Status: shipped (2026-09-22, `ccf3393`, "Add compare_sources: mid-turn Jev tool for cross-source
+conflict checks") — see `tools/compare_sources.go`.** Shipped before the badge feature (see
+[source-verification.md](source-verification.md)) as planned — smaller surface area, no schema/WS/
+frontend changes.
 
 See [source-verification.md](source-verification.md) for shared context: what Jev is, the API
 shape (including the corrected `instructions`/`criteria` request format), and general skepticism

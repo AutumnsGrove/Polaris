@@ -1,8 +1,12 @@
 # Comet — monthly retrospective
 
+**Added: 2026-09-19 (`2281d51`).**
+
 **Status: mockup reviewed and liked (operator: "just right... quite brief"), backend mechanics for
 category breakdown + spiked/faded now settled — still entirely in planning, implementation
-explicitly deferred.** Named and scoped in a live brainstorm 2026-09-19 — see
+explicitly deferred.** Tracked as
+[issue #115](https://github.com/AutumnsGrove/Polaris/issues/115). Named and scoped in a live
+brainstorm 2026-09-19 — see
 `docs/plans/crazy-ideas.md` for the naming history. A first visual mockup lives at
 `mockups/comet.html` (monthly cadence, all four blocks below — the "full page" density option the
 operator picked over a single stat card or a stats+chart-only cut). Nothing here is

@@ -1,5 +1,7 @@
 # Auto-compaction: verification, timing, and prompt quality
 
+**Added: 2026-09-24 (`c4cb6dc`).**
+
 Working notes for GitHub issue #109.
 
 Status: **steps 1-4 all implemented, independently reviewed, and live-verified.** See

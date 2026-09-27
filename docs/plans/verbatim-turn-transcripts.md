@@ -1,5 +1,7 @@
 # Verbatim turn transcripts (replacing reconstructed history)
 
+**Added: 2026-09-23 (`6cf4e6a`).**
+
 **Status:** implemented 2026-09-23 (all three phases). Decisions below are settled (see "Decisions").
 
 ## Phases

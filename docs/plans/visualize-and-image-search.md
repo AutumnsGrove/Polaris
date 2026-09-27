@@ -1,5 +1,7 @@
 # Visualize & Image Search — v1 plan
 
+**Added: 2026-09-03 (`be43545`).**
+
 **Status: `visualize` was removed entirely on 2026-09-14** (see issue #44) once code_exec's
 general-purpose matplotlib plotting, themed to match the app's UI, proved clearly better across
 every chart kind `visualize` supported and several it never could (scatter+regression, histograms)
