@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Projects — mockup</title>
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/asimovian@5/latin-400.css');
+
+/* ---------------------------------------------------------------
+   Tokens — copied 1:1 from Polaris's own web/src/app.css :root /
+   dark-media / [data-theme] blocks, not reinvented. This mockup
+   exists to show real product screens, so it uses the real palette.
+   Swatch-* tokens are a subset of the existing --color-cat-* scale
+   (same hues, same formula), reused for the project color-tag
+   picker instead of inventing a new palette. Companion to
+   docs/plans/projects.md (issue #119).
+   --------------------------------------------------------------- */
+:root {
+	color-scheme: light;
+	--color-bg: oklch(97% 0.008 75);
+	--color-surface: oklch(99% 0.004 80);
+	--color-surface-2: oklch(95% 0.01 75);
+	--color-surface-3: oklch(91% 0.012 75);
+	--color-border: oklch(87% 0.012 75);
+	--color-border-strong: oklch(78% 0.016 75);
+	--color-text: oklch(24% 0.016 60);
+	--color-text-dim: oklch(46% 0.018 60);
+	--color-accent: oklch(54% 0.17 68);
+	--color-accent-strong: oklch(46% 0.18 66);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	--color-accent-2: oklch(48% 0.1 240);
+	--color-accent-2-strong: oklch(40% 0.11 240);
+	--color-danger: oklch(52% 0.19 25);
+	--color-danger-bg: oklch(93% 0.04 25);
+
+	--swatch-tech: oklch(52% 0.16 337);
+	--swatch-nature: oklch(52% 0.16 28.6);
+	--swatch-finance: oklch(52% 0.16 265.8);
+	--swatch-space: oklch(52% 0.16 18.2);
+	--swatch-music: oklch(52% 0.16 142);
+	--swatch-food: oklch(52% 0.16 203.9);
+	--swatch-career: oklch(52% 0.16 224.5);
+	--swatch-relationships: oklch(52% 0.16 296.7);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+
+	--font-sans: 'Lexend', ui-sans-serif, system-ui, sans-serif;
+	--font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--color-bg: oklch(15% 0.014 65);
+		--color-surface: oklch(19% 0.014 65);
+		--color-surface-2: oklch(23% 0.016 65);
+		--color-surface-3: oklch(28% 0.018 65);
+		--color-border: oklch(30% 0.016 65);
+		--color-border-strong: oklch(40% 0.02 65);
+		--color-text: oklch(93% 0.01 75);
+		--color-text-dim: oklch(64% 0.014 70);
+		--color-accent: oklch(82% 0.17 78);
+		--color-accent-strong: oklch(72% 0.18 74);
+		--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+		--color-accent-2: oklch(78% 0.06 235);
+		--color-accent-2-strong: oklch(68% 0.09 235);
+		--color-danger: oklch(65% 0.19 25);
+		--color-danger-bg: oklch(28% 0.05 25);
+		--swatch-tech: oklch(78% 0.15 337);
+		--swatch-nature: oklch(78% 0.15 28.6);
+		--swatch-finance: oklch(78% 0.15 265.8);
+		--swatch-space: oklch(78% 0.15 18.2);
+		--swatch-music: oklch(78% 0.15 142);
+		--swatch-food: oklch(78% 0.15 203.9);
+		--swatch-career: oklch(78% 0.15 224.5);
+		--swatch-relationships: oklch(78% 0.15 296.7);
+	}
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-accent-2-strong: oklch(68% 0.09 235);
+	--color-danger: oklch(65% 0.19 25);
+	--color-danger-bg: oklch(28% 0.05 25);
+	--swatch-tech: oklch(78% 0.15 337);
+	--swatch-nature: oklch(78% 0.15 28.6);
+	--swatch-finance: oklch(78% 0.15 265.8);
+	--swatch-space: oklch(78% 0.15 18.2);
+	--swatch-music: oklch(78% 0.15 142);
+	--swatch-food: oklch(78% 0.15 203.9);
+	--swatch-career: oklch(78% 0.15 224.5);
+	--swatch-relationships: oklch(78% 0.15 296.7);
+}
+
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+button, select, input, textarea { font: inherit; color: inherit; }
+svg.icon { width: 15px; height: 15px; flex-shrink: 0; }
+svg.icon.sm { width: 13px; height: 13px; }
+
+/* ---------------- meta review frame — NOT part of the product ---------------- */
+.review-bar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-md);
+	padding: var(--space-md) var(--space-lg);
+	background: oklch(20% 0.006 260);
+	color: oklch(88% 0.006 260);
+	border-bottom: 1px solid oklch(30% 0.008 260);
+	font-size: 12.5px;
+}
+.review-bar .brand {
+	font-family: var(--font-wordmark);
+	font-weight: 400;
+	font-size: 13px;
+	letter-spacing: 0.02em;
+	color: oklch(78% 0.03 260);
+	margin-right: auto;
+}
+.review-bar .note { color: oklch(62% 0.01 260); }
+.tabs, .theme-toggle {
+	display: flex;
+	gap: 2px;
+	background: oklch(15% 0.006 260);
+	border-radius: var(--radius-md);
+	padding: 3px;
+}
+.tabs button, .theme-toggle button {
+	border: none;
+	background: transparent;
+	color: oklch(72% 0.01 260);
+	padding: 6px 12px;
+	border-radius: calc(var(--radius-md) - 3px);
+	cursor: pointer;
+	font-size: 12.5px;
+	font-weight: 500;
+	white-space: nowrap;
+}
+.tabs button[aria-current="true"], .theme-toggle button[aria-current="true"] {
+	background: oklch(38% 0.02 260);
+	color: oklch(96% 0.006 260);
+}
+
+.stage { padding: var(--space-2xl) var(--space-lg) 80px; max-width: 1180px; margin: 0 auto; }
+.stage-caption { color: var(--color-text-dim); font-size: 12.5px; margin: 0 0 var(--space-lg); max-width: 68ch; }
+.screen {
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-xl);
+	overflow: hidden;
+}
+
+/* ================= shared bits ================= */
+.section-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-dim);
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	padding: 0 var(--space-xs) var(--space-sm);
+}
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-sm);
+	border: 1px solid var(--color-border);
+	background: var(--color-surface-2);
+	color: var(--color-text);
+	padding: var(--space-sm) var(--space-lg);
+	border-radius: var(--radius-md);
+	cursor: pointer;
+	font-weight: 500;
+	font-size: 13.5px;
+}
+.btn:hover { background: var(--color-surface-3); }
+.btn-accent {
+	background: var(--color-accent);
+	color: oklch(20% 0.03 78);
+	border-color: transparent;
+	font-weight: 600;
+}
+.btn-accent:hover { background: var(--color-accent-strong); }
+.btn-danger { color: var(--color-danger); background: transparent; border-color: var(--color-border); }
+.btn-danger:hover { background: var(--color-danger-bg); }
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	font-weight: 500;
+	padding: 3px 9px 3px 7px;
+	border-radius: var(--radius-full);
+	background: var(--color-surface-3);
+	color: var(--color-text-dim);
+}
+.chip.on { background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.field-label { font-size: 12.5px; font-weight: 600; color: var(--color-text-dim); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.hint { font-size: 12px; color: var(--color-text-dim); margin-top: 4px; }
+select, .textinput {
+	width: 100%;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	color: var(--color-text);
+	border-radius: var(--radius-md);
+	padding: var(--space-sm) var(--space-md);
+	font-size: 13.5px;
+}
+textarea.textinput { resize: vertical; min-height: 90px; font-family: var(--font-sans); }
+select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outline-offset: 1px; }
+.icon-btn {
+	border: none; background: transparent; color: var(--color-text-dim);
+	padding: 4px; border-radius: var(--radius-sm); cursor: pointer;
+	display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { background: var(--color-surface-3); color: var(--color-text); }
+.icon-btn.starred { color: var(--color-accent); }
+
+/* ================= VIEW 1: Hub ================= */
+#view-hub .hub-header {
+	display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-lg);
+	padding: var(--space-xl) var(--space-xl) var(--space-lg);
+	border-bottom: 1px solid var(--color-border);
+}
+#view-hub h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+#view-hub .hub-header p { margin: 0; color: var(--color-text-dim); font-size: 13px; }
+.project-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: var(--space-lg);
+	padding: var(--space-xl);
+}
+.project-card {
+	position: relative;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	border-left: 3px solid var(--tag, transparent);
+	border-radius: var(--radius-lg);
+	padding: var(--space-lg);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-md);
+	cursor: pointer;
+	transition: border-color .15s ease;
+}
+.project-card:hover { border-color: var(--color-border-strong); border-left-color: var(--tag, var(--color-border-strong)); }
+.project-card .row-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
+.project-card .name { font-weight: 600; font-size: 15px; }
+.project-card .desc { color: var(--color-text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.6em; }
+.project-card .meta { font-size: 11.5px; color: var(--color-text-dim); display: flex; justify-content: space-between; }
+.project-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-card.new {
+	align-items: center; justify-content: center; text-align: center;
+	border-style: dashed; color: var(--color-text-dim); min-height: 168px;
+}
+.project-card.new:hover { color: var(--color-accent-strong); border-color: var(--color-accent); }
+
+/* ================= VIEW 2: Detail ================= */
+#view-detail .detail-header {
+	display: flex; align-items: center; gap: var(--space-md);
+	padding: var(--space-lg) var(--space-xl);
+	border-bottom: 1px solid var(--color-border);
+}
+#view-detail .detail-header .titles { flex: 1; min-width: 0; }
+#view-detail .detail-header h1 { font-size: 18px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: var(--space-sm); }
+#view-detail .detail-header .desc { font-size: 12.5px; color: var(--color-text-dim); margin-top: 2px; }
+.detail-scroll { padding: var(--space-xl); }
+.omnibox {
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border-strong);
+	border-radius: var(--radius-lg);
+	padding: var(--space-md) var(--space-lg);
+	margin-bottom: var(--space-md);
+}
+.omnibox textarea {
+	width: 100%; border: none; background: transparent; resize: none;
+	font-family: var(--font-sans); font-size: 14px; color: var(--color-text);
+	min-height: 44px; padding: 0;
+}
+.omnibox textarea:focus { outline: none; }
+.omnibox textarea::placeholder { color: var(--color-text-dim); }
+.omnibox-toolbar { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-sm); }
+.omnibox-toolbar .chip { background: var(--color-surface-3); cursor: pointer; }
+.omnibox-toolbar .send {
+	margin-left: auto; width: 30px; height: 30px; border-radius: var(--radius-full);
+	background: var(--color-accent); color: oklch(20% 0.03 78); border: none;
+	display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.newthread-row { display: flex; justify-content: flex-end; margin-bottom: var(--space-xl); }
+.detail-body { display: grid; grid-template-columns: 1.6fr 1fr; gap: var(--space-xl); }
+@media (max-width: 760px) { .detail-body { grid-template-columns: 1fr; } }
+.card {
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	padding: var(--space-lg);
+}
+.card + .card { margin-top: var(--space-lg); }
+.card h2 { font-size: 13.5px; font-weight: 600; margin: 0 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); }
+.card h2 .count { font-weight: 400; color: var(--color-text-dim); }
+.charcount { text-align: right; font-size: 11px; color: var(--color-text-dim); margin-top: 4px; }
+.file-row, .thread-row {
+	display: flex; align-items: center; gap: var(--space-sm);
+	padding: var(--space-sm) 2px;
+	border-bottom: 1px solid var(--color-border);
+	font-size: 13px;
+}
+.file-row:last-child, .thread-row:last-child { border-bottom: none; }
+.file-row .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .fsize { color: var(--color-text-dim); font-size: 11.5px; }
+.thread-row .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-row .tdate { color: var(--color-text-dim); font-size: 11.5px; }
+.upload-drop {
+	border: 1px dashed var(--color-border-strong);
+	border-radius: var(--radius-md);
+	padding: var(--space-md);
+	text-align: center;
+	color: var(--color-text-dim);
+	font-size: 12.5px;
+	margin-top: var(--space-md);
+}
+.setting-row { padding: var(--space-md) 0; border-bottom: 1px solid var(--color-border); }
+.setting-row:last-of-type { border-bottom: none; }
+.setting-row .row-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); margin-bottom: 6px; }
+.switch { position: relative; width: 36px; height: 21px; border-radius: var(--radius-full); background: var(--color-surface-3); border: 1px solid var(--color-border); flex-shrink: 0; cursor: pointer; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--color-text-dim); transition: transform .15s ease, background .15s ease; }
+.switch.on { background: var(--color-accent-soft); border-color: var(--color-accent); }
+.switch.on::after { transform: translateX(15px); background: var(--color-accent-strong); }
+.segmented { display: flex; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+.segmented button { flex: 1; border: none; background: var(--color-surface-2); color: var(--color-text-dim); padding: 7px 6px; font-size: 12px; font-weight: 500; cursor: pointer; border-right: 1px solid var(--color-border); }
+.segmented button:last-child { border-right: none; }
+.segmented button[aria-current="true"] { background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.segmented button.reserved { color: var(--color-text-dim); cursor: not-allowed; opacity: .55; }
+.segmented button.reserved .tag { display: block; font-size: 9.5px; font-weight: 400; }
+.swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+	width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+	border: 2px solid transparent; position: relative;
+}
+.swatch.none { background: var(--color-surface-3); border-color: var(--color-border-strong); }
+.swatch[aria-current="true"] { border-color: var(--color-text); }
+.danger-zone { margin-top: var(--space-xl); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+.danger-zone p { font-size: 12px; color: var(--color-text-dim); margin: var(--space-sm) 0 0; max-width: 40ch; }
+
+/* ================= VIEW 3: Integration ================= */
+.integration-grid { display: grid; grid-template-columns: 300px 1fr; gap: var(--space-xl); padding: var(--space-xl); align-items: start; }
+@media (max-width: 720px) { .integration-grid { grid-template-columns: 1fr; } }
+.mini-sidebar { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-lg) var(--space-md); }
+.mini-sidebar .wordmark { font-family: var(--font-wordmark); color: var(--color-accent); font-size: 15px; padding: 0 var(--space-xs) var(--space-lg); }
+.proj-row, .thread-row-mini {
+	display: flex; align-items: center; gap: var(--space-sm);
+	padding: 7px var(--space-xs);
+	border-radius: var(--radius-sm);
+	font-size: 13px;
+	cursor: pointer;
+}
+.proj-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.proj-row:hover, .thread-row-mini:hover { background: var(--color-surface-2); }
+.proj-row .chev { margin-left: auto; color: var(--color-text-dim); }
+.sidebar-footnote { font-size: 11px; color: var(--color-text-dim); padding: var(--space-xs) var(--space-xs) var(--space-md); }
+.mock-chatheader { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.mock-chatheader .titleblock { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.mock-chatheader .t { font-weight: 600; font-size: 14px; }
+.project-pill {
+	display: inline-flex; align-items: center; gap: 5px;
+	font-size: 11px; font-weight: 500; color: var(--color-accent-strong);
+	background: var(--color-accent-soft); padding: 3px 9px 3px 7px;
+	border-radius: var(--radius-full); width: fit-content; cursor: pointer;
+}
+.mock-chatbody { padding: var(--space-xl); color: var(--color-text-dim); font-size: 13px; background: var(--color-bg); }
+.menu-wrap { position: relative; display: inline-block; }
+.menu-popover {
+	position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
+	width: 220px;
+	background: var(--color-surface-2);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	box-shadow: 0 12px 32px -10px oklch(0% 0 0 / 0.35);
+	padding: 6px;
+}
+.menu-item { display: flex; align-items: center; gap: var(--space-sm); padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; }
+.menu-item:hover { background: var(--color-surface-3); }
+.menu-item .arrow { margin-left: auto; color: var(--color-text-dim); }
+.menu-item.danger { color: var(--color-danger); }
+.submenu { position: absolute; top: -6px; right: calc(100% + 6px); width: 200px; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: 0 12px 32px -10px oklch(0% 0 0 / 0.35); padding: 6px; }
+.submenu .menu-item.current { color: var(--color-accent-strong); background: var(--color-accent-soft); }
+.callout { background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-lg); font-size: 12.5px; color: var(--color-text-dim); }
+.callout b { color: var(--color-text); }
+
+@media (max-width: 480px) {
+	.stage { padding: var(--space-lg) var(--space-md) 60px; }
+	.detail-scroll, .integration-grid { padding: var(--space-lg); }
+	#view-hub .hub-header, #view-detail .detail-header { padding: var(--space-lg); flex-wrap: wrap; }
+	.project-grid { padding: var(--space-lg); grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="review-bar">
+	<span class="brand">Polaris</span>
+	<span class="note">Projects — design mockup, not the live app</span>
+	<div class="tabs" role="tablist" aria-label="Screen">
+		<button data-tab="hub" aria-current="true">Hub</button>
+		<button data-tab="detail">Project detail</button>
+		<button data-tab="integration">Sidebar &amp; menu</button>
+	</div>
+	<div class="theme-toggle" role="group" aria-label="Theme preview">
+		<button data-theme-btn="">System</button>
+		<button data-theme-btn="dark" aria-current="true">Dark</button>
+		<button data-theme-btn="light">Light</button>
+	</div>
+</div>
+
+<!-- Reusable icon defs, referenced by <use> everywhere below so the same
+     glyph is genuinely the same glyph on every card, row, and menu — Brain
+     (memory), Cpu (default model), SlidersHorizontal (focus mode), Orbit
+     (Constellation/Weaver), search-with-slash (chat-search exclusion),
+     folder (project), filled star (favorite/pin). -->
+<svg width="0" height="0" style="position:absolute">
+	<defs>
+		<g id="i-brain" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M9 3.5a3 3 0 00-3 3 2.6 2.6 0 00-1.5 4.6A2.8 2.8 0 006 15.8V18a3 3 0 003 3"/>
+			<path d="M15 3.5a3 3 0 013 3 2.6 2.6 0 011.5 4.6A2.8 2.8 0 0118 15.8V18a3 3 0 01-3 3"/>
+			<path d="M9 3.5v17.5M15 3.5v17.5M9 8.5h2M13 8.5h2M9 13h2M13 13h2"/>
+		</g>
+		<g id="i-cpu" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<rect x="6" y="6" width="12" height="12" rx="2"/>
+			<rect x="9.5" y="9.5" width="5" height="5" rx="1"/>
+			<path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+		</g>
+		<g id="i-sliders" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M4 6h9M17 6h3M4 18h3M11 18h9M4 12h5M13 12h7"/>
+			<circle cx="15" cy="6" r="2.2"/>
+			<circle cx="7" cy="18" r="2.2"/>
+			<circle cx="11" cy="12" r="2.2"/>
+		</g>
+		<g id="i-orbit" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+			<circle cx="12" cy="12" r="3"/>
+			<ellipse cx="12" cy="12" rx="9.5" ry="4.2" transform="rotate(-30 12 12)"/>
+			<circle cx="20.6" cy="8" r="1.4" fill="currentColor" stroke="none"/>
+		</g>
+		<g id="i-searchoff" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+			<circle cx="10.5" cy="10.5" r="6.5"/>
+			<path d="M15.3 15.3L21 21M4 4l16 16"/>
+		</g>
+		<g id="i-folder" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+		</g>
+		<path id="i-star" d="M12 2l2.9 6.6 7.1.6-5.4 4.7L18.2 21 12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/>
+		<g id="i-chevron-left" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></g>
+		<g id="i-plus" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></g>
+		<g id="i-send" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></g>
+	</defs>
+</svg>
+
+<div class="stage">
+
+	<!-- ============================================================ -->
+	<!-- VIEW 1 — /projects hub                                       -->
+	<!-- ============================================================ -->
+	<section id="view-hub">
+		<p class="stage-caption">A dedicated route, same tier as <code>/pulsar</code> / <code>/daily</code> / <code>/constellation</code>. The star pins a project into the sidebar — most projects here stay unpinned and live only in this hub. Chips only appear for settings that differ from their default, using the same icons the settings panel uses.</p>
+		<div class="screen">
+			<div class="hub-header">
+				<div>
+					<h1>Projects</h1>
+					<p>Shared instructions and files for threads that belong together.</p>
+				</div>
+				<button class="btn btn-accent"><svg class="icon"><use href="#i-plus"/></svg> New project</button>
+			</div>
+			<div class="project-grid">
+
+				<div class="project-card" style="--tag:var(--swatch-tech)">
+					<div class="row-top">
+						<div class="name">Home network rebuild</div>
+						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg></button>
+					</div>
+					<div class="desc">ISP outage notes, router configs, the mesh-vs-AP debate.</div>
+					<div class="chips">
+						<span class="chip on"><svg class="icon sm"><use href="#i-sliders"/></svg>Researcher</span>
+						<span class="chip on"><svg class="icon sm"><use href="#i-cpu"/></svg>Sonnet</span>
+					</div>
+					<div class="meta"><span>7 threads</span><span>updated 2d ago</span></div>
+				</div>
+
+				<div class="project-card" style="--tag:var(--swatch-space)">
+					<div class="row-top">
+						<div class="name">Theros one-shot prep</div>
+						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg></button>
+					</div>
+					<div class="desc">Session notes, NPC voices, the loot table I keep forgetting to finish.</div>
+					<div class="chips">
+						<span class="chip on"><svg class="icon sm"><use href="#i-orbit"/></svg>Weaver off</span>
+					</div>
+					<div class="meta"><span>12 threads</span><span>updated yesterday</span></div>
+				</div>
+
+				<div class="project-card" style="--tag:var(--swatch-finance)">
+					<div class="row-top">
+						<div class="name">Budget after bankruptcy</div>
+						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#i-star"/></svg></button>
+					</div>
+					<div class="desc">Rebuilding from zero — statements, the payoff order, what's actually working.</div>
+					<div class="chips">
+						<span class="chip on"><svg class="icon sm"><use href="#i-brain"/></svg>No memory</span>
+						<span class="chip on"><svg class="icon sm"><use href="#i-searchoff"/></svg>Search-hidden</span>
+					</div>
+					<div class="meta"><span>4 threads</span><span>updated 5d ago</span></div>
+				</div>
+
+				<div class="project-card" style="--tag:var(--swatch-career)">
+					<div class="row-top">
+						<div class="name">Coding reference</div>
+						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75"><use href="#i-star"/></svg></button>
+					</div>
+					<div class="desc">Go idioms, the SQLite migration pattern, snippets worth not re-deriving.</div>
+					<div class="chips"></div>
+					<div class="meta"><span>21 threads</span><span>updated 3h ago</span></div>
+				</div>
+
+				<div class="project-card new">
+					<svg class="icon" style="width:22px;height:22px;margin-bottom:8px;"><use href="#i-plus"/></svg>
+					Start a new project
+				</div>
+
+			</div>
+		</div>
+	</section>
+
+	<!-- ============================================================ -->
+	<!-- VIEW 2 — project detail                                      -->
+	<!-- ============================================================ -->
+	<section id="view-detail" hidden>
+		<p class="stage-caption">An omnibox up top starts a thread the instant you send — same as claude.ai's own project page — with a separate "New thread" button for opening a blank composer instead. Settings on the right use the same five icons as the hub cards.</p>
+		<div class="screen">
+			<div class="detail-header">
+				<button class="btn" style="padding:8px;"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+				<div class="titles">
+					<h1>Home network rebuild <svg class="icon" fill="currentColor" style="width:13px;height:13px;color:var(--color-accent);"><use href="#i-star"/></svg></h1>
+					<div class="desc">ISP outage notes, router configs, the mesh-vs-AP debate.</div>
+				</div>
+			</div>
+
+			<div class="detail-scroll">
+
+				<div class="omnibox">
+					<textarea rows="2" placeholder="Ask something, or start a new thread in Home network rebuild…"></textarea>
+					<div class="omnibox-toolbar">
+						<span class="chip"><svg class="icon sm"><use href="#i-cpu"/></svg>Sonnet</span>
+						<span class="chip"><svg class="icon sm"><use href="#i-sliders"/></svg>Researcher</span>
+						<button class="send"><svg class="icon" style="width:15px;height:15px;"><use href="#i-send"/></svg></button>
+					</div>
+				</div>
+				<div class="newthread-row">
+					<button class="btn"><svg class="icon"><use href="#i-plus"/></svg> New thread</button>
+				</div>
+
+				<div class="detail-body">
+					<div class="col-main">
+
+						<div class="card">
+							<h2>Instructions</h2>
+							<textarea class="textinput" rows="5">Assume UniFi gear (UDM-SE, three U6-Pros) and a Ting fiber ONT. When I paste a speed test, compare it against the plan's rated 940/880. Flag anything that looks like a DNS problem before blaming the ISP.</textarea>
+							<div class="charcount">612 / 4000</div>
+							<p class="hint">Added to every thread in this project, alongside your global custom instructions.</p>
+						</div>
+
+						<div class="card">
+							<h2>Shared workspace <span class="count">· 3 files</span></h2>
+							<div class="file-row">
+								<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>
+								<span class="fname">router-configs.txt</span>
+								<span class="fsize">14 KB</span>
+							</div>
+							<div class="file-row">
+								<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+								<span class="fname">mesh-layout-sketch.png</span>
+								<span class="fsize">1.1 MB</span>
+							</div>
+							<div class="file-row">
+								<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>
+								<span class="fname">isp-outage-log.csv</span>
+								<span class="fsize">6 KB</span>
+							</div>
+							<div class="upload-drop">Drop a file, or any thread in this project can add one from the composer</div>
+						</div>
+
+						<div class="card">
+							<h2>Threads <span class="count">· 7</span></h2>
+							<div class="thread-row"><span class="tname">Why did the U6-Pro in the office keep dropping</span><span class="tdate">2d ago</span></div>
+							<div class="thread-row"><span class="tname">Comparing mesh vs. a wired backhaul AP</span><span class="tdate">4d ago</span></div>
+							<div class="thread-row"><span class="tname">Reading the Ting outage page right</span><span class="tdate">1w ago</span></div>
+						</div>
+
+					</div>
+
+					<div class="col-side">
+						<div class="card">
+							<h2>Project settings</h2>
+
+							<div class="setting-row">
+								<span class="field-label"><svg class="icon sm"><use href="#i-sliders"/></svg>Default focus mode</span>
+								<select>
+									<option>Inherit global default (Off)</option>
+									<option selected>Researcher — cross-check sources, dig deeper</option>
+									<option>Brief — same research, shorter replies</option>
+									<option>Academic — prefer academic sources</option>
+									<option>First Principles — reason up from fundamentals</option>
+								</select>
+							</div>
+
+							<div class="setting-row">
+								<span class="field-label"><svg class="icon sm"><use href="#i-cpu"/></svg>Default model</span>
+								<select>
+									<option>Inherit global default</option>
+									<option selected>Claude Sonnet 5</option>
+									<option>Claude Opus 5.5</option>
+									<option>Claude Haiku 4.5</option>
+								</select>
+							</div>
+
+							<div class="setting-row">
+								<span class="field-label"><svg class="icon sm"><use href="#i-brain"/></svg>Memory mode</span>
+								<div class="segmented">
+									<button aria-current="true">Default</button>
+									<button>None</button>
+									<button class="reserved" title="Isolated per-project memory — planned for v2">Project-scoped<span class="tag">soon</span></button>
+								</div>
+							</div>
+
+							<div class="setting-row">
+								<div class="row-top">
+									<span class="field-label" style="margin:0;"><svg class="icon sm"><use href="#i-orbit"/></svg>Let Weaver read this project</span>
+									<div class="switch on"></div>
+								</div>
+							</div>
+
+							<div class="setting-row">
+								<div class="row-top">
+									<span class="field-label" style="margin:0;"><svg class="icon sm"><use href="#i-searchoff"/></svg>Exclude from chat search</span>
+									<div class="switch"></div>
+								</div>
+							</div>
+
+							<div class="setting-row">
+								<span class="field-label">Color tag</span>
+								<div class="swatch-row">
+									<div class="swatch none" title="No tag"></div>
+									<div class="swatch" style="background:var(--swatch-tech)" aria-current="true" title="Technology"></div>
+									<div class="swatch" style="background:var(--swatch-nature)" title="Nature"></div>
+									<div class="swatch" style="background:var(--swatch-finance)" title="Finance"></div>
+									<div class="swatch" style="background:var(--swatch-space)" title="Space"></div>
+									<div class="swatch" style="background:var(--swatch-music)" title="Music"></div>
+									<div class="swatch" style="background:var(--swatch-food)" title="Food"></div>
+									<div class="swatch" style="background:var(--swatch-career)" title="Career"></div>
+								</div>
+							</div>
+
+						</div>
+
+						<div class="danger-zone">
+							<button class="btn btn-danger">Delete project</button>
+							<p>Threads move back to your regular list, untouched. Shared workspace files are deleted with the project.</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ============================================================ -->
+	<!-- VIEW 3 — sidebar + thread menu integration                   -->
+	<!-- ============================================================ -->
+	<section id="view-integration" hidden>
+		<p class="stage-caption">Only pinned projects show in the sidebar — same favorite mechanism threads already have, not a full listing. A thread that belongs to a project carries a small pill in its header; tapping it goes back to the project.</p>
+		<div class="screen">
+			<div class="integration-grid">
+
+				<div>
+					<div class="mini-sidebar">
+						<div class="wordmark">Polaris</div>
+
+						<div class="section-label"><svg class="icon"><use href="#i-folder"/></svg>Projects</div>
+						<div class="proj-row"><span class="dot" style="background:var(--swatch-tech)"></span>Home network rebuild <span class="chev">›</span></div>
+						<div class="proj-row"><span class="dot" style="background:var(--swatch-space)"></span>Theros one-shot prep <span class="chev">›</span></div>
+						<div class="sidebar-footnote">2 pinned — 2 more in the Projects hub</div>
+
+						<div class="section-label" style="margin-top:var(--space-lg);"><svg class="icon" fill="currentColor"><use href="#i-star"/></svg>Favorites</div>
+						<div class="thread-row-mini">Comparing mortgage refi offers</div>
+
+						<div class="section-label" style="margin-top:var(--space-lg);">Recents</div>
+						<div class="thread-row-mini">What's the current stable Go version</div>
+						<div class="thread-row-mini">Coffee near the Space Needle</div>
+					</div>
+				</div>
+
+				<div>
+					<div class="mock-chatheader">
+						<div class="titleblock">
+							<span class="t">Comparing mesh vs. a wired backhaul AP</span>
+							<span class="project-pill"><svg class="icon sm"><use href="#i-folder"/></svg>Home network rebuild</span>
+						</div>
+						<div class="menu-wrap">
+							<button class="btn" style="padding:7px 9px;">
+								<svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+							</button>
+							<div class="menu-popover">
+								<div class="menu-item">
+									<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+									Rename
+								</div>
+								<div class="menu-item">
+									<svg class="icon" fill="currentColor"><use href="#i-star"/></svg>
+									Favorite
+								</div>
+								<div class="menu-item" style="position:relative;">
+									<svg class="icon"><use href="#i-folder"/></svg>
+									Move to project
+									<span class="arrow">›</span>
+									<div class="submenu">
+										<div class="menu-item current">✓ Home network rebuild</div>
+										<div class="menu-item">Theros one-shot prep</div>
+										<div class="menu-item">Budget after bankruptcy</div>
+										<div class="menu-item">Coding reference</div>
+										<div class="menu-item" style="border-top:1px solid var(--color-border); margin-top:4px; padding-top:10px;">Remove from project</div>
+									</div>
+								</div>
+								<div class="menu-item danger">
+									<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+									Delete
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="mock-chatbody">
+						A wired backhaul avoids the mesh radios' airtime tax entirely — since the U6-Pros already have a switch port at each end, that's the same conclusion the earlier "Why did the office one keep dropping" thread landed on…
+					</div>
+					<div style="padding: var(--space-lg); background: var(--color-bg);">
+						<div class="callout"><b>Shared context in action:</b> this reply can reference the office-AP thread's finding directly because both threads live in the same project — same workspace, same instructions, no re-explaining. The pill above the reply is the only thing on this screen that says so.</div>
+					</div>
+				</div>
+
+			</div>
+		</div>
+	</section>
+
+</div>
+
+<script>
+	(function () {
+		var tabs = document.querySelectorAll('.tabs button');
+		var views = { hub: document.getElementById('view-hub'), detail: document.getElementById('view-detail'), integration: document.getElementById('view-integration') };
+		tabs.forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				tabs.forEach(function (b) { b.removeAttribute('aria-current'); });
+				btn.setAttribute('aria-current', 'true');
+				Object.keys(views).forEach(function (k) { views[k].hidden = (k !== btn.dataset.tab); });
+			});
+		});
+
+		var themeBtns = document.querySelectorAll('.theme-toggle button');
+		themeBtns.forEach(function (btn) {
+			btn.addEventListener('click', function () {
+				themeBtns.forEach(function (b) { b.removeAttribute('aria-current'); });
+				btn.setAttribute('aria-current', 'true');
+				var v = btn.dataset.themeBtn;
+				if (v) { document.documentElement.setAttribute('data-theme', v); }
+				else { document.documentElement.removeAttribute('data-theme'); }
+			});
+		});
+		document.documentElement.setAttribute('data-theme', 'dark');
+
+		document.querySelectorAll('.switch').forEach(function (sw) {
+			sw.addEventListener('click', function () { sw.classList.toggle('on'); });
+		});
+		document.querySelectorAll('.segmented button:not(.reserved)').forEach(function (seg) {
+			seg.addEventListener('click', function () {
+				seg.parentElement.querySelectorAll('button').forEach(function (b) { b.removeAttribute('aria-current'); });
+				seg.setAttribute('aria-current', 'true');
+			});
+		});
+		document.querySelectorAll('.swatch').forEach(function (sw) {
+			sw.addEventListener('click', function () {
+				sw.parentElement.querySelectorAll('.swatch').forEach(function (b) { b.removeAttribute('aria-current'); });
+				sw.setAttribute('aria-current', 'true');
+			});
+		});
+		document.querySelectorAll('.project-card .icon-btn').forEach(function (star) {
+			star.addEventListener('click', function (e) {
+				e.stopPropagation();
+				star.classList.toggle('starred');
+				var svg = star.querySelector('svg');
+				svg.setAttribute('fill', star.classList.contains('starred') ? 'currentColor' : 'none');
+			});
+		});
+	})();
+</script>
+</body>
+</html>
