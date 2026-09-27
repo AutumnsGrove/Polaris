@@ -8,7 +8,11 @@ Daily Stage A-D generation pipeline") and is live in `gateway/pulsar_daily.go`/
 section. The "still in active design/mockup discussion, not ready to build from yet" line below is
 stale — kept as the historical record of the pre-build design discussion, most of which shipped as
 described. See `mockups/pulsar-daily.html` for the mockup this was built against (open it in a
-browser; resize the window to see the mobile behavior).
+browser; resize the window to see the mobile behavior). One known gap: three of this pipeline's
+system prompts (the pick-block writer, the yesterday/today diff judge, the top-story elector) are
+still hardcoded Go string literals in `gateway/pulsar_daily.go` rather than living in `prompts.yaml`
+alongside its other prompts — tracked as
+[issue #117](https://github.com/AutumnsGrove/Polaris/issues/117).
 
 **2026-09-14 update:** every `visualize` mention below is now `code_exec` (+`show` to display the
 result) — `visualize` itself was removed entirely (see issue #44 and

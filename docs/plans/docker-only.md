@@ -12,8 +12,8 @@ settled shape. Filed against issue #61, which this doc **superseded the directio
 opened 2026-09-13 (before code_exec was fully working) and its one comment argued for the opposite
 conclusion (keep bare-metal primary, use Docker only narrowly as a capability). Revisited
 2026-09-14 with code_exec now real and durable: the decision was full convergence, not the narrow
-middle path. #61's body/title should be rewritten to reflect this rather than left as a stale
-"still deciding" issue — see "Tracking" below.
+middle path. #61's body/title were rewritten accordingly (2026-09-15) to reflect this rather than
+being left as a stale "still deciding" issue — see "Tracking" below.
 
 Second, dependent doc: `docs/plans/workspace-store-unification.md` — unifying attachments and
 code_exec's per-thread workspace into one storage mechanism only becomes clean once every
@@ -55,10 +55,10 @@ below, since the two are no longer independent asks.
   `web/build/` being committed exists because the *potato* can't run `pnpm`/`vite`, which has
   nothing to do with a developer's own machine. See "Dev loop: code_exec must still be fully
   testable, without containerizing Polaris" below for the one real design item this leaves.
-- **Tracking**: #61 gets rewritten to reflect this direction (title + body), with a comment
+- **Tracking**: #61 was rewritten to reflect this direction (title + body), with a comment
   preserving *why* the original narrow-middle-path comment no longer applies (code_exec maturity),
-  rather than silently overwritten. A second, separate issue is opened for
-  `workspace-store-unification.md`, explicitly marked as depending on this one.
+  rather than silently overwritten. `workspace-store-unification.md` shipped as its own issue,
+  #68, marked as depending on this one — see that doc's own Status line.
 
 ## What gets deleted
 
