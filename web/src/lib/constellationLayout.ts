@@ -21,7 +21,17 @@ const TICKS = 300;
 const LINK_DISTANCE = 70;
 const CHARGE_STRENGTH = -90;
 const COLLIDE_RADIUS = 26;
-const CLUSTER_STRENGTH = 0.12;
+const CLUSTER_STRENGTH = 0.35;
+// Same-category links pull as hard as before; cross-category links (a
+// real connection Weaver found between two different topic areas) are
+// weaker and longer so they read as a thread stretching between two
+// neighborhoods instead of dragging those neighborhoods into each other
+// — with ~45% of real star_edges crossing categories, leaving this at
+// one strength/distance for every link is what collapses the whole map
+// into a single blob regardless of CLUSTER_STRENGTH above.
+const LINK_DISTANCE_CROSS = 170;
+const LINK_STRENGTH_SAME = 0.6;
+const LINK_STRENGTH_CROSS = 0.15;
 
 export interface LayoutNode {
 	id: number;
@@ -34,6 +44,10 @@ export interface LayoutEdge {
 	starAId: number;
 	starBId: number;
 	reasoning: string;
+	// crossCategory: lets the Map dial back visual weight on the links
+	// most likely to read as clutter — a long line spanning two distant
+	// category neighborhoods — without hiding them outright.
+	crossCategory: boolean;
 }
 
 export interface LayoutResult {
@@ -74,6 +88,13 @@ export function layoutStars(
 		.filter((e) => nodeById.has(e.star_a_id) && nodeById.has(e.star_b_id))
 		.map((e) => ({ source: e.star_a_id, target: e.star_b_id }));
 
+	// forceLink resolves source/target from plain ids into the actual
+	// LayoutNode objects during initialization, before any tick runs — so
+	// by the time these callbacks fire, `.source`/`.target` are nodes, not
+	// ids, and `.star.category` is safe to read.
+	const isCrossCategory = (l: { source: unknown; target: unknown }) =>
+		(l.source as LayoutNode).star.category !== (l.target as LayoutNode).star.category;
+
 	// Category clustering: each distinct category anchors to a fixed point
 	// on a ring around the canvas center, so the mockup's grouped-by-
 	// category feel survives alongside edge-driven placement — a personal
@@ -98,8 +119,8 @@ export function layoutStars(
 			'link',
 			forceLink(simLinks)
 				.id((d: unknown) => (d as LayoutNode).id)
-				.distance(LINK_DISTANCE)
-				.strength(0.6)
+				.distance((l) => (isCrossCategory(l) ? LINK_DISTANCE_CROSS : LINK_DISTANCE))
+				.strength((l) => (isCrossCategory(l) ? LINK_STRENGTH_CROSS : LINK_STRENGTH_SAME))
 		)
 		.force('charge', forceManyBody().strength(CHARGE_STRENGTH))
 		.force('collide', forceCollide(COLLIDE_RADIUS))
@@ -156,7 +177,13 @@ export function layoutStars(
 
 	const edges: LayoutEdge[] = edgePairs
 		.filter((e) => nodeById.has(e.star_a_id) && nodeById.has(e.star_b_id))
-		.map((e) => ({ starAId: e.star_a_id, starBId: e.star_b_id, reasoning: e.reasoning }));
+		.map((e) => ({
+			starAId: e.star_a_id,
+			starBId: e.star_b_id,
+			reasoning: e.reasoning,
+			crossCategory:
+				nodeById.get(e.star_a_id)!.star.category !== nodeById.get(e.star_b_id)!.star.category
+		}));
 
 	return { nodes, nodeById, edges };
 }

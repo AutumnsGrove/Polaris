@@ -389,6 +389,12 @@
 								y1={a.y}
 								x2={b.x}
 								y2={b.y}
+								class:cross-category={edge.crossCategory}
+								class:dimmed={selectedStarId !== null &&
+									selectedStarId !== edge.starAId &&
+									selectedStarId !== edge.starBId}
+								class:highlighted={selectedStarId !== null &&
+									(selectedStarId === edge.starAId || selectedStarId === edge.starBId)}
 								style="--star-color: {colorForCategory(a.star.category)}"
 							/>
 						{/if}
@@ -669,6 +675,26 @@
 		stroke: var(--star-color);
 		stroke-width: 1;
 		opacity: 0.35;
+		transition: opacity 0.15s ease, stroke-width 0.15s ease;
+	}
+	/* A cross-category link is real signal (Weaver found a connection
+	   across two topic areas), not noise — but on a large map it's also
+	   the longest line on the canvas, so it gets the most visual weight
+	   by default unless dialed back. Receded, not hidden. */
+	.lines line.cross-category {
+		opacity: 0.15;
+		stroke-width: 0.75;
+	}
+	/* Focus-on-select: a tapped star's own links stay/become visible,
+	   everything else eases back — moderate, not a near-invisible fade,
+	   so the map still reads as one shape while you're tracing a
+	   specific star's connections. */
+	.lines line.dimmed {
+		opacity: 0.1;
+	}
+	.lines line.highlighted {
+		opacity: 0.85;
+		stroke-width: 1.5;
 	}
 	.map-node {
 		position: absolute;
