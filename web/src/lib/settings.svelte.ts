@@ -128,6 +128,14 @@ export class SettingsState {
 	// touched this setting behaves exactly as before it existed.
 	memoryEnabled = $state(true);
 
+	// Master on/off for Oracle mode (docs/plans/oracle-mode.md) — off by
+	// default, unlike memoryEnabled above: Oracle spends real Jev budget
+	// and picks focus modes/injects guidance on every turn, so it's opt-in
+	// rather than opt-out (see gateway/settings.go's OracleEnabledFromStore
+	// doc comment on why the default polarity is deliberately opposite
+	// memoryEnabled's).
+	oracleEnabled = $state(false);
+
 	// Free-text operator steering substituted into prompt.md's
 	// {custom_instructions} placeholder on every turn (see
 	// gateway/settings.go's settingCustomInstructions and
@@ -239,6 +247,7 @@ export class SettingsState {
 		this.toggleableTools = data.toggleable_tools ?? [];
 		this.disabledTools = data.disabled_tools ?? [];
 		this.memoryEnabled = data.memory_enabled ?? true;
+		this.oracleEnabled = data.oracle_enabled ?? false;
 		this.customInstructions = data.custom_instructions ?? '';
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
@@ -292,6 +301,11 @@ export class SettingsState {
 	async setMemoryEnabled(enabled: boolean) {
 		this.memoryEnabled = enabled;
 		await this.put({ memory_enabled: enabled });
+	}
+
+	async setOracleEnabled(enabled: boolean) {
+		this.oracleEnabled = enabled;
+		await this.put({ oracle_enabled: enabled });
 	}
 
 	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —

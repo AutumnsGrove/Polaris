@@ -26,6 +26,7 @@
 	import MemorySettings from './MemorySettings.svelte';
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
+	import Asterism from './Asterism.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 	import PulsarUsageModal from './PulsarUsageModal.svelte';
 
@@ -557,6 +558,27 @@
 					it's saved across conversations.
 				</p>
 			</div>
+
+			<div class="section-head"><Asterism size={15} /><span class="section-title">Oracle mode</span></div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Enabled</span>
+					<label class="switch">
+						<input
+							type="checkbox"
+							checked={appState.settings.oracleEnabled}
+							onchange={(e) => appState.settings.setOracleEnabled(e.currentTarget.checked)}
+						/>
+						<span class="slider"></span>
+					</label>
+				</div>
+			</div>
+			<p class="hint">
+				Pre-reads each message to pick a focus mode and nudge the reply toward what it needs —
+				sourcing style for a medical question, a places tool for a local one. Every pick is shown
+				in the reply itself and can be undone. Off by default; uses the same Jev budget as
+				verification.
+			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>
 			<div class="settings-group">

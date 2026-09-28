@@ -3,6 +3,7 @@
 	import type { FocusMode } from '$lib/types';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import { Plus, Image as ImageIcon, Cpu, Microscope, Globe, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal } from '@lucide/svelte';
+	import Asterism from './Asterism.svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -133,13 +134,39 @@
 	// surfacing at a glance the way an active focus mode does) but grows
 	// small badges for whatever's actually turned on.
 	let activeFocusLabel = $derived(FOCUS_MODES.find((m) => m.id === focusMode)?.label ?? null);
+
+	// Oracle mode's own trigger state (docs/plans/oracle-mode.md's B12) —
+	// the ring only renders when Oracle is actually on (see
+	// SettingsPanel.svelte's toggle); otherwise the plain Plus icon from
+	// before Oracle existed is unchanged. "reading" spins the ring for the
+	// brief window a turn has been sent but nothing has streamed back yet
+	// — there's no dedicated "Oracle started/finished" WS event (Oracle
+	// runs synchronously before agent.Run even begins), but that window is
+	// exactly the period during which the pending assistant turn has
+	// neither timeline items nor content, so it doubles as an accurate
+	// proxy without needing one.
+	let oracleReading = $derived.by(() => {
+		if (!appState.busy) return false;
+		// The last pushed turn while busy is always the pending assistant
+		// reply (dispatch() pushes user-then-assistant as a pair) —
+		// pendingTurn itself is private to AppState, so this reads the same
+		// live object via the public turns array instead.
+		const turn = appState.turns[appState.turns.length - 1];
+		return turn?.role === 'assistant' && !turn.timeline?.length && !turn.content;
+	});
 	let selectedModelName = $derived(appState.models.find((m) => m.id === appState.selectedModel)?.name ?? '');
 
 	let headerTitle = $derived(view === 'focus' ? 'Focus' : view === 'model' ? 'Model' : 'More');
 </script>
 
 <button type="button" class="trigger" onclick={() => (open = true)} aria-label="Attach, focus modes, and model">
-	<Plus size={16} />
+	{#if appState.settings.oracleEnabled}
+		<span class="ring" class:reading={oracleReading}>
+			<Asterism size={14} />
+		</span>
+	{:else}
+		<Plus size={16} />
+	{/if}
 	<span class="trigger-label">More</span>
 	{#if activeFocusLabel}
 		<span class="trigger-badge">{activeFocusLabel}</span>
@@ -301,6 +328,64 @@
 
 	.trigger :global(svg:first-child) {
 		flex-shrink: 0;
+	}
+
+	/* Oracle mode's ring (docs/plans/oracle-mode.md's B12) — "starlight
+	   through a prism": the full hue wheel at one lightness/chroma, not
+	   RGB-neon-saturated. Ported from mockups/oracle-mode.html's .ring. */
+	.ring {
+		--ring-l: 80%;
+		--ring-c: 0.13;
+		--size: 26px;
+		width: var(--size);
+		height: var(--size);
+		border-radius: var(--radius-full);
+		display: grid;
+		place-items: center;
+		position: relative;
+		flex: none;
+		background: conic-gradient(
+			from 0deg,
+			oklch(var(--ring-l) var(--ring-c) 20),
+			oklch(var(--ring-l) var(--ring-c) 80),
+			oklch(var(--ring-l) var(--ring-c) 140),
+			oklch(var(--ring-l) var(--ring-c) 200),
+			oklch(var(--ring-l) var(--ring-c) 260),
+			oklch(var(--ring-l) var(--ring-c) 320),
+			oklch(var(--ring-l) var(--ring-c) 20)
+		);
+	}
+
+	:root[data-theme='light'] .ring {
+		--ring-l: 66%;
+		--ring-c: 0.15;
+	}
+
+	.ring::before {
+		content: '';
+		position: absolute;
+		inset: 1.5px;
+		border-radius: inherit;
+		background: var(--color-surface-2);
+	}
+
+	.ring :global(svg) {
+		position: relative;
+		color: var(--color-text);
+	}
+
+	.ring.reading {
+		animation: ring-spin 2.4s linear infinite;
+	}
+
+	.ring.reading :global(svg) {
+		animation: ring-spin 2.4s linear infinite reverse;
+	}
+
+	@keyframes ring-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.trigger-label {
