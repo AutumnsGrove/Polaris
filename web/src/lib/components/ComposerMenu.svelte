@@ -23,11 +23,18 @@
 	// popup treatment, not two competing ones.
 	let {
 		focusMode = $bindable<FocusMode>('off'),
+		focusModeManual = $bindable(false),
 		deepResearch = $bindable(false),
 		research = $bindable(true),
 		onAttach
 	}: {
 		focusMode: FocusMode;
+		// See ChatView.svelte's focusModeManual doc comment — set true only
+		// by selectFocus below, a live tap in this picker, so Oracle mode
+		// (docs/plans/oracle-mode.md) can tell "the operator picked this for
+		// this specific message" from "focusMode is just the standing
+		// default".
+		focusModeManual: boolean;
 		deepResearch: boolean;
 		// The composer's "Research" toggle — on by default, same shape as
 		// deepResearch but inverted: turning it OFF is what enables chat
@@ -78,6 +85,7 @@
 		// Tapping the already-active mode turns it back off — a toggle,
 		// same shape as AudioPlayer's readAloud-the-active-turn pattern.
 		focusMode = focusMode === id ? 'off' : id;
+		focusModeManual = true;
 		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch, !research);
 		close();
 	}

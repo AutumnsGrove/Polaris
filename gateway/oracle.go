@@ -84,14 +84,14 @@ type OracleResult struct {
 	// FocusMode is Oracle's own pick, if any check fired one — always
 	// populated for transparency even when IsManualFocus means
 	// gateway/turn.go won't apply it as the turn's actual mode.
-	FocusMode      string
-	NoResearchHint bool
+	FocusMode      string `json:"focus_mode,omitempty"`
+	NoResearchHint bool   `json:"no_research_hint,omitempty"`
 	// Injections is every fired check's resolved text, in the order the
 	// ## Oracle section should list them — one paragraph each.
-	Injections []string
-	Checks     []CheckOutcome
-	Chips      []Chip
-	CostUSD    float64
+	Injections []string       `json:"injections,omitempty"`
+	Checks     []CheckOutcome `json:"checks,omitempty"`
+	Chips      []Chip         `json:"chips,omitempty"`
+	CostUSD    float64        `json:"cost_usd,omitempty"`
 }
 
 // RunOracle fires every enabled check (plus chips) as one Jev AskChoice

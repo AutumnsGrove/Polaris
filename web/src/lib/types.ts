@@ -31,6 +31,34 @@ export interface VerificationMark {
 	confidence: number;
 }
 
+// Mirrors gateway/oracle.go's CheckOutcome — one Oracle check's raw
+// result, kept regardless of whether it fired (the "why" sheet's
+// collapsed list needs the non-fired ones too).
+export interface OracleCheckOutcome {
+	key: string;
+	winner: string;
+	probabilities: Record<string, number>;
+	fired: boolean;
+}
+
+// Mirrors gateway/oracle.go's Chip — one offer surfaced under a reply
+// (Pulsar/Daily/Project); key maps to a destination icon + verb client-side.
+export interface OracleChip {
+	key: string;
+	label?: string;
+}
+
+// Mirrors gateway/oracle.go's OracleResult 1:1 — RunOracle's whole verdict
+// for one turn. See ServerEvent's 'done' case and ChatTurn.oracleResult.
+export interface OracleResult {
+	focus_mode?: string;
+	no_research_hint?: boolean;
+	injections?: string[];
+	checks?: OracleCheckOutcome[];
+	chips?: OracleChip[];
+	cost_usd?: number;
+}
+
 // Mirrors store.Attachment — one file included with a user message. Kept
 // snake_case, decoded straight off the wire like Citation/Card above,
 // not remapped to camelCase. workspace_file_id is only known once the
@@ -222,6 +250,27 @@ export type ServerEvent =
 			// Set when this turn ended with ask_user_question instead of a
 			// normal finished answer — see PendingQuestion above.
 			pending_question?: PendingQuestion;
+			// Oracle mode (docs/plans/oracle-mode.md) — mirrors
+			// gateway/protocol.go's ServerEvent.OracleResult/
+			// OracleFocusModeSource. Both absent whenever Oracle didn't run
+			// this turn (off, unconfigured, budget exhausted, errored/timed
+			// out) — same silent-normal-outcome convention as suggestions/
+			// verification.
+			oracle_result?: OracleResult;
+			oracle_focus_mode_source?: string;
+			// CostUSD's three-tier split — see gateway/protocol.go's
+			// ServerEvent doc comment. Sums into the turn-info sheet's
+			// per-tier totals.
+			cost_answer_usd?: number;
+			cost_verification_usd?: number;
+			cost_oracle_usd?: number;
+			// Answer-stats sheet fields, sent regardless of whether Oracle is
+			// on — see gateway/protocol.go's ServerEvent.TTFTMs/
+			// TokensPerSecond/ToolCallCount doc comment on why these are
+			// approximations, not exact instrumentation.
+			ttft_ms?: number;
+			tokens_per_second?: number;
+			tool_call_count?: number;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -295,6 +344,13 @@ export type ClientMessage =
 			// Set from the composer's "+" sheet — see agent/driver.go's
 			// focusModeInstructions and Run's DeepResearch handling.
 			focus_mode?: FocusMode;
+			// Distinguishes a manual per-message pick (omitted) from
+			// focus_mode just being the standing Settings/thread default
+			// ("default") — see gateway/protocol.go's
+			// ClientMessage.FocusModeSource doc comment. Oracle mode's own
+			// focus check only ever applies when this is exactly "default";
+			// anything else (including omitted) is treated as manual.
+			focus_mode_source?: 'default';
 			deep_research?: boolean;
 			// True when the composer's "Research" toggle is off (chat
 			// mode) for this turn — see tools.Context.NoResearch. Also set
@@ -674,6 +730,28 @@ export interface ChatTurn {
 	// inline chip uses claim_index to mark the *specific* chip a claim
 	// came from.
 	verification?: VerificationMark[];
+	// Oracle mode (docs/plans/oracle-mode.md) — assistant turns only, set
+	// from the 'done' event's own oracle_result/oracle_focus_mode_source
+	// (see ServerEvent above), or on reload from StoredMessage's
+	// oracle_result/focus_mode_source. oracleResult undefined means Oracle
+	// didn't run this turn; oracleFocusModeSource is "manual"/"default"/
+	// "oracle" whenever it did.
+	oracleResult?: OracleResult;
+	oracleFocusModeSource?: string;
+	// costAnswer/costVerification/costOracle are costUsd's three-tier split
+	// — see store.Message.CostAnswerUSD's doc comment. Shown even with
+	// Oracle off (verification can run either way).
+	costAnswer?: number;
+	costVerification?: number;
+	costOracle?: number;
+	// promptTokens/cacheReadTokens/toolCallCount/ttftMs/tokensPerSecond back
+	// the turn-info sheet's answer-stats section — sent/persisted
+	// regardless of whether Oracle is on, same as durationMs above.
+	promptTokens?: number;
+	cacheReadTokens?: number;
+	toolCallCount?: number;
+	ttftMs?: number;
+	tokensPerSecond?: number;
 }
 
 // Mirrors search/domain_rankings.go's RankState constants.

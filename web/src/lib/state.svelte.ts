@@ -14,7 +14,8 @@ import type {
 	MessageAttachment,
 	VariantGroup,
 	MessageSearchResult,
-	VerificationMark
+	VerificationMark,
+	OracleResult
 } from './types';
 import { AgentSocket } from './ws';
 import { AudioPlayer } from './audio.svelte';
@@ -665,6 +666,21 @@ export class AppState {
 				pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
 				costUsd: m.cost_usd,
 				durationMs: m.duration_ms || undefined,
+				// Oracle mode — oracle_result is JSON-encoded gateway.OracleResult
+				// (see store.Message.OracleResult), same double-encoded shape as
+				// chart/pending_question above. "" for Oracle off/unconfigured.
+				oracleResult: m.oracle_result
+					? (safeParseObject(m.oracle_result) as unknown as OracleResult)
+					: undefined,
+				oracleFocusModeSource: m.focus_mode_source || undefined,
+				costAnswer: m.cost_answer_usd,
+				costVerification: m.cost_verification_usd,
+				costOracle: m.cost_oracle_usd,
+				promptTokens: m.prompt_tokens || undefined,
+				cacheReadTokens: m.cache_read_tokens || undefined,
+				toolCallCount: m.tool_call_count || undefined,
+				ttftMs: m.ttft_ms || undefined,
+				tokensPerSecond: m.tokens_per_second || undefined,
 				// Both roles now carry their real DB id — see ChatTurn.id's doc
 				// comment (assistant turns need it too, for read-aloud's
 				// persisted-audio attachment; this used to be user-only before
@@ -1108,7 +1124,16 @@ export class AppState {
 		// configured model rather than whatever the main assistant's picker
 		// last had selected. Every other caller leaves this undefined and
 		// gets the normal this.selectedModel behavior, unchanged.
-		modelOverride?: string
+		modelOverride?: string,
+		// focusModeManual: true only when the operator just picked
+		// focusMode for this specific message from ComposerMenu's Focus
+		// picker (see ChatView.svelte's focusModeManual state) — every
+		// other caller (retry, suggestion chips, Transponder, Weaver,
+		// Pulsar Daily's expand-to-chat) leaves this false/undefined,
+		// which is correct: none of those are a live manual composer pick,
+		// so Oracle's own focus check should stay free to run. See
+		// gateway/protocol.go's ClientMessage.FocusModeSource doc comment.
+		focusModeManual?: boolean
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
@@ -1125,7 +1150,8 @@ export class AppState {
 			titleSeed,
 			ghostMode,
 			voiceMode,
-			modelOverride
+			modelOverride,
+			focusModeManual
 		);
 	}
 
@@ -1225,7 +1251,9 @@ export class AppState {
 		// voiceMode: see send()'s doc comment.
 		voiceMode?: boolean,
 		// modelOverride: see send()'s doc comment.
-		modelOverride?: string
+		modelOverride?: string,
+		// focusModeManual: see send()'s doc comment.
+		focusModeManual?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1293,6 +1321,10 @@ export class AppState {
 			stt_cost_usd: sttCostUsd,
 			user_location: getUserLocation(),
 			focus_mode: focusMode && focusMode !== 'off' ? focusMode : undefined,
+			// Omitted (manual) only for a live composer pick — see
+			// send()'s focusModeManual doc comment and
+			// gateway/protocol.go's ClientMessage.FocusModeSource.
+			focus_mode_source: focusModeManual ? undefined : 'default',
 			deep_research: deepResearch || undefined,
 			no_research: noResearch || undefined,
 			attachments: attachments?.map((a) => ({
@@ -1551,6 +1583,19 @@ export class AppState {
 				turn.pendingQuestion = e.pending_question;
 				turn.costUsd = e.cost_usd ?? 0;
 				turn.durationMs = e.duration_ms;
+				// Oracle mode — see ServerEvent's 'done' doc comment. Both
+				// undefined whenever Oracle didn't run this turn, same
+				// silent-normal-outcome convention as pendingQuestion above.
+				turn.oracleResult = e.oracle_result;
+				turn.oracleFocusModeSource = e.oracle_focus_mode_source;
+				turn.costAnswer = e.cost_answer_usd;
+				turn.costVerification = e.cost_verification_usd;
+				turn.costOracle = e.cost_oracle_usd;
+				turn.promptTokens = e.prompt_tokens;
+				turn.cacheReadTokens = e.cache_read_tokens;
+				turn.toolCallCount = e.tool_call_count;
+				turn.ttftMs = e.ttft_ms;
+				turn.tokensPerSecond = e.tokens_per_second;
 				// See ServerEvent's assistant_message_id doc comment — without
 				// this, read-aloud on a turn from the current session (not yet
 				// reloaded from history) has no message id to attach a

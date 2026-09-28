@@ -77,6 +77,16 @@
 	// only, which meant leaving a thread in chat mode and reopening it
 	// silently reset back to research-on.
 	let focusMode = $state<FocusMode>('off');
+	// True only from the moment the operator taps a focus mode in
+	// ComposerMenu's Focus picker (see its bind:focusModeManual), until the
+	// next thread switch or the settings-default effect below re-applies a
+	// standing default — "manual" is scoped to a live composer pick "for
+	// this specific message" (see gateway/protocol.go's
+	// ClientMessage.FocusModeSource doc comment), not to whatever a
+	// thread's sticky config happens to already equal. Threaded through
+	// send() as focusModeManual so Oracle mode's own focus check stays free
+	// to run on every send that isn't a real manual override.
+	let focusModeManual = $state(false);
 	let deepResearch = $state(false);
 	let research = $state(true);
 	// Ghost mode (issue #67) — unlike focusMode/deepResearch/research, this
@@ -101,6 +111,7 @@
 	$effect(() => {
 		if (appState.settings.loaded && !focusModeInitialized) {
 			focusMode = appState.settings.defaultFocusMode;
+			focusModeManual = false;
 			focusModeInitialized = true;
 		}
 	});
@@ -127,6 +138,7 @@
 		const id = appState.currentThreadId;
 		if (id !== null && id !== lastConfigThreadId) {
 			focusMode = appState.threadFocusMode;
+			focusModeManual = false;
 			deepResearch = appState.threadDeepResearch;
 			research = !appState.threadNoResearch;
 		}
@@ -224,7 +236,20 @@
 		}
 
 		if (files.length === 0) {
-			appState.send(text, sttCostUsd, focusMode, deepResearch, undefined, !research, undefined, undefined, ghostMode);
+			appState.send(
+				text,
+				sttCostUsd,
+				focusMode,
+				deepResearch,
+				undefined,
+				!research,
+				undefined,
+				undefined,
+				ghostMode,
+				undefined,
+				undefined,
+				focusModeManual
+			);
 			return;
 		}
 
@@ -237,7 +262,20 @@
 			(a) => a !== null
 		);
 		uploading = false;
-		appState.send(text, sttCostUsd, focusMode, deepResearch, uploaded, !research, undefined, undefined, ghostMode);
+		appState.send(
+			text,
+			sttCostUsd,
+			focusMode,
+			deepResearch,
+			uploaded,
+			!research,
+			undefined,
+			undefined,
+			ghostMode,
+			undefined,
+			undefined,
+			focusModeManual
+		);
 	}
 
 	// The active thread's title, shown in the header now that the model
@@ -416,7 +454,13 @@
 
 		<div class="composer-toolbar">
 			{#if !isWeaverThread}
-				<ComposerMenu bind:focusMode bind:deepResearch bind:research onAttach={handleAttach} />
+				<ComposerMenu
+				bind:focusMode
+				bind:focusModeManual
+				bind:deepResearch
+				bind:research
+				onAttach={handleAttach}
+			/>
 			{/if}
 			<div class="toolbar-spacer"></div>
 			{#if !isWeaverThread}
