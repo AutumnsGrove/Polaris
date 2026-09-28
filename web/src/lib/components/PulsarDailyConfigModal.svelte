@@ -16,7 +16,8 @@
 
 	let {
 		onClose,
-		initialCustomBlockSeed
+		initialCustomBlockSeed,
+		initialCustomBlockTitle
 	}: {
 		onClose: () => void;
 		// Oracle mode's "Follow this in Daily" offer chip (see
@@ -25,6 +26,9 @@
 		// with this text as its instructions, so the operator just needs to
 		// give it a title and save rather than starting from a blank block.
 		initialCustomBlockSeed?: string;
+		// The block title that came back with the same derived seed
+		// (issue #126) — blank when the seed fell back to the raw message.
+		initialCustomBlockTitle?: string;
 	} = $props();
 
 	// blockOptions mirrors gateway/pulsar_daily.go's dailyBlockRegistry —
@@ -79,7 +83,7 @@
 				.map((b) => ({ ...b }))
 				.concat(
 					initialCustomBlockSeed
-						? [{ key: `custom_${crypto.randomUUID().slice(0, 8)}`, title: '', instructions: initialCustomBlockSeed }]
+						? [{ key: `custom_${crypto.randomUUID().slice(0, 8)}`, title: initialCustomBlockTitle ?? '', instructions: initialCustomBlockSeed }]
 						: []
 				)
 		)

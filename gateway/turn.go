@@ -316,7 +316,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// thread's previous user message, if any. Best-effort: a lookup
 	// failure just means Oracle classifies without that extra context,
 	// same as an empty thread would.
-	prevUserMessage, _ := s.db.LastUserMessage(storageThreadID)
+	prevUserMessage, err := s.db.LastUserMessage(storageThreadID)
+	if err != nil {
+		log.Warn("oracle: loading previous user message failed", "thread", storageThreadID, "err", err)
+	}
 
 	// Persist the user message before running the agent, not after — so
 	// it (and its ID, needed for retry/edit) survives even if the turn
@@ -810,7 +813,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 		if withinOracleBudget {
 			isManualFocus := msg.FocusModeSource != "default"
-			isFirstMsg, _ := s.db.IsFirstMessage(storageThreadID, userMsgID)
+			isFirstMsg, err := s.db.IsFirstMessage(storageThreadID, userMsgID)
+			if err != nil {
+				log.Warn("oracle: checking first-message status failed", "thread", storageThreadID, "err", err)
+			}
 			priorOracleFocus := ""
 			if source, err := s.db.LastAssistantFocusModeSource(storageThreadID); err == nil && source == "oracle" {
 				if thread, err := s.db.GetThread(threadID); err == nil {
@@ -818,7 +824,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				}
 			}
 			oracleAttempted = true
-			oracleResult, _ = RunOracle(ctx, s.jev, OracleInput{
+			oracleResult = RunOracle(ctx, s.jev, OracleInput{
 				CurrentMessage:       msg.Content,
 				PrevUserMessage:      prevUserMessage,
 				IsFirstMessage:       isFirstMsg,
@@ -826,6 +832,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				IsManualFocus:        isManualFocus,
 				PriorOracleFocusMode: priorOracleFocus,
 			})
+			// Recorded on the shared Jev ledger the monthly cap sums (issue
+			// #125) — only when the call actually completed and billed, the
+			// same convention verification.go follows. CostUSD stays zero on
+			// a timeout/error, so nothing is logged for a call that never
+			// returned.
+			if oracleResult.CostUSD > 0 {
+				if err := s.db.LogOracleJevCost(oracleResult.CostUSD); err != nil {
+					log.Warn("oracle: logging jev cost failed", "err", err)
+				}
+			}
 			// FocusCleared is Oracle retracting a mode it set earlier (see
 			// resolveFocus) — the turn runs with no mode at all, and the
 			// thread's sticky focus_mode is cleared to match. Handled in the
@@ -859,11 +875,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 					log.Warn("failed to persist oracle's focus decision as thread config", "thread", threadID, "err", err)
 				}
 			} else if msg.FocusMode != "" {
-				if isManualFocus {
-					oracleFocusModeSource = "manual"
-				} else {
-					oracleFocusModeSource = "default"
-				}
+				oracleFocusModeSource = carriedFocusModeSource(isManualFocus, msg.FocusMode, priorOracleFocus)
 			}
 			if len(oracleResult.Injections) > 0 {
 				agentCtx.OracleSection = strings.ReplaceAll(prompts.Get().Oracle.Section, "{items}", strings.Join(oracleResult.Injections, "\n\n"))
@@ -1126,6 +1138,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			}
 		}
 	}
+	// Oracle timed out or errored (no checks to persist), but the turn still
+	// carried a focus mode whose provenance the next turn's sticky/retract
+	// logic reads back — losing it here would make an Oracle-set mode look
+	// like a plain default after one Jev hiccup.
+	if len(oracleResult.Checks) == 0 && oracleFocusModeSource != "" {
+		if err := s.db.SetMessageFocusModeSource(assistantMsgID, oracleFocusModeSource); err != nil {
+			log.Warn("failed to record focus mode source", "err", err)
+		}
+	}
 
 	// The turn's exact wire messages, so the next turn replays them
 	// verbatim — see loadHistory. The closing assistant message is
@@ -1221,14 +1242,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// (oracle_result "") and the live events agree on what "Oracle didn't
 	// run" looks like.
 	send(ServerEvent{
-		Type:                  "done",
-		ThreadID:              threadID,
-		UserMessageID:         userMsgID,
-		AssistantMessageID:    assistantMsgID,
-		Citations:             result.Citations,
-		Cards:                 result.Cards,
-		Chart:                 result.Chart,
-		CostUSD:               totalCost,
+		Type:               "done",
+		ThreadID:           threadID,
+		UserMessageID:      userMsgID,
+		AssistantMessageID: assistantMsgID,
+		Citations:          result.Citations,
+		Cards:              result.Cards,
+		Chart:              result.Chart,
+		// Oracle's Jev spend is already on this message/thread in the DB
+		// (AddTurnCost above), so the live total must carry it too or the
+		// thread's running cost only catches up on reload.
+		CostUSD:               totalCost + oracleResult.CostUSD,
 		ContextTokens:         contextTokens,
 		DurationMs:            durationMs,
 		PromptTokens:          result.PromptTokens,
@@ -1832,4 +1856,24 @@ func (s *Server) historyEntries(threadID string, excludeFromID int64) ([]store.H
 	}
 
 	return store.EffectiveHistory(thread, msgs, excludeFromID), nil
+}
+
+// carriedFocusModeSource labels a focus mode Oracle didn't pick this turn.
+// A mode the operator picked is "manual"; one that's merely riding along as
+// the composer's standing value is "default" — except when that value is
+// exactly the mode Oracle itself set earlier in this thread (the frontend
+// re-sends the thread's sticky mode on every message, flagged as
+// non-manual). That case must stay "oracle": recording it as "default"
+// made LastAssistantFocusModeSource forget after a single quiet turn that
+// the mode was Oracle's, silently disabling sticky/switch_threshold and
+// Oracle's ability to retract its own pick on any later message.
+func carriedFocusModeSource(isManualFocus bool, focusMode, priorOracleFocus string) string {
+	switch {
+	case isManualFocus:
+		return "manual"
+	case priorOracleFocus != "" && focusMode == priorOracleFocus:
+		return "oracle"
+	default:
+		return "default"
+	}
 }

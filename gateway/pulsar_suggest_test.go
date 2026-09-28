@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -127,4 +128,17 @@ func tail(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+func TestHandleSuggestPulsarPrompt_RejectsUnknownKind(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	resp, err := http.Post(h.url("/api/pulsar/suggest"), "application/json",
+		strings.NewReader(`{"thread_id":"t1","kind":"weekly"}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an unknown kind", resp.StatusCode)
+	}
 }

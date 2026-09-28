@@ -123,6 +123,11 @@ type Set struct {
 	PulsarSuggest struct {
 		System string `yaml:"system"`
 		Task   string `yaml:"task"`
+		// DailySystem/DailyTask are the same derivation aimed at a Pulsar
+		// Daily custom block's instructions (the "Follow this in Daily" chip,
+		// issue #126). Same two-%s task shape and reply format as Task.
+		DailySystem string `yaml:"daily_system"`
+		DailyTask   string `yaml:"daily_task"`
 	} `yaml:"pulsar_suggest"`
 
 	PulsarDaily struct {
@@ -737,6 +742,37 @@ Name: <a short routine name, at most six words>
 ---
 <the recurring prompt, as the message to run>`
 
+	d.PulsarSuggest.DailySystem = `You turn a finished conversation into the standing instructions for one custom block of a
+Polaris Pulsar Daily digest — a "morning newspaper" block that is generated fresh every day,
+unattended, with no memory of the conversation it came from and no follow-up allowed. Write the
+block's instructions; do not summarize the chat.
+
+Rules:
+- It must stand alone. Someone who never saw the conversation has to be able to run it. Never
+  carry over "that one", "the second option", "what you mentioned" or any other reference to the
+  chat — name the actual subject, product, team, place, or question.
+- Aim it at one clear focus a person would want a daily glance at: what to check, which sources
+  or regions matter if they cared, what to skip, and how to report it. If the conversation's
+  real ongoing interest is narrower than the chat as a whole, write the narrow one.
+- Ask for what is new today, not a rehash of what is always true. If there are several distinct
+  items, tell the block to report each as its own short item (a title, a few sentences, a
+  source) rather than one merged narrative.
+- A few sentences at most, written as the instruction handed to the block. No preamble, no
+  explanation, no "this block will".`
+
+	d.PulsarSuggest.DailyTask = `Here is the conversation. Write the standing instructions for a daily digest block covering
+whatever this person would actually want to glance at each morning.
+
+Conversation title: %s
+
+Conversation:
+%s
+
+Reply in exactly this format and nothing else:
+Name: <a short block title, at most four words>
+---
+<the block's instructions>`
+
 	d.PulsarDaily.ExpandPrefix = "The user tapped an expand affordance on a Pulsar Daily block titled \"%s\" " +
 		"with this content: %s. This wasn't typed by them — it's a request to go deeper on exactly this. " +
 		"Don't re-greet or re-summarize what the block already said; begin from where it left off."
@@ -1172,6 +1208,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarSuggest.Task == "" {
 		s.PulsarSuggest.Task = defaults.PulsarSuggest.Task
+	}
+	if s.PulsarSuggest.DailySystem == "" {
+		s.PulsarSuggest.DailySystem = defaults.PulsarSuggest.DailySystem
+	}
+	if s.PulsarSuggest.DailyTask == "" {
+		s.PulsarSuggest.DailyTask = defaults.PulsarSuggest.DailyTask
 	}
 	if s.PulsarDaily.WizardSystem == "" {
 		s.PulsarDaily.WizardSystem = defaults.PulsarDaily.WizardSystem

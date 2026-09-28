@@ -31,6 +31,14 @@ export interface VerificationMark {
 	confidence: number;
 }
 
+// Mirrors gateway/pulsar_suggest.go's pulsarSuggestResponse — the derived
+// routine prompt / Daily block instructions behind an Oracle offer chip.
+export interface PulsarSuggestion {
+	name?: string;
+	prompt: string;
+	cost_usd?: number;
+}
+
 // Mirrors gateway/oracle.go's CheckOutcome — one Oracle check's raw
 // result, kept regardless of whether it fired (the "why" sheet's
 // collapsed list needs the non-fired ones too).
