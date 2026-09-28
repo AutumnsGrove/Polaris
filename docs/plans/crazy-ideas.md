@@ -104,6 +104,10 @@ its own `docs/plans/` doc.
 
 ### Oracle mode
 
+**Graduated 2026-09-28 → [oracle-mode.md](oracle-mode.md)**, which supersedes the design notes
+below (deep research is never auto-enabled, no tool disabling, prompt-injected nudges added). Kept
+here as the original pitch.
+
 An opt-in settings toggle that hands every turn's steering decisions to Jev instead of the
 composer's manual pickers. Today the operator manually sets focus mode (`ComposerMenu.svelte`'s
 picker, one of the `FocusModeBrief`/`Academic`/`News`/... constants in `agent/driver.go`), whether
