@@ -1145,7 +1145,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				logEvent(storageThreadID, "warn", "suggestions", "persisting follow-up suggestions failed", map[string]interface{}{"err": err.Error()}, turnID)
 				return
 			}
-			if err := s.db.AddTurnCost(storageThreadID, assistantMsgID, sugCost); err != nil {
+			if err := s.db.AddTurnCost(storageThreadID, assistantMsgID, "answer", sugCost); err != nil {
 				log.Warn("failed to record follow-up suggestions cost", "err", err)
 			}
 			send(ServerEvent{
@@ -1177,7 +1177,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			before := agentCtx.JevSpentThisTurn()
 			results := runVerification(agentCtx, result.Answer, result.Citations)
 			if delta := agentCtx.JevSpentThisTurn() - before; delta > 0 {
-				if err := s.db.AddTurnCost(storageThreadID, assistantMsgID, delta); err != nil {
+				if err := s.db.AddTurnCost(storageThreadID, assistantMsgID, "verification", delta); err != nil {
 					log.Warn("failed to record verification cost", "err", err)
 				}
 			}

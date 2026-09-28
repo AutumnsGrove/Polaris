@@ -733,8 +733,8 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 		"check on yet — ask a single focused opening question to find out."
 
 	d.Oracle.Section = "## Oracle\n\n" +
-		"These notes come from an automatic pre-read of the user's message, not from the user. Treat " +
-		"them as hints about what probably helps here — follow them when they fit, and ignore any that " +
+		"These notes come from an automatic pre-read of the user's message, not from the user. Treat\n" +
+		"them as hints about what probably helps here — follow them when they fit, and ignore any that\n" +
 		"turn out not to match what the user actually asked.\n\n{items}"
 	d.Oracle.QuestionPreamble = "You are reading a message someone sent to a research assistant that " +
 		"searches the web and cites sources. Answer about the latest message; an earlier message, if " +

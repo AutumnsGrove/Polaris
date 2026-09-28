@@ -219,7 +219,7 @@ func TestGetStats_CostCountsForksOnceAndLateCostsOnBothLedgers(t *testing.T) {
 		answerIDs = append(answerIDs, id)
 	}
 	// Suggestions/verification spend after the fact, on turn 1.
-	if err := s.AddTurnCost("root", answerIDs[0], 0.004); err != nil {
+	if err := s.AddTurnCost("root", answerIDs[0], "answer", 0.004); err != nil {
 		t.Fatalf("AddTurnCost: %v", err)
 	}
 	// A retry of turn 2: the fork copies turn 1, then pays for its own reply.

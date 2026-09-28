@@ -264,6 +264,38 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- (docs/plans/verbatim-turn-transcripts.md); '' for every turn from
 	-- before this existed, which falls back to the older reconstruction.
 	transcript TEXT NOT NULL DEFAULT '',
+	-- oracle_result: JSON-encoded gateway.OracleResult — which checks ran,
+	-- each winner/probability, and which injections fired (docs/plans/
+	-- oracle-mode.md, issue #122), set via SetMessageOracleResult once the
+	-- assistant message's ID exists, same post-hoc-UPDATE shape as
+	-- verification above. '' for a message with Oracle off or unconfigured.
+	oracle_result TEXT NOT NULL DEFAULT '',
+	-- focus_mode_source: "manual" (picked in the composer for this
+	-- message), "default" (Settings' standing default), or "oracle" (this
+	-- turn's Oracle focus check fired) — see oracle-mode.md's "Manual
+	-- always wins" section for why the server needs to tell these apart.
+	-- '' for a message with no focus mode in play at all.
+	focus_mode_source TEXT NOT NULL DEFAULT '',
+	-- cost_answer_usd/cost_verification_usd/cost_oracle_usd: the same
+	-- total cost_usd above, split by what spent it (docs/plans/
+	-- oracle-mode.md's "three-tier cost") — the main answer (plus
+	-- follow-up suggestions and title regen, both part of producing it),
+	-- the per-claim "found in source" pass, and Oracle's own Jev call.
+	-- cost_usd stays their sum, read by every existing cost display; these
+	-- three are additive detail, not a replacement.
+	cost_answer_usd REAL NOT NULL DEFAULT 0,
+	cost_verification_usd REAL NOT NULL DEFAULT 0,
+	cost_oracle_usd REAL NOT NULL DEFAULT 0,
+	-- ttft_ms/tokens_per_second: time to the first streamed token and the
+	-- answer's overall generation rate — assistant messages only, 0 for
+	-- user messages and for any turn from before these were recorded.
+	-- Set post-hoc once agent.Run returns, same shape as duration_ms.
+	ttft_ms INTEGER NOT NULL DEFAULT 0,
+	tokens_per_second REAL NOT NULL DEFAULT 0,
+	-- tool_call_count: how many tool calls this turn made in total —
+	-- assistant messages only, 0 elsewhere. Set post-hoc alongside
+	-- ttft_ms/tokens_per_second.
+	tool_call_count INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1096,6 +1128,23 @@ var migrations = []string{
 	// right: this flag only ever matters for a brand-new thread's creation
 	// turn going forward.
 	`ALTER TABLE threads ADD COLUMN ghost INTEGER NOT NULL DEFAULT 0`,
+	// oracle_result/focus_mode_source/cost_answer_usd/cost_verification_usd/
+	// cost_oracle_usd/ttft_ms/tokens_per_second/tool_call_count — see the
+	// schema comments above. Appended at the end per this file's own
+	// established rule (positional user_version tracking, never insert
+	// mid-list). Every existing row's cost_answer_usd starts at 0 rather
+	// than being backfilled from its existing cost_usd — there's no way to
+	// know in hindsight how an old turn's total split across tiers, and a
+	// stats display reading these new columns only needs to be accurate
+	// going forward.
+	`ALTER TABLE messages ADD COLUMN oracle_result TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN focus_mode_source TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN cost_answer_usd REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN cost_verification_usd REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN cost_oracle_usd REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN ttft_ms INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN tokens_per_second REAL NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN tool_call_count INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1286,8 +1335,32 @@ type Message struct {
 	// Transcript is the turn's exact wire messages (see the schema
 	// comment) — history-building only, never sent to the frontend: it
 	// can run to hundreds of KB for a researched turn.
-	Transcript string    `json:"-"`
-	CreatedAt  time.Time `json:"created_at"`
+	Transcript string `json:"-"`
+	// PromptTokens/CacheReadTokens are this turn's own input tokens and
+	// prompt-cache hits — previously write-only (only ThreadCacheUsage's
+	// SUM read them back); exposed per-message here for the Oracle mode
+	// turn-info sheet's "tokens in/out" (docs/plans/oracle-mode.md).
+	PromptTokens    int `json:"prompt_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
+	// OracleResult is JSON-encoded gateway.OracleResult — see the schema
+	// comment above messages.oracle_result and SetMessageOracleResult.
+	// "" for a message with Oracle off or unconfigured.
+	OracleResult string `json:"oracle_result,omitempty"`
+	// FocusModeSource is "manual"/"default"/"oracle" — see the schema
+	// comment above messages.focus_mode_source.
+	FocusModeSource string `json:"focus_mode_source,omitempty"`
+	// CostAnswerUSD/CostVerificationUSD/CostOracleUSD are CostUSD's
+	// three-tier split — see the schema comment above
+	// messages.cost_answer_usd.
+	CostAnswerUSD       float64 `json:"cost_answer_usd"`
+	CostVerificationUSD float64 `json:"cost_verification_usd"`
+	CostOracleUSD       float64 `json:"cost_oracle_usd"`
+	// TTFTMs/TokensPerSecond/ToolCallCount — see the schema comments above
+	// messages.ttft_ms/tokens_per_second/tool_call_count.
+	TTFTMs          int64     `json:"ttft_ms,omitempty"`
+	TokensPerSecond float64   `json:"tokens_per_second,omitempty"`
+	ToolCallCount   int       `json:"tool_call_count,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // Attachment is one file included with a user message — see
@@ -2283,8 +2356,8 @@ func (s *Store) AddMessage(threadID, role, content, citationsJSON, suggestionsJS
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		threadID, role, content, citationsJSON, suggestionsJSON, costUSD, turnID,
+		`INSERT INTO messages (thread_id, role, content, citations, suggestions, cost_usd, cost_answer_usd, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		threadID, role, content, citationsJSON, suggestionsJSON, costUSD, costUSD, turnID,
 	)
 	if err != nil {
 		return 0, err
@@ -2478,7 +2551,8 @@ func (s *Store) SetSetting(key, value string) error {
 func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at,
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2491,7 +2565,8 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt); err != nil {
+			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt,
+			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2510,11 +2585,13 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	var m Message
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
-			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at
+			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at,
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
-		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt)
+		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt,
+		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount)
 	if err != nil {
 		return Message{}, err
 	}
@@ -2621,6 +2698,27 @@ func (s *Store) SetMessageVerification(messageID int64, verificationJSON string)
 	return err
 }
 
+// SetMessageOracleResult records Oracle mode's classification result for a
+// turn (docs/plans/oracle-mode.md, issue #122) — a post-hoc UPDATE, same
+// shape as SetMessageVerification, since gateway/oracle.go's RunOracle
+// finishes before the assistant message's ID exists but focusModeSource is
+// only known once "manual always wins" is resolved against it. Both are
+// written together since they're always decided at the same point in
+// gateway/turn.go's turn setup.
+func (s *Store) SetMessageOracleResult(messageID int64, oracleResultJSON, focusModeSource string) error {
+	_, err := s.db.Exec(`UPDATE messages SET oracle_result = ?, focus_mode_source = ? WHERE id = ?`, oracleResultJSON, focusModeSource, messageID)
+	return err
+}
+
+// SetMessageTurnStats records the answer-stats fields the Oracle mode
+// turn-info sheet shows regardless of whether Oracle itself is on — same
+// post-hoc-UPDATE shape as SetMessageDuration, since none of these are
+// known until agent.Run has already returned.
+func (s *Store) SetMessageTurnStats(messageID int64, ttftMs int64, tokensPerSecond float64, toolCallCount int) error {
+	_, err := s.db.Exec(`UPDATE messages SET ttft_ms = ?, tokens_per_second = ?, tool_call_count = ? WHERE id = ?`, ttftMs, tokensPerSecond, toolCallCount, messageID)
+	return err
+}
+
 // AddTurnCost records spend incurred after a turn's AddMessage already
 // ran (follow-up suggestions, the verification pass, a title
 // regeneration) on both ledgers at once: the thread's running total (what
@@ -2634,19 +2732,42 @@ func (s *Store) SetMessageVerification(messageID int64, verificationJSON string)
 // thread-level action (title regeneration) that has no turn of its own.
 // A message that no longer exists just drops the message half; the thread
 // total still gets it.
-func (s *Store) AddTurnCost(threadID string, messageID int64, delta float64) error {
+//
+// tier is "answer", "verification", or "oracle" (docs/plans/oracle-mode.md's
+// "three-tier cost") — it decides which of cost_answer_usd/
+// cost_verification_usd/cost_oracle_usd also gets delta, alongside the
+// existing cost_usd total both ledgers already tracked. An unrecognized
+// tier still updates cost_usd/threads.cost_usd (never silently drops spend)
+// but skips the per-tier column — callers should only ever pass one of the
+// three known values.
+func (s *Store) AddTurnCost(threadID string, messageID int64, tier string, delta float64) error {
+	tierColumn := map[string]string{
+		"answer":       "cost_answer_usd",
+		"verification": "cost_verification_usd",
+		"oracle":       "cost_oracle_usd",
+	}[tier]
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if messageID == 0 {
-		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ?
-			WHERE id = (SELECT MAX(id) FROM messages WHERE thread_id = ? AND role = 'assistant')`, delta, threadID)
-	} else {
-		_, err = tx.Exec(`UPDATE messages SET cost_usd = cost_usd + ? WHERE id = ?`, delta, messageID)
+	messageQuery := `UPDATE messages SET cost_usd = cost_usd + ?`
+	if tierColumn != "" {
+		messageQuery += fmt.Sprintf(", %s = %s + ?", tierColumn, tierColumn)
 	}
-	if err != nil {
+	args := []interface{}{delta}
+	if tierColumn != "" {
+		args = append(args, delta)
+	}
+	if messageID == 0 {
+		messageQuery += ` WHERE id = (SELECT MAX(id) FROM messages WHERE thread_id = ? AND role = 'assistant')`
+		args = append(args, threadID)
+	} else {
+		messageQuery += ` WHERE id = ?`
+		args = append(args, messageID)
+	}
+	if _, err = tx.Exec(messageQuery, args...); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE threads SET cost_usd = cost_usd + ? WHERE id = ?`, delta, threadID); err != nil {
