@@ -535,9 +535,12 @@
 							</button>
 						</div>
 					{/if}
-					{#if turn.costUsd !== undefined}
-						<span class="turn-cost">${turn.costUsd.toFixed(5)}</span>
-					{/if}
+					<!-- Cost moved into TurnInfoSheet's own three-tier breakdown
+						 (docs/plans/oracle-mode.md) — the footer now keeps only
+						 duration and the action icons, same as the mockup's 4a
+						 frame. Still shown live while streaming further up
+						 (turn.streaming && turn.costUsd), a different "still
+						 running" ticker this decision doesn't touch. -->
 					{#if turn.durationMs !== undefined}
 						<span class="turn-duration">{formatDuration(turn.durationMs)}</span>
 					{/if}

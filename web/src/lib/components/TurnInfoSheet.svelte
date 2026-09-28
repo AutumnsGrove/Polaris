@@ -102,11 +102,12 @@
 				>
 			</div>
 			<div class="stat-cell">
-				<span class="k">Tokens</span>
+				<span class="k">Tokens in</span>
 				<span class="v">
 					{#if turn.promptTokens !== undefined}
-						{turn.promptTokens.toLocaleString()}<small> in</small>{#if turn.cacheReadTokens}
-							· {turn.cacheReadTokens.toLocaleString()}<small> cached</small>{/if}
+						{turn.promptTokens.toLocaleString()}{#if turn.cacheReadTokens}<small
+								>&nbsp;· {Math.round((turn.cacheReadTokens / turn.promptTokens) * 100)}% cached</small
+							>{/if}
 					{:else}
 						—
 					{/if}
@@ -231,6 +232,7 @@
 		font-size: 15px;
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+		overflow-wrap: break-word;
 	}
 
 	.stat-cell .v small {
