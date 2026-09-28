@@ -17,10 +17,15 @@
 	// list without this component needing to know which route it's in.
 	let {
 		routine = null,
+		initialPrompt,
 		onClose,
 		onSaved
 	}: {
 		routine?: PulsarRoutine | null;
+		// initialPrompt: only meaningful on create (routine null) — set by
+		// /pulsar/+page.svelte from pulsarState.pendingSeed, Oracle mode's
+		// "Set up as Pulsar" offer chip (see that field's own doc comment).
+		initialPrompt?: string;
 		onClose: () => void;
 		onSaved: () => void;
 	} = $props();
@@ -43,7 +48,7 @@
 	// kept alive across a routine swap — see EditTextModal.svelte's
 	// identical pattern/comment for the general case).
 	let name = $state(untrack(() => routine?.name ?? ''));
-	let prompt = $state(untrack(() => routine?.prompt ?? ''));
+	let prompt = $state(untrack(() => routine?.prompt ?? initialPrompt ?? ''));
 	let model = $state(untrack(() => routine?.model ?? appState.selectedModel));
 	// `|| 'off'`, not `?? 'off'` — a stored routine's focus_mode is '' for
 	// "no focus mode" (see the normalization in submit() below), which

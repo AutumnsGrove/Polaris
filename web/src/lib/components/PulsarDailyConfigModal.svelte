@@ -6,6 +6,7 @@
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
 	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
+	import { untrack } from 'svelte';
 
 	// customFieldMaxHeight: roughly 5 lines at this field's font-size/line-
 	// height — some of these instructions can get long (a multi-city
@@ -13,7 +14,18 @@
 	// input would force that to scroll sideways instead of wrapping.
 	const customFieldMaxHeight = 110;
 
-	let { onClose }: { onClose: () => void } = $props();
+	let {
+		onClose,
+		initialCustomBlockSeed
+	}: {
+		onClose: () => void;
+		// Oracle mode's "Follow this in Daily" offer chip (see
+		// pulsarState.pendingSeed's doc comment and
+		// routes/daily/+page.svelte's onMount) — pre-adds one custom block
+		// with this text as its instructions, so the operator just needs to
+		// give it a title and save rather than starting from a blank block.
+		initialCustomBlockSeed?: string;
+	} = $props();
 
 	// blockOptions mirrors gateway/pulsar_daily.go's dailyBlockRegistry —
 	// top_story deliberately excluded, same reasoning as the registry's
@@ -61,7 +73,17 @@
 	// store.PulsarDailyConfig.CustomBlocks' doc comment. A fresh copy of
 	// each object (not the same references as cfg.custom_blocks) so
 	// editing here doesn't mutate pulsarDailyState.config until Save.
-	let customBlocks = $state<PulsarDailyCustomBlock[]>((cfg?.custom_blocks ?? []).map((b) => ({ ...b })));
+	let customBlocks = $state<PulsarDailyCustomBlock[]>(
+		untrack(() =>
+			(cfg?.custom_blocks ?? [])
+				.map((b) => ({ ...b }))
+				.concat(
+					initialCustomBlockSeed
+						? [{ key: `custom_${crypto.randomUUID().slice(0, 8)}`, title: '', instructions: initialCustomBlockSeed }]
+						: []
+				)
+		)
+	);
 	// weatherLocation overrides config.yaml's app-wide default_location
 	// for Weather only — blank means "use default_location", same
 	// fallback every other location-aware tool already has. Weather is

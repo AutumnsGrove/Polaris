@@ -23,6 +23,19 @@ export class PulsarState {
 	routines = $state<PulsarRoutine[]>([]);
 	archivedRoutines = $state<PulsarRoutine[]>([]);
 
+	// pendingSeed hands a chat turn's own content across a full page
+	// navigation to /pulsar — Oracle mode's "Set up as Pulsar" offer chip
+	// (docs/plans/oracle-mode.md, ChatTurnView.svelte) needs to pre-fill
+	// the new-routine form's prompt with the question that's being asked
+	// to check periodically, but /pulsar isn't mounted at the time the
+	// chip is tapped (it's a normal SvelteKit route swap, not a modal
+	// already on screen) — so this is set right before goto('/pulsar'),
+	// read once by /pulsar/+page.svelte's onMount, and cleared
+	// immediately after so it can't leak into some unrelated later visit
+	// to the page. Same idea for /daily's own "Follow this in Daily" chip,
+	// just a different destination kind.
+	pendingSeed = $state<{ kind: 'pulsar' | 'daily'; text: string } | null>(null);
+
 	// Keyed by routine id as a string (JSON object keys can't be numeric —
 	// see gateway/pulsar_routes.go's handlePulsarUnreadCounts) — the
 	// amber indicator's per-routine scope reads this directly; the

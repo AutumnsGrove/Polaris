@@ -11,10 +11,21 @@
 	import { PanelLeft, Plus, Archive, Info } from '@lucide/svelte';
 	import type { PulsarRoutine } from '$lib/types';
 
+	// Oracle mode's "Set up as Pulsar" offer chip (see pulsarState.pendingSeed's
+	// doc comment) — captured once, before the field is cleared, so
+	// PulsarRoutineForm below still has it after this mount effect runs.
+	let newRoutineSeed = $state<string | undefined>(undefined);
+
 	onMount(() => {
 		void pulsarState.loadRoutines();
 		void pulsarState.loadArchivedRoutines();
 		void pulsarState.loadUnreadCounts();
+
+		if (pulsarState.pendingSeed?.kind === 'pulsar') {
+			newRoutineSeed = pulsarState.pendingSeed.text;
+			pulsarState.pendingSeed = null;
+			showForm = true;
+		}
 	});
 
 	let showForm = $state(false);
@@ -123,6 +134,7 @@
 
 {#if showForm}
 	<PulsarRoutineForm
+		initialPrompt={newRoutineSeed}
 		onClose={() => (showForm = false)}
 		onSaved={() => {
 			showForm = false;

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
+	import { pulsarState } from '$lib/pulsar.svelte';
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import {
@@ -53,6 +54,12 @@
 	let latestDate = $state('');
 	let expandingKey = $state('');
 	let showConfig = $state(false);
+	// Oracle mode's "Follow this in Daily" offer chip — see
+	// pulsarState.pendingSeed's doc comment. Captured once in onMount
+	// below, after loadConfig() resolves, so PulsarDailyConfigModal's own
+	// initial customBlocks state (built once at its own mount, from
+	// pulsarDailyState.config) reflects real data alongside the seed.
+	let newCustomBlockSeed = $state<string | undefined>(undefined);
 	// Set when a card's own image is tapped — opens it large instead of
 	// navigating into a chat thread, which is what tapping the image used
 	// to do back when the whole card was one giant <button>. null means
@@ -158,6 +165,11 @@
 				// needs to flip this itself rather than waiting for a
 				// future reload.
 				pulsarDailyState.hasNewEdition = false;
+			}
+			if (pulsarState.pendingSeed?.kind === 'daily') {
+				newCustomBlockSeed = pulsarState.pendingSeed.text;
+				pulsarState.pendingSeed = null;
+				showConfig = true;
 			}
 		})();
 		return () => window.removeEventListener('resize', updateColumnCount);
@@ -522,7 +534,10 @@
 </div>
 
 {#if showConfig}
-	<PulsarDailyConfigModal onClose={() => (showConfig = false)} />
+	<PulsarDailyConfigModal
+		initialCustomBlockSeed={newCustomBlockSeed}
+		onClose={() => (showConfig = false)}
+	/>
 {/if}
 
 {#if lightboxCard}

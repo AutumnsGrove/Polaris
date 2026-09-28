@@ -25,7 +25,9 @@
 		Paperclip,
 		CheckCheck,
 		Info,
-		WifiOff
+		WifiOff,
+		Orbit,
+		Sunrise
 	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
@@ -33,6 +35,8 @@
 	import { buildOracleNote } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
+	import { pulsarState } from '$lib/pulsar.svelte';
+	import { goto } from '$app/navigation';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -227,6 +231,46 @@
 	);
 
 	let infoSheetOpen = $state(false);
+
+	// Offer lines (docs/plans/oracle-mode.md's 7a) — only "pulsar"/"daily"
+	// have a real destination today; "project" is included in
+	// prompts.yaml's chip vocabulary for a Projects feature that doesn't
+	// exist anywhere in this codebase yet (gateway/turn.go never actually
+	// populates OracleInput.ProjectOptions, so the check can never fire in
+	// practice) — rendered inert rather than either faking a destination
+	// or silently dropping a chip the backend did send.
+	const OFFER_META: Record<string, { icon: typeof Orbit; verb: string; label: (l?: string) => string }> = {
+		pulsar: { icon: Orbit, verb: 'Set up', label: () => 'Check weekly as a <b>Pulsar</b>' },
+		daily: { icon: Sunrise, verb: 'Add', label: () => 'Follow this in <b>Daily</b>' },
+		project: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ?? 'a project'}</b>` }
+	};
+
+	let offers = $derived(
+		(turn.oracleResult?.chips ?? []).flatMap((c) => {
+			const meta = OFFER_META[c.key];
+			return meta ? [{ key: c.key, label: c.label, meta }] : [];
+		})
+	);
+
+	// The preceding user turn's own content — what a Pulsar routine/Daily
+	// block should actually check periodically, not the assistant's
+	// answer to it. Falls back to this turn's own content on the rare
+	// chance there's no preceding user turn (shouldn't happen for a real
+	// assistant turn, but a synthetic/replayed one is cheap to guard).
+	let seedText = $derived(appState.turns[index - 1]?.content ?? turn.content);
+
+	function activateOffer(key: string) {
+		if (key === 'pulsar') {
+			pulsarState.pendingSeed = { kind: 'pulsar', text: seedText };
+			void goto('/pulsar');
+		} else if (key === 'daily') {
+			pulsarState.pendingSeed = { kind: 'daily', text: seedText };
+			void goto('/daily');
+		}
+		// "project" has no real destination yet — see OFFER_META's doc
+		// comment above; tapping it is a no-op until a Projects feature
+		// exists to move the thread into.
+	}
 
 	async function copyAnswerWithSources() {
 		const sources = (turn.citations ?? [])
@@ -524,6 +568,24 @@
 			{#if turn.ttsAudioFile}
 				<WaveformAudioPlayer src={turn.ttsAudioFile} autoplay={appState.audio.justFinishedIndex === index} />
 			{/if}
+			{#if !turn.streaming && offers.length}
+				<!-- 7a: offer lines below the footer — see OFFER_META's doc
+					 comment for why "project" renders without a click handler. -->
+				<div class="offer-lines">
+					{#each offers as offer (offer.key)}
+						<button
+							class="offer-line"
+							type="button"
+							disabled={offer.key === 'project'}
+							onclick={() => activateOffer(offer.key)}
+						>
+							<offer.meta.icon size={14} />
+							<span>{@html offer.meta.label(offer.label)}</span>
+							<span class="go">{offer.meta.verb}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
 			{#if infoSheetOpen}
 				<TurnInfoSheet {turn} {index} onClose={() => (infoSheetOpen = false)} />
 			{/if}
@@ -713,6 +775,53 @@
 		text-decoration: line-through;
 		color: var(--color-text-dim);
 		font-weight: 400;
+	}
+
+	/* 7a offer lines (docs/plans/oracle-mode.md) — one row per Oracle chip,
+	   ported from mockups/oracle-mode.html's .offer-lines/.offer-line. */
+	.offer-lines {
+		display: flex;
+		flex-direction: column;
+		margin-top: var(--space-sm);
+		border-top: 1px solid var(--color-border);
+	}
+
+	.offer-line {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		width: 100%;
+		border: none;
+		background: none;
+		padding: var(--space-sm) 0;
+		border-bottom: 1px solid var(--color-border);
+		font-size: 13px;
+		color: var(--color-text-dim);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.offer-line:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	.offer-line :global(svg) {
+		flex-shrink: 0;
+		color: var(--color-accent);
+	}
+
+	.offer-line :global(b) {
+		color: var(--color-text);
+		font-weight: 500;
+	}
+
+	.offer-line .go {
+		margin-left: auto;
+		flex-shrink: 0;
+		color: var(--color-accent);
+		font-size: 12.5px;
+		font-weight: 500;
 	}
 
 	/* Same layout as ChatView.svelte's .interrupted banner, but on the
