@@ -346,6 +346,25 @@ body {
 	width: 100%;
 }
 
+/* iOS Safari auto-zooms the whole page whenever a focused input/textarea/
+   select has a computed font-size under 16px, and never zooms back out on
+   its own — that's what left the memory editor (and every other 12-13px
+   field) magnified with the layout cluttered. The fix that doesn't cost
+   anything is making sure the field is never under 16px on touch devices,
+   rather than `maximum-scale=1` in the viewport meta, which would kill
+   pinch-zoom everywhere (an accessibility regression). !important is
+   deliberate: nearly every component sets its own scoped, higher-
+   specificity font-size on its fields, and a global rule can't otherwise
+   win against ~20 of those without touching each one. Gated on
+   `pointer: coarse` so desktop keeps the denser sizing. */
+@media (pointer: coarse) {
+	input,
+	textarea,
+	select {
+		font-size: max(16px, 1em) !important;
+	}
+}
+
 /* Fixed, viewport-covering grain — the classic fix for a flat oklch fill
    reading as a digital gradient rather than a physical surface. Fractal
    noise baked into a tiny inline SVG (no image request, no runtime cost),

@@ -100,6 +100,8 @@
 	</h3>
 	<div class="instruction-bar">
 		<textarea
+			autocomplete="off"
+			autocorrect="off"
 			rows="1"
 			placeholder="e.g. I prefer metric units, or I'm a backend engineer"
 			bind:value={addText}
@@ -165,6 +167,8 @@
 					<p class="memory-content">{memory.content}</p>
 					<div class="instruction-bar adjust-bar">
 						<textarea
+							autocomplete="off"
+							autocorrect="off"
 							rows="1"
 							placeholder="Tell it what to change about this memory"
 							bind:value={adjustText}
