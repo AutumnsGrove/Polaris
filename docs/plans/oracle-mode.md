@@ -360,7 +360,7 @@ oracle:
 
 Explored in `mockups/oracle-mode.html` (round 2 frames copy the real app's chrome, captured by
 driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the operator
-(2026-09-28, after round 1):**
+(2026-09-28, rounds 1–2):**
 
 - **The moment — constellation (A1).** One faint star per enabled check appears under the user's
   message, lights in order, a line joins them, and the constellation folds into the margin note.
@@ -371,21 +371,29 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
   the info sheet.
 - **The "why" — an ⓘ turn-info sheet (C1).** A new ⓘ button at the end of every turn's footer
   (same icon as Settings' usage stats, shown even with Oracle off) opens a sheet with the answer's
-  own stats (model, time to first token, tokens/s, tokens in/out, cost, total time, tool calls)
+  own stats (model, time to first token, tokens/s, tokens in/out, total time, tool calls, cost)
   and then a section per Oracle check: checks that changed something get a card with runner-up
   odds, the exact nudge text, and a rerun button; checks that ran but did nothing are one
   collapsed list. Time-to-first-token and tokens/s aren't recorded today — need adding.
-- **Composer — icon only, in a ring.** No text badge: the Oracle icon sits inside a thin
-  full-hue-wheel ring inside the More button, turning while Jev reads. A manual per-message pick
+- **Cost moves into the sheet, in three tiers.** The per-turn cost leaves the turn footer (duration
+  and the action icons stay). The sheet shows the total plus a split: **Answer** (model + paid
+  tools), **Verification** (the "found in source" Jev call) and **Oracle** (its own Jev call).
+  Today `gateway/turn.go` folds verification's Jev spend into the turn's single total via
+  `AddTurnCost`, so the split needs separate per-message cost fields (answer / verification /
+  oracle) rather than one running sum; the total stays their sum.
+- **Composer — icon only, in the prism ring.** No text badge: the Oracle icon sits inside a thin
+  full-hue-wheel ring (every hue at one lightness/chroma, so starlight-through-a-prism rather than
+  RGB neon) inside the More button, turning while Jev reads. A manual per-message pick
   shows today's text badge instead, and the ring returns on the next message.
 - **Mid-thread change (F1).** The note reads "Switched ~~Shopper~~ → **First Principles**" and
   glows once; tapping it undoes the switch for that message.
-- **Offers — D2 lines at the end, not settled.** Round 2 also shows them merged into the
-  suggestion-chip row (each with its destination's icon — Sunrise for Daily, Orbit for Pulsar).
-- **Icon — not settled.** The round-1 four-point star was rejected. Round 2 shows custom
-  Lucide-grid icons (asterism, crystal ball, seer's eye, pole star) and unused Lucide ones
-  (waypoints, moon-star, radar, zodiac-ophiuchus, lens-convex, wand), excluding icons Polaris
-  already uses elsewhere.
+- **Offers — separate lines under the footer (7a).** Full-width lines above the follow-up
+  suggestions, each with its destination's icon (Sunrise for Daily, Orbit for Pulsar, a folder for
+  projects) and a verb on the right ("Add", "Set up", "Move").
+- **Icon — Asterism (custom).** Four stars joined by lines, drawn on Lucide's 24px grid so it sits
+  next to the stock icons: it's the constellation animation's final frame, so the icon itself
+  means "Oracle read this". SVG source is in `mockups/oracle-mode.html` (`#i-asterism`); it'll
+  need to become a small Svelte component, since `@lucide/svelte` doesn't ship it.
 - **Reduced motion**: no constellation or ring spin, just the note.
 
 ## Open questions

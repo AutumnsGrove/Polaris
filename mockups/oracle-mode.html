@@ -341,6 +341,17 @@ section { display: flex; flex-direction: column; gap: var(--space-xl); }
 .stat-cell .v { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .stat-cell .v small { font-size: 11px; color: var(--color-text-dim); font-weight: 400; }
 .stat-cell.wide { grid-column: 1 / -1; }
+.cost-cell { gap: var(--space-xs); }
+.cost-head { display: flex; justify-content: space-between; align-items: baseline; }
+.cost-bar { display: flex; gap: 2px; height: 5px; border-radius: var(--radius-full); overflow: hidden; margin-block: 2px var(--space-xs); }
+.cost-bar i { display: block; min-width: 4px; }
+.t-answer { background: var(--color-text-dim); }
+.t-verify { background: var(--color-accent-2); }
+.t-oracle { background: var(--color-accent); }
+.cost-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: baseline; gap: var(--space-sm); font-size: 12.5px; }
+.cost-row .dot { width: 7px; height: 7px; border-radius: var(--radius-full); align-self: center; }
+.cost-row .sub { font-size: 11px; color: var(--color-text-dim); }
+.cost-row .amt { font-variant-numeric: tabular-nums; }
 .check { background: var(--color-surface-2); border-radius: var(--radius-md); padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
 .check-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
 .check-name { font-size: 12px; color: var(--color-text-dim); }
@@ -477,7 +488,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 
 <main class="page">
 	<header class="intro">
-		<span class="eyebrow">Polaris · Oracle mode · round 2</span>
+		<span class="eyebrow">Polaris · Oracle mode · round 2, with round-3 picks</span>
 		<h1>Oracle mode</h1>
 		<p>
 			Round 2 of the mockups for <code>docs/plans/oracle-mode.md</code>. The phone frames now copy the real app's
@@ -489,7 +500,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 			<span><b>A1</b> constellation, one star per check</span>
 			<span><b>B2</b> margin note above tool calls</span>
 			<span><b>C1</b> odds, behind an ⓘ button</span>
-			<span><b>D2</b> offer lines (not sold yet)</span>
+			<span><b>7a</b> offer lines at the end</span><span><b>Asterism</b> icon, prism ring</span><span>Cost moves into ⓘ, in three tiers</span>
 			<span><b>F1</b> mid-thread switch</span>
 			<span>Composer: icon in a ring, no text</span>
 		</div>
@@ -509,7 +520,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 		</div>
 		<div class="icon-grid">
 			<div class="icon-card pick">
-				<span class="src">Custom · my pick</span>
+				<span class="src">Custom · chosen</span>
 				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-asterism" /></svg><span class="ring"><svg><use href="#i-asterism" /></svg></span></div>
 				<h4>Asterism <small>constellation</small></h4>
 				<div class="inline"><svg class="lucide"><use href="#i-asterism" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
@@ -593,7 +604,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 			</p>
 		</div>
 		<div class="ring-row">
-			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring"><svg><use href="#i-asterism" /></svg></span></span>Prism ring (recommended)</div>
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring"><svg><use href="#i-asterism" /></svg></span></span>Prism ring (chosen)</div>
 			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring soft"><svg><use href="#i-asterism" /></svg></span></span>Softer ring, half the saturation</div>
 			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring halo"><svg><use href="#i-asterism" /></svg></span></span>Prism ring plus a faint halo</div>
 			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring reading"><svg><use href="#i-asterism" /></svg></span></span>While reading (ring turns)</div>
@@ -680,7 +691,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 						<div class="prose"><p>Worth checking with your pharmacist if you need it for more than a few days.</p></div>
 						<div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div>
 						<div class="turn-footer">
-							<span class="stat">$0.00410</span><span class="stat">8.2s</span>
+							<span class="stat">8.2s</span>
 							<button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button>
 							<button class="icon-btn" type="button" aria-label="Link"><svg class="lucide"><use href="#i-link" /></svg></button>
 							<button class="icon-btn" type="button" aria-label="Read aloud"><svg class="lucide"><use href="#i-volume" /></svg></button>
@@ -689,7 +700,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 						</div>
 					</div>
 				</div>
-				<p class="note">The ⓘ goes at the end of the existing footer row (highlighted here only to point it out). It appears on every turn, even with Oracle off, since the answer's stats are useful anyway.</p>
+				<p class="note">The ⓘ goes at the end of the footer row (highlighted here only to point it out). The per-turn cost moves into the sheet, so the footer keeps only the duration and the action icons. The ⓘ appears on every turn, even with Oracle off.</p>
 			</div>
 
 			<div class="frame">
@@ -710,9 +721,15 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 								<div class="stat-cell"><span class="k">First token</span><span class="v">1.4<small>s</small></span></div>
 								<div class="stat-cell"><span class="k">Speed</span><span class="v">62<small> tok/s</small></span></div>
 								<div class="stat-cell"><span class="k">Tokens</span><span class="v">3,210<small> in</small> · 412<small> out</small></span></div>
-								<div class="stat-cell"><span class="k">Cost</span><span class="v">$0.0041<small> + Oracle $0.00002</small></span></div>
 								<div class="stat-cell"><span class="k">Total time</span><span class="v">8.2<small>s</small></span></div>
 								<div class="stat-cell"><span class="k">Tool calls</span><span class="v">2</span></div>
+								<div class="stat-cell wide cost-cell">
+									<div class="cost-head"><span class="k">Cost</span><span class="v">$0.00430</span></div>
+									<div class="cost-bar" aria-hidden="true"><i class="t-answer" style="flex:4100"></i><i class="t-verify" style="flex:180"></i><i class="t-oracle" style="flex:20"></i></div>
+									<div class="cost-row"><span class="dot t-answer"></span>Answer<span class="sub">model + tools</span><span class="amt">$0.00410</span></div>
+									<div class="cost-row"><span class="dot t-verify"></span>Verification<span class="sub">Jev · 5 claims</span><span class="amt">$0.00018</span></div>
+									<div class="cost-row"><span class="dot t-oracle"></span>Oracle<span class="sub">Jev · 6 checks</span><span class="amt">$0.00002</span></div>
+								</div>
 							</div>
 
 							<div class="group-title"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Oracle · read in 0.31s</div>
@@ -743,7 +760,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 						</div>
 					</div>
 				</div>
-				<p class="note">Numbers are illustrative. Model, tokens and cost come back from OpenRouter today. First-token time and speed would be timed by Polaris (to confirm while building). "Oracle read in 0.31s" is the Jev call's own latency, which is worth seeing while it's new.</p>
+				<p class="note">Numbers are illustrative. Cost is split into three tiers: the answer itself (model plus paid tools), verification (the Jev call behind the "found in source" checks) and Oracle (its own Jev call). Today verification is folded into the turn's single total, so the split needs separate per-turn fields. Model, tokens and answer cost come back from OpenRouter today. First-token time and speed would be timed by Polaris (to confirm while building). "Oracle read in 0.31s" is the Jev call's own latency, which is worth seeing while it's new.</p>
 			</div>
 		</div>
 	</section>
@@ -851,10 +868,10 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 		</div>
 		<div class="frames">
 			<div class="frame">
-				<div class="frame-label"><span class="num">7a</span><h3>D2 in context</h3></div>
+				<div class="frame-label"><span class="num">7a</span><h3>D2 in context (chosen)</h3></div>
 				<div class="phone short"><div class="timeline">
 					<div class="prose"><p style="font-size:14px">No firm date yet. NASA's latest update lists it as "no earlier than mid-2027"<span class="cchip">nasa.gov</span>.</p></div>
-					<div class="turn-footer"><span class="stat">$0.00352</span><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
+					<div class="turn-footer"><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
 					<div class="offer-lines">
 						<div class="offer-line"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-sunrise" /></svg><span>Follow this in <b>Daily</b></span><span class="go">Add</span></div>
 						<div class="offer-line"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-orbit" /></svg><span>Check weekly as a <b>Pulsar</b></span><span class="go">Set up</span></div>
@@ -871,7 +888,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 				<div class="frame-label"><span class="num">7b</span><h3>Offers as the first suggestions</h3></div>
 				<div class="phone short"><div class="timeline">
 					<div class="prose"><p style="font-size:14px">No firm date yet. NASA's latest update lists it as "no earlier than mid-2027"<span class="cchip">nasa.gov</span>.</p></div>
-					<div class="turn-footer"><span class="stat">$0.00352</span><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
+					<div class="turn-footer"><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
 					<div class="suggestions">
 						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-sunrise" /></svg>Follow in Daily</button>
 						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-orbit" /></svg>Track as a Pulsar</button>
@@ -900,15 +917,14 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 	<section>
 		<div class="section-head">
 			<span class="tag">Your call</span>
-			<h2>Open questions for round 3</h2>
+			<h2>Where it stands</h2>
 		</div>
 		<div class="decide">
 			<ol>
-				<li><b>Icon:</b> Asterism, crystal ball, seer's eye, pole star, or keep searching? My pick is Asterism, because the animation ends on it.</li>
-				<li><b>Ring:</b> prism, soft, or halo? And should it turn while reading, or is the constellation under your message enough motion?</li>
-				<li><b>Info sheet:</b> does "a card per check that changed something, plus one collapsed list" feel right? Should the stats sit above or below Oracle?</li>
-				<li><b>Offers:</b> 7a (separate lines) or 7b (merged into the suggestion row)? I lean 7b now that I've seen it next to the real suggestion chips.</li>
-				<li><b>Note wording:</b> "Read as medical · answered as Researcher" is the long form. Too wordy, or just right?</li>
+				<li><b>Icon:</b> Asterism (custom). <b>Ring:</b> prism, turning while Oracle reads.</li>
+				<li><b>Footer:</b> cost moves into the ⓘ sheet, split into answer, verification and Oracle. Duration stays in the footer.</li>
+				<li><b>Offers:</b> 7a, separate lines under the footer, above the follow-up suggestions.</li>
+				<li><b>Still open:</b> whether the sheet's stats sit above or below the Oracle sections, and whether "Read as medical · answered as Researcher" is too wordy.</li>
 			</ol>
 		</div>
 	</section>
@@ -988,7 +1004,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 			after.innerHTML = `
 				<div style="display:flex;flex-direction:column;gap:var(--space-sm)">
 					<div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div>
-					<div class="turn-footer"><span class="stat">$0.00410</span><span class="stat">8.2s</span>
+					<div class="turn-footer"><span class="stat">8.2s</span>
 						<button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button>
 						<button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button>
 						<button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
@@ -1006,7 +1022,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 		tools.innerHTML = toolRow('i-search', 'Searching: ibuprofen lisinopril interaction', false) + toolRow('i-file-search', 'Reading: https://www.nhs.uk/medicines/ibuprofen-for-adults/', false);
 		prose.innerHTML = `<p>${answer.join(' ')}</p>`;
 		send.className = 'send'; send.innerHTML = '<svg class="lucide"><use href="#i-send" /></svg>';
-		after.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--space-sm)"><div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div><div class="turn-footer"><span class="stat">$0.00410</span><span class="stat">8.2s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div></div>`;
+		after.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--space-sm)"><div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div><div class="turn-footer"><span class="stat">8.2s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div></div>`;
 		phase.textContent = 'Done — press Play turn';
 	}
 
