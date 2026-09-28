@@ -203,11 +203,13 @@ medical or legal question is exactly the failure this whole feature is meant to 
 operator can still pick Brief by hand (or have it as the Settings default); then the short
 high-stakes variant applies.
 
-### Settings default excludes Shopper and Safari
+### Settings default and Shopper/Safari
 
-`gateway/settings.go`'s `validFocusModes` (the Settings default) doesn't include `shopper` or
-`safari` — they're per-message only today. With Oracle on, Oracle becomes the only automatic way
-into either, which is why both need a high pick threshold.
+`gateway/settings.go`'s `validFocusModes` (the Settings default) was missing `shopper` and `safari` —
+added to `agent.FocusMode` after that set was written — so picking either as a default 400'd. Fixed
+alongside this plan, with a regression test that checks the set against `prompts.yaml`'s
+`focus_modes` keys. Either can now be a standing default, which with Oracle on means Oracle's
+fallback — another reason both keep high pick thresholds when Oracle chooses them itself.
 
 ## Draft `prompts.yaml` section
 

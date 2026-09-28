@@ -201,6 +201,11 @@ var validVoiceInputModes = map[string]bool{"hold": true, "toggle": true}
 // agent/driver.go) — "off" itself is valid too (it just means "no
 // default"), handled separately below rather than added to this set,
 // since it reads oddly next to the descriptive doc comment ones.
+// Shopper and Safari were added to agent.FocusMode after this set was
+// written and got missed here, so SettingsPanel's picker (built from
+// the shared FOCUS_MODES list, which did include them) 400'd on either
+// — TestHandlePutSettings_EveryFocusModeIsAValidDefault now checks this
+// set against prompts.yaml's focus_modes keys so the next one can't drift.
 var validFocusModes = map[string]bool{
 	agent.FocusModeBrief:           true,
 	agent.FocusModeAcademic:        true,
@@ -208,6 +213,8 @@ var validFocusModes = map[string]bool{
 	agent.FocusModeFirstPrinciples: true,
 	agent.FocusModeSocratic:        true,
 	agent.FocusModeResearcher:      true,
+	agent.FocusModeShopper:         true,
+	agent.FocusModeSafari:          true,
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"polaris/models"
+	"polaris/prompts"
 	"polaris/store"
 )
 
@@ -188,6 +189,32 @@ func TestHandlePutSettings_DefaultFocusModeRoundTrips(t *testing.T) {
 	json.NewDecoder(getResp.Body).Decode(&settings)
 	if settings["default_focus_mode"] != "socratic" {
 		t.Errorf("default_focus_mode = %v, want socratic", settings["default_focus_mode"])
+	}
+}
+
+// Every focus mode the composer/Settings picker can offer must be
+// accepted as a standing default. prompts' compiled-in focus_modes keys are
+// the canonical list (agent/driver.go's FocusMode constants must match
+// them), so iterating those catches a mode added there but not to
+// validFocusModes — exactly how shopper and safari were missed.
+func TestHandlePutSettings_EveryFocusModeIsAValidDefault(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	modes := prompts.Get().Agent.FocusModes
+	if len(modes) == 0 {
+		t.Fatal("prompts.Get().Agent.FocusModes is empty — nothing to check")
+	}
+	for mode := range modes {
+		body, _ := json.Marshal(map[string]interface{}{"default_focus_mode": mode})
+		req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PUT /api/settings (%s): %v", mode, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("default_focus_mode %q: status = %d, want 204", mode, resp.StatusCode)
+		}
 	}
 }
 
