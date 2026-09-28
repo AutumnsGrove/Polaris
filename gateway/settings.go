@@ -26,6 +26,13 @@ const (
 	// early) that it went mostly unused in favor of the iOS keyboard's
 	// own dictation button instead.
 	settingVoiceInputMode = "voice_input_mode"
+	// settingOracleEnabled stores "true" to turn Oracle mode on (docs/
+	// plans/oracle-mode.md, issue #122); any other value (including
+	// unset) means off — opposite default polarity from
+	// settingMemoryEnabled, since Oracle spends real Jev budget and picks
+	// focus modes on the operator's behalf, so it should be an explicit
+	// opt-in rather than an opt-out.
+	settingOracleEnabled = "oracle_enabled"
 	// settingDisabledTools stores a JSON-encoded []string of tool names the
 	// user has individually turned off from the settings panel — see
 	// DisabledToolsFromStore and tools.ToggleableTools. Empty/unset means
@@ -128,6 +135,21 @@ func MemoryEnabledFromStore(db *store.Store) bool {
 		return true
 	}
 	return val != "false"
+}
+
+// OracleEnabledFromStore reads the oracle_enabled setting — see its doc
+// comment for why the default polarity is opposite MemoryEnabledFromStore's
+// (off unless explicitly turned on). A nil db, a read error, or an unset
+// value all default to false (Oracle off).
+func OracleEnabledFromStore(db *store.Store) bool {
+	if db == nil {
+		return false
+	}
+	val, err := db.GetSetting(settingOracleEnabled)
+	if err != nil {
+		return false
+	}
+	return val == "true"
 }
 
 // CustomInstructionsFromStore reads the custom_instructions setting —
@@ -257,6 +279,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		// only otherwise live in tools/descriptions/*.yaml.
 		"toggleable_tools":    tools.ToggleableTools(),
 		"memory_enabled":      MemoryEnabledFromStore(s.db),
+		"oracle_enabled":      OracleEnabledFromStore(s.db),
 		"custom_instructions": all[settingCustomInstructions],
 		"person_name":         all[settingPersonName],
 		"person_pronouns":     all[settingPersonPronouns],
@@ -271,6 +294,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		VoiceInputMode     *string   `json:"voice_input_mode"`
 		DisabledTools      *[]string `json:"disabled_tools"`
 		MemoryEnabled      *bool     `json:"memory_enabled"`
+		OracleEnabled      *bool     `json:"oracle_enabled"`
 		CustomInstructions *string   `json:"custom_instructions"`
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
@@ -373,6 +397,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "memory enabled changed", map[string]interface{}{"memory_enabled": *req.MemoryEnabled}, "")
+	}
+	if req.OracleEnabled != nil {
+		val := "true"
+		if !*req.OracleEnabled {
+			val = "false"
+		}
+		if err := s.db.SetSetting(settingOracleEnabled, val); err != nil {
+			log.Warn("saving oracle_enabled setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving oracle_enabled setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "oracle enabled changed", map[string]interface{}{"oracle_enabled": *req.OracleEnabled}, "")
 	}
 	if req.CustomInstructions != nil {
 		if len(*req.CustomInstructions) > maxCustomInstructionsChars {
