@@ -678,6 +678,7 @@ export class AppState {
 				costOracle: m.cost_oracle_usd,
 				promptTokens: m.prompt_tokens || undefined,
 				cacheReadTokens: m.cache_read_tokens || undefined,
+				completionTokens: m.completion_tokens || undefined,
 				toolCallCount: m.tool_call_count || undefined,
 				ttftMs: m.ttft_ms || undefined,
 				tokensPerSecond: m.tokens_per_second || undefined,
@@ -1626,6 +1627,7 @@ export class AppState {
 				turn.costOracle = e.cost_oracle_usd;
 				turn.promptTokens = e.prompt_tokens;
 				turn.cacheReadTokens = e.cache_read_tokens;
+				turn.completionTokens = e.completion_tokens;
 				turn.toolCallCount = e.tool_call_count;
 				turn.ttftMs = e.ttft_ms;
 				turn.tokensPerSecond = e.tokens_per_second;

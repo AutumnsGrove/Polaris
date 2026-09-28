@@ -337,6 +337,13 @@ type ServerEvent struct {
 	// as CostUSD above: the frontend adds these into running thread totals.
 	PromptTokens    int `json:"prompt_tokens"`
 	CacheReadTokens int `json:"cache_read_tokens"`
+	// CompletionTokens is this turn's summed output tokens — the other
+	// half issue #107 didn't expose, added for the turn-info sheet's
+	// "tokens out" stat (docs/plans/oracle-mode.md). omitempty is fine
+	// here (unlike PromptTokens/CacheReadTokens above): the frontend
+	// doesn't sum this into a running thread total, just displays it per
+	// turn in the sheet.
+	CompletionTokens int `json:"completion_tokens,omitempty"`
 	// PendingQuestion mirrors store.Message.PendingQuestion for the live
 	// "done" event — see the doc comment above.
 	PendingQuestion *tools.PendingQuestion `json:"pending_question,omitempty"`

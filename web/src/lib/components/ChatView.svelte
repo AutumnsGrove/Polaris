@@ -154,6 +154,40 @@
 		lastConfigThreadId = id;
 	});
 
+	// Oracle mode's own focus pick (docs/plans/oracle-mode.md) only ever
+	// showed up in the reply's own margin note/info sheet, easy to miss
+	// entirely — a real gap found live: the composer gave no visible sign
+	// Oracle had just switched into Shopper for that turn, even though it
+	// genuinely had (confirmed against the DB: applied_focus_mode/
+	// oracle_focus_mode_source were both set correctly; the frontend
+	// display was the actual gap). Mirrors a manual pick's own visible
+	// effect — the trigger's badge — the instant a turn finishes with
+	// Oracle having actually applied one, same "as if the operator had
+	// picked it" idea (source.svelte.ts's threads.focus_mode is already
+	// updated server-side to match — see gateway/turn.go's second
+	// SetThreadConfig call — so this doesn't diverge from what's actually
+	// sticky). focusModeManual stays false: this is Oracle's own pick, not
+	// an operator override, so Oracle stays free to change it again next
+	// turn. Keyed by turns.length (not turn identity) so this only fires
+	// once per newly-finished turn, not on every unrelated reactive touch
+	// of appState.turns.
+	let lastOracleFocusAppliedAt = -1;
+	$effect(() => {
+		const idx = appState.turns.length - 1;
+		const last = appState.turns[idx];
+		if (
+			last?.role === 'assistant' &&
+			!last.streaming &&
+			last.oracleFocusModeSource === 'oracle' &&
+			last.appliedFocusMode &&
+			idx !== lastOracleFocusAppliedAt
+		) {
+			lastOracleFocusAppliedAt = idx;
+			focusMode = last.appliedFocusMode as FocusMode;
+			focusModeManual = false;
+		}
+	});
+
 	function handleAttach(files: File[]) {
 		attachedFiles = [...attachedFiles, ...files];
 	}

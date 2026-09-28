@@ -490,6 +490,11 @@ type Result struct {
 	// ContextTokens (the LAST call's size only), these are totals.
 	PromptTokens    int
 	CacheReadTokens int
+	// CompletionTokens is this turn's output tokens, summed the same way
+	// as PromptTokens above — the turn-info sheet's "tokens out" stat
+	// (docs/plans/oracle-mode.md), added after issue #107 only exposed
+	// the input side.
+	CompletionTokens int
 	// Transcript is every message this turn put on the wire, in order,
 	// after the replayed history — the model-facing user message (with any
 	// attachment notes or Pulsar report folded in), mode reinforcement,
@@ -545,13 +550,14 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	// cache — issue #107. Only the loop's own calls: a tool's side call
 	// (web_read's filter pass, a spawned sub-agent) has its own unrelated
 	// prefix and would just blur the number.
-	var promptTokens, cacheReadTokens int
+	var promptTokens, cacheReadTokens, completionTokens int
 	// turnStart is where this turn's own messages begin — everything
 	// before it is the system prompt plus replayed history.
 	turnStart := 1 + len(history)
 	finish := func(r *Result) *Result {
 		r.PromptTokens = promptTokens
 		r.CacheReadTokens = cacheReadTokens
+		r.CompletionTokens = completionTokens
 		transcript := make([]llm.ChatMessage, 0, len(messages)-turnStart+1)
 		transcript = append(transcript, messages[turnStart:]...)
 		r.Transcript = append(transcript, llm.ChatMessage{Role: "assistant", Content: r.Answer})
@@ -613,6 +619,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		totalCost += resp.CostUSD
 		promptTokens += resp.PromptTokens
 		cacheReadTokens += resp.CacheReadTokens
+		completionTokens += resp.CompletionTokens
 		// Live-only running total, not persisted (logTurnEvent has no case
 		// for it) and not additive — the footer used to sit at $0.00 for
 		// the entire turn, only learning the real spend from "done" once
@@ -836,6 +843,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	totalCost += resp.CostUSD
 	promptTokens += resp.PromptTokens
 	cacheReadTokens += resp.CacheReadTokens
+	completionTokens += resp.CompletionTokens
 
 	answerText := resp.Content
 	if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {

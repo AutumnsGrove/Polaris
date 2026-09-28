@@ -114,6 +114,10 @@
 				</span>
 			</div>
 			<div class="stat-cell">
+				<span class="k">Tokens out</span>
+				<span class="v">{turn.completionTokens !== undefined ? turn.completionTokens.toLocaleString() : '—'}</span>
+			</div>
+			<div class="stat-cell">
 				<span class="k">Total time</span>
 				<span class="v">{turn.durationMs !== undefined ? formatDuration(turn.durationMs) : '—'}</span>
 			</div>

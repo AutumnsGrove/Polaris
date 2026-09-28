@@ -1101,6 +1101,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		log.Warn("failed to record cache usage", "err", err)
 		logEvent(storageThreadID, "warn", "turn", "recording cache usage failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
+	if err := s.db.SetMessageCompletionTokens(assistantMsgID, result.CompletionTokens); err != nil {
+		log.Warn("failed to record completion tokens", "err", err)
+		logEvent(storageThreadID, "warn", "turn", "recording completion tokens failed", map[string]interface{}{"err": err.Error()}, turnID)
+	}
 
 	if len(result.Cards) > 0 {
 		if cardsJSON, err := json.Marshal(result.Cards); err != nil {
@@ -1184,6 +1188,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		DurationMs:            durationMs,
 		PromptTokens:          result.PromptTokens,
 		CacheReadTokens:       result.CacheReadTokens,
+		CompletionTokens:      result.CompletionTokens,
 		PendingQuestion:       result.PendingQuestion,
 		OracleResult:          oracleResultForEvent,
 		OracleFocusModeSource: oracleFocusModeSource,

@@ -249,6 +249,9 @@ export type ServerEvent =
 			// gateway/protocol.go's ServerEvent.PromptTokens (issue #107).
 			prompt_tokens?: number;
 			cache_read_tokens?: number;
+			// This turn's summed output tokens — see
+			// gateway/protocol.go's ServerEvent.CompletionTokens doc comment.
+			completion_tokens?: number;
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
 			duration_ms?: number;
@@ -777,6 +780,9 @@ export interface ChatTurn {
 	// regardless of whether Oracle is on, same as durationMs above.
 	promptTokens?: number;
 	cacheReadTokens?: number;
+	// This turn's summed output tokens — see store.Message.CompletionTokens's
+	// doc comment.
+	completionTokens?: number;
 	toolCallCount?: number;
 	ttftMs?: number;
 	tokensPerSecond?: number;
