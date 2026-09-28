@@ -207,6 +207,82 @@ type Set struct {
 		// tools.Context.WeaverInteractive is set alongside WeaverRun.
 		InteractiveSystem string `yaml:"interactive_system"`
 	} `yaml:"weaver"`
+
+	// Oracle backs Oracle mode (docs/plans/oracle-mode.md, issue #122) —
+	// gateway/oracle.go fires every enabled Checks entry as one Jev
+	// AskChoice call, applies each answer's threshold/focus rules, and
+	// folds whatever fired into Section via {items}.
+	Oracle struct {
+		// Section is the whole injected system-prompt block; {items} is
+		// replaced with every fired check's Inject text, one per
+		// paragraph — see gateway/oracle.go.
+		Section string `yaml:"section"`
+		// QuestionPreamble is prepended to every check's own Instructions
+		// before it's sent to Jev; {state} isn't substituted here (that's
+		// Jev's `state` request field, built separately) — this is purely
+		// the shared framing text.
+		QuestionPreamble string                 `yaml:"question_preamble"`
+		Checks           map[string]OracleCheck `yaml:"checks"`
+		// Chips are offer-only checks (Pulsar/Daily/Project) — no Inject,
+		// just a threshold and, for Pulsar/Daily, a fixed Options set.
+		// Project's Options is left empty in prompts.yaml and built at
+		// request time from the store's project list instead.
+		Chips map[string]OracleChip `yaml:"chips"`
+	} `yaml:"oracle"`
+}
+
+// OracleCheck is one entry under oracle.checks — see docs/plans/
+// oracle-mode.md's "Draft prompts.yaml section" for the full field-by-field
+// rationale. Every check shares this one shape, including ByFocus, whose
+// inner map is always option-keyed (with an "any" sentinel for an override
+// that doesn't depend on which option fired) rather than a plain string —
+// see the plan doc's note next to by_focus for why.
+type OracleCheck struct {
+	Threshold float64 `yaml:"threshold"`
+	// SwitchThreshold only applies to the focus check — the bar to change
+	// an already-set focus mode mid-thread, higher than Threshold.
+	SwitchThreshold float64 `yaml:"switch_threshold,omitempty"`
+	// OptionThresholds raises the bar for specific options above the
+	// check's own Threshold (e.g. focus.brief/safari) — checked in
+	// addition to, not instead of, Threshold.
+	OptionThresholds map[string]float64 `yaml:"option_thresholds,omitempty"`
+	// Sticky options are never switched away from once set for a thread
+	// (focus.safari).
+	Sticky []string `yaml:"sticky,omitempty"`
+	// NeverWithHighStakes options are never picked by Oracle on a turn
+	// where the high_stakes check fired (focus.brief).
+	NeverWithHighStakes []string `yaml:"never_with_high_stakes,omitempty"`
+	// SkipForFocus skips this whole check when the turn's active focus
+	// mode is one of these (clarify skipped for safari; Safari's own
+	// Embark step already asks).
+	SkipForFocus []string `yaml:"skip_for_focus,omitempty"`
+	// FirstMessageOnly restricts this check to a thread's first message
+	// (clarify).
+	FirstMessageOnly bool              `yaml:"first_message_only,omitempty"`
+	Instructions     string            `yaml:"instructions"`
+	Options          map[string]string `yaml:"options"`
+	// Inject maps a winning option to the text folded into oracle.section
+	// via {items}. The sentinel key "any" applies in addition to whichever
+	// option's own Inject text fired (high_stakes' compare_sources hint).
+	Inject map[string]string `yaml:"inject,omitempty"`
+	// SkipOptionForFocus suppresses one option's Inject entirely under a
+	// given focus mode (intent.product under shopper — Shopper's own
+	// prompt already covers it).
+	SkipOptionForFocus map[string][]string `yaml:"skip_option_for_focus,omitempty"`
+	// ByFocus replaces (not stacks with) whichever Inject text fired, when
+	// the turn's focus mode has an entry here — outer key is the focus
+	// mode, inner key is the option that fired, or "any" for a single
+	// override applied regardless of which option won.
+	ByFocus map[string]map[string]string `yaml:"by_focus,omitempty"`
+}
+
+// OracleChip is one entry under oracle.chips — an offer-only check with no
+// Inject, just a yes/no (or, for project, per-project) verdict that renders
+// a chip under the reply. See docs/plans/oracle-mode.md's "chips" table.
+type OracleChip struct {
+	Threshold    float64           `yaml:"threshold"`
+	Instructions string            `yaml:"instructions"`
+	Options      map[string]string `yaml:"options,omitempty"`
 }
 
 // defaults mirrors prompts.yaml's shipped content exactly — the
@@ -656,6 +732,195 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 	d.PulsarDaily.CustomBlockWizardOpenerTask = "The user hasn't described what this custom block should " +
 		"check on yet — ask a single focused opening question to find out."
 
+	d.Oracle.Section = "## Oracle\n\n" +
+		"These notes come from an automatic pre-read of the user's message, not from the user. Treat " +
+		"them as hints about what probably helps here — follow them when they fit, and ignore any that " +
+		"turn out not to match what the user actually asked.\n\n{items}"
+	d.Oracle.QuestionPreamble = "You are reading a message someone sent to a research assistant that " +
+		"searches the web and cites sources. Answer about the latest message; an earlier message, if " +
+		"present, is only context."
+	d.Oracle.Checks = map[string]OracleCheck{
+		"focus": {
+			Threshold:           0.70,
+			SwitchThreshold:     0.85,
+			OptionThresholds:    map[string]float64{"brief": 0.85, "safari": 0.92},
+			Sticky:              []string{"safari"},
+			NeverWithHighStakes: []string{"brief"},
+			Instructions: "Which answering style best fits this message? Pick \"off\" unless one style " +
+				"is clearly a better fit than a normal, balanced answer.",
+			Options: map[string]string{
+				"off":              "A normal balanced answer fits; no special style is clearly better.",
+				"brief":            "The message itself asks for a short answer (quick question, tl;dr, one word) or is a single fact lookup.",
+				"researcher":       "The question needs careful cross-checking of several sources, or has real consequences if wrong.",
+				"academic":         "A scientific, medical, or technical question best answered from papers, journals, or official documentation.",
+				"news":             "About a current or recent event, where fresh news coverage matters more than reference pages.",
+				"shopper":          "The person wants to find, compare, or buy a product.",
+				"first_principles": "The person wants to understand why or how something works from the ground up.",
+				"socratic":         "The person wants to be guided to work something out themselves, not handed the answer.",
+				"safari":           "The person explicitly wants to explore a broad topic interactively, stop by stop, over several turns.",
+			},
+		},
+		"research": {
+			Threshold:    0.85,
+			Instructions: "Does answering this well require searching the web or reading current information?",
+			Options: map[string]string{
+				"yes": "Needs current facts, specifics, prices, news, anything that could have changed recently, " +
+					"or a specific checkable fact about a real person/date/event (ages, release dates, " +
+					"statistics) — those are easy to get subtly wrong from memory alone.",
+				"no": "Casual conversation, writing help, brainstorming, or genuinely stable general knowledge.",
+			},
+			Inject: map[string]string{
+				"no": "This message probably doesn't need a web search — it looks answerable from general " +
+					"knowledge or the conversation so far. Answer directly unless you find you're unsure of a " +
+					"specific fact, in which case search as normal.",
+			},
+		},
+		"high_stakes": {
+			Threshold: 0.75,
+			Instructions: "Would acting on a wrong answer to this message risk someone's health, legal standing, " +
+				"money, or physical safety?",
+			Options: map[string]string{
+				"none":      "Low stakes; a wrong answer would be an inconvenience at most.",
+				"medical":   "Health, symptoms, medications, dosages, diagnoses, or treatment.",
+				"legal":     "Laws, rights, contracts, disputes, taxes as a legal matter, or legal procedure.",
+				"financial": "Investing, debt, taxes, insurance, large purchases, or other money decisions.",
+				"safety":    "Physical danger — electrical, chemical, structural, vehicles, weapons, outdoor risks.",
+			},
+			Inject: map[string]string{
+				"medical": "This looks like a medical question. Prefer primary clinical sources — government health " +
+					"agencies, peer-reviewed research, professional society guidance, drug labels — over " +
+					"health blogs or forums. Be exact about dosages, thresholds, and who a finding applies to. " +
+					"Say plainly where evidence is weak or mixed, and when something warrants seeing a " +
+					"clinician, say so once, clearly, without burying the answer in disclaimers.",
+				"legal": "This looks like a legal question. Law depends on jurisdiction — if the user's isn't clear " +
+					"from context or memory, say which one your answer assumes. Prefer statute text, court or " +
+					"government sources, and bar-association guidance over general-audience summaries. Note " +
+					"when an answer turns on specific facts a lawyer would need to see.",
+				"financial": "This looks like a financial decision. Prefer primary sources (regulators, official rate " +
+					"and tax tables, fund prospectuses, company filings) over promotional content, and check " +
+					"that numbers are current. Separate facts from opinion, and name the assumptions any " +
+					"recommendation depends on.",
+				"safety": "This involves physical safety. Prefer manufacturer documentation, official codes and " +
+					"standards, and safety agencies. State the specific hazard and the specific precaution " +
+					"rather than a generic warning, and don't give confident instructions for anything you " +
+					"couldn't source.",
+				"any": "When sources disagree on something that matters here, use compare_sources rather than " +
+					"picking one.",
+			},
+			ByFocus: map[string]map[string]string{
+				"brief": {
+					"any": "This looks like a {option} question. Keep the answer short as asked, but brevity trims " +
+						"explanation, not safety: keep any figure exact, never drop the one caveat that changes " +
+						"what the user should do, and still cite a primary source for it.",
+				},
+			},
+		},
+		"intent": {
+			Threshold:    0.65,
+			Instructions: "What kind of thing is this message mainly asking about?",
+			Options: map[string]string{
+				"general":    "None of the other options clearly fits.",
+				"place":      "A place, business, restaurant, or something nearby or at a specific location.",
+				"book":       "A book, author, or what to read.",
+				"film_tv":    "A movie, TV show, actor, or what to watch.",
+				"music":      "A song, album, artist, or what to listen to.",
+				"product":    "A specific product or buying decision.",
+				"weather":    "Weather or a forecast.",
+				"video":      "A specific YouTube video or its contents.",
+				"code":       "A code repository, library, or programming project.",
+				"definition": "The meaning, pronunciation, or origin of a word.",
+			},
+			Inject: map[string]string{
+				"place": "This is about a place. nearby_search gives real listings with addresses, hours, and " +
+					"ratings — use it rather than relying on web_search alone, and include those specifics.",
+				"book": "This is about books. Use the books tool for real bibliographic data. If more than one " +
+					"title fits, briefly say how they differ (focus, tone, audience, depth) so the choice is " +
+					"easy, rather than just listing them.",
+				"film_tv": "This is about film or TV. Use the movies tool for real details (year, cast, runtime, " +
+					"where it's streaming if available). If recommending several, say what distinguishes each.",
+				"music": "This is about music. Use the music tool for real release and artist data. If recommending " +
+					"several, say what distinguishes each.",
+				"product": "This is about a product. Compare real, currently available options with actual prices " +
+					"and the tradeoffs that matter for this use — not a generic feature list.",
+				"weather": "This is about weather. Use the weather tool rather than a web search.",
+				"video": "This refers to a video. If there's a YouTube link or an identifiable video, read its " +
+					"transcript with youtube_transcript rather than guessing at its contents.",
+				"code": "This is about a code project. github_repo and github_activity give real, current repo " +
+					"data — prefer them over search results about the project.",
+				"definition": "This is about a word. Use the dictionary tool for the definition, and mention usage " +
+					"or origin if it's interesting.",
+			},
+			SkipOptionForFocus: map[string][]string{"product": {"shopper"}},
+			ByFocus: map[string]map[string]string{
+				"brief": {
+					"book":    "This is about books. Use the books tool; give the one best pick, or one line per title on how they differ.",
+					"film_tv": "This is about film or TV. Use the movies tool; give the one best pick, or one line per title on how they differ.",
+					"music":   "This is about music. Use the music tool; give the one best pick, or one line per title on how they differ.",
+					"product": "This is about a product. Give the single best current option with its real price.",
+				},
+			},
+		},
+		"clarify": {
+			Threshold:        0.85,
+			FirstMessageOnly: true,
+			SkipForFocus:     []string{"safari"},
+			Instructions: "Is this message ambiguous enough that the answer would be substantially different " +
+				"depending on something the person didn't say — so that asking one question first would clearly " +
+				"save wasted research?",
+			Options: map[string]string{
+				"no":  "Clear enough to answer well, or any ambiguity has an obvious default.",
+				"yes": "Two or more very different readings, or a missing detail that changes everything.",
+			},
+			Inject: map[string]string{
+				"yes": "This message looks ambiguous in a way that matters. Before researching, ask one short " +
+					"clarifying question with ask_user_question, offering the two or three likeliest readings " +
+					"as options. Skip this if, on reflection, the conversation or memory already answers it.",
+			},
+		},
+		"recall": {
+			Threshold: 0.80,
+			Instructions: "Does this message refer back to an earlier conversation the person had with the " +
+				"assistant (for example \"like we talked about\", \"that thing from last week\", \"remember when\")?",
+			Options: map[string]string{
+				"no":  "No reference to a past conversation.",
+				"yes": "Explicitly or clearly refers to something discussed before.",
+			},
+			Inject: map[string]string{
+				"yes": "The user seems to be referring to an earlier conversation. If memory doesn't already " +
+					"cover it, use search_chats to find it before answering rather than asking them to repeat " +
+					"themselves.",
+			},
+		},
+	}
+	d.Oracle.Chips = map[string]OracleChip{
+		"pulsar": {
+			Threshold: 0.80,
+			Instructions: "Is this the kind of thing someone would want updated regularly — a price, a score, " +
+				"an ongoing story, a release date, a changing number?",
+			Options: map[string]string{
+				"no":  "A one-time question.",
+				"yes": "Information that changes and would be worth checking on a schedule.",
+			},
+		},
+		"daily": {
+			Threshold: 0.80,
+			Instructions: "Is this something the person might want to keep an eye on each morning as part of a " +
+				"daily briefing?",
+			Options: map[string]string{
+				"no":  "Not something to follow day to day.",
+				"yes": "A topic, story, or situation worth a daily glance.",
+			},
+		},
+		// project's Options is built at request time from the store's
+		// project list (every project name -> its description, plus
+		// "none" -> "Doesn't clearly belong to any project") — see
+		// gateway/oracle.go.
+		"project": {
+			Threshold:    0.75,
+			Instructions: "Which of the person's projects, if any, does this message clearly belong to?",
+		},
+	}
+
 	return d
 }
 
@@ -876,6 +1141,23 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarDaily.TopStoryElectorSystem == "" {
 		s.PulsarDaily.TopStoryElectorSystem = defaults.PulsarDaily.TopStoryElectorSystem
+	}
+	if s.Oracle.Section == "" {
+		s.Oracle.Section = defaults.Oracle.Section
+	}
+	if s.Oracle.QuestionPreamble == "" {
+		s.Oracle.QuestionPreamble = defaults.Oracle.QuestionPreamble
+	}
+	// Checks/Chips fall back whole-map, not per-key — unlike FocusModes'
+	// flat map[string]string, each value here is a nested struct with its
+	// own thresholds/options/injections, and a prompts.yaml edit to one
+	// check is expected to redefine that check completely rather than
+	// partially inherit stale fields from defaults.
+	if s.Oracle.Checks == nil {
+		s.Oracle.Checks = defaults.Oracle.Checks
+	}
+	if s.Oracle.Chips == nil {
+		s.Oracle.Chips = defaults.Oracle.Chips
 	}
 	return &s
 }

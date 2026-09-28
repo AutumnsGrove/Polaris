@@ -324,12 +324,18 @@ oracle:
         any: >-
           When sources disagree on something that matters here, use compare_sources rather than
           picking one.
-      # Replaces every high_stakes inject above when Brief is active.
+      # by_focus keys are focus-mode names; each inner map is keyed by the
+      # option that fired, or "any" for a single override applied
+      # regardless of which option won (same sentinel `inject.any` already
+      # uses above) — same shape every check's by_focus uses, so Go's
+      # ByFocus field type (map[string]map[string]string) doesn't need a
+      # different shape per check.
       by_focus:
-        brief: >-
-          This looks like a {option} question. Keep the answer short as asked, but brevity trims
-          explanation, not safety: keep any figure exact, never drop the one caveat that changes
-          what the user should do, and still cite a primary source for it.
+        brief:
+          any: >-
+            This looks like a {option} question. Keep the answer short as asked, but brevity trims
+            explanation, not safety: keep any figure exact, never drop the one caveat that changes
+            what the user should do, and still cite a primary source for it.
 
     intent:
       threshold: 0.65
@@ -363,15 +369,6 @@ oracle:
         product: >-
           This is about a product. Compare real, currently available options with actual prices
           and the tradeoffs that matter for this use — not a generic feature list.
-      # Shopper mode already carries its own product guidance; don't send two.
-      skip_option_for_focus:
-        product: [shopper]
-      by_focus:
-        brief:
-          book: This is about books. Use the books tool; give the one best pick, or one line per title on how they differ.
-          film_tv: This is about film or TV. Use the movies tool; give the one best pick, or one line per title on how they differ.
-          music: This is about music. Use the music tool; give the one best pick, or one line per title on how they differ.
-          product: This is about a product. Give the single best current option with its real price.
         weather: >-
           This is about weather. Use the weather tool rather than a web search.
         video: >-
@@ -383,6 +380,19 @@ oracle:
         definition: >-
           This is about a word. Use the dictionary tool for the definition, and mention usage or
           origin if it's interesting.
+      # Shopper mode already carries its own product guidance; don't send two.
+      skip_option_for_focus:
+        product: [shopper]
+      # by_focus keys are focus-mode names (never option names — weather/
+      # video/code/definition above are options, and their inject text
+      # doesn't change under Brief, so they only exist in the map above,
+      # not here).
+      by_focus:
+        brief:
+          book: This is about books. Use the books tool; give the one best pick, or one line per title on how they differ.
+          film_tv: This is about film or TV. Use the movies tool; give the one best pick, or one line per title on how they differ.
+          music: This is about music. Use the music tool; give the one best pick, or one line per title on how they differ.
+          product: This is about a product. Give the single best current option with its real price.
 
     clarify:
       threshold: 0.85
