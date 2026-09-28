@@ -89,6 +89,17 @@ type ClientMessage struct {
 	// agent.FocusMode's values, or empty for normal behavior. Shapes the
 	// system prompt for this turn only; see agent.focusModeInstruction.
 	FocusMode string `json:"focus_mode,omitempty"`
+	// FocusModeSource distinguishes "the operator picked FocusMode for
+	// this specific message in the composer" ("manual") from "FocusMode
+	// is just the Settings default pre-filling the composer" ("default")
+	// — Oracle mode (docs/plans/oracle-mode.md) needs this to implement
+	// "manual always wins": only a manual pick blocks Oracle's own focus
+	// check from taking effect. Anything other than exactly "default"
+	// (including empty/unset, from a frontend build that predates this
+	// field) is treated as manual — the safer default, since silently
+	// letting Oracle override an operator's real choice is worse than
+	// Oracle being overly conservative until the frontend sends this.
+	FocusModeSource string `json:"focus_mode_source,omitempty"`
 	// DeepResearch, when true, raises this turn's research budget and
 	// check-in leniency — see agent.Run's maxTurns/researchCheckInInterval
 	// handling.
@@ -331,6 +342,28 @@ type ServerEvent struct {
 	// event had ClientMessage.WaitVerification set. Nil on every real
 	// chat/WebSocket turn; see ask.go's AskRequest.WaitVerification.
 	VerificationDebug []ClaimVerification `json:"verification_debug,omitempty"`
+	// OracleResult/OracleFocusModeSource mirror store.Message's own
+	// oracle_result/focus_mode_source columns for the live "done" event —
+	// see docs/plans/oracle-mode.md. Nil/"" whenever Oracle didn't run
+	// this turn (off, unconfigured, budget exhausted, or it errored/timed
+	// out), same silent-normal-outcome convention as Suggestions/
+	// Verification above.
+	OracleResult          *OracleResult `json:"oracle_result,omitempty"`
+	OracleFocusModeSource string        `json:"oracle_focus_mode_source,omitempty"`
+	// CostAnswerUSD/CostVerificationUSD/CostOracleUSD are CostUSD's
+	// three-tier split (docs/plans/oracle-mode.md's "Cost moves into the
+	// sheet, in three tiers") — mirrors store.Message's own columns. No
+	// omitempty, same NaN-poisoning reasoning as CostUSD/PromptTokens
+	// above: the frontend sums these into running per-tier totals.
+	CostAnswerUSD       float64 `json:"cost_answer_usd"`
+	CostVerificationUSD float64 `json:"cost_verification_usd"`
+	CostOracleUSD       float64 `json:"cost_oracle_usd"`
+	// TTFTMs/TokensPerSecond/ToolCallCount back the turn-info sheet's
+	// answer-stats section — sent regardless of whether Oracle is on,
+	// same as AssistantMessageID/DurationMs above.
+	TTFTMs          int64   `json:"ttft_ms,omitempty"`
+	TokensPerSecond float64 `json:"tokens_per_second,omitempty"`
+	ToolCallCount   int     `json:"tool_call_count,omitempty"`
 }
 
 // VerificationMark is one claim/source pair that cleared the "found in

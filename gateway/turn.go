@@ -310,6 +310,14 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}, turnID)
 	}
 
+	// Captured before AddMessage below inserts the new user message, so
+	// this naturally holds the prior one — Oracle mode's classification
+	// state (docs/plans/oracle-mode.md) wants the current message plus the
+	// thread's previous user message, if any. Best-effort: a lookup
+	// failure just means Oracle classifies without that extra context,
+	// same as an empty thread would.
+	prevUserMessage, _ := s.db.LastUserMessage(storageThreadID)
+
 	// Persist the user message before running the agent, not after — so
 	// it (and its ID, needed for retry/edit) survives even if the turn
 	// below errors out. Previously a failed turn left no record at all.
@@ -441,6 +449,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// everything else emit() does around that write.
 	var emitMu sync.Mutex
 
+	// firstTokenAt/tokenEventCount/toolCallEventCount back the Oracle mode
+	// turn-info sheet's TTFT/tokens-per-second/tool-call-count stats
+	// (docs/plans/oracle-mode.md) — read under emitMu below, after
+	// agent.Run returns. tokensPerSecond derived from these is a
+	// chunk-arrival-rate proxy (each "token" SSE event, not necessarily
+	// exactly one model token), good enough for a UI display, not a
+	// precise decode-rate measurement.
+	var firstTokenAt time.Time
+	var tokenEventCount, toolCallEventCount int
+
 	// emit both streams the event to the browser (send) and, for the
 	// subset worth keeping as durable evidence, persists it to the events
 	// table — "token" is deliberately excluded: it arrives as
@@ -452,6 +470,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	emit := func(eventType string, payload map[string]interface{}) {
 		emitMu.Lock()
 		defer emitMu.Unlock()
+
+		switch eventType {
+		case "token":
+			tokenEventCount++
+			if firstTokenAt.IsZero() {
+				firstTokenAt = time.Now()
+			}
+		case "tool_call":
+			toolCallEventCount++
+		}
 
 		evt := ServerEvent{Type: eventType, ThreadID: threadID}
 		if v, ok := payload["content"].(string); ok {
@@ -757,6 +785,55 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		}
 	}
 
+	// Oracle mode (docs/plans/oracle-mode.md, issue #122) — an opt-in
+	// pre-read of this message via Jev, run before agent.Run so its focus-
+	// mode pick and injected guidance can shape the turn itself. Left off
+	// for a ghost thread, same "no extra background intelligence" reasoning
+	// as memory/stars/search_chats above. oracleResult/oracleFocusModeSource
+	// are captured in this outer scope for persisting once assistantMsgID
+	// exists, after agent.Run returns below.
+	var oracleResult OracleResult
+	var oracleFocusModeSource string
+	if !ghost && OracleEnabledFromStore(s.db) && s.jev != nil {
+		withinOracleBudget := true
+		if used, err := s.db.JevCostThisMonth(); err != nil {
+			log.Warn("oracle: checking jev monthly cost failed, proceeding anyway", "err", err)
+		} else if used >= jevMonthlyCapUSD {
+			withinOracleBudget = false
+		}
+		if withinOracleBudget {
+			isManualFocus := msg.FocusModeSource != "default"
+			isFirstMsg, _ := s.db.IsFirstMessage(storageThreadID, userMsgID)
+			priorOracleFocus := ""
+			if source, err := s.db.LastAssistantFocusModeSource(storageThreadID); err == nil && source == "oracle" {
+				if thread, err := s.db.GetThread(threadID); err == nil {
+					priorOracleFocus = thread.FocusMode
+				}
+			}
+			oracleResult, _ = RunOracle(ctx, s.jev, OracleInput{
+				CurrentMessage:       msg.Content,
+				PrevUserMessage:      prevUserMessage,
+				IsFirstMessage:       isFirstMsg,
+				ActiveFocusMode:      msg.FocusMode,
+				IsManualFocus:        isManualFocus,
+				PriorOracleFocusMode: priorOracleFocus,
+			})
+			if oracleResult.FocusMode != "" && !isManualFocus {
+				agentCtx.FocusMode = oracleResult.FocusMode
+				oracleFocusModeSource = "oracle"
+			} else if msg.FocusMode != "" {
+				if isManualFocus {
+					oracleFocusModeSource = "manual"
+				} else {
+					oracleFocusModeSource = "default"
+				}
+			}
+			if len(oracleResult.Injections) > 0 {
+				agentCtx.OracleSection = strings.ReplaceAll(prompts.Get().Oracle.Section, "{items}", strings.Join(oracleResult.Injections, "\n\n"))
+			}
+		}
+	}
+
 	// Timed around agent.Run specifically, not the whole handler — this is
 	// "how long it took to get an answer", the number a user watching the
 	// tokens stream in actually cares about. Excludes the follow-up
@@ -925,6 +1002,48 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		logEvent(storageThreadID, "warn", "turn", "recording message duration failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
+	// Read under emitMu — the same lock emit() holds while writing these
+	// counters, and agent.Run has already returned by this point so
+	// nothing is still writing them, but locking here costs nothing and
+	// avoids relying on that ordering guarantee staying true forever.
+	emitMu.Lock()
+	ttftMs := int64(0)
+	if !firstTokenAt.IsZero() {
+		ttftMs = firstTokenAt.Sub(turnStart).Milliseconds()
+	}
+	tokensPerSecond := 0.0
+	if !firstTokenAt.IsZero() && tokenEventCount > 0 {
+		if elapsed := time.Since(firstTokenAt).Seconds(); elapsed > 0 {
+			tokensPerSecond = float64(tokenEventCount) / elapsed
+		}
+	}
+	toolCallCount := toolCallEventCount
+	emitMu.Unlock()
+	if err := s.db.SetMessageTurnStats(assistantMsgID, ttftMs, tokensPerSecond, toolCallCount); err != nil {
+		log.Warn("failed to record turn stats", "err", err)
+		logEvent(storageThreadID, "warn", "turn", "recording turn stats failed", map[string]interface{}{"err": err.Error()}, turnID)
+	}
+
+	// oracleResult.Checks is only non-empty when Oracle actually got a
+	// live Jev answer this turn (RunOracle returns early, before
+	// appending anything, on every off/unconfigured/error/timeout path)
+	// — persisting only then keeps oracle_result "" for every ordinary
+	// Oracle-off turn, matching its schema comment, rather than storing
+	// an empty-but-marshaled "{}".
+	if len(oracleResult.Checks) > 0 {
+		if oracleResultJSON, err := json.Marshal(oracleResult); err != nil {
+			log.Warn("failed to marshal oracle result", "err", err)
+		} else if err := s.db.SetMessageOracleResult(assistantMsgID, string(oracleResultJSON), oracleFocusModeSource); err != nil {
+			log.Warn("failed to record oracle result", "err", err)
+			logEvent(storageThreadID, "warn", "turn", "recording oracle result failed", map[string]interface{}{"err": err.Error()}, turnID)
+		}
+		if oracleResult.CostUSD > 0 {
+			if err := s.db.AddTurnCost(storageThreadID, assistantMsgID, "oracle", oracleResult.CostUSD); err != nil {
+				log.Warn("failed to record oracle cost", "err", err)
+			}
+		}
+	}
+
 	// The turn's exact wire messages, so the next turn replays them
 	// verbatim — see loadHistory. The closing assistant message is
 	// synced to the answer actually persisted above (StripFakeSourcesNote
@@ -1009,20 +1128,40 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"cache_read_tokens": result.CacheReadTokens,
 	}, turnID)
 
+	// Only sent when Oracle actually got a live answer this turn — mirrors
+	// the persistence condition above, so a reload (oracle_result "") and
+	// the live event agree on what "Oracle didn't run" looks like.
+	var oracleResultForEvent *OracleResult
+	if len(oracleResult.Checks) > 0 {
+		oracleResultForEvent = &oracleResult
+	}
+
 	send(ServerEvent{
-		Type:               "done",
-		ThreadID:           threadID,
-		UserMessageID:      userMsgID,
-		AssistantMessageID: assistantMsgID,
-		Citations:          result.Citations,
-		Cards:              result.Cards,
-		Chart:              result.Chart,
-		CostUSD:            totalCost,
-		ContextTokens:      contextTokens,
-		DurationMs:         durationMs,
-		PromptTokens:       result.PromptTokens,
-		CacheReadTokens:    result.CacheReadTokens,
-		PendingQuestion:    result.PendingQuestion,
+		Type:                  "done",
+		ThreadID:              threadID,
+		UserMessageID:         userMsgID,
+		AssistantMessageID:    assistantMsgID,
+		Citations:             result.Citations,
+		Cards:                 result.Cards,
+		Chart:                 result.Chart,
+		CostUSD:               totalCost,
+		ContextTokens:         contextTokens,
+		DurationMs:            durationMs,
+		PromptTokens:          result.PromptTokens,
+		CacheReadTokens:       result.CacheReadTokens,
+		PendingQuestion:       result.PendingQuestion,
+		OracleResult:          oracleResultForEvent,
+		OracleFocusModeSource: oracleFocusModeSource,
+		CostAnswerUSD:         totalCost,
+		// CostVerificationUSD deliberately left at its zero value: that
+		// spend isn't known yet (verification runs in a detached goroutine
+		// after this event ships, adding to cost_verification_usd
+		// separately) — same "reload to see it" gap that already existed
+		// for verification cost before this three-tier split.
+		CostOracleUSD:   oracleResult.CostUSD,
+		TTFTMs:          ttftMs,
+		TokensPerSecond: tokensPerSecond,
+		ToolCallCount:   toolCallCount,
 	})
 
 	// Auto-compaction, detached for the same reason as the suggestions

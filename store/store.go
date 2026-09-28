@@ -2698,6 +2698,36 @@ func (s *Store) SetMessageVerification(messageID int64, verificationJSON string)
 	return err
 }
 
+// LastUserMessage returns the most recent user-role message's content in
+// threadID, "" if there is none — used by gateway/turn.go to build Oracle
+// mode's classification state (current message + previous user message,
+// docs/plans/oracle-mode.md) before the new user message is itself
+// inserted, so this naturally returns the prior one rather than the one
+// about to be added.
+func (s *Store) LastUserMessage(threadID string) (string, error) {
+	var content string
+	err := s.db.QueryRow(`SELECT content FROM messages WHERE thread_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1`, threadID).Scan(&content)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return content, err
+}
+
+// LastAssistantFocusModeSource returns the most recent assistant message's
+// focus_mode_source in threadID, "" if there is none — Oracle mode's
+// stickiness/switch-threshold logic (gateway.RunOracle's PriorOracleFocusMode)
+// uses this to tell whether the thread's current sticky focus mode
+// (threads.focus_mode) was itself Oracle's own pick, as opposed to a
+// manual or default one.
+func (s *Store) LastAssistantFocusModeSource(threadID string) (string, error) {
+	var source string
+	err := s.db.QueryRow(`SELECT focus_mode_source FROM messages WHERE thread_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1`, threadID).Scan(&source)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return source, err
+}
+
 // SetMessageOracleResult records Oracle mode's classification result for a
 // turn (docs/plans/oracle-mode.md, issue #122) — a post-hoc UPDATE, same
 // shape as SetMessageVerification, since gateway/oracle.go's RunOracle
