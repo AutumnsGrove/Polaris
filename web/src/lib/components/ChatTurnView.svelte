@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ChatTurn } from '$lib/types';
+	import type { ChatTurn, FocusMode } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
@@ -32,7 +32,7 @@
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
-	import { buildOracleNote } from '$lib/oracleLabels';
+	import { buildOracleNote, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
@@ -231,6 +231,21 @@
 		buildOracleNote(turn.oracleResult, turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode)
 	);
 
+	// F1 (mockups/oracle-mode.html): a mid-thread switch's note is a
+	// tap-to-undo control, not just another way to open the info sheet —
+	// "undo" means re-running this exact turn forced back to the mode it
+	// switched away from, via the same rerun-as-X path TurnInfoSheet's own
+	// Focus card button uses.
+	let switchInfo = $derived(focusSwitch(turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode));
+
+	function onOracleNoteClick() {
+		if (switchInfo) {
+			appState.retry(index, switchInfo.from as FocusMode);
+		} else {
+			infoSheetOpen = true;
+		}
+	}
+
 	// The live "reading" choreography (OracleConstellation.svelte) — shown
 	// only while this turn is still streaming with no timeline/content yet
 	// (the same "Oracle hasn't resolved" window ComposerMenu's ring uses)
@@ -375,8 +390,16 @@
 			{:else if oracleNote}
 				<!-- B2: sits above tool calls/prose, same position the
 					 OracleConstellation "reading" animation above folds away
-					 from once a live turn resolves. -->
-				<button class="oracle-note" type="button" onclick={() => (infoSheetOpen = true)}>
+					 from once a live turn resolves. F1: a mid-thread switch is
+					 tap-to-undo (see onOracleNoteClick) with a one-time glow on
+					 mount instead of the usual "open the info sheet" tap. -->
+				<button
+					class="oracle-note"
+					class:glow={!!switchInfo}
+					type="button"
+					onclick={onOracleNoteClick}
+					title={switchInfo ? 'Tap to undo — answer again as before' : 'Turn info'}
+				>
 					<Asterism size={13} class="o-icon" />
 					{@html oracleNote}
 				</button>
@@ -811,6 +834,41 @@
 		text-decoration: line-through;
 		color: var(--color-text-dim);
 		font-weight: 400;
+	}
+
+	/* F1's one-time glow on a mid-thread switch note — plays once on
+	   mount (no `infinite`), same idea as mockups/oracle-mode.html's
+	   Web Animations version, just as a plain CSS animation. */
+	.oracle-note.glow {
+		animation: oracle-note-glow 1.4s ease-out;
+	}
+
+	.oracle-note.glow :global(.o-icon) {
+		animation: oracle-note-icon-glow 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	@keyframes oracle-note-glow {
+		0% {
+			text-shadow: 0 0 0 transparent;
+		}
+		30% {
+			text-shadow: 0 0 12px var(--color-accent);
+		}
+		100% {
+			text-shadow: 0 0 0 transparent;
+		}
+	}
+
+	@keyframes oracle-note-icon-glow {
+		0% {
+			transform: scale(1) rotate(0deg);
+		}
+		40% {
+			transform: scale(1.5) rotate(20deg);
+		}
+		100% {
+			transform: scale(1) rotate(0deg);
+		}
 	}
 
 	/* 7a offer lines (docs/plans/oracle-mode.md) — one row per Oracle chip,

@@ -30,6 +30,28 @@ function focusLabel(mode: string): string {
 	return FOCUS_MODES.find((m) => m.id === mode)?.label ?? mode;
 }
 
+// True only for the F1 "mid-thread switch" case (mockups/oracle-mode.html)
+// — Oracle's own pick actually took effect this turn AND it differs from
+// the nearest earlier turn's own applied mode. Shared by buildOracleNote's
+// text (below) and ChatTurnView.svelte's tap-to-undo/one-time-glow
+// behavior, so the two can't drift out of sync on what counts as "a real
+// switch" vs. Oracle just re-picking the same mode it already had.
+export function focusSwitch(
+	oracleFocusModeSource: string | undefined,
+	appliedFocusMode: string | undefined,
+	previousAppliedFocusMode: string | undefined
+): { from: string; to: string } | null {
+	if (
+		oracleFocusModeSource === 'oracle' &&
+		appliedFocusMode &&
+		previousAppliedFocusMode &&
+		previousAppliedFocusMode !== appliedFocusMode
+	) {
+		return { from: previousAppliedFocusMode, to: appliedFocusMode };
+	}
+	return null;
+}
+
 // Builds the margin note's text — see ChatTurnView.svelte's rendering and
 // mockups/oracle-mode.html's B2/F1 examples ("Read as medical · answered as
 // Researcher", "Ambiguous · asking first", "Refers to a past chat",
@@ -67,14 +89,13 @@ export function buildOracleNote(
 	let focusClause: string | undefined;
 	if (appliedFocusMode) {
 		if (oracleFocusModeSource === 'oracle') {
-			// Oracle's pick actually took effect this turn — "Switched" only
-			// when there's a real earlier mode to contrast against and it's
-			// different; otherwise this is just the normal "answered as X"
-			// (first time in the thread, or Oracle re-picking the same mode
-			// it already had).
-			if (previousAppliedFocusMode && previousAppliedFocusMode !== appliedFocusMode) {
-				focusClause = `Switched <b class="old">${focusLabel(previousAppliedFocusMode)}</b> → <b>${focusLabel(appliedFocusMode)}</b>`;
+			const sw = focusSwitch(oracleFocusModeSource, appliedFocusMode, previousAppliedFocusMode);
+			if (sw) {
+				focusClause = `Switched <b class="old">${focusLabel(sw.from)}</b> → <b>${focusLabel(sw.to)}</b>`;
 			} else {
+				// First time in the thread, or Oracle re-picking the same mode
+				// it already had — either way, not a real "switch" worth
+				// calling out.
 				focusClause = `answered as <b>${focusLabel(appliedFocusMode)}</b>`;
 			}
 		} else {
