@@ -152,6 +152,39 @@ func TestGetStats_AuxUsageFoldsIntoPolaris(t *testing.T) {
 	}
 }
 
+// Oracle's Jev spend must land on the same ledger the monthly cap sums
+// (issue #125) while Stats keeps it out of the verification breakout — a
+// regression here means either the cap under-counts again or Oracle spend
+// reads as verification spend.
+func TestGetStats_OracleJevCostCountsTowardCapButBreaksOutSeparately(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.LogJevCost(0.002); err != nil {
+		t.Fatalf("LogJevCost: %v", err)
+	}
+	if err := s.LogOracleJevCost(0.0005); err != nil {
+		t.Fatalf("LogOracleJevCost: %v", err)
+	}
+
+	month, err := s.JevCostThisMonth()
+	if err != nil {
+		t.Fatalf("JevCostThisMonth: %v", err)
+	}
+	if math.Abs(month-0.0025) > 1e-9 {
+		t.Errorf("JevCostThisMonth = %v, want 0.0025 (verification + oracle both count toward the cap)", month)
+	}
+
+	stats, err := s.GetStats(30)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if math.Abs(stats.VerificationCostUSD.TotalCostUSD-0.002) > 1e-9 {
+		t.Errorf("VerificationCostUSD.Total = %v, want 0.002 (Oracle's row excluded)", stats.VerificationCostUSD.TotalCostUSD)
+	}
+	if math.Abs(stats.OracleCostUSD.TotalCostUSD-0.0005) > 1e-9 || math.Abs(stats.OracleCostUSD.PeriodCostUSD-0.0005) > 1e-9 {
+		t.Errorf("OracleCostUSD = %+v, want 0.0005 total and period", stats.OracleCostUSD)
+	}
+}
+
 // TestGetStats_SearchProviderCounts guards against conflating this with
 // api_usage's billing-cap counters (see Stats.SearchProviderCounts' doc
 // comment) — only "tool call finished" events on tool.web_search with a

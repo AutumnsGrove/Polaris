@@ -30,14 +30,23 @@
 	);
 
 	let checks = $derived(turn.oracleResult?.checks ?? []);
+	// "Changed something" (a card) vs. "ran but did nothing" (the collapsed
+	// list) — the plan's split. `fired` alone isn't that: a check whose
+	// confident winner is the no-op option (high_stakes "none", intent
+	// "general", clarify "no") clears its threshold too but injects nothing,
+	// and used to get a card labeled "Nudged" with no nudge under it. Focus
+	// counts when it fired, since a pick or a clear is itself the change.
+	function changedSomething(key: string, check: { fired: boolean; nudge?: string }): boolean {
+		return check.fired && (key === 'focus' || !!check.nudge);
+	}
 	let firedChecks = $derived(
 		CHECK_DISPLAY.map((d) => ({ display: d, check: checks.find((c) => c.key === d.key) })).filter(
-			(x) => x.check?.fired
+			(x) => x.check && changedSomething(x.display.key, x.check)
 		)
 	);
 	let quietChecks = $derived(
 		CHECK_DISPLAY.map((d) => ({ display: d, check: checks.find((c) => c.key === d.key) })).filter(
-			(x) => x.check && !x.check.fired
+			(x) => x.check && !changedSomething(x.display.key, x.check)
 		)
 	);
 	let hasOracleSection = $derived(checks.length > 0);
@@ -115,6 +124,10 @@
 	}
 
 	let costTotal = $derived((turn.costAnswer ?? 0) + (turn.costVerification ?? 0) + (turn.costOracle ?? 0));
+	// The headline is the tiers' sum when there is one: turn.costUsd on a
+	// live turn is only what the 'done' event carried, while a reloaded turn
+	// reads the DB's running total — the sum reads the same either way.
+	let costHeadline = $derived(costTotal > 0 ? costTotal : (turn.costUsd ?? 0));
 </script>
 
 <div class="modal-backdrop" role="presentation">
@@ -163,7 +176,7 @@
 			<div class="stat-cell"><span class="k">Tool calls</span><span class="v">{turn.toolCallCount ?? 0}</span></div>
 			{#if turn.costUsd !== undefined}
 				<div class="stat-cell wide cost-cell">
-					<div class="cost-head"><span class="k">Cost</span><span class="v">${turn.costUsd.toFixed(5)}</span></div>
+					<div class="cost-head"><span class="k">Cost</span><span class="v">${costHeadline.toFixed(5)}</span></div>
 					{#if costTotal > 0}
 						<div class="cost-bar" aria-hidden="true">
 							<i class="t-answer" style="flex:{Math.max(turn.costAnswer ?? 0, 0.0000001)}"></i>
@@ -316,7 +329,7 @@
 		height: 5px;
 		border-radius: var(--radius-full);
 		overflow: hidden;
-		margin-block: 2px var(--space-xs);
+		margin-block: var(--space-xs);
 	}
 
 	.cost-bar i {
@@ -401,7 +414,7 @@
 		font-size: 11px;
 		font-weight: 600;
 		border-radius: var(--radius-full);
-		padding: 1px 8px;
+		padding: 0 var(--space-sm);
 		color: var(--color-accent);
 		background: var(--color-accent-soft);
 	}
@@ -409,7 +422,7 @@
 	.opt {
 		display: grid;
 		grid-template-columns: 1fr 40px;
-		gap: 2px var(--space-sm);
+		gap: var(--space-xs) var(--space-sm);
 		align-items: center;
 		font-size: 13px;
 	}
@@ -463,7 +476,7 @@
 		background: var(--color-surface-3);
 		border: none;
 		border-radius: var(--radius-full);
-		padding: 4px 12px;
+		padding: var(--space-xs) var(--space-md);
 		margin-top: var(--space-xs);
 	}
 

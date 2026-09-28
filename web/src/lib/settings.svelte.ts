@@ -43,6 +43,9 @@ export interface UsageStats {
 	// Never add this into total_cost_usd/period_cost_usd or cost_by_source
 	// a second time — see store.Stats.VerificationCostUSD's doc comment.
 	verification_cost_usd: { period_cost_usd: number; total_cost_usd: number };
+	// Same kind of breakout for Oracle mode's own Jev pre-read spend — see
+	// store.Stats.OracleCostUSD. Never add into the totals above either.
+	oracle_cost_usd: { period_cost_usd: number; total_cost_usd: number };
 	thread_count: number;
 	turn_count: number;
 	// Distinct threads that have ever had a voice_mode (Transponder call)

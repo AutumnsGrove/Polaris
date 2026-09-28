@@ -26,8 +26,19 @@ const INTENT_LABELS: Record<string, string> = {
 	definition: 'a word'
 };
 
+// The note and offer labels are rendered with {@html} so they can carry
+// <b> emphasis; anything not from a fixed developer-authored set (an
+// unrecognized focus mode id, a project name) goes through this first.
+export function escapeHtml(text: string): string {
+	return text
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;');
+}
+
 function focusLabel(mode: string): string {
-	return FOCUS_MODES.find((m) => m.id === mode)?.label ?? mode;
+	return FOCUS_MODES.find((m) => m.id === mode)?.label ?? escapeHtml(mode);
 }
 
 // True only for the F1 "mid-thread switch" case (mockups/oracle-mode.html)

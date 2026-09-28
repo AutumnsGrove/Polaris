@@ -1,7 +1,9 @@
 // pulsar_suggest.go is the one-shot "derive a routine from this
-// conversation" pass behind Oracle mode's "Set up as Pulsar" offer chip
-// (see docs/plans/oracle-mode.md's 7a and web/src/lib/components/
-// ChatTurnView.svelte's activateOffer).
+// conversation" pass behind Oracle mode's "Set up as Pulsar" and "Follow
+// this in Daily" offer chips (see docs/plans/oracle-mode.md's 7a and
+// web/src/lib/components/ChatTurnView.svelte's activateOffer). The Daily
+// kind (issue #126) derives a custom block's standing instructions instead
+// of a routine prompt, through the same call shape.
 //
 // Why this exists at all: the chip used to seed the new-routine form with
 // the preceding user message verbatim. That's the right text only when the
@@ -46,8 +48,17 @@ const (
 	pulsarSuggestMaxTokens     = 700
 )
 
+// Kinds of thing pulsarSuggestRequest can ask to have derived.
+const (
+	pulsarSuggestKindPulsar = "pulsar"
+	pulsarSuggestKindDaily  = "daily"
+)
+
 type pulsarSuggestRequest struct {
 	ThreadID string `json:"thread_id"`
+	// Kind is "pulsar" (default when empty) or "daily" — see the file
+	// comment.
+	Kind string `json:"kind,omitempty"`
 }
 
 type pulsarSuggestResponse struct {
@@ -56,7 +67,7 @@ type pulsarSuggestResponse struct {
 	CostUSD float64 `json:"cost_usd"`
 }
 
-// pulsar_suggest.go's own endpoint. This call happens outside any turn, so
+// handleSuggestPulsarPrompt serves POST /api/pulsar/suggest. This call happens outside any turn, so
 // there is no message row to bill — its cost goes to store.Store's
 // aux_usage ledger instead, which GetStats folds into the Polaris bucket
 // (see aux_usage's schema comment), so it reaches the settings panel's
@@ -74,6 +85,14 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 	threadID := strings.TrimSpace(req.ThreadID)
 	if threadID == "" {
 		http.Error(w, "thread_id is required", http.StatusBadRequest)
+		return
+	}
+	kind := req.Kind
+	if kind == "" {
+		kind = pulsarSuggestKindPulsar
+	}
+	if kind != pulsarSuggestKindPulsar && kind != pulsarSuggestKindDaily {
+		http.Error(w, "kind must be \"pulsar\" or \"daily\"", http.StatusBadRequest)
 		return
 	}
 
@@ -114,9 +133,13 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 		WithReasoning(&llm.ReasoningParams{Enabled: boolPtr(false)})
 
 	p := prompts.Get()
+	system, task := p.PulsarSuggest.System, p.PulsarSuggest.Task
+	if kind == pulsarSuggestKindDaily {
+		system, task = p.PulsarSuggest.DailySystem, p.PulsarSuggest.DailyTask
+	}
 	chat := []llm.ChatMessage{
-		{Role: "system", Content: p.PulsarSuggest.System},
-		{Role: "user", Content: fmt.Sprintf(p.PulsarSuggest.Task, title, transcript)},
+		{Role: "system", Content: system},
+		{Role: "user", Content: fmt.Sprintf(task, title, transcript)},
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), pulsarSuggestTimeout)
@@ -128,6 +151,14 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Billed before the parse check: the completion already ran and cost
+	// real money whether or not its output turns out usable.
+	if resp.CostUSD > 0 {
+		if err := s.db.RecordAuxCost("pulsar_suggest", resp.CostUSD); err != nil {
+			log.Warn("pulsar suggest: recording cost failed", "thread", threadID, "err", err)
+		}
+	}
+
 	name, prompt := parsePulsarSuggestion(resp.Content)
 	if prompt == "" {
 		// A parse failure or an empty draft must not silently hand the
@@ -135,12 +166,6 @@ func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Reques
 		log.Warn("pulsar suggest: model returned no usable prompt", "thread", threadID)
 		http.Error(w, "the model didn't return a usable prompt — try again", http.StatusBadGateway)
 		return
-	}
-
-	if resp.CostUSD > 0 {
-		if err := s.db.RecordAuxCost("pulsar_suggest", resp.CostUSD); err != nil {
-			log.Warn("pulsar suggest: recording cost failed", "thread", threadID, "err", err)
-		}
 	}
 
 	writeJSON(w, pulsarSuggestResponse{Name: name, Prompt: prompt, CostUSD: resp.CostUSD})

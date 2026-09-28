@@ -176,8 +176,8 @@
 	// oracle_focus_mode_source were both set correctly; the frontend
 	// display was the actual gap). Mirrors a manual pick's own visible
 	// effect — the trigger's badge — the instant Oracle actually resolves,
-	// same "as if the operator had picked it" idea (source.svelte.ts's
-	// threads.focus_mode is already updated server-side to match — see
+	// same "as if the operator had picked it" idea (threads.focus_mode is
+	// already updated server-side to match — see
 	// gateway/turn.go's second SetThreadConfig call — so this doesn't
 	// diverge from what's actually sticky).
 	//
@@ -531,12 +531,12 @@
 		<div class="composer-toolbar">
 			{#if !isWeaverThread}
 				<ComposerMenu
-				bind:focusMode
-				bind:focusModeManual
-				bind:deepResearch
-				bind:research
-				onAttach={handleAttach}
-			/>
+					bind:focusMode
+					bind:focusModeManual
+					bind:deepResearch
+					bind:research
+					onAttach={handleAttach}
+				/>
 			{/if}
 			<div class="toolbar-spacer"></div>
 			{#if !isWeaverThread}

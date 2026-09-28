@@ -2,9 +2,11 @@
 
 **Added: 2026-09-28.**
 
-**Status: planning — nothing built yet.** Graduated from `crazy-ideas.md`'s "Oracle mode" entry after
-a design pass with the operator. Mockups are the next step (`mockups/oracle-mode.html`), then a live
-Jev spike against real prompts before any Go gets written.
+**Status: built (2026-09-28, issue #122).** Mockups (`mockups/oracle-mode.html`) and the live Jev
+spike (below) both done; the engine, UI, and settings toggle shipped behind the opt-in
+`oracle_enabled` setting. Known v1 gap: the `project` offer chip is wired end to end but inert —
+it needs the Projects feature (issue #119), which doesn't exist yet, so `OracleInput.ProjectOptions`
+is never populated and the check never runs.
 
 ## The idea
 
@@ -129,8 +131,10 @@ ambiguity already, and a clarifying question there reads as the model forgetting
 
 Jev's claimed latency is 70–500 ms and its input price $0.042/MTok, output free (vendor figures, not
 yet measured on the potato — see source-verification.md). A few hundred tokens of state × ~7
-questions is a rounding error per turn. Oracle's spend should count against the existing Jev monthly
-cap in `gateway/verification.go` (`jevMonthlyCapUSD`) rather than a separate one; if the cap is hit,
+questions is a rounding error per turn. Oracle's spend counts against the existing Jev monthly
+cap in `gateway/verification.go` (`jevMonthlyCapUSD`) rather than a separate one — it's written to
+the shared `jev_usage` ledger tagged `source = 'oracle'` (issue #125), so the cap sums it while
+Settings' usage stats break it out from verification; if the cap is hit,
 Oracle silently behaves as if it were off.
 
 Latency matters more than money: this call sits in front of the first token. It can run concurrently
@@ -502,7 +506,8 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
   `gateway/pulsar_suggest.go`) instead of seeding the form with the preceding message verbatim — a
   follow-up like "what about the second one?" is unanswerable once the routine fires with no thread
   to refer back to (found live). It reads "Writing…" while that call runs and falls back to the raw
-  message if it can't produce a prompt.
+  message if it can't produce a prompt. The Daily line does the same with `kind: "daily"` (issue
+  #126), deriving a custom block's title and standing instructions instead of a routine prompt.
 - **Icon — Asterism (custom).** Four stars joined by lines, drawn on Lucide's 24px grid so it sits
   next to the stock icons: it's the constellation animation's final frame, so the icon itself
   means "Oracle read this". SVG source is in `mockups/oracle-mode.html` (`#i-asterism`); it'll

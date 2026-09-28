@@ -32,7 +32,7 @@
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
-	import { buildOracleNote, focusSwitch } from '$lib/oracleLabels';
+	import { buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
@@ -262,8 +262,13 @@
 	// *before*. Same simplification the mockup's own demo makes
 	// (`buildConstellation`'s default `starCount = 6`); the margin note
 	// that follows is what conveys the real, per-turn result.
+	// constellationFolded flips when OracleConstellation finishes folding
+	// (naturally or cut short), unmounting it: left mounted for the whole
+	// streaming turn it sat above the answer as an invisible 34px gap, then
+	// swapped for the note in a layout jump when the turn finished.
+	let constellationFolded = $state(false);
 	let showConstellation = $derived(
-		appState.settings.oracleEnabled && !appState.isGhostThread && turn.streaming
+		appState.settings.oracleEnabled && !appState.isGhostThread && turn.streaming && !constellationFolded
 	);
 	let constellationCutShort = $derived(!!turn.timeline?.length || !!turn.content);
 
@@ -279,7 +284,7 @@
 	const OFFER_META: Record<string, { icon: typeof Orbit; verb: string; label: (l?: string) => string }> = {
 		pulsar: { icon: Orbit, verb: 'Set up', label: () => 'Check weekly as a <b>Pulsar</b>' },
 		daily: { icon: Sunrise, verb: 'Add', label: () => 'Follow this in <b>Daily</b>' },
-		project: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ?? 'a project'}</b>` }
+		project: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a project'}</b>` }
 	};
 
 	let offers = $derived(
@@ -302,49 +307,32 @@
 	let offerBusy = $state<string | null>(null);
 
 	async function activateOffer(key: string) {
-		if (offerBusy) return;
-		if (key === 'pulsar') {
-			// The preceding message is only the right seed when the
-			// conversation *is* the recurring question. On a follow-up
-			// ("what about the second one?") it produces a routine that
-			// returns nothing when it fires, since a scheduled run has no
-			// thread to refer back to — a real gap found live. So derive a
-			// standalone prompt from the whole conversation first, and fall
-			// back to the raw message if that call can't produce one.
-			let text = seedText;
-			let name: string | undefined;
-			if (appState.currentThreadId) {
-				offerBusy = key;
-				try {
-					const res = await fetch('/api/pulsar/suggest', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ thread_id: appState.currentThreadId })
-					});
-					if (res.ok) {
-						const data = (await res.json()) as { name?: string; prompt?: string };
-						if (data.prompt) {
-							text = data.prompt;
-							name = data.name || undefined;
-						}
-					}
-				} catch {
-					// Network hiccup, server restart, model error — the raw
-					// seed is still a usable (if blunt) starting point, and
-					// the form is editable, so this degrades rather than
-					// blocking the tap.
-				}
-				offerBusy = null;
-			}
-			pulsarState.pendingSeed = { kind: 'pulsar', text, name };
-			void goto('/pulsar');
-		} else if (key === 'daily') {
-			pulsarState.pendingSeed = { kind: 'daily', text: seedText };
-			void goto('/daily');
-		}
+		if (offerBusy || (key !== 'pulsar' && key !== 'daily')) return;
 		// "project" has no real destination yet — see OFFER_META's doc
 		// comment above; tapping it is a no-op until a Projects feature
 		// exists to move the thread into.
+		//
+		// The preceding message is only the right seed when the conversation
+		// *is* the recurring question. On a follow-up ("what about the second
+		// one?") it produces a routine or Daily block that returns nothing
+		// when it runs, since a scheduled run has no thread to refer back to
+		// — a real gap found live for Pulsar, and the same one for Daily
+		// (issue #126). So derive standalone text from the whole conversation
+		// first, and fall back to the raw message if that call can't produce
+		// one.
+		let text = seedText;
+		let name: string | undefined;
+		if (appState.currentThreadId) {
+			offerBusy = key;
+			const suggestion = await pulsarState.suggestSeed(key, appState.currentThreadId);
+			offerBusy = null;
+			if (suggestion) {
+				text = suggestion.prompt;
+				name = suggestion.name || undefined;
+			}
+		}
+		pulsarState.pendingSeed = { kind: key, text, name };
+		void goto(key === 'pulsar' ? '/pulsar' : '/daily');
 	}
 
 	async function copyAnswerWithSources() {
@@ -424,7 +412,11 @@
 		<div class="bubble bubble-assistant">
 			{#if showConstellation}
 				<div class="stage">
-					<OracleConstellation checkCount={6} cutShort={constellationCutShort} />
+					<OracleConstellation
+						checkCount={6}
+						cutShort={constellationCutShort}
+						onDone={() => (constellationFolded = true)}
+					/>
 				</div>
 			{:else if oracleNote}
 				<!-- B2: sits above tool calls/prose, same position the
@@ -840,7 +832,7 @@
 	.oracle-note {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: var(--space-xs);
 		margin-bottom: var(--space-sm);
 		min-height: 20px;
 		border: none;

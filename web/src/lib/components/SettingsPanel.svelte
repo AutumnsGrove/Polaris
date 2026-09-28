@@ -205,6 +205,16 @@
 							)}</span
 						>
 					</div>
+					{#if usage.oracle_cost_usd.total_cost_usd > 0}
+						<div class="usage-stat-row sub">
+							<span class="label">Oracle</span>
+							<span class="value"
+								>${usage.oracle_cost_usd.period_cost_usd.toFixed(4)} / ${usage.oracle_cost_usd.total_cost_usd.toFixed(
+									4
+								)}</span
+							>
+						</div>
+					{/if}
 					<div class="usage-stat-row">
 						<span class="label">Pulsar</span>
 						<span class="value"

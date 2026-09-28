@@ -114,13 +114,13 @@ type OracleResult struct {
 // RunOracle fires every enabled check (plus chips) as one Jev AskChoice
 // call and applies each answer's threshold/sticky/focus rules — see
 // docs/plans/oracle-mode.md. Jev unconfigured, erroring, or timing out
-// returns a zero-value OracleResult and a nil error: Oracle must never be
-// a way for a turn to fail, so gateway/turn.go can treat every non-nil-
-// error-free return here as "proceed exactly as Oracle-off" without
-// inspecting anything.
-func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (OracleResult, error) {
+// returns a zero-value OracleResult: Oracle must never be a way for a turn
+// to fail, so there is deliberately no error return — gateway/turn.go
+// treats an empty result as "proceed exactly as Oracle-off". The failure
+// itself is logged here.
+func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) OracleResult {
 	if client == nil {
-		return OracleResult{}, nil
+		return OracleResult{}
 	}
 
 	p := prompts.Get()
@@ -155,7 +155,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 		}
 	}
 	if len(questions) == 0 {
-		return OracleResult{}, nil
+		return OracleResult{}
 	}
 
 	state := "Latest message: " + in.CurrentMessage
@@ -168,7 +168,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 	resp, err := client.AskChoice(callCtx, state, questions)
 	if err != nil {
 		log.Warn("oracle: jev call failed, proceeding as Oracle-off", "err", err)
-		return OracleResult{}, nil
+		return OracleResult{}
 	}
 
 	result := OracleResult{CostUSD: resp.Usage.CostUSD}
@@ -269,7 +269,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 	// regardless of Jev's answer-map iteration order.
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
-	return result, nil
+	return result
 }
 
 // resolveFocus applies the focus check's sticky/never-with-high-stakes/
@@ -356,8 +356,8 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 		return nil
 	}
 	out := []string{text}
-	if any := check.Inject["any"]; any != "" {
-		out = append(out, any)
+	if extra := check.Inject["any"]; extra != "" {
+		out = append(out, extra)
 	}
 	return out
 }

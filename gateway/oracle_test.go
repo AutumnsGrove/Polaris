@@ -40,10 +40,7 @@ func outcomeFor(result OracleResult, key string) *CheckOutcome {
 }
 
 func TestRunOracle_NilClientNeverFails(t *testing.T) {
-	result, err := RunOracle(context.Background(), nil, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("want nil error with a nil client, got %v", err)
-	}
+	result := RunOracle(context.Background(), nil, OracleInput{CurrentMessage: "test"})
 	if result.FocusMode != "" || len(result.Injections) != 0 || len(result.Checks) != 0 {
 		t.Errorf("want zero-value result with a nil client, got %+v", result)
 	}
@@ -51,10 +48,7 @@ func TestRunOracle_NilClientNeverFails(t *testing.T) {
 
 func TestRunOracle_JevErrorNeverFails(t *testing.T) {
 	stub := stubJevClient{err: errors.New("connection reset")}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("want nil error on Jev failure, got %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if len(result.Checks) != 0 {
 		t.Errorf("want zero-value result on Jev failure, got %+v", result)
 	}
@@ -65,10 +59,7 @@ func TestRunOracle_HighStakesInjectsMedicalAndCompareSources(t *testing.T) {
 		"focus":       answer("off", 0.9),
 		"high_stakes": answer("medical", 0.95),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "what's the max dose of tylenol"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "what's the max dose of tylenol"})
 	if len(result.Injections) != 2 {
 		t.Fatalf("want 2 injections (medical text + compare_sources any), got %d: %v", len(result.Injections), result.Injections)
 	}
@@ -79,10 +70,7 @@ func TestRunOracle_HighStakesBriefOverrideReplacesNotStacks(t *testing.T) {
 		"focus":       answer("off", 0.9),
 		"high_stakes": answer("medical", 0.95),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", ActiveFocusMode: "brief"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", ActiveFocusMode: "brief"})
 	if len(result.Injections) != 1 {
 		t.Fatalf("want exactly 1 injection (brief override replaces both), got %d: %v", len(result.Injections), result.Injections)
 	}
@@ -96,10 +84,7 @@ func TestRunOracle_FocusNeverPicksBriefWithHighStakes(t *testing.T) {
 		"focus":       answer("brief", 0.99),
 		"high_stakes": answer("medical", 0.95),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if result.FocusMode != "" {
 		t.Errorf("want no focus pick when high_stakes fired and winner is in never_with_high_stakes, got %q", result.FocusMode)
 	}
@@ -109,10 +94,7 @@ func TestRunOracle_FocusPicksBriefWithoutHighStakes(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("brief", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "quick question: what year is it"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "quick question: what year is it"})
 	if result.FocusMode != "brief" {
 		t.Errorf("want brief picked at 0.9 (clears its 0.80 option threshold), got %q", result.FocusMode)
 	}
@@ -122,10 +104,7 @@ func TestRunOracle_FocusRespectsOptionThreshold(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("brief", 0.75), // above the check's 0.70 floor, below brief's own 0.80 bar
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if result.FocusMode != "" {
 		t.Errorf("want no pick — 0.75 clears the check's threshold but not brief's own 0.80 option_threshold, got %q", result.FocusMode)
 	}
@@ -139,10 +118,7 @@ func TestRunOracle_FocusPicksSafariAtTheObservedConfidence(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("safari", 0.87),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "take me on a safari of the industrial complex"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "take me on a safari of the industrial complex"})
 	if result.FocusMode != "safari" {
 		t.Errorf("want safari picked at 0.87 (clears the 0.85 option threshold), got %q", result.FocusMode)
 	}
@@ -155,10 +131,7 @@ func TestRunOracle_SafariIsStickyForTheThread(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("shopper", 0.99),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "safari"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "safari"})
 	if result.FocusMode != "" {
 		t.Errorf("want safari to be sticky (Oracle never switches away mid-thread), got %q", result.FocusMode)
 	}
@@ -168,10 +141,7 @@ func TestRunOracle_SwitchThresholdHigherThanInitialPick(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("news", 0.75), // clears the 0.70 initial-pick bar but not the 0.85 switch_threshold
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "academic"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", PriorOracleFocusMode: "academic"})
 	if result.FocusMode != "" {
 		t.Errorf("want no switch — 0.75 clears the initial-pick threshold but not switch_threshold (0.85), got %q", result.FocusMode)
 	}
@@ -193,10 +163,7 @@ func TestRunOracle_FocusClearsModeItSetWhenNoModeClearsTheBar(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("brief", 0.62), // below the check's 0.70 bar
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "research prada's background", PriorOracleFocusMode: "shopper"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "research prada's background", PriorOracleFocusMode: "shopper"})
 	if !result.FocusCleared {
 		t.Fatalf("want FocusCleared when the mode in effect was Oracle's own and no mode clears the bar, got %+v", result)
 	}
@@ -213,10 +180,7 @@ func TestRunOracle_FocusClearsOnExplicitOff(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", PriorOracleFocusMode: "shopper"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", PriorOracleFocusMode: "shopper"})
 	if !result.FocusCleared {
 		t.Errorf("want an explicit off winner to clear Oracle's own mode, got %+v", result)
 	}
@@ -228,10 +192,7 @@ func TestRunOracle_FocusDoesNotClearAModeOracleDidNotSet(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("off", 0.95),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", ActiveFocusMode: "brief"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", ActiveFocusMode: "brief"})
 	if result.FocusCleared || result.FocusMode != "" {
 		t.Errorf("want no clear and no pick for a manual/default mode, got %+v", result)
 	}
@@ -243,10 +204,7 @@ func TestRunOracle_FocusDoesNotClearStickySafari(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("off", 0.99),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "next stop", PriorOracleFocusMode: "safari"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "next stop", PriorOracleFocusMode: "safari"})
 	if result.FocusCleared || result.FocusMode != "" {
 		t.Errorf("want safari kept (sticky), got %+v", result)
 	}
@@ -257,14 +215,11 @@ func TestRunOracle_ManualFocusStillReportedButNotAppliedToInjections(t *testing.
 		"focus":  answer("shopper", 0.99),
 		"intent": answer("product", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{
+	result := RunOracle(context.Background(), stub, OracleInput{
 		CurrentMessage:  "test",
 		ActiveFocusMode: "academic",
 		IsManualFocus:   true,
 	})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
 	if result.FocusMode != "shopper" {
 		t.Errorf("want Oracle's raw pick still reported (for the why sheet) even though manual wins, got %q", result.FocusMode)
 	}
@@ -281,10 +236,7 @@ func TestRunOracle_IntentSkipsProductForShopper(t *testing.T) {
 		"focus":  answer("shopper", 0.99),
 		"intent": answer("product", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if len(result.Injections) != 0 {
 		t.Errorf("want intent:product's injection skipped once Oracle itself picks shopper, got %v", result.Injections)
 	}
@@ -294,10 +246,7 @@ func TestRunOracle_ClarifySkippedWhenNotFirstMessage(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", IsFirstMessage: false})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", IsFirstMessage: false})
 	for _, c := range result.Checks {
 		if c.Key == "clarify" {
 			t.Errorf("want clarify never sent to Jev on a non-first message, got it in Checks: %+v", c)
@@ -310,10 +259,7 @@ func TestRunOracle_ResearchNoSetsHint(t *testing.T) {
 		"focus":    answer("off", 0.9),
 		"research": answer("no", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if !result.NoResearchHint {
 		t.Error("want NoResearchHint true when research fires 'no' at/above threshold")
 	}
@@ -328,10 +274,7 @@ func TestRunOracle_ChipsFireAboveThreshold(t *testing.T) {
 		"chip_pulsar": answer("yes", 0.9),
 		"chip_daily":  answer("no", 0.9),
 	}}}
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if len(result.Chips) != 1 || result.Chips[0].Key != "pulsar" {
 		t.Errorf("want exactly one pulsar chip (daily fired 'no'), got %+v", result.Chips)
 	}
@@ -346,10 +289,7 @@ func TestRunOracle_ProjectChipSkippedWithoutOptions(t *testing.T) {
 	// (which can't happen here since our stub only returns what we gave
 	// it) has nothing to match against. This mainly guards RunOracle
 	// doesn't panic/misbehave building the question set with an empty map.
-	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
-	if err != nil {
-		t.Fatalf("RunOracle error: %v", err)
-	}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	for _, c := range result.Chips {
 		if c.Key == "project" {
 			t.Error("want no project chip without ProjectOptions set")
@@ -420,6 +360,29 @@ func TestOracleYAML_ByFocusOptionsAreRealOptions(t *testing.T) {
 					t.Errorf("oracle.checks.%s.by_focus.%s references %q, which isn't in %s.options", key, focusMode, option, key)
 				}
 			}
+		}
+	}
+}
+
+// The frontend re-sends a thread's sticky focus mode on every message
+// flagged non-manual, so a mode Oracle set earlier arrives looking like a
+// plain default. If that turn's source were recorded as "default", the next
+// turn would forget the mode was Oracle's and could never retract it.
+func TestCarriedFocusModeSource(t *testing.T) {
+	tests := []struct {
+		name         string
+		manual       bool
+		focus, prior string
+		want         string
+	}{
+		{"operator pick for this message", true, "brief", "shopper", "manual"},
+		{"Oracle's own earlier mode riding along stays oracle", false, "shopper", "shopper", "oracle"},
+		{"a different standing default is just a default", false, "brief", "shopper", "default"},
+		{"no prior Oracle mode means default", false, "brief", "", "default"},
+	}
+	for _, tt := range tests {
+		if got := carriedFocusModeSource(tt.manual, tt.focus, tt.prior); got != tt.want {
+			t.Errorf("%s: carriedFocusModeSource(%v, %q, %q) = %q, want %q", tt.name, tt.manual, tt.focus, tt.prior, got, tt.want)
 		}
 	}
 }

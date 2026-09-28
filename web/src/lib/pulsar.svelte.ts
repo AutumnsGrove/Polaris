@@ -1,4 +1,4 @@
-import type { FocusMode, PulsarPulse, PulsarRoutine, PulsarStats } from './types';
+import type { FocusMode, PulsarPulse, PulsarRoutine, PulsarStats, PulsarSuggestion } from './types';
 
 // PulsarRoutineInput is what the create/edit form (PulsarRoutineForm.svelte)
 // submits — same shape for both POST (create) and PATCH (edit), matching
@@ -35,10 +35,10 @@ export class PulsarState {
 	// to the page. Same idea for /daily's own "Follow this in Daily" chip,
 	// just a different destination kind.
 	//
-	// name is the optional suggested routine name that comes back from the
-	// Pulsar chip's own /api/pulsar/suggest call (see gateway/
-	// pulsar_suggest.go) — undefined for the Daily chip and for a fallback
-	// seed, where there's no drafted title to offer.
+	// name is the optional suggested routine name (or, for kind 'daily',
+	// custom block title) that comes back from the chip's own
+	// /api/pulsar/suggest call (see gateway/pulsar_suggest.go) — undefined
+	// for a fallback seed, where there's no drafted title to offer.
 	pendingSeed = $state<{ kind: 'pulsar' | 'daily'; text: string; name?: string } | null>(null);
 
 	// Keyed by routine id as a string (JSON object keys can't be numeric —
@@ -91,6 +91,29 @@ export class PulsarState {
 	// across every routine combined, per the plan doc's "Amber indicator
 	// semantics".
 	totalUnread = $derived(Object.values(this.unreadCounts).reduce((sum, n) => sum + n, 0));
+
+	// suggestSeed asks the server to derive a standalone routine prompt (kind
+	// 'pulsar') or Daily custom-block instructions (kind 'daily') from a whole
+	// conversation — a follow-up like "what about the second one?" is
+	// meaningless once a scheduled run has no thread to refer back to (found
+	// live; issue #126 for the Daily side). Returns null on any failure so
+	// the caller can fall back to the raw message rather than block the tap.
+	async suggestSeed(kind: 'pulsar' | 'daily', threadId: string): Promise<PulsarSuggestion | null> {
+		try {
+			const res = await fetch('/api/pulsar/suggest', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ thread_id: threadId, kind })
+			});
+			if (!res.ok) return null;
+			const data = (await res.json()) as PulsarSuggestion;
+			return data.prompt ? data : null;
+		} catch {
+			// Network hiccup or server restart — the raw seed is still a
+			// usable, editable starting point.
+			return null;
+		}
+	}
 
 	async loadRoutines() {
 		this.routinesError = false;

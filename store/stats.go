@@ -56,6 +56,12 @@ type Stats struct {
 	// filtering is exact (trailing N days), unlike a calendar-month-only
 	// aggregate would allow.
 	VerificationCostUSD SourceCost `json:"verification_cost_usd"`
+	// OracleCostUSD is the same kind of breakout for Oracle mode's own Jev
+	// pre-read spend (jev_usage rows with source = 'oracle') — already
+	// inside CostBySource.Polaris via messages.cost_usd, never added a
+	// second time. Split from VerificationCostUSD so neither reads as the
+	// other's spend (issue #125).
+	OracleCostUSD SourceCost `json:"oracle_cost_usd"`
 
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
@@ -346,17 +352,23 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// tools.Context.AddCost during the turn, same as any other tool's
 	// spend), so unlike ghostTotal/ghostPeriod just above, neither figure
 	// here is added to stats.TotalCostUSD/PeriodCostUSD or CostBySource.
-	if err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage`,
-	).Scan(&stats.VerificationCostUSD.TotalCostUSD); err != nil {
-		return nil, err
-	}
-	if since == "" {
-		stats.VerificationCostUSD.PeriodCostUSD = stats.VerificationCostUSD.TotalCostUSD
-	} else {
+	for _, b := range []struct {
+		dst   *SourceCost
+		where string
+	}{
+		{&stats.VerificationCostUSD, "source != 'oracle'"},
+		{&stats.OracleCostUSD, "source = 'oracle'"},
+	} {
 		if err := s.db.QueryRow(
-			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE created_at >= ?`, since,
-		).Scan(&stats.VerificationCostUSD.PeriodCostUSD); err != nil {
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE ` + b.where,
+		).Scan(&b.dst.TotalCostUSD); err != nil {
+			return nil, err
+		}
+		if since == "" {
+			b.dst.PeriodCostUSD = b.dst.TotalCostUSD
+		} else if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE created_at >= ? AND `+b.where, since,
+		).Scan(&b.dst.PeriodCostUSD); err != nil {
 			return nil, err
 		}
 	}

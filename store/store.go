@@ -415,6 +415,11 @@ CREATE TABLE IF NOT EXISTS ghost_usage (
 CREATE TABLE IF NOT EXISTS jev_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,
+	-- source: "" for verification/compare_sources spend (every row from
+	-- before this column existed), "oracle" for Oracle mode's pre-read
+	-- (issue #125) — lets Stats break the two out separately while the
+	-- monthly cap (JevCostThisMonth) still sums every row.
+	source TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1207,6 +1212,8 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN applied_model TEXT NOT NULL DEFAULT ''`,
 	// completion_tokens — see the schema comment above.
 	`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
+	// jev_usage.source — see the schema comment above (issue #125).
+	`ALTER TABLE jev_usage ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -2820,6 +2827,14 @@ func (s *Store) SetMessageOracleResult(messageID int64, oracleResultJSON, focusM
 	return err
 }
 
+// SetMessageFocusModeSource records only focus_mode_source, for a turn
+// where Oracle produced no result to persist via SetMessageOracleResult
+// but the turn's focus mode provenance still matters to the next turn.
+func (s *Store) SetMessageFocusModeSource(messageID int64, focusModeSource string) error {
+	_, err := s.db.Exec(`UPDATE messages SET focus_mode_source = ? WHERE id = ?`, focusModeSource, messageID)
+	return err
+}
+
 // SetMessageAppliedFocusMode records this turn's own resolved focus mode —
 // see the schema comment above messages.applied_focus_mode. Written
 // unconditionally for every assistant turn (unlike SetMessageOracleResult,
@@ -2996,6 +3011,15 @@ func (s *Store) RecordGhostCost(costUSD float64) error {
 // calls.
 func (s *Store) LogJevCost(costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd) VALUES (?)`, costUSD)
+	return err
+}
+
+// LogOracleJevCost is LogJevCost for Oracle mode's pre-read call — same
+// ledger (so JevCostThisMonth's monthly cap counts it, which the plan's
+// "Cost and budgets" section requires), tagged so Stats can show it apart
+// from verification spend (issue #125).
+func (s *Store) LogOracleJevCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'oracle')`, costUSD)
 	return err
 }
 

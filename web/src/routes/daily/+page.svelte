@@ -60,6 +60,7 @@
 	// initial customBlocks state (built once at its own mount, from
 	// pulsarDailyState.config) reflects real data alongside the seed.
 	let newCustomBlockSeed = $state<string | undefined>(undefined);
+	let newCustomBlockTitle = $state<string | undefined>(undefined);
 	// Set when a card's own image is tapped — opens it large instead of
 	// navigating into a chat thread, which is what tapping the image used
 	// to do back when the whole card was one giant <button>. null means
@@ -168,6 +169,7 @@
 			}
 			if (pulsarState.pendingSeed?.kind === 'daily') {
 				newCustomBlockSeed = pulsarState.pendingSeed.text;
+				newCustomBlockTitle = pulsarState.pendingSeed.name;
 				pulsarState.pendingSeed = null;
 				showConfig = true;
 			}
@@ -536,6 +538,7 @@
 {#if showConfig}
 	<PulsarDailyConfigModal
 		initialCustomBlockSeed={newCustomBlockSeed}
+		initialCustomBlockTitle={newCustomBlockTitle}
 		onClose={() => (showConfig = false)}
 	/>
 {/if}
