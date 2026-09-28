@@ -276,8 +276,11 @@ oracle:
       instructions: >-
         Does answering this well require searching the web or reading current information?
       options:
-        yes: Needs current facts, specifics, prices, news, or anything that could have changed recently.
-        no: Casual conversation, writing help, brainstorming, or stable general knowledge.
+        yes: >-
+          Needs current facts, specifics, prices, news, anything that could have changed recently,
+          or a specific checkable fact about a real person/date/event (ages, release dates,
+          statistics) — those are easy to get subtly wrong from memory alone.
+        no: Casual conversation, writing help, brainstorming, or genuinely stable general knowledge.
       inject:
         no: >-
           This message probably doesn't need a web search — it looks answerable from general
@@ -481,26 +484,60 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
 - **Note wording** ("Read as **medical** · answered as **Researcher**"): kept as is; to be judged in
   real use. Per-mode wording is in "Focus modes, one by one".
 
+## Live spike results (2026-09-28)
+
+Ran `dev/oracle_spike` (throwaway tool, `go run ./dev/oracle_spike`) against 50 real user messages
+sampled from the potato's thread history (18 thread-openers, 32 with real prior-user-message
+context), one `AskChoice` call per message across `focus`/`research`/`high_stakes`/`intent`/
+`recall` (+`clarify` when first-in-thread). Full results: `/tmp/oracle_spike_results.jsonl` (not
+committed — throwaway).
+
+- **Latency badly missed the vendor figure.** p50 1876ms, p95 10164ms, max 19011ms — nowhere near
+  the claimed 70–500ms this plan's "Cost and budgets" section leaned on to justify running Oracle
+  unbounded and concurrent with turn setup. 6/50 calls (12%) hit `jev.Client`'s 20s timeout
+  outright, plus one HTTP 520 from OpenRouter's edge — a 14% hard-failure rate in a single run, not
+  a rare edge case. (Possibly a transient Jev/OpenRouter capacity issue — OpenRouter's own reported
+  volume through Jev has grown sharply recently — but Oracle's design has to defend against this
+  regardless of cause, since there's no lever to fix Jev's infra from here.) **Action for
+  Milestone B**: give `RunOracle` its own short `context.WithTimeout` well under `jev.Client`'s 20s
+  (something in the 2–3s range, tuned against more data over time), not just relying on the
+  client's existing timeout — a turn's first token should not routinely wait 10+ seconds on
+  Oracle. The "Jev errors/times out → proceed as Oracle-off" fallback isn't just defensive
+  boilerplate; this data shows it fires often enough to matter.
+- **Calibration looks solid where it matters most.** `high_stakes` correctly fired `financial`
+  (conf 0.90, 0.92) on real cost-of-living/wage questions and `medical` (conf 1.00) on a
+  diabetes-risk question. `focus`/`clarify` stayed appropriately quiet on ordinary thread
+  continuations — `clarify` never cleared conf 0.45 across 18 first-message samples, and `focus`'s
+  weak `brief` signals (0.49–0.70) correctly stayed under a 0.85 firing bar. The draft thresholds
+  in this doc's `prompts.yaml` block all look directionally right against this sample; no changes
+  made to them.
+- **One real miscalibration**: `research` gave high-confidence "no" (conf 0.01, 0.44) to specific
+  factual lookups like "how old was [artist] when they released [album]" — exactly the kind of
+  verifiable-but-easy-to-hallucinate fact that should lean toward search, not away from it. Low
+  risk today since a "no" is only a soft nudge and every tool stays available regardless, but the
+  `research` check's `no` criteria description should be tightened in Milestone B to explicitly
+  exclude "specific, checkable facts about people/dates/events" from "stable general knowledge."
+- **`clarify` has weak true-positive coverage from this sample** — only 18 first-message prompts,
+  none genuinely ambiguous, so its 0.85 threshold is unvalidated against a real positive case.
+  Worth a small supplementary batch of intentionally ambiguous synthetic prompts before treating
+  0.85 as final, rather than blocking the whole build on it.
+- **Cost was trivial**: $0.0026 total for 50 messages × ~6 questions — confirms the plan's
+  "rounding error" cost assumption, unaffected by the latency finding.
+
 ## Open questions
 
 - **Re-run from the "why" sheet**: replace the reply in place, or append a new turn? Replace is
   cleaner; check how existing regenerate behaves first.
-- **Does Jev handle short, conversational prompts well?** Every live spike so far was
-  claim-vs-source verification over real documents; classifying a 6-word question is a different
-  shape. The spike needs to answer this before anything else.
 - **Chip dismissal memory**: if the operator dismisses "Make this a Pulsar" on a thread, don't offer
   it again on that thread. Across threads is probably overkill.
 
 ## Next steps
 
-1. **Mockups** (`mockups/oracle-mode.html`): reading-the-stars animation variants, chip variants,
-   why sheet, smart chips, settings toggle, composer state.
-2. **Live Jev spike**: run the draft checks above against ~50 real prompts pulled from the potato's
-   thread history via `curl` against OpenRouter's `/systemone`, hand-grade the results, measure
-   latency, and set real thresholds. Same "spike before implementing" pattern as
-   source-verification.md.
-3. **Build**: `prompts.Set` gets the `oracle` block; a new `gateway/oracle.go` runs the checks and
-   returns a result struct; `agent.loadSystemPrompt`/`modeReinforcement` take the injected section;
-   a new WS event + a persisted per-message column; frontend chip, why sheet, smart chips, settings
-   toggle.
+1. ~~**Mockups**~~ — done, `mockups/oracle-mode.html`.
+2. ~~**Live Jev spike**~~ — done, see "Live spike results" above. Latency assumptions revised;
+   thresholds validated as-is; one criteria-wording fix flagged for `research`.
+3. **Build**: `prompts.Set` gets the `oracle` block; a new `gateway/oracle.go` runs the checks
+   under its own short timeout (see spike results) and returns a result struct;
+   `agent.loadSystemPrompt`/`modeReinforcement` take the injected section; a new WS event + a
+   persisted per-message column; frontend chip, why sheet, smart chips, settings toggle.
 4. **v2 candidates**: model/effort routing; more `intent` options as real usage shows gaps.
