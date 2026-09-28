@@ -11,7 +11,8 @@ GHCR, updated by a host-side watcher. There's no other install path.
 
 - A running [SearXNG](https://github.com/searxng/searxng) instance with JSON output enabled
   (disabled by default upstream — see below). Docker's bundled SearXNG already has this on.
-- An [OpenRouter](https://openrouter.ai) API key
+- An [OpenRouter](https://openrouter.ai) API key — also what source verification and the optional
+  Oracle mode setting use for their own Jev classification calls; no separate key needed
 - Optional: a [Foursquare](https://foursquare.com/developers) Service API Key for structured
   nearby-place search (free tier: 10k calls/month) — without it, `nearby_search` falls back to
   plain web search
