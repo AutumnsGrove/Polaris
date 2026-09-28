@@ -70,6 +70,8 @@
 		</div>
 
 		<textarea
+			autocomplete="off"
+			autocorrect="off"
 			class="edit-field"
 			bind:value
 			{placeholder}
