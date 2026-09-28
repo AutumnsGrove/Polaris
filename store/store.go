@@ -420,15 +420,18 @@ CREATE TABLE IF NOT EXISTS jev_usage (
 
 -- aux_usage is a per-call ledger of real, billed LLM spend the assistant
 -- incurred on a chat's behalf that belongs to no single turn's own cost —
--- currently just gateway/pulsar_suggest.go's one-shot "derive a routine
--- prompt from this conversation" call, made when the operator taps an
--- offer chip (there is no turn running, so nothing else could carry it).
+-- currently gateway/pulsar_suggest.go's one-shot "derive a routine prompt
+-- from this conversation" call made when the operator taps an offer chip,
+-- and gateway/pulsar_wizard.go's ephemeral interview turns (which by design
+-- persist no threads/messages rows to bill, so each turn records its own
+-- cost here).
 -- Folded straight into CostBySource.Polaris by GetStats — the same place
 -- the spend would have landed had it happened inside a turn — so it
 -- reaches the settings panel's grand total without needing a bucket of
--- its own. kind names the caller (e.g. "pulsar_suggest") purely so a
--- future one can be told apart in the table; GetStats sums across all
--- kinds, since the split it reports is by subsystem, not by call site.
+-- its own. kind names the caller (e.g. "pulsar_suggest"/"pulsar_wizard")
+-- purely so a future one can be told apart in the table; GetStats sums
+-- across all kinds, since the split it reports is by subsystem, not by
+-- call site.
 CREATE TABLE IF NOT EXISTS aux_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	kind TEXT NOT NULL,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +42,18 @@ func toolCallSSEBody(toolCallJSON string) string {
 	return strings.Join([]string{
 		`data: {"choices":[{"delta":{"tool_calls":[` + toolCallJSON + `]}}]}`,
 		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":0.0001}}`,
+		`data: [DONE]`,
+	}, "\n") + "\n"
+}
+
+// toolCallSSEBodyCost is toolCallSSEBody with an explicit usage cost. A test
+// verifying that each wizard turn bills its own spend needs the two turns to
+// cost different amounts — an equal pair would let a single accidental
+// record pass just as easily as the correct two.
+func toolCallSSEBodyCost(toolCallJSON string, cost float64) string {
+	return strings.Join([]string{
+		`data: {"choices":[{"delta":{"tool_calls":[` + toolCallJSON + `]}}]}`,
+		fmt.Sprintf(`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"cost":%v}}`, cost),
 		`data: [DONE]`,
 	}, "\n") + "\n"
 }
@@ -179,6 +192,53 @@ func TestHandleWizardTurn_FinalizesPrompt(t *testing.T) {
 	}
 	if len(threads) != 0 {
 		t.Errorf("ListThreads = %d threads, want 0 — the wizard must not persist anything", len(threads))
+	}
+}
+
+// TestHandleWizard_RecordsEachTurnsCost covers the ledger half of the
+// wizard's zero-persistence design: it creates no message row to bill, so
+// each turn's agent.Run cost has to reach aux_usage on its own — and every
+// turn must record its own, not just the opener, since an interview runs
+// one completion per answer. Two turns at different costs, then the
+// folded-in Polaris total must equal their sum (see aux_usage's schema
+// comment and gateway/pulsar_wizard.go's recordWizardCost).
+func TestHandleWizard_RecordsEachTurnsCost(t *testing.T) {
+	srv := sequencedSSEServer(t, []string{
+		toolCallSSEBodyCost(`{"index":0,"id":"call_1","type":"function","function":{"name":"ask_user_question",`+
+			`"arguments":"{\"question\":\"What should this routine check on?\"}"}}`, 0.0001),
+		toolCallSSEBodyCost(`{"index":0,"id":"call_2","type":"function","function":{"name":"finalize_pulsar_prompt",`+
+			`"arguments":"{\"prompt\":\"Summarize the latest Guild Wars 3 news.\",\"name\":\"GW3 news\"}"}}`, 0.0002),
+	})
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+
+	startResp, start := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "gaming news"})
+	if startResp.StatusCode != http.StatusOK {
+		t.Fatalf("start status = %d, want 200", startResp.StatusCode)
+	}
+	sessionID, _ := start["session_id"].(string)
+	if sessionID == "" {
+		t.Fatal("no session_id from start")
+	}
+	turnResp, _ := postWizard(t, h, "/api/pulsar/wizard/turn", map[string]interface{}{
+		"session_id": sessionID,
+		"message":    "Guild Wars 3, weekly",
+	})
+	if turnResp.StatusCode != http.StatusOK {
+		t.Fatalf("turn status = %d, want 200", turnResp.StatusCode)
+	}
+
+	stats, err := h.db.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	const want = 0.0003 // 0.0001 from the start turn + 0.0002 from the follow-up
+	if math.Abs(stats.CostBySource.Polaris.TotalCostUSD-want) > 1e-9 {
+		t.Errorf("Polaris.TotalCostUSD = %v, want %v — both wizard turns must bill their own cost to aux_usage",
+			stats.CostBySource.Polaris.TotalCostUSD, want)
+	}
+	if math.Abs(stats.TotalCostUSD-want) > 1e-9 {
+		t.Errorf("TotalCostUSD = %v, want %v — wizard spend must reach the grand total", stats.TotalCostUSD, want)
 	}
 }
 

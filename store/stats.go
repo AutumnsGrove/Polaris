@@ -304,8 +304,9 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 
 	// Aux usage — assistant-side LLM work done on a chat's behalf that no
 	// turn owns (see aux_usage's schema comment; currently the "derive a
-	// routine prompt from this conversation" call behind an offer chip).
-	// Folded into Polaris for the same reason ghost's is: it's ordinary
+	// routine prompt from this conversation" call behind an offer chip and
+	// the Pulsar wizard's own ephemeral interview turns). Folded into
+	// Polaris for the same reason ghost's is: it's ordinary
 	// chat-adjacent spend, not a separate subsystem, so it belongs in the
 	// bucket its own turn would have landed in. Without this it reached no
 	// total at all — the call happens outside any turn, so there was no

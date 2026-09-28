@@ -128,6 +128,8 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.recordWizardCost(sessionID, result.costUSD)
+
 	s.wizardMu.Lock()
 	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), dailyBlockTitle: dailyBlockTitle, isCustomDailyBlock: isCustomDailyBlock}
 	s.wizardMu.Unlock()
@@ -182,6 +184,8 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.recordWizardCost(req.SessionID, result.costUSD)
+
 	writeJSON(w, wizardResponse{SessionID: req.SessionID, Question: result.question, Final: result.final, Answer: result.answer})
 }
 
@@ -208,6 +212,28 @@ type wizardTurnResult struct {
 	// answer is set when the model replied in plain prose instead of
 	// calling either tool — see wizardResponse's doc comment.
 	answer string
+	// costUSD is what this turn's agent.Run actually cost — carried here
+	// so both handlers can bill it (see recordWizardCost). The wizard
+	// persists no threads/messages rows, so without this the spend reached
+	// no ledger at all.
+	costUSD float64
+}
+
+// recordWizardCost bills one wizard turn's spend to the aux_usage ledger,
+// which GetStats folds into the Polaris bucket and thus the settings
+// panel's grand total (see that table's schema comment). Each turn records
+// its own cost, not just the start: an interview runs several completions
+// (one per user answer), so folding them all into the opener's row would
+// lose every follow-up's spend. Best-effort by design, same convention as
+// gateway/pulsar_suggest.go — a ledger write failing must not fail a turn
+// the client is waiting on.
+func (s *Server) recordWizardCost(sessionID string, costUSD float64) {
+	if costUSD <= 0 {
+		return
+	}
+	if err := s.db.RecordAuxCost("pulsar_wizard", costUSD); err != nil {
+		log.Warn("pulsar wizard: recording cost failed", "session", sessionID, "err", err)
+	}
 }
 
 // runWizardTurn is the one place both handlers build the client/Context
@@ -285,7 +311,7 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 		llm.ChatMessage{Role: "assistant", Content: result.Answer},
 	)
 
-	out := &wizardTurnResult{history: newHistory, question: result.PendingQuestion, final: result.WizardFinal}
+	out := &wizardTurnResult{history: newHistory, question: result.PendingQuestion, final: result.WizardFinal, costUSD: result.CostUSD}
 	if result.PendingQuestion == nil && result.WizardFinal == nil {
 		out.answer = result.Answer
 	}

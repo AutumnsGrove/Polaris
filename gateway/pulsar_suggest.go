@@ -63,8 +63,8 @@ type pulsarSuggestResponse struct {
 // grand total like any other assistant-side spend. Best-effort: a ledger
 // write failing must not fail a request the client is waiting on.
 //
-// (The Pulsar *wizard*'s turns are still unattributed — a separate,
-// pre-existing gap of the same shape.)
+// (The Pulsar *wizard*'s turns — gateway/pulsar_wizard.go — record their
+// own spend the same way, under the "pulsar_wizard" kind.)
 func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Request) {
 	var req pulsarSuggestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
