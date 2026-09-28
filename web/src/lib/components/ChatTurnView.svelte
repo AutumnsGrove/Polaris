@@ -247,9 +247,10 @@
 	}
 
 	// The live "reading" choreography (OracleConstellation.svelte) — shown
-	// only while this turn is still streaming with no timeline/content yet
-	// (the same "Oracle hasn't resolved" window ComposerMenu's ring uses)
-	// and Oracle is actually enabled. Ghost threads never run Oracle at
+	// only while this turn is still streaming and Oracle is actually
+	// enabled, cut short once real output arrives (the "nothing has
+	// streamed yet" window ComposerMenu's ring still falls back to when no
+	// early 'oracle' event ever lands). Ghost threads never run Oracle at
 	// all (see gateway/turn.go's `!ghost` gate), so the animation would be
 	// pure theater there — skipped for the same reason the backend skips
 	// the real classification call.

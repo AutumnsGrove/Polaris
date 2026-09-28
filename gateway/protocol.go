@@ -194,6 +194,17 @@ type ClientMessage struct {
 //	                  at nothing until "done". Always the full running total, never a delta — the
 //	                  frontend should overwrite whatever it's showing for this turn, not add to it
 //	                  (unlike "done"/"suggestions", which add their cost_usd to the thread's total).
+//	"oracle"        — oracle_result + oracle_focus_mode_source + applied_focus_mode + cost_oracle_usd:
+//	                  Oracle mode's verdict for this turn, sent the moment Oracle actually resolves —
+//	                  before agent.Run is even called, typically a couple of seconds into the turn
+//	                  and often many seconds before the answer's first token — so the composer's own
+//	                  focus badge and "reading" ring can update at that real moment instead of
+//	                  waiting for the whole answer to stream out (the gap this event closes: "the
+//	                  data currently only arrives on 'done'"). Live-only, never persisted, exactly
+//	                  like "cost_update" above: the same verdict is persisted onto the assistant
+//	                  message and re-sent on "done", which is what a reload replays. Never arrives at
+//	                  all when Oracle didn't run this turn (off/unconfigured/over budget/ghost) — the
+//	                  frontend must treat its absence as a normal, silent outcome.
 //	"commentary"    — content: what the model said before deciding to call a tool (or before an
 //	                  aborted attempt got discarded) — sent once, with the full text, right before
 //	                  that turn's tool_call events; the frontend clears whatever it had streamed

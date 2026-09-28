@@ -223,6 +223,22 @@ export type ServerEvent =
 	// turn.costUsd with it, don't accumulate. Not persisted, so it never
 	// appears in a reopened thread's own event history.
 	| { type: 'cost_update'; thread_id?: string; cost_usd: number }
+	// Oracle mode's verdict for this turn, sent the moment Oracle resolves
+	// — before agent.Run is even called, typically well before the
+	// answer's first token — so the composer's focus badge and "reading"
+	// ring can update at that real moment rather than waiting for 'done'
+	// (see gateway/protocol.go's "oracle" doc comment). Live-only, never
+	// persisted: the same fields ride 'done' again, which is what a reload
+	// replays. Absent entirely when Oracle didn't run this turn — a
+	// normal, silent outcome.
+	| {
+			type: 'oracle';
+			thread_id?: string;
+			oracle_result?: OracleResult;
+			oracle_focus_mode_source?: string;
+			applied_focus_mode?: string;
+			cost_oracle_usd?: number;
+	  }
 	// What the model said before deciding to call a tool (or before an
 	// aborted attempt got discarded) — see gateway/protocol.go's doc
 	// comment on this event type for the full rationale.
@@ -760,6 +776,15 @@ export interface ChatTurn {
 	// "oracle" whenever it did.
 	oracleResult?: OracleResult;
 	oracleFocusModeSource?: string;
+	// Set true the instant this turn's early 'oracle' event arrives (see
+	// ServerEvent above), which is Oracle actually finishing its pre-read —
+	// often seconds before the answer's first token. Distinguishes "Oracle
+	// is still reading" from "Oracle is done, the model just hasn't
+	// streamed anything yet" for the composer's reading ring, a signal
+	// nothing else in the live stream can give. Undefined for a turn Oracle
+	// didn't run on, and on reload (irrelevant there — the ring only shows
+	// during a live turn).
+	oracleResolved?: boolean;
 	// This turn's own resolved focus mode — see ServerEvent's
 	// applied_focus_mode doc comment. "" (not undefined) means "no focus
 	// mode was in effect", which the note-builder treats differently from

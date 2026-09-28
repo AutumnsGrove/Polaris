@@ -794,6 +794,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// exists, after agent.Run returns below.
 	var oracleResult OracleResult
 	var oracleFocusModeSource string
+	// oracleAttempted records that Oracle actually got to run (Jev
+	// configured, setting on, within budget) — the gate for the early
+	// "oracle" event below, which must not fire for a turn Oracle never
+	// touched. oracleResultForEvent is shared with the "done" event further
+	// down so its checks-empty-means-nil rule lives in exactly one place.
+	var oracleAttempted bool
+	var oracleResultForEvent *OracleResult
 	if !ghost && !msg.NoOracle && OracleEnabledFromStore(s.db) && s.jev != nil {
 		withinOracleBudget := true
 		if used, err := s.db.JevCostThisMonth(); err != nil {
@@ -810,6 +817,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 					priorOracleFocus = thread.FocusMode
 				}
 			}
+			oracleAttempted = true
 			oracleResult, _ = RunOracle(ctx, s.jev, OracleInput{
 				CurrentMessage:       msg.Content,
 				PrevUserMessage:      prevUserMessage,
@@ -854,6 +862,32 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// of the turn. Persisted post-hoc below alongside the other per-turn
 	// stats, once assistantMsgID exists.
 	appliedFocusMode := agentCtx.FocusMode
+
+	// Oracle mode: its whole verdict — every check's winner, the focus mode
+	// it did or didn't apply, its own cost — is known right here, before
+	// agent.Run has even been called (RunOracle runs synchronously above).
+	// Sending it now rather than waiting for "done" is what lets the
+	// composer's focus badge and its "reading" ring update the moment
+	// Oracle actually resolves, instead of seconds later when the answer
+	// finishes streaming (the answer's first token can lag Oracle by many
+	// seconds). "done" still carries the same fields again — that copy is
+	// the persisted one a reload replays — so this is a live-only early
+	// duplicate, never persisted, exactly like "cost_update" (see
+	// protocol.go's "oracle" doc comment). Absent entirely for a turn
+	// Oracle never ran on; the frontend treats that as normal.
+	if oracleAttempted {
+		if len(oracleResult.Checks) > 0 {
+			oracleResultForEvent = &oracleResult
+		}
+		send(ServerEvent{
+			Type:                  "oracle",
+			ThreadID:              threadID,
+			OracleResult:          oracleResultForEvent,
+			OracleFocusModeSource: oracleFocusModeSource,
+			AppliedFocusMode:      appliedFocusMode,
+			CostOracleUSD:         oracleResult.CostUSD,
+		})
+	}
 
 	// Timed around agent.Run specifically, not the whole handler — this is
 	// "how long it took to get an answer", the number a user watching the
@@ -1167,14 +1201,11 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		"cache_read_tokens": result.CacheReadTokens,
 	}, turnID)
 
-	// Only sent when Oracle actually got a live answer this turn — mirrors
-	// the persistence condition above, so a reload (oracle_result "") and
-	// the live event agree on what "Oracle didn't run" looks like.
-	var oracleResultForEvent *OracleResult
-	if len(oracleResult.Checks) > 0 {
-		oracleResultForEvent = &oracleResult
-	}
-
+	// oracleResultForEvent was filled in above, right before the early
+	// "oracle" event — only non-nil when Oracle actually got a live answer
+	// this turn, mirroring the persistence condition above, so a reload
+	// (oracle_result "") and the live events agree on what "Oracle didn't
+	// run" looks like.
 	send(ServerEvent{
 		Type:                  "done",
 		ThreadID:              threadID,

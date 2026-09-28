@@ -28,7 +28,7 @@
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { FocusMode } from '$lib/types';
+	import type { ChatTurn, FocusMode } from '$lib/types';
 
 	let input = $state('');
 	// Set by VoiceButton when a recording is transcribed via the Whisper
@@ -78,14 +78,18 @@
 	// silently reset back to research-on.
 	let focusMode = $state<FocusMode>('off');
 	// True only from the moment the operator taps a focus mode in
-	// ComposerMenu's Focus picker (see its bind:focusModeManual), until the
-	// next thread switch or the settings-default effect below re-applies a
-	// standing default — "manual" is scoped to a live composer pick "for
-	// this specific message" (see gateway/protocol.go's
-	// ClientMessage.FocusModeSource doc comment), not to whatever a
-	// thread's sticky config happens to already equal. Threaded through
-	// send() as focusModeManual so Oracle mode's own focus check stays free
-	// to run on every send that isn't a real manual override.
+	// ComposerMenu's Focus picker (see its bind:focusModeManual) until that
+	// pick has been delivered — submit() clears it right after capturing it
+	// for the send, and the thread-switch effect below clears it too.
+	// "Manual" is scoped to a live composer pick "for this specific
+	// message" (see gateway/protocol.go's ClientMessage.FocusModeSource doc
+	// comment), not to whatever a thread's sticky config happens to already
+	// equal — which is why the reset-after-send matters: leaving it true
+	// kept every later message in the session flagged manual, so Oracle's
+	// focus check could never switch and the composer badge stopped
+	// following Oracle's picks. Threaded through send() as a one-shot flag
+	// so Oracle's focus check stays free to run on every send that isn't a
+	// real, just-made manual override.
 	let focusModeManual = $state(false);
 	let deepResearch = $state(false);
 	let research = $state(true);
@@ -117,26 +121,39 @@
 	});
 
 	// Applies a thread's own sticky config (appState.threadFocusMode/
-	// threadDeepResearch/threadNoResearch, populated by openThread()) every
-	// time a *different* thread is opened — the composer's local
-	// focusMode/deepResearch/research otherwise only ever reflected
-	// whatever the last-used thread happened to leave them at, never what
-	// this specific thread was last configured with. Keyed on
-	// currentThreadId (not just the three config values) so this only
-	// fires on an actual thread switch, not on every persistThreadConfig()
-	// round trip the same thread's own selectors trigger. Skips null
-	// (newThread() territory — the settings-default effect above already
-	// owns that case) so starting a new thread doesn't get its focus mode
-	// clobbered back to whatever the previously open thread had.
-	// Always tracks currentThreadId, including back down to null (not just
-	// the ids actually applied below) — otherwise leaving a thread via
-	// newThread() and later reopening the exact same thread wouldn't
-	// reapply its config, since id would already equal the last id this
-	// effect saw.
-	let lastConfigThreadId: string | null = null;
+	// threadDeepResearch/threadNoResearch, populated by openThread()) — or
+	// the standing Settings default for a new thread — on every real,
+	// user-initiated thread switch.
+	//
+	// Keyed on appState.threadConfigEpoch (bumped only by openThread()/
+	// newThread()) rather than currentThreadId. Keying on the id was a real
+	// bug found live: the 'done' handler also sets currentThreadId (a
+	// brand-new thread learning its own id from its first answer), so this
+	// effect fired right after that answer finished and reapplied whatever
+	// threadFocusMode still held from the *previous* thread — silently
+	// snapping the composer back to the last thread's mode even though
+	// Oracle had just applied a different one for this turn. The epoch
+	// moves only on an actual switch, so a turn completing never triggers
+	// it.
+	//
+	// Also applies for the null (newThread()) case now, instead of leaving
+	// it to the settings-default effect above: that one runs exactly once
+	// (guarded by focusModeInitialized), so "start a new thread" was
+	// falling back to nothing and carrying the previous thread's focus
+	// mode/research toggles straight over. Reset here to the settings
+	// default (focus) and the ordinary defaults (research on, deep research
+	// off).
+	let lastConfigEpoch = -1;
 	$effect(() => {
-		const id = appState.currentThreadId;
-		if (id !== null && id !== lastConfigThreadId) {
+		const epoch = appState.threadConfigEpoch;
+		if (epoch === lastConfigEpoch) return;
+		lastConfigEpoch = epoch;
+		if (appState.currentThreadId === null) {
+			focusMode = appState.settings.defaultFocusMode;
+			focusModeManual = false;
+			deepResearch = false;
+			research = true;
+		} else {
 			focusMode = appState.threadFocusMode;
 			focusModeManual = false;
 			deepResearch = appState.threadDeepResearch;
@@ -148,10 +165,7 @@
 		// just-finished ghost session silently making the next, unrelated
 		// conversation a ghost too would be a bigger surprise than just
 		// needing to flip it on again each time.
-		if (id !== lastConfigThreadId) {
-			ghostMode = false;
-		}
-		lastConfigThreadId = id;
+		ghostMode = false;
 	});
 
 	// Oracle mode's own focus pick (docs/plans/oracle-mode.md) only ever
@@ -161,28 +175,37 @@
 	// genuinely had (confirmed against the DB: applied_focus_mode/
 	// oracle_focus_mode_source were both set correctly; the frontend
 	// display was the actual gap). Mirrors a manual pick's own visible
-	// effect — the trigger's badge — the instant a turn finishes with
-	// Oracle having actually applied one, same "as if the operator had
-	// picked it" idea (source.svelte.ts's threads.focus_mode is already
-	// updated server-side to match — see gateway/turn.go's second
-	// SetThreadConfig call — so this doesn't diverge from what's actually
-	// sticky). focusModeManual stays false: this is Oracle's own pick, not
-	// an operator override, so Oracle stays free to change it again next
-	// turn. Keyed by turns.length (not turn identity) so this only fires
-	// once per newly-finished turn, not on every unrelated reactive touch
-	// of appState.turns.
-	let lastOracleFocusAppliedAt = -1;
+	// effect — the trigger's badge — the instant Oracle actually resolves,
+	// same "as if the operator had picked it" idea (source.svelte.ts's
+	// threads.focus_mode is already updated server-side to match — see
+	// gateway/turn.go's second SetThreadConfig call — so this doesn't
+	// diverge from what's actually sticky).
+	//
+	// Not gated on !last.streaming any more: Oracle's verdict now arrives
+	// on its own early 'oracle' event (see its doc comment), which lands
+	// seconds before the answer finishes — the whole point of keying here
+	// is to show the badge at that real moment rather than after 'done'.
+	// focusModeManual stays false: this is Oracle's own pick, not an
+	// operator override, so Oracle stays free to change it again next turn.
+	//
+	// Guarded by the turn object itself, not its index. An index guard was
+	// a real bug: newThread() empties appState.turns, so the next thread's
+	// first answer lands back at index 1 — exactly where a previous
+	// thread's single-exchange turn already left the guard — and Oracle's
+	// pick for that new thread was then silently skipped. The turn object
+	// is a fresh proxy per thread, so identity can't collide that way. The
+	// guard still does its other job: the early 'oracle' event sets it, and
+	// 'done' re-setting the same fields finds it already applied.
+	let lastOracleFocusAppliedTurn: ChatTurn | null = null;
 	$effect(() => {
-		const idx = appState.turns.length - 1;
-		const last = appState.turns[idx];
+		const last = appState.turns[appState.turns.length - 1];
 		if (
 			last?.role === 'assistant' &&
-			!last.streaming &&
 			last.oracleFocusModeSource === 'oracle' &&
 			last.appliedFocusMode &&
-			idx !== lastOracleFocusAppliedAt
+			last !== lastOracleFocusAppliedTurn
 		) {
-			lastOracleFocusAppliedAt = idx;
+			lastOracleFocusAppliedTurn = last;
 			focusMode = last.appliedFocusMode as FocusMode;
 			focusModeManual = false;
 		}
@@ -255,6 +278,20 @@
 		attachedFiles = [];
 		voiceCostUsd = undefined;
 
+		// "Manual" means "the operator picked this focus mode for THIS
+		// message" (see gateway/protocol.go's ClientMessage.FocusModeSource),
+		// not "this thread is now manually steered forever" — so it clears
+		// the moment it's been delivered, while the picked mode itself stays
+		// on screen (and sticky server-side via SetThreadConfig). Without
+		// this, one tap on a focus mode marked every later message in the
+		// session manual too, so Oracle's focus check could never switch
+		// again and the composer badge stopped reflecting Oracle's picks —
+		// the exact "it says academic but the chip still says shopper"
+		// failure found live. A local copy is what gets sent so the values
+		// captured below stay consistent even after the reset.
+		const manualFocusForThisMessage = focusModeManual;
+		focusModeManual = false;
+
 		// The very first message of a new "Talk to Weaver" session (issue
 		// #94) — no thread exists yet, so this must go through
 		// startWeaverThread (which pins source: 'weaver') rather than the
@@ -282,7 +319,7 @@
 				ghostMode,
 				undefined,
 				undefined,
-				focusModeManual
+				manualFocusForThisMessage
 			);
 			return;
 		}
@@ -308,7 +345,7 @@
 			ghostMode,
 			undefined,
 			undefined,
-			focusModeManual
+			manualFocusForThisMessage
 		);
 	}
 

@@ -139,12 +139,17 @@
 	// the ring only renders when Oracle is actually on (see
 	// SettingsPanel.svelte's toggle); otherwise the plain Plus icon from
 	// before Oracle existed is unchanged. "reading" spins the ring for the
-	// brief window a turn has been sent but nothing has streamed back yet
-	// — there's no dedicated "Oracle started/finished" WS event (Oracle
-	// runs synchronously before agent.Run even begins), but that window is
-	// exactly the period during which the pending assistant turn has
-	// neither timeline items nor content, so it doubles as an accurate
-	// proxy without needing one.
+	// window between sending a turn and Oracle finishing its pre-read.
+	//
+	// That window now has a real end-of-signal: the early 'oracle' event
+	// (turn.oracleResolved, see its doc comment) lands the moment Oracle
+	// actually resolves — typically a couple of seconds in, and often many
+	// seconds before the answer's first token — so keying only off "nothing
+	// has streamed yet" used to keep the ring spinning after Oracle was
+	// already done. The timeline/content fallback stays for a turn Oracle
+	// never ran on (off/unconfigured/over budget), where no event will ever
+	// arrive and the first real output is still the only end-of-reading
+	// signal there is.
 	let oracleReading = $derived.by(() => {
 		if (!appState.busy) return false;
 		// The last pushed turn while busy is always the pending assistant
@@ -152,7 +157,9 @@
 		// pendingTurn itself is private to AppState, so this reads the same
 		// live object via the public turns array instead.
 		const turn = appState.turns[appState.turns.length - 1];
-		return turn?.role === 'assistant' && !turn.timeline?.length && !turn.content;
+		return (
+			turn?.role === 'assistant' && !turn.oracleResolved && !turn.timeline?.length && !turn.content
+		);
 	});
 	let selectedModelName = $derived(appState.models.find((m) => m.id === appState.selectedModel)?.name ?? '');
 

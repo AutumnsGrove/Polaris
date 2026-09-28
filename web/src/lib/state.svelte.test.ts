@@ -180,6 +180,42 @@ describe('AppState.handleEvent', () => {
 		expect(state.totalCost).toBe(0);
 	});
 
+	it("an early 'oracle' event lands Oracle's verdict on the pending turn before 'done', and 'done' doesn't undo it", () => {
+		// Oracle resolves seconds before the answer's first token, so the
+		// composer badge/ring read this event — not 'done' (see
+		// gateway/protocol.go's "oracle" doc comment). The fields it sets
+		// must be present on the still-streaming pending turn, and 'done'
+		// re-sending the same values must leave them intact.
+		state.send('which gucci models hold value?');
+		fireEvent(state, { type: 'user_message', thread_id: 't1', user_message_id: 1 });
+		expect(state.turns[1].oracleResolved).toBeUndefined();
+
+		fireEvent(state, {
+			type: 'oracle',
+			thread_id: 't1',
+			oracle_result: { focus_mode: 'shopper', checks: [{ key: 'focus', winner: 'shopper', probabilities: { shopper: 0.9 }, fired: true }] },
+			oracle_focus_mode_source: 'oracle',
+			applied_focus_mode: 'shopper',
+			cost_oracle_usd: 0.0004
+		});
+		expect(state.turns[1].streaming).toBe(true); // still mid-answer
+		expect(state.turns[1].oracleResolved).toBe(true);
+		expect(state.turns[1].oracleFocusModeSource).toBe('oracle');
+		expect(state.turns[1].appliedFocusMode).toBe('shopper');
+		expect(state.turns[1].costOracle).toBe(0.0004);
+
+		fireEvent(state, {
+			type: 'done',
+			thread_id: 't1',
+			cost_usd: 0.002,
+			oracle_result: { focus_mode: 'shopper' },
+			oracle_focus_mode_source: 'oracle',
+			applied_focus_mode: 'shopper'
+		});
+		expect(state.turns[1].oracleResolved).toBe(true);
+		expect(state.turns[1].appliedFocusMode).toBe('shopper');
+	});
+
 	// Mirrors the exact wire sequence gateway/turn.go now emits for an
 	// image attachment (see gateway/attachments.go's resolveAttachment):
 	// user_message, then a synthetic describe_image tool_call/tool_result

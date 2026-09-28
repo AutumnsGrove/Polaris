@@ -191,6 +191,17 @@ export class AppState {
 	threadFocusMode = $state<FocusMode>('off');
 	threadDeepResearch = $state(false);
 	threadNoResearch = $state(false);
+	// Bumped by openThread()/newThread() — the two places that are a real,
+	// user-initiated thread switch — so ChatView's config-restoring effect
+	// reacts to an actual switch instead of to currentThreadId changing for
+	// ANY reason. That distinction is load-bearing: the 'done' handler also
+	// sets currentThreadId (a brand-new thread learning its own id), and an
+	// effect keyed on the id would fire there too, re-applying whatever
+	// threadFocusMode still held from the *previous* thread — a real bug
+	// found live, where Oracle would pick a new mode for a new thread's
+	// first answer and the composer would silently snap back to the last
+	// thread's mode the moment that turn finished.
+	threadConfigEpoch = $state(0);
 	// Whether the just-opened thread's turn is genuinely still running
 	// server-side — set by openThread() below from GetThread's
 	// turn_in_progress (see gateway's IsTurnInFlight). Exists specifically
@@ -775,6 +786,10 @@ export class AppState {
 		this.threadFocusMode = (data.focus_mode || 'off') as FocusMode;
 		this.threadDeepResearch = data.deep_research ?? false;
 		this.threadNoResearch = data.no_research ?? false;
+		// Announce the switch (see threadConfigEpoch's doc comment) only
+		// once every config field above is in place, so ChatView's effect
+		// reads a fully-populated set rather than a half-updated one.
+		this.threadConfigEpoch++;
 		this.threadTurnInProgress = data.turn_in_progress ?? false;
 		// The server just flipped this pulse's seen flag (handleGetThread's
 		// MarkPulseSeen) — refresh the sidebar/routine-row amber counts so
@@ -937,6 +952,11 @@ export class AppState {
 		this.isGhostThread = false;
 		this.startingWeaverThread = false;
 		this.pendingWeaverModel = undefined;
+		// Announce the switch — ChatView's effect resets the composer to the
+		// standing Settings default here rather than letting the previously
+		// open thread's focus mode/research toggles leak into the new one
+		// (see threadConfigEpoch's doc comment).
+		this.threadConfigEpoch++;
 		this.syncURL(null);
 		this.closeSidebarIfMobile();
 	}
@@ -1564,6 +1584,23 @@ export class AppState {
 				// moves on 'done'/'suggestions', which already add their
 				// own cost_usd to it once, so adding this too would double-count.
 				turn.costUsd = e.cost_usd;
+				break;
+
+			case 'oracle':
+				// Oracle's verdict, arriving the moment it resolves — well
+				// before 'done' (see gateway/protocol.go's "oracle" doc
+				// comment). Writes the same fields the 'done' case below
+				// writes again later (a harmless same-value overwrite), so
+				// the composer's focus badge and reading ring can react now,
+				// seconds before the answer starts streaming; oracleResolved
+				// is the live-only signal those two key off. costOracle is
+				// not added to any running total here — 'done' owns the
+				// thread-wide cost bookkeeping.
+				turn.oracleResult = e.oracle_result;
+				turn.oracleFocusModeSource = e.oracle_focus_mode_source;
+				turn.appliedFocusMode = e.applied_focus_mode;
+				turn.costOracle = e.cost_oracle_usd;
+				turn.oracleResolved = true;
 				break;
 
 			case 'compacted':

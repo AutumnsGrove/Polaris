@@ -70,6 +70,25 @@
 		onClose();
 	}
 
+	// Whether Oracle's focus pick for this turn actually took effect. It
+	// can fire and still not apply: "manual always wins" (see the plan
+	// doc) means an operator pick for this message keeps the turn on that
+	// mode, and `focus.fired` is only Oracle's confidence the winning mode
+	// fits — not a claim it was applied. Rendering an overridden pick as
+	// "Set" is exactly what made a live session read "Oracle set Academic"
+	// while the answer had actually run in the operator's own Shopper mode.
+	function focusPickApplied(check: { winner: string }): boolean {
+		return turn.oracleFocusModeSource === 'oracle' && turn.appliedFocusMode === check.winner;
+	}
+
+	// The check header's right-hand state label — "Set"/"Nudged" for a
+	// real result, but "Not applied" for the one case those words would
+	// misrepresent (see focusPickApplied above).
+	function stateLabel(display: { key: string }, check: { winner: string; fired: boolean }): string {
+		if (display.key === 'focus' && check.fired && !focusPickApplied(check)) return 'Not applied';
+		return checkStateLabel(display.key, check.fired);
+	}
+
 	function rerunWithoutOracle() {
 		appState.retry(index, undefined, true);
 		onClose();
@@ -163,7 +182,7 @@
 					<div class="check">
 						<div class="check-head">
 							<span class="check-name">{display.name}</span>
-							<span class="check-state fired">{checkStateLabel(display.key, true)}</span>
+							<span class="check-state fired">{stateLabel(display, check)}</span>
 						</div>
 						{#each sortedOptions as [option, p] (option)}
 							<div class="opt" class:win={option === check.winner}>
@@ -177,6 +196,13 @@
 						{/if}
 						{#if display.key === 'focus'}
 							{@const alt = runnerUp(check.probabilities, check.winner)}
+							{#if !focusPickApplied(check)}
+								<div class="nudge-text">
+									Not applied — {turn.appliedFocusMode
+										? `your own ${optionLabel('focus', turn.appliedFocusMode)} pick for this message`
+										: 'your own pick for this message'} took precedence.
+								</div>
+							{/if}
 							{#if alt}
 								<button class="rerun" type="button" onclick={() => rerunAs(alt)}>
 									Rerun as {optionLabel('focus', alt)}
