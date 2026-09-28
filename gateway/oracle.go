@@ -66,6 +66,15 @@ type CheckOutcome struct {
 	Winner        string             `json:"winner"`
 	Probabilities map[string]float64 `json:"probabilities"`
 	Fired         bool               `json:"fired"`
+	// Nudge is this specific check's own resolved injection text (see
+	// resolveInjections), "" for a check with no inject map at all (focus
+	// itself; a mode pick isn't a "nudge") or one that fired but this
+	// option/focus combination has nothing to inject. Kept separate from
+	// OracleResult.Injections (every fired check's text already flattened
+	// into one ordered list for the system prompt's {items} substitution)
+	// since the turn-info sheet needs to show which nudge came from which
+	// check, not just the combined prompt text.
+	Nudge string `json:"nudge,omitempty"`
 }
 
 // Chip is one offer surfaced under the reply — the frontend maps Key to
@@ -228,7 +237,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 		if sliceContains(check.SkipOptionForFocus[ans.Choice], effectiveFocus) {
 			continue
 		}
-		result.Injections = append(result.Injections, resolveInjections(check, ans.Choice, effectiveFocus)...)
+		injs := resolveInjections(check, ans.Choice, effectiveFocus)
+		result.Injections = append(result.Injections, injs...)
+		if len(injs) > 0 {
+			result.Checks[len(result.Checks)-1].Nudge = strings.Join(injs, " ")
+		}
 	}
 
 	// Checks was appended focus-first then in sorted-key order — re-sort

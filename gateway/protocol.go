@@ -112,6 +112,13 @@ type ClientMessage struct {
 	// zero value for a caller (POST /api/ask, cmd/search.go) that never
 	// sets either.
 	NoResearch bool `json:"no_research,omitempty"`
+	// NoOracle skips Oracle mode entirely for this one turn — set only by
+	// TurnInfoSheet.svelte's "Rerun without Oracle" button (docs/plans/
+	// oracle-mode.md), so a nudge the operator disagreed with can be
+	// re-run plain without having to flip the Settings toggle off and back
+	// on for every other turn in the meantime. False (Oracle behaves
+	// exactly as its own setting/budget say) for every other caller.
+	NoOracle bool `json:"no_oracle,omitempty"`
 	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
 	// Answer via POST /api/ask, never by the WebSocket chat client.
 	QuickMode bool `json:"quick_mode,omitempty"`
@@ -350,6 +357,17 @@ type ServerEvent struct {
 	// Verification above.
 	OracleResult          *OracleResult `json:"oracle_result,omitempty"`
 	OracleFocusModeSource string        `json:"oracle_focus_mode_source,omitempty"`
+	// AppliedFocusMode mirrors store.Message's own applied_focus_mode
+	// column — this turn's actual resolved focus mode, "" for none. See
+	// its schema comment for why this is distinct from FocusMode (the
+	// composer's request) and OracleResult.FocusMode (Oracle's pick even
+	// when overridden by manual): the margin note needs "what this turn
+	// actually ran with" to compare against the nearest earlier turn's own
+	// applied mode for "kept your X" vs. "Switched X -> Y".
+	AppliedFocusMode string `json:"applied_focus_mode,omitempty"`
+	// AppliedModel mirrors store.Message's own applied_model column — this
+	// turn's requested model id, for the turn-info sheet's "Model" stat.
+	AppliedModel string `json:"applied_model,omitempty"`
 	// CostAnswerUSD/CostVerificationUSD/CostOracleUSD are CostUSD's
 	// three-tier split (docs/plans/oracle-mode.md's "Cost moves into the
 	// sheet, in three tiers") — mirrors store.Message's own columns. No

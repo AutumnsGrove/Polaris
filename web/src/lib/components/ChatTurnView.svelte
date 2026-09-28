@@ -30,6 +30,9 @@
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
+	import { buildOracleNote } from '$lib/oracleLabels';
+	import Asterism from './Asterism.svelte';
+	import TurnInfoSheet from './TurnInfoSheet.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
@@ -203,6 +206,28 @@
 		}
 	}
 
+	// The nearest earlier assistant turn's own applied focus mode — see
+	// oracleLabels.ts's buildOracleNote doc comment on why this (not just
+	// oracleResult.focus_mode) is what lets the note tell "kept your X"
+	// from "Switched X -> Y" from a plain first-time "answered as X".
+	// Undefined turns (no oracleResult at all, or predating this field)
+	// are skipped rather than treated as "no mode", since either would
+	// otherwise read as a false "switch" the moment Oracle mode/this field
+	// is turned on partway through an existing thread's history.
+	let previousAppliedFocusMode = $derived.by(() => {
+		for (let i = index - 1; i >= 0; i--) {
+			const t = appState.turns[i];
+			if (t?.role === 'assistant' && t.appliedFocusMode !== undefined) return t.appliedFocusMode;
+		}
+		return undefined;
+	});
+
+	let oracleNote = $derived(
+		buildOracleNote(turn.oracleResult, turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode)
+	);
+
+	let infoSheetOpen = $state(false);
+
 	async function copyAnswerWithSources() {
 		const sources = (turn.citations ?? [])
 			.map((c, i) => `${i + 1}. ${c.title || hostname(c.url)} — ${c.url}`)
@@ -278,6 +303,15 @@
 {:else}
 	<div class="row row-assistant" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		<div class="bubble bubble-assistant">
+			{#if oracleNote}
+				<!-- B2: sits above tool calls/prose, same position the
+					 OracleConstellation "reading" animation folds into once a
+					 live turn resolves (see OracleConstellation.svelte's onDone). -->
+				<button class="oracle-note" type="button" onclick={() => (infoSheetOpen = true)}>
+					<Asterism size={13} class="o-icon" />
+					{@html oracleNote}
+				</button>
+			{/if}
 			{#if turn.timeline?.length}
 				<div class="timeline">
 					{#each turn.timeline as item, i (i)}
@@ -479,10 +513,19 @@
 					>
 						<RotateCcw size={13} />
 					</button>
+					<!-- Always shown, Oracle on or off — the answer-stats section
+						 of TurnInfoSheet (model/TTFT/tokens/cost) is meaningful
+						 regardless; Oracle's own sections just add to it when it ran. -->
+					<button class="icon-btn" onclick={() => (infoSheetOpen = true)} title="Turn info">
+						<Info size={13} />
+					</button>
 				</div>
 			{/if}
 			{#if turn.ttsAudioFile}
 				<WaveformAudioPlayer src={turn.ttsAudioFile} autoplay={appState.audio.justFinishedIndex === index} />
+			{/if}
+			{#if infoSheetOpen}
+				<TurnInfoSheet {turn} {index} onClose={() => (infoSheetOpen = false)} />
 			{/if}
 		</div>
 	</div>
@@ -628,6 +671,48 @@
 
 	.timeline {
 		margin-bottom: var(--space-sm);
+	}
+
+	/* Oracle mode's margin note (docs/plans/oracle-mode.md's B2) — a
+	   button, not static text: tapping it opens TurnInfoSheet, same
+	   "the reply is the surface" idea as the ⓘ button in the footer below.
+	   Ported from mockups/oracle-mode.html's .oracle-note. */
+	.oracle-note {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: var(--space-sm);
+		min-height: 20px;
+		border: none;
+		background: none;
+		padding: 0;
+		text-align: left;
+		font-size: 12.5px;
+		color: var(--color-text-dim);
+		cursor: pointer;
+	}
+
+	.oracle-note :global(.o-icon) {
+		flex-shrink: 0;
+		color: var(--color-accent);
+		opacity: 0.85;
+	}
+
+	/* :global since the note's own bold/strikethrough spans arrive via
+	   {@html} (buildOracleNote in oracleLabels.ts), not Svelte-templated
+	   markup — same reasoning as .prose :global(...) below. The strings
+	   themselves are built entirely from a fixed, developer-authored label
+	   set (FOCUS_MODES, high-stakes/intent labels), never model or user
+	   text, so this is safe without a DOMPurify pass. */
+	.oracle-note :global(b) {
+		color: var(--color-text);
+		font-weight: 500;
+	}
+
+	.oracle-note :global(b.old) {
+		text-decoration: line-through;
+		color: var(--color-text-dim);
+		font-weight: 400;
 	}
 
 	/* Same layout as ChatView.svelte's .interrupted banner, but on the

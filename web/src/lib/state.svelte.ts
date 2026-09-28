@@ -681,6 +681,8 @@ export class AppState {
 				toolCallCount: m.tool_call_count || undefined,
 				ttftMs: m.ttft_ms || undefined,
 				tokensPerSecond: m.tokens_per_second || undefined,
+				appliedFocusMode: m.applied_focus_mode,
+				appliedModel: m.applied_model,
 				// Both roles now carry their real DB id — see ChatTurn.id's doc
 				// comment (assistant turns need it too, for read-aloud's
 				// persisted-audio attachment; this used to be user-only before
@@ -1188,10 +1190,34 @@ export class AppState {
 
 	// Re-runs an assistant turn using the same preceding user message —
 	// most useful after a transient error (network blip, provider hiccup).
-	retry(assistantTurnIndex: number) {
+	// focusOverride/noOracle: TurnInfoSheet.svelte's "Rerun as X"/"Rerun
+	// without Oracle" buttons (docs/plans/oracle-mode.md) — a plain retry
+	// button call (ChatTurnView's footer icon) passes neither, same as
+	// before either existed. focusOverride is sent as a manual pick (same
+	// "operator explicitly chose this for this message" semantics as a
+	// live ComposerMenu tap — see send()'s focusModeManual doc comment),
+	// not a "default", so Oracle's own focus check won't immediately
+	// re-override the very mode being tested.
+	retry(assistantTurnIndex: number, focusOverride?: FocusMode, noOracle?: boolean) {
 		const userTurn = this.turns[assistantTurnIndex - 1];
 		if (!userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
-		this.dispatch(userTurn.content, userTurn.id, assistantTurnIndex - 1);
+		this.dispatch(
+			userTurn.content,
+			userTurn.id,
+			assistantTurnIndex - 1,
+			undefined,
+			focusOverride,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			!!focusOverride,
+			noOracle
+		);
 		this.carryForwardAttachmentChips(userTurn.attachments);
 	}
 
@@ -1253,7 +1279,13 @@ export class AppState {
 		// modelOverride: see send()'s doc comment.
 		modelOverride?: string,
 		// focusModeManual: see send()'s doc comment.
-		focusModeManual?: boolean
+		focusModeManual?: boolean,
+		// noOracle: only ever set by retry()'s "Rerun without Oracle" —
+		// see gateway/protocol.go's ClientMessage.NoOracle doc comment.
+		// Not exposed through send() itself since no composer control sets
+		// it; TurnInfoSheet.svelte's rerun buttons go through retry(),
+		// which calls this directly.
+		noOracle?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1327,6 +1359,7 @@ export class AppState {
 			focus_mode_source: focusModeManual ? undefined : 'default',
 			deep_research: deepResearch || undefined,
 			no_research: noResearch || undefined,
+			no_oracle: noOracle || undefined,
 			attachments: attachments?.map((a) => ({
 				id: a.id,
 				filename: a.filename,
@@ -1596,6 +1629,8 @@ export class AppState {
 				turn.toolCallCount = e.tool_call_count;
 				turn.ttftMs = e.ttft_ms;
 				turn.tokensPerSecond = e.tokens_per_second;
+				turn.appliedFocusMode = e.applied_focus_mode;
+				turn.appliedModel = e.applied_model;
 				// See ServerEvent's assistant_message_id doc comment — without
 				// this, read-aloud on a turn from the current session (not yet
 				// reloaded from history) has no message id to attach a

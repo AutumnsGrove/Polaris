@@ -794,7 +794,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// exists, after agent.Run returns below.
 	var oracleResult OracleResult
 	var oracleFocusModeSource string
-	if !ghost && OracleEnabledFromStore(s.db) && s.jev != nil {
+	if !ghost && !msg.NoOracle && OracleEnabledFromStore(s.db) && s.jev != nil {
 		withinOracleBudget := true
 		if used, err := s.db.JevCostThisMonth(); err != nil {
 			log.Warn("oracle: checking jev monthly cost failed, proceeding anyway", "err", err)
@@ -821,6 +821,21 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			if oracleResult.FocusMode != "" && !isManualFocus {
 				agentCtx.FocusMode = oracleResult.FocusMode
 				oracleFocusModeSource = "oracle"
+				// Persists Oracle's own pick as the thread's new sticky
+				// focus_mode — the earlier SetThreadConfig call above (this
+				// function's very first write) only ever wrote msg.FocusMode
+				// (whatever the client sent), since it runs before Oracle
+				// does. Without this second write, threads.focus_mode never
+				// actually reflects an Oracle pick, and
+				// LastAssistantFocusModeSource/PriorOracleFocusMode above
+				// silently degrades to always empty — breaking the focus
+				// check's own sticky/switch_threshold rules (resolveFocus in
+				// oracle.go), which depend on knowing what Oracle itself
+				// picked last turn. Best-effort, same as every other
+				// post-hoc store write in this handler.
+				if err := s.db.SetThreadConfig(threadID, modelCfg.ID, oracleResult.FocusMode, msg.DeepResearch, msg.NoResearch); err != nil {
+					log.Warn("failed to persist oracle's focus pick as thread config", "thread", threadID, "err", err)
+				}
 			} else if msg.FocusMode != "" {
 				if isManualFocus {
 					oracleFocusModeSource = "manual"
@@ -833,6 +848,12 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			}
 		}
 	}
+	// Captured once agentCtx.FocusMode has its final value (Oracle's own
+	// pick, if applied, otherwise msg.FocusMode) — agent.Run only ever
+	// reads this field, never mutates it, so this is stable for the rest
+	// of the turn. Persisted post-hoc below alongside the other per-turn
+	// stats, once assistantMsgID exists.
+	appliedFocusMode := agentCtx.FocusMode
 
 	// Timed around agent.Run specifically, not the whole handler — this is
 	// "how long it took to get an answer", the number a user watching the
@@ -1024,6 +1045,20 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		logEvent(storageThreadID, "warn", "turn", "recording turn stats failed", map[string]interface{}{"err": err.Error()}, turnID)
 	}
 
+	// Written unconditionally (unlike oracle_result below, which only
+	// persists when Oracle actually got a live answer) — a turn's applied
+	// focus mode is meaningful even with Oracle off/quiet this turn, and
+	// the frontend's margin note needs it either way (see the schema
+	// comment above messages.applied_focus_mode).
+	if err := s.db.SetMessageAppliedFocusMode(assistantMsgID, appliedFocusMode); err != nil {
+		log.Warn("failed to record applied focus mode", "err", err)
+		logEvent(storageThreadID, "warn", "turn", "recording applied focus mode failed", map[string]interface{}{"err": err.Error()}, turnID)
+	}
+	if err := s.db.SetMessageAppliedModel(assistantMsgID, requestedModel); err != nil {
+		log.Warn("failed to record applied model", "err", err)
+		logEvent(storageThreadID, "warn", "turn", "recording applied model failed", map[string]interface{}{"err": err.Error()}, turnID)
+	}
+
 	// oracleResult.Checks is only non-empty when Oracle actually got a
 	// live Jev answer this turn (RunOracle returns early, before
 	// appending anything, on every off/unconfigured/error/timeout path)
@@ -1152,6 +1187,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		PendingQuestion:       result.PendingQuestion,
 		OracleResult:          oracleResultForEvent,
 		OracleFocusModeSource: oracleFocusModeSource,
+		AppliedFocusMode:      appliedFocusMode,
+		AppliedModel:          requestedModel,
 		CostAnswerUSD:         totalCost,
 		// CostVerificationUSD deliberately left at its zero value: that
 		// spend isn't known yet (verification runs in a detached goroutine

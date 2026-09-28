@@ -276,6 +276,29 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- always wins" section for why the server needs to tell these apart.
 	-- '' for a message with no focus mode in play at all.
 	focus_mode_source TEXT NOT NULL DEFAULT '',
+	-- applied_focus_mode: this turn's actual resolved agent.FocusMode
+	-- ("" for none) — distinct from threads.focus_mode (the thread's
+	-- current *sticky* config, overwritten every turn) and from
+	-- oracle_result's own FocusMode field (Oracle's pick even when
+	-- overridden by manual — see gateway.OracleResult's doc comment).
+	-- This is "what this specific turn actually ran with", captured once
+	-- per assistant message so the frontend can compare a turn's own
+	-- applied mode against the nearest earlier turn's to render "kept
+	-- your X" vs. "Switched X -> Y" in the Oracle margin note
+	-- (docs/plans/oracle-mode.md) — threads.focus_mode alone can't
+	-- answer that per-turn, since it's just whatever the client last
+	-- sent, never Oracle's own picks (see SetMessageAppliedFocusMode).
+	applied_focus_mode TEXT NOT NULL DEFAULT '',
+	-- applied_model: this turn's own requested model id (config.yaml's
+	-- model id, e.g. "deepseek-v4.1"), alongside applied_focus_mode above
+	-- for the same reason — threads.model is the thread's current sticky
+	-- default, overwritten every turn, so it can't answer "what did THIS
+	-- past turn use" once a later turn switches models. Doesn't account
+	-- for llm.Client's own runtime provider fallback within that model id
+	-- (e.g. the DeepSeek 429 pool-exhaustion retry) — this is what was
+	-- requested, which is what the turn-info sheet's "Model" stat means to
+	-- show.
+	applied_model TEXT NOT NULL DEFAULT '',
 	-- cost_answer_usd/cost_verification_usd/cost_oracle_usd: the same
 	-- total cost_usd above, split by what spent it (docs/plans/
 	-- oracle-mode.md's "three-tier cost") — the main answer (plus
@@ -1145,6 +1168,17 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN ttft_ms INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN tokens_per_second REAL NOT NULL DEFAULT 0`,
 	`ALTER TABLE messages ADD COLUMN tool_call_count INTEGER NOT NULL DEFAULT 0`,
+	// applied_focus_mode — see the schema comment above. Appended at the
+	// end per this file's own established rule (positional user_version
+	// tracking, never insert mid-list). An existing row defaults to ""
+	// (no way to know in hindsight what an old turn actually ran with),
+	// which just means its own margin note (were Oracle mode ever
+	// retroactively read from it) renders no focus clause — a normal,
+	// silent "nothing to say" outcome, not a wrong one.
+	`ALTER TABLE messages ADD COLUMN applied_focus_mode TEXT NOT NULL DEFAULT ''`,
+	// applied_model — see the schema comment above. Same reasoning/
+	// appended-at-the-end placement as applied_focus_mode just above.
+	`ALTER TABLE messages ADD COLUMN applied_model TEXT NOT NULL DEFAULT ''`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1349,6 +1383,12 @@ type Message struct {
 	// FocusModeSource is "manual"/"default"/"oracle" — see the schema
 	// comment above messages.focus_mode_source.
 	FocusModeSource string `json:"focus_mode_source,omitempty"`
+	// AppliedFocusMode is this turn's own resolved focus mode — see the
+	// schema comment above messages.applied_focus_mode.
+	AppliedFocusMode string `json:"applied_focus_mode,omitempty"`
+	// AppliedModel is this turn's own requested model id — see the schema
+	// comment above messages.applied_model.
+	AppliedModel string `json:"applied_model,omitempty"`
 	// CostAnswerUSD/CostVerificationUSD/CostOracleUSD are CostUSD's
 	// three-tier split — see the schema comment above
 	// messages.cost_answer_usd.
@@ -2552,7 +2592,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -2566,7 +2606,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt,
-			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount); err != nil {
+			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -2586,12 +2626,12 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt,
-		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount)
+		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel)
 	if err != nil {
 		return Message{}, err
 	}
@@ -2737,6 +2777,26 @@ func (s *Store) LastAssistantFocusModeSource(threadID string) (string, error) {
 // gateway/turn.go's turn setup.
 func (s *Store) SetMessageOracleResult(messageID int64, oracleResultJSON, focusModeSource string) error {
 	_, err := s.db.Exec(`UPDATE messages SET oracle_result = ?, focus_mode_source = ? WHERE id = ?`, oracleResultJSON, focusModeSource, messageID)
+	return err
+}
+
+// SetMessageAppliedFocusMode records this turn's own resolved focus mode —
+// see the schema comment above messages.applied_focus_mode. Written
+// unconditionally for every assistant turn (unlike SetMessageOracleResult,
+// which only fires when Oracle got a live answer) since a turn can have an
+// applied focus mode from a manual/default pick with Oracle off or quiet
+// this turn — the frontend's "kept your X" margin note needs that case
+// too, not just the ones where Oracle itself picked something.
+func (s *Store) SetMessageAppliedFocusMode(messageID int64, focusMode string) error {
+	_, err := s.db.Exec(`UPDATE messages SET applied_focus_mode = ? WHERE id = ?`, focusMode, messageID)
+	return err
+}
+
+// SetMessageAppliedModel records this turn's own requested model id — see
+// the schema comment above messages.applied_model. Same
+// always-written-regardless-of-Oracle shape as SetMessageAppliedFocusMode.
+func (s *Store) SetMessageAppliedModel(messageID int64, model string) error {
+	_, err := s.db.Exec(`UPDATE messages SET applied_model = ? WHERE id = ?`, model, messageID)
 	return err
 }
 

@@ -39,6 +39,11 @@ export interface OracleCheckOutcome {
 	winner: string;
 	probabilities: Record<string, number>;
 	fired: boolean;
+	// This specific check's own resolved nudge text, if it fired one — see
+	// gateway/oracle.go's CheckOutcome.Nudge doc comment. Absent for a
+	// check with no inject map (focus) or one whose fired option/focus
+	// combination has nothing to inject.
+	nudge?: string;
 }
 
 // Mirrors gateway/oracle.go's Chip — one offer surfaced under a reply
@@ -271,6 +276,17 @@ export type ServerEvent =
 			ttft_ms?: number;
 			tokens_per_second?: number;
 			tool_call_count?: number;
+			// This turn's own resolved focus mode ("" for none) — see
+			// gateway/protocol.go's ServerEvent.AppliedFocusMode doc comment.
+			// Distinct from oracle_result.focus_mode (Oracle's pick even when
+			// overridden by manual) — this is what the turn actually ran
+			// with, used to render "kept your X"/"Switched X -> Y" in the
+			// margin note by comparing against the nearest earlier turn's own
+			// applied mode.
+			applied_focus_mode?: string;
+			// This turn's requested model id — see
+			// gateway/protocol.go's ServerEvent.AppliedModel doc comment.
+			applied_model?: string;
 	  }
 	// Sent once, shortly after 'done' — up to 3 follow-up questions for the
 	// answer that just finished, persisted alongside it (see
@@ -358,6 +374,9 @@ export type ClientMessage =
 			// search" action, overriding the composer's current toggle
 			// state for that one follow-up reply.
 			no_research?: boolean;
+			// TurnInfoSheet.svelte's "Rerun without Oracle" — see
+			// gateway/protocol.go's ClientMessage.NoOracle doc comment.
+			no_oracle?: boolean;
 			// Set when the composer's "+" sheet attached one or more files,
 			// each already uploaded via POST /api/upload before this message
 			// is sent — see gateway/attachments.go's resolveAttachments.
@@ -738,6 +757,15 @@ export interface ChatTurn {
 	// "oracle" whenever it did.
 	oracleResult?: OracleResult;
 	oracleFocusModeSource?: string;
+	// This turn's own resolved focus mode — see ServerEvent's
+	// applied_focus_mode doc comment. "" (not undefined) means "no focus
+	// mode was in effect", which the note-builder treats differently from
+	// "unknown" (undefined, a turn from before this field existed).
+	appliedFocusMode?: string;
+	// This turn's requested model id — see store.Message.AppliedModel's
+	// doc comment. Mapped to a display name via appState.models in
+	// TurnInfoSheet.svelte, same lookup ComposerMenu's model picker uses.
+	appliedModel?: string;
 	// costAnswer/costVerification/costOracle are costUsd's three-tier split
 	// — see store.Message.CostAnswerUSD's doc comment. Shown even with
 	// Oracle off (verification can run either way).
