@@ -9,9 +9,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Asimovian&display=swap" />
 <style>
 /* ---------------------------------------------------------------
-   Tokens copied from web/src/app.css (dark is the app's default,
-   so bare :root is dark here too) and the light values from
-   mockups/projects.html. Companion to docs/plans/oracle-mode.md.
+   Round 2. Tokens and component styles copied from the real app
+   (web/src/app.css, ChatTurnView.svelte, ToolEvent.svelte,
+   ComposerMenu.svelte, ChatView.svelte) after driving a real turn
+   through `dev/stack.sh --fake-llm` — so the phone frames below
+   match what Polaris actually renders today, and only the Oracle
+   pieces are new. Companion to docs/plans/oracle-mode.md.
    --------------------------------------------------------------- */
 :root {
 	color-scheme: dark;
@@ -19,6 +22,7 @@
 	--color-surface: oklch(19% 0.014 65);
 	--color-surface-2: oklch(23% 0.016 65);
 	--color-surface-3: oklch(28% 0.018 65);
+	--color-sheet: oklch(27% 0.018 60);
 	--color-border: oklch(30% 0.016 65);
 	--color-border-strong: oklch(40% 0.02 65);
 	--color-text: oklch(93% 0.01 75);
@@ -28,9 +32,15 @@
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
 	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
 	--color-accent-2: oklch(78% 0.06 235);
-	--color-star-dim: oklch(45% 0.02 70);
+	--color-star-dim: oklch(42% 0.02 70);
+	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
+	--shadow-sm: 0 1px 2px rgba(15, 10, 5, 0.3);
 	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
 	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+	/* Oracle's ring: the full hue wheel at one lightness/chroma, so it
+	   reads as starlight through a prism rather than RGB-gamer neon. */
+	--ring-l: 80%;
+	--ring-c: 0.13;
 
 	--radius-sm: 6px;
 	--radius-md: 10px;
@@ -46,7 +56,8 @@
 	--space-3xl: 40px;
 	--space-4xl: 48px;
 	--font-sans: 'Lexend', ui-sans-serif, system-ui, -apple-system, sans-serif;
-	--font-wordmark: 'Asimovian', ui-serif, Georgia, serif;
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--font-wordmark: 'Asimovian', var(--font-serif);
 	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (prefers-color-scheme: light) {
@@ -56,6 +67,7 @@
 		--color-surface: oklch(99% 0.004 80);
 		--color-surface-2: oklch(95% 0.01 75);
 		--color-surface-3: oklch(91% 0.012 75);
+		--color-sheet: oklch(98% 0.006 75);
 		--color-border: oklch(87% 0.012 75);
 		--color-border-strong: oklch(78% 0.016 75);
 		--color-text: oklch(24% 0.016 60);
@@ -68,6 +80,8 @@
 		--color-star-dim: oklch(80% 0.015 70);
 		--shadow-lg: 0 24px 60px -16px rgba(60, 40, 20, 0.22), 0 8px 24px -8px rgba(60, 40, 20, 0.14);
 		--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+		--ring-l: 66%;
+		--ring-c: 0.15;
 	}
 }
 :root[data-theme='light'] {
@@ -76,6 +90,7 @@
 	--color-surface: oklch(99% 0.004 80);
 	--color-surface-2: oklch(95% 0.01 75);
 	--color-surface-3: oklch(91% 0.012 75);
+	--color-sheet: oklch(98% 0.006 75);
 	--color-border: oklch(87% 0.012 75);
 	--color-border-strong: oklch(78% 0.016 75);
 	--color-text: oklch(24% 0.016 60);
@@ -88,6 +103,8 @@
 	--color-star-dim: oklch(80% 0.015 70);
 	--shadow-lg: 0 24px 60px -16px rgba(60, 40, 20, 0.22), 0 8px 24px -8px rgba(60, 40, 20, 0.14);
 	--shadow-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	--ring-l: 66%;
+	--ring-c: 0.15;
 }
 
 * { box-sizing: border-box; }
@@ -99,8 +116,9 @@ body {
 	font-size: 15px;
 	line-height: 1.55;
 }
+button { font-family: inherit; }
 .page {
-	max-width: 1180px;
+	max-width: 1220px;
 	margin: 0 auto;
 	padding-inline: var(--space-lg);
 	padding-block: var(--space-3xl) var(--space-4xl);
@@ -108,702 +126,914 @@ body {
 	flex-direction: column;
 	gap: var(--space-4xl);
 }
+.lucide { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
 /* ---------- page header ---------- */
-.intro { max-width: 64ch; display: flex; flex-direction: column; gap: var(--space-sm); }
-.intro .eyebrow {
-	font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim);
-}
-.intro h1 {
-	margin: 0; font-family: var(--font-wordmark); font-weight: 400; font-size: 40px; line-height: 1.1;
-	text-wrap: balance;
-}
+.intro { max-width: 66ch; display: flex; flex-direction: column; gap: var(--space-sm); }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); }
+.intro h1 { margin: 0; font-family: var(--font-wordmark); font-weight: 400; font-size: 40px; line-height: 1.1; }
 .intro p { margin: 0; color: var(--color-text-dim); }
-
-/* ---------- sections ---------- */
-section { display: flex; flex-direction: column; gap: var(--space-xl); }
-.section-head { max-width: 64ch; display: flex; flex-direction: column; gap: var(--space-xs); }
-.section-head .tag {
-	font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-accent);
-	font-weight: 600;
+.decided { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-sm); }
+.decided span {
+	font-size: 12px; color: var(--color-text); background: var(--color-surface-2);
+	border-radius: var(--radius-full); padding: 3px 10px; box-shadow: var(--shadow-xs);
 }
-.section-head h2 { margin: 0; font-size: 22px; font-weight: 600; text-wrap: balance; }
+.decided b { color: var(--color-accent); font-weight: 600; }
+
+section { display: flex; flex-direction: column; gap: var(--space-xl); }
+.section-head { max-width: 66ch; display: flex; flex-direction: column; gap: var(--space-xs); }
+.tag { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-accent); font-weight: 600; }
+.section-head h2 { margin: 0; font-family: var(--font-serif); font-size: 26px; font-weight: 600; text-wrap: balance; }
 .section-head p { margin: 0; color: var(--color-text-dim); }
 
-.variants {
+.frames {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
 	gap: var(--space-xl);
 	align-items: start;
 }
-.variant { display: flex; flex-direction: column; gap: var(--space-md); }
-.variant-label { display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap; }
-.variant-label .letter {
-	font-size: 12px; font-weight: 700; color: var(--color-bg); background: var(--color-accent);
-	border-radius: var(--radius-sm); padding: 0 6px; letter-spacing: 0.04em;
+.frame { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.frame-label { display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap; }
+.num {
+	font-size: 11.5px; font-weight: 700; color: var(--color-bg); background: var(--color-accent);
+	border-radius: var(--radius-sm); padding: 0 6px; font-variant-numeric: tabular-nums;
 }
-.variant-label h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.variant-note { margin: 0; font-size: 13.5px; color: var(--color-text-dim); max-width: 60ch; }
+.frame-label h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.note { margin: 0; font-size: 13px; color: var(--color-text-dim); max-width: 60ch; }
+.note b { color: var(--color-text); font-weight: 500; }
 
-/* ---------- phone frame ---------- */
+/* ---------- phone (real app chrome) ---------- */
 .phone {
-	background: var(--color-surface);
+	background: var(--color-bg);
 	border: 1px solid var(--color-border);
-	border-radius: var(--radius-xl);
+	border-radius: 28px;
 	box-shadow: var(--shadow-lg), var(--shadow-glass-edge);
-	padding: var(--space-lg);
 	display: flex;
 	flex-direction: column;
-	gap: var(--space-md);
+	height: 640px;
 	max-width: 100%;
-	position: relative;
 	overflow: hidden;
-	min-height: 260px;
+	position: relative;
 }
-.user-msg {
-	align-self: flex-end;
-	max-width: 85%;
-	background: var(--color-surface-2);
-	border-radius: var(--radius-md);
-	padding: var(--space-sm) var(--space-md);
-	font-size: 14.5px;
+.phone.short { height: auto; min-height: 0; }
+.app-header {
+	display: flex; align-items: center; gap: var(--space-md);
+	padding: var(--space-md) var(--space-lg); background: var(--color-surface);
+	border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+	flex: none;
 }
-.answer { display: flex; flex-direction: column; gap: var(--space-sm); font-size: 14.5px; }
-.answer p { margin: 0; }
-.cite {
-	display: inline-block; font-size: 11px; font-weight: 600; color: var(--color-accent-2);
-	background: color-mix(in srgb, var(--color-accent-2) 14%, transparent);
-	border-radius: var(--radius-sm); padding: 0 5px; vertical-align: 1px;
+.app-header .lucide { width: 18px; height: 18px; color: var(--color-text-dim); }
+.app-header .title {
+	font-family: var(--font-serif); font-weight: 600; font-size: 15px; line-height: 1.25;
+	flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.skeleton { height: 10px; border-radius: var(--radius-full); background: var(--color-surface-3); }
-.skeleton.w80 { width: 80%; } .skeleton.w60 { width: 60%; } .skeleton.w90 { width: 90%; }
+.timeline {
+	flex: 1; overflow: hidden; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md);
+}
+.bubble-user {
+	align-self: flex-end; max-width: 84%;
+	background: var(--color-surface-2); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+	padding: var(--space-md) var(--space-lg); font-size: 14px; line-height: 1.5;
+}
+.dim-turn { opacity: 0.5; display: flex; flex-direction: column; gap: var(--space-md); }
+.tools { display: flex; flex-direction: column; gap: var(--space-xs); }
+.tool {
+	display: flex; align-items: center; gap: var(--space-sm);
+	background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
+	border-radius: var(--radius-sm); box-shadow: var(--shadow-xs);
+	padding: var(--space-sm) var(--space-md); font-size: 12px; color: var(--color-text-dim);
+}
+.tool .lucide { width: 13px; height: 13px; }
+.tool .lucide.i-search { color: var(--color-accent-2); }
+.tool span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.prose { font-size: 15px; line-height: 1.65; display: flex; flex-direction: column; gap: var(--space-md); }
+.prose p { margin: 0; }
+.cchip {
+	display: inline-flex; align-items: center; margin-left: var(--space-xs);
+	padding: 1px var(--space-sm); border-radius: var(--radius-full);
+	background: var(--color-surface-2); color: var(--color-text-dim); font-size: 11.5px; font-weight: 500;
+	vertical-align: 1px;
+}
+.caret { display: inline-block; width: 7px; height: 15px; background: var(--color-accent); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.sources-row { display: flex; align-items: center; gap: var(--space-xs); font-size: 12px; color: var(--color-text-dim); }
+.sources-row .count {
+	display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: var(--radius-full);
+	background: var(--color-surface-2); font-size: 10px; font-weight: 600;
+}
+.sources-row .lucide { width: 12px; height: 12px; }
+.turn-footer { display: flex; align-items: center; gap: var(--space-xs); font-size: 11px; color: var(--color-text-dim); }
+.turn-footer .stat { font-variant-numeric: tabular-nums; margin-right: var(--space-xs); }
+.icon-btn {
+	width: 30px; height: 30px; display: grid; place-items: center; border: none; background: transparent;
+	color: var(--color-text-dim); border-radius: var(--radius-sm); padding: 0; cursor: pointer;
+}
+.icon-btn .lucide { width: 15px; height: 15px; }
+.icon-btn.new { color: var(--color-text); background: var(--color-accent-soft); }
+.suggestions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.suggestion-chip {
+	border: none; background: var(--color-surface-2); color: var(--color-text-dim);
+	border-radius: var(--radius-full); padding: var(--space-sm) var(--space-lg);
+	font-size: 12.5px; text-align: left; box-shadow: var(--shadow-xs);
+}
 
-.replay {
-	align-self: flex-start;
-	font: inherit; font-size: 13px; font-weight: 500;
-	color: var(--color-text); background: var(--color-surface-2);
-	border: 1px solid var(--color-border); border-radius: var(--radius-full);
-	padding: var(--space-xs) var(--space-md); cursor: pointer;
+/* composer */
+.composer { flex: none; padding: var(--space-sm) var(--space-lg) var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); }
+.composer-box {
+	background: var(--color-surface-2); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm);
+	padding: var(--space-md) var(--space-lg); font-size: 15px; color: var(--color-text-dim); min-height: 52px;
+	display: flex; align-items: center;
 }
-.replay:hover { border-color: var(--color-border-strong); }
-button:focus-visible, .chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-
-/* ---------- the Oracle glyph + chip ---------- */
-.glyph { width: 14px; height: 14px; flex: none; color: var(--color-accent); }
-.chip {
-	display: inline-flex; align-items: center; gap: 6px;
-	font: inherit; font-size: 12.5px; font-weight: 500; color: var(--color-text);
-	background: var(--color-accent-soft);
-	border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-	border-radius: var(--radius-full);
-	padding: 3px 10px 3px 8px;
-	cursor: pointer;
-	align-self: flex-start;
+.composer-box.typed { color: var(--color-text); }
+.toolbar { display: flex; align-items: center; gap: var(--space-sm); }
+.trigger {
+	display: flex; align-items: center; gap: var(--space-sm); border: none; height: 38px;
+	background: var(--color-surface-2); border-radius: var(--radius-full); box-shadow: var(--shadow-xs);
+	padding: var(--space-sm) var(--space-md); color: var(--color-text-dim);
 }
-.chip .sep { color: var(--color-text-dim); }
-.chip.bare { padding: 3px 6px; background: transparent; border-color: var(--color-border); }
-.chip.bare .glyph { color: var(--color-text-dim); }
-
-/* ---------- A1: constellation ---------- */
-.stage { height: 40px; position: relative; display: flex; align-items: center; }
-.stage svg.const { width: 132px; height: 40px; overflow: visible; transform-origin: left center; }
-.const .star { fill: var(--color-star-dim); }
-.const .line { stroke: var(--color-accent); stroke-width: 0.8; fill: none; stroke-dasharray: 160; stroke-dashoffset: 160; opacity: 0.55; }
-.const-result { position: absolute; left: 0; top: 50%; transform: translateY(-50%); opacity: 0; }
-.play .const .star { animation: star-light 0.5s var(--ease-out-expo) forwards; }
-.play .const .star:nth-of-type(1) { animation-delay: 0.05s; }
-.play .const .star:nth-of-type(2) { animation-delay: 0.17s; }
-.play .const .star:nth-of-type(3) { animation-delay: 0.29s; }
-.play .const .star:nth-of-type(4) { animation-delay: 0.41s; }
-.play .const .star:nth-of-type(5) { animation-delay: 0.53s; }
-.play .const .star:nth-of-type(6) { animation-delay: 0.65s; }
-.play .const .line { animation: line-draw 0.7s ease-out 0.8s forwards; }
-.play svg.const { animation: const-out 0.45s ease-in 1.75s forwards; }
-.play .const-result { animation: fade-in 0.5s var(--ease-out-expo) 2.05s forwards; }
-.play .answer.reveal { animation: fade-in 0.6s ease-out 2.2s both; }
-@keyframes star-light {
-	0% { fill: var(--color-star-dim); r: 1.4; }
-	50% { fill: var(--color-accent); r: 3; }
-	100% { fill: var(--color-accent); r: 2; }
+.trigger .lucide { width: 16px; height: 16px; }
+.trigger-label { font-size: 13px; color: var(--color-text); }
+.trigger-badge {
+	font-size: 11px; font-weight: 600; color: var(--color-accent-2);
+	background: color-mix(in srgb, var(--color-accent-2) 16%, transparent);
+	border-radius: var(--radius-full); padding: var(--space-xs) var(--space-sm);
 }
-@keyframes line-draw { to { stroke-dashoffset: 0; } }
-@keyframes const-out { to { opacity: 0; transform: scale(0.35) translateX(-60px); } }
-@keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-
-/* ---------- A2: single star breathing ---------- */
-.breath { display: flex; align-items: center; gap: var(--space-sm); height: 40px; }
-.breath .big-glyph { width: 22px; height: 22px; color: var(--color-accent); opacity: 0.35; }
-.breath .label { opacity: 0; font-size: 12.5px; }
-.play .breath .big-glyph { animation: breathe 0.9s ease-in-out 0s 2, settle 0.5s var(--ease-out-expo) 1.8s forwards; }
-.play .breath .reading { animation: fade-out 0.3s ease 1.7s forwards; }
-.breath .reading { font-size: 12.5px; color: var(--color-text-dim); font-style: italic; }
-.play .breath .label { animation: fade-in 0.5s var(--ease-out-expo) 1.95s forwards; }
-.breath-wrap { position: relative; display: flex; align-items: center; gap: var(--space-sm); }
-.breath-wrap .reading, .breath-wrap .label { position: absolute; left: 30px; white-space: nowrap; }
-@keyframes breathe {
-	0%, 100% { opacity: 0.35; transform: scale(0.9); filter: none; }
-	50% { opacity: 1; transform: scale(1.08); filter: drop-shadow(0 0 6px var(--color-accent-soft-strong)); }
+.toolbar .spacer { flex: 1; }
+.toolbar .plain { width: 34px; height: 38px; display: grid; place-items: center; color: var(--color-text-dim); }
+.toolbar .plain .lucide { width: 17px; height: 17px; }
+.send {
+	width: 38px; height: 38px; border-radius: var(--radius-md); border: none; display: grid; place-items: center;
+	background: var(--color-accent); color: var(--color-bg);
 }
-@keyframes settle { to { opacity: 1; transform: scale(0.72); } }
-@keyframes fade-out { to { opacity: 0; } }
+.send .lucide { width: 17px; height: 17px; }
+.send.stop { background: var(--color-surface-3); color: var(--color-text); }
+.send.stop i { width: 11px; height: 11px; background: currentColor; border-radius: 2px; display: block; }
 
-/* ---------- A3: sky dial ---------- */
-.dial-row { display: flex; align-items: center; gap: var(--space-sm); height: 40px; position: relative; }
-.dial { width: 34px; height: 34px; flex: none; transform-origin: center; }
-.dial .tick { fill: var(--color-star-dim); }
-.dial .core { color: var(--color-accent); opacity: 0.4; }
-.play .dial .tick { animation: tick-on 0.3s ease-out forwards; }
-.play .dial .tick:nth-of-type(1) { animation-delay: 0.1s; }
-.play .dial .tick:nth-of-type(2) { animation-delay: 0.25s; }
-.play .dial .tick:nth-of-type(3) { animation-delay: 0.4s; }
-.play .dial .tick:nth-of-type(4) { animation-delay: 0.55s; }
-.play .dial .tick:nth-of-type(5) { animation-delay: 0.7s; }
-.play .dial .tick:nth-of-type(6) { animation-delay: 0.85s; }
-.play .dial .core { animation: core-on 0.4s ease-out 1.05s forwards; }
-.play .dial { animation: dial-shrink 0.5s var(--ease-out-expo) 1.5s forwards; }
-.dial-row .label { opacity: 0; }
-.play .dial-row .label { animation: fade-in 0.5s var(--ease-out-expo) 1.7s forwards; }
-@keyframes tick-on { to { fill: var(--color-accent); } }
-@keyframes core-on { to { opacity: 1; } }
-@keyframes dial-shrink { to { transform: scale(0.55) rotate(45deg); } }
-
-/* ---------- B: chip treatments ---------- */
-.margin-note {
-	font-size: 12.5px; color: var(--color-text-dim); display: flex; align-items: center; gap: 6px;
-	background: none; border: none; padding: 0; font-family: inherit; cursor: pointer; text-align: left;
+/* ---------- the Oracle icon + ring ---------- */
+.o-icon { width: 14px; height: 14px; color: var(--color-accent); }
+.ring {
+	--size: 26px;
+	width: var(--size); height: var(--size); border-radius: var(--radius-full);
+	display: grid; place-items: center; position: relative; flex: none;
+	background: conic-gradient(from 0deg,
+		oklch(var(--ring-l) var(--ring-c) 20), oklch(var(--ring-l) var(--ring-c) 80), oklch(var(--ring-l) var(--ring-c) 140),
+		oklch(var(--ring-l) var(--ring-c) 200), oklch(var(--ring-l) var(--ring-c) 260), oklch(var(--ring-l) var(--ring-c) 320),
+		oklch(var(--ring-l) var(--ring-c) 20));
 }
-.margin-note b { color: var(--color-text); font-weight: 500; }
-.corner-glyph {
-	position: absolute; top: var(--space-md); right: var(--space-md);
-	width: 28px; height: 28px; border-radius: var(--radius-full);
-	display: grid; place-items: center; background: var(--color-accent-soft); border: none; cursor: pointer;
+.ring::before {
+	content: ''; position: absolute; inset: 1.5px; border-radius: inherit; background: var(--color-surface-2);
 }
-.pair { display: flex; flex-direction: column; gap: var(--space-sm); }
-.state-caption { font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); }
-.divider { height: 1px; background: var(--color-border); }
+.ring > svg { position: relative; width: 14px; height: 14px; color: var(--color-text); }
+.ring.reading { animation: ring-spin 2.4s linear infinite; }
+.ring.reading > svg { animation: ring-spin 2.4s linear infinite reverse; }
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+.ring.soft { filter: saturate(0.55); }
+.ring.halo { box-shadow: 0 0 10px -2px oklch(var(--ring-l) var(--ring-c) 260 / 0.55); }
+.ring.big { --size: 44px; }
+.ring.big::before { inset: 2px; }
+.ring.big > svg { width: 22px; height: 22px; }
 
-/* ---------- C: why sheet ---------- */
-.sheet-host { min-height: 560px; padding: 0; justify-content: flex-end; }
-.sheet-host .behind { padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); opacity: 0.35; }
+/* ---------- B2 margin note ---------- */
+.oracle-note {
+	display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-text-dim);
+	background: none; border: none; padding: 0; text-align: left; cursor: pointer; min-height: 20px;
+}
+.oracle-note b { color: var(--color-text); font-weight: 500; }
+.oracle-note .old { text-decoration: line-through; color: var(--color-text-dim); font-weight: 400; }
+
+/* ---------- A1 constellation (generated, N stars) ---------- */
+.stage { position: relative; height: 34px; }
+.stage svg.const { position: absolute; left: 0; top: 0; width: 100%; max-width: 220px; height: 34px; overflow: visible; transform-origin: 7px 17px; }
+.const .line { stroke: var(--color-accent); stroke-width: 0.9; fill: none; opacity: 0.5; }
+.const .star { fill: var(--color-star-dim); transition: fill 0.35s var(--ease-out-expo); }
+.const .star.lit { fill: var(--color-accent); }
+.const .glow { fill: var(--color-accent); opacity: 0; }
+.stage .oracle-note { position: absolute; left: 0; top: 7px; opacity: 0; transition: opacity 0.45s var(--ease-out-expo); }
+.stage.done svg.const { opacity: 0; transform: scale(0.08); transition: opacity 0.4s ease-in, transform 0.45s ease-in; }
+.stage.done .oracle-note { opacity: 1; transition-delay: 0.25s; }
+.stage.static svg.const { display: none; }
+.stage.static .oracle-note { opacity: 1; }
+
+/* ---------- info sheet ---------- */
+.sheet-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
 .sheet {
-	position: absolute; inset: auto 0 0 0;
-	background: var(--color-surface-2);
-	border-top: 1px solid var(--color-border-strong);
-	border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-	box-shadow: var(--shadow-glass-edge), 0 -12px 40px -12px rgba(0, 0, 0, 0.45);
-	padding: var(--space-sm) var(--space-lg) var(--space-lg);
-	display: flex; flex-direction: column; gap: var(--space-md);
+	position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%;
+	background: var(--color-sheet); border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+	box-shadow: var(--shadow-glass-edge), 0 -12px 40px -12px rgba(0, 0, 0, 0.5);
+	display: flex; flex-direction: column;
 }
+.sheet-top { flex: none; padding: var(--space-sm) var(--space-lg) var(--space-sm); display: flex; flex-direction: column; gap: var(--space-sm); }
 .grabber { width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); align-self: center; }
-.sheet-title { display: flex; align-items: center; gap: var(--space-sm); font-weight: 600; font-size: 15px; }
-.sheet-sub { margin: 0; font-size: 12.5px; color: var(--color-text-dim); }
-.reads { display: flex; flex-direction: column; gap: var(--space-sm); }
-.read {
-	display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: var(--space-sm);
-	font-size: 13px;
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet-head h4 { margin: 0; font-family: var(--font-serif); font-size: 20px; font-weight: 600; }
+.sheet-head .lucide { width: 18px; height: 18px; color: var(--color-text-dim); }
+.sheet-body { overflow-y: auto; padding: 0 var(--space-lg) var(--space-lg); display: flex; flex-direction: column; gap: var(--space-lg); }
+.group-title {
+	display: flex; align-items: center; gap: var(--space-sm);
+	font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600;
 }
-.read .k { color: var(--color-text-dim); }
-.read .v { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.read .v span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar { height: 4px; border-radius: var(--radius-full); background: var(--color-surface-3); overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--color-accent); border-radius: inherit; }
-.read.quiet .bar i { background: var(--color-border-strong); }
-.read .pct { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--color-text-dim); min-width: 3ch; text-align: right; }
-.read.fired .v span { color: var(--color-text); font-weight: 500; }
-.nudge {
-	background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md);
-	font-size: 12.5px; color: var(--color-text-dim); display: flex; flex-direction: column; gap: var(--space-xs);
+.group-title .lucide { width: 14px; height: 14px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+.stat-cell { background: var(--color-surface-2); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); display: flex; flex-direction: column; }
+.stat-cell .k { font-size: 11px; color: var(--color-text-dim); }
+.stat-cell .v { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stat-cell .v small { font-size: 11px; color: var(--color-text-dim); font-weight: 400; }
+.stat-cell.wide { grid-column: 1 / -1; }
+.check { background: var(--color-surface-2); border-radius: var(--radius-md); padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+.check-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
+.check-name { font-size: 12px; color: var(--color-text-dim); }
+.check-state { font-size: 11px; font-weight: 600; border-radius: var(--radius-full); padding: 1px 8px; }
+.check-state.fired { color: var(--color-accent); background: var(--color-accent-soft); }
+.check-state.quiet { color: var(--color-text-dim); background: var(--color-surface-3); }
+.opt { display: grid; grid-template-columns: 1fr 40px; gap: 2px var(--space-sm); align-items: center; font-size: 13px; }
+.opt .bar { grid-column: 1 / -1; height: 4px; border-radius: var(--radius-full); background: var(--color-surface-3); overflow: hidden; }
+.opt .bar i { display: block; height: 100%; border-radius: inherit; background: var(--color-border-strong); }
+.opt.win .bar i { background: var(--color-accent); }
+.opt.win .label { font-weight: 500; }
+.opt .pct { text-align: right; font-size: 12px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; }
+.opt:not(.win) .label { color: var(--color-text-dim); }
+.nudge-text {
+	font-size: 12px; color: var(--color-text-dim); border-left: 2px solid var(--color-accent-soft-strong);
+	padding-left: var(--space-sm); line-height: 1.5;
 }
-.nudge summary { cursor: pointer; color: var(--color-text); font-weight: 500; font-size: 13px; }
-.alts { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.alt {
-	font: inherit; font-size: 12.5px; color: var(--color-text); background: var(--color-surface);
-	border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 4px 12px; cursor: pointer;
+.rerun {
+	align-self: flex-start; font-size: 12px; color: var(--color-text); background: var(--color-surface-3);
+	border: none; border-radius: var(--radius-full); padding: 4px 12px;
 }
-.alt:hover { border-color: var(--color-border-strong); }
+.quiet-list { display: flex; flex-direction: column; background: var(--color-surface-2); border-radius: var(--radius-md); }
+.quiet-list div { display: flex; justify-content: space-between; font-size: 12.5px; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); }
+.quiet-list div:first-child { border-top: none; }
+.quiet-list span:last-child { color: var(--color-text-dim); font-variant-numeric: tabular-nums; }
 
-/* ---------- D: smart chips ---------- */
-.offer-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.offer {
-	display: inline-flex; align-items: center; gap: 6px;
-	font: inherit; font-size: 12.5px; color: var(--color-text);
-	background: transparent; border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, transparent);
-	border-radius: var(--radius-full); padding: 4px 12px 4px 9px; cursor: pointer;
-}
-.offer .x { color: var(--color-text-dim); margin-left: 2px; }
-.suggestions { display: flex; flex-direction: column; }
-.suggestion {
-	font-size: 13.5px; padding: var(--space-sm) 0; border-top: 1px solid var(--color-border);
-	color: var(--color-text); display: flex; gap: var(--space-sm);
-}
-.suggestion::before { content: '↳'; color: var(--color-text-dim); }
-.offer-list { display: flex; flex-direction: column; gap: 2px; }
+/* ---------- D offers ---------- */
+.offer-lines { display: flex; flex-direction: column; border-top: 1px solid var(--color-border); }
 .offer-line {
 	display: flex; align-items: center; gap: var(--space-sm); font-size: 13px; color: var(--color-text-dim);
-	padding: 6px 0; background: none; border: none; font-family: inherit; cursor: pointer; text-align: left;
+	padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border);
 }
 .offer-line b { color: var(--color-text); font-weight: 500; }
 .offer-line .go { margin-left: auto; color: var(--color-accent); font-size: 12.5px; font-weight: 500; }
+.offer-line .lucide { width: 14px; height: 14px; }
+.suggestion-chip.offer { color: var(--color-text); display: inline-flex; align-items: center; gap: 6px; box-shadow: inset 0 0 0 1px var(--color-accent-soft-strong), var(--shadow-xs); }
+.suggestion-chip.offer .lucide { width: 13px; height: 13px; color: var(--color-accent); }
 
-/* ---------- E: composer + settings ---------- */
-.composer {
-	margin-top: auto; background: var(--color-surface-2); border-radius: var(--radius-lg);
-	padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-md);
-	display: flex; flex-direction: column; gap: var(--space-sm);
-}
-.composer .placeholder { color: var(--color-text-dim); font-size: 14.5px; padding-top: var(--space-xs); }
-.composer-bar { display: flex; align-items: center; gap: var(--space-sm); }
-.trigger {
-	display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 500;
-	color: var(--color-text); background: var(--color-surface-3); border: none;
-	border-radius: var(--radius-full); padding: 5px 12px 5px 9px;
-}
-.trigger.oracle { background: var(--color-accent-soft); }
-.trigger.manual .glyph { color: var(--color-text-dim); }
-.send {
-	margin-left: auto; width: 34px; height: 34px; border-radius: var(--radius-full); border: none;
-	background: var(--color-accent); color: var(--color-bg); display: grid; place-items: center;
-}
-.setting-row {
-	display: grid; grid-template-columns: 1fr auto; gap: var(--space-md); align-items: start;
-	padding: var(--space-md) 0; border-bottom: 1px solid var(--color-border);
-}
-.setting-row:last-child { border-bottom: none; }
-.setting-row .name { font-weight: 500; font-size: 14.5px; display: flex; align-items: center; gap: var(--space-sm); }
-.setting-row .desc { font-size: 12.5px; color: var(--color-text-dim); margin: 2px 0 0; }
-.switch {
-	width: 42px; height: 24px; border-radius: var(--radius-full); background: var(--color-accent);
-	position: relative; flex: none; margin-top: 2px;
-}
-.switch::after {
-	content: ''; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px;
-	border-radius: var(--radius-full); background: var(--color-surface);
-}
-.switch.off { background: var(--color-surface-3); }
-.switch.off::after { right: auto; left: 3px; }
-.settings-title { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); }
+/* ---------- ask_user_question card (for the clarify phase) ---------- */
+.ask-card { background: var(--color-surface-2); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); box-shadow: var(--shadow-sm); }
+.ask-card p { margin: 0; font-size: 14px; }
+.ask-opts { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.ask-opts span { font-size: 12.5px; background: var(--color-surface-3); border-radius: var(--radius-full); padding: 5px 12px; }
 
-/* ---------- F: mid-thread flip ---------- */
-.flip-chip { position: relative; }
-.flip-chip .old { text-decoration: line-through; color: var(--color-text-dim); }
-.play .flip-chip .chip { animation: glow 1.6s ease-out 0.3s 1; }
-@keyframes glow {
-	0% { box-shadow: 0 0 0 0 var(--color-accent-soft-strong); }
-	30% { box-shadow: 0 0 0 6px var(--color-accent-soft-strong); background: var(--color-accent-soft-strong); }
-	100% { box-shadow: 0 0 0 0 transparent; }
+/* ---------- icon exploration ---------- */
+.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: var(--space-md); }
+.icon-card {
+	background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+	padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm);
 }
-.flip-note { font-size: 12px; color: var(--color-text-dim); }
-.earlier { opacity: 0.55; display: flex; flex-direction: column; gap: var(--space-sm); }
+.icon-card.pick { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent-soft-strong); }
+.icon-card .hero { height: 58px; display: flex; align-items: center; gap: var(--space-md); }
+.icon-card .hero .lucide { width: 34px; height: 34px; stroke-width: 1.75; }
+.icon-card .inline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-dim); }
+.icon-card .inline .lucide { width: 14px; height: 14px; color: var(--color-accent); }
+.icon-card h4 { margin: 0; font-size: 13.5px; font-weight: 600; display: flex; gap: var(--space-sm); align-items: baseline; flex-wrap: wrap; }
+.icon-card h4 small { font-weight: 400; font-size: 11px; color: var(--color-text-dim); }
+.icon-card p { margin: 0; font-size: 12px; color: var(--color-text-dim); }
+.src { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-2); }
 
-/* ---------- decisions table ---------- */
+.ring-row { display: flex; flex-wrap: wrap; gap: var(--space-xl); align-items: flex-end; }
+.ring-sample { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); font-size: 12px; color: var(--color-text-dim); text-align: center; max-width: 150px; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+.btn {
+	font-size: 13px; font-weight: 500; color: var(--color-text); background: var(--color-surface-2);
+	border: 1px solid var(--color-border); border-radius: var(--radius-full); padding: 5px 14px; cursor: pointer;
+}
+.btn:hover { border-color: var(--color-border-strong); }
+.btn[aria-pressed='true'] { background: var(--color-accent-soft); border-color: var(--color-accent); }
+button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.phase-name { font-size: 12.5px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; }
+
 .decide {
 	background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
-	padding: var(--space-lg) var(--space-xl); display: flex; flex-direction: column; gap: var(--space-sm);
-	max-width: 72ch;
+	padding: var(--space-lg) var(--space-xl); max-width: 76ch;
 }
-.decide ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--space-sm); }
-.decide li { color: var(--color-text-dim); }
-.decide li b { color: var(--color-text); font-weight: 500; }
+.decide ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--space-sm); color: var(--color-text-dim); }
+.decide b { color: var(--color-text); font-weight: 500; }
 
 @media (prefers-reduced-motion: reduce) {
-	*, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
+	*, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 </style>
 </head>
 <body>
+<!-- Icon library. Lucide ones are copied verbatim from
+     @lucide/svelte v1.46.0 (already a web/ dependency). Custom ones are
+     drawn on the same 24px grid, 2px round stroke, so they'd sit in the
+     app next to Lucide without looking borrowed. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-	<!-- Four-point star: a custom glyph for Oracle, deliberately not the
-	     generic AI "sparkles" icon. Long vertical rays, like a diffraction
-	     spike on a star photo. -->
-	<symbol id="oracle" viewBox="0 0 24 24">
-		<path fill="currentColor" d="M12 1.5 C12.6 8.2 13.4 10.4 15 11.2 C16.4 11.8 18.6 11.9 21 12 C18.6 12.1 16.4 12.2 15 12.8 C13.4 13.6 12.6 15.8 12 22.5 C11.4 15.8 10.6 13.6 9 12.8 C7.6 12.2 5.4 12.1 3 12 C5.4 11.9 7.6 11.8 9 11.2 C10.6 10.4 11.4 8.2 12 1.5 Z" />
-	</symbol>
+	<defs>
+		<!-- custom -->
+		<symbol id="i-asterism" viewBox="0 0 24 24"><path d="M5 18 9.5 8.5 19 5M9.5 8.5 16 16.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/><circle cx="5" cy="18" r="2.1" fill="currentColor"/><circle cx="9.5" cy="8.5" r="2.4" fill="currentColor"/><circle cx="19" cy="5" r="1.8" fill="currentColor"/><circle cx="16" cy="16.5" r="2.1" fill="currentColor"/></symbol>
+		<symbol id="i-crystal" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="7.5"/><path d="M7.5 16 6 21.5h12L16.5 16"/><path d="M9 6.8a4 4 0 0 1 3-1.6"/></g></symbol>
+		<symbol id="i-seer" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/></g><path d="M12 8.2c.25 2.3.6 3.1 1.3 3.45.55.25 1.3.3 2.5.35-1.2.05-1.95.1-2.5.35-.7.35-1.05 1.15-1.3 3.45-.25-2.3-.6-3.1-1.3-3.45-.55-.25-1.3-.3-2.5-.35 1.2-.05 1.95-.1 2.5-.35.7-.35 1.05-1.15 1.3-3.45Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></symbol>
+		<symbol id="i-pole" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.5a9 9 0 0 1 17 0" opacity=".45"/><path d="M6.5 17.5a5.5 5.5 0 0 1 11 0" opacity=".7"/><path d="M12 3v4M10 5h4"/><path d="M3 21h18"/></g></symbol>
+		<!-- lucide -->
+		<symbol id="i-waypoints" viewBox="0 0 24 24"><g class="ln"><path d="m10.586 5.414-5.172 5.172"/><path d="m18.586 13.414-5.172 5.172"/><path d="M6 12h12"/><circle cx="12" cy="20" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="20" cy="12" r="2"/><circle cx="4" cy="12" r="2"/></g></symbol>
+		<symbol id="i-moon-star" viewBox="0 0 24 24"><g class="ln"><path d="M18 5h4"/><path d="M20 3v4"/><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></g></symbol>
+		<symbol id="i-radar" viewBox="0 0 24 24"><g class="ln"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></g></symbol>
+		<symbol id="i-lens" viewBox="0 0 24 24"><g class="ln"><path d="M13.433 2a1 1 0 0 1 .824.448 18 18 0 0 1 0 19.104 1 1 0 0 1-.824.448h-2.866a1 1 0 0 1-.824-.448 18 18 0 0 1 0-19.104A1 1 0 0 1 10.567 2z"/></g></symbol>
+		<symbol id="i-ophiuchus" viewBox="0 0 24 24"><g class="ln"><path d="M3 10A6.06 6.06 0 0 1 12 10 A6.06 6.06 0 0 0 21 10"/><path d="M6 3v12a6 6 0 0 0 12 0V3"/></g></symbol>
+		<symbol id="i-wand" viewBox="0 0 24 24"><g class="ln"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></g></symbol>
+		<!-- app chrome (lucide) -->
+		<symbol id="i-panel" viewBox="0 0 24 24"><g class="ln"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></g></symbol>
+		<symbol id="i-plus-circle" viewBox="0 0 24 24"><g class="ln"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h8"/><path d="M12 8v8"/></g></symbol>
+		<symbol id="i-dots" viewBox="0 0 24 24"><g class="ln"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></g></symbol>
+		<symbol id="i-search" viewBox="0 0 24 24"><g class="ln"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></g></symbol>
+		<symbol id="i-file-search" viewBox="0 0 24 24"><g class="ln"><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"/><path d="m9 18-1.5-1.5"/><circle cx="5" cy="14" r="3"/></g></symbol>
+		<symbol id="i-chev" viewBox="0 0 24 24"><g class="ln"><path d="m9 18 6-6-6-6"/></g></symbol>
+		<symbol id="i-loader" viewBox="0 0 24 24"><g class="ln"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></g></symbol>
+		<symbol id="i-info" viewBox="0 0 24 24"><g class="ln"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></g></symbol>
+		<symbol id="i-copy" viewBox="0 0 24 24"><g class="ln"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></symbol>
+		<symbol id="i-link" viewBox="0 0 24 24"><g class="ln"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></g></symbol>
+		<symbol id="i-volume" viewBox="0 0 24 24"><g class="ln"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/></g></symbol>
+		<symbol id="i-retry" viewBox="0 0 24 24"><g class="ln"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></g></symbol>
+		<symbol id="i-plus" viewBox="0 0 24 24"><g class="ln"><path d="M5 12h14"/><path d="M12 5v14"/></g></symbol>
+		<symbol id="i-mic" viewBox="0 0 24 24"><g class="ln"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></g></symbol>
+		<symbol id="i-audio" viewBox="0 0 24 24"><g class="ln"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></g></symbol>
+		<symbol id="i-send" viewBox="0 0 24 24"><g class="ln"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></g></symbol>
+		<symbol id="i-x" viewBox="0 0 24 24"><g class="ln"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g></symbol>
+		<symbol id="i-gauge" viewBox="0 0 24 24"><g class="ln"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></g></symbol>
+		<symbol id="i-sunrise" viewBox="0 0 24 24"><g class="ln"><path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></g></symbol>
+		<symbol id="i-orbit" viewBox="0 0 24 24"><g class="ln"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"/><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"/><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/></g></symbol>
+		<symbol id="i-folder" viewBox="0 0 24 24"><g class="ln"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></g></symbol>
+	</defs>
 </svg>
+<style>
+	/* <symbol> children can't inherit the .lucide class, so the Lucide-
+	   copied groups get their stroke styling here instead. */
+	symbol .ln { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
 
 <main class="page">
 	<header class="intro">
-		<span class="eyebrow">Polaris · design exploration</span>
+		<span class="eyebrow">Polaris · Oracle mode · round 2</span>
 		<h1>Oracle mode</h1>
 		<p>
-			Mockups for <code>docs/plans/oracle-mode.md</code>. Jev reads the prompt before the turn starts,
-			picks a focus mode and adds a few nudges to the system prompt. These screens explore how that
-			shows up: the moment it happens, the chip on the reply, the "why" sheet, smart chips, and the
-			composer. Tap the Replay buttons to rerun an animation.
+			Round 2 of the mockups for <code>docs/plans/oracle-mode.md</code>. The phone frames now copy the real app's
+			chrome, captured by driving a scripted turn through <code>dev/stack.sh --fake-llm</code>, so only the Oracle
+			pieces are new. It includes your round-1 picks, the icon search, and the whole flow from sending to reading
+			the info sheet.
 		</p>
+		<div class="decided">
+			<span><b>A1</b> constellation, one star per check</span>
+			<span><b>B2</b> margin note above tool calls</span>
+			<span><b>C1</b> odds, behind an ⓘ button</span>
+			<span><b>D2</b> offer lines (not sold yet)</span>
+			<span><b>F1</b> mid-thread switch</span>
+			<span>Composer: icon in a ring, no text</span>
+		</div>
 	</header>
 
-	<!-- ================= A: the moment ================= -->
+	<!-- ======================= ICON ======================= -->
 	<section>
 		<div class="section-head">
-			<span class="tag">A · The moment</span>
-			<h2>Reading the stars</h2>
+			<span class="tag">1 · Icon</span>
+			<h2>Finding Oracle's icon</h2>
 			<p>
-				What plays in the short gap between sending and the first token. Jev answers every check in one
-				request, so the choreography is a fixed ~1.5s sequence that ends early if the answer starts
-				streaming. It isn't one light per real answer.
+				Every icon here is either copied from the Lucide set the app already ships, or drawn on Lucide's grid (24px,
+				2px round stroke) so it sits next to them naturally. I skipped the icons already in use elsewhere in Polaris:
+				Telescope, Compass, Orbit, Galaxy, Sunrise, Scan Eye, Eye, Sparkles, Star, Moon, Sun Moon and Target. Each card
+				shows the icon large and at the 14px size it would have in the margin note.
 			</p>
 		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">A1</span><h3>Constellation</h3></div>
-				<div class="phone play" id="a1">
-					<div class="user-msg">Is it safe to take ibuprofen with lisinopril?</div>
-					<div class="stage">
-						<svg class="const" viewBox="0 0 132 40" aria-hidden="true">
-							<polyline class="line" points="8,26 30,12 54,20 78,8 100,24 124,16" />
-							<circle class="star" cx="8" cy="26" r="1.4" />
-							<circle class="star" cx="30" cy="12" r="1.4" />
-							<circle class="star" cx="54" cy="20" r="1.4" />
-							<circle class="star" cx="78" cy="8" r="1.4" />
-							<circle class="star" cx="100" cy="24" r="1.4" />
-							<circle class="star" cx="124" cy="16" r="1.4" />
-						</svg>
-						<button class="chip const-result" type="button"><svg class="glyph"><use href="#oracle" /></svg>Researcher <span class="sep">·</span> Medical</button>
-					</div>
-					<div class="answer reveal">
-						<p>Usually best avoided for regular use. NSAIDs like ibuprofen can blunt the blood-pressure-lowering effect of ACE inhibitors such as lisinopril <span class="cite">1</span> and, together, raise the risk of kidney injury <span class="cite">2</span>…</p>
-					</div>
-				</div>
-				<button class="replay" type="button" data-target="a1">Replay</button>
-				<p class="variant-note">One faint star per check. They brighten in turn, a thin line joins them, and the constellation folds down into the chip. The most literal take on "reading the stars", and the most motion.</p>
+		<div class="icon-grid">
+			<div class="icon-card pick">
+				<span class="src">Custom · my pick</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-asterism" /></svg><span class="ring"><svg><use href="#i-asterism" /></svg></span></div>
+				<h4>Asterism <small>constellation</small></h4>
+				<div class="inline"><svg class="lucide"><use href="#i-asterism" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>Four stars joined by lines: the constellation animation's final frame. The animation ends by folding into this icon, so the icon itself means "Oracle read this".</p>
 			</div>
-
-			<div class="variant">
-				<div class="variant-label"><span class="letter">A2</span><h3>Single star</h3></div>
-				<div class="phone play" id="a2">
-					<div class="user-msg">Is it safe to take ibuprofen with lisinopril?</div>
-					<div class="breath">
-						<div class="breath-wrap">
-							<svg class="big-glyph"><use href="#oracle" /></svg>
-							<span class="reading">Reading your question…</span>
-							<button class="chip label" type="button" style="padding-left:10px">Researcher <span class="sep">·</span> Medical</button>
-						</div>
-					</div>
-					<div class="answer reveal">
-						<p>Usually best avoided for regular use. NSAIDs like ibuprofen can blunt the blood-pressure-lowering effect of ACE inhibitors such as lisinopril <span class="cite">1</span>…</p>
-					</div>
-				</div>
-				<button class="replay" type="button" data-target="a2">Replay</button>
-				<p class="variant-note">The Oracle star breathes twice, then settles and the result slides out beside it. The quietest option and the closest to "calm over clever". The star stays in place as the chip's icon.</p>
+			<div class="icon-card">
+				<span class="src">Custom</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-crystal" /></svg><span class="ring"><svg><use href="#i-crystal" /></svg></span></div>
+				<h4>Crystal ball</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-crystal" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>The literal oracle, and the clearest at a glance. Risks feeling like fortune-telling on a tool whose whole point is sourcing.</p>
 			</div>
-
-			<div class="variant">
-				<div class="variant-label"><span class="letter">A3</span><h3>Sky dial</h3></div>
-				<div class="phone play" id="a3">
-					<div class="user-msg">Is it safe to take ibuprofen with lisinopril?</div>
-					<div class="dial-row">
-						<svg class="dial" viewBox="0 0 34 34" aria-hidden="true">
-							<circle class="tick" cx="17" cy="3" r="1.6" />
-							<circle class="tick" cx="29.1" cy="10" r="1.6" />
-							<circle class="tick" cx="29.1" cy="24" r="1.6" />
-							<circle class="tick" cx="17" cy="31" r="1.6" />
-							<circle class="tick" cx="4.9" cy="24" r="1.6" />
-							<circle class="tick" cx="4.9" cy="10" r="1.6" />
-							<use class="core" href="#oracle" x="9" y="9" width="16" height="16" />
-						</svg>
-						<button class="chip label" type="button">Researcher <span class="sep">·</span> Medical</button>
-					</div>
-					<div class="answer reveal">
-						<p>Usually best avoided for regular use. NSAIDs like ibuprofen can blunt the blood-pressure-lowering effect of ACE inhibitors such as lisinopril <span class="cite">1</span>…</p>
-					</div>
-				</div>
-				<button class="replay" type="button" data-target="a3">Replay</button>
-				<p class="variant-note">Six points around the star light clockwise, one per check, like a sextant sighting. More structured than A1 and more legible as "it checked six things", but it reads slightly more like a loading spinner.</p>
+			<div class="icon-card">
+				<span class="src">Custom</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-seer" /></svg><span class="ring"><svg><use href="#i-seer" /></svg></span></div>
+				<h4>Seer's eye <small>eye with a star pupil</small></h4>
+				<div class="inline"><svg class="lucide"><use href="#i-seer" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>"Sees what you meant." Distinct from Scan Eye, but still an eye, and the star pupil gets muddy at 14px.</p>
 			</div>
-		</div>
-	</section>
-
-	<!-- ================= B: the chip ================= -->
-	<section>
-		<div class="section-head">
-			<span class="tag">B · The result</span>
-			<h2>How the decision sits on the reply</h2>
-			<p>Each variant shows two states: something fired, and nothing fired. The plan leaves open whether a quiet turn shows a bare glyph or nothing at all.</p>
-		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">B1</span><h3>Pill chip</h3></div>
-				<div class="phone">
-					<div class="pair">
-						<span class="state-caption">Nudges fired</span>
-						<button class="chip open-sheet" type="button"><svg class="glyph"><use href="#oracle" /></svg>Researcher <span class="sep">·</span> Medical</button>
-						<div class="skeleton w90"></div><div class="skeleton w60"></div>
-					</div>
-					<div class="divider"></div>
-					<div class="pair">
-						<span class="state-caption">Nothing fired</span>
-						<button class="chip bare open-sheet" type="button" aria-label="Oracle: no changes"><svg class="glyph"><use href="#oracle" /></svg></button>
-						<div class="skeleton w80"></div><div class="skeleton w60"></div>
-					</div>
-				</div>
-				<p class="variant-note">Filled, tappable, sits above the answer. Clear and obviously interactive. When nothing fires, a dim bare star confirms Oracle ran.</p>
+			<div class="icon-card">
+				<span class="src">Custom</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-pole" /></svg><span class="ring"><svg><use href="#i-pole" /></svg></span></div>
+				<h4>Pole star <small>star over star trails</small></h4>
+				<div class="inline"><svg class="lucide"><use href="#i-pole" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>A fixed star with the sky turning around it, like a long-exposure photo. Very Polaris, less obviously "Oracle".</p>
 			</div>
-
-			<div class="variant">
-				<div class="variant-label"><span class="letter">B2</span><h3>Margin note</h3></div>
-				<div class="phone">
-					<div class="pair">
-						<span class="state-caption">Nudges fired</span>
-						<button class="margin-note open-sheet" type="button"><svg class="glyph"><use href="#oracle" /></svg>Read as <b>medical</b>, answered in <b>Researcher</b></button>
-						<div class="skeleton w90"></div><div class="skeleton w60"></div>
-					</div>
-					<div class="divider"></div>
-					<div class="pair">
-						<span class="state-caption">Nothing fired</span>
-						<div class="skeleton w80"></div><div class="skeleton w60"></div>
-					</div>
-				</div>
-				<p class="variant-note">No container, just a line of dim text like an editor's note. Most "reading-first". A quiet turn shows nothing. Easier to overlook that it's tappable.</p>
+			<div class="icon-card">
+				<span class="src">Lucide · waypoints</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-waypoints" /></svg><span class="ring"><svg><use href="#i-waypoints" /></svg></span></div>
+				<h4>Waypoints</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-waypoints" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>The closest stock icon to a constellation, but it's too symmetrical. It reads as a network diagram rather than stars.</p>
 			</div>
-
-			<div class="variant">
-				<div class="variant-label"><span class="letter">B3</span><h3>Corner star</h3></div>
-				<div class="phone">
-					<button class="corner-glyph open-sheet" type="button" aria-label="Why Oracle chose this"><svg class="glyph"><use href="#oracle" /></svg></button>
-					<div class="pair" style="padding-right:36px">
-						<span class="state-caption">Nudges fired</span>
-						<div class="skeleton w90"></div><div class="skeleton w80"></div><div class="skeleton w60"></div>
-					</div>
-				</div>
-				<p class="variant-note">Only a star in the reply's corner; everything else lives in the sheet. The calmest option, but you can't see what Oracle decided without tapping, which weakens "sourcing is the product".</p>
+			<div class="icon-card">
+				<span class="src">Lucide · moon-star</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-moon-star" /></svg><span class="ring"><svg><use href="#i-moon-star" /></svg></span></div>
+				<h4>Moon star</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-moon-star" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>Night-sky and mystical. It's a near neighbour of the Moon icon already used for dark mode.</p>
+			</div>
+			<div class="icon-card">
+				<span class="src">Lucide · radar</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-radar" /></svg><span class="ring"><svg><use href="#i-radar" /></svg></span></div>
+				<h4>Radar</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-radar" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>Accurate ("sweeps your message first") but reads as a tech tool, which is exactly what the brand avoids.</p>
+			</div>
+			<div class="icon-card">
+				<span class="src">Lucide · zodiac-ophiuchus</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-ophiuchus" /></svg><span class="ring"><svg><use href="#i-ophiuchus" /></svg></span></div>
+				<h4>Ophiuchus <small>the 13th sign</small></h4>
+				<div class="inline"><svg class="lucide"><use href="#i-ophiuchus" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>A deep cut: the serpent-bearer, the constellation of healers. Distinctive, but nobody will read it as Oracle without being told.</p>
+			</div>
+			<div class="icon-card">
+				<span class="src">Lucide · lens-convex</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-lens" /></svg><span class="ring"><svg><use href="#i-lens" /></svg></span></div>
+				<h4>Convex lens</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-lens" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>"Brings your question into focus." Elegant in the ring, but meaningless on its own at 14px.</p>
+			</div>
+			<div class="icon-card">
+				<span class="src">Lucide · wand</span>
+				<div class="hero"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-wand" /></svg><span class="ring"><svg><use href="#i-wand" /></svg></span></div>
+				<h4>Wand</h4>
+				<div class="inline"><svg class="lucide"><use href="#i-wand" /></svg>Read as <b style="color:var(--color-text);font-weight:500">medical</b></div>
+				<p>Magic, but it's the generic "AI magic" signal that the Sparkles-style icons have worn out.</p>
 			</div>
 		</div>
 	</section>
 
-	<!-- ================= C: why sheet ================= -->
+	<!-- ======================= COMPOSER RING ======================= -->
 	<section>
 		<div class="section-head">
-			<span class="tag">C · Why</span>
-			<h2>The why sheet</h2>
-			<p>Opens from the chip. Shows every check's pick and Jev's probability, the nudge text the model actually received, and one-tap reruns with a different choice.</p>
+			<span class="tag">2 · Composer</span>
+			<h2>The icon in its ring</h2>
+			<p>
+				It replaces the text badge inside the <b>More</b> button. Oracle uses no label, so it stays compact. The ring
+				is the full hue wheel at one lightness, so it reads as starlight through a prism rather than RGB neon. It
+				turns slowly while Jev reads.
+			</p>
 		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">C1</span><h3>Every check, with odds</h3></div>
-				<div class="phone sheet-host">
-					<div class="behind">
-						<div class="user-msg">Is it safe to take ibuprofen with lisinopril?</div>
-						<div class="skeleton w90"></div><div class="skeleton w80"></div>
-					</div>
-					<div class="sheet" role="dialog" aria-label="Why Oracle chose this">
-						<div class="grabber"></div>
-						<div class="sheet-title"><svg class="glyph"><use href="#oracle" /></svg>How Oracle read this</div>
-						<p class="sheet-sub">Picks shown in gold changed this answer.</p>
-						<div class="reads">
-							<div class="read fired"><span class="k">Focus</span><span class="v"><span>Researcher</span><span class="bar"><i style="width:82%"></i></span></span><span class="pct">82%</span></div>
-							<div class="read fired"><span class="k">High stakes</span><span class="v"><span>Medical</span><span class="bar"><i style="width:91%"></i></span></span><span class="pct">91%</span></div>
-							<div class="read quiet"><span class="k">Research</span><span class="v"><span>Needed</span><span class="bar"><i style="width:97%"></i></span></span><span class="pct">97%</span></div>
-							<div class="read quiet"><span class="k">Topic</span><span class="v"><span>General</span><span class="bar"><i style="width:74%"></i></span></span><span class="pct">74%</span></div>
-							<div class="read quiet"><span class="k">Clarify</span><span class="v"><span>Not needed</span><span class="bar"><i style="width:88%"></i></span></span><span class="pct">88%</span></div>
-							<div class="read quiet"><span class="k">Past chats</span><span class="v"><span>No reference</span><span class="bar"><i style="width:99%"></i></span></span><span class="pct">99%</span></div>
-						</div>
-						<details class="nudge">
-							<summary>Medical sourcing nudge</summary>
-							This looks like a medical question. Prefer primary clinical sources (government health agencies, peer-reviewed research, professional society guidance, drug labels) over health blogs or forums…
-						</details>
-						<div class="alts">
-							<button class="alt" type="button">Rerun as Academic</button>
-							<button class="alt" type="button">Rerun as Brief</button>
-							<button class="alt" type="button">Rerun without Oracle</button>
-						</div>
-					</div>
-				</div>
-				<p class="variant-note">Gold rows changed the turn; dim rows ran but did nothing. The rerun buttons are the top runner-ups plus "without Oracle". It's all on one screen, which makes it good for tuning thresholds too.</p>
-			</div>
+		<div class="ring-row">
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring"><svg><use href="#i-asterism" /></svg></span></span>Prism ring (recommended)</div>
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring soft"><svg><use href="#i-asterism" /></svg></span></span>Softer ring, half the saturation</div>
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring halo"><svg><use href="#i-asterism" /></svg></span></span>Prism ring plus a faint halo</div>
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring reading"><svg><use href="#i-asterism" /></svg></span></span>While reading (ring turns)</div>
+			<div class="ring-sample"><span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="trigger-badge">Academic</span></span>Your manual pick for this message: today's badge; the ring returns next message</div>
+		</div>
+	</section>
 
-			<div class="variant">
-				<div class="variant-label"><span class="letter">C2</span><h3>Plain sentences</h3></div>
-				<div class="phone sheet-host">
-					<div class="behind">
-						<div class="user-msg">Is it safe to take ibuprofen with lisinopril?</div>
-						<div class="skeleton w90"></div><div class="skeleton w80"></div>
-					</div>
-					<div class="sheet" role="dialog" aria-label="Why Oracle chose this">
-						<div class="grabber"></div>
-						<div class="sheet-title"><svg class="glyph"><use href="#oracle" /></svg>How Oracle read this</div>
-						<div class="reads" style="gap:var(--space-md)">
-							<p class="sheet-sub" style="color:var(--color-text);font-size:13.5px">This looked like a <b>medical question</b> (91% sure), so Polaris was asked to prefer clinical sources and be exact about dosages.</p>
-							<p class="sheet-sub" style="color:var(--color-text);font-size:13.5px">It answered in <b>Researcher</b> mode (82%). Next closest was Academic (11%).</p>
-							<p class="sheet-sub">Research on, no clarifying question, no past chat referenced.</p>
+	<!-- ======================= LIVE FLOW ======================= -->
+	<section>
+		<div class="section-head">
+			<span class="tag">3 · The whole turn</span>
+			<h2>Playing it through</h2>
+			<p>
+				A full turn, timed roughly like a real one. The constellation gets one star per enabled check, lit in order.
+				Change the count to see it scale. It folds into the margin note just as the first tool call arrives.
+			</p>
+		</div>
+		<div class="frames">
+			<div class="frame">
+				<div class="controls">
+					<button class="btn" type="button" id="play">Play turn</button>
+					<span class="phase-name" id="phase">Sent</span>
+				</div>
+				<div class="controls">
+					<span class="phase-name">Checks:</span>
+					<button class="btn" type="button" data-n="4">4</button>
+					<button class="btn" type="button" data-n="6" aria-pressed="true">6</button>
+					<button class="btn" type="button" data-n="9">9</button>
+					<button class="btn" type="button" data-n="12">12</button>
+				</div>
+				<div class="phone" id="live">
+					<div class="app-header"><svg class="lucide"><use href="#i-panel" /></svg><span class="title">Ibuprofen with lisinopril</span><svg class="lucide"><use href="#i-plus-circle" /></svg><svg class="lucide"><use href="#i-dots" /></svg></div>
+					<div class="timeline">
+						<div class="bubble-user">Is it safe to take ibuprofen with lisinopril?</div>
+						<div class="stage" id="live-stage">
+							<svg class="const" id="live-const" viewBox="0 0 220 34" aria-hidden="true"></svg>
+							<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>medical</b> · answered as <b>Researcher</b></button>
 						</div>
-						<div class="alts">
-							<button class="alt" type="button">Rerun as Academic</button>
-							<button class="alt" type="button">Rerun without Oracle</button>
+						<div class="tools" id="live-tools"></div>
+						<div class="prose" id="live-prose"></div>
+						<div id="live-after"></div>
+					</div>
+					<div class="composer">
+						<div class="composer-box">Ask Polaris…</div>
+						<div class="toolbar">
+							<span class="trigger"><svg class="lucide"><use href="#i-plus" /></svg><span class="trigger-label">More</span><span class="ring" id="live-ring"><svg><use href="#i-asterism" /></svg></span></span>
+							<span class="spacer"></span>
+							<span class="plain"><svg class="lucide"><use href="#i-audio" /></svg></span>
+							<span class="plain"><svg class="lucide"><use href="#i-mic" /></svg></span>
+							<span class="send stop" id="live-send"><i></i></span>
 						</div>
 					</div>
 				</div>
-				<p class="variant-note">The same data written as prose, generated from templates rather than an LLM. Warmer and quicker to read, but harder to compare turns side by side, and the raw nudge text is hidden.</p>
+			</div>
+			<div class="frame" style="align-self:center">
+				<ol class="note" style="display:flex;flex-direction:column;gap:var(--space-sm);padding-left:1.2em;margin:0">
+					<li><b>Sent.</b> The ring in the composer starts turning. The stop button replaces send, as it does today.</li>
+					<li><b>Reading.</b> Faint stars appear under your message and light up one per check, and a line joins them. In reality Jev answers all checks in one request, so this is a fixed ~1s sequence that ends early if the first tool call arrives first.</li>
+					<li><b>Resolved.</b> The constellation shrinks into the icon's position and the note fades in beside it. Same place, same moment.</li>
+					<li><b>Researching.</b> Tool calls stream in underneath, unchanged from today.</li>
+					<li><b>Answering.</b> Prose streams as normal. Nothing about Oracle moves at this point.</li>
+					<li><b>Done.</b> The footer gets a new ⓘ button that opens the info sheet. Offer lines and follow-up suggestions appear last.</li>
+				</ol>
 			</div>
 		</div>
 	</section>
 
-	<!-- ================= D: smart chips ================= -->
+	<!-- ======================= INFO SHEET ======================= -->
 	<section>
 		<div class="section-head">
-			<span class="tag">D · Offers</span>
-			<h2>Smart chips</h2>
-			<p>These come from the same Jev call, so they're ready before the LLM-generated follow-ups. They're offers only, and dismissing one hides it for the rest of the thread.</p>
+			<span class="tag">4 · The ⓘ sheet</span>
+			<h2>Turn info, with a section per check</h2>
+			<p>
+				Opened from the new ⓘ in the turn footer, like Settings' usage stats. The top shows the answer's own numbers.
+				Below that, each Oracle check that changed something gets its own card with the runner-up odds and the exact
+				nudge text. Checks that ran but changed nothing are collapsed into one list.
+			</p>
 		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">D1</span><h3>Dashed pills above follow-ups</h3></div>
+		<div class="frames">
+			<div class="frame">
+				<div class="frame-label"><span class="num">4a</span><h3>Where the button lives</h3></div>
+				<div class="phone short">
+					<div class="timeline">
+						<div class="prose"><p>Worth checking with your pharmacist if you need it for more than a few days.</p></div>
+						<div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div>
+						<div class="turn-footer">
+							<span class="stat">$0.00410</span><span class="stat">8.2s</span>
+							<button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button>
+							<button class="icon-btn" type="button" aria-label="Link"><svg class="lucide"><use href="#i-link" /></svg></button>
+							<button class="icon-btn" type="button" aria-label="Read aloud"><svg class="lucide"><use href="#i-volume" /></svg></button>
+							<button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button>
+							<button class="icon-btn new" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button>
+						</div>
+					</div>
+				</div>
+				<p class="note">The ⓘ goes at the end of the existing footer row (highlighted here only to point it out). It appears on every turn, even with Oracle off, since the answer's stats are useful anyway.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">4b</span><h3>The sheet</h3></div>
 				<div class="phone">
-					<div class="user-msg">What's the current price of a Steam Deck OLED?</div>
-					<div class="skeleton w90"></div><div class="skeleton w60"></div>
-					<div class="offer-row">
-						<button class="offer" type="button"><svg class="glyph"><use href="#oracle" /></svg>Track this as a Pulsar<span class="x" aria-label="Dismiss">×</span></button>
-						<button class="offer" type="button"><svg class="glyph"><use href="#oracle" /></svg>Move to Gaming setup<span class="x" aria-label="Dismiss">×</span></button>
+					<div class="timeline" style="opacity:.6">
+						<div class="bubble-user">Is it safe to take ibuprofen with lisinopril?</div>
+					</div>
+					<div class="sheet-scrim"></div>
+					<div class="sheet" role="dialog" aria-label="Turn info">
+						<div class="sheet-top">
+							<div class="grabber"></div>
+							<div class="sheet-head"><h4>This answer</h4><svg class="lucide"><use href="#i-x" /></svg></div>
+						</div>
+						<div class="sheet-body">
+							<div class="stats">
+								<div class="stat-cell wide"><span class="k">Model</span><span class="v">DeepSeek V4.1 Flash</span></div>
+								<div class="stat-cell"><span class="k">First token</span><span class="v">1.4<small>s</small></span></div>
+								<div class="stat-cell"><span class="k">Speed</span><span class="v">62<small> tok/s</small></span></div>
+								<div class="stat-cell"><span class="k">Tokens</span><span class="v">3,210<small> in</small> · 412<small> out</small></span></div>
+								<div class="stat-cell"><span class="k">Cost</span><span class="v">$0.0041<small> + Oracle $0.00002</small></span></div>
+								<div class="stat-cell"><span class="k">Total time</span><span class="v">8.2<small>s</small></span></div>
+								<div class="stat-cell"><span class="k">Tool calls</span><span class="v">2</span></div>
+							</div>
+
+							<div class="group-title"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Oracle · read in 0.31s</div>
+
+							<div class="check">
+								<div class="check-head"><span class="check-name">High stakes</span><span class="check-state fired">Nudged</span></div>
+								<div class="opt win"><span class="label">Medical</span><span class="pct">91%</span><span class="bar"><i style="width:91%"></i></span></div>
+								<div class="opt"><span class="label">None</span><span class="pct">6%</span><span class="bar"><i style="width:6%"></i></span></div>
+								<div class="nudge-text">This looks like a medical question. Prefer primary clinical sources (government health agencies, peer-reviewed research, drug labels) over health blogs or forums…</div>
+							</div>
+
+							<div class="check">
+								<div class="check-head"><span class="check-name">Focus</span><span class="check-state fired">Set</span></div>
+								<div class="opt win"><span class="label">Researcher</span><span class="pct">82%</span><span class="bar"><i style="width:82%"></i></span></div>
+								<div class="opt"><span class="label">Academic</span><span class="pct">11%</span><span class="bar"><i style="width:11%"></i></span></div>
+								<div class="opt"><span class="label">Off</span><span class="pct">5%</span><span class="bar"><i style="width:5%"></i></span></div>
+								<button class="rerun" type="button">Rerun as Academic</button>
+							</div>
+
+							<div class="quiet-list">
+								<div><span>Research</span><span>Needed · 97%</span></div>
+								<div><span>Topic</span><span>General · 74%</span></div>
+								<div><span>Clarify first</span><span>No · 88%</span></div>
+								<div><span>Past chats</span><span>No · 99%</span></div>
+								<div><span>Offers</span><span>None</span></div>
+							</div>
+							<button class="rerun" type="button">Rerun without Oracle</button>
+						</div>
+					</div>
+				</div>
+				<p class="note">Numbers are illustrative. Model, tokens and cost come back from OpenRouter today. First-token time and speed would be timed by Polaris (to confirm while building). "Oracle read in 0.31s" is the Jev call's own latency, which is worth seeing while it's new.</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= STATES ======================= -->
+	<section>
+		<div class="section-head">
+			<span class="tag">5 · Other phases</span>
+			<h2>What the note says in each situation</h2>
+			<p>The margin note carries only what changed. Here's every case the plan covers.</p>
+		</div>
+		<div class="frames">
+			<div class="frame">
+				<div class="frame-label"><span class="num">5a</span><h3>Nudge only, focus left off</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Ramen places open after 11 near me?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>a place</b></button>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Nearby: ramen, open late</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+				<p class="note">The topic nudge fired (so it used <b>nearby_search</b>), but no focus mode fit. The note names only the read.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">5b</span><h3>Nothing fired</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Can you tighten up this paragraph for me?</div>
+					<div class="prose"><p style="color:var(--color-text-dim);font-size:14px">Here's a tighter version…</p></div>
+				</div></div>
+				<p class="note">No note at all. Oracle ran (the ⓘ sheet still shows every check), but nothing it did needs announcing.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">5c</span><h3>Clarify first</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">What's the best Mercury setup?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg><b>Ambiguous</b> · asking first</button>
+					<div class="ask-card">
+						<p>Which Mercury do you mean?</p>
+						<div class="ask-opts"><span>The planet (observing)</span><span>Mercury outboard motor</span><span>Mercury DAW plugin</span></div>
+					</div>
+				</div></div>
+				<p class="note">The clarify nudge fired on the first message, so the model uses its existing <b>ask_user_question</b> card before searching.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">5d</span><h3>You picked the mode</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Evidence on intermittent fasting and longevity?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>medical</b> · kept your <b>Academic</b></button>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Searching: intermittent fasting longevity RCT</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+				<p class="note">Your manual pick wins. Oracle still adds its nudges and says it left your choice alone.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">5e</span><h3>Recall</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Remember that espresso machine we looked at? Is it on sale yet?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Refers to <b>a past chat</b></button>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Searching chats: espresso machine</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+				<p class="note">A cheap text-cue check that nudges toward <b>search_chats</b>.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">5f</span><h3>Oracle unavailable</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">What's the tallest building in Oslo?</div>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Searching: tallest building Oslo</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+				<p class="note">Jev timed out or the monthly cap was hit: the turn runs as if Oracle were off. No note, and the ⓘ sheet says "Oracle didn't answer this time" in place of the checks.</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= F1 ======================= -->
+	<section>
+		<div class="section-head">
+			<span class="tag">6 · Changing course</span>
+			<h2>Mid-thread switch, in margin-note form</h2>
+			<p>F1 carried over to the B2 style. The old mode is struck through and the note glows once. Tap the note to undo it for this message.</p>
+		</div>
+		<div class="frames">
+			<div class="frame">
+				<div class="controls"><button class="btn" type="button" id="flip-play">Replay</button></div>
+				<div class="phone short" id="flip"><div class="timeline">
+					<div class="dim-turn">
+						<div class="bubble-user">Best budget espresso machine under $300?</div>
+						<span class="oracle-note"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>Shopper</b></span>
+					</div>
+					<div class="bubble-user">Why does pressure matter so much for extraction?</div>
+					<button class="oracle-note" type="button" id="flip-note"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Switched <b class="old">Shopper</b> → <b>First Principles</b></button>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Searching: espresso extraction pressure 9 bar</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= OFFERS ======================= -->
+	<section>
+		<div class="section-head">
+			<span class="tag">7 · Offers</span>
+			<h2>Two more tries at the offers</h2>
+			<p>You weren't sold on D2, so here it is with the real footer and suggestion chips around it, plus a variant that merges offers into the suggestion row.</p>
+		</div>
+		<div class="frames">
+			<div class="frame">
+				<div class="frame-label"><span class="num">7a</span><h3>D2 in context</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="prose"><p style="font-size:14px">No firm date yet. NASA's latest update lists it as "no earlier than mid-2027"<span class="cchip">nasa.gov</span>.</p></div>
+					<div class="turn-footer"><span class="stat">$0.00352</span><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
+					<div class="offer-lines">
+						<div class="offer-line"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-sunrise" /></svg><span>Follow this in <b>Daily</b></span><span class="go">Add</span></div>
+						<div class="offer-line"><svg class="lucide" style="color:var(--color-accent)"><use href="#i-orbit" /></svg><span>Check weekly as a <b>Pulsar</b></span><span class="go">Set up</span></div>
 					</div>
 					<div class="suggestions">
-						<div class="suggestion">How does it compare to the LCD model?</div>
-						<div class="suggestion">Is a refurbished one worth it?</div>
+						<button class="suggestion-chip" type="button">What caused the last delay?</button>
+						<button class="suggestion-chip" type="button">Who's on the crew?</button>
 					</div>
-				</div>
-				<p class="variant-note">A dashed outline marks these as offers, not actions or answers. The pills wrap on narrow screens.</p>
+				</div></div>
+				<p class="note">Each offer uses the icon of the place it leads to (Sunrise for Daily, Orbit for Pulsar), which should tell you where it goes faster than words.</p>
 			</div>
 
-			<div class="variant">
-				<div class="variant-label"><span class="letter">D2</span><h3>Quiet lines</h3></div>
-				<div class="phone">
-					<div class="user-msg">Any news on the Artemis III launch date?</div>
-					<div class="skeleton w90"></div><div class="skeleton w60"></div>
-					<div class="offer-list">
-						<button class="offer-line" type="button"><svg class="glyph"><use href="#oracle" /></svg><span>Follow this in <b>Daily</b></span><span class="go">Add</span></button>
-						<button class="offer-line" type="button"><svg class="glyph"><use href="#oracle" /></svg><span>Check weekly as a <b>Pulsar</b></span><span class="go">Set up</span></button>
-					</div>
+			<div class="frame">
+				<div class="frame-label"><span class="num">7b</span><h3>Offers as the first suggestions</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="prose"><p style="font-size:14px">No firm date yet. NASA's latest update lists it as "no earlier than mid-2027"<span class="cchip">nasa.gov</span>.</p></div>
+					<div class="turn-footer"><span class="stat">$0.00352</span><span class="stat">6.1s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
 					<div class="suggestions">
-						<div class="suggestion">What caused the last delay?</div>
-						<div class="suggestion">Who's on the crew?</div>
+						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-sunrise" /></svg>Follow in Daily</button>
+						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-orbit" /></svg>Track as a Pulsar</button>
+						<button class="suggestion-chip" type="button">What caused the last delay?</button>
+						<button class="suggestion-chip" type="button">Who's on the crew?</button>
 					</div>
-				</div>
-				<p class="variant-note">Full-width lines with the verb on the right. More room to say what will happen. It sits more calmly next to the follow-up list, but takes more vertical space.</p>
+				</div></div>
+				<p class="note">One row instead of two sections. Offers show up first (Jev is faster than the suggestion LLM), then the question chips fill in after them. A thin gold outline and the destination icon set them apart.</p>
+			</div>
+
+			<div class="frame">
+				<div class="frame-label"><span class="num">7c</span><h3>Move to a project</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="prose"><p style="font-size:14px">The OLED model is $549 at Steam right now<span class="cchip">steampowered.com</span>, unchanged since launch.</p></div>
+					<div class="suggestions">
+						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-folder" /></svg>Move to Gaming setup</button>
+						<button class="suggestion-chip offer" type="button"><svg class="lucide"><use href="#i-orbit" /></svg>Track price</button>
+						<button class="suggestion-chip" type="button">Is refurbished worth it?</button>
+					</div>
+				</div></div>
+				<p class="note">The project offer, in 7b's style. It only appears when the thread isn't already in a project.</p>
 			</div>
 		</div>
 	</section>
 
-	<!-- ================= E: composer + settings ================= -->
-	<section>
-		<div class="section-head">
-			<span class="tag">E · Controls</span>
-			<h2>Composer and settings</h2>
-			<p>When Oracle is on, the composer's "More" trigger says so. Picking a mode by hand for one message overrides Oracle for that message only.</p>
-		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">E1</span><h3>Composer states</h3></div>
-				<div class="phone">
-					<span class="state-caption">Oracle deciding</span>
-					<div class="composer">
-						<span class="placeholder">Ask anything…</span>
-						<div class="composer-bar">
-							<span class="trigger oracle"><svg class="glyph"><use href="#oracle" /></svg>Oracle</span>
-							<span class="send" aria-hidden="true">↑</span>
-						</div>
-					</div>
-					<span class="state-caption">Manual pick for this message</span>
-					<div class="composer">
-						<span class="placeholder">Ask anything…</span>
-						<div class="composer-bar">
-							<span class="trigger manual"><svg class="glyph"><use href="#oracle" /></svg>Academic</span>
-							<span class="send" aria-hidden="true">↑</span>
-						</div>
-					</div>
-				</div>
-				<p class="variant-note">The star stays in the trigger even on a manual pick, dimmed, as a reminder that Oracle is back in charge next message.</p>
-			</div>
-
-			<div class="variant">
-				<div class="variant-label"><span class="letter">E2</span><h3>Settings</h3></div>
-				<div class="phone">
-					<span class="settings-title">Assistant</span>
-					<div>
-						<div class="setting-row">
-							<div>
-								<div class="name"><svg class="glyph"><use href="#oracle" /></svg>Oracle mode</div>
-								<p class="desc">Read each message first and choose a focus mode, research, and sourcing guidance for you. Your manual picks always win.</p>
-							</div>
-							<span class="switch" role="img" aria-label="On"></span>
-						</div>
-						<div class="setting-row">
-							<div>
-								<div class="name">Smart suggestions</div>
-								<p class="desc">Offer to track a topic as a Pulsar, add it to Daily, or move the chat to a project.</p>
-							</div>
-							<span class="switch" role="img" aria-label="On"></span>
-						</div>
-						<div class="setting-row">
-							<div>
-								<div class="name">Default focus mode</div>
-								<p class="desc">Used when Oracle is off, or when it isn't confident.</p>
-							</div>
-							<span class="switch off" role="img" aria-label="Off"></span>
-						</div>
-					</div>
-				</div>
-				<p class="variant-note">Smart suggestions get their own switch, so you can keep Oracle's steering without the offers or the other way round. Both rely on the same single Jev call.</p>
-			</div>
-		</div>
-	</section>
-
-	<!-- ================= F: mid-thread flip ================= -->
-	<section>
-		<div class="section-head">
-			<span class="tag">F · Changes</span>
-			<h2>When Oracle changes course mid-thread</h2>
-			<p>A focus-mode change partway through a thread needs higher confidence than the first pick, and it's never silent.</p>
-		</div>
-		<div class="variants">
-			<div class="variant">
-				<div class="variant-label"><span class="letter">F1</span><h3>Glow and strikethrough</h3></div>
-				<div class="phone play" id="f1">
-					<div class="earlier">
-						<div class="user-msg">Best budget espresso machine under $300?</div>
-						<button class="chip" type="button"><svg class="glyph"><use href="#oracle" /></svg>Shopper</button>
-						<div class="skeleton w80"></div>
-					</div>
-					<div class="user-msg">Why does pressure matter so much for extraction?</div>
-					<div class="flip-chip pair">
-						<button class="chip" type="button"><svg class="glyph"><use href="#oracle" /></svg><span class="old">Shopper</span> → First Principles</button>
-						<span class="flip-note">Switched for this question. Tap to undo.</span>
-					</div>
-					<div class="skeleton w90"></div><div class="skeleton w60"></div>
-				</div>
-				<button class="replay" type="button" data-target="f1">Replay</button>
-				<p class="variant-note">The chip pulses once and briefly shows the old mode crossed out. After this turn it just reads "First Principles" like any other chip.</p>
-			</div>
-		</div>
-	</section>
-
-	<!-- ================= decisions ================= -->
 	<section>
 		<div class="section-head">
 			<span class="tag">Your call</span>
-			<h2>What to pick</h2>
+			<h2>Open questions for round 3</h2>
 		</div>
 		<div class="decide">
 			<ol>
-				<li><b>The moment:</b> A1 constellation, A2 single star, or A3 sky dial? My pick is A2. It's the calmest, and the star it leaves behind becomes the chip's icon, so nothing disappears.</li>
-				<li><b>The result:</b> B1 pill, B2 margin note, or B3 corner star? My pick is B1, with the dim bare star on quiet turns so you can always tell Oracle ran.</li>
-				<li><b>Why sheet:</b> C1 odds or C2 sentences? C1 is better for tuning; C2 is friendlier. It could be C2 with C1's rows behind a "Details" toggle.</li>
-				<li><b>Offers:</b> D1 pills or D2 lines?</li>
-				<li><b>The glyph itself:</b> does a long-rayed four-point star work, or should it be something else, like Polaris's own star mark or a small eye?</li>
+				<li><b>Icon:</b> Asterism, crystal ball, seer's eye, pole star, or keep searching? My pick is Asterism, because the animation ends on it.</li>
+				<li><b>Ring:</b> prism, soft, or halo? And should it turn while reading, or is the constellation under your message enough motion?</li>
+				<li><b>Info sheet:</b> does "a card per check that changed something, plus one collapsed list" feel right? Should the stats sit above or below Oracle?</li>
+				<li><b>Offers:</b> 7a (separate lines) or 7b (merged into the suggestion row)? I lean 7b now that I've seen it next to the real suggestion chips.</li>
+				<li><b>Note wording:</b> "Read as medical · answered as Researcher" is the long form. Too wordy, or just right?</li>
 			</ol>
 		</div>
 	</section>
 </main>
 
 <script>
-	// Replay: remove .play, force a reflow, add it back, so the CSS
-	// animations restart from their first frame.
-	document.querySelectorAll('.replay').forEach((btn) => {
-		btn.addEventListener('click', () => {
-			const el = document.getElementById(btn.dataset.target);
-			if (!el) return;
-			el.classList.remove('play');
-			void el.offsetWidth;
-			el.classList.add('play');
+(() => {
+	const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	// ----- constellation: N stars, deterministic zig-zag so it looks like
+	// a real asterism rather than a chart line. -----
+	let starCount = 6;
+	function buildConstellation(svg, n) {
+		const w = 220, h = 34;
+		const xs = Array.from({ length: n }, (_, i) => 8 + (i * (w - 16)) / Math.max(1, n - 1));
+		// pseudo-random but stable heights
+		const ys = xs.map((_, i) => 6 + ((Math.sin(i * 2.3 + 0.7) + 1) / 2) * (h - 12));
+		let html = `<polyline class="line" points="${xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')}" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" />`;
+		xs.forEach((x, i) => {
+			html += `<circle class="star" cx="${x.toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${i % 3 === 1 ? 2.2 : 1.7}" />`;
 		});
-	});
+		svg.innerHTML = html;
+	}
+
+	const $ = (id) => document.getElementById(id);
+	const stage = $('live-stage'), cst = $('live-const'), tools = $('live-tools'), prose = $('live-prose'),
+		after = $('live-after'), ring = $('live-ring'), send = $('live-send'), phase = $('phase');
+	let timers = [];
+	const at = (ms, fn) => timers.push(setTimeout(fn, reduce ? 0 : ms));
+
+	const toolRow = (icon, text, loading) => `<div class="tool"><svg class="lucide${icon === 'i-search' ? '' : ''}"><use href="#${icon}" /></svg><span>${text}</span><svg class="lucide${loading ? ' spin' : ''}"><use href="#${loading ? 'i-loader' : 'i-chev'}" /></svg></div>`;
+	const answer = [
+		'Usually best avoided for regular use. NSAIDs like ibuprofen can blunt the blood-pressure-lowering effect of ACE inhibitors such as lisinopril',
+		'<span class="cchip">nhs.uk</span>, and taking the two together raises the risk of kidney injury, especially alongside a diuretic',
+		'<span class="cchip">drugs.com</span>.'
+	];
+
+	function reset() {
+		timers.forEach(clearTimeout); timers = [];
+		buildConstellation(cst, starCount);
+		stage.classList.remove('done', 'static');
+		stage.style.visibility = 'hidden';
+		tools.innerHTML = ''; prose.innerHTML = ''; after.innerHTML = '';
+		ring.classList.remove('reading');
+		send.className = 'send stop'; send.innerHTML = '<i></i>';
+	}
+
+	function play() {
+		reset();
+		phase.textContent = 'Sent';
+		ring.classList.add('reading');
+		at(250, () => { stage.style.visibility = 'visible'; phase.textContent = 'Reading'; });
+		const stars = cst.querySelectorAll('.star');
+		const step = Math.min(140, 900 / stars.length);
+		stars.forEach((s, i) => at(350 + i * step, () => s.classList.add('lit')));
+		const lineAt = 350 + stars.length * step;
+		at(lineAt, () => {
+			const l = cst.querySelector('.line');
+			l.style.transition = 'stroke-dashoffset .5s ease-out';
+			l.style.strokeDashoffset = '0';
+		});
+		at(lineAt + 650, () => { stage.classList.add('done'); ring.classList.remove('reading'); phase.textContent = 'Resolved'; });
+		at(lineAt + 1100, () => { tools.innerHTML = toolRow('i-search', 'Searching: ibuprofen lisinopril interaction', true); phase.textContent = 'Researching'; });
+		at(lineAt + 2000, () => {
+			tools.innerHTML = toolRow('i-search', 'Searching: ibuprofen lisinopril interaction', false) + toolRow('i-file-search', 'Reading: https://www.nhs.uk/medicines/ibuprofen-for-adults/', true);
+		});
+		at(lineAt + 3000, () => {
+			tools.innerHTML = toolRow('i-search', 'Searching: ibuprofen lisinopril interaction', false) + toolRow('i-file-search', 'Reading: https://www.nhs.uk/medicines/ibuprofen-for-adults/', false);
+			phase.textContent = 'Answering';
+		});
+		answer.forEach((chunk, i) => at(lineAt + 3300 + i * 700, () => {
+			prose.innerHTML = `<p>${answer.slice(0, i + 1).join(' ')}<span class="caret"></span></p>`;
+		}));
+		at(lineAt + 3300 + answer.length * 700 + 200, () => {
+			prose.innerHTML = `<p>${answer.join(' ')}</p>`;
+			send.className = 'send'; send.innerHTML = '<svg class="lucide"><use href="#i-send" /></svg>';
+			after.innerHTML = `
+				<div style="display:flex;flex-direction:column;gap:var(--space-sm)">
+					<div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div>
+					<div class="turn-footer"><span class="stat">$0.00410</span><span class="stat">8.2s</span>
+						<button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button>
+						<button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button>
+						<button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div>
+					<div class="suggestions"><button class="suggestion-chip" type="button">Is paracetamol safer?</button><button class="suggestion-chip" type="button">What about naproxen?</button></div>
+				</div>`;
+			phase.textContent = 'Done';
+		});
+	}
+
+	// Resting state (and thumbnails): the finished turn, fully visible.
+	function showFinished() {
+		reset();
+		stage.style.visibility = 'visible';
+		stage.classList.add('static');
+		tools.innerHTML = toolRow('i-search', 'Searching: ibuprofen lisinopril interaction', false) + toolRow('i-file-search', 'Reading: https://www.nhs.uk/medicines/ibuprofen-for-adults/', false);
+		prose.innerHTML = `<p>${answer.join(' ')}</p>`;
+		send.className = 'send'; send.innerHTML = '<svg class="lucide"><use href="#i-send" /></svg>';
+		after.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--space-sm)"><div class="sources-row"><span class="count">2</span>Sources<svg class="lucide"><use href="#i-chev" /></svg></div><div class="turn-footer"><span class="stat">$0.00410</span><span class="stat">8.2s</span><button class="icon-btn" type="button" aria-label="Copy"><svg class="lucide"><use href="#i-copy" /></svg></button><button class="icon-btn" type="button" aria-label="Retry"><svg class="lucide"><use href="#i-retry" /></svg></button><button class="icon-btn" type="button" aria-label="Turn info"><svg class="lucide"><use href="#i-info" /></svg></button></div></div>`;
+		phase.textContent = 'Done — press Play turn';
+	}
+
+	$('play').addEventListener('click', play);
+	document.querySelectorAll('[data-n]').forEach((b) => b.addEventListener('click', () => {
+		starCount = +b.dataset.n;
+		document.querySelectorAll('[data-n]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+		play();
+	}));
+	showFinished();
+
+	// F1 glow
+	const flipNote = $('flip-note');
+	function flip() {
+		if (reduce) return;
+		flipNote.animate([
+			{ textShadow: '0 0 0 transparent', transform: 'none' },
+			{ textShadow: '0 0 12px var(--color-accent)', transform: 'translateX(2px)' },
+			{ textShadow: '0 0 0 transparent', transform: 'none' }
+		], { duration: 1400, easing: 'ease-out' });
+		flipNote.querySelector('svg').animate([
+			{ transform: 'scale(1)' }, { transform: 'scale(1.5) rotate(20deg)' }, { transform: 'scale(1)' }
+		], { duration: 900, easing: 'cubic-bezier(.16,1,.3,1)' });
+	}
+	$('flip-play').addEventListener('click', flip);
+	setTimeout(flip, 600);
+})();
 </script>
 </body>
 </html>

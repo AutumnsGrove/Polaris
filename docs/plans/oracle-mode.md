@@ -358,31 +358,38 @@ oracle:
 
 ## UI
 
-To be explored in `mockups/oracle-mode.html`. Starting direction from the design discussion:
+Explored in `mockups/oracle-mode.html` (round 2 frames copy the real app's chrome, captured by
+driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the operator
+(2026-09-28, after round 1):**
 
-- **Settings**: one toggle, "Oracle mode", with a one-line explanation.
-- **Composer**: when Oracle is on, the "More" trigger reads **Oracle** instead of a focus-mode name,
-  so it's obvious the steering has been handed over. Manually picking a mode for one message still
-  works and shows that mode instead.
-- **"Reading the stars"**: while Jev runs, a few faint points of light (one per check) brighten as
-  answers return and join into a small constellation — covering the classification latency with
-  something that means something. Night sky, not sparkle-burst; no generic AI "✨".
-- **The Oracle chip**: the constellation settles into a quiet chip at the top of the reply naming
-  what fired — e.g. `✦ Researcher · Medical`. Nothing fired → a bare glyph or no chip at all (open
-  question for the mockups).
-- **"Why" sheet**: tapping the chip shows each check's winner and probability ("Researcher 82% ·
-  off 11%") and the injected nudges, with any alternative tappable to re-run the turn with that
-  choice instead.
-- **Mid-thread change**: when Oracle changes the focus mode partway through a thread, the chip
-  briefly glows so the flip is never silent.
-- **Smart chips**: "Make this a Pulsar" / "Add to Daily" / "Move to *Project*", above the follow-up
-  suggestions.
-- **Reduced motion**: no animation, just the chip.
+- **The moment — constellation (A1).** One faint star per enabled check appears under the user's
+  message, lights in order, a line joins them, and the constellation folds into the margin note.
+  Adding checks just adds stars. Jev answers every check in one request, so the lighting is a fixed
+  ~1s choreography cut short if the first tool call arrives, not one star per real answer.
+- **The result — margin note (B2).** A line of dim text above the tool calls and prose, e.g.
+  "Read as **medical** · answered as **Researcher**". No note when nothing fired. Tapping it opens
+  the info sheet.
+- **The "why" — an ⓘ turn-info sheet (C1).** A new ⓘ button at the end of every turn's footer
+  (same icon as Settings' usage stats, shown even with Oracle off) opens a sheet with the answer's
+  own stats (model, time to first token, tokens/s, tokens in/out, cost, total time, tool calls)
+  and then a section per Oracle check: checks that changed something get a card with runner-up
+  odds, the exact nudge text, and a rerun button; checks that ran but did nothing are one
+  collapsed list. Time-to-first-token and tokens/s aren't recorded today — need adding.
+- **Composer — icon only, in a ring.** No text badge: the Oracle icon sits inside a thin
+  full-hue-wheel ring inside the More button, turning while Jev reads. A manual per-message pick
+  shows today's text badge instead, and the ring returns on the next message.
+- **Mid-thread change (F1).** The note reads "Switched ~~Shopper~~ → **First Principles**" and
+  glows once; tapping it undoes the switch for that message.
+- **Offers — D2 lines at the end, not settled.** Round 2 also shows them merged into the
+  suggestion-chip row (each with its destination's icon — Sunrise for Daily, Orbit for Pulsar).
+- **Icon — not settled.** The round-1 four-point star was rejected. Round 2 shows custom
+  Lucide-grid icons (asterism, crystal ball, seer's eye, pole star) and unused Lucide ones
+  (waypoints, moon-star, radar, zodiac-ophiuchus, lens-convex, wand), excluding icons Polaris
+  already uses elsewhere.
+- **Reduced motion**: no constellation or ring spin, just the note.
 
 ## Open questions
 
-- **Nothing fired**: show a bare Oracle glyph (so it's clear Oracle ran and chose nothing), or no
-  chip at all (calmer)? Mockups should show both.
 - **Re-run from the "why" sheet**: replace the reply in place, or append a new turn? Replace is
   cleaner; check how existing regenerate behaves first.
 - **Does Jev handle short, conversational prompts well?** Every live spike so far was
