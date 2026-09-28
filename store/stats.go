@@ -28,9 +28,10 @@ type Stats struct {
 
 	// CostBySource splits TotalCostUSD/PeriodCostUSD four ways — Polaris
 	// (regular chat, every threads.source other than "pulsar", plus
-	// ghost-mode turns' spend from ghost_usage — see GetStats — since a
-	// ghost thread is just an incognito regular chat, not a distinct
-	// subsystem the way Pulsar/Daily/Constellation are), Pulsar (routine
+	// ghost-mode turns' spend from ghost_usage and turn-less assistant-side
+	// spend from aux_usage — see GetStats — since a ghost thread is just an
+	// incognito regular chat and an aux call is chat-adjacent work, neither
+	// a distinct subsystem the way Pulsar/Daily/Constellation are), Pulsar (routine
 	// pulses, threads.source = "pulsar"), Daily (Pulsar Daily editions),
 	// and Constellation (Weaver runs plus Refine/Edit's one-off calls —
 	// see store.ConstellationStats, the same two tables). Daily and
@@ -300,6 +301,32 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	}
 	stats.CostBySource.Polaris.TotalCostUSD += ghostTotal
 	stats.CostBySource.Polaris.PeriodCostUSD += ghostPeriod
+
+	// Aux usage — assistant-side LLM work done on a chat's behalf that no
+	// turn owns (see aux_usage's schema comment; currently the "derive a
+	// routine prompt from this conversation" call behind an offer chip).
+	// Folded into Polaris for the same reason ghost's is: it's ordinary
+	// chat-adjacent spend, not a separate subsystem, so it belongs in the
+	// bucket its own turn would have landed in. Without this it reached no
+	// total at all — the call happens outside any turn, so there was no
+	// message row to bill.
+	var auxTotal, auxPeriod float64
+	if err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage`,
+	).Scan(&auxTotal); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		auxPeriod = auxTotal
+	} else {
+		if err := s.db.QueryRow(
+			`SELECT COALESCE(SUM(cost_usd), 0) FROM aux_usage WHERE created_at >= ?`, since,
+		).Scan(&auxPeriod); err != nil {
+			return nil, err
+		}
+	}
+	stats.CostBySource.Polaris.TotalCostUSD += auxTotal
+	stats.CostBySource.Polaris.PeriodCostUSD += auxPeriod
 
 	// TotalCostUSD/PeriodCostUSD: the true, complete grand total across
 	// every real spend path — computed last, once every bucket above

@@ -553,6 +553,43 @@ pulsar_wizard:
     The user hasn't described what they want this routine to check on yet — ask a single focused
     opening question to find out (e.g. what topic, or what kind of update they're after).
 
+# The one-shot "derive a routine from this conversation" pass behind Oracle mode's "Set up as
+# Pulsar" offer chip — see gateway/pulsar_suggest.go. Unlike pulsar_wizard above this is not an
+# interview: it gets one completion and has to come back with a ready-to-run prompt (or fail
+# cleanly), because the chip navigates straight to the new-routine form. task has two %s verbs —
+# the thread title, then the transcript.
+pulsar_suggest:
+  system: |-
+    You turn a finished conversation into one prompt for a Polaris Pulsar routine — a prompt saved
+    once and then run on a schedule, unattended, with no memory of the conversation it came from and
+    no follow-up allowed. Write the recurring prompt; do not summarize the chat.
+
+    Rules:
+    - It must stand alone. Someone who never saw the conversation has to be able to run it. Never
+      carry over "that one", "the second option", "what you mentioned" or any other reference to the
+      chat — name the actual subject, product, team, place, or question.
+    - It must ask for something that changes. A routine earns its place by returning new information
+      next time: prices, availability, scores, releases, filings, an ongoing story. If the
+      conversation's real recurring interest is narrower than the chat as a whole, write the narrow
+      one.
+    - Be concrete about the subject and the depth: the specific items they compared, the angle they
+      cared about, and how much detail they wanted.
+    - A few sentences at most, written as the message the routine will send. No preamble, no
+      explanation, no "this routine will".
+  task: |-
+    Here is the conversation. Write the recurring prompt for whatever this person would actually want
+    checked again on a schedule.
+
+    Conversation title: %s
+
+    Conversation:
+    %s
+
+    Reply in exactly this format and nothing else:
+    Name: <a short routine name, at most six words>
+    ---
+    <the recurring prompt, as the message to run>
+
 # Pulsar Daily's expand-to-chat follow-up templates — see
 # docs/plans/pulsar-daily.md's "Expand-to-chat prompt templates". expand_prefix is shared by
 # every block kind (formatted with the block's title and content, in that order); exactly one of

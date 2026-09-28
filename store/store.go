@@ -418,6 +418,24 @@ CREATE TABLE IF NOT EXISTS jev_usage (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- aux_usage is a per-call ledger of real, billed LLM spend the assistant
+-- incurred on a chat's behalf that belongs to no single turn's own cost —
+-- currently just gateway/pulsar_suggest.go's one-shot "derive a routine
+-- prompt from this conversation" call, made when the operator taps an
+-- offer chip (there is no turn running, so nothing else could carry it).
+-- Folded straight into CostBySource.Polaris by GetStats — the same place
+-- the spend would have landed had it happened inside a turn — so it
+-- reaches the settings panel's grand total without needing a bucket of
+-- its own. kind names the caller (e.g. "pulsar_suggest") purely so a
+-- future one can be told apart in the table; GetStats sums across all
+-- kinds, since the split it reports is by subsystem, not by call site.
+CREATE TABLE IF NOT EXISTS aux_usage (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind TEXT NOT NULL,
+	cost_usd REAL NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- search_history backs Atlas's sidebar "Recent searches"/Favorites
 -- sections — the same shape as threads' recency+favorite model, but for
 -- one-shot queries rather than conversations, so it's its own table
@@ -2975,6 +2993,15 @@ func (s *Store) RecordGhostCost(costUSD float64) error {
 // calls.
 func (s *Store) LogJevCost(costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd) VALUES (?)`, costUSD)
+	return err
+}
+
+// RecordAuxCost appends one row for real assistant-side LLM spend that no
+// turn owns — see aux_usage's schema comment. Called only after a call
+// actually completed and reported its cost, same convention as
+// LogJevCost/IncrementBraveUsage above.
+func (s *Store) RecordAuxCost(kind string, costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO aux_usage (kind, cost_usd) VALUES (?, ?)`, kind, costUSD)
 	return err
 }
 

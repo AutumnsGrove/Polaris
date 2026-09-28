@@ -497,7 +497,12 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
   glows once; tapping it undoes the switch for that message.
 - **Offers — separate lines under the footer (7a).** Full-width lines above the follow-up
   suggestions, each with its destination's icon (Sunrise for Daily, Orbit for Pulsar, a folder for
-  projects) and a verb on the right ("Add", "Set up", "Move").
+  projects) and a verb on the right ("Add", "Set up", "Move"). The Pulsar line first derives a
+  standalone recurring prompt from the whole conversation (`POST /api/pulsar/suggest`,
+  `gateway/pulsar_suggest.go`) instead of seeding the form with the preceding message verbatim — a
+  follow-up like "what about the second one?" is unanswerable once the routine fires with no thread
+  to refer back to (found live). It reads "Writing…" while that call runs and falls back to the raw
+  message if it can't produce a prompt.
 - **Icon — Asterism (custom).** Four stars joined by lines, drawn on Lucide's 24px grid so it sits
   next to the stock icons: it's the constellation animation's final frame, so the icon itself
   means "Oracle read this". SVG source is in `mockups/oracle-mode.html` (`#i-asterism`); it'll

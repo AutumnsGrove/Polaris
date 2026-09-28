@@ -18,6 +18,7 @@
 	let {
 		routine = null,
 		initialPrompt,
+		initialName,
 		onClose,
 		onSaved
 	}: {
@@ -25,7 +26,14 @@
 		// initialPrompt: only meaningful on create (routine null) — set by
 		// /pulsar/+page.svelte from pulsarState.pendingSeed, Oracle mode's
 		// "Set up as Pulsar" offer chip (see that field's own doc comment).
+		// It's a derived, standalone prompt (gateway/pulsar_suggest.go),
+		// not the raw message the chip used to pass through.
 		initialPrompt?: string;
+		// initialName: the same chip's suggested routine title, when the
+		// derivation that produced initialPrompt also named it. Undefined
+		// on every other path (a plain "New Pulsar", an edit, or a seed
+		// that fell back to the raw message).
+		initialName?: string;
 		onClose: () => void;
 		onSaved: () => void;
 	} = $props();
@@ -47,7 +55,7 @@
 	// and intentional here: this form is remounted fresh per open, not
 	// kept alive across a routine swap — see EditTextModal.svelte's
 	// identical pattern/comment for the general case).
-	let name = $state(untrack(() => routine?.name ?? ''));
+	let name = $state(untrack(() => routine?.name ?? initialName ?? ''));
 	let prompt = $state(untrack(() => routine?.prompt ?? initialPrompt ?? ''));
 	let model = $state(untrack(() => routine?.model ?? appState.selectedModel));
 	// `|| 'off'`, not `?? 'off'` — a stored routine's focus_mode is '' for

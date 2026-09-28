@@ -296,9 +296,47 @@
 	// assistant turn, but a synthetic/replayed one is cheap to guard).
 	let seedText = $derived(appState.turns[index - 1]?.content ?? turn.content);
 
-	function activateOffer(key: string) {
+	// Which offer line is mid-flight, if any — the Pulsar chip now does a
+	// round trip before navigating (see activateOffer), so it needs a
+	// visible "working" state instead of looking like the tap did nothing.
+	let offerBusy = $state<string | null>(null);
+
+	async function activateOffer(key: string) {
+		if (offerBusy) return;
 		if (key === 'pulsar') {
-			pulsarState.pendingSeed = { kind: 'pulsar', text: seedText };
+			// The preceding message is only the right seed when the
+			// conversation *is* the recurring question. On a follow-up
+			// ("what about the second one?") it produces a routine that
+			// returns nothing when it fires, since a scheduled run has no
+			// thread to refer back to — a real gap found live. So derive a
+			// standalone prompt from the whole conversation first, and fall
+			// back to the raw message if that call can't produce one.
+			let text = seedText;
+			let name: string | undefined;
+			if (appState.currentThreadId) {
+				offerBusy = key;
+				try {
+					const res = await fetch('/api/pulsar/suggest', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ thread_id: appState.currentThreadId })
+					});
+					if (res.ok) {
+						const data = (await res.json()) as { name?: string; prompt?: string };
+						if (data.prompt) {
+							text = data.prompt;
+							name = data.name || undefined;
+						}
+					}
+				} catch {
+					// Network hiccup, server restart, model error — the raw
+					// seed is still a usable (if blunt) starting point, and
+					// the form is editable, so this degrades rather than
+					// blocking the tap.
+				}
+				offerBusy = null;
+			}
+			pulsarState.pendingSeed = { kind: 'pulsar', text, name };
 			void goto('/pulsar');
 		} else if (key === 'daily') {
 			pulsarState.pendingSeed = { kind: 'daily', text: seedText };
@@ -628,12 +666,12 @@
 						<button
 							class="offer-line"
 							type="button"
-							disabled={offer.key === 'project'}
+							disabled={offer.key === 'project' || offerBusy !== null}
 							onclick={() => activateOffer(offer.key)}
 						>
 							<offer.meta.icon size={14} />
 							<span>{@html offer.meta.label(offer.label)}</span>
-							<span class="go">{offer.meta.verb}</span>
+							<span class="go">{offerBusy === offer.key ? 'Writing…' : offer.meta.verb}</span>
 						</button>
 					{/each}
 				</div>

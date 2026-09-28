@@ -14,7 +14,10 @@
 	// Oracle mode's "Set up as Pulsar" offer chip (see pulsarState.pendingSeed's
 	// doc comment) — captured once, before the field is cleared, so
 	// PulsarRoutineForm below still has it after this mount effect runs.
+	// newRoutineName is the chip's own suggested title (from
+	// /api/pulsar/suggest), when the call managed to draft one.
 	let newRoutineSeed = $state<string | undefined>(undefined);
+	let newRoutineName = $state<string | undefined>(undefined);
 
 	onMount(() => {
 		void pulsarState.loadRoutines();
@@ -23,6 +26,7 @@
 
 		if (pulsarState.pendingSeed?.kind === 'pulsar') {
 			newRoutineSeed = pulsarState.pendingSeed.text;
+			newRoutineName = pulsarState.pendingSeed.name;
 			pulsarState.pendingSeed = null;
 			showForm = true;
 		}
@@ -135,6 +139,7 @@
 {#if showForm}
 	<PulsarRoutineForm
 		initialPrompt={newRoutineSeed}
+		initialName={newRoutineName}
 		onClose={() => (showForm = false)}
 		onSaved={() => {
 			showForm = false;

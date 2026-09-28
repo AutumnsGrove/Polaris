@@ -119,6 +119,39 @@ func TestGetStats_CostBySource(t *testing.T) {
 	}
 }
 
+// Aux usage (see aux_usage's schema comment) belongs to no turn, so there
+// is no message row to bill it to — it has to reach Polaris's bucket and
+// the grand total by its own path, which is the entire reason the call
+// site records it (gateway/pulsar_suggest.go). Before the fold-in, that
+// spend reached no total at all.
+func TestGetStats_AuxUsageFoldsIntoPolaris(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Chat", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if _, err := s.AddMessage("t1", "assistant", "hi", "[]", "[]", 0.01, "turn-1"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := s.RecordAuxCost("pulsar_suggest", 0.0015); err != nil {
+		t.Fatalf("RecordAuxCost: %v", err)
+	}
+
+	stats, err := s.GetStats(0)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	const want = 0.0115
+	if math.Abs(stats.CostBySource.Polaris.TotalCostUSD-want) > 1e-9 {
+		t.Errorf("Polaris.TotalCostUSD = %v, want %v (0.01 message + 0.0015 aux)", stats.CostBySource.Polaris.TotalCostUSD, want)
+	}
+	if math.Abs(stats.CostBySource.Polaris.PeriodCostUSD-want) > 1e-9 {
+		t.Errorf("Polaris.PeriodCostUSD = %v, want %v (all-time period covers today's row)", stats.CostBySource.Polaris.PeriodCostUSD, want)
+	}
+	if math.Abs(stats.TotalCostUSD-want) > 1e-9 {
+		t.Errorf("TotalCostUSD = %v, want %v — aux spend must reach the grand total", stats.TotalCostUSD, want)
+	}
+}
+
 // TestGetStats_SearchProviderCounts guards against conflating this with
 // api_usage's billing-cap counters (see Stats.SearchProviderCounts' doc
 // comment) — only "tool call finished" events on tool.web_search with a

@@ -113,6 +113,18 @@ type Set struct {
 		OpenerTask string `yaml:"opener_task"`
 	} `yaml:"pulsar_wizard"`
 
+	// PulsarSuggest backs gateway/pulsar_suggest.go's one-shot "derive a
+	// recurring routine from this chat" call, behind Oracle mode's "Set up
+	// as Pulsar" offer chip. Distinct from PulsarWizard above: that one is
+	// an interactive interview; this is a single pass over a finished
+	// conversation that has to come back with a ready-to-run prompt (or
+	// nothing), because the chip navigates straight to the routine form.
+	// Task has two %s verbs — the thread title, then the transcript.
+	PulsarSuggest struct {
+		System string `yaml:"system"`
+		Task   string `yaml:"task"`
+	} `yaml:"pulsar_suggest"`
+
 	PulsarDaily struct {
 		ExpandPrefix      string `yaml:"expand_prefix"`
 		ResearchFollowup  string `yaml:"research_followup"`
@@ -691,6 +703,40 @@ Once you have enough, call finalize_pulsar_prompt with the finished prompt, writ
 		"ask a single focused opening question to find out (e.g. what topic, or what kind of update they're " +
 		"after)."
 
+	// These two mirror prompts.yaml's pulsar_suggest block literally
+	// (TestDefaults_MatchRealPromptsYAML enforces it) — including its line
+	// wrapping, which is why they're raw strings rather than concatenated
+	// fragments.
+	d.PulsarSuggest.System = `You turn a finished conversation into one prompt for a Polaris Pulsar routine — a prompt saved
+once and then run on a schedule, unattended, with no memory of the conversation it came from and
+no follow-up allowed. Write the recurring prompt; do not summarize the chat.
+
+Rules:
+- It must stand alone. Someone who never saw the conversation has to be able to run it. Never
+  carry over "that one", "the second option", "what you mentioned" or any other reference to the
+  chat — name the actual subject, product, team, place, or question.
+- It must ask for something that changes. A routine earns its place by returning new information
+  next time: prices, availability, scores, releases, filings, an ongoing story. If the
+  conversation's real recurring interest is narrower than the chat as a whole, write the narrow
+  one.
+- Be concrete about the subject and the depth: the specific items they compared, the angle they
+  cared about, and how much detail they wanted.
+- A few sentences at most, written as the message the routine will send. No preamble, no
+  explanation, no "this routine will".`
+
+	d.PulsarSuggest.Task = `Here is the conversation. Write the recurring prompt for whatever this person would actually want
+checked again on a schedule.
+
+Conversation title: %s
+
+Conversation:
+%s
+
+Reply in exactly this format and nothing else:
+Name: <a short routine name, at most six words>
+---
+<the recurring prompt, as the message to run>`
+
 	d.PulsarDaily.ExpandPrefix = "The user tapped an expand affordance on a Pulsar Daily block titled \"%s\" " +
 		"with this content: %s. This wasn't typed by them — it's a request to go deeper on exactly this. " +
 		"Don't re-greet or re-summarize what the block already said; begin from where it left off."
@@ -1120,6 +1166,12 @@ func fillDefaults(s Set) *Set {
 	}
 	if s.PulsarWizard.OpenerTask == "" {
 		s.PulsarWizard.OpenerTask = defaults.PulsarWizard.OpenerTask
+	}
+	if s.PulsarSuggest.System == "" {
+		s.PulsarSuggest.System = defaults.PulsarSuggest.System
+	}
+	if s.PulsarSuggest.Task == "" {
+		s.PulsarSuggest.Task = defaults.PulsarSuggest.Task
 	}
 	if s.PulsarDaily.WizardSystem == "" {
 		s.PulsarDaily.WizardSystem = defaults.PulsarDaily.WizardSystem

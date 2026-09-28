@@ -34,7 +34,12 @@ export class PulsarState {
 	// immediately after so it can't leak into some unrelated later visit
 	// to the page. Same idea for /daily's own "Follow this in Daily" chip,
 	// just a different destination kind.
-	pendingSeed = $state<{ kind: 'pulsar' | 'daily'; text: string } | null>(null);
+	//
+	// name is the optional suggested routine name that comes back from the
+	// Pulsar chip's own /api/pulsar/suggest call (see gateway/
+	// pulsar_suggest.go) — undefined for the Daily chip and for a fallback
+	// seed, where there's no drafted title to offer.
+	pendingSeed = $state<{ kind: 'pulsar' | 'daily'; text: string; name?: string } | null>(null);
 
 	// Keyed by routine id as a string (JSON object keys can't be numeric —
 	// see gateway/pulsar_routes.go's handlePulsarUnreadCounts) — the
