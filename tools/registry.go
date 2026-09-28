@@ -442,6 +442,18 @@ type Context struct {
 	// QuickMode above.
 	NoResearch bool
 
+	// OracleSection is Oracle mode's whole "## Oracle" system-prompt block
+	// (docs/plans/oracle-mode.md, issue #122), already built from
+	// prompts.yaml's oracle.section template — gateway/turn.go sets this
+	// from gateway.RunOracle's result before agent.Run starts. Appended by
+	// agent.loadSystemPrompt the same way DeepResearch/NoResearch's own
+	// instructions are, and re-injected near the end of the message list
+	// by Run itself, same reason FocusMode is (see modeReinforcement's doc
+	// comment — a standing instruction at position 0 drifts out of
+	// attention as history grows). "" whenever Oracle is off, unconfigured,
+	// or fired no checks this turn.
+	OracleSection string
+
 	// PulsarWizard, when true, marks this turn as the ephemeral "help me
 	// write the prompt" interview (see gateway/pulsar_wizard.go) rather
 	// than a normal chat/pulse turn — the only thing it gates is

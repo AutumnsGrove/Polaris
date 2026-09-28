@@ -264,6 +264,9 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		// no reason to make that combination an error either).
 		prompt += "\n\n" + p.Agent.NoResearchInstruction
 	}
+	if ctx.OracleSection != "" {
+		prompt += "\n\n" + ctx.OracleSection
+	}
 	return prompt
 }
 
@@ -528,6 +531,9 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	if len(history) > 0 {
 		if reinforcement := modeReinforcement(prompts.Get(), ctx.VoiceMode, ctx.FocusMode); reinforcement != "" {
 			messages = append(messages, llm.ChatMessage{Role: "user", Content: reinforcement})
+		}
+		if ctx.OracleSection != "" {
+			messages = append(messages, llm.ChatMessage{Role: "user", Content: ctx.OracleSection})
 		}
 	}
 
