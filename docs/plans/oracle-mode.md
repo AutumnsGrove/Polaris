@@ -107,6 +107,19 @@ when the new winner clears a higher `switch_threshold` than the initial pick nee
 (high-stakes, intent) don't need this — they're per-message guidance, not thread state — so they
 fire whenever their own threshold clears.
 
+**A mode Oracle set can be retracted by Oracle.** (Added 2026-09-28 after a live session.) The
+original design only ever *changed* a mode, so once Oracle picked one the thread kept it until a new
+winner cleared `switch_threshold` — including on messages the old mode had nothing to do with (a
+"shopper" thread asked a background-research question; `shopper` scored 0.00 and the thread stayed in
+shopper mode). Now, when the focus check's winner can't clear its own plain `threshold` — an explicit
+`off`, or a winner below the base bar — and the mode in effect is one Oracle itself set earlier
+(`PriorOracleFocusMode`), Oracle **clears** it: the turn runs with no mode and `threads.focus_mode`
+is written back to `""` (surfaced as `OracleResult.FocusCleared`). Two things it deliberately does
+*not* clear: a mode the operator or the Settings default supplied (Oracle doesn't own those), and a
+near-miss on a new mode that clears the base bar but not `switch_threshold` — clearing there would
+drop the thread every time Oracle leaned another way without being confident enough to switch, which
+is exactly what `switch_threshold` exists to prevent. Sticky modes (`safari`) are never cleared.
+
 ### Clarify only on the first message
 
 The `clarify` check only runs on a thread's first message. Mid-thread, history usually resolves the
@@ -174,14 +187,14 @@ text; it doesn't stack on top of it.
 | Mode | Oracle picks it when | Note wording | Rules |
 |---|---|---|---|
 | `off` | No mode is clearly better | *(focus not mentioned)* | Baseline. |
-| `brief` | The message itself asks for brevity ("quick question", "tl;dr", "one word") or is a single fact lookup | "kept **brief**" | Higher bar to pick (0.85). **High-stakes never makes Oracle pick Brief**, and when Brief is already on, high-stakes and intent nudges switch to short variants (below). |
+| `brief` | The message itself asks for brevity ("quick question", "tl;dr", "one word") or is a single fact lookup | "kept **brief**" | Higher bar to pick (0.80). **High-stakes never makes Oracle pick Brief**, and when Brief is already on, high-stakes and intent nudges switch to short variants (below). |
 | `researcher` | Careful cross-checking matters | "answered as **Researcher**" | The ceiling for Oracle-chosen depth, and high-stakes' fallback when no mode is set. |
 | `academic` | Scientific/medical/technical, best from papers or official docs | "answered as **Academic**" | Complements high-stakes medical; no conflict. |
 | `news` | Current events | "answered as **News**" | Likely to trigger the Pulsar/Daily offers; nothing to suppress. |
 | `shopper` | Find/compare/buy a product | "answered as **Shopper**" | Skip the `intent: product` nudge — Shopper's own instructions already cover it, and two versions of the same guidance fight each other. |
 | `first_principles` | Wants the why/how from fundamentals | "answered from **First Principles**" | No conflicts. |
 | `socratic` | Wants to reason it through step by step | "answered as **Socratic**" | Polaris's Socratic is a step-by-step walk-through, not a question loop, so clarify still applies. |
-| `safari` | Explicitly wants an interactive, multi-stop exploration | "answered as **Safari**" | Highest bar to pick (0.92). Skip `clarify` (Safari's Embark step already asks). **Sticky for the whole thread**: Oracle never switches out of Safari mid-thread, since that would abandon the stop-by-stop loop halfway. |
+| `safari` | Explicitly wants an interactive, multi-stop exploration | "answered as **Safari**" | Highest bar to pick (0.85). Skip `clarify` (Safari's Embark step already asks). **Sticky for the whole thread**: Oracle never switches out of Safari mid-thread, since that would abandon the stop-by-stop loop halfway. |
 
 ### Brief, specifically
 
@@ -250,8 +263,8 @@ oracle:
       # one mode that can make an answer *worse* if picked wrongly; Safari
       # takes over the whole thread.
       option_thresholds:
-        brief: 0.85
-        safari: 0.92
+        brief: 0.80
+        safari: 0.85
       # Oracle never switches out of these once they're set for a thread.
       sticky: [safari]
       # Oracle won't pick brief if high_stakes fired (see the plan's
@@ -518,7 +531,7 @@ committed — throwaway).
   (conf 0.90, 0.92) on real cost-of-living/wage questions and `medical` (conf 1.00) on a
   diabetes-risk question. `focus`/`clarify` stayed appropriately quiet on ordinary thread
   continuations — `clarify` never cleared conf 0.45 across 18 first-message samples, and `focus`'s
-  weak `brief` signals (0.49–0.70) correctly stayed under a 0.85 firing bar. The draft thresholds
+  weak `brief` signals (0.49–0.70) correctly stayed under the (then 0.85) firing bar. The draft thresholds
   in this doc's `prompts.yaml` block all look directionally right against this sample; no changes
   made to them.
 - **One real miscalibration**: `research` gave high-confidence "no" (conf 0.01, 0.44) to specific

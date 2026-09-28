@@ -743,7 +743,7 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 		"focus": {
 			Threshold:           0.70,
 			SwitchThreshold:     0.85,
-			OptionThresholds:    map[string]float64{"brief": 0.85, "safari": 0.92},
+			OptionThresholds:    map[string]float64{"brief": 0.80, "safari": 0.85},
 			Sticky:              []string{"safari"},
 			NeverWithHighStakes: []string{"brief"},
 			Instructions: "Which answering style best fits this message? Pick \"off\" unless one style " +

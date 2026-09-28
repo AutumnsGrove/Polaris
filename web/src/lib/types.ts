@@ -57,6 +57,11 @@ export interface OracleChip {
 // for one turn. See ServerEvent's 'done' case and ChatTurn.oracleResult.
 export interface OracleResult {
 	focus_mode?: string;
+	// Oracle retracted a mode it had itself set (see gateway/oracle.go's
+	// FocusCleared doc comment) — the turn ran with no mode and the
+	// thread's sticky mode was cleared to match. Distinct from focus_mode
+	// being absent, which means "Oracle had no opinion".
+	focus_cleared?: boolean;
 	no_research_hint?: boolean;
 	injections?: string[];
 	checks?: OracleCheckOutcome[];

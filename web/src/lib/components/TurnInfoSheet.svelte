@@ -81,11 +81,31 @@
 		return turn.oracleFocusModeSource === 'oracle' && turn.appliedFocusMode === check.winner;
 	}
 
-	// The check header's right-hand state label — "Set"/"Nudged" for a
-	// real result, but "Not applied" for the one case those words would
-	// misrepresent (see focusPickApplied above).
+	// The focus mode Oracle cleared this turn, for the "cleared" explanation
+	// below — the nearest earlier turn's own applied mode, the same
+	// backward scan ChatTurnView does for its "Switched X -> Y" note (the
+	// turn itself has no mode to read: clearing is what left it empty).
+	let clearedFrom = $derived.by(() => {
+		if (!turn.oracleResult?.focus_cleared) return undefined;
+		for (let i = index - 1; i >= 0; i--) {
+			const mode = appState.turns[i]?.appliedFocusMode;
+			if (mode) return mode;
+		}
+		return undefined;
+	});
+
+	// The check header's right-hand state label — "Set"/"Nudged" for a real
+	// result, plus the two cases those words would misrepresent: an
+	// overridden pick (a manual choice won — see focusPickApplied above)
+	// and a cleared one (Oracle retracted its own earlier mode). The
+	// backend's focus_cleared flag is what distinguishes the two; without
+	// it, a cleared pick would render as either "Set" or "Not applied",
+	// both wrong.
 	function stateLabel(display: { key: string }, check: { winner: string; fired: boolean }): string {
-		if (display.key === 'focus' && check.fired && !focusPickApplied(check)) return 'Not applied';
+		if (display.key === 'focus' && check.fired) {
+			if (turn.oracleResult?.focus_cleared) return 'Cleared';
+			return focusPickApplied(check) ? 'Set' : 'Not applied';
+		}
 		return checkStateLabel(display.key, check.fired);
 	}
 
@@ -196,7 +216,12 @@
 						{/if}
 						{#if display.key === 'focus'}
 							{@const alt = runnerUp(check.probabilities, check.winner)}
-							{#if !focusPickApplied(check)}
+							{#if turn.oracleResult?.focus_cleared}
+								<div class="nudge-text">
+									Cleared{clearedFrom ? ` the earlier ${optionLabel('focus', clearedFrom)} mode` : ''} — no mode
+									clearly fits this message, so the thread runs without one.
+								</div>
+							{:else if !focusPickApplied(check)}
 								<div class="nudge-text">
 									Not applied — {turn.appliedFocusMode
 										? `your own ${optionLabel('focus', turn.appliedFocusMode)} pick for this message`

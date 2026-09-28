@@ -28,6 +28,17 @@ func answer(choice string, prob float64) jev.ChoiceAnswer {
 	return jev.ChoiceAnswer{Choice: choice, Probabilities: map[string]float64{choice: prob}}
 }
 
+// outcomeFor returns the CheckOutcome for one check key, or nil — a small
+// convenience for tests that only care about one check's own result.
+func outcomeFor(result OracleResult, key string) *CheckOutcome {
+	for i := range result.Checks {
+		if result.Checks[i].Key == key {
+			return &result.Checks[i]
+		}
+	}
+	return nil
+}
+
 func TestRunOracle_NilClientNeverFails(t *testing.T) {
 	result, err := RunOracle(context.Background(), nil, OracleInput{CurrentMessage: "test"})
 	if err != nil {
@@ -103,20 +114,40 @@ func TestRunOracle_FocusPicksBriefWithoutHighStakes(t *testing.T) {
 		t.Fatalf("RunOracle error: %v", err)
 	}
 	if result.FocusMode != "brief" {
-		t.Errorf("want brief picked at 0.9 (clears its 0.85 option threshold), got %q", result.FocusMode)
+		t.Errorf("want brief picked at 0.9 (clears its 0.80 option threshold), got %q", result.FocusMode)
 	}
 }
 
 func TestRunOracle_FocusRespectsOptionThreshold(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
-		"focus": answer("brief", 0.80), // above the check's 0.70 floor, below brief's own 0.85 bar
+		"focus": answer("brief", 0.75), // above the check's 0.70 floor, below brief's own 0.80 bar
 	}}}
 	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	if err != nil {
 		t.Fatalf("RunOracle error: %v", err)
 	}
 	if result.FocusMode != "" {
-		t.Errorf("want no pick — 0.80 clears the check's threshold but not brief's own 0.85 option_threshold, got %q", result.FocusMode)
+		t.Errorf("want no pick — 0.75 clears the check's threshold but not brief's own 0.80 option_threshold, got %q", result.FocusMode)
+	}
+}
+
+// The live case that prompted lowering safari's option_threshold from 0.92
+// to 0.85: a real "take me on a safari of X" message classified safari at
+// 0.87 and Oracle left the turn in no mode. Pinned at the exact observed
+// confidence so a future bump back above it fails loudly.
+func TestRunOracle_FocusPicksSafariAtTheObservedConfidence(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus": answer("safari", 0.87),
+	}}}
+	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "take me on a safari of the industrial complex"})
+	if err != nil {
+		t.Fatalf("RunOracle error: %v", err)
+	}
+	if result.FocusMode != "safari" {
+		t.Errorf("want safari picked at 0.87 (clears the 0.85 option threshold), got %q", result.FocusMode)
+	}
+	if result.FocusCleared {
+		t.Errorf("a pick must not also read as a clear")
 	}
 }
 
@@ -143,6 +174,81 @@ func TestRunOracle_SwitchThresholdHigherThanInitialPick(t *testing.T) {
 	}
 	if result.FocusMode != "" {
 		t.Errorf("want no switch — 0.75 clears the initial-pick threshold but not switch_threshold (0.85), got %q", result.FocusMode)
+	}
+	// Not cleared either: a near-miss on a *new* mode (above the base bar,
+	// below the switch bar) keeps the existing mode. Clearing here would
+	// drop the thread every time Oracle leaned another way without being
+	// confident enough to switch — exactly what switch_threshold prevents.
+	if result.FocusCleared {
+		t.Errorf("want the existing mode kept on a switch-threshold near-miss, not cleared")
+	}
+}
+
+// A live-found case: a thread in "shopper" mode (which Oracle itself had
+// set) got asked a background-research question where shopper scored 0.00
+// and no mode cleared its bar — and the thread stayed in shopper mode
+// anyway. Oracle owns that mode, so its "no mode fits" verdict now retracts
+// it rather than leaving it sticky.
+func TestRunOracle_FocusClearsModeItSetWhenNoModeClearsTheBar(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus": answer("brief", 0.62), // below the check's 0.70 bar
+	}}}
+	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "research prada's background", PriorOracleFocusMode: "shopper"})
+	if err != nil {
+		t.Fatalf("RunOracle error: %v", err)
+	}
+	if !result.FocusCleared {
+		t.Fatalf("want FocusCleared when the mode in effect was Oracle's own and no mode clears the bar, got %+v", result)
+	}
+	if result.FocusMode != "" {
+		t.Errorf("want no FocusMode alongside a clear (they are distinct outcomes), got %q", result.FocusMode)
+	}
+	focus := outcomeFor(result, "focus")
+	if focus == nil || !focus.Fired {
+		t.Errorf("want the focus check recorded as fired (Oracle acted — it cleared), got %+v", focus)
+	}
+}
+
+func TestRunOracle_FocusClearsOnExplicitOff(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus": answer("off", 0.9),
+	}}}
+	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", PriorOracleFocusMode: "shopper"})
+	if err != nil {
+		t.Fatalf("RunOracle error: %v", err)
+	}
+	if !result.FocusCleared {
+		t.Errorf("want an explicit off winner to clear Oracle's own mode, got %+v", result)
+	}
+}
+
+// The clear must never touch a mode Oracle didn't set: with no prior Oracle
+// pick, a low-confidence/off verdict just leaves the turn's own mode alone.
+func TestRunOracle_FocusDoesNotClearAModeOracleDidNotSet(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus": answer("off", 0.95),
+	}}}
+	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "hi", ActiveFocusMode: "brief"})
+	if err != nil {
+		t.Fatalf("RunOracle error: %v", err)
+	}
+	if result.FocusCleared || result.FocusMode != "" {
+		t.Errorf("want no clear and no pick for a manual/default mode, got %+v", result)
+	}
+}
+
+// A sticky mode outranks a clear too — safari owns the whole thread, and a
+// later "off" verdict must not silently drop it mid-exploration.
+func TestRunOracle_FocusDoesNotClearStickySafari(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus": answer("off", 0.99),
+	}}}
+	result, err := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "next stop", PriorOracleFocusMode: "safari"})
+	if err != nil {
+		t.Fatalf("RunOracle error: %v", err)
+	}
+	if result.FocusCleared || result.FocusMode != "" {
+		t.Errorf("want safari kept (sticky), got %+v", result)
 	}
 }
 

@@ -93,8 +93,16 @@ type OracleResult struct {
 	// FocusMode is Oracle's own pick, if any check fired one — always
 	// populated for transparency even when IsManualFocus means
 	// gateway/turn.go won't apply it as the turn's actual mode.
-	FocusMode      string `json:"focus_mode,omitempty"`
-	NoResearchHint bool   `json:"no_research_hint,omitempty"`
+	FocusMode string `json:"focus_mode,omitempty"`
+	// FocusCleared means Oracle retracted the focus mode it had itself set
+	// for this thread: the focus check found no mode that clears its bar
+	// this turn (an explicit "off" winner, or a winner below the check's
+	// threshold), so gateway/turn.go runs the turn with no mode and clears
+	// threads.focus_mode. Only ever about a mode Oracle set earlier — a
+	// manual pick or the Settings default is left alone (see resolveFocus).
+	// Distinct from FocusMode == "": that means "Oracle had no opinion".
+	FocusCleared   bool `json:"focus_cleared,omitempty"`
+	NoResearchHint bool `json:"no_research_hint,omitempty"`
 	// Injections is every fired check's resolved text, in the order the
 	// ## Oracle section should list them — one paragraph each.
 	Injections []string       `json:"injections,omitempty"`
@@ -187,9 +195,21 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 			picked, fired := resolveFocus(check, focusAns, in.PriorOracleFocusMode, highStakesOption)
 			result.Checks = append(result.Checks, CheckOutcome{Key: "focus", Winner: focusAns.Choice, Probabilities: focusAns.Probabilities, Fired: fired})
 			if fired {
-				result.FocusMode = picked
-				if !in.IsManualFocus {
-					effectiveFocus = picked
+				// picked=="off" is resolveFocus's "retract the mode Oracle
+				// itself set" outcome — recorded as its own flag rather than
+				// folded into FocusMode so "" stays meaningfully "Oracle had
+				// no opinion" everywhere else, and so the why-sheet can say
+				// "cleared" instead of "no pick".
+				if picked == "off" {
+					result.FocusCleared = true
+					if !in.IsManualFocus {
+						effectiveFocus = ""
+					}
+				} else {
+					result.FocusMode = picked
+					if !in.IsManualFocus {
+						effectiveFocus = picked
+					}
 				}
 			}
 		}
@@ -253,19 +273,47 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) (Oracl
 }
 
 // resolveFocus applies the focus check's sticky/never-with-high-stakes/
-// option-threshold/switch-threshold rules to its raw Jev answer. Returns
-// ("", false) whenever nothing should change — the caller decides what
-// "nothing changes" means for the turn (keep the prior/default mode).
+// option-threshold/switch-threshold rules to its raw Jev answer, and
+// decides when Oracle should *retract* a mode it set earlier.
+//
+// Returns (picked, fired):
+//   - ("", false)   nothing changes (keep whatever mode the turn already has)
+//   - (mode, true)  Oracle picked that mode
+//   - ("off", true) Oracle cleared the mode it had set — see below
 func resolveFocus(check prompts.OracleCheck, ans jev.ChoiceAnswer, priorOracleFocus, highStakesOption string) (picked string, fired bool) {
-	if ans.Choice == "" || ans.Choice == "off" {
-		return "", false
-	}
-	if highStakesOption != "" && sliceContains(check.NeverWithHighStakes, ans.Choice) {
+	if ans.Choice == "" {
 		return "", false
 	}
 	if priorOracleFocus != "" && sliceContains(check.Sticky, priorOracleFocus) {
 		// Already in a sticky mode for this thread — Oracle doesn't even
-		// consider switching away from it.
+		// consider switching away from it, or clearing it (a sticky mode
+		// like safari is meant to own the thread to the end).
+		return "", false
+	}
+
+	// A winner that can't clear this check's own base bar means Oracle
+	// isn't confident *any* mode fits this message, and "off" says so
+	// outright. When the mode now in effect was Oracle's own earlier pick,
+	// that verdict retracts it: leaving a stale mode on a message Oracle
+	// doesn't think it suits is the bug this closes (live: a "shopper"
+	// thread asked a background-research question, shopper scored 0.00,
+	// and the thread stayed in shopper mode anyway).
+	//
+	// Note the bar compared here is the check's plain Threshold, NOT the
+	// higher SwitchThreshold: a near-miss on a *new* mode (clears the base
+	// bar but not the switch bar) keeps the existing mode on purpose —
+	// clearing there would drop the thread to nothing every time Oracle
+	// leaned a different way but not strongly enough to switch, which is
+	// exactly what SwitchThreshold exists to avoid. Only a true "no mode
+	// fits" (off, or below the base bar) retracts.
+	if priorOracleFocus != "" &&
+		(ans.Choice == "off" || ans.Probabilities[ans.Choice] < check.Threshold) {
+		return "off", true
+	}
+	if ans.Choice == "off" {
+		return "", false
+	}
+	if highStakesOption != "" && sliceContains(check.NeverWithHighStakes, ans.Choice) {
 		return "", false
 	}
 

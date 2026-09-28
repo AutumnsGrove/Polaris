@@ -893,8 +893,8 @@ oracle:
       # one mode that can make an answer *worse* if picked wrongly; Safari
       # takes over the whole thread.
       option_thresholds:
-        brief: 0.85
-        safari: 0.92
+        brief: 0.80
+        safari: 0.85
       # Oracle never switches out of these once they're set for a thread.
       sticky: [safari]
       # Oracle won't pick brief if high_stakes fired (see the plan's

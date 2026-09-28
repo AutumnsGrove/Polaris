@@ -826,23 +826,37 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				IsManualFocus:        isManualFocus,
 				PriorOracleFocusMode: priorOracleFocus,
 			})
-			if oracleResult.FocusMode != "" && !isManualFocus {
-				agentCtx.FocusMode = oracleResult.FocusMode
+			// FocusCleared is Oracle retracting a mode it set earlier (see
+			// resolveFocus) — the turn runs with no mode at all, and the
+			// thread's sticky focus_mode is cleared to match. Handled in the
+			// same branch as a pick so both count as "Oracle acted" for the
+			// frontend (oracleFocusModeSource == "oracle"), which is what
+			// lets the composer badge clear itself as well as set itself.
+			if !isManualFocus && (oracleResult.FocusMode != "" || oracleResult.FocusCleared) {
+				appliedOracleFocus := oracleResult.FocusMode
+				if oracleResult.FocusCleared {
+					appliedOracleFocus = ""
+				}
+				agentCtx.FocusMode = appliedOracleFocus
 				oracleFocusModeSource = "oracle"
-				// Persists Oracle's own pick as the thread's new sticky
-				// focus_mode — the earlier SetThreadConfig call above (this
-				// function's very first write) only ever wrote msg.FocusMode
-				// (whatever the client sent), since it runs before Oracle
-				// does. Without this second write, threads.focus_mode never
-				// actually reflects an Oracle pick, and
-				// LastAssistantFocusModeSource/PriorOracleFocusMode above
-				// silently degrades to always empty — breaking the focus
-				// check's own sticky/switch_threshold rules (resolveFocus in
-				// oracle.go), which depend on knowing what Oracle itself
-				// picked last turn. Best-effort, same as every other
-				// post-hoc store write in this handler.
-				if err := s.db.SetThreadConfig(threadID, modelCfg.ID, oracleResult.FocusMode, msg.DeepResearch, msg.NoResearch); err != nil {
-					log.Warn("failed to persist oracle's focus pick as thread config", "thread", threadID, "err", err)
+				// Persists Oracle's own decision as the thread's new sticky
+				// focus_mode — either the pick, or "" when Oracle cleared a
+				// mode it had set. The earlier SetThreadConfig call above
+				// (this function's very first write) only ever wrote
+				// msg.FocusMode (whatever the client sent), since it runs
+				// before Oracle does. Without this second write,
+				// threads.focus_mode never actually reflects an Oracle
+				// decision, and LastAssistantFocusModeSource/
+				// PriorOracleFocusMode above silently degrades to always
+				// empty — breaking the focus check's own sticky/
+				// switch_threshold rules (resolveFocus in oracle.go), which
+				// depend on knowing what Oracle itself decided last turn.
+				// appliedOracleFocus (not OracleResult.FocusMode directly),
+				// since a clear must write "" rather than leave the old mode.
+				// Best-effort, same as every other post-hoc store write in
+				// this handler.
+				if err := s.db.SetThreadConfig(threadID, modelCfg.ID, appliedOracleFocus, msg.DeepResearch, msg.NoResearch); err != nil {
+					log.Warn("failed to persist oracle's focus decision as thread config", "thread", threadID, "err", err)
 				}
 			} else if msg.FocusMode != "" {
 				if isManualFocus {

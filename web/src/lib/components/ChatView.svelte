@@ -202,11 +202,16 @@
 		if (
 			last?.role === 'assistant' &&
 			last.oracleFocusModeSource === 'oracle' &&
-			last.appliedFocusMode &&
 			last !== lastOracleFocusAppliedTurn
 		) {
 			lastOracleFocusAppliedTurn = last;
-			focusMode = last.appliedFocusMode as FocusMode;
+			// Fall back to 'off', not to "leave it alone": Oracle clears a
+			// mode it set earlier (appliedFocusMode "" / undefined,
+			// focus_cleared) when no mode fits the new message, and the
+			// composer badge has to reflect that too — previously this
+			// branch only ran for a non-empty pick, so a cleared mode stayed
+			// showing on the trigger.
+			focusMode = (last.appliedFocusMode || 'off') as FocusMode;
 			focusModeManual = false;
 		}
 	});
