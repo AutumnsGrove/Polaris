@@ -70,6 +70,36 @@
 //	  {"match":"Top Headlines","content":"Concurrent block reply for headlines specifically."},
 //	  {"content":"Generic reply for every other concurrent block this turn fires."}
 //	]}'
+//
+// # Jev (Oracle mode, source verification)
+//
+// jev.Client hits a completely different endpoint (POST {base}/systemone,
+// not /chat/completions, and a plain JSON response, not SSE) with a
+// different request/response shape — see jev/jev.go's package doc
+// comment. This server answers it too, with its own queue/control
+// surface, so a browser/Playwright session can exercise Oracle mode or
+// verification against this same fake process instead of needing a real
+// Jev-capable OpenRouter key on hand. GET /_control/jev/calls returns raw
+// request bodies (each one's "questions" map's keys/criteria are the
+// interesting part to assert on — e.g. that a skip_for_focus check really
+// didn't get asked). POST /_control/jev/queue schedules answers for
+// specific question keys by name — any question in the request NOT
+// covered by the queued entry answers itself, picking whichever of its
+// own criteria is named "off"/"no"/"none" (falling back to the
+// alphabetically-first option), at 100% confidence, so an unscripted
+// question never blocks the response or looks like it fired:
+//
+//	curl -sX POST http://127.0.0.1:18901/_control/jev/queue -d '{"responses":[
+//	  {"answers":{
+//	    "high_stakes":{"choice":"medical","probabilities":{"medical":0.91,"none":0.06}},
+//	    "focus":{"choice":"researcher","probabilities":{"researcher":0.82,"academic":0.11,"off":0.05}}
+//	  }}
+//	]}'
+//
+// Same Match/FIFO precedence as the chat queue above, and the same
+// "queue empty -> everything answers quiet/off" fallback as
+// defaultReply's reasoning — a script that only cares about the chat
+// completion side doesn't have to also stub every Jev call it triggers.
 package main
 
 import (
@@ -128,6 +158,38 @@ type queuedResponse struct {
 // explicitly scripted, e.g. title/suggestion generation calls).
 const defaultReply = "This is the fake OpenRouter server's default reply — queue a scripted response via POST /_control/queue for anything more specific."
 
+// jevAnswerScript is one scripted question's answer — see
+// jev.ChoiceAnswer. Probabilities defaults to {Choice: 1.0} when omitted,
+// the common case for a script that only cares which option won, not the
+// exact odds.
+type jevAnswerScript struct {
+	Choice        string             `json:"choice"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+}
+
+// queuedJevResponse is one scripted /systemone call — Answers is keyed by
+// question key (e.g. "focus", "high_stakes", "chip_pulsar"), same shape
+// gateway/oracle.go's RunOracle asks for. Any question in the real
+// request NOT covered here answers itself via a quiet default — see
+// jevQuietAnswer.
+type queuedJevResponse struct {
+	Answers map[string]jevAnswerScript `json:"answers,omitempty"`
+	Cost    float64                    `json:"cost,omitempty"`
+	// Match: see queuedResponse.Match's doc comment — identical semantics,
+	// just checked against a /systemone request body instead of a
+	// /chat/completions one.
+	Match string `json:"match,omitempty"`
+}
+
+// jevRequestBody mirrors jev.go's own requestBody/questionWire just
+// enough to read back each question's criteria (option set) — needed to
+// pick a quiet default for any question a queued response doesn't cover.
+type jevRequestBody struct {
+	Questions map[string]struct {
+		Criteria map[string]string `json:"criteria"`
+	} `json:"questions"`
+}
+
 type server struct {
 	mu    sync.Mutex
 	queue []queuedResponse
@@ -141,6 +203,12 @@ type server struct {
 	// human (or a screenshot/mid-turn state check) to ever see it "still
 	// running." Set via -delay to slow every call down uniformly instead.
 	delay time.Duration
+
+	// jevQueue/jevCalls: Jev's own queue/call-log, entirely separate from
+	// the chat-completion ones above — see the package doc comment's
+	// "Jev" section.
+	jevQueue []queuedJevResponse
+	jevCalls []json.RawMessage
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +346,8 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.queue = nil
 	s.calls = nil
+	s.jevQueue = nil
+	s.jevCalls = nil
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -285,6 +355,120 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleCalls(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	calls := s.calls
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(calls)
+}
+
+// jevQuietAnswer picks the "nothing fired" option from a question's own
+// criteria set — "off"/"no"/"none" in that priority order (prompts.yaml's
+// checks only ever use one of these three for their quiet option), or the
+// alphabetically-first criteria key if none of those three are present,
+// so an unusual/future check still gets a deterministic, valid answer
+// instead of an empty Choice that would fail RunOracle's
+// Probabilities[Choice] threshold lookup.
+func jevQuietAnswer(criteria map[string]string) jevAnswerScript {
+	for _, quiet := range []string{"off", "no", "none"} {
+		if _, ok := criteria[quiet]; ok {
+			return jevAnswerScript{Choice: quiet, Probabilities: map[string]float64{quiet: 1.0}}
+		}
+	}
+	first := ""
+	for k := range criteria {
+		if first == "" || k < first {
+			first = k
+		}
+	}
+	return jevAnswerScript{Choice: first, Probabilities: map[string]float64{first: 1.0}}
+}
+
+// takeJevResponse mirrors takeResponse's match/FIFO precedence, just
+// against s.jevQueue — see queuedJevResponse.Match's doc comment.
+func (s *server) takeJevResponse(body string) (queuedJevResponse, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, resp := range s.jevQueue {
+		if resp.Match != "" && strings.Contains(body, resp.Match) {
+			s.jevQueue = append(s.jevQueue[:i:i], s.jevQueue[i+1:]...)
+			return resp, true
+		}
+	}
+	for i, resp := range s.jevQueue {
+		if resp.Match == "" {
+			s.jevQueue = append(s.jevQueue[:i:i], s.jevQueue[i+1:]...)
+			return resp, true
+		}
+	}
+	return queuedJevResponse{}, false
+}
+
+func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	s.jevCalls = append(s.jevCalls, json.RawMessage(body))
+	s.mu.Unlock()
+
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+
+	var req jevRequestBody
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	scripted, _ := s.takeJevResponse(string(body))
+
+	answers := make(map[string]struct {
+		Choice        string             `json:"choice"`
+		Probabilities map[string]float64 `json:"probabilities"`
+		Confidence    float64            `json:"confidence"`
+	}, len(req.Questions))
+	for key, q := range req.Questions {
+		a, ok := scripted.Answers[key]
+		if !ok {
+			a = jevQuietAnswer(q.Criteria)
+		}
+		conf := a.Probabilities[a.Choice]
+		answers[key] = struct {
+			Choice        string             `json:"choice"`
+			Probabilities map[string]float64 `json:"probabilities"`
+			Confidence    float64            `json:"confidence"`
+		}{Choice: a.Choice, Probabilities: a.Probabilities, Confidence: conf}
+	}
+
+	resp := map[string]interface{}{
+		"answers": answers,
+		"usage":   map[string]interface{}{"input_tokens": 0, "output_tokens": 0, "cost": scripted.Cost},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *server) handleJevQueue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Responses []queuedJevResponse `json:"responses"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	s.jevQueue = append(s.jevQueue, req.Responses...)
+	n := len(s.jevQueue)
+	s.mu.Unlock()
+	fmt.Fprintf(w, `{"queued":%d}`, n)
+}
+
+func (s *server) handleJevCalls(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	calls := s.jevCalls
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(calls)
@@ -301,6 +485,9 @@ func main() {
 	mux.HandleFunc("/_control/queue", s.handleQueue)
 	mux.HandleFunc("/_control/reset", s.handleReset)
 	mux.HandleFunc("/_control/calls", s.handleCalls)
+	mux.HandleFunc("/systemone", s.handleSystemOne)
+	mux.HandleFunc("/_control/jev/queue", s.handleJevQueue)
+	mux.HandleFunc("/_control/jev/calls", s.handleJevCalls)
 
 	log.Printf("fake OpenRouter stub listening on %s (delay=%s) — point openrouter.base_url at it in config.yaml", *addr, *delay)
 	log.Fatal(http.ListenAndServe(*addr, mux))

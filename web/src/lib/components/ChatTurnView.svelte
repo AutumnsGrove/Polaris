@@ -34,6 +34,7 @@
 	import { renderInlineCitations } from '$lib/citations';
 	import { buildOracleNote } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
+	import OracleConstellation from './OracleConstellation.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { goto } from '$app/navigation';
@@ -230,6 +231,26 @@
 		buildOracleNote(turn.oracleResult, turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode)
 	);
 
+	// The live "reading" choreography (OracleConstellation.svelte) — shown
+	// only while this turn is still streaming with no timeline/content yet
+	// (the same "Oracle hasn't resolved" window ComposerMenu's ring uses)
+	// and Oracle is actually enabled. Ghost threads never run Oracle at
+	// all (see gateway/turn.go's `!ghost` gate), so the animation would be
+	// pure theater there — skipped for the same reason the backend skips
+	// the real classification call.
+	//
+	// checkCount is a fixed, approximate star count (prompts.yaml defines
+	// 6 checks today: focus/research/high_stakes/intent/clarify/recall),
+	// not this turn's real fired count — that isn't known until the turn
+	// actually finishes, which is exactly what this animation is playing
+	// *before*. Same simplification the mockup's own demo makes
+	// (`buildConstellation`'s default `starCount = 6`); the margin note
+	// that follows is what conveys the real, per-turn result.
+	let showConstellation = $derived(
+		appState.settings.oracleEnabled && !appState.isGhostThread && turn.streaming
+	);
+	let constellationCutShort = $derived(!!turn.timeline?.length || !!turn.content);
+
 	let infoSheetOpen = $state(false);
 
 	// Offer lines (docs/plans/oracle-mode.md's 7a) — only "pulsar"/"daily"
@@ -347,10 +368,14 @@
 {:else}
 	<div class="row row-assistant" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		<div class="bubble bubble-assistant">
-			{#if oracleNote}
+			{#if showConstellation}
+				<div class="stage">
+					<OracleConstellation checkCount={6} cutShort={constellationCutShort} />
+				</div>
+			{:else if oracleNote}
 				<!-- B2: sits above tool calls/prose, same position the
-					 OracleConstellation "reading" animation folds into once a
-					 live turn resolves (see OracleConstellation.svelte's onDone). -->
+					 OracleConstellation "reading" animation above folds away
+					 from once a live turn resolves. -->
 				<button class="oracle-note" type="button" onclick={() => (infoSheetOpen = true)}>
 					<Asterism size={13} class="o-icon" />
 					{@html oracleNote}
@@ -732,6 +757,14 @@
 	}
 
 	.timeline {
+		margin-bottom: var(--space-sm);
+	}
+
+	/* Holds OracleConstellation's live "reading" animation — fixed height
+	   matches the component's own SVG so nothing shifts when it mounts. */
+	.stage {
+		position: relative;
+		height: 34px;
 		margin-bottom: var(--space-sm);
 	}
 
