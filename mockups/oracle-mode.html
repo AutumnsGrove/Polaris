@@ -425,6 +425,14 @@ section { display: flex; flex-direction: column; gap: var(--space-xl); }
 button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .phase-name { font-size: 12.5px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; }
 
+.mode-grid { display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); max-width: 860px; }
+.mode-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-md); align-items: center; padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--color-border); }
+.mode-row:first-child { border-top: none; }
+.mode-name { font-size: 13px; font-weight: 600; }
+.mode-rule { font-size: 12px; color: var(--color-text-dim); }
+@media (max-width: 640px) {
+	.mode-row { grid-template-columns: 1fr; gap: 2px; }
+}
 .decide {
 	background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
 	padding: var(--space-lg) var(--space-xl); max-width: 76ch;
@@ -914,6 +922,45 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 		</div>
 	</section>
 
+
+	<!-- ======================= FOCUS MODES ======================= -->
+	<section>
+		<div class="section-head">
+			<span class="tag">8 · Every focus mode</span>
+			<h2>The note in each mode, and Brief up close</h2>
+			<p>Each nudge is checked against the active mode, whoever picked it: Oracle, you, or the Settings default. Brief gets short versions of the nudges that would otherwise make the answer long.</p>
+		</div>
+		<div class="mode-grid"><div class="mode-row"><span class="mode-name">Off</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>a place</b></button><span class="mode-rule">Only nudges are named; focus isn't mentioned.</span></div><div class="mode-row"><span class="mode-name">Brief</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>a quick fact</b> · kept <b>brief</b></button><span class="mode-rule">Oracle only picks Brief when the message asks for it, at 85%+ confidence.</span></div><div class="mode-row"><span class="mode-name">Researcher</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>medical</b> · answered as <b>Researcher</b></button><span class="mode-rule">High stakes' fallback when no mode is set.</span></div><div class="mode-row"><span class="mode-name">Academic</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>Academic</b></button><span class="mode-rule"></span></div><div class="mode-row"><span class="mode-name">News</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>News</b></button><span class="mode-rule"></span></div><div class="mode-row"><span class="mode-name">Shopper</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>Shopper</b></button><span class="mode-rule">The product nudge is skipped; Shopper already covers it.</span></div><div class="mode-row"><span class="mode-name">First Principles</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered from <b>First Principles</b></button><span class="mode-rule"></span></div><div class="mode-row"><span class="mode-name">Socratic</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>Socratic</b></button><span class="mode-rule"></span></div><div class="mode-row"><span class="mode-name">Safari</span><button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Answered as <b>Safari</b> · held for this thread</button><span class="mode-rule">Highest bar (92%). Oracle never switches out of Safari mid-thread.</span></div></div>
+		<div class="frames">
+			<div class="frame">
+				<div class="frame-label"><span class="num">8a</span><h3>Oracle picks Brief</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Quick one: what year did the Berlin Wall fall?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>a quick fact</b> · kept <b>brief</b></button>
+					<div class="prose"><p style="font-size:14px">1989, on the night of 9 November<span class="cchip">britannica.com</span>.</p></div>
+				</div></div>
+				<p class="note">The message asked for brevity, so Brief clears its higher bar. Research still runs as needed.</p>
+			</div>
+			<div class="frame">
+				<div class="frame-label"><span class="num">8b</span><h3>Your Brief, high-stakes question</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Can I take ibuprofen with lisinopril?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>medical</b> · kept your <b>Brief</b></button>
+					<div class="prose"><p style="font-size:14px">Occasionally, at a low dose, it's generally OK. Regular use can weaken lisinopril's effect and strain your kidneys, so paracetamol is the usual choice<span class="cchip">nhs.uk</span>. Ask a pharmacist if you need it for more than a few days.</p></div>
+				</div></div>
+				<p class="note">Brief was your pick (or your Settings default), so it stays. The medical nudge switches to its short version: short answer, but the caveat that changes what you'd do is kept and cited.</p>
+			</div>
+			<div class="frame">
+				<div class="frame-label"><span class="num">8c</span><h3>Same question, no mode set</h3></div>
+				<div class="phone short"><div class="timeline">
+					<div class="bubble-user">Can I take ibuprofen with lisinopril?</div>
+					<button class="oracle-note" type="button"><svg class="lucide o-icon"><use href="#i-asterism" /></svg>Read as <b>medical</b> · answered as <b>Researcher</b></button>
+					<div class="tools"><div class="tool"><svg class="lucide"><use href="#i-search" /></svg><span>Searching: ibuprofen lisinopril interaction</span><svg class="lucide"><use href="#i-chev" /></svg></div></div>
+				</div></div>
+				<p class="note">Oracle never picks Brief itself on a high-stakes question, even if the message is short. It goes to Researcher.</p>
+			</div>
+		</div>
+	</section>
 	<section>
 		<div class="section-head">
 			<span class="tag">Your call</span>
@@ -924,7 +971,7 @@ button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2
 				<li><b>Icon:</b> Asterism (custom). <b>Ring:</b> prism, turning while Oracle reads.</li>
 				<li><b>Footer:</b> cost moves into the ⓘ sheet, split into answer, verification and Oracle. Duration stays in the footer.</li>
 				<li><b>Offers:</b> 7a, separate lines under the footer, above the follow-up suggestions.</li>
-				<li><b>Still open:</b> whether the sheet's stats sit above or below the Oracle sections, and whether "Read as medical · answered as Researcher" is too wordy.</li>
+				<li><b>Sheet order:</b> the answer's stats sit above the Oracle sections.</li><li><b>Note wording:</b> kept as is for now; to be judged in real use.</li><li><b>Focus modes:</b> every nudge is checked against the active mode. Brief gets short variants, and Oracle never picks Brief on a high-stakes question. Safari needs the highest bar and holds for the whole thread.</li>
 			</ol>
 		</div>
 	</section>

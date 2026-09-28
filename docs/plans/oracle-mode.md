@@ -79,6 +79,13 @@ If the operator set a focus mode or toggled research by hand for this message, O
 override that field — it still runs its other checks (high-stakes, intent, clarify) and injects
 their guidance.
 
+**The Settings default focus mode is not a manual pick.** Today `settings.defaultFocusMode`
+pre-fills the composer, so by the time a message is sent, the server can't tell "the operator
+chose Brief for this message" from "Brief was the standing default." With Oracle on, the default
+becomes Oracle's fallback — used when the `focus` check isn't confident — and only a pick made in
+the composer for this message counts as manual. That needs the ask/WS request to carry where the
+focus mode came from (e.g. `focus_mode_source: "manual" | "default"`), not just its value.
+
 ### Yes/no questions
 
 `jev.go` only implements `AskChoice` today. Every yes/no check below is a two-option Choice
@@ -147,14 +154,60 @@ Chip checks run in the same Jev request as everything else, so the chips are rea
 LLM-generated follow-up suggestions — they render **above** those suggestions.
 
 **`high_stakes` and focus interplay**: if `high_stakes` fires and neither the operator nor the `focus`
-check picked a mode, focus becomes Researcher. If `focus` picked something else with confidence
-(e.g. Brief), that pick stands — the high-stakes injection still applies, and it's written to hold up
-on its own regardless of focus mode.
+check picked a mode, focus becomes Researcher. If a mode is already set, it stands — but every
+injection is checked against it first; see "Focus modes, one by one" below, Brief especially.
 
 **Verification**: per-claim "found in source" verification already runs on every turn
 (`gateway/turn.go`), so high-stakes doesn't need to switch it on. The high-stakes nudges instead push
 the model toward sources worth verifying (primary, authoritative) and toward `compare_sources` when
 sources disagree.
+
+## Focus modes, one by one
+
+Oracle's nudges were first written assuming a normal answer. Every focus mode reshapes the answer
+differently (see `prompts.yaml`'s `agent.focus_modes`), so each injection has to be checked against
+each mode — whether Oracle picked that mode, the operator picked it, or it's the Settings default.
+The mechanism: any `inject` text can carry per-focus-mode variants (`by_focus` in the draft below),
+and a check can be skipped outright for a mode (`skip_for_focus`). A variant replaces the default
+text; it doesn't stack on top of it.
+
+| Mode | Oracle picks it when | Note wording | Rules |
+|---|---|---|---|
+| `off` | No mode is clearly better | *(focus not mentioned)* | Baseline. |
+| `brief` | The message itself asks for brevity ("quick question", "tl;dr", "one word") or is a single fact lookup | "kept **brief**" | Higher bar to pick (0.85). **High-stakes never makes Oracle pick Brief**, and when Brief is already on, high-stakes and intent nudges switch to short variants (below). |
+| `researcher` | Careful cross-checking matters | "answered as **Researcher**" | The ceiling for Oracle-chosen depth, and high-stakes' fallback when no mode is set. |
+| `academic` | Scientific/medical/technical, best from papers or official docs | "answered as **Academic**" | Complements high-stakes medical; no conflict. |
+| `news` | Current events | "answered as **News**" | Likely to trigger the Pulsar/Daily offers; nothing to suppress. |
+| `shopper` | Find/compare/buy a product | "answered as **Shopper**" | Skip the `intent: product` nudge — Shopper's own instructions already cover it, and two versions of the same guidance fight each other. |
+| `first_principles` | Wants the why/how from fundamentals | "answered from **First Principles**" | No conflicts. |
+| `socratic` | Wants to reason it through step by step | "answered as **Socratic**" | Polaris's Socratic is a step-by-step walk-through, not a question loop, so clarify still applies. |
+| `safari` | Explicitly wants an interactive, multi-stop exploration | "answered as **Safari**" | Highest bar to pick (0.92). Skip `clarify` (Safari's Embark step already asks). **Sticky for the whole thread**: Oracle never switches out of Safari mid-thread, since that would abandon the stop-by-stop loop halfway. |
+
+### Brief, specifically
+
+Brief says "a few sentences or a tight paragraph, no filler." Several nudges ask for more than that
+(high-stakes wants caveats and exact figures; book/film/music want a comparison of each title), so
+when Brief is on those nudges swap to short variants that keep the one thing that matters:
+
+- **High stakes + Brief**: stay short, but never drop the single caveat that changes what the user
+  should do, keep exact figures exact, and still cite a primary source. Brevity trims explanation,
+  not safety.
+- **Book / film / music + Brief**: at most one line per title on how it differs, or just the one
+  best pick.
+- **Product + Brief**: the one best option and its price, not a comparison table.
+- **Clarify + Brief**: unchanged — asking one short question is compatible with a short answer.
+- **Research-off + Brief**: unchanged — Brief never limits research, only the written answer.
+
+And Oracle itself won't choose Brief when `high_stakes` fired: a short, confident answer to a
+medical or legal question is exactly the failure this whole feature is meant to prevent. The
+operator can still pick Brief by hand (or have it as the Settings default); then the short
+high-stakes variant applies.
+
+### Settings default excludes Shopper and Safari
+
+`gateway/settings.go`'s `validFocusModes` (the Settings default) doesn't include `shopper` or
+`safari` — they're per-message only today. With Oracle on, Oracle becomes the only automatic way
+into either, which is why both need a high pick threshold.
 
 ## Draft `prompts.yaml` section
 
@@ -191,19 +244,30 @@ oracle:
     focus:
       threshold: 0.70
       switch_threshold: 0.85   # needed to change an already-set mode mid-thread
+      # Per-option pick bars, above the check's own threshold. Brief is the
+      # one mode that can make an answer *worse* if picked wrongly; Safari
+      # takes over the whole thread.
+      option_thresholds:
+        brief: 0.85
+        safari: 0.92
+      # Oracle never switches out of these once they're set for a thread.
+      sticky: [safari]
+      # Oracle won't pick brief if high_stakes fired (see the plan's
+      # "Brief, specifically").
+      never_with_high_stakes: [brief]
       instructions: >-
         Which answering style best fits this message? Pick "off" unless one style is clearly a
         better fit than a normal, balanced answer.
       options:
         off: A normal balanced answer fits; no special style is clearly better.
-        brief: The person wants a quick fact or a short answer, not an explanation.
+        brief: The message itself asks for a short answer (quick question, tl;dr, one word) or is a single fact lookup.
         researcher: The question needs careful cross-checking of several sources, or has real consequences if wrong.
         academic: A scientific, medical, or technical question best answered from papers, journals, or official documentation.
         news: About a current or recent event, where fresh news coverage matters more than reference pages.
         shopper: The person wants to find, compare, or buy a product.
         first_principles: The person wants to understand why or how something works from the ground up.
         socratic: The person wants to be guided to work something out themselves, not handed the answer.
-        safari: The person wants to explore a broad topic interactively, stop by stop.
+        safari: The person explicitly wants to explore a broad topic interactively, stop by stop, over several turns.
 
     research:
       threshold: 0.85
@@ -255,6 +319,12 @@ oracle:
         any: >-
           When sources disagree on something that matters here, use compare_sources rather than
           picking one.
+      # Replaces every high_stakes inject above when Brief is active.
+      by_focus:
+        brief: >-
+          This looks like a {option} question. Keep the answer short as asked, but brevity trims
+          explanation, not safety: keep any figure exact, never drop the one caveat that changes
+          what the user should do, and still cite a primary source for it.
 
     intent:
       threshold: 0.65
@@ -288,6 +358,15 @@ oracle:
         product: >-
           This is about a product. Compare real, currently available options with actual prices
           and the tradeoffs that matter for this use — not a generic feature list.
+      # Shopper mode already carries its own product guidance; don't send two.
+      skip_option_for_focus:
+        product: [shopper]
+      by_focus:
+        brief:
+          book: This is about books. Use the books tool; give the one best pick, or one line per title on how they differ.
+          film_tv: This is about film or TV. Use the movies tool; give the one best pick, or one line per title on how they differ.
+          music: This is about music. Use the music tool; give the one best pick, or one line per title on how they differ.
+          product: This is about a product. Give the single best current option with its real price.
         weather: >-
           This is about weather. Use the weather tool rather than a web search.
         video: >-
@@ -303,6 +382,7 @@ oracle:
     clarify:
       threshold: 0.85
       first_message_only: true
+      skip_for_focus: [safari]   # Safari's Embark step already asks
       instructions: >-
         Is this message ambiguous enough that the answer would be substantially different depending
         on something the person didn't say — so that asking one question first would clearly save
@@ -395,6 +475,9 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
   means "Oracle read this". SVG source is in `mockups/oracle-mode.html` (`#i-asterism`); it'll
   need to become a small Svelte component, since `@lucide/svelte` doesn't ship it.
 - **Reduced motion**: no constellation or ring spin, just the note.
+- **Sheet order**: the answer's own stats sit above the Oracle sections.
+- **Note wording** ("Read as **medical** · answered as **Researcher**"): kept as is; to be judged in
+  real use. Per-mode wording is in "Focus modes, one by one".
 
 ## Open questions
 
