@@ -56,6 +56,21 @@ describe('ProjectsState', () => {
 		expect(state.projects).toHaveLength(1); // a network blip must not empty the list
 	});
 
+	it('a 404 from a backend that predates the routes is an error, never a silent "still loading"', async () => {
+		// The ThreadMenu picker distinguishes error/loaded/neither; this pins
+		// the state it reads. loaded must stay false and error must be set.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse('404 page not found', false, 404))));
+		await state.load();
+		expect(state.error).toBe(true);
+		expect(state.loaded).toBe(false);
+
+		// And a later successful retry clears it.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse([]))));
+		await state.load();
+		expect(state.error).toBe(false);
+		expect(state.loaded).toBe(true);
+	});
+
 	it('an update floats the project to the top and refreshes every reader', async () => {
 		state.projects = [project({ id: 'a', name: 'A' }), project({ id: 'b', name: 'B' })];
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(project({ id: 'b', name: 'B', favorite: true })))));

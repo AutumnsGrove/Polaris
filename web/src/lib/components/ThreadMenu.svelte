@@ -212,7 +212,17 @@
 						{#if appState.activeProjectId === project.id}<Check size={14} />{/if}
 					</button>
 				{:else}
-					<div class="info-row"><span>{projectsState.loaded ? 'No projects yet.' : 'Loading…'}</span></div>
+					<!-- Three distinct states, not two: a failed load must not sit on
+					     "Loading…" forever (it did, against a backend that predated
+					     the projects routes) — say so and offer a retry. -->
+					{#if projectsState.error && !projectsState.loaded}
+						<div class="info-row move-error">
+							<span>Couldn't load projects.</span>
+							<button class="retry" onclick={() => projectsState.load()}>Retry</button>
+						</div>
+					{:else}
+						<div class="info-row"><span>{projectsState.loaded ? 'No projects yet.' : 'Loading…'}</span></div>
+					{/if}
 				{/each}
 				{#if appState.activeProjectId}
 					<div class="divider" role="separator"></div>
@@ -384,6 +394,16 @@
 
 	.move-error {
 		color: var(--color-danger);
+	}
+
+	.retry {
+		margin-left: auto;
+		border: none;
+		background: transparent;
+		color: var(--color-accent);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
 	}
 
 	.divider {
