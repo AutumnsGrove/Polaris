@@ -233,10 +233,9 @@ running through the exact same `agent.Run` turn pipeline as a normal message. On
 
 - **Pulsar** (`/pulsar`) — user-defined recurring routines (daily/weekly/monthly), each a real
   thread (`threads.source == "pulsar"`) told what it reported last time so it states only what's
-  new rather than restating still-true facts. `gateway/pulsar_wizard.go`'s ephemeral,
-  non-persisted interview turns a vague idea into a tuned prompt;
-  `tools/finalize_pulsar_prompt.go` forces that final output through a tool call instead of
-  parseable prose. Design doc: `docs/plans/pulsar-routines.md`.
+  new rather than restating still-true facts. The shared "help me write this" wizard (see
+  "The prompt-writing wizard" below) turns a vague idea into a tuned prompt through an ephemeral
+  interview. Design doc: `docs/plans/pulsar-routines.md`.
 - **Pulsar Daily** (`/daily`) — a *different, singleton* surface, not a `routine.kind == 'daily'`
   special case: one "morning newspaper" edition/day assembling ~10 independent mini-generations
   (`gateway/pulsar_daily.go`'s Stage A — weather is a direct tool call, word-of-day/on-this-day/
@@ -247,10 +246,33 @@ running through the exact same `agent.Run` turn pipeline as a normal message. On
   is a singleton daily config, not routine-shaped. Design doc: `docs/plans/pulsar-daily.md`
   (living/mid-design — check its "Status" line before assuming a section is final).
 
-Relevant code beyond the two `gateway/pulsar_scheduler.go`/`pulsar_wizard.go` files above:
-`gateway/pulsar_routes.go`, `gateway/pulsar_daily_routes.go`, `store/pulsar.go`,
-`store/pulsar_daily.go`. README's Pulsar/Pulsar Daily bullets are the user-facing description;
-this section is only the "where the code lives" pointer.
+Relevant code beyond `gateway/pulsar_scheduler.go` above: `gateway/pulsar_routes.go`,
+`gateway/pulsar_daily_routes.go`, `store/pulsar.go`, `store/pulsar_daily.go`. README's
+Pulsar/Pulsar Daily bullets are the user-facing description; this section is only the "where the
+code lives" pointer.
+
+## The prompt-writing wizard
+
+"Help me write this" is one shared, target-driven interview, not a per-surface feature — Pulsar
+routine prompts, Pulsar Daily block instructions (fixed and custom), and a Field's custom
+instructions all run through the same code (issue #138). It is ephemeral: an in-memory session, zero
+`threads`/`messages` rows, a 30-minute TTL swept on the Pulsar scheduler's tick.
+
+- Backend: `gateway/wizard.go` (`POST /api/wizard/start|turn`, sessions, per-turn cost as
+  `aux_usage` kind `wizard:<target>`), `tools/finalize_wizard_prompt.go` (the one finalize tool, also
+  where `tools.WizardTarget` and the `Wizard*` kind constants live), `tools.Context.Wizard`.
+- Prompts: `prompts.yaml`'s `wizard:` section — a shared `contract`/`revision` plus per-target
+  `intro`/`guidance`/`finish`/`opener_task`, assembled by `prompts.Set.WizardSystem`
+  (`prompts/wizard.go`). `{label}` in a fragment is the target's label, deliberately not a Sprintf
+  verb. Edit the YAML and `buildDefaults()` in `prompts/prompts.go` together — a drift test enforces it.
+- Frontend: `web/src/lib/wizard.svelte.ts` (`WizardState`), `WizardOverlay.svelte`, and the
+  launcher `WizardButton.svelte`; each surface passes a `WizardTarget` and an `onAccept`.
+
+**Adding a new target** is three small pieces, not a fourth copy of the machinery: a `Wizard*` kind
+constant (`tools/finalize_wizard_prompt.go`) + its `WizardTargetKind` in `web/src/lib/types.ts`, a
+`targets.<kind>` entry in both `prompts.yaml` and `buildDefaults()`, and a `WizardButton` +
+`WizardOverlay` at the call site. Add the kind to the literal target lists in
+`prompts/prompts_test.go` and `gateway/wizard_test.go` so the shared tests cover it.
 
 ## Keeping the in-app help glossary in sync
 

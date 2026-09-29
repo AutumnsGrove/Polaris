@@ -106,8 +106,8 @@ next to Settings at the bottom of the sidebar — it explains each one in plain 
   search tool access, that's deleted the moment it ends unless you promote it into a regular
   thread. Its real cost still counts toward your regular usage totals, so spend never goes
   unaccounted for. Available over the WebSocket chat client and `POST /api/ask`/`/api/ask/stream`.
-- **Fields** (`/fields`) — a named group of conversations that share custom instructions and a
-  pool of reference files, plus per-Field defaults for model, focus mode, and memory, and opt-outs
+- **Fields** (`/fields`) — a named group of conversations that share custom instructions (a "help
+  me write this" interview can draft them for you) and a pool of reference files, plus per-Field defaults for model, focus mode, and memory, and opt-outs
   from Constellation and chat search. Shared files are read-only to every conversation in the
   Field (an edit becomes a private copy); pin a Field to keep it in the sidebar, or file a conversation under one from the composer's More menu. Shared files
   need the `code_exec` sandbox's workspace configured.
