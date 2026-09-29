@@ -19,7 +19,7 @@ import (
 var catalogOrder = []string{
 	"think", "calculator", "current_time", "web_search", "web_read", "nearby_search", "youtube_transcript",
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
-	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "stars", "spawn_researchers", "finalize_pulsar_prompt",
+	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "stars", "spawn_researchers", "finalize_wizard_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars", "compare_sources",
 	// Appended last, not grouped with code_exec/fetch_url/show: catalogOrder
 	// fixes the wire-format tool order that prompt-prefix caching depends on
@@ -172,11 +172,11 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// Researcher focus mode, which must stay single-agent — see
 		// docs/plans/deep-research-two-tier.md).
 		return ctx.DeepResearch && ctx.SpawnResearchers != nil
-	case "pulsar_wizard":
-		// The ephemeral "help me write the prompt" interview only — see
-		// registry.go's PulsarWizard doc comment. Never offered on a
+	case "wizard":
+		// The ephemeral "help me write this" interview only — see
+		// registry.go's Wizard doc comment. Never offered on a
 		// normal chat/pulse turn, regardless of NoResearch/DisabledTools.
-		return ctx.PulsarWizard
+		return ctx.Wizard != nil
 	case "pulsar_daily_items":
 		// A Pulsar Daily list-block generation only — see registry.go's
 		// PulsarDailyItems doc comment. Never offered on a normal
@@ -292,9 +292,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
 		Description:    "fan out to multiple parallel research sub-agents for a genuinely broad Deep Research question.",
 		APIDescription: "Fan out to multiple independent research sub-agents running in parallel, each investigating one focused angle, then report back their findings for you to synthesize."},
-	"finalize_pulsar_prompt": {Name: "finalize_pulsar_prompt", Requires: "pulsar_wizard",
-		Description:    "end the interview and hand back the drafted Pulsar routine prompt.",
-		APIDescription: "End the interview and hand back the drafted, ready-to-schedule Pulsar routine prompt — this ends the turn."},
+	"finalize_wizard_prompt": {Name: "finalize_wizard_prompt", Requires: "wizard",
+		Description:    "end the interview and hand back the drafted text.",
+		APIDescription: "End the interview and hand back the drafted, ready-to-use text — this ends the turn."},
 	"finalize_daily_items": {Name: "finalize_daily_items", Requires: "pulsar_daily_items",
 		Description:    "end with a structured list of distinct stories instead of one merged paragraph.",
 		APIDescription: "End with every distinct story found as its own item (title, summary, source) instead of one merged paragraph — this ends the turn."},
@@ -394,7 +394,7 @@ func loadCatalog() map[string]catalogEntry {
 // switch.
 var nonToggleable = map[string]bool{
 	"think": true, "ask_user_question": true, "memory": true,
-	"finalize_pulsar_prompt": true, "finalize_daily_items": true,
+	"finalize_wizard_prompt": true, "finalize_daily_items": true,
 }
 
 // ToolInfo is one individually toggleable tool's identity, for the

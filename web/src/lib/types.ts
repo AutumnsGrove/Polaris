@@ -641,15 +641,33 @@ export interface PulsarDailyEdition {
 	created_at: string;
 }
 
-// WizardFinal mirrors tools.WizardFinal — the drafted prompt
-// finalize_pulsar_prompt handed back, ending a wizard turn the same way
-// PendingQuestion ends an ordinary one. See gateway/pulsar_wizard.go.
+// WizardTarget says what a "help me write this" interview is writing —
+// mirrors tools.WizardTarget. kind is the wire value POST /api/wizard/start
+// takes (tools.Wizard* constants, the keys of prompts.yaml's
+// wizard.targets); label is the one piece of per-instance text that target's
+// prompt can mention (a Daily block's title, a Field's name) and is ignored
+// by targets whose prompt doesn't use one.
+export type WizardTargetKind =
+	| 'pulsar_routine'
+	| 'pulsar_daily_block'
+	| 'pulsar_daily_custom_block'
+	| 'field_instructions';
+
+export interface WizardTarget {
+	kind: WizardTargetKind;
+	label?: string;
+}
+
+// WizardFinal mirrors tools.WizardFinal — the drafted text
+// finalize_wizard_prompt handed back, ending a wizard turn the same way
+// PendingQuestion ends an ordinary one. See gateway/wizard.go. name is only
+// ever set for a pulsar_routine target.
 export interface WizardFinal {
 	prompt: string;
 	name?: string;
 }
 
-// WizardResponse mirrors gateway/pulsar_wizard.go's wizardResponse —
+// WizardResponse mirrors gateway/wizard.go's wizardResponse —
 // exactly one of question/final/answer is set per turn. answer is the
 // fallback for a plain-prose reply with no tool call (see its Go doc
 // comment for why that's handled rather than dropped).

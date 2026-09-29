@@ -1,30 +1,29 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { pulsarWizardState } from '$lib/pulsarWizard.svelte';
+	import { wizardState } from '$lib/wizard.svelte';
+	import type { WizardTarget } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { X, Send, Loader2, Check } from '@lucide/svelte';
 
-	// seed: whatever's currently typed into the routine form's prompt
-	// field, if anything — passed straight through to
-	// pulsarWizardState.start(). onAccept fires per "Use this" click,
+	// The one "help me write this" overlay every prompt-writing surface
+	// mounts (Pulsar routine form, Pulsar Daily config, Field instructions)
+	// — see gateway/wizard.go. target says what's being written (see
+	// WizardTarget); seed is whatever's currently typed into the calling
+	// form's field, if anything — both passed straight through to
+	// wizardState.start(). onAccept fires per "Use this" click,
 	// independent of whether it's the latest draft in the transcript (see
-	// pulsarWizard.svelte.ts's applyResponse) — see accept() below for
-	// why this also closes the wizard. dailyBlockTitle, when set, scopes
-	// the interview to one Pulsar Daily block's steering instruction
-	// instead of a whole routine prompt (see pulsarWizardState.start).
-	// isCustomBlock, only meaningful alongside dailyBlockTitle, further
-	// scopes it to a custom block's own full instructions field.
+	// wizard.svelte.ts's applyResponse) — see accept() below for why this
+	// also closes the wizard. name is only ever set for a pulsar_routine
+	// target; every other caller can ignore the second argument.
 	let {
+		target,
 		seed,
-		dailyBlockTitle,
-		isCustomBlock,
 		onClose,
 		onAccept
 	}: {
+		target: WizardTarget;
 		seed: string;
-		dailyBlockTitle?: string;
-		isCustomBlock?: boolean;
 		onClose: () => void;
 		onAccept: (prompt: string, name?: string) => void;
 	} = $props();
@@ -50,8 +49,8 @@
 	// linear: there's never a reason to be looking at anything but the
 	// latest question or draft.
 	$effect(() => {
-		void pulsarWizardState.transcript.length;
-		void pulsarWizardState.loading;
+		void wizardState.transcript.length;
+		void wizardState.loading;
 		tick().then(() => {
 			transcriptEl?.scrollTo({ top: transcriptEl.scrollHeight, behavior: 'smooth' });
 		});
@@ -62,14 +61,14 @@
 		// /pulsar/[id]/+page.svelte's identical note on why: an async
 		// onMount callback's returned Promise isn't treated as a teardown
 		// function by Svelte).
-		void pulsarWizardState.start(seed, dailyBlockTitle, isCustomBlock);
+		void wizardState.start(target, seed);
 	});
 
 	function submitFreeform() {
 		const text = freeform.trim();
 		if (!text) return;
 		freeform = '';
-		void pulsarWizardState.answer(text);
+		void wizardState.answer(text);
 	}
 
 	// Same Enter-to-send / Shift+Enter-for-newline convention as the main
@@ -84,11 +83,11 @@
 	}
 
 	function pickOption(option: string) {
-		void pulsarWizardState.answer(option);
+		void wizardState.answer(option);
 	}
 
 	function close() {
-		pulsarWizardState.close();
+		wizardState.close();
 		onClose();
 	}
 </script>
@@ -103,19 +102,19 @@
 		</div>
 
 		<div class="transcript" bind:this={transcriptEl}>
-			{#each pulsarWizardState.transcript as entry, i (i)}
+			{#each wizardState.transcript as entry, i (i)}
 				{#if entry.kind === 'user'}
 					<div class="bubble user">{entry.text}</div>
 				{:else if entry.kind === 'question'}
 					<div class="bubble assistant">{entry.question.question}</div>
 					<!-- Tappable options only on the still-unanswered last question —
 					     once a reply is sent, pendingQuestion clears (see
-					     pulsarWizard.svelte.ts's answer()), and every earlier question
+					     wizard.svelte.ts's answer()), and every earlier question
 					     in the transcript renders as plain history with no controls. -->
-					{#if i === pulsarWizardState.transcript.length - 1 && pulsarWizardState.pendingQuestion?.options?.length}
+					{#if i === wizardState.transcript.length - 1 && wizardState.pendingQuestion?.options?.length}
 						<div class="options">
-							{#each pulsarWizardState.pendingQuestion.options as option, oi (option)}
-								<button class="option-row" onclick={() => pickOption(option)} disabled={pulsarWizardState.loading}>
+							{#each wizardState.pendingQuestion.options as option, oi (option)}
+								<button class="option-row" onclick={() => pickOption(option)} disabled={wizardState.loading}>
 									<span class="option-index">{oi + 1}</span>
 									<span class="option-text">{option}</span>
 								</button>
@@ -135,12 +134,12 @@
 				{/if}
 			{/each}
 
-			{#if pulsarWizardState.loading}
+			{#if wizardState.loading}
 				<div class="bubble assistant loading"><Loader2 size={14} class="spin" /></div>
 			{/if}
 
-			{#if pulsarWizardState.error}
-				<p class="error">{pulsarWizardState.error}</p>
+			{#if wizardState.error}
+				<p class="error">{wizardState.error}</p>
 			{/if}
 		</div>
 
@@ -158,12 +157,12 @@
 				bind:value={freeform}
 				onkeydown={onKeydown}
 				use:autoResize={{ value: freeform, maxHeight: 140 }}
-				disabled={pulsarWizardState.loading || !pulsarWizardState.sessionId}
+				disabled={wizardState.loading || !wizardState.sessionId}
 			></textarea>
 			<button
 				class="freeform-send"
 				type="submit"
-				disabled={pulsarWizardState.loading || !freeform.trim() || !pulsarWizardState.sessionId}
+				disabled={wizardState.loading || !freeform.trim() || !wizardState.sessionId}
 			>
 				<Send size={14} />
 			</button>

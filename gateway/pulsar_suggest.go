@@ -13,7 +13,7 @@
 // back to isn't in the prompt. A scheduled run has no thread history, so
 // the seed has to be rewritten into a standalone prompt first.
 //
-// Deliberately NOT the wizard (gateway/pulsar_wizard.go): that's an
+// Deliberately NOT the wizard (gateway/wizard.go): that's an
 // interactive interview, and the chip navigates straight to the routine
 // form — there's no surface to answer questions on. One completion, one
 // parseable answer, or a clean failure the client falls back from.
@@ -74,8 +74,8 @@ type pulsarSuggestResponse struct {
 // grand total like any other assistant-side spend. Best-effort: a ledger
 // write failing must not fail a request the client is waiting on.
 //
-// (The Pulsar *wizard*'s turns — gateway/pulsar_wizard.go — record their
-// own spend the same way, under the "pulsar_wizard" kind.)
+// (The *wizard*'s turns — gateway/wizard.go — record their own spend the
+// same way, under a "wizard:<target>" kind.)
 func (s *Server) handleSuggestPulsarPrompt(w http.ResponseWriter, r *http.Request) {
 	var req pulsarSuggestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

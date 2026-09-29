@@ -449,13 +449,13 @@ CREATE TABLE IF NOT EXISTS jev_usage (
 -- incurred on a chat's behalf that belongs to no single turn's own cost —
 -- currently gateway/pulsar_suggest.go's one-shot "derive a routine prompt
 -- from this conversation" call made when the operator taps an offer chip,
--- and gateway/pulsar_wizard.go's ephemeral interview turns (which by design
+-- and gateway/wizard.go's ephemeral interview turns (which by design
 -- persist no threads/messages rows to bill, so each turn records its own
 -- cost here).
 -- Folded straight into CostBySource.Polaris by GetStats — the same place
 -- the spend would have landed had it happened inside a turn — so it
 -- reaches the settings panel's grand total without needing a bucket of
--- its own. kind names the caller (e.g. "pulsar_suggest"/"pulsar_wizard")
+-- its own. kind names the caller (e.g. "pulsar_suggest"/"wizard:field_instructions")
 -- purely so a future one can be told apart in the table; GetStats sums
 -- across all kinds, since the split it reports is by subsystem, not by
 -- call site.

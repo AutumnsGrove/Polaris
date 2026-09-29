@@ -12,5 +12,5 @@ api_description: >-
   Order items most significant first — the first item is the one most likely to be pulled out and
   elaborated on separately, so put your best/biggest story there.
 
-  Calling this tool ENDS the turn, same as finalize_pulsar_prompt. If you only found one real story
+  Calling this tool ENDS the turn, same as ask_user_question. If you only found one real story
   worth reporting, that's fine — call this with a single item rather than padding the list.

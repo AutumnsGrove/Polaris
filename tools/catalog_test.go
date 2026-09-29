@@ -46,7 +46,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.Jev = jev.NewClient("http://test", "test-key")
 	ctx.DeepResearch = true
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
-	ctx.PulsarWizard = true
+	ctx.Wizard = &WizardTarget{Kind: WizardPulsarRoutine}
 	ctx.PulsarDailyItems = true
 	ctx.CodeExecEnabled = true
 	ctx.CodeExecWorkspaceDir = "/ws"

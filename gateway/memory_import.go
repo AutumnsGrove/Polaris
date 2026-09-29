@@ -4,7 +4,7 @@
 // (claude.ai, ChatGPT) to get a plain-text dump of what it remembers about
 // them, then pastes back here to seed Polaris's own memory store.
 //
-// Deliberately one-shot, not a real session like gateway/pulsar_wizard.go's
+// Deliberately one-shot, not a real session like gateway/wizard.go's
 // interview — the import model never needs to ask the user anything (it's
 // parsing a dump, not conducting an interview), so the whole parse/dedup/
 // write pass runs inside a single request via runMemoryToolLoop, the same

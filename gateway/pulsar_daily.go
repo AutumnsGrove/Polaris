@@ -36,7 +36,7 @@ const (
 	// own knowledge — Word of the Day, On This Day, Quote.
 	dailyBlockPick
 	// dailyBlockResearch is a narrow-toolset agent.Run, same "small
-	// restricted-toolset agent run" shape pulsar_wizard.go's interview
+	// restricted-toolset agent run" shape wizard.go's interview
 	// loop uses — Headlines, Trending, Local, Sports.
 	dailyBlockResearch
 	// dailyBlockCustom is a user-authored "general purpose" block with no
@@ -121,7 +121,7 @@ const dailySportsNoGamesMarker = "NO_GAMES_TODAY"
 // dailyResearchDisabledTools locks a research block's agent.Run down to
 // web_search/web_read/image_search/think, plus code_exec/show/fetch_url/
 // view_image when Docker's available (see newDailyToolContext) — a
-// different cut than pulsar_wizard.go's NoResearch (which excludes
+// different cut than wizard.go's NoResearch (which excludes
 // research entirely): a Daily research block needs web_search itself,
 // just not the rest of the full chat catalog (dictionary, weather,
 // recommendations, memory, ...) that has nothing to do with writing one
@@ -154,8 +154,8 @@ var dailyPickTasks = map[string]string{
 // dailyBlockWantsItems) so the model knows to end with
 // finalize_daily_items instead of one merged paragraph. This is the only
 // place that actually mandates the tool call: unlike the wizard's
-// finalize_pulsar_prompt (mandated by a dedicated system prompt swapped
-// in via PulsarWizard/PulsarDailyBlockTitle), a Daily research block runs
+// finalize_wizard_prompt (mandated by a dedicated system prompt swapped
+// in via tools.Context.Wizard), a Daily research block runs
 // under the ordinary chat system prompt, so the task text itself has to
 // carry the instruction.
 const dailyItemsInstruction = " Call finalize_daily_items with the 3-5 most significant distinct stories as " +
@@ -449,7 +449,7 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 
 // dailyVerdictToolDef forces Stage A's diff-judge to answer via a
 // structured tool call instead of parseable prose — same pattern as
-// tools/finalize_pulsar_prompt.go, applied to a judgment call instead of
+// tools/finalize_wizard_prompt.go, applied to a judgment call instead of
 // a user-facing turn-ending action.
 var dailyVerdictToolDef = llm.ToolDef{
 	Type: "function",

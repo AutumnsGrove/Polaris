@@ -201,7 +201,7 @@ type Context struct {
 	// isWeaverThread, issue #94) — gates the five weaver_run tools
 	// (tools/search_stars.go, read_star.go, create_star.go, update_star.go,
 	// link_stars.go) so they're never offered on a normal chat/pulse turn,
-	// same "requires:" gating shape as pulsar_daily_items/pulsar_wizard
+	// same "requires:" gating shape as pulsar_daily_items/wizard
 	// above. The five WeaverX closures below are only ever wired alongside
 	// this being true.
 	WeaverRun bool
@@ -454,39 +454,24 @@ type Context struct {
 	// or fired no checks this turn.
 	OracleSection string
 
-	// PulsarWizard, when true, marks this turn as the ephemeral "help me
-	// write the prompt" interview (see gateway/pulsar_wizard.go) rather
-	// than a normal chat/pulse turn — the only thing it gates is
-	// finalize_pulsar_prompt's offering (catalog.go's "pulsar_wizard"
-	// Requires case), so that tool can never appear outside this one
-	// context even if a caller left NoResearch/DisabledTools unset. Zero
-	// value (false) is normal behavior, same safe-default shape as
-	// NoResearch/QuickMode above.
-	PulsarWizard bool
-
-	// PulsarDailyBlockTitle, when non-empty on a PulsarWizard turn, scopes
-	// the interview to writing a short steering instruction for one
-	// Pulsar Daily block (e.g. "Local") instead of a whole routine
-	// prompt — see agent/driver.go's loadSystemPrompt, which picks
-	// prompts.PulsarDaily.WizardSystem instead of prompts.PulsarWizard.System
-	// when this is set. Empty means the ordinary routine-prompt wizard.
-	PulsarDailyBlockTitle string
-
-	// PulsarDailyCustomBlockWizard, when true alongside a non-empty
-	// PulsarDailyBlockTitle, further scopes the interview to a
-	// user-authored custom block's own full instructions field instead of
-	// a fixed registry block's short steer — see agent/driver.go's
-	// loadSystemPrompt, which picks prompts.PulsarDaily.
-	// CustomBlockWizardSystem instead of WizardSystem when this is set.
-	// Meaningless without PulsarDailyBlockTitle also set.
-	PulsarDailyCustomBlockWizard bool
+	// Wizard, when non-nil, marks this turn as the ephemeral "help me
+	// write this" interview (see gateway/wizard.go) rather than a normal
+	// chat/pulse turn, and says what the interview is writing (see
+	// WizardTarget). Two things key off it: finalize_wizard_prompt's
+	// offering (catalog.go's "wizard" Requires case), so that tool can
+	// never appear outside this one context even if a caller left
+	// NoResearch/DisabledTools unset, and agent/driver.go's
+	// loadSystemPrompt, which swaps in the target's own system prompt
+	// instead of prompt.md's persona. nil is normal behavior, same
+	// safe-default shape as NoResearch/QuickMode above.
+	Wizard *WizardTarget
 
 	// PulsarDailyItems, when true, marks this turn as a Pulsar Daily
 	// block generation whose content is a list of distinct stories
 	// (headlines/trending/custom blocks), not a single narrative — the
 	// only thing it gates is finalize_daily_items's offering (catalog.go's
-	// "pulsar_daily_items" Requires case), same isolation PulsarWizard
-	// gives finalize_pulsar_prompt. Only ever set true by
+	// "pulsar_daily_items" Requires case), same isolation Wizard
+	// gives finalize_wizard_prompt. Only ever set true by
 	// gateway/pulsar_daily.go's block-context builder, never in a normal
 	// chat/pulse turn. Zero value (false) is normal behavior.
 	PulsarDailyItems bool
@@ -691,9 +676,9 @@ type Context struct {
 	PendingQuestion   *PendingQuestion
 
 	// WizardFinal, once set, tells agent.Run to end the turn the same way
-	// PendingQuestion does — see finalize_pulsar_prompt.go and
-	// PulsarWizard above. Only ever populated on a PulsarWizard turn,
-	// since finalize_pulsar_prompt is never offered otherwise.
+	// PendingQuestion does — see finalize_wizard_prompt.go and
+	// Wizard above. Only ever populated on a Wizard turn,
+	// since finalize_wizard_prompt is never offered otherwise.
 	// wizardFinalMu guards it for the same concurrent-dispatch reason
 	// PendingQuestion's mutex exists.
 	wizardFinalMu sync.Mutex
@@ -726,11 +711,11 @@ type Context struct {
 	PendingImageMessages []llm.ChatMessage
 }
 
-// WizardFinal is the tuned prompt the model drafted once it decided the
-// Pulsar prompt wizard interview had enough to go on — see
-// finalize_pulsar_prompt.go. Unlike PendingQuestion this is never
+// WizardFinal is the tuned text the model drafted once it decided the
+// wizard interview had enough to go on — see
+// finalize_wizard_prompt.go. Unlike PendingQuestion this is never
 // persisted anywhere: the whole wizard session is ephemeral, held only in
-// gateway/pulsar_wizard.go's in-memory session map.
+// gateway/wizard.go's in-memory session map.
 type WizardFinal struct {
 	Prompt string `json:"prompt"`
 	// Name is an optional suggested routine name — left blank if the
@@ -1308,7 +1293,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"music": musicDef, "books": booksDef, "movies": moviesDef, "code_exec": codeExecDef, "fetch_url": fetchURLDef,
 		"image_search": imageSearchDef, "view_image": viewImageDef, "show": showDef, "highlight": highlightDef,
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "stars": starsDef, "spawn_researchers": spawnResearchersDef,
-		"finalize_pulsar_prompt": finalizePulsarPromptDef,
+		"finalize_wizard_prompt": finalizeWizardPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
 		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
 		"update_star": updateStarDef, "link_stars": linkStarsDef,

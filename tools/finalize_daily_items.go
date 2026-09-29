@@ -3,7 +3,7 @@
 // end with a structured list of distinct stories instead of one merged
 // prose blob. Only ever offered on that specific generation (see
 // catalog.go's "pulsar_daily_items" Requires case) — never appears in a
-// normal chat or pulse turn. Mirrors finalize_pulsar_prompt.go's shape:
+// normal chat or pulse turn. Mirrors finalize_wizard_prompt.go's shape:
 // calling this ends the turn immediately, same as that tool.
 package tools
 

@@ -1,7 +1,7 @@
-import type { PendingQuestion, WizardFinal, WizardResponse } from './types';
+import type { PendingQuestion, WizardFinal, WizardResponse, WizardTarget } from './types';
 
-// One transcript entry — either side of the exchange, or a drafted-prompt
-// card rendered inline (see PulsarPromptWizard.svelte). Kept separate from
+// One transcript entry — either side of the exchange, or a drafted-text
+// card rendered inline (see WizardOverlay.svelte). Kept separate from
 // PendingQuestion/WizardFinal themselves so the transcript can hold more
 // than one of each across a multi-round interview.
 export type WizardTranscriptEntry =
@@ -9,19 +9,22 @@ export type WizardTranscriptEntry =
 	| { kind: 'question'; question: PendingQuestion }
 	| { kind: 'final'; final: WizardFinal }
 	// Fallback for a plain-prose reply with no tool call — see
-	// gateway/pulsar_wizard.go's wizardResponse doc comment. Rare (the
+	// gateway/wizard.go's wizardResponse doc comment. Rare (the
 	// system prompt asks the model to always call a tool) but a real,
 	// observed case: without this, that reply had nowhere to render and
 	// the wizard looked frozen after a tap.
 	| { kind: 'text'; text: string };
 
-// PulsarWizardState drives the "help me write the prompt" floating
-// overlay — see docs/plans/pulsar-routines.md's v1.2 note and
-// gateway/pulsar_wizard.go. Deliberately its own small class, not folded
-// into PulsarState: the wizard's session is ephemeral (server-side state
-// discarded on session expiry, client-side state discarded on close),
-// with nothing in common with routines/pulses' persisted data.
-export class PulsarWizardState {
+// WizardState drives the "help me write this" floating overlay for every
+// surface that offers it (Pulsar routine prompts, Pulsar Daily blocks, Field
+// instructions) — see gateway/wizard.go. One shared class, not one per
+// surface: the interview is identical, only what it's writing differs, and
+// that's just the WizardTarget passed to start(). Deliberately its own
+// small class, not folded into PulsarState or FieldsState: the wizard's
+// session is ephemeral (server-side state discarded on session expiry,
+// client-side state discarded on close), with nothing in common with any
+// surface's persisted data.
+export class WizardState {
 	open = $state(false);
 	sessionId = $state<string | null>(null);
 	transcript = $state<WizardTranscriptEntry[]>([]);
@@ -30,17 +33,11 @@ export class PulsarWizardState {
 	error = $state('');
 
 	// start() seeds the interview with whatever's currently typed into the
-	// routine form's prompt field, if anything — an empty seed opens with
-	// the backend's generic opener question instead (see
-	// prompts.PulsarWizard.OpenerTask). dailyBlockTitle, when set, scopes
-	// the whole interview to writing a short steering instruction for one
-	// Pulsar Daily block instead of a routine prompt — see
-	// gateway/pulsar_wizard.go's wizardStartRequest.DailyBlockTitle.
-	// isCustomBlock, only meaningful alongside dailyBlockTitle, further
-	// scopes it to a custom block's own full instructions field instead of
-	// a fixed block's one-line steer — see wizardStartRequest.
-	// IsCustomDailyBlock.
-	async start(seed: string, dailyBlockTitle?: string, isCustomBlock?: boolean) {
+	// calling form's field, if anything — an empty seed opens with that
+	// target's own generic opener question instead (its opener_task in
+	// prompts.yaml's wizard.targets). target picks which interview this is;
+	// the server rejects an unknown kind with a 400, surfaced as `error`.
+	async start(target: WizardTarget, seed: string) {
 		this.open = true;
 		this.sessionId = null;
 		this.transcript = [];
@@ -48,14 +45,10 @@ export class PulsarWizardState {
 		this.error = '';
 		this.loading = true;
 		try {
-			const res = await fetch('/api/pulsar/wizard/start', {
+			const res = await fetch('/api/wizard/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					seed,
-					daily_block_title: dailyBlockTitle ?? '',
-					is_custom_daily_block: isCustomBlock ?? false
-				})
+				body: JSON.stringify({ target: target.kind, label: target.label ?? '', seed })
 			});
 			if (!res.ok) {
 				this.error = (await res.text()) || 'Something went wrong starting the wizard.';
@@ -74,8 +67,8 @@ export class PulsarWizardState {
 	// answer() is both "reply to the current question" and "send a
 	// free-text follow-up after a drafted prompt appeared" — the wizard
 	// compose box stays live the whole time (see
-	// PulsarPromptWizard.svelte), so there's no separate code path for
-	// refining after finalize_pulsar_prompt already fired once.
+	// WizardOverlay.svelte), so there's no separate code path for
+	// refining after finalize_wizard_prompt already fired once.
 	async answer(text: string) {
 		const trimmed = text.trim();
 		if (!trimmed || !this.sessionId || this.loading) return;
@@ -84,7 +77,7 @@ export class PulsarWizardState {
 		this.error = '';
 		this.loading = true;
 		try {
-			const res = await fetch('/api/pulsar/wizard/turn', {
+			const res = await fetch('/api/wizard/turn', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ session_id: this.sessionId, message: trimmed })
@@ -131,4 +124,4 @@ export class PulsarWizardState {
 	}
 }
 
-export const pulsarWizardState = new PulsarWizardState();
+export const wizardState = new WizardState();

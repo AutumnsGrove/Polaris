@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"polaris/tools"
 )
 
 // sequencedSSEServer serves one pre-baked SSE response body per top-level
@@ -108,7 +110,7 @@ func TestHandleWizardStart_QuestionPath(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "gaming news"})
+	resp, decoded := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardPulsarRoutine, "seed": "gaming news"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -140,29 +142,29 @@ func TestHandleWizardStart_QuestionPath(t *testing.T) {
 }
 
 // TestHandleWizardTurn_FinalizesPrompt drives a session through to
-// finalize_pulsar_prompt, mirroring the two-request start-then-turn flow
+// finalize_wizard_prompt, mirroring the two-request start-then-turn flow
 // the real routine form uses.
 func TestHandleWizardTurn_FinalizesPrompt(t *testing.T) {
 	// One fake server, two rounds: /start's agent.Run consumes the first
 	// (ask_user_question), /turn's agent.Run — a fresh agent.Run call, but
 	// the same underlying HTTP server and request counter — consumes the
-	// second (finalize_pulsar_prompt).
+	// second (finalize_wizard_prompt).
 	srv := sequencedSSEServer(t, []string{
 		toolCallSSEBody(`{"index":0,"id":"call_1","type":"function","function":{"name":"ask_user_question",` +
 			`"arguments":"{\"question\":\"What should this routine check on?\"}"}}`),
-		toolCallSSEBody(`{"index":0,"id":"call_2","type":"function","function":{"name":"finalize_pulsar_prompt",` +
+		toolCallSSEBody(`{"index":0,"id":"call_2","type":"function","function":{"name":"finalize_wizard_prompt",` +
 			`"arguments":"{\"prompt\":\"Summarize the latest Guild Wars 3 news.\",\"name\":\"GW3 news\"}"}}`),
 	})
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	_, start := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "gaming news"})
+	_, start := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardPulsarRoutine, "seed": "gaming news"})
 	sessionID, _ := start["session_id"].(string)
 	if sessionID == "" {
 		t.Fatal("no session_id from start")
 	}
 
-	resp, turn := postWizard(t, h, "/api/pulsar/wizard/turn", map[string]interface{}{
+	resp, turn := postWizard(t, h, "/api/wizard/turn", map[string]interface{}{
 		"session_id": sessionID,
 		"message":    "Guild Wars 3, weekly",
 	})
@@ -201,44 +203,50 @@ func TestHandleWizardTurn_FinalizesPrompt(t *testing.T) {
 // turn must record its own, not just the opener, since an interview runs
 // one completion per answer. Two turns at different costs, then the
 // folded-in Polaris total must equal their sum (see aux_usage's schema
-// comment and gateway/pulsar_wizard.go's recordWizardCost).
+// comment and gateway/wizard.go's recordWizardCost). Run against two
+// different targets: billing lives in the shared handlers, not per target,
+// and a target-specific path that skipped it would otherwise go unnoticed.
 func TestHandleWizard_RecordsEachTurnsCost(t *testing.T) {
-	srv := sequencedSSEServer(t, []string{
-		toolCallSSEBodyCost(`{"index":0,"id":"call_1","type":"function","function":{"name":"ask_user_question",`+
-			`"arguments":"{\"question\":\"What should this routine check on?\"}"}}`, 0.0001),
-		toolCallSSEBodyCost(`{"index":0,"id":"call_2","type":"function","function":{"name":"finalize_pulsar_prompt",`+
-			`"arguments":"{\"prompt\":\"Summarize the latest Guild Wars 3 news.\",\"name\":\"GW3 news\"}"}}`, 0.0002),
-	})
-	defer srv.Close()
-	h := newTestHarness(t, srv.URL)
+	for _, target := range []string{tools.WizardPulsarRoutine, tools.WizardFieldInstructions} {
+		t.Run(target, func(t *testing.T) {
+			srv := sequencedSSEServer(t, []string{
+				toolCallSSEBodyCost(`{"index":0,"id":"call_1","type":"function","function":{"name":"ask_user_question",`+
+					`"arguments":"{\"question\":\"What should this routine check on?\"}"}}`, 0.0001),
+				toolCallSSEBodyCost(`{"index":0,"id":"call_2","type":"function","function":{"name":"finalize_wizard_prompt",`+
+					`"arguments":"{\"prompt\":\"Summarize the latest Guild Wars 3 news.\",\"name\":\"GW3 news\"}"}}`, 0.0002),
+			})
+			defer srv.Close()
+			h := newTestHarness(t, srv.URL)
 
-	startResp, start := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "gaming news"})
-	if startResp.StatusCode != http.StatusOK {
-		t.Fatalf("start status = %d, want 200", startResp.StatusCode)
-	}
-	sessionID, _ := start["session_id"].(string)
-	if sessionID == "" {
-		t.Fatal("no session_id from start")
-	}
-	turnResp, _ := postWizard(t, h, "/api/pulsar/wizard/turn", map[string]interface{}{
-		"session_id": sessionID,
-		"message":    "Guild Wars 3, weekly",
-	})
-	if turnResp.StatusCode != http.StatusOK {
-		t.Fatalf("turn status = %d, want 200", turnResp.StatusCode)
-	}
+			startResp, start := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": target, "label": "Trip", "seed": "gaming news"})
+			if startResp.StatusCode != http.StatusOK {
+				t.Fatalf("start status = %d, want 200", startResp.StatusCode)
+			}
+			sessionID, _ := start["session_id"].(string)
+			if sessionID == "" {
+				t.Fatal("no session_id from start")
+			}
+			turnResp, _ := postWizard(t, h, "/api/wizard/turn", map[string]interface{}{
+				"session_id": sessionID,
+				"message":    "Guild Wars 3, weekly",
+			})
+			if turnResp.StatusCode != http.StatusOK {
+				t.Fatalf("turn status = %d, want 200", turnResp.StatusCode)
+			}
 
-	stats, err := h.db.GetStats(0)
-	if err != nil {
-		t.Fatalf("GetStats: %v", err)
-	}
-	const want = 0.0003 // 0.0001 from the start turn + 0.0002 from the follow-up
-	if math.Abs(stats.CostBySource.Polaris.TotalCostUSD-want) > 1e-9 {
-		t.Errorf("Polaris.TotalCostUSD = %v, want %v — both wizard turns must bill their own cost to aux_usage",
-			stats.CostBySource.Polaris.TotalCostUSD, want)
-	}
-	if math.Abs(stats.TotalCostUSD-want) > 1e-9 {
-		t.Errorf("TotalCostUSD = %v, want %v — wizard spend must reach the grand total", stats.TotalCostUSD, want)
+			stats, err := h.db.GetStats(0)
+			if err != nil {
+				t.Fatalf("GetStats: %v", err)
+			}
+			const want = 0.0003 // 0.0001 from the start turn + 0.0002 from the follow-up
+			if math.Abs(stats.CostBySource.Polaris.TotalCostUSD-want) > 1e-9 {
+				t.Errorf("Polaris.TotalCostUSD = %v, want %v — both wizard turns must bill their own cost to aux_usage",
+					stats.CostBySource.Polaris.TotalCostUSD, want)
+			}
+			if math.Abs(stats.TotalCostUSD-want) > 1e-9 {
+				t.Errorf("TotalCostUSD = %v, want %v — wizard spend must reach the grand total", stats.TotalCostUSD, want)
+			}
+		})
 	}
 }
 
@@ -251,7 +259,7 @@ func TestHandleWizardStart_PlainProseFallsBackToAnswer(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": ""})
+	resp, decoded := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardPulsarRoutine, "seed": ""})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -272,7 +280,7 @@ func TestHandleWizardTurn_RejectsEmptyMessage(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	resp, err := http.Post(h.url("/api/pulsar/wizard/turn"), "application/json",
+	resp, err := http.Post(h.url("/api/wizard/turn"), "application/json",
 		bytes.NewReader([]byte(`{"session_id":"whatever","message":"   "}`)))
 	if err != nil {
 		t.Fatalf("POST wizard/turn: %v", err)
@@ -288,7 +296,7 @@ func TestHandleWizardTurn_UnknownSessionIsGone(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	resp, err := http.Post(h.url("/api/pulsar/wizard/turn"), "application/json",
+	resp, err := http.Post(h.url("/api/wizard/turn"), "application/json",
 		bytes.NewReader([]byte(`{"session_id":"does-not-exist","message":"hello"}`)))
 	if err != nil {
 		t.Fatalf("POST wizard/turn: %v", err)
@@ -308,7 +316,7 @@ func TestHandleWizardTurn_ExpiredSessionIsGone(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	_, start := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "test"})
+	_, start := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardPulsarRoutine, "seed": "test"})
 	sessionID, _ := start["session_id"].(string)
 	if sessionID == "" {
 		t.Fatal("no session_id from start")
@@ -318,7 +326,7 @@ func TestHandleWizardTurn_ExpiredSessionIsGone(t *testing.T) {
 	h.srvObj.wizardSessions[sessionID].createdAt = time.Now().Add(-wizardSessionTTL - time.Minute)
 	h.srvObj.wizardMu.Unlock()
 
-	resp, err := http.Post(h.url("/api/pulsar/wizard/turn"), "application/json",
+	resp, err := http.Post(h.url("/api/wizard/turn"), "application/json",
 		bytes.NewReader([]byte(`{"session_id":"`+sessionID+`","message":"still there?"}`)))
 	if err != nil {
 		t.Fatalf("POST wizard/turn: %v", err)
@@ -364,11 +372,31 @@ func TestSweepExpiredWizardSessions(t *testing.T) {
 
 // TestRunWizardTurn_DisablesNonInterviewTools confirms the tool menu the
 // interview actually gets — calculator/memory disabled, ask_user_question
-// and finalize_pulsar_prompt available — by
+// and finalize_wizard_prompt available — by
 // inspecting the request the fake model server actually received, the
 // same technique CLAUDE.md recommends for asserting what a turn really
-// sent (dev/fakeopenrouter's own /_control/calls).
+// sent (dev/fakeopenrouter's own /_control/calls). Runs for every target:
+// the menu lockdown is in the shared runWizardTurn, and each target must
+// get it, not just whichever one the test happened to be written for.
 func TestRunWizardTurn_DisablesNonInterviewTools(t *testing.T) {
+	for _, target := range wizardTestTargets {
+		t.Run(target, func(t *testing.T) {
+			runWizardToolMenuCheck(t, target)
+		})
+	}
+}
+
+// wizardTestTargets is every target the shared system serves. Literal,
+// like prompts_test.go's wizardKinds, so dropping one fails loudly.
+var wizardTestTargets = []string{
+	tools.WizardPulsarRoutine,
+	tools.WizardPulsarDailyBlock,
+	tools.WizardPulsarDailyCustomBlock,
+	tools.WizardFieldInstructions,
+}
+
+func runWizardToolMenuCheck(t *testing.T, target string) {
+	t.Helper()
 	var capturedBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)
@@ -384,7 +412,7 @@ func TestRunWizardTurn_DisablesNonInterviewTools(t *testing.T) {
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "test"})
+	postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": target, "label": "Anything", "seed": "test"})
 
 	if capturedBody == "" {
 		t.Fatal("the fake model server never received a request")
@@ -394,25 +422,22 @@ func TestRunWizardTurn_DisablesNonInterviewTools(t *testing.T) {
 			t.Errorf("request body offered disallowed tool %q to the wizard model: %s", disabled, capturedBody)
 		}
 	}
-	for _, required := range []string{"ask_user_question", "finalize_pulsar_prompt"} {
+	for _, required := range []string{"ask_user_question", "finalize_wizard_prompt"} {
 		if !strings.Contains(capturedBody, `"name":"`+required+`"`) {
 			t.Errorf("request body is missing the wizard's own tool %q: %s", required, capturedBody)
 		}
 	}
 }
 
-// TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt covers
-// tools.Context.PulsarDailyBlockTitle end to end: a start request naming
-// a block should get the Daily-scoped wizard system prompt (with the
-// block's title interpolated in), not the ordinary routine-prompt one —
-// and the session should remember that scoping for the next turn without
-// needing the title resent.
-func TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt(t *testing.T) {
-	var capturedBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// capturingModelServer returns a fake model endpoint that answers every
+// request with plain "ok" and records the latest request body — enough to
+// assert what system prompt / opener a wizard start actually sent.
+func capturingModelServer(t *testing.T, captured *string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(r.Body)
-		capturedBody = buf.String()
+		*captured = buf.String()
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
@@ -420,88 +445,122 @@ func TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n")
 		flusher.Flush()
 	}))
-	defer srv.Close()
-	h := newTestHarness(t, srv.URL)
+}
 
-	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"daily_block_title": "Local"})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+// TestHandleWizardStart_TargetScopesSystemPrompt covers the shared
+// system's core promise end to end, for every target: a start request
+// naming a target gets THAT target's system prompt (with its label
+// interpolated where the prompt uses one) and none of the others', and
+// the session remembers the whole target for follow-up turns without it
+// being resent. This is the successor to the old per-surface tests
+// (daily block, custom daily block) — same assertions, one table.
+func TestHandleWizardStart_TargetScopesSystemPrompt(t *testing.T) {
+	// marker is text unique to that target's intro; every other target's
+	// prompt must lack it. usesLabel is whether the intro interpolates it.
+	cases := []struct {
+		target    string
+		label     string
+		marker    string
+		usesLabel bool
+	}{
+		{tools.WizardPulsarRoutine, "", "helping the user write a good prompt for a Pulsar routine", false},
+		{tools.WizardPulsarDailyBlock, "Local", "This is NOT a whole routine prompt", true},
+		{tools.WizardPulsarDailyCustomBlock, "Stock Watchlist", `"general purpose" block`, true},
+		{tools.WizardFieldInstructions, "Japan Trip", "custom instructions for a Field", true},
 	}
-	if !strings.Contains(capturedBody, `Local`) {
-		t.Errorf("request body doesn't mention the block title %q: %s", "Local", capturedBody)
-	}
-	if strings.Contains(capturedBody, "help the user write a good prompt for a Pulsar routine") {
-		t.Error("request body used the routine wizard's system prompt instead of the Daily-scoped one")
-	}
+	for _, tc := range cases {
+		t.Run(tc.target, func(t *testing.T) {
+			var captured string
+			srv := capturingModelServer(t, &captured)
+			defer srv.Close()
+			h := newTestHarness(t, srv.URL)
 
-	sessionID, _ := decoded["session_id"].(string)
-	h.srvObj.wizardMu.Lock()
-	session, exists := h.srvObj.wizardSessions[sessionID]
-	title := ""
-	if exists {
-		title = session.dailyBlockTitle
-	}
-	h.srvObj.wizardMu.Unlock()
-	if !exists {
-		t.Fatal("session was not stored server-side")
-	}
-	if title != "Local" {
-		t.Errorf("session.dailyBlockTitle = %q, want %q — a follow-up turn needs this remembered", title, "Local")
+			resp, decoded := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tc.target, "label": tc.label})
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", resp.StatusCode)
+			}
+			// The request body is JSON, so a quote in the prompt is escaped;
+			// compare against the escaped form of the marker.
+			escaped := func(s string) string { b, _ := json.Marshal(s); return strings.Trim(string(b), `"`) }
+			if !strings.Contains(captured, escaped(tc.marker)) {
+				t.Errorf("request body lacks %s's own system prompt (marker %q): %s", tc.target, tc.marker, captured)
+			}
+			for _, other := range cases {
+				if other.target != tc.target && strings.Contains(captured, escaped(other.marker)) {
+					t.Errorf("request body for %s leaked %s's system prompt", tc.target, other.target)
+				}
+			}
+			if tc.usesLabel && !strings.Contains(captured, tc.label) {
+				t.Errorf("request body doesn't mention the label %q: %s", tc.label, captured)
+			}
+			if strings.Contains(captured, "{label}") {
+				t.Errorf("unsubstituted {label} reached the model: %s", captured)
+			}
+
+			sessionID, _ := decoded["session_id"].(string)
+			h.srvObj.wizardMu.Lock()
+			session, exists := h.srvObj.wizardSessions[sessionID]
+			var got tools.WizardTarget
+			if exists {
+				got = session.target
+			}
+			h.srvObj.wizardMu.Unlock()
+			if !exists {
+				t.Fatal("session was not stored server-side")
+			}
+			if got.Kind != tc.target || got.Label != tc.label {
+				t.Errorf("session.target = %+v, want {%s %s} — a follow-up turn needs this remembered", got, tc.target, tc.label)
+			}
+		})
 	}
 }
 
-// TestHandleWizardStart_CustomDailyBlockScopesSystemPrompt mirrors
-// TestHandleWizardStart_DailyBlockTitleScopesSystemPrompt for the custom-
-// block variant — a fixed block's steer and a custom block's full
-// instructions are different scopes with different system prompts (see
-// prompts.PulsarDaily.WizardSystem vs. CustomBlockWizardSystem), so a
-// request naming both fields must pick the custom-block one, not silently
-// fall back to the fixed-block wording.
-func TestHandleWizardStart_CustomDailyBlockScopesSystemPrompt(t *testing.T) {
-	var capturedBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(r.Body)
-		capturedBody = buf.String()
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n")
-		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"cost":0.0001}}`+"\n")
-		fmt.Fprint(w, "data: [DONE]\n")
-		flusher.Flush()
-	}))
+// TestHandleWizardStart_EmptySeedUsesTargetOpener: with no draft to seed
+// from, the interview opens with that target's own opener task, not
+// another's (and not an empty message).
+func TestHandleWizardStart_EmptySeedUsesTargetOpener(t *testing.T) {
+	var captured string
+	srv := capturingModelServer(t, &captured)
 	defer srv.Close()
 	h := newTestHarness(t, srv.URL)
 
-	resp, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{
-		"daily_block_title":     "Stock Watchlist",
-		"is_custom_daily_block": true,
-	})
+	resp, _ := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardFieldInstructions, "label": "Japan Trip"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if !strings.Contains(capturedBody, "Stock Watchlist") {
-		t.Errorf("request body doesn't mention the block title %q: %s", "Stock Watchlist", capturedBody)
+	if !strings.Contains(captured, "hasn't said what this Field is for yet") {
+		t.Errorf("empty-seed start didn't open with the Field target's opener: %s", captured)
 	}
-	if !strings.Contains(capturedBody, "general purpose") {
-		t.Error("request body doesn't look like the custom-block wizard system prompt")
-	}
-	if strings.Contains(capturedBody, "This is NOT a whole routine prompt") {
-		t.Error("request body used the fixed-block wizard's system prompt instead of the custom-block one")
-	}
+}
 
-	sessionID, _ := decoded["session_id"].(string)
-	h.srvObj.wizardMu.Lock()
-	session, exists := h.srvObj.wizardSessions[sessionID]
-	isCustom := false
-	if exists {
-		isCustom = session.isCustomDailyBlock
-	}
-	h.srvObj.wizardMu.Unlock()
-	if !exists {
-		t.Fatal("session was not stored server-side")
-	}
-	if !isCustom {
-		t.Error("session.isCustomDailyBlock = false, want true — a follow-up turn needs this remembered")
+// TestHandleWizardStart_RejectsUnknownTarget: an unknown or missing target
+// must be a 400 with no session and no model call — not an interview
+// running on a system prompt assembled from empty strings.
+func TestHandleWizardStart_RejectsUnknownTarget(t *testing.T) {
+	for name, body := range map[string]map[string]interface{}{
+		"unknown": {"target": "nonsense", "seed": "x"},
+		"missing": {"seed": "x"},
+		"legacy":  {"daily_block_title": "Local"}, // the pre-consolidation request shape
+	} {
+		t.Run(name, func(t *testing.T) {
+			var captured string
+			srv := capturingModelServer(t, &captured)
+			defer srv.Close()
+			h := newTestHarness(t, srv.URL)
+
+			resp, _ := postWizard(t, h, "/api/wizard/start", body)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400", resp.StatusCode)
+			}
+			if captured != "" {
+				t.Error("the model was called for a rejected start request")
+			}
+			h.srvObj.wizardMu.Lock()
+			n := len(h.srvObj.wizardSessions)
+			h.srvObj.wizardMu.Unlock()
+			if n != 0 {
+				t.Errorf("%d session(s) stored for a rejected start request", n)
+			}
+		})
 	}
 }

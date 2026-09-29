@@ -5,7 +5,7 @@
 	import type { PulsarDailyCustomBlock } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
-	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
+	import WizardOverlay from './WizardOverlay.svelte';
 	import { untrack } from 'svelte';
 
 	// customFieldMaxHeight: roughly 5 lines at this field's font-size/line-
@@ -139,9 +139,9 @@
 	// PulsarRoutineForm.svelte's own wizard button uses. isCustom
 	// distinguishes a custom block's own full instructions field (written
 	// to customBlocks) from a fixed registry block's short steer (written
-	// to customInstructions) — different storage, different wizard system
-	// prompt server-side (see gateway/pulsar_wizard.go's
-	// IsCustomDailyBlock).
+	// to customInstructions) — different storage, different wizard target
+	// (pulsar_daily_custom_block vs. pulsar_daily_block, see
+	// WizardOverlay's `target` below).
 	let wizardBlock = $state<{ key: string; label: string; isCustom: boolean } | null>(null);
 
 	function acceptWizardInstruction(text: string) {
@@ -427,12 +427,14 @@
 </div>
 
 {#if wizardBlock}
-	<PulsarPromptWizard
+	<WizardOverlay
+		target={{
+			kind: wizardBlock.isCustom ? 'pulsar_daily_custom_block' : 'pulsar_daily_block',
+			label: wizardBlock.label
+		}}
 		seed={wizardBlock.isCustom
 			? (customBlocks.find((b) => b.key === wizardBlock!.key)?.instructions ?? '')
 			: (customInstructions[wizardBlock.key] ?? '')}
-		dailyBlockTitle={wizardBlock.label}
-		isCustomBlock={wizardBlock.isCustom}
 		onClose={() => (wizardBlock = null)}
 		onAccept={acceptWizardInstruction}
 	/>

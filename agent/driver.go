@@ -207,27 +207,17 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		return system
 	}
 
-	if ctx.PulsarWizard {
+	if ctx.Wizard != nil {
 		// A completely different task from "Polaris the research
 		// assistant" — a narrow writing interview with its own 2-3 tool
 		// menu, not the operator's prompt.md persona. Returned as-is,
 		// skipping applyToolsPlaceholder/applyMemoriesPlaceholder/the
 		// mode-instruction appends below entirely: none of those are
 		// relevant here, and {tools}/{memories} aren't referenced in
-		// either wizard system prompt's own text.
-		if ctx.PulsarDailyBlockTitle != "" {
-			if ctx.PulsarDailyCustomBlockWizard {
-				// A custom block's own full instructions, not a fixed
-				// block's one-line steer — see
-				// tools.Context.PulsarDailyCustomBlockWizard's doc comment.
-				return fmt.Sprintf(p.PulsarDaily.CustomBlockWizardSystem, ctx.PulsarDailyBlockTitle)
-			}
-			// Scoped to one Daily block's short steering instruction
-			// instead of a whole routine prompt — see
-			// tools.Context.PulsarDailyBlockTitle's doc comment.
-			return fmt.Sprintf(p.PulsarDaily.WizardSystem, ctx.PulsarDailyBlockTitle)
-		}
-		return p.PulsarWizard.System
+		// any wizard system prompt's own text. Which interview this is
+		// (routine prompt, Daily block, Field instructions, ...) is the
+		// target's Kind — see prompts.Set.WizardSystem.
+		return p.WizardSystem(ctx.Wizard.Kind, ctx.Wizard.Label)
 	}
 
 	data, err := os.ReadFile(promptPath)
@@ -459,8 +449,8 @@ type Result struct {
 	// finished answer (follow-up suggestions, most notably).
 	PendingQuestion *tools.PendingQuestion
 	// WizardFinal is non-nil when the turn ended early because
-	// finalize_pulsar_prompt was called — only possible on a PulsarWizard
-	// turn (see tools.Context.PulsarWizard). Answer holds the drafted
+	// finalize_wizard_prompt was called — only possible on a Wizard
+	// turn (see tools.Context.Wizard). Answer holds the drafted
 	// prompt text the same way PendingQuestion's Answer holds the question
 	// text, so it reads naturally if ever displayed as a plain reply.
 	WizardFinal *tools.WizardFinal
@@ -716,7 +706,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// (see the comment above this block).
 		messages = append(messages, ctx.FlushPendingImageMessages()...)
 
-		// finalize_pulsar_prompt was called — end the turn the same way
+		// finalize_wizard_prompt was called — end the turn the same way
 		// PendingQuestion does below, checked first: it means "actually
 		// done", which takes precedence over a hypothetical
 		// ask_user_question call landing in the same batch (shouldn't

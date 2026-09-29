@@ -1,14 +1,14 @@
-name: finalize_pulsar_prompt
-requires: pulsar_wizard
+name: finalize_wizard_prompt
+requires: wizard
 description: >-
   end the interview and hand back the drafted text.
 api_description: >-
-  End the interview and hand back the finished, ready-to-use text — either a Pulsar routine's
-  recurring prompt, or (per the system prompt above, if this interview is scoped to one) a Pulsar
-  Daily block's short steering instruction. Call this once you have enough to write something
-  genuinely good — specific enough it won't need to be re-asked every time, clear about what to
-  focus on or skip. Don't call this after just one exchange unless the user's very first message
-  already gave you everything you need.
+  End the interview and hand back the finished, ready-to-use text — what it is (a routine's
+  recurring prompt, a Daily block's instructions, a Field's custom instructions, ...) is set by
+  the system prompt above. Call this once you have enough to write something genuinely good —
+  specific enough it won't need to be re-asked every time, clear about what to focus on or skip.
+  Don't call this after just one exchange unless the user's very first message already gave you
+  everything you need.
 
   Write `prompt` the way you'd write it if you were about to use it yourself right now, not a
   description of what it will do — e.g. "Give me a quick rundown of the biggest news in the Guild

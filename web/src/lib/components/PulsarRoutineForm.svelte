@@ -5,7 +5,7 @@
 	import type { FocusMode, PulsarRoutine } from '$lib/types';
 	import { X, Sparkles, CalendarClock } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
-	import PulsarPromptWizard from './PulsarPromptWizard.svelte';
+	import WizardOverlay from './WizardOverlay.svelte';
 	import { untrack } from 'svelte';
 
 	// One form doing double duty as both create and edit, per
@@ -268,7 +268,12 @@
 </div>
 
 {#if showWizard}
-	<PulsarPromptWizard seed={prompt} onClose={() => (showWizard = false)} onAccept={acceptWizardPrompt} />
+	<WizardOverlay
+		target={{ kind: 'pulsar_routine' }}
+		seed={prompt}
+		onClose={() => (showWizard = false)}
+		onAccept={acceptWizardPrompt}
+	/>
 {/if}
 
 <style>
@@ -334,7 +339,7 @@
 		font: inherit;
 		/* 16px, not smaller — anything under 16px makes iOS Safari zoom the
 		   whole page on focus, same reasoning as the main composer and
-		   PulsarPromptWizard's freeform textarea. This form's Name/Prompt
+		   WizardOverlay's freeform textarea. This form's Name/Prompt
 		   fields were missed when that convention was set elsewhere, which
 		   is exactly what made the mobile "New Pulsar" sheet unusable: focus
 		   the prompt textarea and the whole page zooms in, with no way to

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"polaris/tools"
 )
 
 // blockingSSEServer serves the same tool-call SSE body for every request,
@@ -48,7 +50,7 @@ func TestHandleWizardTurn_RejectsConcurrentTurnOnSameSession(t *testing.T) {
 	defer startSrv.Close()
 	h := newTestHarness(t, startSrv.URL)
 
-	_, decoded := postWizard(t, h, "/api/pulsar/wizard/start", map[string]interface{}{"seed": "gaming news"})
+	_, decoded := postWizard(t, h, "/api/wizard/start", map[string]interface{}{"target": tools.WizardPulsarRoutine, "seed": "gaming news"})
 	sessionID, _ := decoded["session_id"].(string)
 	if sessionID == "" {
 		t.Fatal("session_id is empty")
@@ -66,7 +68,7 @@ func TestHandleWizardTurn_RejectsConcurrentTurnOnSameSession(t *testing.T) {
 
 	firstDone := make(chan *http.Response, 1)
 	go func() {
-		resp, _ := postWizard(t, h, "/api/pulsar/wizard/turn", map[string]interface{}{"session_id": sessionID, "message": "first"})
+		resp, _ := postWizard(t, h, "/api/wizard/turn", map[string]interface{}{"session_id": sessionID, "message": "first"})
 		firstDone <- resp
 	}()
 
@@ -86,7 +88,7 @@ func TestHandleWizardTurn_RejectsConcurrentTurnOnSameSession(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	secondResp, _ := postWizard(t, h, "/api/pulsar/wizard/turn", map[string]interface{}{"session_id": sessionID, "message": "second"})
+	secondResp, _ := postWizard(t, h, "/api/wizard/turn", map[string]interface{}{"session_id": sessionID, "message": "second"})
 	if secondResp.StatusCode != http.StatusConflict {
 		t.Errorf("second concurrent request status = %d, want %d (already in progress)", secondResp.StatusCode, http.StatusConflict)
 	}

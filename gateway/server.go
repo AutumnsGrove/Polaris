@@ -120,7 +120,7 @@ type Server struct {
 
 	// wizardMu/wizardSessions hold every in-progress "help me write the
 	// prompt" wizard interview's conversation history (see
-	// pulsar_wizard.go) — pure in-memory state, never persisted, matching
+	// wizard.go) — pure in-memory state, never persisted, matching
 	// that feature's "ephemeral" design point literally. Same
 	// map+single-mutex shape as inFlightThreads above.
 	wizardMu       sync.Mutex
@@ -592,8 +592,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
 	s.mux.HandleFunc("GET /api/pulsar/stats", s.handleGetPulsarStats)
 	s.mux.HandleFunc("POST /api/pulsar/suggest", s.handleSuggestPulsarPrompt)
-	s.mux.HandleFunc("POST /api/pulsar/wizard/start", s.handleWizardStart)
-	s.mux.HandleFunc("POST /api/pulsar/wizard/turn", s.handleWizardTurn)
+	s.mux.HandleFunc("POST /api/wizard/start", s.handleWizardStart)
+	s.mux.HandleFunc("POST /api/wizard/turn", s.handleWizardTurn)
 	s.mux.HandleFunc("GET /api/pulsar/daily/config", s.handleGetDailyConfig)
 	s.mux.HandleFunc("PUT /api/pulsar/daily/config", s.handleUpdateDailyConfig)
 	s.mux.HandleFunc("GET /api/pulsar/daily/editions/{date}", s.handleGetDailyEdition)

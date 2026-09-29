@@ -1,12 +1,16 @@
-// pulsar_wizard.go is the "help me write the prompt" wizard's REST API —
-// an ephemeral, non-persisted interview that drives a real agent.Run loop
-// (NoResearch, restricted to ask_user_question/finalize_pulsar_prompt) to
-// turn a vague idea into a tuned Pulsar routine prompt. See
-// docs/plans/pulsar-routines.md's "v1.2" note for why this is its own
-// slice, deliberately separate from gateway/turn.go: a wizard turn creates
-// ZERO threads/messages rows, keeping its conversation purely in the
-// in-memory session map below rather than reusing handleTurn's
-// persistence-heavy machinery.
+// wizard.go is the "help me write this" wizard's REST API — an ephemeral,
+// non-persisted interview that drives a real agent.Run loop (NoResearch,
+// restricted to ask_user_question/finalize_wizard_prompt) to turn a vague
+// idea into tuned text for whichever surface asked: a Pulsar routine's
+// prompt, a Pulsar Daily block's instructions, a Field's custom
+// instructions (see tools.WizardTarget). One implementation for every
+// target on purpose — the interview contract is identical, and separate
+// per-surface copies are exactly what drifted before this was
+// consolidated. See docs/plans/pulsar-routines.md's "v1.2" note for why
+// this is its own slice, deliberately separate from gateway/turn.go: a
+// wizard turn creates ZERO threads/messages rows, keeping its conversation
+// purely in the in-memory session map below rather than reusing
+// handleTurn's persistence-heavy machinery.
 package gateway
 
 import (
@@ -49,33 +53,24 @@ type wizardSession struct {
 	// caveat ws.go's own doc comment makes) would both start from the same
 	// history and the second write would silently clobber the first's turn.
 	busy bool
-	// dailyBlockTitle: set for a Pulsar Daily block-instruction interview
-	// (see wizardStartRequest.DailyBlockTitle) and carried across every
-	// turn in this session, since only the start request actually
-	// includes it — a follow-up turn otherwise has no way to know this
-	// interview is scoped to one block instead of a whole routine.
-	dailyBlockTitle string
-	// isCustomDailyBlock: set for a custom block's full-instructions
-	// interview (see wizardStartRequest.IsCustomDailyBlock) — same
-	// carried-across-every-turn reasoning as dailyBlockTitle. Meaningless
-	// when dailyBlockTitle is empty.
-	isCustomDailyBlock bool
+	// target is what this interview is writing (see tools.WizardTarget),
+	// carried across every turn in the session since only the start request
+	// actually includes it — a follow-up turn otherwise has no way to know
+	// which system prompt or cost kind it belongs to.
+	target tools.WizardTarget
 }
 
-// wizardStartRequest's Seed is whatever the routine form's prompt field
-// already had typed into it when the wizard was opened, if anything — an
-// empty Seed means the interview opens with prompts.PulsarWizard.OpenerTask
-// instead of the user's own draft. DailyBlockTitle, when non-empty, scopes
-// the whole interview to writing a short steering instruction for one
-// Pulsar Daily block instead — see tools.Context.PulsarDailyBlockTitle.
-// IsCustomDailyBlock, only meaningful alongside a non-empty
-// DailyBlockTitle, further scopes it to a custom block's own full
-// instructions field instead — see
-// tools.Context.PulsarDailyCustomBlockWizard.
+// wizardStartRequest's Target names what's being written (one of
+// tools.Wizard* kinds — the keys of prompts.yaml's wizard.targets), and
+// Label is that target's one piece of per-instance text (a Daily block's
+// title, a Field's name) for the system prompt to mention. Seed is
+// whatever the calling form's field already had typed into it when the
+// wizard was opened, if anything — an empty Seed means the interview opens
+// with the target's own opener task instead of the user's draft.
 type wizardStartRequest struct {
-	Seed               string `json:"seed"`
-	DailyBlockTitle    string `json:"daily_block_title"`
-	IsCustomDailyBlock bool   `json:"is_custom_daily_block"`
+	Target string `json:"target"`
+	Label  string `json:"label"`
+	Seed   string `json:"seed"`
 }
 
 type wizardTurnRequest struct {
@@ -86,7 +81,7 @@ type wizardTurnRequest struct {
 // wizardResponse is both endpoints' shared reply shape: exactly one of
 // Question/Final/Answer is set. Answer is the fallback — the system
 // prompt asks the model to always call ask_user_question or
-// finalize_pulsar_prompt rather than reply in plain prose, but nothing
+// finalize_wizard_prompt rather than reply in plain prose, but nothing
 // enforces that the way a required tool call would, so a model that
 // answers in plain text anyway still needs somewhere to go instead of
 // silently vanishing (a real bug caught live: the wizard looked frozen
@@ -106,32 +101,33 @@ func (s *Server) handleWizardStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rejected up front rather than letting an unknown kind through to
+	// prompts.WizardSystem, which would happily assemble a system prompt
+	// out of empty strings — an interview with no instructions at all.
+	p := prompts.Get()
+	if !p.HasWizardTarget(req.Target) {
+		http.Error(w, "unknown wizard target", http.StatusBadRequest)
+		return
+	}
+	target := tools.WizardTarget{Kind: req.Target, Label: strings.TrimSpace(req.Label)}
+
 	sessionID := uuid.NewString()
-	dailyBlockTitle := strings.TrimSpace(req.DailyBlockTitle)
-	isCustomDailyBlock := req.IsCustomDailyBlock && dailyBlockTitle != ""
 	turnMessage := strings.TrimSpace(req.Seed)
 	if turnMessage == "" {
-		switch {
-		case isCustomDailyBlock:
-			turnMessage = prompts.Get().PulsarDaily.CustomBlockWizardOpenerTask
-		case dailyBlockTitle != "":
-			turnMessage = prompts.Get().PulsarDaily.WizardOpenerTask
-		default:
-			turnMessage = prompts.Get().PulsarWizard.OpenerTask
-		}
+		turnMessage = p.WizardOpenerTask(target.Kind)
 	}
 
-	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, dailyBlockTitle, isCustomDailyBlock)
+	result, err := s.runWizardTurn(r.Context(), nil, turnMessage, target)
 	if err != nil {
-		log.Warn("pulsar wizard start failed", "err", err)
+		log.Warn("wizard start failed", "target", target.Kind, "err", err)
 		http.Error(w, "the wizard hit an error starting up — try again", http.StatusInternalServerError)
 		return
 	}
 
-	s.recordWizardCost(sessionID, result.costUSD)
+	s.recordWizardCost(sessionID, target.Kind, result.costUSD)
 
 	s.wizardMu.Lock()
-	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), dailyBlockTitle: dailyBlockTitle, isCustomDailyBlock: isCustomDailyBlock}
+	s.wizardSessions[sessionID] = &wizardSession{history: result.history, createdAt: time.Now(), target: target}
 	s.wizardMu.Unlock()
 
 	writeJSON(w, wizardResponse{SessionID: sessionID, Question: result.question, Final: result.final, Answer: result.answer})
@@ -169,7 +165,7 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.runWizardTurn(r.Context(), session.history, message, session.dailyBlockTitle, session.isCustomDailyBlock)
+	result, err := s.runWizardTurn(r.Context(), session.history, message, session.target)
 
 	s.wizardMu.Lock()
 	session.busy = false
@@ -179,12 +175,12 @@ func (s *Server) handleWizardTurn(w http.ResponseWriter, r *http.Request) {
 	s.wizardMu.Unlock()
 
 	if err != nil {
-		log.Warn("pulsar wizard turn failed", "session", req.SessionID, "err", err)
+		log.Warn("wizard turn failed", "session", req.SessionID, "target", session.target.Kind, "err", err)
 		http.Error(w, "the wizard hit an error — try again", http.StatusInternalServerError)
 		return
 	}
 
-	s.recordWizardCost(req.SessionID, result.costUSD)
+	s.recordWizardCost(req.SessionID, session.target.Kind, result.costUSD)
 
 	writeJSON(w, wizardResponse{SessionID: req.SessionID, Question: result.question, Final: result.final, Answer: result.answer})
 }
@@ -224,15 +220,18 @@ type wizardTurnResult struct {
 // panel's grand total (see that table's schema comment). Each turn records
 // its own cost, not just the start: an interview runs several completions
 // (one per user answer), so folding them all into the opener's row would
-// lose every follow-up's spend. Best-effort by design, same convention as
-// gateway/pulsar_suggest.go — a ledger write failing must not fail a turn
-// the client is waiting on.
-func (s *Server) recordWizardCost(sessionID string, costUSD float64) {
+// lose every follow-up's spend. The ledger kind is "wizard:<target kind>"
+// so a per-target breakdown stays possible without a schema change — the
+// total is what the settings panel shows today, but which surface is
+// spending is the first thing to ask if that number ever looks off.
+// Best-effort by design, same convention as gateway/pulsar_suggest.go — a
+// ledger write failing must not fail a turn the client is waiting on.
+func (s *Server) recordWizardCost(sessionID, kind string, costUSD float64) {
 	if costUSD <= 0 {
 		return
 	}
-	if err := s.db.RecordAuxCost("pulsar_wizard", costUSD); err != nil {
-		log.Warn("pulsar wizard: recording cost failed", "session", sessionID, "err", err)
+	if err := s.db.RecordAuxCost("wizard:"+kind, costUSD); err != nil {
+		log.Warn("wizard: recording cost failed", "session", sessionID, "target", kind, "err", err)
 	}
 }
 
@@ -242,7 +241,7 @@ func (s *Server) recordWizardCost(sessionID string, costUSD float64) {
 // generateTitle/generateSuggestions shape), just with no thread, no DB
 // writes, and no streaming: the answer comes back directly in the HTTP
 // response, not over the WebSocket.
-func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage, dailyBlockTitle string, isCustomDailyBlock bool) (*wizardTurnResult, error) {
+func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, turnMessage string, target tools.WizardTarget) (*wizardTurnResult, error) {
 	cfg := s.liveConfig()
 	modelCfg := cfg.ModelByID(s.effectiveDefaultModel(cfg))
 	// AllowFallbacks(true) — escape valve for every pinned provider being
@@ -254,10 +253,10 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	}
 
 	// Locks the tool menu down to essentially ask_user_question/
-	// finalize_pulsar_prompt/think: NoResearch already excludes every
-	// "research"-category tool, and PulsarWizard is what makes
-	// finalize_pulsar_prompt appear at all (see catalog.go's
-	// "pulsar_wizard" Requires case) — but NoResearch alone would still
+	// finalize_wizard_prompt/think: NoResearch already excludes every
+	// "research"-category tool, and Wizard is what makes
+	// finalize_wizard_prompt appear at all (see catalog.go's
+	// "wizard" Requires case) — but NoResearch alone would still
 	// leave calculator/memory on the menu, which a prompt-writing interview
 	// has no use for. image_search needs no entry here — it's category:
 	// research, so NoResearch above already excludes it the same way it
@@ -274,14 +273,12 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	disabled["memory"] = true
 
 	agentCtx := &tools.Context{
-		NoResearch:                   true,
-		PulsarWizard:                 true,
-		PulsarDailyBlockTitle:        dailyBlockTitle,
-		PulsarDailyCustomBlockWizard: isCustomDailyBlock,
-		DisabledTools:                disabled,
-		LLM:                          client,
-		Emit:                         func(string, map[string]interface{}) {}, // no live client to stream to
-		MaxTurns:                     cfg.MaxAgentTurns,
+		NoResearch:    true,
+		Wizard:        &target,
+		DisabledTools: disabled,
+		LLM:           client,
+		Emit:          func(string, map[string]interface{}) {}, // no live client to stream to
+		MaxTurns:      cfg.MaxAgentTurns,
 		// RequestLocation is never actually called here — no location-
 		// needing tool (weather/nearby_search) is ever offered under
 		// NoResearch above — but catalog.go's "interactive_chat" gate on
@@ -289,7 +286,7 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 		// it returns, as its own doc comment says: "is there a live client
 		// on the other end of this turn". The wizard's whole interview
 		// loop (and its system prompt, which mandates every reply be
-		// either ask_user_question or finalize_pulsar_prompt) depends on
+		// either ask_user_question or finalize_wizard_prompt) depends on
 		// ask_user_question actually being on the menu — leaving this nil
 		// silently excluded it, degrading every interview to a plain-text
 		// reply instead of the intended one-question-at-a-time flow.
@@ -297,10 +294,10 @@ func (s *Server) runWizardTurn(ctx context.Context, history []llm.ChatMessage, t
 	}
 
 	// agent.Run builds its own system message internally (loadSystemPrompt,
-	// gated on agentCtx.PulsarWizard above to return
-	// prompts.Get().PulsarWizard.System instead of the normal prompt.md
-	// persona) — history here is purely the prior user/assistant turns,
-	// same shape gateway/turn.go's loadHistory produces.
+	// gated on agentCtx.Wizard above to return the target's assembled
+	// prompts.Get().WizardSystem instead of the normal prompt.md persona)
+	// — history here is purely the prior user/assistant turns, same shape
+	// gateway/turn.go's loadHistory produces.
 	result, err := agent.Run(ctx, agentCtx, history, turnMessage)
 	if err != nil {
 		return nil, err

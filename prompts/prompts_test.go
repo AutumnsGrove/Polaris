@@ -1,9 +1,11 @@
 package prompts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,20 +55,94 @@ func TestGet_MissingFileFallsBackToDefaults(t *testing.T) {
 	}
 }
 
-// TestGet_PulsarWizardMissingFileFallsBackToDefaults guards a real bug:
-// fillDefaults never merged PulsarWizard.System/OpenerTask at all, so a
-// missing or corrupted prompts.yaml sent gateway/pulsar_wizard.go's
-// interview an empty system prompt instead of degrading to the built-in
-// default like every other prompt does.
-func TestGet_PulsarWizardMissingFileFallsBackToDefaults(t *testing.T) {
+// wizardKinds is every target the wizard system must know how to interview
+// for — kept literal here (not derived from defaults) so a target dropped
+// from buildDefaults fails these tests instead of silently shrinking the
+// set they check.
+var wizardKinds = []string{"pulsar_routine", "pulsar_daily_block", "pulsar_daily_custom_block", "field_instructions"}
+
+// TestGet_WizardMissingFileFallsBackToDefaults guards a real bug (from
+// before the wizard was consolidated): fillDefaults never merged the
+// wizard's prompts at all, so a missing or corrupted prompts.yaml sent
+// gateway/wizard.go's interview an empty system prompt instead of
+// degrading to the built-in default like every other prompt does.
+func TestGet_WizardMissingFileFallsBackToDefaults(t *testing.T) {
 	withPromptsFile(t, "")
 
 	got := Get()
-	if got.PulsarWizard.System == "" || got.PulsarWizard.System != defaults.PulsarWizard.System {
-		t.Errorf("PulsarWizard.System = %q, want the built-in default", got.PulsarWizard.System)
+	if got.Wizard.Contract == "" || got.Wizard.Revision == "" {
+		t.Errorf("Wizard.Contract/Revision empty on a missing prompts.yaml: %q / %q", got.Wizard.Contract, got.Wizard.Revision)
 	}
-	if got.PulsarWizard.OpenerTask == "" || got.PulsarWizard.OpenerTask != defaults.PulsarWizard.OpenerTask {
-		t.Errorf("PulsarWizard.OpenerTask = %q, want the built-in default", got.PulsarWizard.OpenerTask)
+	for _, kind := range wizardKinds {
+		if !got.HasWizardTarget(kind) {
+			t.Errorf("HasWizardTarget(%q) = false, want true", kind)
+			continue
+		}
+		if got.WizardSystem(kind, "X") == "" {
+			t.Errorf("WizardSystem(%q) is empty", kind)
+		}
+		if got.WizardOpenerTask(kind) == "" {
+			t.Errorf("WizardOpenerTask(%q) is empty", kind)
+		}
+	}
+	if got.HasWizardTarget("nonsense") {
+		t.Error("HasWizardTarget(\"nonsense\") = true, want false")
+	}
+}
+
+// TestGet_WizardPartialOverrideKeepsOtherFields: a prompts.yaml that only
+// overrides one target's finish must keep the built-in text for that
+// target's other fields and for every other target — the per-field merge
+// fillWizardDefaults does, since a whole-struct "is it zero" check on a
+// map value would drop the rest of the target.
+func TestGet_WizardPartialOverrideKeepsOtherFields(t *testing.T) {
+	withPromptsFile(t, "wizard:\n  targets:\n    field_instructions:\n      finish: CUSTOM FINISH\n")
+
+	got := Get()
+	sys := got.WizardSystem("field_instructions", "Trip")
+	if !strings.Contains(sys, "CUSTOM FINISH") {
+		t.Errorf("override not applied: %q", sys)
+	}
+	if !strings.Contains(sys, `Field named "Trip"`) {
+		t.Errorf("built-in intro (with {label} filled) lost by a finish-only override: %q", sys)
+	}
+	if got.WizardOpenerTask("field_instructions") == "" {
+		t.Error("field_instructions opener lost by a finish-only override")
+	}
+	if got.WizardSystem("pulsar_routine", "") == "" {
+		t.Error("an untouched target lost its prompts")
+	}
+}
+
+// TestWizardSystem_Assembly: the shared contract/revision appear exactly
+// once in every target's prompt, {label} never leaks through, only the
+// custom-block target carries a Guidance paragraph, and the tool name the
+// prompts tell the model to call is the one the catalog actually offers.
+func TestWizardSystem_Assembly(t *testing.T) {
+	withPromptsFile(t, "")
+	got := Get()
+
+	for _, kind := range wizardKinds {
+		sys := got.WizardSystem(kind, "Some Label")
+		if strings.Count(sys, got.Wizard.Contract) != 1 || strings.Count(sys, got.Wizard.Revision) != 1 {
+			t.Errorf("%s: shared contract/revision should each appear exactly once", kind)
+		}
+		if strings.Contains(sys, "{label}") {
+			t.Errorf("%s: unsubstituted {label} in %q", kind, sys)
+		}
+		if !strings.Contains(sys, "finalize_wizard_prompt") || strings.Contains(sys, "finalize_pulsar_prompt") {
+			t.Errorf("%s: must name finalize_wizard_prompt (the registered tool), not the old name", kind)
+		}
+	}
+	if !strings.Contains(got.WizardSystem("pulsar_daily_custom_block", "B"), "steer the user toward ONE clear focus") {
+		t.Error("custom block lost its guidance paragraph")
+	}
+	if strings.Contains(got.WizardSystem("pulsar_daily_block", "B"), "steer the user toward ONE clear focus") {
+		t.Error("fixed block must not carry the custom block's guidance")
+	}
+	// A caller that forgot the label must not leak the placeholder.
+	if s := got.WizardSystem("field_instructions", "  "); strings.Contains(s, "{label}") || !strings.Contains(s, "untitled") {
+		t.Errorf("blank label not handled: %q", s)
 	}
 }
 
@@ -131,7 +207,7 @@ func TestGet_RealPromptsYAML_WeaverSectionLoads(t *testing.T) {
 // touched by hand. A prompts.yaml edit that isn't mirrored into
 // prompts.go leaves the fallback silently serving stale prompts. This
 // found 10 real mismatches (fixed alongside adding this test) the first
-// time it ran, including one field, PulsarWizard.System/OpenerTask, that
+// time it ran, including one field, the wizard's system prompt/opener, that
 // fillDefaults never merged from defaults at all — a missing prompts.yaml
 // would have sent that wizard call an empty system prompt.
 func TestDefaults_MatchRealPromptsYAML(t *testing.T) {
@@ -176,6 +252,14 @@ func diffStringFields(t *testing.T, path string, got, want reflect.Value) {
 			gv, wv := got.MapIndex(k), want.MapIndex(k)
 			if !wv.IsValid() {
 				t.Errorf("%s[%v]: present in prompts.yaml but missing from buildDefaults()", path, k)
+				continue
+			}
+			// A struct-valued map (wizard.targets) has to be walked, not
+			// compared: reflect's String() on a struct is just its type
+			// name, so comparing it would report "equal" for any two
+			// targets whatever their text — a drift check that can't fail.
+			if gv.Kind() == reflect.Struct {
+				diffStringFields(t, fmt.Sprintf("%s[%v]", path, k), gv, wv)
 				continue
 			}
 			if gv.String() != wv.String() {
