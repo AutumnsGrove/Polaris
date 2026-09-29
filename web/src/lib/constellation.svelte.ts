@@ -242,6 +242,21 @@ export class ConstellationState {
 		}
 	}
 
+	// Flips only `enabled`, carrying the saved interval/model through — the
+	// PUT is a full overwrite (see ConstellationConfigInput), so a bare
+	// {enabled} would reset both. Used by the main Settings panel's toggle,
+	// which doesn't render those other fields. Loads the config first when
+	// it hasn't landed yet rather than overwriting unseen values with defaults.
+	async setEnabled(enabled: boolean): Promise<{ error: string }> {
+		if (!this.config) await this.loadConfig();
+		if (!this.config) return { error: 'Could not load Constellation settings — try again.' };
+		return this.updateConfig({
+			enabled,
+			poll_interval_minutes: this.config.poll_interval_minutes,
+			model: this.config.model
+		});
+	}
+
 	async patchStar(
 		id: number,
 		patch: { title?: string; disabled?: boolean }

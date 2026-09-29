@@ -18,8 +18,10 @@
 		NotepadText,
 		User,
 		Mic,
-		MapPin
+		MapPin,
+		Galaxy
 	} from '@lucide/svelte';
+	import { constellationState } from '$lib/constellation.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
@@ -80,6 +82,9 @@
 	// the panel was last open, without waiting for a full page reload.
 	void appState.settings.checkUpdateStatus(() => appState.busy);
 	void appState.settings.loadUsage();
+	// The Constellation toggle below reads the shared config; usually the
+	// sidebar already loaded it, this covers a cold open.
+	if (!constellationState.config) void constellationState.loadConfig();
 
 	// toolCallTotal/toolErrorRate collapse the per-tool breakdown from
 	// GetStats into the two headline numbers worth a glance here — the
@@ -602,6 +607,27 @@
 				stay out of this unless you turn on the second switch; even then, Oracle won't offer to set
 				up a Pulsar, add to Daily, or file the chat into a Field from a conversation that's meant to
 				leave no trace.
+			</p>
+
+			<div class="section-head"><Galaxy size={15} /><span class="section-title">Constellation</span></div>
+			<div class="settings-group">
+				<div class="settings-row">
+					<span class="row-label">Enabled</span>
+					<label class="switch">
+						<input
+							type="checkbox"
+							checked={constellationState.config?.enabled ?? false}
+							disabled={!constellationState.config}
+							onchange={(e) => void constellationState.setEnabled(e.currentTarget.checked)}
+						/>
+						<span class="slider"></span>
+					</label>
+				</div>
+			</div>
+			<p class="hint">
+				Weaver checks your recent threads on a schedule and builds your personal library of stars.
+				Turning this off also hides Constellation from the sidebar. Check interval and model are
+				in Constellation's own settings.
 			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>

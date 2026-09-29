@@ -110,6 +110,8 @@ with citations.
   need the `code_exec` sandbox's workspace configured.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
   of a bare text chip.
+- **Help (?) button** — next to Settings in the sidebar; a plain-English glossary of the app's
+  named features (Fields = projects, Pulsar = routine searches, and so on).
 - **Settings panel** — theme, default model, the Memory list above, and a one-click
   Update/Restart button — see [Self-update](SETUP.md#self-update).
 - **Automatic backups** — a daily, pruned-automatically database snapshot, with a CLI to
