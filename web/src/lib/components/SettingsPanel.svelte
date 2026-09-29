@@ -584,10 +584,10 @@
 				</div>
 			</div>
 			<p class="hint">
-				Pre-reads each message to pick a focus mode and nudge the reply toward what it needs —
-				sourcing style for a medical question, a places tool for a local one. Every pick is shown
-				in the reply itself and can be undone. Off by default; uses the same Jev budget as
-				verification.
+				Reads each message before answering and quietly adjusts how <span class="wordmark">Polaris</span>
+				answers — for example, taking extra care with sources on a health question. Anything it
+				changes is shown on the reply, and you can undo it with a tap. Off by default. Each message
+				is also sent to a small helper model, and its cost appears under Usage.
 			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>

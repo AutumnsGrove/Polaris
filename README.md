@@ -84,9 +84,9 @@ with citations.
   anything, including via a plain-English instruction ("forget the one about my old job").
 - **Clarifying questions** — asks a single focused question with tappable options when a
   genuinely necessary detail is missing, instead of guessing or interrogating you at once.
-- **Oracle mode** (opt-in) — pre-reads each message to pick a focus mode and nudge the reply
-  toward what it actually needs (sourcing style for a medical question, a places tool for a local
-  one), with every pick shown and reversible right on the reply.
+- **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
+  (extra care with sources on a health question, say), with every change shown and undoable right
+  on the reply.
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
