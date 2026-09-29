@@ -234,6 +234,10 @@ export type ServerEvent =
 			// other tool.
 			url?: string;
 			caption?: string;
+			// show's image_indices payload — the hand-picked image_search
+			// results to render inline at this call. See
+			// gateway/protocol.go's ServerEvent.Images.
+			images?: Card[];
 			call_id?: string;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
@@ -735,6 +739,7 @@ export type TimelineItem =
 			// show's own payload — see ServerEvent's tool_result case.
 			url?: string;
 			caption?: string;
+			images?: Card[];
 			done: boolean;
 			// Mirrors ServerEvent's call_id — lets handleEvent's tool_result
 			// case match this exact call instead of falling back to a

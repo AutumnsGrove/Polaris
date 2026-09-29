@@ -3,7 +3,15 @@ category: research
 description: >-
   find real photos for a query — thumbnail, source page, title, source domain. Use this when a
   photo would help more than a text description (a hairstyle, an object, a place, a visual style).
+  Results aren't shown to the user automatically: you judge them, then show the good ones.
 api_description: >-
-  Find real photos for a query and attach them as a gallery. Returns a thumbnail, source page,
-  title, and source domain per image — a deterministic pass-through of search-engine ranking, not
-  a curated selection. Use for anything a photo answers better than a text description.
+  Find real photos for a query. Returns a numbered candidate list (title + source domain per
+  image) — a deterministic pass-through of search-engine ranking, not a curated selection — and
+  by default NONE of it is shown to the user. Look at the candidates that matter with view_image,
+  then put just the good ones on screen — either show (image_indices; one renders large, several as
+  a photo gallery) or highlight (items with image_index; link-out cards with an optional "why" per
+  pick, best when the user is choosing between things). Both display only the images you pick, and
+  it's fine to show a subset or nothing at all if the results are junk. attach_gallery is the rare
+  escape hatch: true dumps every result onto the user's screen unjudged, so use it only for a bare
+  "show me pictures of X" where there is nothing for you to pick between — when in doubt, false.
+  Use image_search for anything a photo answers better than a text description.

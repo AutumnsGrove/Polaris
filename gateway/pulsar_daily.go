@@ -312,7 +312,7 @@ func (s *Server) generateDailyElaboration(reqCtx context.Context, cfg *config.Co
 		"padding), and a pulled quote if one genuinely fits. If code_exec is available and the story has "+
 		"genuinely chart-worthy quantitative data, use it to build a matplotlib chart themed to this app "+
 		"(see the system prompt's chart-styling guidance) and call show to display it — or use image_search "+
-		"if a relevant photo would help instead. Don't just restate the quick version — add to it, but keep "+
+		"and then show one relevant photo instead (search results aren't displayed until you call show). Don't just restate the quick version — add to it, but keep "+
 		"it tight.", title, quickContent)
 
 	agentCtx := s.newDailyToolContext(reqCtx, writerClient, cfg, location, false)
@@ -404,10 +404,11 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 
 // generateDailyPictureBlock picks a short image-search query via the
 // writer model, then dispatches image_search directly (tools.Dispatch,
-// same direct-call path Weather uses) and reads back the first result
-// card for its URL — image_search's own return string is a summary
+// same direct-call path Weather uses) and reads back the first image
+// candidate for its URL — image_search's own return string is a summary
 // sentence, not the image data itself (see tools/image_search.go's
-// finishImageSearch), so the actual URL only exists on the Card it adds.
+// finishImageSearch), so the actual URL only exists on the candidate card
+// it records in ctx.ImageCandidates.
 func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, cost float64, err error) {
 	task := "Give me a search query for an interesting, visually striking photo to feature as today's " +
 		"\"Picture of the Day\" — nature, space, art, architecture, wildlife, or similar. Vary it day to " +
@@ -425,13 +426,16 @@ func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClie
 		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: model returned an empty search query")
 	}
 
-	argsJSON, _ := json.Marshal(map[string]string{"query": query})
+	// attach_gallery false: the first candidate is read straight off the
+	// pool below, so there's no gallery to attach (and no model in this
+	// path to judge-then-show — Picture of the Day just takes the top hit).
+	argsJSON, _ := json.Marshal(map[string]interface{}{"query": query, "attach_gallery": false})
 	result := tools.Dispatch("image_search", string(argsJSON), ctx, "pulsar-daily-image-search")
 	if strings.HasPrefix(result, "error:") || strings.HasPrefix(result, "image search is degraded") {
 		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: %s", result)
 	}
 
-	for _, c := range ctx.CardsSnapshot() {
+	for _, c := range ctx.ImageCandidatesSnapshot() {
 		if c.Kind == "image" {
 			title := c.Title
 			if title == "" {

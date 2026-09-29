@@ -5,6 +5,7 @@
 	import hljs from '$lib/highlightjs';
 	import type { TimelineItem, Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
+	import ImageGallery from './ImageGallery.svelte';
 	import ArtifactViewer from './ArtifactViewer.svelte';
 	import {
 		Search,
@@ -58,7 +59,7 @@
 	let artifactViewerOpen = $state(false);
 	function showCard(showItem: Extract<TimelineItem, { kind: 'tool' }>): Card {
 		return {
-			title: showItem.caption || (showItem.args?.path as string) || 'Artifact',
+			title: showItem.caption || (showItem.args?.path as string) || (showItem.args?.url as string) || 'Artifact',
 			subtitle: showItem.caption,
 			image_url: showItem.url ?? '',
 			full_image_url: showItem.url,
@@ -231,7 +232,34 @@
 				<Loader2 size={14} color="var(--color-text-dim)" class="spin" />
 				<span>Preparing artifact…</span>
 			</div>
-		{:else if item.url && isLikelyImage(item.args?.path as string)}
+		{:else if item.images?.length === 1}
+			<!-- One hand-picked image_search result: rendered as large as a
+			     workspace image. The card (not a bare url) keeps the source
+			     page link available in the lightbox. -->
+			<button class="show-image-button" onclick={() => (showLightboxOpen = true)}>
+				<img
+					class="show-image"
+					src={item.images[0].full_image_url || item.images[0].image_url}
+					alt={item.caption || item.images[0].title}
+				/>
+			</button>
+			{#if item.caption}
+				<div class="show-caption">{item.caption}</div>
+			{/if}
+			{#if showLightboxOpen}
+				<ImageLightbox card={item.images[0]} onClose={() => (showLightboxOpen = false)} />
+			{/if}
+		{:else if item.images?.length}
+			<!-- Several picked results: the same masonry gallery image_search
+			     used to auto-attach at end of turn, but only the chosen
+			     subset, right where the model called show. -->
+			<ImageGallery cards={item.images} />
+			{#if item.caption}
+				<div class="show-caption">{item.caption}</div>
+			{/if}
+		{:else if item.url && (item.args?.url || isLikelyImage(item.args?.path as string))}
+			<!-- args.url is a remote image the model vouched for (no extension
+			     to sniff), so it's an image by declaration. -->
 			<button class="show-image-button" onclick={() => (showLightboxOpen = true)}>
 				<img class="show-image" src={item.url} alt={item.caption || 'artifact'} />
 			</button>

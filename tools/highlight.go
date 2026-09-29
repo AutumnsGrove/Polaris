@@ -41,6 +41,9 @@ var highlightDef = llm.ToolDef{
 					"items": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
+							"image_index": map[string]interface{}{"type": "integer",
+								"description": "Instead of typing out title/url/image_url: the number of an image_search " +
+									"result to build this card from. Anything else you set on the item overrides it."},
 							"title": map[string]interface{}{"type": "string"},
 							"url":   map[string]interface{}{"type": "string"},
 							"price": map[string]interface{}{"type": "string",
@@ -51,7 +54,8 @@ var highlightDef = llm.ToolDef{
 									"This is the only place your reasoning for a specific item should go — do not " +
 									"also restate it in your text reply."},
 						},
-						"required": []string{"title", "url"},
+						// title/url aren't schema-required: an item may instead carry an
+						// image_index that supplies them (handler validates either way).
 					},
 				},
 			},
@@ -70,6 +74,11 @@ func handleHighlight(argsJSON string, ctx *Context, callID string) string {
 			Price    string `json:"price"`
 			ImageURL string `json:"image_url"`
 			Why      string `json:"why"`
+			// ImageIndex fills any of the above the model left empty from an
+			// image_search candidate (issue #124) — the candidate list only
+			// shows titles, so without this the model couldn't highlight a
+			// search result without retyping a URL it never saw.
+			ImageIndex int `json:"image_index"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -92,7 +101,27 @@ func handleHighlight(argsJSON string, ctx *Context, callID string) string {
 			"candidates and call again with fewer.", len(args.Items), highlightMaxItems))
 	}
 
-	for _, item := range args.Items {
+	for i := range args.Items {
+		item := &args.Items[i]
+		if item.ImageIndex > 0 {
+			card, ok := ctx.ImageCandidate(item.ImageIndex)
+			if !ok {
+				return fail(fmt.Sprintf("image_index %d is out of range — only %d image(s) found by image_search this turn.",
+					item.ImageIndex, len(ctx.ImageCandidatesSnapshot())))
+			}
+			if item.Title == "" {
+				item.Title = card.Title
+			}
+			if item.URL == "" {
+				item.URL = card.URL
+			}
+			if item.ImageURL == "" {
+				item.ImageURL = card.FullImageURL
+				if item.ImageURL == "" {
+					item.ImageURL = card.ImageURL
+				}
+			}
+		}
 		if item.Title == "" || item.URL == "" {
 			return fail("every item requires a title and url.")
 		}

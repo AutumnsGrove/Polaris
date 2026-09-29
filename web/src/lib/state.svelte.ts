@@ -135,6 +135,7 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 								citations: data.citations,
 								url: data.url,
 								caption: data.caption,
+								images: data.images,
 								done: true
 							};
 							matched = true;
@@ -152,6 +153,7 @@ function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 								citations: data.citations,
 								url: data.url,
 								caption: data.caption,
+								images: data.images,
 								done: true
 							};
 							break;
@@ -1631,6 +1633,7 @@ export class AppState {
 								citations: e.citations,
 								url: e.url,
 								caption: e.caption,
+								images: e.images,
 								done: true
 							};
 							matched = true;
@@ -1649,6 +1652,7 @@ export class AppState {
 								citations: e.citations,
 								url: e.url,
 								caption: e.caption,
+								images: e.images,
 								done: true
 							};
 							break;

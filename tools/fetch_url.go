@@ -15,7 +15,7 @@
 // a URL already in ctx.CitationsSnapshot() — something a prior
 // web_search/web_read/other citing tool actually surfaced this
 // conversation, not a string the model invented or a lookalike domain
-// it guessed at. card_index is the mutually-exclusive alternative
+// it guessed at. image_index is the mutually-exclusive alternative
 // view_image.go already established for the image_search case, where
 // there's no raw URL exposed to check against at all (see
 // image_search.go's finishImageSearch) — resolved server-side to the
@@ -109,9 +109,9 @@ var fetchURLDef = llm.ToolDef{
 				"url": map[string]interface{}{
 					"type": "string",
 					"description": "A URL already shown to you as a citation this conversation (from web_search, web_read, or another " +
-						"citing tool) — must match one exactly. Mutually exclusive with card_index — pass exactly one of the two.",
+						"citing tool) — must match one exactly. Mutually exclusive with image_index — pass exactly one of the two.",
 				},
-				"card_index": map[string]interface{}{
+				"image_index": map[string]interface{}{
 					"type": "integer",
 					"description": "Which image_search result to fetch, by its number from a prior result (1-indexed). " +
 						"Mutually exclusive with url — pass exactly one of the two.",
@@ -131,16 +131,22 @@ func init() { Register("fetch_url", handleFetchURL) }
 func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		URL       string `json:"url"`
-		CardIndex int    `json:"card_index"`
-		Filename  string `json:"filename"`
+		CardIndex int    `json:"image_index"`
+		// card_index is the pre-#124 name for image_index, kept as a
+		// fallback (same as view_image) so an older call shape still works.
+		LegacyCardIndex int    `json:"card_index"`
+		Filename        string `json:"filename"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "fetch_url", nil, "error: "+err.Error(), callID)
 	}
+	if args.CardIndex == 0 {
+		args.CardIndex = args.LegacyCardIndex
+	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool":    "fetch_url",
-		"args":    map[string]interface{}{"url": args.URL, "card_index": args.CardIndex, "filename": args.Filename},
+		"args":    map[string]interface{}{"url": args.URL, "image_index": args.CardIndex, "filename": args.Filename},
 		"call_id": callID,
 	})
 
@@ -152,8 +158,8 @@ func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 			"error: filename must be a plain name with no directories", callID)
 	}
 	if (args.URL != "") == (args.CardIndex >= 1) {
-		return emitToolError(ctx, "fetch_url", map[string]interface{}{"url": args.URL, "card_index": args.CardIndex},
-			"error: pass exactly one of url or card_index", callID)
+		return emitToolError(ctx, "fetch_url", map[string]interface{}{"url": args.URL, "image_index": args.CardIndex},
+			"error: pass exactly one of url or image_index", callID)
 	}
 	if ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
 		result := "error: this deployment has no code-execution workspace configured"
@@ -177,19 +183,19 @@ func handleFetchURL(argsJSON string, ctx *Context, callID string) string {
 		}
 		targetURL = args.URL
 	} else {
-		cards := ctx.CardsSnapshot()
-		if args.CardIndex > len(cards) {
-			return emitToolError(ctx, "fetch_url", map[string]interface{}{"card_index": args.CardIndex},
-				fmt.Sprintf("error: card_index %d is out of range — only %d card(s) exist this turn", args.CardIndex, len(cards)), callID)
+		card, ok := ctx.ImageCandidate(args.CardIndex)
+		if !ok {
+			return emitToolError(ctx, "fetch_url", map[string]interface{}{"image_index": args.CardIndex},
+				fmt.Sprintf("error: image_index %d is out of range — only %d image(s) found by image_search this turn",
+					args.CardIndex, len(ctx.ImageCandidatesSnapshot())), callID)
 		}
-		card := cards[args.CardIndex-1]
 		targetURL = card.FullImageURL
 		if targetURL == "" {
 			targetURL = card.ImageURL
 		}
 		if targetURL == "" {
-			return emitToolError(ctx, "fetch_url", map[string]interface{}{"card_index": args.CardIndex},
-				fmt.Sprintf("error: card %d has no fetchable URL", args.CardIndex), callID)
+			return emitToolError(ctx, "fetch_url", map[string]interface{}{"image_index": args.CardIndex},
+				fmt.Sprintf("error: image %d has no fetchable URL", args.CardIndex), callID)
 		}
 	}
 

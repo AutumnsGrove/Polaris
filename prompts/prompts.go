@@ -774,14 +774,14 @@ Name: <a short block title, at most four words>
 
 	d.PulsarDaily.ResearchFollowup = "Do fresh research and expand on this — don't just restate what's " +
 		"already shown. Use visualize if you find genuinely chart-worthy quantitative data, or image_search " +
-		"if a relevant image would help. Cite sources the way you normally would."
+		"(then show the good ones) if a relevant image would help. Cite sources the way you normally would."
 
 	d.PulsarDaily.CuriosityFollowup = "Go deeper on this for its own sake — etymology, context, related " +
 		"trivia, why it's interesting — rather than searching for \"updates.\" Lean on what you already know " +
 		"first."
 
 	d.PulsarDaily.MediaFollowup = "Tell me more about what's shown in this image — its subject, significance, " +
-		"and context. Use image_search if more images would help illustrate the answer."
+		"and context. Use image_search if more images would help illustrate the answer — then call show with just the ones worth displaying (search results aren't shown until you do)."
 
 	d.PulsarDaily.WizardSystem = `You are helping the user write a short steering instruction for one block of their Pulsar Daily digest, titled "%s". This is NOT a whole routine prompt — it's one or two sentences telling that specific block what to focus on (e.g. "focus on AI and climate policy" for a headlines block, or "Beaverton, OR and also Portland, OR" for a local-news block). Your job is a short interview, not a conversation: ask ONE focused question at a time via ask_user_question (with options where a natural finite set exists) until you know what they actually want to see. Most blocks need 1-2 questions, not a long interrogation. Every reply you give must be a tool call, either ask_user_question or finalize_pulsar_prompt — never a plain-text message with no tool call.
 Once you have enough, call finalize_pulsar_prompt with the finished instruction in its ` + "`" + `prompt` + "`" + ` field, written as a short directive the block's own generation prompt can just append (e.g. "focus on AI and climate policy", not "A block that covers AI and climate policy"). Leave ` + "`" + `name` + "`" + ` empty — it isn't meaningful here. If the user replies after you've already finalized once (asking to change something), treat it as a revision request and call finalize_pulsar_prompt again with the updated draft.`
@@ -930,7 +930,7 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 				"definition": "This is about a word. Use the dictionary tool for the definition, and mention usage " +
 					"or origin if it's interesting.",
 				"academic_paper": "This is about a specific paper or body of research. reference_lookup can fetch an arXiv abstract directly — prefer it over a general search, then cite the paper itself (authors, year, venue) rather than a blog post about it, and say how strong the evidence is.",
-				"image":          "The user wants to see pictures. image_search returns real photos with their source pages — use it rather than describing the thing in words.",
+				"image":          "The user wants to see pictures. image_search returns real photos with their source pages — use it rather than describing the thing in words. Its results aren't shown automatically: check the promising ones with view_image, then display only the good ones with show (image_indices, a photo gallery) or highlight (image_index cards, when the user is choosing between things).",
 				"person_org":     "This is about a specific person or organization. Prefer their own site, filings, and established reporting over aggregator profiles, and be careful to match the right entity when a name is shared. State dates for anything that changes (roles, ownership).",
 				"recipe":         "This is a cooking question. Prefer recipes from sources that test and explain them, note quantities and timings exactly, and say what a substitution will change.",
 				"travel":         "This is about travel. Rules, prices, and hours change — prefer official tourism, transit, and government sources, say when a detail was last verified, and use nearby_search for real places along the way.",

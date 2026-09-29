@@ -29,7 +29,7 @@ func fakeImageServer(t *testing.T) *httptest.Server {
 func TestHandleViewImage_NeitherCardIndexNorPath(t *testing.T) {
 	ctx := newTestContext()
 	result := handleViewImage(`{}`, ctx, "call-1")
-	if !strings.Contains(result, "pass exactly one of card_index or path") {
+	if !strings.Contains(result, "pass exactly one of image_index or path") {
 		t.Errorf("result = %q, want an exactly-one-of error", result)
 	}
 }
@@ -37,7 +37,7 @@ func TestHandleViewImage_NeitherCardIndexNorPath(t *testing.T) {
 func TestHandleViewImage_BothCardIndexAndPath(t *testing.T) {
 	ctx := newTestContext()
 	result := handleViewImage(`{"card_index":1,"path":"chart.png"}`, ctx, "call-1")
-	if !strings.Contains(result, "pass exactly one of card_index or path") {
+	if !strings.Contains(result, "pass exactly one of image_index or path") {
 		t.Errorf("result = %q, want an exactly-one-of error", result)
 	}
 }
@@ -101,7 +101,7 @@ func TestHandleViewImage_PathDescribeMode(t *testing.T) {
 
 func TestHandleViewImage_CardIndexOutOfRange(t *testing.T) {
 	ctx := newTestContext()
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
 	result := handleViewImage(`{"card_index":5}`, ctx, "call-1")
 	if !strings.Contains(result, "out of range") {
 		t.Errorf("result = %q, want an out-of-range error", result)
@@ -128,7 +128,7 @@ func TestHandleViewImage_BlockedSourceRejectedWithoutFetching(t *testing.T) {
 
 	ctx := newTestContext()
 	ctx.Blocklist = bl
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
 
 	result := handleViewImage(`{"card_index":1}`, ctx, "call-1")
 	if !strings.Contains(result, "blocked") {
@@ -141,7 +141,7 @@ func TestHandleViewImage_BlockedSourceRejectedWithoutFetching(t *testing.T) {
 
 func TestHandleViewImage_UnknownMode(t *testing.T) {
 	ctx := newTestContext()
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
 	result := handleViewImage(`{"card_index":1,"mode":"stare"}`, ctx, "call-1")
 	if !strings.Contains(result, `unknown mode "stare"`) {
 		t.Errorf("result = %q, want an unknown-mode error", result)
@@ -151,7 +151,7 @@ func TestHandleViewImage_UnknownMode(t *testing.T) {
 func TestHandleViewImage_SeeRejectedWhenNotMultimodal(t *testing.T) {
 	ctx := newTestContext()
 	ctx.Multimodal = false
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
 	result := handleViewImage(`{"card_index":1,"mode":"see"}`, ctx, "call-1")
 	if !strings.Contains(result, `only available to a multimodal model`) {
 		t.Errorf("result = %q, want a not-multimodal error", result)
@@ -164,7 +164,7 @@ func TestHandleViewImage_SeeRejectedWhenNotMultimodal(t *testing.T) {
 func TestHandleViewImage_DescribeMode(t *testing.T) {
 	srv := fakeImageServer(t)
 	ctx := newTestContext()
-	ctx.AddCard(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
 
 	var gotInstructions string
 	ctx.DescribeImage = func(_ context.Context, imageBase64, mimeType, instructions string) (string, float64, error) {
@@ -193,7 +193,7 @@ func TestHandleViewImage_DescribeMode(t *testing.T) {
 func TestHandleViewImage_DescribeModeNoVisionConfigured(t *testing.T) {
 	srv := fakeImageServer(t)
 	ctx := newTestContext()
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
 	// ctx.DescribeImage left nil — no multimodal model configured at all.
 	result := handleViewImage(`{"card_index":1}`, ctx, "call-1")
 	if !strings.Contains(result, "no multimodal model is configured") {
@@ -205,11 +205,11 @@ func TestHandleViewImage_SeeMode(t *testing.T) {
 	srv := fakeImageServer(t)
 	ctx := newTestContext()
 	ctx.Multimodal = true
-	ctx.AddCard(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
 
 	result := handleViewImage(`{"card_index":1,"mode":"see"}`, ctx, "call-1")
-	if !strings.Contains(result, "now viewing card 1") {
-		t.Errorf("result = %q, want an acknowledgement mentioning card 1", result)
+	if !strings.Contains(result, "now viewing image 1") {
+		t.Errorf("result = %q, want an acknowledgement mentioning image 1", result)
 	}
 
 	pending := ctx.FlushPendingImageMessages()
@@ -232,7 +232,7 @@ func TestHandleViewImage_FullImageURLFallsBackToImageURL(t *testing.T) {
 		return "described", 0, nil
 	}
 	// No FullImageURL set — handleViewImage should fall back to ImageURL.
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", ImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", ImageURL: srv.URL, Kind: "image"})
 	result := handleViewImage(`{"card_index":1}`, ctx, "call-1")
 	if result != "described" {
 		t.Errorf("result = %q, want the description (ImageURL fallback should have worked)", result)

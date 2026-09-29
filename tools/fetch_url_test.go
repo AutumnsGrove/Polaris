@@ -43,7 +43,7 @@ func TestHandleFetchURL_FilenameWithSlashRejected(t *testing.T) {
 func TestHandleFetchURL_NeitherURLNorCardIndex(t *testing.T) {
 	ctx := newTestContext()
 	result := handleFetchURL(`{"filename":"x.csv"}`, ctx, "call-1")
-	if !strings.Contains(result, "pass exactly one of url or card_index") {
+	if !strings.Contains(result, "pass exactly one of url or image_index") {
 		t.Errorf("result = %q, want an exactly-one-of error", result)
 	}
 }
@@ -51,7 +51,7 @@ func TestHandleFetchURL_NeitherURLNorCardIndex(t *testing.T) {
 func TestHandleFetchURL_BothURLAndCardIndex(t *testing.T) {
 	ctx := newTestContext()
 	result := handleFetchURL(`{"url":"https://example.com/x","card_index":1,"filename":"x.csv"}`, ctx, "call-1")
-	if !strings.Contains(result, "pass exactly one of url or card_index") {
+	if !strings.Contains(result, "pass exactly one of url or image_index") {
 		t.Errorf("result = %q, want an exactly-one-of error", result)
 	}
 }
@@ -145,7 +145,7 @@ func TestHandleFetchURL_CardIndexOutOfRange(t *testing.T) {
 	ctx := newTestContext()
 	ctx.CodeExecWorkspaceDir = t.TempDir()
 	ctx.ThreadID = "thread-1"
-	ctx.AddCard(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "one", URL: "https://example.com/1", ImageURL: "https://example.com/1.png", Kind: "image"})
 	result := handleFetchURL(`{"card_index":5,"filename":"photo.jpg"}`, ctx, "call-1")
 	if !strings.Contains(result, "out of range") {
 		t.Errorf("result = %q, want an out-of-range error", result)
@@ -158,7 +158,7 @@ func TestHandleFetchURL_CardIndexSuccessWritesWorkspaceFile(t *testing.T) {
 	ctx := newTestContext()
 	ctx.CodeExecWorkspaceDir = workspaceRoot
 	ctx.ThreadID = "thread-1"
-	ctx.AddCard(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
+	ctx.AddImageCandidate(Card{Title: "a red bicycle", URL: "https://example.com/1", FullImageURL: srv.URL, Kind: "image"})
 
 	result := handleFetchURL(`{"card_index":1,"filename":"photo.png"}`, ctx, "call-1")
 	if !strings.Contains(result, `"photo.png"`) {

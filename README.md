@@ -71,8 +71,9 @@ with citations.
   of doing the math in free text, removing a whole class of LLM arithmetic mistakes.
 - **Current time** — the assistant always knows today's date and checks the exact time of day
   only when an answer depends on it.
-- **Image search & viewing** — finds real photos for a query as a gallery, and can look directly
-  at a specific image (a result, or a chart it just generated) when a text description isn't enough.
+- **Image search & viewing** — finds real photos for a query, looks at the candidates itself (a
+  description, or directly if the model is multimodal), and shows you only the good ones — as a
+  gallery or cards — instead of dumping every result.
 - **Highlight cards** — turns a handful of items actually found this turn (products, places,
   repos) into cards instead of a paragraph.
 - **PDF paging** — search or page through an attached PDF beyond its initial preview, with an

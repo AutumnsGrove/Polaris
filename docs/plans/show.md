@@ -26,6 +26,18 @@ dedicated tool, for the reasons below. Depends on nothing unbuilt — `code_exec
 `view_image`'s `path`-resolution pattern (`docs/plans/view-image.md`) are both shipped and
 live-verified already; `show` reuses the same workspace-file contract, not new plumbing.
 
+**Extended 2026-09-29 (issue #124).** The "no `card_index` alternative — revisit only if real usage
+shows a genuine want to promote a single search result" note below was overtaken by exactly that: a
+live thread where the model wanted to display only the useful `image_search` results but the tool
+had already put the whole set on screen. `image_search` no longer auto-attaches a gallery (an
+explicit, required `attach_gallery` flag is the rare opt-out); results land in a per-turn candidate
+pool (`Context.ImageCandidates`, numbered 1-based) that `view_image`/`fetch_url` (`image_index`),
+`highlight` (item `image_index`) and `show` all resolve against. `show` now takes exactly one of
+`path` (as below), `url` (any remote http(s) image, blocklist-checked, rendered by the browser —
+no server fetch), or `image_indices` (a hand-picked subset, ≤8; one renders large, several as an
+`ImageGallery` inline). `show` also dropped its `docker_only` gate, since only its `path` source
+needs the workspace. The sections below describe the original path-only design.
+
 ## The gap
 
 Confirmed directly in the frontend code (`web/src/lib/components/ChatTurnView.svelte`): every

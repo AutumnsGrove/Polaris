@@ -19,9 +19,11 @@
 // message, not silently" shape every other tool error in this package
 // already uses.
 //
-// card_index is a 1-based, absolute position into ctx.CardsSnapshot() —
-// the same numbering image_search's own result text now hands the model
-// (see finishImageSearch in image_search.go) — deliberately not a raw URL:
+// image_index is a 1-based position into ctx.ImageCandidates — the same
+// numbering image_search's own result text hands the model (see
+// finishImageSearch in image_search.go; the pool exists so searching never
+// has to put an image on the user's screen just to give it a number,
+// issue #124) — deliberately not a raw URL:
 // an index is strictly less for the model to juggle, and it structurally
 // can't reference anything that didn't come from a genuine search result.
 //
@@ -32,7 +34,7 @@
 // Resolved the same defensive way as any other user-influenced path join
 // in this codebase: filepath.Join then a filepath.Rel check that the
 // result didn't escape the thread's own workspace root via "..".
-// card_index and path are mutually exclusive — exactly one is required.
+// image_index and path are mutually exclusive — exactly one is required.
 package tools
 
 import (
@@ -58,16 +60,16 @@ var viewImageDef = llm.ToolDef{
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"card_index": map[string]interface{}{
+				"image_index": map[string]interface{}{
 					"type": "integer",
 					"description": "Which image to view, by its number from a prior image_search result " +
-						"(e.g. \"images 4-6\" means pass 4, 5, or 6). 1-indexed. Mutually exclusive with path — " +
-						"pass exactly one of the two.",
+						"(e.g. candidate \"4.\" or \"images 4-6\" means pass 4, 5, or 6). 1-indexed. Mutually " +
+						"exclusive with path — pass exactly one of the two.",
 				},
 				"path": map[string]interface{}{
 					"type": "string",
 					"description": "Path (relative to this conversation's workspace) to an image file already " +
-						"there — e.g. a chart code_exec just generated. Mutually exclusive with card_index — " +
+						"there — e.g. a chart code_exec just generated. Mutually exclusive with image_index — " +
 						"pass exactly one of the two.",
 				},
 				"mode": map[string]interface{}{
@@ -99,24 +101,30 @@ const maxViewImageBytes = 15 << 20 // 15MB
 
 func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
-		CardIndex    int    `json:"card_index"`
-		Path         string `json:"path"`
-		Mode         string `json:"mode"`
-		Instructions string `json:"instructions"`
+		CardIndex int `json:"image_index"`
+		// card_index is view_image's pre-#124 name for the same thing, kept
+		// as a fallback so an older transcript's call shape still works.
+		LegacyCardIndex int    `json:"card_index"`
+		Path            string `json:"path"`
+		Mode            string `json:"mode"`
+		Instructions    string `json:"instructions"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "view_image", nil, "error: "+err.Error(), callID)
 	}
+	if args.CardIndex == 0 {
+		args.CardIndex = args.LegacyCardIndex
+	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool":    "view_image",
-		"args":    map[string]interface{}{"card_index": args.CardIndex, "path": args.Path, "mode": args.Mode, "instructions": args.Instructions},
+		"args":    map[string]interface{}{"image_index": args.CardIndex, "path": args.Path, "mode": args.Mode, "instructions": args.Instructions},
 		"call_id": callID,
 	})
 
 	if (args.CardIndex >= 1) == (args.Path != "") {
-		return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex, "path": args.Path},
-			"error: pass exactly one of card_index or path", callID)
+		return emitToolError(ctx, "view_image", map[string]interface{}{"image_index": args.CardIndex, "path": args.Path},
+			"error: pass exactly one of image_index or path", callID)
 	}
 
 	mode := args.Mode
@@ -148,19 +156,19 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 		}
 		source = fmt.Sprintf("workspace file %q", args.Path)
 	} else {
-		cards := ctx.CardsSnapshot()
-		if args.CardIndex > len(cards) {
-			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-				fmt.Sprintf("error: card_index %d is out of range — only %d card(s) exist this turn", args.CardIndex, len(cards)), callID)
+		card, ok := ctx.ImageCandidate(args.CardIndex)
+		if !ok {
+			return emitToolError(ctx, "view_image", map[string]interface{}{"image_index": args.CardIndex},
+				fmt.Sprintf("error: image_index %d is out of range — only %d image(s) found by image_search this turn",
+					args.CardIndex, len(ctx.ImageCandidatesSnapshot())), callID)
 		}
-		card := cards[args.CardIndex-1]
 		imageURL := card.FullImageURL
 		if imageURL == "" {
 			imageURL = card.ImageURL
 		}
 		if imageURL == "" {
-			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
-				fmt.Sprintf("error: card %d has no image to view", args.CardIndex), callID)
+			return emitToolError(ctx, "view_image", map[string]interface{}{"image_index": args.CardIndex},
+				fmt.Sprintf("error: image %d has no image to view", args.CardIndex), callID)
 		}
 		if ctx.Blocklist.Blocked(imageURL) {
 			// Same check web_read.go applies before fetching any model-directed
@@ -170,7 +178,7 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 			// it or inserting it straight into the live conversation in "see"
 			// mode) would silently bypass that policy for this one path while
 			// web_read still enforces it for the same domain.
-			return emitToolError(ctx, "view_image", map[string]interface{}{"card_index": args.CardIndex},
+			return emitToolError(ctx, "view_image", map[string]interface{}{"image_index": args.CardIndex},
 				"error: this image's source is blocked and cannot be viewed", callID)
 		}
 
@@ -182,7 +190,7 @@ func handleViewImage(argsJSON string, ctx *Context, callID string) string {
 			ctx.Emit("tool_result", map[string]interface{}{"tool": "view_image", "result": result, "call_id": callID})
 			return result
 		}
-		source = fmt.Sprintf("card %d (%q)", args.CardIndex, card.Title)
+		source = fmt.Sprintf("image %d (%q)", args.CardIndex, card.Title)
 	}
 	imageBase64 := base64.StdEncoding.EncodeToString(data)
 

@@ -577,6 +577,9 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		if v, ok := payload["caption"].(string); ok {
 			evt.Caption = v
 		}
+		if v, ok := payload["images"].([]tools.Card); ok {
+			evt.Images = v
+		}
 		if v, ok := payload["cost_usd"].(float64); ok {
 			evt.CostUSD = v
 		}
@@ -1588,7 +1591,7 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		}
 		data := map[string]interface{}{
 			"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID,
-			"url": evt.URL, "caption": evt.Caption,
+			"url": evt.URL, "caption": evt.Caption, "images": evt.Images,
 		}
 		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", data, turnID)
 	case "agent_nudge":

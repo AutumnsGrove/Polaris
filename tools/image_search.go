@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"polaris/brave"
 	"polaris/llm"
@@ -44,8 +45,15 @@ var imageSearchDef = llm.ToolDef{
 				"query": map[string]interface{}{"type": "string", "description": "What to find photos of."},
 				"count": map[string]interface{}{"type": "integer",
 					"description": "How many images to return (default 10, max 20)."},
+				"attach_gallery": map[string]interface{}{"type": "boolean",
+					"description": "Almost always false. False (the norm) returns a numbered list of candidates " +
+						"the user has NOT seen yet — you then look at them with view_image and put just the good ones " +
+						"on screen with show (image_indices). True skips that judging step and dumps EVERY result " +
+						"onto the user's screen as a gallery: use it only when the user's whole request is just " +
+						"\"show me pictures of X\" with nothing for you to pick between. If you might drop, " +
+						"compare or filter any of the results, pass false."},
 			},
-			"required": []string{"query"},
+			"required": []string{"query", "attach_gallery"},
 		},
 	},
 }
@@ -56,6 +64,9 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Query string `json:"query"`
 		Count int    `json:"count"`
+		// A model that omits the (schema-required) field gets the safe
+		// judge-first behavior — the gallery dump is the opt-in.
+		AttachGallery bool `json:"attach_gallery"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "image_search", nil, "error: "+err.Error(), callID)
@@ -94,7 +105,7 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("image_search: checking brave usage failed, skipping fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("image_search: brave monthly cap reached, skipping fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveImageFallback(ctx, args.Query, args.Count, callID); ok {
+			} else if formatted, ok := braveImageFallback(ctx, args.Query, args.Count, args.AttachGallery, callID); ok {
 				return formatted
 			}
 		}
@@ -113,16 +124,16 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 		return "no images found"
 	}
 
-	startIndex := len(ctx.CardsSnapshot())
+	var found []Card
 	for _, r := range resp.Results {
 		if r.Thumbnail == "" {
 			continue
 		}
-		ctx.AddCard(Card{
+		found = append(found, Card{
 			Title: r.Title, Subtitle: hostnameOf(r.URL), ImageURL: r.Thumbnail, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "SearXNG", args.Query, startIndex, callID)
+	return finishImageSearch(ctx, "SearXNG", args.Query, found, args.AttachGallery, callID)
 }
 
 // braveImageFallback tries Brave's Image Search API once SearXNG has
@@ -131,7 +142,7 @@ func handleImageSearch(argsJSON string, ctx *Context, callID string) string {
 // checked-before-call, incremented-only-on-success shape as web_search's
 // braveFallback. Returns ok=false on any failure or empty result so the
 // caller falls through to the plain "degraded" message.
-func braveImageFallback(ctx *Context, query string, count int, callID string) (result string, ok bool) {
+func braveImageFallback(ctx *Context, query string, count int, attachGallery bool, callID string) (result string, ok bool) {
 	dedupKey := searchDedupKey("brave-images", query, "images", 1, count)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*brave.ImageSearchResponse, error) {
 		r, e := ctx.Brave.SearchImages(ctx.Ctx, query, count)
@@ -151,7 +162,7 @@ func braveImageFallback(ctx *Context, query string, count int, callID string) (r
 		return "", false
 	}
 
-	startIndex := len(ctx.CardsSnapshot())
+	var found []Card
 	for _, r := range resp.Results {
 		if r.ImageSrc == "" {
 			continue
@@ -160,50 +171,89 @@ func braveImageFallback(ctx *Context, query string, count int, callID string) (r
 		if source == "" {
 			source = hostnameOf(r.URL)
 		}
-		ctx.AddCard(Card{
+		found = append(found, Card{
 			Title: r.Title, Subtitle: source, ImageURL: r.ImageSrc, FullImageURL: r.FullImageURL, URL: r.URL, Kind: "image",
 		})
 	}
-	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query, startIndex, callID), true
+	return finishImageSearch(ctx, "Brave (SearXNG degraded)", query, found, attachGallery, callID), true
 }
 
-// finishImageSearch reports how many images this call added, and — the
-// part that used to be missing entirely — which numbered positions they
-// landed at in this turn's card gallery, so the model can actually
-// reference one via view_image's card_index parameter (tools/view_image.go)
-// instead of only being told images exist without any way to point at a
-// specific one. Indices are 1-based, absolute positions in
-// ctx.CardsSnapshot() (not a separate "image-only" numbering space) since
-// that's the exact slice view_image indexes into — startIndex is the
-// snapshot length taken by the caller before this call's own AddCard loop
-// ran, so [startIndex, len(cards)) is exactly the range this call added,
-// even if earlier tool calls this turn already added other cards.
-func finishImageSearch(ctx *Context, provider, query string, startIndex int, callID string) string {
-	cards := ctx.CardsSnapshot()
-	imageCount := 0
-	for _, c := range cards[startIndex:] {
-		if c.Kind == "image" {
-			imageCount++
+// finishImageSearch records this call's results in the turn's image
+// candidate pool (ctx.ImageCandidates) and tells the model what it found.
+// The pool is the numbering space view_image, fetch_url and show's
+// image_indices all resolve against, so the numbers reported here are the
+// ones the model passes to them — stable across calls (a re-surfaced image
+// keeps its earlier number, see AddImageCandidate).
+//
+// By default nothing is rendered: the model is handed a numbered list
+// (title + source domain, enough to weed out the obvious junk without a
+// vision call) and told the user hasn't seen any of it, so it has to judge
+// and then show only what earned it (issue #124 — the old behavior dumped
+// every result onto the user's screen before the model had looked at any).
+// attachGallery is the explicit opt-out for the plain "show me pictures of
+// X" request: it additionally adds every result to ctx.Cards, which the
+// frontend renders as an end-of-turn gallery.
+func finishImageSearch(ctx *Context, provider, query string, found []Card, attachGallery bool, callID string) string {
+	numbers := make([]int, len(found))
+	for i, card := range found {
+		numbers[i] = ctx.AddImageCandidate(card)
+		if attachGallery {
+			ctx.AddCard(card)
 		}
 	}
 
-	indexHint := "no images were added"
-	if imageCount == 1 {
-		indexHint = fmt.Sprintf("call it image %d with view_image if you need to actually look at it or describe it", startIndex+1)
-	} else if imageCount > 1 {
-		indexHint = fmt.Sprintf("call them images %d-%d with view_image if you need to actually look at or describe any of them",
-			startIndex+1, len(cards))
+	var result string
+	switch {
+	case len(found) == 0:
+		result = fmt.Sprintf("[via %s] found no usable images for %q.", provider, query)
+	case attachGallery:
+		result = fmt.Sprintf("[via %s] found %d image(s) for %q — all of them are attached to this turn's answer as a "+
+			"gallery, no need to describe them individually in prose unless asked. They're images %s if you want to "+
+			"look at one with view_image.", provider, len(found), query, imageNumberRange(numbers))
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "[via %s] found %d image(s) for %q. The user has NOT seen any of them yet — nothing is displayed "+
+			"until you call show. Candidates:\n", provider, len(found), query)
+		for i, card := range found {
+			fmt.Fprintf(&b, "%d. %s (%s)\n", numbers[i], card.Title, card.Subtitle)
+		}
+		b.WriteString("Titles alone are weak evidence: view_image (image_index, mode \"describe\") to check the ones " +
+			"that matter before you pick. Then call show with image_indices listing only the good ones — you may show " +
+			"any subset, or none if nothing fits.")
+		result = b.String()
 	}
-	result := fmt.Sprintf("[via %s] found %d image(s) for %q — they're attached to this turn's answer as a gallery, "+
-		"no need to describe them individually in prose unless asked; %s.", provider, imageCount, query, indexHint)
-	log.Info("image_search", "provider", provider, "query", query, "results", imageCount)
-	ctx.Emit("tool_result", map[string]interface{}{
-		"tool":    "image_search",
-		"result":  result,
-		"cards":   cards,
-		"call_id": callID,
-	})
+
+	log.Info("image_search", "provider", provider, "query", query, "results", len(found), "attach_gallery", attachGallery)
+	payload := map[string]interface{}{"tool": "image_search", "result": result, "call_id": callID}
+	if attachGallery {
+		payload["cards"] = ctx.CardsSnapshot()
+	}
+	ctx.Emit("tool_result", payload)
 	return result
+}
+
+// imageNumberRange renders candidate numbers compactly for the model, e.g.
+// "3-7" for a contiguous run, or a comma list when a re-surfaced image
+// broke the run.
+func imageNumberRange(numbers []int) string {
+	if len(numbers) == 0 {
+		return ""
+	}
+	contiguous := true
+	for i := 1; i < len(numbers); i++ {
+		if numbers[i] != numbers[i-1]+1 {
+			contiguous = false
+			break
+		}
+	}
+	if contiguous && len(numbers) > 1 {
+		return fmt.Sprintf("%d-%d", numbers[0], numbers[len(numbers)-1])
+	}
+	parts := make([]string, len(numbers))
+	for i, n := range numbers {
+		parts[i] = fmt.Sprint(n)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // hostnameOf returns url's host, or the raw string unchanged if it

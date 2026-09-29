@@ -316,6 +316,12 @@ type ServerEvent struct {
 	// model-supplied caption. Empty for every other tool.
 	URL     string `json:"url,omitempty"`
 	Caption string `json:"caption,omitempty"`
+	// Images is show's image_indices payload — the hand-picked
+	// image_search candidates to render inline right at this call (one
+	// large, several as a gallery). Carried on the timeline item rather than
+	// Cards because Cards is the turn-wide end-of-message bucket; these
+	// belong where the model chose to show them. Empty for every other tool.
+	Images []tools.Card `json:"images,omitempty"`
 	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
 	// legitimate value for both (a stopped turn that never reached an LLM
 	// call costs exactly $0), and omitempty would drop the field from the

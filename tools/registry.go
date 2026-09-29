@@ -613,6 +613,17 @@ type Context struct {
 	cardsMu sync.Mutex
 	Cards   []Card
 
+	// ImageCandidates is image_search's result pool: every image a search
+	// found this turn, numbered 1-based in the order found, *without* being
+	// rendered anywhere. Deliberately separate from Cards — Cards is what
+	// the frontend displays at end of turn, so an image_search that fed it
+	// directly forced the whole result set onto the user before the model
+	// had judged any of it (issue #124). view_image, fetch_url and show's
+	// image_indices all resolve a model-supplied image number against this
+	// pool instead. Same concurrency shape as Cards.
+	imageCandidatesMu sync.Mutex
+	ImageCandidates   []Card
+
 	// ExtraCostUSD accumulates LLM spend a tool handler incurred on its
 	// own — a filter/extraction pass (web_read's instructions param, see
 	// FilterExtractedText) — that agent.Run's own
@@ -968,6 +979,52 @@ func (c *Context) CardsSnapshot() []Card {
 	defer c.cardsMu.Unlock()
 	out := make([]Card, len(c.Cards))
 	copy(out, c.Cards)
+	return out
+}
+
+// AddImageCandidate records an image_search result in the candidate pool
+// and returns its 1-based number. An image already in the pool (same
+// full-size/thumbnail URL — a second search often re-surfaces the same
+// photo) returns its existing number rather than a duplicate, so numbers
+// the model was already told stay stable. Safe to call concurrently.
+func (c *Context) AddImageCandidate(card Card) int {
+	c.imageCandidatesMu.Lock()
+	defer c.imageCandidatesMu.Unlock()
+	key := card.FullImageURL
+	if key == "" {
+		key = card.ImageURL
+	}
+	for i, existing := range c.ImageCandidates {
+		existingKey := existing.FullImageURL
+		if existingKey == "" {
+			existingKey = existing.ImageURL
+		}
+		if existingKey == key {
+			return i + 1
+		}
+	}
+	c.ImageCandidates = append(c.ImageCandidates, card)
+	return len(c.ImageCandidates)
+}
+
+// ImageCandidate returns the candidate at 1-based number n, or ok=false if
+// n is out of range.
+func (c *Context) ImageCandidate(n int) (card Card, ok bool) {
+	c.imageCandidatesMu.Lock()
+	defer c.imageCandidatesMu.Unlock()
+	if n < 1 || n > len(c.ImageCandidates) {
+		return Card{}, false
+	}
+	return c.ImageCandidates[n-1], true
+}
+
+// ImageCandidatesSnapshot returns a copy of the candidate pool — same
+// concurrent-read rationale as CardsSnapshot.
+func (c *Context) ImageCandidatesSnapshot() []Card {
+	c.imageCandidatesMu.Lock()
+	defer c.imageCandidatesMu.Unlock()
+	out := make([]Card, len(c.ImageCandidates))
+	copy(out, c.ImageCandidates)
 	return out
 }
 

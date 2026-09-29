@@ -649,14 +649,15 @@ pulsar_daily:
     Don't re-greet or re-summarize what the block already said; begin from where it left off.
   research_followup: >-
     Do fresh research and expand on this — don't just restate what's already shown. Use
-    visualize if you find genuinely chart-worthy quantitative data, or image_search if a
-    relevant image would help. Cite sources the way you normally would.
+    visualize if you find genuinely chart-worthy quantitative data, or image_search (then show
+    the good ones) if a relevant image would help. Cite sources the way you normally would.
   curiosity_followup: >-
     Go deeper on this for its own sake — etymology, context, related trivia, why it's
     interesting — rather than searching for "updates." Lean on what you already know first.
   media_followup: >-
     Tell me more about what's shown in this image — its subject, significance, and context.
-    Use image_search if more images would help illustrate the answer.
+    Use image_search if more images would help illustrate the answer — then call show with just the
+    ones worth displaying (search results aren't shown until you do).
   # wizard_system/wizard_opener_task back the "help me write this" interview scoped to one
   # block's steering instruction (see tools.Context.PulsarDailyBlockTitle) — the same
   # ask_user_question/finalize_pulsar_prompt mechanism pulsar_wizard uses, reused rather than
@@ -1117,7 +1118,10 @@ oracle:
           year, venue) rather than a blog post about it, and say how strong the evidence is.
         image: >-
           The user wants to see pictures. image_search returns real photos with their source pages —
-          use it rather than describing the thing in words.
+          use it rather than describing the thing in words. Its results aren't shown automatically:
+          check the promising ones with view_image, then display only the good ones with show
+          (image_indices, a photo gallery) or highlight (image_index cards, when the user is
+          choosing between things).
         person_org: >-
           This is about a specific person or organization. Prefer their own site, filings, and
           established reporting over aggregator profiles, and be careful to match the right

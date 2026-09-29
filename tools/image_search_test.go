@@ -58,13 +58,16 @@ func TestHandleImageSearch_FormatsResultsAsImageCards(t *testing.T) {
 		Emit:    func(string, map[string]interface{}) {},
 	}
 
-	result := handleImageSearch(`{"query":"curtain bang shag"}`, ctx, "test-call")
+	result := handleImageSearch(`{"query":"curtain bang shag","attach_gallery":true}`, ctx, "test-call")
 
 	if !strings.Contains(result, "[via SearXNG]") {
 		t.Errorf("result = %q, want a provider tag naming SearXNG", result)
 	}
 	if len(ctx.Cards) != 1 {
 		t.Fatalf("Cards = %+v, want 1 card", ctx.Cards)
+	}
+	if len(ctx.ImageCandidates) != 1 {
+		t.Errorf("ImageCandidates = %+v, want the result in the pool too so view_image/show can number it", ctx.ImageCandidates)
 	}
 	card := ctx.Cards[0]
 	if card.Kind != "image" {
@@ -148,11 +151,71 @@ func TestHandleImageSearch_DegradedFallsBackToBrave(t *testing.T) {
 	if incremented != 1 {
 		t.Errorf("IncrementBraveUsage called %d times, want 1", incremented)
 	}
-	if len(ctx.Cards) != 1 || ctx.Cards[0].URL != "https://example.com/brave-photo-page" {
-		t.Errorf("Cards = %+v, want the Brave fallback result added", ctx.Cards)
+	if len(ctx.ImageCandidates) != 1 || ctx.ImageCandidates[0].URL != "https://example.com/brave-photo-page" {
+		t.Fatalf("ImageCandidates = %+v, want the Brave fallback result added", ctx.ImageCandidates)
 	}
-	if ctx.Cards[0].FullImageURL != "https://example.com/brave-full-res.jpg" {
-		t.Errorf("FullImageURL = %q, want Brave's properties.url", ctx.Cards[0].FullImageURL)
+	if ctx.ImageCandidates[0].FullImageURL != "https://example.com/brave-full-res.jpg" {
+		t.Errorf("FullImageURL = %q, want Brave's properties.url", ctx.ImageCandidates[0].FullImageURL)
+	}
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none — the Brave path must also default to judge-first", ctx.Cards)
+	}
+}
+
+// The core of issue #124: by default a search only fills the candidate pool
+// — nothing reaches ctx.Cards (what the frontend renders), and the model is
+// told the user hasn't seen anything.
+func TestHandleImageSearch_DefaultDoesNotAttachGallery(t *testing.T) {
+	srv := fakeSearXNGImages(t, []map[string]interface{}{
+		{"title": "First", "url": "https://example.com/a", "thumbnail": "https://example.com/a.jpg", "img_src": "https://example.com/a-full.jpg"},
+		{"title": "Second", "url": "https://example.com/b", "thumbnail": "https://example.com/b.jpg", "img_src": "https://example.com/b-full.jpg"},
+	})
+	var emitted map[string]interface{}
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit: func(event string, payload map[string]interface{}) {
+			if event == "tool_result" {
+				emitted = payload
+			}
+		},
+	}
+
+	result := handleImageSearch(`{"query":"anything","attach_gallery":false}`, ctx, "test-call")
+
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: nothing may be displayed before the model judges it", ctx.Cards)
+	}
+	if len(ctx.ImageCandidates) != 2 {
+		t.Fatalf("ImageCandidates = %+v, want both results pooled", ctx.ImageCandidates)
+	}
+	for _, want := range []string{"NOT seen", "1. First (example.com)", "2. Second (example.com)", "image_indices"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result = %q, want it to contain %q", result, want)
+		}
+	}
+	if _, has := emitted["cards"]; has {
+		t.Errorf("tool_result carried cards %v; the frontend would render them as a gallery", emitted["cards"])
+	}
+}
+
+// A second search re-surfacing an already-pooled image must keep its
+// original number, so numbers the model was already told stay valid.
+func TestAddImageCandidate_DedupsAndKeepsNumbers(t *testing.T) {
+	ctx := &Context{}
+	a := Card{Title: "a", ImageURL: "https://x/a.jpg", FullImageURL: "https://x/a-full.jpg"}
+	b := Card{Title: "b", ImageURL: "https://x/b.jpg"}
+	if got := ctx.AddImageCandidate(a); got != 1 {
+		t.Errorf("first = %d, want 1", got)
+	}
+	if got := ctx.AddImageCandidate(b); got != 2 {
+		t.Errorf("second = %d, want 2", got)
+	}
+	if got := ctx.AddImageCandidate(a); got != 1 {
+		t.Errorf("re-added a = %d, want its original number 1", got)
+	}
+	if n := len(ctx.ImageCandidatesSnapshot()); n != 2 {
+		t.Errorf("pool size = %d, want 2", n)
 	}
 }
 

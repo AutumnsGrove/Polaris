@@ -8,6 +8,10 @@ api_description: >-
   title, a url, and optionally a short free-text price/badge, an image, and a one-sentence "why"
   (why this pick fits what was asked). Every item's title/url/price must come from a web_search
   result or a page you actually read (web_read) this very turn — never from memory or training
-  data. Not for anything else: this tool renders whatever you give it without checking it's real.
+  data. An image_search result needs no title/url typed out: pass just its image_index and the
+  card is filled in from that result (its image, title, and source page) — this is one of the two
+  ways to put picked image_search results on screen (the other is show's image_indices, a plain
+  photo gallery); use highlight when the user is choosing between things and a per-item "why"
+  helps. Not for anything else: this tool renders whatever you give it without checking it's real.
   If the request needs per-item reasoning, put it in each item's "why" field, not in your text
   reply — the cards fully replace prose, they don't supplement it.

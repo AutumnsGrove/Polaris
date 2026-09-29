@@ -252,23 +252,30 @@ var catalogDefaults = map[string]catalogEntry{
 	"fetch_url": {Name: "fetch_url", Requires: "docker_only", Category: "compute",
 		Description: "download a URL you've already been shown into your code_exec workspace so code_exec can process it.",
 		APIDescription: "Fetch a URL you've already been shown as a citation this conversation, or an image_search result " +
-			"by card_index, and save it into your workspace under the filename you choose — so code_exec can load a real " +
+			"by image_index, and save it into your workspace under the filename you choose — so code_exec can load a real " +
 			"image, CSV, JSON, Parquet, or SQLite file instead of only synthesizing data from scratch."},
 	"image_search": {Name: "image_search", Category: "research", Description: "find real photos for a query.",
-		APIDescription: "Find real photos for a query and attach them as a gallery."},
+		APIDescription: "Find real photos for a query. Returns a numbered candidate list the user has not seen; look at " +
+			"the promising ones with view_image, then put just the good ones on screen with show."},
 	"view_image": {Name: "view_image", Description: "actually look at a specific image from a prior image_search result.",
-		APIDescription: "View a specific image from a prior image_search result by its numbered position (card_index). " +
+		APIDescription: "View a specific image from a prior image_search result by its number (image_index). " +
 			"mode: \"describe\" (default) returns a thorough text description. mode: \"see\" (only offered to a " +
 			"multimodal model) inserts the actual image as your next message so you can genuinely look at it."},
-	"show": {Name: "show", Requires: "docker_only", Description: "display a workspace artifact (e.g. a code_exec chart) large and inline, right where you produced it.",
-		APIDescription: "Display an image already in your workspace (e.g. a code_exec-generated chart) large and inline " +
-			"in the conversation, right at this point in your reply, with an optional caption. Purely a display action — " +
-			"it doesn't let you see the image yourself; use view_image for that."},
+	// Not docker_only: show's path source needs the workspace, but its url and
+	// image_indices sources don't, and image_search no longer displays anything
+	// by itself (issue #124) — gating show would leave a bare-metal instance
+	// with no way to put a found image on screen. handleShow's own path branch
+	// already fails with a clear "no workspace configured" error.
+	"show": {Name: "show", Description: "display an image or workspace artifact large and inline, right where you produced it.",
+		APIDescription: "Display an image inline in the conversation, right at this point in your reply, with an optional " +
+			"caption — a hand-picked subset of image_search results (image_indices), a remote image URL (url), or a file in " +
+			"your workspace (path). Purely a display action — it doesn't let you see the image yourself; use view_image for that."},
 	"highlight": {Name: "highlight", Category: "research",
 		Description: "turn a handful of items you actually found this turn into cards instead of a paragraph.",
 		APIDescription: "Render 1-5 items you actually found this turn as cards instead of describing them in prose " +
 			"— a title, a url, and optionally a short free-text price/badge and an image. Every item must come " +
-			"from a web_search result or a page you actually read this turn, never from memory."},
+			"from a web_search result or a page you actually read this turn, never from memory. An image_search " +
+			"result can be passed by image_index alone."},
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
 		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
 		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},
