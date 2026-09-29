@@ -120,7 +120,7 @@ describe('display config vs prompts.yaml', () => {
 	});
 
 	it('names every offer chip', () => {
-		for (const chip of chips.filter((c) => c !== 'project')) expect(CHIP_NAMES[chip], `chip ${chip}`).toBeTruthy();
+		for (const chip of chips.filter((c) => c !== 'field')) expect(CHIP_NAMES[chip], `chip ${chip}`).toBeTruthy();
 	});
 });
 
