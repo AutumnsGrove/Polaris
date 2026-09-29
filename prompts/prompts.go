@@ -254,38 +254,17 @@ type Set struct {
 // inner map is always option-keyed (with an "any" sentinel for an override
 // that doesn't depend on which option fired) rather than a plain string —
 // see the plan doc's note next to by_focus for why.
+//
+// Only wording lives here. When a check fires, which options need a higher
+// bar, sticky/skip rules and the rest are policy, not prompt text — see
+// config.OracleConfig (config.yaml's oracle: block).
 type OracleCheck struct {
-	Threshold float64 `yaml:"threshold"`
-	// SwitchThreshold only applies to the focus check — the bar to change
-	// an already-set focus mode mid-thread, higher than Threshold.
-	SwitchThreshold float64 `yaml:"switch_threshold,omitempty"`
-	// OptionThresholds raises the bar for specific options above the
-	// check's own Threshold (e.g. focus.brief/safari) — checked in
-	// addition to, not instead of, Threshold.
-	OptionThresholds map[string]float64 `yaml:"option_thresholds,omitempty"`
-	// Sticky options are never switched away from once set for a thread
-	// (focus.safari).
-	Sticky []string `yaml:"sticky,omitempty"`
-	// NeverWithHighStakes options are never picked by Oracle on a turn
-	// where the high_stakes check fired (focus.brief).
-	NeverWithHighStakes []string `yaml:"never_with_high_stakes,omitempty"`
-	// SkipForFocus skips this whole check when the turn's active focus
-	// mode is one of these (clarify skipped for safari; Safari's own
-	// Embark step already asks).
-	SkipForFocus []string `yaml:"skip_for_focus,omitempty"`
-	// FirstMessageOnly restricts this check to a thread's first message
-	// (clarify).
-	FirstMessageOnly bool              `yaml:"first_message_only,omitempty"`
-	Instructions     string            `yaml:"instructions"`
-	Options          map[string]string `yaml:"options"`
+	Instructions string            `yaml:"instructions"`
+	Options      map[string]string `yaml:"options"`
 	// Inject maps a winning option to the text folded into oracle.section
 	// via {items}. The sentinel key "any" applies in addition to whichever
 	// option's own Inject text fired (high_stakes' compare_sources hint).
 	Inject map[string]string `yaml:"inject,omitempty"`
-	// SkipOptionForFocus suppresses one option's Inject entirely under a
-	// given focus mode (intent.product under shopper — Shopper's own
-	// prompt already covers it).
-	SkipOptionForFocus map[string][]string `yaml:"skip_option_for_focus,omitempty"`
 	// ByFocus replaces (not stacks with) whichever Inject text fired, when
 	// the turn's focus mode has an entry here — outer key is the focus
 	// mode, inner key is the option that fired, or "any" for a single
@@ -295,9 +274,9 @@ type OracleCheck struct {
 
 // OracleChip is one entry under oracle.chips — an offer-only check with no
 // Inject, just a yes/no (or, for project, per-project) verdict that renders
-// a chip under the reply. See docs/plans/oracle-mode.md's "chips" table.
+// a chip under the reply. See docs/plans/oracle-mode.md's "chips" table. Its
+// firing threshold is config.OracleConfig's, not part of the prompt.
 type OracleChip struct {
-	Threshold    float64           `yaml:"threshold"`
 	Instructions string            `yaml:"instructions"`
 	Options      map[string]string `yaml:"options,omitempty"`
 }
@@ -823,11 +802,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 		"present, is only context."
 	d.Oracle.Checks = map[string]OracleCheck{
 		"focus": {
-			Threshold:           0.70,
-			SwitchThreshold:     0.85,
-			OptionThresholds:    map[string]float64{"brief": 0.80, "safari": 0.85},
-			Sticky:              []string{"safari"},
-			NeverWithHighStakes: []string{"brief"},
 			Instructions: "Which answering style best fits this message? Pick \"off\" unless one style " +
 				"is clearly a better fit than a normal, balanced answer.",
 			Options: map[string]string{
@@ -843,7 +817,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"research": {
-			Threshold:    0.85,
 			Instructions: "Does answering this well require searching the web or reading current information?",
 			Options: map[string]string{
 				"yes": "Needs current facts, specifics, prices, news, anything that could have changed recently, " +
@@ -858,7 +831,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"high_stakes": {
-			Threshold: 0.75,
 			Instructions: "Would acting on a wrong answer to this message risk someone's health, legal standing, " +
 				"money, or physical safety?",
 			Options: map[string]string{
@@ -898,7 +870,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"intent": {
-			Threshold:    0.65,
 			Instructions: "What kind of thing is this message mainly asking about?",
 			Options: map[string]string{
 				"general":    "None of the other options clearly fits.",
@@ -932,7 +903,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 				"definition": "This is about a word. Use the dictionary tool for the definition, and mention usage " +
 					"or origin if it's interesting.",
 			},
-			SkipOptionForFocus: map[string][]string{"product": {"shopper"}},
 			ByFocus: map[string]map[string]string{
 				"brief": {
 					"book":    "This is about books. Use the books tool; give the one best pick, or one line per title on how they differ.",
@@ -943,9 +913,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"clarify": {
-			Threshold:        0.85,
-			FirstMessageOnly: true,
-			SkipForFocus:     []string{"safari"},
 			Instructions: "Is this message ambiguous enough that the answer would be substantially different " +
 				"depending on something the person didn't say — so that asking one question first would clearly " +
 				"save wasted research?",
@@ -960,7 +927,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"recall": {
-			Threshold: 0.80,
 			Instructions: "Does this message refer back to an earlier conversation the person had with the " +
 				"assistant (for example \"like we talked about\", \"that thing from last week\", \"remember when\")?",
 			Options: map[string]string{
@@ -976,7 +942,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 	}
 	d.Oracle.Chips = map[string]OracleChip{
 		"pulsar": {
-			Threshold: 0.80,
 			Instructions: "Is this the kind of thing someone would want updated regularly — a price, a score, " +
 				"an ongoing story, a release date, a changing number?",
 			Options: map[string]string{
@@ -985,7 +950,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			},
 		},
 		"daily": {
-			Threshold: 0.80,
 			Instructions: "Is this something the person might want to keep an eye on each morning as part of a " +
 				"daily briefing?",
 			Options: map[string]string{
@@ -998,7 +962,6 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 		// "none" -> "Doesn't clearly belong to any project") — see
 		// gateway/oracle.go.
 		"project": {
-			Threshold:    0.75,
 			Instructions: "Which of the person's projects, if any, does this message clearly belong to?",
 		},
 	}

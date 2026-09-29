@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oracle trigger chip — options</title>
+<!--
+  The composer's "More" chip while Oracle mode is on. Today it swaps the "+"
+  for a rainbow conic-gradient ring around the Asterism (ComposerMenu.svelte's
+  .ring, always visible). These are alternatives that keep the "Oracle is on"
+  signal but stop it shouting.
+
+  Every option shows three states, in dark and light:
+    Idle      — Oracle on, nothing happening
+    Reading   — between sending and Oracle finishing its pre-read (oracleReading)
+    Picked    — Oracle chose a focus mode; the existing badge appears
+
+  Tokens are copied from web/src/app.css so colors match the real app.
+-->
+<style>
+  .dark {
+    --color-bg: oklch(15% 0.014 65);
+    --color-surface: oklch(19% 0.014 65);
+    --color-surface-2: oklch(23% 0.016 65);
+    --color-surface-3: oklch(28% 0.018 65);
+    --color-border: oklch(30% 0.016 65);
+    --color-border-strong: oklch(40% 0.02 65);
+    --color-text: oklch(93% 0.01 75);
+    --color-text-dim: oklch(64% 0.014 70);
+    --color-accent: oklch(82% 0.17 78);
+    --color-accent-2: oklch(78% 0.06 235);
+    --ring-l: 80%; --ring-c: 0.13;
+  }
+  .light {
+    --color-bg: oklch(97% 0.008 75);
+    --color-surface: oklch(99% 0.004 80);
+    --color-surface-2: oklch(95% 0.01 75);
+    --color-surface-3: oklch(91% 0.012 75);
+    --color-border: oklch(87% 0.012 75);
+    --color-border-strong: oklch(78% 0.016 75);
+    --color-text: oklch(24% 0.016 60);
+    --color-text-dim: oklch(46% 0.018 60);
+    --color-accent: oklch(54% 0.17 68);
+    --color-accent-2: oklch(48% 0.1 240);
+    --ring-l: 66%; --ring-c: 0.15;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 64px;
+    background: oklch(12% 0.01 65); color: oklch(93% 0.01 75);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lede { color: oklch(70% 0.014 70); font-size: 14px; line-height: 1.5; margin: 0 0 28px; max-width: 62ch; }
+
+  .option { margin-bottom: 28px; }
+  .option h2 { font-size: 15px; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; }
+  .option h2 .tag { font-size: 11px; color: oklch(78% 0.17 78); border: 1px solid oklch(40% 0.06 78); border-radius: 99px; padding: 1px 8px; }
+  .option p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: oklch(70% 0.014 70); max-width: 70ch; }
+  .themes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .themes { grid-template-columns: 1fr; } }
+  .panel { background: var(--color-bg); border-radius: 14px; padding: 14px; }
+  .states { display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row .lbl { width: 54px; flex: none; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--color-text-dim); }
+
+  /* ---- the trigger pill, as in ComposerMenu.svelte ---- */
+  .trigger {
+    position: relative; overflow: hidden;
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 38px; padding: 8px 12px; border-radius: 99px;
+    background: var(--color-surface-2); color: var(--color-text-dim);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .18);
+  }
+  .trigger .label { font-size: 13px; color: var(--color-text); position: relative; }
+  .badge {
+    position: relative; font-size: 11px; font-weight: 600; white-space: nowrap;
+    color: var(--color-accent-2);
+    background: color-mix(in srgb, var(--color-accent-2) 16%, transparent);
+    border-radius: 99px; padding: 4px 8px;
+  }
+  .ico { position: relative; display: grid; place-items: center; width: 26px; height: 26px; flex: none; }
+  .ico svg { position: relative; display: block; }
+
+  /* ---- 0. current: rainbow ring ---- */
+  .cur .ring {
+    border-radius: 99px; width: 26px; height: 26px; display: grid; place-items: center; position: relative;
+    background: conic-gradient(from 0deg,
+      oklch(var(--ring-l) var(--ring-c) 20), oklch(var(--ring-l) var(--ring-c) 80),
+      oklch(var(--ring-l) var(--ring-c) 140), oklch(var(--ring-l) var(--ring-c) 200),
+      oklch(var(--ring-l) var(--ring-c) 260), oklch(var(--ring-l) var(--ring-c) 320),
+      oklch(var(--ring-l) var(--ring-c) 20));
+  }
+  .cur .ring::before { content: ''; position: absolute; inset: 1.5px; border-radius: inherit; background: var(--color-surface-2); }
+  .cur .ring svg { position: relative; color: var(--color-text); }
+  .cur .reading.ring, .cur .reading.ring svg { animation: spin 2.4s linear infinite; }
+  .cur .reading.ring svg { animation-direction: reverse; }
+
+  /* ---- A. plain asterism, dim ---- */
+  .A .ico svg { color: var(--color-text-dim); }
+  .A .reading svg { animation: pulse 1.6s ease-in-out infinite; }
+  .A .picked svg { color: var(--color-text); }
+
+  /* ---- B. hairline ring + gold arc while reading ---- */
+  .B .ico::before { content: ''; position: absolute; inset: 0; border-radius: 99px; border: 1px solid var(--color-border-strong); }
+  .B .ico svg { color: var(--color-text); }
+  .B .reading::after {
+    content: ''; position: absolute; inset: 0; border-radius: 99px;
+    background: conic-gradient(from 0deg, transparent 0 65%, var(--color-accent) 100%);
+    -webkit-mask: radial-gradient(circle, transparent calc(50% - 1.5px), #000 calc(50% - 1px));
+            mask: radial-gradient(circle, transparent calc(50% - 1.5px), #000 calc(50% - 1px));
+    animation: spin 1.4s linear infinite;
+  }
+
+  /* ---- C. gold asterism, stars twinkle in sequence ---- */
+  .C .ico svg { color: var(--color-accent); }
+  .C .reading circle { animation: twinkle 1.4s ease-in-out infinite; }
+  .C .reading circle:nth-of-type(2) { animation-delay: .2s; }
+  .C .reading circle:nth-of-type(3) { animation-delay: .4s; }
+  .C .reading circle:nth-of-type(4) { animation-delay: .6s; }
+
+  /* ---- D. keep the "+", add a small gold dot ---- */
+  .D .ico svg { color: var(--color-text-dim); }
+  .D .ico::after {
+    content: ''; position: absolute; top: 1px; right: 1px; width: 8px; height: 8px; border-radius: 99px;
+    background: var(--color-accent); box-shadow: 0 0 0 2px var(--color-surface-2);
+  }
+  .D .reading::after { animation: dot-pulse 1.4s ease-out infinite; }
+
+  /* ---- E. tinted pill, shimmer while reading ---- */
+  .E.trigger, .E .trigger { background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2)); }
+  .E .ico svg { color: var(--color-accent); }
+  .E .shimmer::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--color-accent) 22%, transparent) 50%, transparent 70%);
+    transform: translateX(-100%); animation: sweep 1.8s ease-in-out infinite;
+  }
+
+  /* ---- F. rainbow only while reading ---- */
+  .F .ico svg { color: var(--color-text-dim); }
+  .F .prism {
+    position: absolute; inset: 0; border-radius: 99px; opacity: 0;
+    background: conic-gradient(from 0deg,
+      oklch(var(--ring-l) var(--ring-c) 20), oklch(var(--ring-l) var(--ring-c) 80),
+      oklch(var(--ring-l) var(--ring-c) 140), oklch(var(--ring-l) var(--ring-c) 200),
+      oklch(var(--ring-l) var(--ring-c) 260), oklch(var(--ring-l) var(--ring-c) 320),
+      oklch(var(--ring-l) var(--ring-c) 20));
+    -webkit-mask: radial-gradient(circle, transparent calc(50% - 1.5px), #000 calc(50% - 1px));
+            mask: radial-gradient(circle, transparent calc(50% - 1.5px), #000 calc(50% - 1px));
+  }
+  .F .reading .prism { opacity: 1; animation: spin 2.4s linear infinite; }
+  .F .reading svg { color: var(--color-text); }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @keyframes twinkle { 50% { opacity: .25; } }
+  @keyframes dot-pulse { 0% { box-shadow: 0 0 0 2px var(--color-surface-2), 0 0 0 2px color-mix(in srgb, var(--color-accent) 60%, transparent); }
+                         100% { box-shadow: 0 0 0 2px var(--color-surface-2), 0 0 0 9px transparent; } }
+  @keyframes sweep { to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Oracle trigger chip</h1>
+  <p class="lede">The “More” chip in the composer while Oracle is on. Each option shows Idle, Reading (the moment between sending and Oracle finishing its pre-read), and Picked (Oracle chose a mode, so the existing focus badge shows). Dark on the left, light on the right.</p>
+  <div id="options"></div>
+</main>
+
+<script>
+  const ASTERISM = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none">
+    <path d="M5 18 9.5 8.5 19 5M9.5 8.5 16 16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+    <circle cx="5" cy="18" r="2.1" fill="currentColor"/><circle cx="9.5" cy="8.5" r="2.4" fill="currentColor"/>
+    <circle cx="19" cy="5" r="1.8" fill="currentColor"/><circle cx="16" cy="16.5" r="2.1" fill="currentColor"/></svg>`;
+  const PLUS = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
+
+  // icon(state) -> inner HTML of the chip's icon slot; wrap adds a class to the whole pill.
+  const options = [
+    { id: 'cur', name: 'Current', tag: 'for reference',
+      desc: 'Always-on rainbow ring. Spins while reading.',
+      icon: (s) => `<span class="ring ${s === 'reading' ? 'reading' : ''}">${ASTERISM}</span>` },
+    { id: 'A', name: 'A · Plain star cluster',
+      desc: 'Just the Asterism, in the same dim tone as the “+” it replaces. Reading is a soft breathing fade. Quietest possible; the icon shape alone says “Oracle”.',
+      icon: (s) => `<span class="ico ${s}">${ASTERISM}</span>` },
+    { id: 'B', name: 'B · Hairline ring, gold arc while reading',
+      desc: 'A thin neutral outline instead of the rainbow. While reading, one short gold arc circles it, then it settles back. Keeps the “ring” shape people already know.',
+      icon: (s) => `<span class="ico ${s}">${ASTERISM}</span>` },
+    { id: 'C', name: 'C · Gold stars',
+      desc: 'No ring at all. The four stars are the app’s accent gold; while reading they twinkle one after another. Uses the accent the rest of the UI already reserves for “current state”.',
+      icon: (s) => `<span class="ico ${s}">${ASTERISM}</span>` },
+    { id: 'D', name: 'D · Keep the “+”, add a dot',
+      desc: 'The chip stays exactly what it was before Oracle existed; a small gold dot in the corner says it’s on and pulses while reading. Least change, but the star icon disappears from the composer.',
+      icon: (s) => `<span class="ico ${s}">${PLUS}</span>` },
+    { id: 'E', name: 'E · Tinted pill',
+      desc: 'Gold-tinted pill background with a gold star; a soft light sweeps across the whole pill while reading. The signal is the chip itself rather than the icon.',
+      icon: (s) => `<span class="ico">${ASTERISM}</span>`, wrapClass: 'E', shimmer: true },
+    { id: 'F', name: 'F · Rainbow only while reading',
+      desc: 'Idle looks like A. The prism ring fades in only during the pre-read and fades away when Oracle resolves, so the rainbow becomes a “working” cue instead of permanent decoration.',
+      icon: (s) => `<span class="ico ${s}"><span class="prism"></span>${ASTERISM}</span>` },
+  ];
+
+  const states = [
+    { key: 'idle', label: 'Idle', badge: null },
+    { key: 'reading', label: 'Reading', badge: null },
+    { key: 'picked', label: 'Picked', badge: 'Shopper' },
+  ];
+
+  const pill = (o, s) => `
+    <span class="trigger ${o.wrapClass || ''}">
+      ${o.shimmer && s.key === 'reading' ? '<span class="shimmer" style="position:absolute;inset:0"></span>' : ''}
+      ${o.icon(s.key)}
+      <span class="label">More</span>
+      ${s.badge ? `<span class="badge">${s.badge}</span>` : ''}
+    </span>`;
+
+  document.getElementById('options').innerHTML = options.map((o) => `
+    <section class="option ${o.id}">
+      <h2>${o.name}${o.tag ? `<span class="tag">${o.tag}</span>` : ''}</h2>
+      <p>${o.desc}</p>
+      <div class="themes">
+        ${['dark', 'light'].map((theme) => `
+          <div class="panel ${theme}">
+            <div class="states">
+              ${states.map((s) => `<div class="row"><span class="lbl">${s.label}</span>${pill(o, s)}</div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </section>`).join('');
+</script>
+</body>
+</html>

@@ -39,7 +39,7 @@ func TestRunDailyPipeline_FullFirstDayRun(t *testing.T) {
 		plainSSEBody("Markets were quiet; one notable product launch dominated headlines today."),          // Stage A: headlines (research)
 		plainSSEBody("A new open-weight model release was the big story trending today."),                  // Stage A: trending (research)
 		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"trending\",\"reasoning\":\"The open-weight release is a bigger development than a quiet headlines day\"}"}}`), // Stage B
-		plainSSEBody("Deeper dive: the open-weight release includes benchmarks showing strong reasoning gains, plus a pulled quote from the release notes."), // Stage C
+		plainSSEBody("Deeper dive: the open-weight release includes benchmarks showing strong reasoning gains, plus a pulled quote from the release notes."),                                                                                // Stage C
 	}
 	srv := sequencedSSEServer(t, bodies)
 	defer srv.Close()
@@ -165,7 +165,7 @@ func TestRunDailyPipeline_ItemizedTopStory(t *testing.T) {
 		itemsBody, // Stage A: headlines (research, itemized)
 		itemsBody, // Stage A: trending (research, itemized)
 		toolCallSSEBody(`{"id":"call_2","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"headlines\",\"reasoning\":\"The Nvidia acquisition is the bigger development\"}"}}`), // Stage B
-		plainSSEBody("Deeper dive: the Nvidia acquisition includes board seats and a multi-year compute commitment."), // Stage C, elaborating item[0] only
+		plainSSEBody("Deeper dive: the Nvidia acquisition includes board seats and a multi-year compute commitment."),                                                                                              // Stage C, elaborating item[0] only
 	}
 	srv := sequencedSSEServer(t, bodies)
 	defer srv.Close()
@@ -289,12 +289,12 @@ func TestRunDailyPipeline_BelowFloorShowsDegradedNotice(t *testing.T) {
 // Top Story.
 func TestRunDailyPipeline_CustomBlock(t *testing.T) {
 	bodies := []string{
-		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."), // Stage A: quote (pick)
-		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),      // Stage A: on_this_day (research)
-		plainSSEBody("Otiose — serving no practical purpose. From Latin otium, \"leisure\"."),               // Stage A: word_of_day (pick)
-		plainSSEBody("NVDA closed at $142.50, up 2%. AAPL closed at $228.10, roughly flat on the day."),     // Stage A: custom block (research)
+		plainSSEBody("Quote: \"Stay hungry, stay foolish.\" Worth remembering because it still holds up."),                                                                                         // Stage A: quote (pick)
+		plainSSEBody("On this day, a landmark treaty was signed that reshaped the region's borders."),                                                                                              // Stage A: on_this_day (research)
+		plainSSEBody("Otiose — serving no practical purpose. From Latin otium, \"leisure\"."),                                                                                                      // Stage A: word_of_day (pick)
+		plainSSEBody("NVDA closed at $142.50, up 2%. AAPL closed at $228.10, roughly flat on the day."),                                                                                            // Stage A: custom block (research)
 		toolCallSSEBody(`{"id":"call_1","type":"function","function":{"name":"elect_top_story","arguments":"{\"winner_key\":\"custom_stocks\",\"reasoning\":\"Only notable candidate today\"}"}}`), // Stage B
-		plainSSEBody("Deeper dive on today's close: NVDA and AAPL both traded within their recent range."),  // Stage C
+		plainSSEBody("Deeper dive on today's close: NVDA and AAPL both traded within their recent range."),                                                                                         // Stage C
 	}
 	srv := sequencedSSEServer(t, bodies)
 	defer srv.Close()

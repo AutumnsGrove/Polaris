@@ -831,6 +831,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				ActiveFocusMode:      msg.FocusMode,
 				IsManualFocus:        isManualFocus,
 				PriorOracleFocusMode: priorOracleFocus,
+				Rules:                cfg.Oracle,
 			})
 			// Recorded on the shared Jev ledger the monthly cap sums (issue
 			// #125) — only when the call actually completed and billed, the

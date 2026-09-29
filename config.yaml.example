@@ -148,3 +148,45 @@ default_model: "deepseek"
 #   deepseek:
 #     reasoning:
 #       effort: "high"
+
+# Oracle mode tuning (opt-in in Settings; see README). Thresholds are the
+# minimum probability Jev's answer needs for a check to fire; the lists
+# decide which focus modes Oracle may pick, keep, or skip. All of this is
+# optional — anything left out uses the value shown here — and it's re-read
+# on every turn, so edits take effect without a restart. The wording Jev is
+# asked, and the text injected into the answer, lives in prompts.yaml.
+oracle:
+  checks:
+    focus:
+      threshold: 0.70           # bar for Oracle to pick a focus mode at all
+      switch_threshold: 0.85    # higher bar to change a mode Oracle already set
+      # Per-mode bars above `threshold`. Brief can make an answer worse if
+      # picked wrongly; Safari takes over the whole thread.
+      option_thresholds:
+        brief: 0.80
+        safari: 0.85
+      sticky: [safari]          # never switched away from once set for a thread
+      never_with_high_stakes: [brief]   # not picked when high_stakes fired
+    research:
+      threshold: 0.85
+    high_stakes:
+      threshold: 0.75
+    intent:
+      threshold: 0.65
+      # Shopper mode already carries its own product guidance.
+      skip_option_for_focus:
+        product: [shopper]
+    clarify:
+      threshold: 0.85
+      first_message_only: true
+      skip_for_focus: [safari]  # Safari's Embark step already asks
+    recall:
+      threshold: 0.80
+  # Offer chips shown under a reply.
+  chips:
+    pulsar:
+      threshold: 0.80
+    daily:
+      threshold: 0.80
+    project:
+      threshold: 0.75
