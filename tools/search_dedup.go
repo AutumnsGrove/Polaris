@@ -13,9 +13,18 @@ import (
 // two-tier.md's "Budget (session-level)" section: "two sub-agents issuing
 // the same or near-identical query in one session cost one real API
 // call."
-func searchDedupKey(provider, query, category string, page, maxResults int) string {
+//
+// recency is variadic so the image/nearby callers that have no time window
+// don't need to pass one; when set it's appended to the key, so a
+// "past week" search can never be answered by a cached unfiltered one (or
+// vice versa). Unset leaves the key byte-identical to before recency existed.
+func searchDedupKey(provider, query, category string, page, maxResults int, recency ...string) string {
 	normalized := strings.ToLower(strings.Join(strings.Fields(query), " "))
-	return fmt.Sprintf("%s|%s|%s|%d|%d", provider, normalized, category, page, maxResults)
+	key := fmt.Sprintf("%s|%s|%s|%d|%d", provider, normalized, category, page, maxResults)
+	if len(recency) > 0 && recency[0] != "" {
+		key += "|recency=" + recency[0]
+	}
+	return key
 }
 
 // dedupedCall runs fn through ctx.SearchDedup (Tier 2 Deep Research's

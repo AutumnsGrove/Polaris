@@ -152,6 +152,10 @@ type searchRequest struct {
 	MaxResults     int      `json:"max_results,omitempty"`
 	SearchDepth    string   `json:"search_depth"`
 	IncludeDomains []string `json:"include_domains,omitempty"`
+	// TimeRange is Tavily's native recency window ("day"/"week"/"month"/
+	// "year") — same vocabulary as web_search's recency argument, so it
+	// passes through unmapped.
+	TimeRange string `json:"time_range,omitempty"`
 }
 
 // Search runs a query against Tavily's own Search API — a different
@@ -166,11 +170,17 @@ type searchRequest struct {
 // tavilyFallback for why this goes through a native field instead of the
 // site: query-text trick used for SearXNG/Brave/Parallel.
 func (c *Client) Search(ctx context.Context, query string, maxResults int, domains []string) (*SearchResponse, error) {
+	return c.SearchRecent(ctx, query, maxResults, domains, "")
+}
+
+// SearchRecent is Search plus an optional recency window ("day", "week",
+// "month", "year"; "" for no filter).
+func (c *Client) SearchRecent(ctx context.Context, query string, maxResults int, domains []string, recency string) (*SearchResponse, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 
-	payload, err := json.Marshal(searchRequest{Query: query, MaxResults: maxResults, SearchDepth: "basic", IncludeDomains: domains})
+	payload, err := json.Marshal(searchRequest{Query: query, MaxResults: maxResults, SearchDepth: "basic", IncludeDomains: domains, TimeRange: recency})
 	if err != nil {
 		return nil, err
 	}

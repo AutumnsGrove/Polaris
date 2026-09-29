@@ -852,3 +852,65 @@ func TestHandleWebSearch_DegradedFallsBackToTavilyWithDomains(t *testing.T) {
 		t.Errorf("tavily request include_domains = %v, want [example.com]", gotBody["include_domains"])
 	}
 }
+
+// TestHandleWebSearch_RecencyForwardedAndValidated covers the tool-level
+// contract: a valid window reaches SearXNG as time_range, and an
+// unrecognized one (a model typo like "last_week") degrades to an ordinary
+// unfiltered search instead of erroring or reaching the backend.
+func TestHandleWebSearch_RecencyForwardedAndValidated(t *testing.T) {
+	var gotRange string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.URL.Query().Get("time_range")
+		_, seen = r.URL.Query()["time_range"]
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"query": r.URL.Query().Get("q"), "results": []map[string]interface{}{}})
+	}))
+	t.Cleanup(srv.Close)
+	ctx := &Context{
+		Ctx:     context.Background(),
+		SearXNG: search.NewSearXNGClient(srv.URL, nil),
+		Emit:    func(string, map[string]interface{}) {},
+	}
+
+	handleWebSearch(`{"query":"openai news","recency":"Week"}`, ctx, "test-call")
+	if gotRange != "week" {
+		t.Errorf("time_range = %q, want %q (case-normalized)", gotRange, "week")
+	}
+
+	handleWebSearch(`{"query":"openai news","recency":"last_week"}`, ctx, "test-call")
+	if seen {
+		t.Errorf("time_range = %q, want omitted for an unrecognized recency", gotRange)
+	}
+}
+
+// TestHandleWebSearch_DegradedForwardsRecencyToBrave covers fallback
+// parity: when SearXNG is down, the window follows the query into Brave as
+// its native freshness code rather than being silently dropped.
+func TestHandleWebSearch_DegradedForwardsRecencyToBrave(t *testing.T) {
+	searxngSrv := fakeDegradedSearXNG(t)
+	var gotFreshness string
+	braveSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFreshness = r.URL.Query().Get("freshness")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"web": map[string]interface{}{"results": []map[string]interface{}{
+			{"title": "From Brave", "url": "https://example.com/brave-result", "description": "d"},
+		}}})
+	}))
+	t.Cleanup(braveSrv.Close)
+	ctx := &Context{
+		Ctx:                 context.Background(),
+		SearXNG:             search.NewSearXNGClient(searxngSrv.URL, nil),
+		Brave:               brave.NewClientForTest("test-key", braveSrv.URL),
+		BraveUsageThisMonth: func() (int, error) { return 0, nil },
+		Emit:                func(string, map[string]interface{}) {},
+	}
+
+	result := handleWebSearch(`{"query":"openai news","recency":"day"}`, ctx, "test-call")
+	if !strings.Contains(result, "From Brave") {
+		t.Fatalf("result = %q, want the Brave fallback result", result)
+	}
+	if gotFreshness != "pd" {
+		t.Errorf("freshness = %q, want %q", gotFreshness, "pd")
+	}
+}

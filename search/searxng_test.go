@@ -496,3 +496,33 @@ func writeBlocklistFile(t *testing.T, contents string) string {
 	}
 	return path
 }
+
+// TestSearchRecent_TimeRangeParam covers the recency plumbing: a window
+// becomes SearXNG's own time_range param, and unset omits it entirely —
+// the exact request shape every other test here relies on.
+func TestSearchRecent_TimeRangeParam(t *testing.T) {
+	var got string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("time_range")
+		_, seen = r.URL.Query()["time_range"]
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+	client := NewSearXNGClient(srv.URL, nil)
+
+	if _, err := client.SearchRecent(context.Background(), "q", 5, "", 1, "week"); err != nil {
+		t.Fatalf("SearchRecent returned error: %v", err)
+	}
+	if got != "week" {
+		t.Errorf("time_range = %q, want \"week\" (SearXNG supports week natively)", got)
+	}
+
+	if _, err := client.Search(context.Background(), "q", 5, "", 1); err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+	if seen {
+		t.Error("expected no time_range param when recency is unset")
+	}
+}

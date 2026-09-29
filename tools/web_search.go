@@ -116,6 +116,16 @@ var webSearchDef = llm.ToolDef{
 						"independent queries, so issue them in the same turn to run concurrently) rather than " +
 						"calling page 1 repeatedly.",
 				},
+				"recency": map[string]interface{}{
+					"type": "string",
+					"description": "Optional: only return results published within this window (day = past 24 " +
+						"hours, week, month, year). Use it when the question is about what's new or current — " +
+						"\"latest on X\", \"what happened this week\", a current price or status. Leave it unset for " +
+						"evergreen questions (how something works, history, reference docs): the best canonical " +
+						"source is often older than any window and the filter would hide it. If a filtered search " +
+						"comes back empty, retry with a wider window or none before concluding nothing exists.",
+					"enum": []string{"day", "week", "month", "year"},
+				},
 				"domains": map[string]interface{}{
 					"type":     "array",
 					"maxItems": webSearchMaxDomains,
@@ -141,6 +151,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 		Category   string   `json:"category"`
 		Page       int      `json:"page"`
 		Domains    []string `json:"domains"`
+		Recency    string   `json:"recency"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "web_search", nil, "error: "+err.Error(), callID)
@@ -157,6 +168,11 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	if args.Page <= 0 || args.Page > 5 {
 		args.Page = 1
 	}
+	// Validated once here, so every backend below only ever sees a canonical
+	// value: Brave, notably, answers 200 to an unknown freshness value and
+	// just ignores it, which would hide a model typo ("last_week") as an
+	// unfiltered search that looks filtered.
+	args.Recency = normalizeRecency(args.Recency)
 	if len(args.Domains) > webSearchMaxDomains {
 		msg := fmt.Sprintf("error: too many domains (%d) — web_search supports at most %d. Pick the strongest "+
 			"candidates and call again with fewer.", len(args.Domains), webSearchMaxDomains)
@@ -177,6 +193,9 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	if len(domains) > 0 {
 		callArgs["domains"] = domains
 	}
+	if args.Recency != "" {
+		callArgs["recency"] = args.Recency
+	}
 	ctx.Emit("tool_call", map[string]interface{}{
 		"tool":    "web_search",
 		"args":    callArgs,
@@ -195,7 +214,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	}
 
 	if ctx.PinnedProvider == "brave" {
-		return handlePinnedBraveSearch(ctx, args.Query, callID)
+		return handlePinnedBraveSearch(ctx, args.Query, args.Recency, callID)
 	}
 
 	if ctx.SearXNG == nil {
@@ -205,9 +224,9 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 		return result
 	}
 
-	dedupKey := searchDedupKey("searxng", siteQuery, args.Category, args.Page, args.MaxResults)
+	dedupKey := searchDedupKey("searxng", siteQuery, args.Category, args.Page, args.MaxResults, args.Recency)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*search.SearchResponse, error) {
-		r, e := ctx.SearXNG.Search(ctx.Ctx, siteQuery, args.MaxResults, args.Category, args.Page)
+		r, e := ctx.SearXNG.SearchRecent(ctx.Ctx, siteQuery, args.MaxResults, args.Category, args.Page, args.Recency)
 		if e == nil && ctx.ResearchBudget != nil {
 			// Recorded inside fn, not after dedupedCall returns:
 			// singleflight.Do's shared return value is true for EVERY
@@ -253,7 +272,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_search: checking brave usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= brave.MonthlyCap {
 				log.Warn("web_search: brave monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", brave.MonthlyCap)
-			} else if formatted, ok := braveFallback(ctx, siteQuery, "Brave (SearXNG degraded)", callID); ok {
+			} else if formatted, ok := braveFallback(ctx, siteQuery, args.Recency, "Brave (SearXNG degraded)", callID); ok {
 				return formatted
 			}
 		}
@@ -262,7 +281,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_search: checking parallel usage failed, skipping to next fallback", "query", args.Query, "err", uErr)
 			} else if used >= parallelMonthlyCap {
 				log.Warn("web_search: parallel monthly cap reached, skipping to next fallback", "query", args.Query, "used", used, "cap", parallelMonthlyCap)
-			} else if formatted, ok := parallelFallback(ctx, siteQuery, callID); ok {
+			} else if formatted, ok := parallelFallback(ctx, siteQuery, args.Recency, callID); ok {
 				return formatted
 			}
 		}
@@ -271,7 +290,7 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 				log.Warn("web_search: checking tavily usage failed, skipping fallback", "query", args.Query, "err", uErr)
 			} else if used >= tavilyMonthlyCap {
 				log.Warn("web_search: tavily monthly cap reached, skipping fallback", "query", args.Query, "used", used, "cap", tavilyMonthlyCap)
-			} else if formatted, ok := tavilyFallback(ctx, args.Query, domains, callID); ok {
+			} else if formatted, ok := tavilyFallback(ctx, args.Query, domains, args.Recency, callID); ok {
 				return formatted
 			}
 		}
@@ -304,6 +323,18 @@ func handleWebSearch(argsJSON string, ctx *Context, callID string) string {
 	}
 	formatted := formatSearchResults(ctx, "SearXNG", "searxng", args.Query, args.Category, args.Page, results, callID)
 	return formatted
+}
+
+// normalizeRecency lowercases and validates web_search's recency argument,
+// returning "" (no filter) for anything outside day/week/month/year — an
+// unrecognized value degrades to an ordinary unfiltered search rather than
+// failing the whole call over an optional narrowing hint.
+func normalizeRecency(r string) string {
+	switch r = strings.ToLower(strings.TrimSpace(r)); r {
+	case "day", "week", "month", "year":
+		return r
+	}
+	return ""
 }
 
 // searchResultLike is the common (Title, URL, Content) shape SearXNG,
@@ -362,14 +393,14 @@ func formatSearchResults(ctx *Context, provider, providerKey, query, category st
 // that cap guards against elsewhere). IncrementBraveUsage is still
 // called when set, purely so the run's own usage is visible to whatever
 // isolated store the caller wired it against — see cmd/benchmark.go.
-func handlePinnedBraveSearch(ctx *Context, query string, callID string) string {
+func handlePinnedBraveSearch(ctx *Context, query, recency string, callID string) string {
 	if ctx.Brave == nil {
 		result := "error: web search is not configured (PinnedProvider=brave but no Brave client set)"
 		log.Warn("web_search: PinnedProvider=brave with no Brave client", "query", query)
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "web_search", "result": result, "call_id": callID})
 		return result
 	}
-	if formatted, ok := braveFallback(ctx, query, "Brave (pinned)", callID); ok {
+	if formatted, ok := braveFallback(ctx, query, recency, "Brave (pinned)", callID); ok {
 		return formatted
 	}
 	result := "no results found"
@@ -390,10 +421,10 @@ func handlePinnedBraveSearch(ctx *Context, query string, callID string) string {
 // human-readable provider string shown in the "[via ...]" transcript
 // line — callers pass a different one depending on why Brave fired
 // (degraded-SearXNG fallback vs. handlePinnedBraveSearch's pinned mode).
-func braveFallback(ctx *Context, query, label string, callID string) (formatted string, ok bool) {
-	dedupKey := searchDedupKey("brave", query, "", 1, 5)
+func braveFallback(ctx *Context, query, recency, label string, callID string) (formatted string, ok bool) {
+	dedupKey := searchDedupKey("brave", query, "", 1, 5, recency)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*brave.SearchResponse, error) {
-		r, e := ctx.Brave.Search(ctx.Ctx, query, 0)
+		r, e := ctx.Brave.SearchRecent(ctx.Ctx, query, 0, recency)
 		if e == nil {
 			// Recorded inside fn — see the searxng call site's comment
 			// above for why this must not live after dedupedCall returns.
@@ -437,10 +468,10 @@ func braveFallback(ctx *Context, query, label string, callID string) (formatted 
 // per-request pricing) almost certainly still billed for it, whether or
 // not anything useful came back. Returns ok=false on any failure so the
 // caller falls through to Tavily instead.
-func parallelFallback(ctx *Context, query string, callID string) (formatted string, ok bool) {
-	dedupKey := searchDedupKey("parallel", query, "", 1, 5)
+func parallelFallback(ctx *Context, query, recency string, callID string) (formatted string, ok bool) {
+	dedupKey := searchDedupKey("parallel", query, "", 1, 5, recency)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*parallel.SearchResponse, error) {
-		r, e := ctx.Parallel.Search(ctx.Ctx, query, 5)
+		r, e := ctx.Parallel.SearchRecent(ctx.Ctx, query, 5, recency)
 		if e == nil {
 			if ctx.IncrementParallelUsage != nil {
 				if incErr := ctx.IncrementParallelUsage(); incErr != nil {
@@ -484,10 +515,10 @@ func parallelFallback(ctx *Context, query string, callID string) (formatted stri
 // happen to honor a site: operator), and it documents include_domains as
 // a first-class parameter, so that's the correct mechanism here rather
 // than the query-text trick used for SearXNG/Brave/Parallel above.
-func tavilyFallback(ctx *Context, query string, domains []string, callID string) (formatted string, ok bool) {
-	dedupKey := searchDedupKey("tavily", query+"|"+strings.Join(domains, ","), "", 1, 5)
+func tavilyFallback(ctx *Context, query string, domains []string, recency, callID string) (formatted string, ok bool) {
+	dedupKey := searchDedupKey("tavily", query+"|"+strings.Join(domains, ","), "", 1, 5, recency)
 	resp, _, err := dedupedCall(ctx, dedupKey, func() (*tavily.SearchResponse, error) {
-		r, e := ctx.Tavily.Search(ctx.Ctx, query, 5, domains)
+		r, e := ctx.Tavily.SearchRecent(ctx.Ctx, query, 5, domains, recency)
 		if e == nil {
 			// Recorded inside fn — see the searxng call site's comment
 			// above for why this must not live after dedupedCall returns.

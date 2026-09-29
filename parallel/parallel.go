@@ -80,7 +80,32 @@ type searchRequest struct {
 }
 
 type advancedSettings struct {
-	MaxResults int `json:"max_results,omitempty"`
+	MaxResults   int           `json:"max_results,omitempty"`
+	SourcePolicy *sourcePolicy `json:"source_policy,omitempty"`
+}
+
+// sourcePolicy lives under advanced_settings, not at the request's top
+// level (a top-level source_policy is rejected with extra_forbidden —
+// verified live).
+type sourcePolicy struct {
+	AfterDate string `json:"after_date,omitempty"`
+}
+
+// recencyDays is how far back each web_search recency value reaches.
+// Parallel has no relative "past week" enum — only an absolute after_date
+// cutoff — so the window has to be turned into a date at call time.
+var recencyDays = map[string]int{"day": 1, "week": 7, "month": 30, "year": 365}
+
+// afterDate returns the YYYY-MM-DD cutoff for a recency window relative to
+// now, or "" when recency is unset/unrecognized. Takes now as a parameter
+// so tests don't depend on the wall clock. UTC, since Parallel's date is
+// timezone-less and a local date could land a day off the server's.
+func afterDate(now time.Time, recency string) string {
+	days, ok := recencyDays[recency]
+	if !ok {
+		return ""
+	}
+	return now.UTC().AddDate(0, 0, -days).Format("2006-01-02")
 }
 
 type searchAPIResponse struct {
@@ -98,15 +123,29 @@ type searchAPIResponse struct {
 // fallback-of-last-resort against a scarce budget, not a case where the
 // higher-quality tiers are worth paying more for.
 func (c *Client) Search(ctx context.Context, query string, maxResults int) (*SearchResponse, error) {
+	return c.SearchRecent(ctx, query, maxResults, "")
+}
+
+// SearchRecent is Search plus an optional recency window ("day", "week",
+// "month", "year"; "" for no filter), sent as source_policy.after_date.
+// Note turbo mode returns publish_date null, so the filter can't be
+// double-checked from the response — it was verified live by the result
+// set shifting (old versioned docs dropped) and by a malformed date being
+// rejected with a 400, which proves the field is actually parsed.
+func (c *Client) SearchRecent(ctx context.Context, query string, maxResults int, recency string) (*SearchResponse, error) {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
 
+	settings := &advancedSettings{MaxResults: maxResults}
+	if d := afterDate(time.Now(), recency); d != "" {
+		settings.SourcePolicy = &sourcePolicy{AfterDate: d}
+	}
 	payload, err := json.Marshal(searchRequest{
 		Objective:        query,
 		SearchQueries:    []string{query},
 		Mode:             "turbo",
-		AdvancedSettings: &advancedSettings{MaxResults: maxResults},
+		AdvancedSettings: settings,
 	})
 	if err != nil {
 		return nil, err

@@ -33,6 +33,7 @@ func TestSearchDedupKey_DistinguishesRelevantParams(t *testing.T) {
 		"category":    searchDedupKey("searxng", "cats", "news", 1, 5),
 		"page":        searchDedupKey("searxng", "cats", "", 2, 5),
 		"max_results": searchDedupKey("searxng", "cats", "", 1, 10),
+		"recency":     searchDedupKey("searxng", "cats", "", 1, 5, "week"),
 	}
 	for name, key := range cases {
 		if key == base {

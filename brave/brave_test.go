@@ -125,3 +125,37 @@ func TestSearch_NonOKStatus(t *testing.T) {
 		t.Fatal("expected an error for a 401 response")
 	}
 }
+
+// TestSearchRecent_FreshnessParam covers the recency -> Brave freshness
+// code mapping, and that an unset or unrecognized recency omits the param
+// (Brave answers 200 to junk freshness values and silently ignores them,
+// so sending one would look filtered without being).
+func TestSearchRecent_FreshnessParam(t *testing.T) {
+	var got string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("freshness")
+		_, seen = r.URL.Query()["freshness"]
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"web": map[string]interface{}{"results": []interface{}{}}})
+	}))
+	defer srv.Close()
+	client := NewClientForTest("k", srv.URL)
+
+	for recency, want := range map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"} {
+		if _, err := client.SearchRecent(context.Background(), "q", 0, recency); err != nil {
+			t.Fatalf("SearchRecent(%q): %v", recency, err)
+		}
+		if got != want {
+			t.Errorf("recency %q: freshness = %q, want %q", recency, got, want)
+		}
+	}
+	for _, recency := range []string{"", "last_week"} {
+		if _, err := client.SearchRecent(context.Background(), "q", 0, recency); err != nil {
+			t.Fatalf("SearchRecent(%q): %v", recency, err)
+		}
+		if seen {
+			t.Errorf("recency %q: expected no freshness param, got %q", recency, got)
+		}
+	}
+}

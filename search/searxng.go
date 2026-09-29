@@ -258,6 +258,17 @@ func rrfScore(positions []int) float64 {
 // pages at once) is trading exhaustiveness for that, same tradeoff behind
 // Google's own numbered pagination.
 func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int, category string, page int) (*SearchResponse, error) {
+	return c.SearchRecent(ctx, query, maxResults, category, page, "")
+}
+
+// SearchRecent is Search plus an optional recency window ("day", "week",
+// "month", "year"; "" for no filter), passed straight through as SearXNG's
+// own time_range parameter. SearXNG does accept "week" (confirmed live
+// against a real instance: 200 for week, 400 for an unknown value) — the
+// engines behind it only honor the window if they support it themselves,
+// so this narrows results but isn't a hard guarantee the way Brave's
+// freshness is.
+func (c *SearXNGClient) SearchRecent(ctx context.Context, query string, maxResults int, category string, page int, recency string) (*SearchResponse, error) {
 	if cooling, until := c.inCooldown(); cooling {
 		blocklistLog.Info("searxng: skipping request, still cooling down after a full outage", "query", query, "retry_after", until)
 		return &SearchResponse{Query: query, Degraded: true, RetryAfter: until}, nil
@@ -273,6 +284,9 @@ func (c *SearXNGClient) Search(ctx context.Context, query string, maxResults int
 	}
 	if page > 1 {
 		u += fmt.Sprintf("&pageno=%d", page)
+	}
+	if recency != "" {
+		u += "&time_range=" + url.QueryEscape(recency)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)

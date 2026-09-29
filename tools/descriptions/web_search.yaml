@@ -6,4 +6,9 @@ api_description: >-
   Search the web via SearXNG for current information, facts, or sources. Returns titles, URLs,
   and snippets. Pass domains when the user names a specific site to search (e.g. "search
   wordpress.com's docs for X") instead of typing a site: prefix into query yourself — that's
-  handled consistently for you regardless of which backend actually answers the search.
+  handled consistently for you regardless of which backend actually answers the search. Pass
+  recency (day/week/month/year) to restrict results to that window when the question is about
+  what's new or current ("latest on X", "this week", a current price or status) instead of typing
+  a year into query. Leave it unset for evergreen questions — the best canonical source is often
+  older than any window, and the filter would hide it. If a filtered search comes back empty,
+  widen the window or drop it before concluding nothing exists.

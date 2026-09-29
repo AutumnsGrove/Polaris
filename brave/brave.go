@@ -127,6 +127,19 @@ type searchAPIResponse struct {
 // 10-result display pages, say) gets the most raw results per real
 // request rather than under-asking.
 func (c *Client) Search(ctx context.Context, query string, offset int) (*SearchResponse, error) {
+	return c.SearchRecent(ctx, query, offset, "")
+}
+
+// freshnessCodes maps web_search's recency values to Brave's freshness
+// parameter. Confirmed live: freshness=pd returned only same-day results
+// where the unfiltered query included a 2015 page. Brave answers 200 even
+// for an unknown freshness value (and just ignores it), so unrecognized
+// input is dropped here rather than sent and silently doing nothing.
+var freshnessCodes = map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}
+
+// SearchRecent is Search plus an optional recency window ("day", "week",
+// "month", "year"; "" or anything else for no filter).
+func (c *Client) SearchRecent(ctx context.Context, query string, offset int, recency string) (*SearchResponse, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -135,6 +148,9 @@ func (c *Client) Search(ctx context.Context, query string, offset int) (*SearchR
 	}
 
 	u := fmt.Sprintf("%s?q=%s&count=%d&offset=%d", c.baseURL, url.QueryEscape(query), MaxCount, offset)
+	if code, ok := freshnessCodes[recency]; ok {
+		u += "&freshness=" + code
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err
