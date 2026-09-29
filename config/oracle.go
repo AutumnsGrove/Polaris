@@ -87,10 +87,28 @@ func DefaultOracle() OracleConfig {
 			// Safari's Embark step already asks its own clarifying question.
 			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}},
 			"recall":  {Threshold: 0.80},
+			// Answer shape. Safari owns its own format; Brief is already short.
+			"format": {Threshold: 0.75, SkipForFocus: []string{"safari"}},
+			"depth":  {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
+			// Source and evidence guidance. Academic mode already carries its
+			// own source guidance.
+			"recency":     {Threshold: 0.75},
+			"source_type": {Threshold: 0.75, SkipOptionForFocus: map[string][]string{"academic": {"academic"}}},
+			"contested":   {Threshold: 0.80},
+			"claim_check": {Threshold: 0.80},
+			"locale":      {Threshold: 0.75},
+			// What the person is doing. First Principles and Socratic already
+			// teach the same way an "explain" nudge would ask for.
+			"task": {Threshold: 0.75, SkipForFocus: []string{"safari"}, SkipOptionForFocus: map[string][]string{"explain": {"first_principles", "socratic"}}},
+			// Sensitivity: wrongly firing these changes tone, so the bar is high.
+			"emotional":      {Threshold: 0.85},
+			"private_person": {Threshold: 0.85},
+			"premise":        {Threshold: 0.85},
 		},
 		Chips: map[string]OracleChipRules{
 			"pulsar": {Threshold: 0.80},
 			"daily":  {Threshold: 0.80},
+			"safari": {Threshold: 0.85},
 			"field":  {Threshold: 0.75},
 		},
 	}

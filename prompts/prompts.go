@@ -238,8 +238,12 @@ type Set struct {
 		// before it's sent to Jev; {state} isn't substituted here (that's
 		// Jev's `state` request field, built separately) — this is purely
 		// the shared framing text.
-		QuestionPreamble string                 `yaml:"question_preamble"`
-		Checks           map[string]OracleCheck `yaml:"checks"`
+		QuestionPreamble string `yaml:"question_preamble"`
+		// LinkNudge is the has_url detector's injection — not a Jev
+		// question (a regex in gateway/oracle.go finds pasted links), so
+		// it has no Options/threshold, just the text folded into Section.
+		LinkNudge string                 `yaml:"link_nudge"`
+		Checks    map[string]OracleCheck `yaml:"checks"`
 		// Chips are offer-only checks (Pulsar/Daily/Field) — no Inject,
 		// just a threshold and, for Pulsar/Daily, a fixed Options set.
 		// Field's Options is left empty in prompts.yaml and built at
@@ -812,6 +816,9 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 	d.Oracle.QuestionPreamble = "You are reading a message someone sent to a research assistant that " +
 		"searches the web and cites sources. Answer about the latest message; an earlier message, if " +
 		"present, is only context."
+	d.Oracle.LinkNudge = "The message contains a link. Read it with web_read (or youtube_transcript for a " +
+		"YouTube video) before answering, rather than guessing from the URL text, and base the answer on what " +
+		"the page actually says."
 	d.Oracle.Checks = map[string]OracleCheck{
 		"focus": {
 			Instructions: "Which answering style best fits this message? Pick \"off\" unless one style " +
@@ -884,16 +891,24 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 		"intent": {
 			Instructions: "What kind of thing is this message mainly asking about?",
 			Options: map[string]string{
-				"general":    "None of the other options clearly fits.",
-				"place":      "A place, business, restaurant, or something nearby or at a specific location.",
-				"book":       "A book, author, or what to read.",
-				"film_tv":    "A movie, TV show, actor, or what to watch.",
-				"music":      "A song, album, artist, or what to listen to.",
-				"product":    "A specific product or buying decision.",
-				"weather":    "Weather or a forecast.",
-				"video":      "A specific YouTube video or its contents.",
-				"code":       "A code repository, library, or programming project.",
-				"definition": "The meaning, pronunciation, or origin of a word.",
+				"general":        "None of the other options clearly fits.",
+				"place":          "A place, business, restaurant, or something nearby or at a specific location.",
+				"book":           "A book, author, or what to read.",
+				"film_tv":        "A movie, TV show, actor, or what to watch.",
+				"music":          "A song, album, artist, or what to listen to.",
+				"product":        "A specific product or buying decision.",
+				"weather":        "Weather or a forecast.",
+				"video":          "A specific YouTube video or its contents.",
+				"code":           "A code repository, library, or programming project.",
+				"definition":     "The meaning, pronunciation, or origin of a word.",
+				"academic_paper": "A specific research paper, study, or preprint, or what the research says on a narrow topic.",
+				"image":          "The person wants to see photos or pictures of something.",
+				"person_org":     "A specific person, company, or organization — who they are, what they did, background.",
+				"recipe":         "A recipe, cooking technique, ingredient substitution, or food question.",
+				"travel":         "Planning a trip — destinations, routes, itineraries, visas, or what to do somewhere.",
+				"sports":         "A sports score, schedule, standing, roster, or result.",
+				"event":          "When something happens — a release date, showtimes, an event, a deadline, a schedule.",
+				"datetime":       "The current time or date somewhere, a time zone conversion, or time until or since something.",
 			},
 			Inject: map[string]string{
 				"place": "This is about a place. nearby_search gives real listings with addresses, hours, and " +
@@ -914,6 +929,14 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 					"data — prefer them over search results about the project.",
 				"definition": "This is about a word. Use the dictionary tool for the definition, and mention usage " +
 					"or origin if it's interesting.",
+				"academic_paper": "This is about a specific paper or body of research. reference_lookup can fetch an arXiv abstract directly — prefer it over a general search, then cite the paper itself (authors, year, venue) rather than a blog post about it, and say how strong the evidence is.",
+				"image":          "The user wants to see pictures. image_search returns real photos with their source pages — use it rather than describing the thing in words.",
+				"person_org":     "This is about a specific person or organization. Prefer their own site, filings, and established reporting over aggregator profiles, and be careful to match the right entity when a name is shared. State dates for anything that changes (roles, ownership).",
+				"recipe":         "This is a cooking question. Prefer recipes from sources that test and explain them, note quantities and timings exactly, and say what a substitution will change.",
+				"travel":         "This is about travel. Rules, prices, and hours change — prefer official tourism, transit, and government sources, say when a detail was last verified, and use nearby_search for real places along the way.",
+				"sports":         "This is about sports. Prefer the league's or team's official site or a live-scores source, and always state the as-of time, since scores and standings go stale within hours.",
+				"event":          "This is about when something happens. Prefer the organizer's or official announcement, state the date with its time zone, and flag anything still tentative or unconfirmed.",
+				"datetime":       "This depends on the time or date. Call current_time for the exact time rather than guessing, and use calculator's days_between for date spans.",
 			},
 			ByFocus: map[string]map[string]string{
 				"brief": {
@@ -951,6 +974,152 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 					"themselves.",
 			},
 		},
+		"format": {
+			Instructions: "What shape of answer would serve this message best? Pick \"none\" unless one clearly beats ordinary well-organized prose for what was asked.",
+			Options: map[string]string{
+				"none":       "No particular shape is clearly better; the model's own judgment is fine.",
+				"table":      "Several items compared across the same attributes (specs, prices, pros/cons, options side by side).",
+				"comparison": "The person is choosing between specific options and wants to know which to pick.",
+				"steps":      "A procedure or how-to where order matters.",
+				"list":       "A set of discrete items — recommendations, examples, ideas — with no strong ordering.",
+				"prose":      "An explanation, story, or reasoning that reads best as connected paragraphs, not fragments.",
+				"code":       "The answer is mostly code, a command, or a config snippet.",
+				"timeline":   "A sequence of events over time, a history, or a schedule.",
+			},
+			Inject: map[string]string{
+				"table":      "This suits a table: one row per item, one column per attribute that actually matters for the decision, with real values in the cells. Add a line after it on what the table shows, not a restatement of it.",
+				"comparison": "The user is choosing between options. Lay out how they differ on the things that matter for their use, then end with a clear pick and the reason for it — and what would change that pick — rather than leaving the choice open.",
+				"steps":      "This is a procedure. Give numbered steps in order, each one doing one thing, with exact commands, values, or settings where they apply, and say up front what's needed first.",
+				"list":       "A short list fits. Keep each item to a line or two and lead with the item itself, not preamble.",
+				"prose":      "This reads best as connected prose, not a bulleted breakdown — explain the reasoning in paragraphs and keep headings and lists out of it.",
+				"code":       "Lead with the code or command in a fenced block, then only as much explanation as it needs.",
+				"timeline":   "Present this in chronological order with dates, so the sequence and the gaps between events are easy to see.",
+			},
+		},
+		"depth": {
+			Instructions: "How much detail does this message call for? Pick \"standard\" unless it clearly wants something noticeably shorter or more thorough than a normal answer.",
+			Options: map[string]string{
+				"standard": "A normal-length answer fits.",
+				"quick":    "A casual, low-effort question where a couple of sentences is the right size.",
+				"thorough": "A complex or open-ended question where a short answer would leave out what matters.",
+			},
+			Inject: map[string]string{
+				"quick":    "This is a quick question — answer it in a few sentences and stop. Add a source, not an essay.",
+				"thorough": "This warrants a thorough answer: cover the parts that change the conclusion, organize it with clear headings, and cite as you go. Depth means completeness, not padding.",
+			},
+		},
+		"recency": {
+			Instructions: "How much does the age of the information matter for answering this well?",
+			Options: map[string]string{
+				"evergreen": "Stable knowledge; older sources are fine.",
+				"recent":    "Things that change over months — software versions, prices, rankings, \"best X\", policies.",
+				"breaking":  "Something happening now or in the last few days — news, live events, scores, outages.",
+			},
+			Inject: map[string]string{
+				"recent":   "Freshness matters here. Prefer sources from the past year, include the current year in your search queries, check the date on what you cite, and state an \"as of\" date for anything that could have changed since.",
+				"breaking": "This is time-sensitive. Prefer the most recent coverage and the primary source of record, include the current year (and month, if useful) in your queries, and lead with what is confirmed as of now versus still developing. Say plainly how fresh your newest source is.",
+			},
+		},
+		"source_type": {
+			Instructions: "What kind of source would answer this best? Pick \"any\" unless one kind is clearly better than the general web.",
+			Options: map[string]string{
+				"any":          "General sources are fine.",
+				"primary_docs": "Official documentation, specifications, manuals, or a company's own published material.",
+				"community":    "Real-world experience — \"is it worth it\", \"what's it actually like\", reliability, common problems.",
+				"official":     "A government, regulator, standards body, or other institution is the authority.",
+				"academic":     "Peer-reviewed research, journals, or preprints.",
+			},
+			Inject: map[string]string{
+				"primary_docs": "Go to the primary documentation — the vendor's docs, the spec, the manual — before secondary write-ups, and cite the page itself.",
+				"community":    "This is about lived experience, which official pages won't tell you. Look at forums, discussion threads, and owner reviews, and report the pattern across several rather than one loud opinion. Say plainly that it's anecdotal.",
+				"official":     "The authority here is an institution. Cite the agency's, regulator's, or standards body's own page, and note its publication or revision date.",
+				"academic":     "Prefer peer-reviewed papers and reputable preprints over news coverage of them. Say what the study actually measured, how large or strong the effect was, and where the evidence is thin.",
+			},
+		},
+		"contested": {
+			Instructions: "Is this a topic where informed people or credible sources genuinely disagree — politics, social or moral questions, or actively disputed science — rather than a matter of fact?",
+			Options: map[string]string{
+				"no":  "A factual question, or one with broad agreement.",
+				"yes": "A genuinely contested question where reasonable people or credible sources disagree.",
+			},
+			Inject: map[string]string{
+				"yes": "This topic is genuinely contested. Present the main positions as their own proponents would state them, sourced to people or institutions who hold them, keep what is factual separate from what is a value judgment, and avoid steering toward a side. If the user asks for your view, say what the evidence does and doesn't settle.",
+			},
+		},
+		"claim_check": {
+			Instructions: "Is the person asking whether something they heard, read, or saw is true — a rumor, a viral claim, a screenshot, a \"supposedly\", or \"is it true that\"?",
+			Options: map[string]string{
+				"no":  "Not a request to verify a claim.",
+				"yes": "Asks whether a specific claim is true.",
+			},
+			Inject: map[string]string{
+				"yes": "The user wants a claim checked. Find where it originated and check that original source rather than repeating what others say about it. Give a clear verdict — true, false, misleading, or unverified — say what the evidence is, and if it's partly true, say which part.",
+			},
+		},
+		"locale": {
+			Instructions: "Does the right answer depend on where the person is — a country, state, city, or region — such as laws, prices, availability, regulations, or local services?",
+			Options: map[string]string{
+				"no":  "The answer is the same everywhere.",
+				"yes": "The answer varies by place, and the message doesn't make the place fully clear.",
+			},
+			Inject: map[string]string{
+				"yes": "The answer depends on location. Use memory for where the user is if it's there; otherwise say which region your answer assumes, and note what would differ elsewhere. Prefer local sources over ones written for another country.",
+			},
+		},
+		"task": {
+			Instructions: "What is the person trying to do? Pick \"answer\" for an ordinary question.",
+			Options: map[string]string{
+				"answer":       "An ordinary question wanting a fact or an answer.",
+				"explain":      "They want to understand something — how or why it works.",
+				"decide":       "They're weighing a choice and want help making it.",
+				"plan":         "They want a plan, schedule, itinerary, or sequence of steps to achieve something.",
+				"troubleshoot": "Something is broken or misbehaving and they want it fixed, often with an error message.",
+				"write":        "They want something written or rewritten — an email, a message, a piece of text.",
+				"summarize":    "They want something condensed — a document, article, thread, or pasted text.",
+				"brainstorm":   "They want ideas, options, or angles, not a single correct answer.",
+				"calculate":    "They want a number worked out — math, a conversion, a split, a date span.",
+			},
+			Inject: map[string]string{
+				"explain":      "The user wants to understand, not just be told. Start from the core idea, build up in an order where each step earns the next, and use one concrete example.",
+				"decide":       "The user is deciding. Identify the two or three factors that actually drive the choice, say how each option does on them, and give a recommendation with the reason — plus what would make you change it.",
+				"plan":         "The user wants a plan. Make it concrete and ordered, with real durations, costs, or dependencies where they exist, and flag the step most likely to go wrong.",
+				"troubleshoot": "Something is broken. If the exact error message, version, or setup isn't given and the fix depends on it, ask for it. Otherwise search the exact error text, prefer official docs and issue trackers over generic advice, and lead with the most likely fix, then how to confirm it worked.",
+				"write":        "The user wants text written, which usually needs no research — write it directly in the voice and length asked for. Search only if it must contain facts you'd otherwise guess.",
+				"summarize":    "The user wants a summary. If it's a link or attachment, read the whole thing first; keep to what the source says without adding outside claims, and lead with the main point.",
+				"brainstorm":   "The user wants ideas, so give a wide, varied spread rather than one polished answer — include a couple of unexpected ones, and don't over-filter.",
+				"calculate":    "This is arithmetic. Use the calculator (or code_exec for anything multi-step) rather than computing in your head, and show the inputs and the result.",
+			},
+		},
+		"emotional": {
+			Instructions: "Is the person going through something painful or stressful — grief, fear, a health scare, a breakup, a job loss, feeling overwhelmed — and not only asking for information?",
+			Options: map[string]string{
+				"no":  "A plain informational or practical message.",
+				"yes": "Clearly distressed or dealing with something hard, beyond a factual question.",
+			},
+			Inject: map[string]string{
+				"yes": "The user seems to be dealing with something hard. Acknowledge that first, in plain words and without theatrics, then give what they asked for — gently, without a wall of citations or a clinical tone. Offer to go deeper rather than piling on detail.",
+			},
+		},
+		"private_person": {
+			Instructions: "Is the message asking for information about a specific named individual who is a private person rather than a public figure — a neighbor, coworker, ex, classmate, or stranger?",
+			Options: map[string]string{
+				"no":  "No private individual, or the person is a public figure or is discussed in general.",
+				"yes": "Asks about a named private individual.",
+			},
+			Inject: map[string]string{
+				"yes": "This is about a private individual. Don't compile a profile of them — addresses, family, workplace, or activity. Help with what the user is actually trying to do (a business check, a safety concern, a reconnection) through appropriate channels, and say so plainly if a request goes beyond that.",
+			},
+		},
+		"premise": {
+			Instructions: "Does the message assume something as true that may not be — a loaded question, a one-sided framing, or a \"why is X so much better than Y\" that presupposes the answer?",
+			Options: map[string]string{
+				"no":  "No questionable assumption built into the question.",
+				"yes": "The question rests on an assumption that should be checked first.",
+			},
+			Inject: map[string]string{
+				"yes": "The question builds in an assumption. Check whether it's actually true before answering on its terms, and if it isn't, say so early and kindly, then answer the question the user more likely meant.",
+			},
+		},
 	}
 	d.Oracle.Chips = map[string]OracleChip{
 		"pulsar": {
@@ -967,6 +1136,17 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 			Options: map[string]string{
 				"no":  "Not something to follow day to day.",
 				"yes": "A topic, story, or situation worth a daily glance.",
+			},
+		},
+		"safari": {
+			Instructions: "Is the person trying to learn a broad subject in depth — a field, a period of history, " +
+				"a system, or a big concept — where a guided, step-by-step walk-through over several turns would " +
+				"serve them better than a single answer?",
+			Options: map[string]string{
+				"no": "A specific question, a decision, a plan, a debate or opinion question, a task, a how-to, or " +
+					"anything a single reply can answer.",
+				"yes": "A wide subject the person wants to understand deeply, with many parts worth exploring one at " +
+					"a time.",
 			},
 		},
 		// field's Options is built at request time from the store's
@@ -1222,6 +1402,9 @@ func fillDefaults(s Set) *Set {
 	// own thresholds/options/injections, and a prompts.yaml edit to one
 	// check is expected to redefine that check completely rather than
 	// partially inherit stale fields from defaults.
+	if s.Oracle.LinkNudge == "" {
+		s.Oracle.LinkNudge = defaults.Oracle.LinkNudge
+	}
 	if s.Oracle.Checks == nil {
 		s.Oracle.Checks = defaults.Oracle.Checks
 	}

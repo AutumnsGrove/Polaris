@@ -27,12 +27,13 @@
 		Info,
 		WifiOff,
 		Orbit,
-		Sunrise
+		Sunrise,
+		Binoculars
 	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { renderInlineCitations } from '$lib/citations';
-	import { buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
+import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
@@ -255,9 +256,9 @@
 	// pure theater there — skipped for the same reason the backend skips
 	// the real classification call.
 	//
-	// checkCount is a fixed, approximate star count (prompts.yaml defines
-	// 6 checks today: focus/research/high_stakes/intent/clarify/recall),
-	// not this turn's real fired count — that isn't known until the turn
+	// checkCount is a fixed, approximate star count (one per CHECK_DISPLAY
+	// entry, so a new prompts.yaml check adds a star as soon as it has a
+	// display row), not this turn's real fired count — that isn't known until the turn
 	// actually finishes, which is exactly what this animation is playing
 	// *before*. Same simplification the mockup's own demo makes
 	// (`buildConstellation`'s default `starCount = 6`); the margin note
@@ -284,6 +285,7 @@
 	const OFFER_META: Record<string, { icon: typeof Orbit; verb: string; label: (l?: string) => string }> = {
 		pulsar: { icon: Orbit, verb: 'Set up', label: () => 'Check weekly as a <b>Pulsar</b>' },
 		daily: { icon: Sunrise, verb: 'Add', label: () => 'Follow this in <b>Daily</b>' },
+		safari: { icon: Binoculars, verb: 'Explore', label: () => 'Go deeper as a <b>Safari</b>' },
 		field: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a Field'}</b>` }
 	};
 
@@ -306,8 +308,35 @@
 	// visible "working" state instead of looking like the tap did nothing.
 	let offerBusy = $state<string | null>(null);
 
+	// Safari is the one offer that stays in the chat: it sends the next turn
+	// itself instead of navigating. The message names the style outright so
+	// it works even when Oracle is off, and the pick goes out as a *manual*
+	// focus mode — Oracle's own Safari bar is deliberately high (a Safari
+	// takes over the thread), and a tap on this chip is exactly the explicit
+	// request that bar is waiting for.
+	const SAFARI_PROMPT =
+		'I want this broken down in more depth, as an interactive, step-by-step exploration in the Safari style.';
+
 	async function activateOffer(key: string) {
-		if (offerBusy || (key !== 'pulsar' && key !== 'daily')) return;
+		if (offerBusy) return;
+		if (key === 'safari') {
+			appState.send(
+				SAFARI_PROMPT,
+				undefined,
+				'safari',
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				true
+			);
+			return;
+		}
+		if (key !== 'pulsar' && key !== 'daily') return;
 		// "field" has no real destination yet — see OFFER_META's doc
 		// comment above; tapping it is a no-op until a Fields feature
 		// exists to move the thread into.
@@ -413,7 +442,7 @@
 			{#if showConstellation}
 				<div class="stage">
 					<OracleConstellation
-						checkCount={6}
+						checkCount={CHECK_DISPLAY.length}
 						cutShort={constellationCutShort}
 						onDone={() => (constellationFolded = true)}
 					/>

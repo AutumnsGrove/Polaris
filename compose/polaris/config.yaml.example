@@ -160,11 +160,47 @@ oracle:
       skip_for_focus: [safari]  # Safari's Embark step already asks
     recall:
       threshold: 0.80
+    # Answer shape. Safari owns its own format; Brief is already short.
+    format:
+      threshold: 0.75
+      skip_for_focus: [safari]
+    depth:
+      threshold: 0.80
+      skip_for_focus: [safari, brief]
+    # Source and evidence guidance.
+    recency:
+      threshold: 0.75
+    source_type:
+      threshold: 0.75
+      # Academic mode already carries its own source guidance.
+      skip_option_for_focus:
+        academic: [academic]
+    contested:
+      threshold: 0.80
+    claim_check:
+      threshold: 0.80
+    locale:
+      threshold: 0.75
+    # What the person is doing. These modes already teach the same way.
+    task:
+      threshold: 0.75
+      skip_for_focus: [safari]
+      skip_option_for_focus:
+        explain: [first_principles, socratic]
+    # Sensitivity: wrongly firing these changes tone, so the bar is high.
+    emotional:
+      threshold: 0.85
+    private_person:
+      threshold: 0.85
+    premise:
+      threshold: 0.85
   # Offer chips shown under a reply.
   chips:
     pulsar:
       threshold: 0.80
     daily:
       threshold: 0.80
+    safari:
+      threshold: 0.85
     field:
       threshold: 0.75

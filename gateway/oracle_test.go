@@ -422,12 +422,14 @@ func TestCarriedFocusModeSource(t *testing.T) {
 // capturingJevClient records what RunOracle actually put on the wire, for
 // asserting on the request rather than the verdict.
 type capturingJevClient struct {
-	resp  *jev.Response
-	state interface{}
+	resp      *jev.Response
+	state     interface{}
+	questions map[string]jev.ChoiceQuestion
 }
 
 func (c *capturingJevClient) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
 	c.state = state
+	c.questions = questions
 	return c.resp, nil
 }
 
@@ -455,5 +457,105 @@ func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToJev(t *testing.T) {
 	state, _ := c.state.(string)
 	if n := len([]rune(state)); n > oracleMaxMessageRunes*2+200 {
 		t.Errorf("want each message capped near %d runes, state was %d runes", oracleMaxMessageRunes, n)
+	}
+}
+
+func TestRunOracle_HasURLDetectorInjectsWithoutJevAnswering(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "can you summarize (https://example.com/post?a=1) for me"})
+	out := outcomeFor(result, "has_url")
+	if out == nil || !out.Fired || out.Nudge == "" {
+		t.Fatalf("want a fired has_url outcome carrying its nudge, got %+v", out)
+	}
+	if len(result.Injections) != 1 || !containsSubstring(result.Injections[0], "web_read") {
+		t.Errorf("want the link nudge as an injection, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_HasURLQuietWithoutALink(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "what is http"})
+	if outcomeFor(result, "has_url") != nil {
+		t.Error("want no has_url outcome for a message with no link")
+	}
+}
+
+func TestRunOracle_FormatTableNudges(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":  answer("off", 0.9),
+		"format": answer("table", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "compare these three laptops"})
+	if len(result.Injections) != 1 || !containsSubstring(result.Injections[0], "table") {
+		t.Errorf("want the table nudge, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_FormatNoneAndBelowThresholdStayQuiet(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":  answer("off", 0.9),
+		"format": answer("table", 0.5),
+		"depth":  answer("standard", 0.99),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Injections) != 0 {
+		t.Errorf("want no injections (low-confidence table, standard depth has none), got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_DepthAndFormatNotAskedUnderTheirSkipFocus(t *testing.T) {
+	c := &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "brief"})
+	if _, asked := c.questions["depth"]; asked {
+		t.Error("want depth skipped under Brief focus")
+	}
+	if _, asked := c.questions["format"]; !asked {
+		t.Error("want format still asked under Brief focus")
+	}
+
+	c = &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
+	for _, k := range []string{"format", "depth", "task"} {
+		if _, asked := c.questions[k]; asked {
+			t.Errorf("want %s skipped under Safari focus", k)
+		}
+	}
+}
+
+func TestRunOracle_SourceTypeAcademicSkippedUnderAcademicFocus(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"source_type": answer("academic", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "academic"})
+	if len(result.Injections) != 0 {
+		t.Errorf("want no academic source nudge under Academic focus, got %v", result.Injections)
+	}
+	result = RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Injections) != 1 {
+		t.Errorf("want the academic source nudge without Academic focus, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_NewIntentOptionsInject(t *testing.T) {
+	for _, opt := range []string{"academic_paper", "image", "person_org", "recipe", "travel", "sports", "event", "datetime"} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"intent": answer(opt, 0.9)}}}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+		if len(result.Injections) != 1 {
+			t.Errorf("intent %q: want exactly one injection, got %v", opt, result.Injections)
+		}
+	}
+}
+
+func TestRunOracle_SafariChipFiresAndHidesInSafari(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"chip_safari": answer("yes", 0.95),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Chips) != 1 || result.Chips[0].Key != "safari" {
+		t.Fatalf("want a safari chip, got %+v", result.Chips)
+	}
+	result = RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
+	if len(result.Chips) != 0 {
+		t.Errorf("want no safari chip when the turn is already in Safari, got %+v", result.Chips)
 	}
 }

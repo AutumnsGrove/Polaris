@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,16 @@ const oracleTimeout = 2500 * time.Millisecond
 // document must not inflate cost/latency or leak wholesale to a classifier
 // that can't use it. Same shape as pulsarSuggestMaxPerMessage.
 const oracleMaxMessageRunes = 2000
+
+// oracleURLPattern finds pasted links for the has_url detector. Trailing
+// punctuation is trimmed by the character class rather than after the
+// fact: a link closing a sentence or sitting in parentheses is still just
+// a link, and only whether one exists matters here, not its exact extent.
+var oracleURLPattern = regexp.MustCompile(`https?://[^\s<>"'\)\]]+`)
+
+// oracleSafariChip is the offer chip whose whole purpose is to start a
+// Safari-focus thread, so it is pointless once the turn is already in one.
+const oracleSafariChip = "safari"
 
 // jevAskChoicer is the one jev.Client method RunOracle needs — a seam so
 // tests can inject a stub instead of a live *jev.Client, same spirit as
@@ -270,6 +281,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			if !ok {
 				continue
 			}
+			// effectiveFocus (not ActiveFocusMode) so a Safari pick Oracle
+			// made this very turn also suppresses the offer.
+			if chipKey == oracleSafariChip && effectiveFocus == "safari" {
+				continue
+			}
 			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chipRule.Threshold {
 				label := ""
 				if chipKey == "field" {
@@ -301,6 +317,18 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		if len(injs) > 0 {
 			result.Checks[len(result.Checks)-1].Nudge = strings.Join(injs, " ")
 		}
+	}
+
+	// has_url is a detector, not a Jev question: whether a message holds a
+	// link is a regex's job, and spending Jev's tight latency budget on it
+	// would be waste. It's still recorded as a check outcome so it gets a
+	// star in the constellation and a card in the turn-info sheet. Skipped
+	// under Safari for the same reason clarify is — Safari runs its own
+	// pacing and reads sources itself.
+	if effectiveFocus != "safari" && oracleURLPattern.MatchString(in.CurrentMessage) {
+		nudge := p.Oracle.LinkNudge
+		result.Checks = append(result.Checks, CheckOutcome{Key: "has_url", Winner: "yes", Probabilities: map[string]float64{"yes": 1}, Fired: true, Nudge: nudge})
+		result.Injections = append(result.Injections, nudge)
 	}
 
 	// Checks was appended focus-first then in sorted-key order — re-sort

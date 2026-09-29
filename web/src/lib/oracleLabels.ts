@@ -23,7 +23,29 @@ const INTENT_LABELS: Record<string, string> = {
 	weather: 'weather',
 	video: 'a video',
 	code: 'code',
-	definition: 'a word'
+	definition: 'a word',
+	academic_paper: 'a research paper',
+	image: 'images',
+	person_org: 'a person or organization',
+	recipe: 'a recipe',
+	travel: 'travel',
+	sports: 'sports',
+	event: 'an event',
+	datetime: 'the time'
+};
+
+// The task check's fired option, for the same "Read as X" clause. Only the
+// options that say something about the message itself — "answer" is the
+// quiet default and has no label.
+const TASK_LABELS: Record<string, string> = {
+	explain: 'an explanation',
+	decide: 'a decision',
+	plan: 'a plan',
+	troubleshoot: 'a fix',
+	write: 'a writing task',
+	summarize: 'a summary',
+	brainstorm: 'a brainstorm',
+	calculate: 'a calculation'
 };
 
 // The note and offer labels are rendered with {@html} so they can carry
@@ -93,9 +115,11 @@ export function buildOracleNote(
 
 	const highStakes = oracleResult.checks?.find((c) => c.key === 'high_stakes');
 	const intent = oracleResult.checks?.find((c) => c.key === 'intent');
+	const task = oracleResult.checks?.find((c) => c.key === 'task');
 	const readAs =
 		(highStakes?.fired && highStakes.winner !== 'none' ? HIGH_STAKES_LABELS[highStakes.winner] : undefined) ??
-		(intent?.fired && intent.winner !== 'general' ? INTENT_LABELS[intent.winner] : undefined);
+		(intent?.fired && intent.winner !== 'general' ? INTENT_LABELS[intent.winner] : undefined) ??
+		(task?.fired ? TASK_LABELS[task.winner] : undefined);
 
 	let focusClause: string | undefined;
 	if (appliedFocusMode) {
@@ -141,7 +165,19 @@ export const CHECK_DISPLAY: { key: string; name: string }[] = [
 	{ key: 'intent', name: 'Topic' },
 	{ key: 'research', name: 'Research' },
 	{ key: 'clarify', name: 'Clarify first' },
-	{ key: 'recall', name: 'Past chats' }
+	{ key: 'recall', name: 'Past chats' },
+	{ key: 'task', name: 'Task' },
+	{ key: 'format', name: 'Format' },
+	{ key: 'depth', name: 'Depth' },
+	{ key: 'recency', name: 'Freshness' },
+	{ key: 'source_type', name: 'Sources' },
+	{ key: 'contested', name: 'Contested' },
+	{ key: 'claim_check', name: 'Claim check' },
+	{ key: 'locale', name: 'Location' },
+	{ key: 'premise', name: 'Premise' },
+	{ key: 'emotional', name: 'Tone' },
+	{ key: 'private_person', name: 'Private person' },
+	{ key: 'has_url', name: 'Link' }
 ];
 
 // Per-check option -> short display label, for the sheet's option-odds
@@ -177,11 +213,56 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		weather: 'Weather',
 		video: 'Video',
 		code: 'Code',
-		definition: 'Definition'
+		definition: 'Definition',
+		academic_paper: 'Paper',
+		image: 'Images',
+		person_org: 'Person/Org',
+		recipe: 'Recipe',
+		travel: 'Travel',
+		sports: 'Sports',
+		event: 'Event',
+		datetime: 'Time'
 	},
 	research: { yes: 'Needed', no: 'Not needed' },
 	clarify: { yes: 'Yes', no: 'No' },
-	recall: { yes: 'Yes', no: 'No' }
+	recall: { yes: 'Yes', no: 'No' },
+	task: {
+		answer: 'Answer',
+		explain: 'Explain',
+		decide: 'Decide',
+		plan: 'Plan',
+		troubleshoot: 'Troubleshoot',
+		write: 'Write',
+		summarize: 'Summarize',
+		brainstorm: 'Brainstorm',
+		calculate: 'Calculate'
+	},
+	format: {
+		none: 'None',
+		table: 'Table',
+		comparison: 'Comparison',
+		steps: 'Steps',
+		list: 'List',
+		prose: 'Prose',
+		code: 'Code',
+		timeline: 'Timeline'
+	},
+	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
+	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },
+	source_type: {
+		any: 'Any',
+		primary_docs: 'Primary docs',
+		community: 'Community',
+		official: 'Official',
+		academic: 'Academic'
+	},
+	contested: { yes: 'Contested', no: 'Settled' },
+	claim_check: { yes: 'Claim to check', no: 'No claim' },
+	locale: { yes: 'Depends on place', no: 'Universal' },
+	premise: { yes: 'Loaded', no: 'Neutral' },
+	emotional: { yes: 'Distressed', no: 'Neutral' },
+	private_person: { yes: 'Private person', no: 'No' },
+	has_url: { yes: 'Has a link' }
 };
 
 export function optionLabel(checkKey: string, option: string): string {
@@ -201,5 +282,6 @@ export function checkStateLabel(checkKey: string, fired: boolean): string {
 // own Label (the field name) rather than a fixed name here.
 export const CHIP_NAMES: Record<string, string> = {
 	pulsar: 'Pulsar',
-	daily: 'Daily'
+	daily: 'Daily',
+	safari: 'Safari'
 };

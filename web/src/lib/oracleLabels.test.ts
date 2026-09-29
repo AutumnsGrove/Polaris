@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildOracleNote, escapeHtml, focusSwitch } from './oracleLabels';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { buildOracleNote, CHECK_DISPLAY, CHIP_NAMES, escapeHtml, focusSwitch, optionLabel } from './oracleLabels';
 import type { OracleResult } from './types';
 
 describe('escapeHtml', () => {
@@ -32,6 +34,93 @@ describe('buildOracleNote', () => {
 			checks: [{ key: 'high_stakes', winner: 'none', probabilities: { none: 0.95 }, fired: true }]
 		};
 		expect(buildOracleNote(result, undefined, undefined, undefined)).toBeNull();
+	});
+
+	it('reads a fired task when nothing more specific applies', () => {
+		const result: OracleResult = {
+			checks: [{ key: 'task', winner: 'troubleshoot', probabilities: { troubleshoot: 0.9 }, fired: true }]
+		};
+		expect(buildOracleNote(result, undefined, undefined, undefined)).toBe('Read as <b>a fix</b>');
+	});
+
+	it('prefers high-stakes over intent over task', () => {
+		const result: OracleResult = {
+			checks: [
+				{ key: 'task', winner: 'plan', probabilities: { plan: 0.9 }, fired: true },
+				{ key: 'intent', winner: 'travel', probabilities: { travel: 0.9 }, fired: true }
+			]
+		};
+		expect(buildOracleNote(result, undefined, undefined, undefined)).toBe('Read as <b>travel</b>');
+	});
+
+	it('stays quiet for the default task option', () => {
+		const result: OracleResult = {
+			checks: [{ key: 'task', winner: 'answer', probabilities: { answer: 0.95 }, fired: true }]
+		};
+		expect(buildOracleNote(result, undefined, undefined, undefined)).toBeNull();
+	});
+});
+
+// prompts.yaml's checks/chips are the source of truth for what Oracle asks;
+// this file only decides how each is *displayed*. A check added to the YAML
+// with no row here would render as a raw key in the turn-info sheet and get
+// no star in the constellation, so fail loudly instead — the Go side has the
+// same kind of drift test for config rules.
+function promptsOracle(): { checks: Record<string, string[]>; chips: string[] } {
+	const lines = readFileSync(resolve(process.cwd(), '..', 'prompts.yaml'), 'utf8').split('\n');
+	const start = lines.findIndex((l) => l === 'oracle:');
+	const checks: Record<string, string[]> = {};
+	const chips: string[] = [];
+	let section = '';
+	let current = '';
+	let inOptions = false;
+	for (const line of lines.slice(start + 1)) {
+		if (/^\S/.test(line)) break; // left the oracle: block
+		if (line.trim() === '' || line.trim().startsWith('#')) continue;
+		const indent = line.length - line.trimStart().length;
+		if (indent === 2) {
+			section = line.trim().replace(':', '');
+			continue;
+		}
+		if (indent === 4 && (section === 'checks' || section === 'chips')) {
+			current = line.trim().replace(':', '');
+			if (section === 'checks') checks[current] = [];
+			else chips.push(current);
+			inOptions = false;
+			continue;
+		}
+		if (section !== 'checks') continue;
+		if (indent === 6) inOptions = line.trim() === 'options:';
+		else if (indent === 8 && inOptions) checks[current].push(line.trim().split(':')[0]);
+	}
+	return { checks, chips };
+}
+
+describe('display config vs prompts.yaml', () => {
+	const { checks, chips } = promptsOracle();
+
+	it('parsed the checks it is guarding', () => {
+		expect(Object.keys(checks)).toContain('focus');
+		expect(chips).toContain('safari');
+	});
+
+	it('has a CHECK_DISPLAY row for every check', () => {
+		const shown = CHECK_DISPLAY.map((d) => d.key);
+		for (const key of Object.keys(checks)) expect(shown, `check ${key}`).toContain(key);
+	});
+
+	it('has a readable label for every option of every check', () => {
+		for (const [key, options] of Object.entries(checks)) {
+			for (const option of options) {
+				// optionLabel falls back to the capitalized raw key, so a real label
+				// is one that isn't just that fallback (snake_case would leak through).
+				expect(optionLabel(key, option), `${key}.${option}`).not.toContain('_');
+			}
+		}
+	});
+
+	it('names every offer chip', () => {
+		for (const chip of chips.filter((c) => c !== 'project')) expect(CHIP_NAMES[chip], `chip ${chip}`).toBeTruthy();
 	});
 });
 

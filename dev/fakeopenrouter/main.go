@@ -361,16 +361,18 @@ func (s *server) handleCalls(w http.ResponseWriter, r *http.Request) {
 }
 
 // jevQuietAnswer picks the "nothing fired" option from a question's own
-// criteria set — "off"/"no"/"none"/"general" in that priority order
-// (prompts.yaml's checks only ever use one of these for their quiet option;
-// intent's is "general" — without it an unscripted intent question
-// answered "book" and fired a book nudge in every test), or the
-// alphabetically-first criteria key if none of those three are present,
+// criteria set — "off"/"no"/"none"/"general"/"standard"/"any"/"answer"/
+// "evergreen" in that priority order (prompts.yaml's checks each use one of
+// these for their quiet option: intent's is "general", depth's "standard",
+// source_type's "any", task's "answer", recency's "evergreen" — without them
+// an unscripted question answered its alphabetically-first option and fired
+// a nudge in every test), or the alphabetically-first criteria key if none
+// of those are present,
 // so an unusual/future check still gets a deterministic, valid answer
 // instead of an empty Choice that would fail RunOracle's
 // Probabilities[Choice] threshold lookup.
 func jevQuietAnswer(criteria map[string]string) jevAnswerScript {
-	for _, quiet := range []string{"off", "no", "none", "general"} {
+	for _, quiet := range []string{"off", "no", "none", "general", "standard", "any", "answer", "evergreen"} {
 		if _, ok := criteria[quiet]; ok {
 			return jevAnswerScript{Choice: quiet, Probabilities: map[string]float64{quiet: 1.0}}
 		}
