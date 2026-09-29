@@ -7,7 +7,8 @@
 	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import EditTextModal from '$lib/components/EditTextModal.svelte';
 	import FieldChips from '$lib/components/FieldChips.svelte';
-	import { PanelLeft, Plus, Star, FolderOpen } from '@lucide/svelte';
+	import { PanelLeft, Plus, Star } from '@lucide/svelte';
+	import FieldIcon from '$lib/components/FieldIcon.svelte';
 	import type { Field } from '$lib/types';
 
 	onMount(() => {
@@ -89,7 +90,7 @@
 				in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 			>
 				<div class="card-top">
-					<FolderOpen size={15} class="card-icon" />
+					<FieldIcon size={15} class="card-icon" />
 					<h2 class="card-name">{field.name}</h2>
 					<button
 						class="pin"

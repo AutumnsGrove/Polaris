@@ -975,6 +975,21 @@ export class AppState {
 		return null;
 	}
 
+	// setThreadField is the composer picker's entry point: files the open
+	// thread under a field, or — for a brand-new thread with no id yet —
+	// stages the field as pendingFieldId so the first message creates the
+	// thread already inside it (the same path startThreadInField takes, minus
+	// the navigation). Also seeds the field's default model on that staged
+	// path, for the same reason startThreadInField does. null = out of any
+	// field. Returns the server's error text on failure.
+	async setThreadField(fieldId: string | null): Promise<string | null> {
+		if (this.currentThreadId !== null) return this.moveCurrentThreadToField(fieldId);
+		this.pendingFieldId = fieldId;
+		const model = fieldId ? fieldsState.byId(fieldId)?.default_model : '';
+		if (model && this.models.some((m) => m.id === model)) this.selectedModel = model;
+		return null;
+	}
+
 	newThread() {
 		// Same reasoning as openThread's abandonment check: navigating to
 		// "no thread selected" can never match whatever the in-flight

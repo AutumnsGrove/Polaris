@@ -102,7 +102,7 @@ with citations.
 - **Fields** (`/fields`) — a named group of conversations that share custom instructions and a
   pool of reference files, plus per-Field defaults for model, focus mode, and memory, and opt-outs
   from Constellation and chat search. Shared files are read-only to every conversation in the
-  Field (an edit becomes a private copy); pin a Field to keep it in the sidebar. Shared files
+  Field (an edit becomes a private copy); pin a Field to keep it in the sidebar, or file a conversation under one from the composer's More menu. Shared files
   need the `code_exec` sandbox's workspace configured.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
   of a bare text chip.

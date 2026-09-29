@@ -6,9 +6,10 @@
 	import { searchState } from '$lib/search.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
+	import FieldIcon from '$lib/components/FieldIcon.svelte';
 	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderOpen, FolderSymlink } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -287,7 +288,7 @@
 			class:active={page.url.pathname.startsWith('/fields')}
 			onclick={() => goto('/fields')}
 		>
-			<FolderOpen size={16} />
+			<FieldIcon size={16} />
 			<span class="pulsar-label">Fields</span>
 		</button>
 		<div class="thread-search">
@@ -352,7 +353,7 @@
 			     better than a list row whose whole job is just "open this". -->
 			{#if fieldsState.favorites.length > 0}
 				<div class="section-label">
-					<FolderOpen size={11} />
+					<FieldIcon size={11} />
 					<span class="section-wordmark">Fields</span>
 				</div>
 				{#each fieldsState.favorites as field, i (field.id)}

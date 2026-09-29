@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { FolderOpen } from '@lucide/svelte';
+	import FieldIcon from './FieldIcon.svelte';
 	import { fieldColorVar } from '$lib/fields.svelte';
 	import type { Field } from '$lib/types';
 
@@ -21,7 +21,7 @@
 	title="Field: {field.name}"
 	aria-label="Open Field {field.name}"
 >
-	<FolderOpen size={12} />
+	<FieldIcon size={12} />
 	<span class="name">{field.name}</span>
 </button>
 
