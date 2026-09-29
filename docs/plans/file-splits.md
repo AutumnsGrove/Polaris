@@ -15,7 +15,7 @@ Rules for every stage:
 
 - [x] 1. `store/store.go` (3,197 lines → 188): schema, migrations, threads, variants, history, thread_pages, message_search, search_history, compaction, settings, messages, message_setters, usage. Schema/migrations verified byte-identical to HEAD.
 - [x] 2. `tools/registry.go` (1,339 lines → 107): context, evidence, citations, cards, image_candidates, chart, http; `WizardFinal`/`DailyItemsFinal`/`PendingQuestion`/show-state moved next to their owning tool files
-- [ ] 3. `gateway/turn.go`: decompose the 1,560-line `handleTurn` (needs a `turnState` struct; live-verify)
+- [x] 3. `gateway/turn.go` (1,979 lines → 181): `handleTurn` is now a ~40-line orchestrator over a `turnRun` struct; phases live in turn_thread / turn_message / turn_context / turn_oracle / turn_agent / turn_persist / turn_followups, the emit closure became `turnEmitter` (turn_emit), and the LLM helpers moved to turn_title / turn_suggestions / turn_compaction / turn_history. Verified: build/vet/`-race` tests, plus a differential run of old vs new code through the real server + `dev/fakeopenrouter` (messages, threads and event log byte-identical). Not exercised live: the detached auto-compaction trigger (the fake reports no token usage).
 - [ ] 4. `web/src/lib/state.svelte.ts`: extract domain modules; `AppState` becomes a thin composition root
 - [ ] 5. `store/constellation.go`: stars, reviews, stats, digest
 - [ ] 6. `prompts/prompts.go`: split `buildDefaults()` per section (drift test must stay green)
