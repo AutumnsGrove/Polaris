@@ -50,6 +50,15 @@ pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go ba
 pnpm run build        # produces web/build/ for `go build`/`go run .` to embed
 ```
 
+### Start-screen night sky
+
+`web/src/lib/components/NightSky.svelte` paints the canvas behind the empty-state heading; the logic
+lives in `web/src/lib/nightSky/`. Every timing, size, count and spacing dial is in `config.ts`
+(seconds between constellations, how many at once, comet gap, how far apart they must sit).
+To add a constellation, append an entry to the pool in `constellations.ts` (points plus edge order,
+nothing else). Placement (`placement.ts`) and scheduling (`director.ts`) are pure and unit-tested;
+`renderer.ts` is the only file that touches the canvas. Design mockup: `mockups/polaris-living-sky.html`.
+
 ### One-command dev stack
 
 `dev/stack.sh` starts (or cleanly restarts) the whole bare-metal dev inner loop in one shot —
