@@ -7,6 +7,7 @@
 	import { autoResize } from '$lib/actions/autoResize';
 	import WizardOverlay from './WizardOverlay.svelte';
 	import WizardButton from './WizardButton.svelte';
+	import Switch from './Switch.svelte';
 	import { untrack } from 'svelte';
 
 	// customFieldMaxHeight: roughly 5 lines at this field's font-size/line-
@@ -220,10 +221,11 @@
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label daily-enabled-label">The Daily</span>
-					<label class="switch">
-						<input type="checkbox" bind:checked={dailyEnabled} />
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="The Daily"
+						checked={dailyEnabled}
+						onchange={(v) => (dailyEnabled = v)}
+					/>
 				</div>
 			</div>
 			<p class="hint">
@@ -241,14 +243,11 @@
 					<div class="settings-row" class:stacked={expanded}>
 						<div class="block-toggle-row">
 							<span class="row-label">{opt.label}</span>
-							<label class="switch">
-								<input
-									type="checkbox"
-									checked={enabledBlocks.has(opt.key)}
-									onchange={() => toggleBlock(opt.key)}
-								/>
-								<span class="slider"></span>
-							</label>
+							<Switch
+								label={opt.label}
+								checked={enabledBlocks.has(opt.key)}
+								onchange={() => toggleBlock(opt.key)}
+							/>
 						</div>
 						{#if opt.key === 'weather' && enabledBlocks.has('weather')}
 							<div class="subfield">
@@ -429,8 +428,8 @@
 <style>
 	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
 	   exactly (issue #83's settings-menu unification). Duplicated per-file
-	   for the same reason .switch below is — Svelte scopes component
-	   styles, so there's no shared-import version of this. */
+	   because Svelte scopes component styles, so there's no
+	   shared-import version of this. */
 	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
 	   + rule treatment, replacing the old all-dim .section-label. */
 	.section-head {
@@ -611,54 +610,4 @@
 		font-weight: 600;
 	}
 
-	/* Same switch construction as PulsarRoutineForm.svelte/
-	   SettingsPanel.svelte/ComposerMenu.svelte — duplicated, not shared,
-	   since Svelte scopes component styles per-file. */
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition:
-			transform 0.15s ease,
-			background 0.15s ease;
-	}
-
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
-	}
 </style>

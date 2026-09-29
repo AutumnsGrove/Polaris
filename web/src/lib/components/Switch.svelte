@@ -1,9 +1,9 @@
 <script lang="ts">
-	// A labelled on/off switch — the same look SettingsPanel.svelte's own
-	// `.switch`/`.slider` styling gives its toggles, as a reusable component
-	// (that CSS is scoped to SettingsPanel, so anything else needing a toggle
-	// was copying it). A real checkbox underneath, so keyboard and screen-
-	// reader behavior come free; `label` is its accessible name.
+	// The one on/off switch every settings surface uses. Svelte scopes CSS
+	// per component, which is what used to make each new toggle copy the
+	// styling into its own file — keep it here instead. A real checkbox
+	// underneath, so keyboard and screen-reader behavior come free; `label`
+	// is its accessible name.
 	let {
 		checked,
 		label,

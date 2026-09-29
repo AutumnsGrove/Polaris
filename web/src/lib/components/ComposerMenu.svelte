@@ -5,6 +5,7 @@
 	import { Plus, Image as ImageIcon, Cpu, Microscope, Globe, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal, Ban } from '@lucide/svelte';
 	import Asterism from './Asterism.svelte';
 	import FieldIcon from './FieldIcon.svelte';
+	import Switch from './Switch.svelte';
 	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { fly } from 'svelte/transition';
@@ -295,15 +296,12 @@
 												: 'Needs Research turned on'}
 										</span>
 									</span>
-									<label class="switch">
-										<input
-											type="checkbox"
-											checked={deepResearch}
-											disabled={!research}
-											onchange={toggleDeepResearch}
-										/>
-										<span class="slider"></span>
-									</label>
+									<Switch
+										label="Deep Research"
+										checked={deepResearch}
+										disabled={!research}
+										onchange={toggleDeepResearch}
+									/>
 								</div>
 
 								<div class="row-btn row-static">
@@ -312,10 +310,7 @@
 										Research
 										<span class="row-description">Search the web and other tools — turn off for a plain chat</span>
 									</span>
-									<label class="switch">
-										<input type="checkbox" checked={research} onchange={toggleResearch} />
-										<span class="slider"></span>
-									</label>
+									<Switch label="Research" checked={research} onchange={toggleResearch} />
 								</div>
 
 								<button type="button" class="row-btn" onclick={() => drillInto('model')}>
@@ -652,56 +647,6 @@
 	.row-btn :global(.row-chevron) {
 		flex-shrink: 0;
 		color: var(--color-text-dim);
-	}
-
-	/* Same switch as SettingsPanel.svelte's — duplicated rather than
-	   shared since Svelte scopes component styles per-file, but it's the
-	   same visual vocabulary everywhere a boolean setting appears, not a
-	   bespoke one just for this row (see the Deep Research row above). */
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition: transform 0.15s ease, background 0.15s ease;
-	}
-
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
 	}
 
 	/* The picker's color dot stands in for a row icon, sized to the 16px

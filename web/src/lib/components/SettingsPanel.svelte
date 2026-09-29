@@ -28,6 +28,7 @@
 	import MemorySettings from './MemorySettings.svelte';
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
+	import Switch from './Switch.svelte';
 	import Asterism from './Asterism.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 	import PulsarUsageModal from './PulsarUsageModal.svelte';
@@ -556,14 +557,11 @@
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Enabled</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={appState.settings.memoryEnabled}
-							onchange={(e) => appState.settings.setMemoryEnabled(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="Memory enabled"
+						checked={appState.settings.memoryEnabled}
+						onchange={(v) => appState.settings.setMemoryEnabled(v)}
+					/>
 				</div>
 			</div>
 			<div class:section-disabled={!appState.settings.memoryEnabled}>
@@ -589,25 +587,19 @@
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Enabled</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={appState.settings.oracleEnabled}
-							onchange={(e) => appState.settings.setOracleEnabled(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="Oracle mode enabled"
+						checked={appState.settings.oracleEnabled}
+						onchange={(v) => appState.settings.setOracleEnabled(v)}
+					/>
 				</div>
 				<div class="settings-row">
 					<span class="row-label">Also in ghost conversations</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={appState.settings.oracleGhostEnabled}
-							onchange={(e) => appState.settings.setOracleGhostEnabled(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="Oracle mode in ghost conversations"
+						checked={appState.settings.oracleGhostEnabled}
+						onchange={(v) => appState.settings.setOracleGhostEnabled(v)}
+					/>
 				</div>
 			</div>
 			<p class="hint">
@@ -624,15 +616,12 @@
 			<div class="settings-group">
 				<div class="settings-row">
 					<span class="row-label">Enabled</span>
-					<label class="switch">
-						<input
-							type="checkbox"
-							checked={constellationState.config?.enabled ?? false}
-							disabled={!constellationState.config}
-							onchange={(e) => void constellationState.setEnabled(e.currentTarget.checked)}
-						/>
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="Constellation enabled"
+						checked={constellationState.config?.enabled ?? false}
+						disabled={!constellationState.config}
+						onchange={(v) => void constellationState.setEnabled(v)}
+					/>
 				</div>
 			</div>
 			<p class="hint">
@@ -765,9 +754,8 @@
 	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
 	   exactly (issue #83 — bringing every settings surface onto one visual
 	   language instead of N divergent ones). Duplicated here rather than
-	   shared, same reasoning as .switch below: Svelte scopes component
-	   styles per-file, so this is copy-once-per-component by design, not
-	   an oversight.
+	   shared: Svelte scopes component styles per-file, so this is
+	   copy-once-per-component by design, not an oversight.
 
 	   .section-label used to be the header treatment (11px uppercase,
 	   --color-text-dim) — the same dim color .hint uses below, so a
@@ -896,58 +884,6 @@
 	.section-disabled {
 		opacity: 0.45;
 		pointer-events: none;
-	}
-
-	/* Same switch construction as ComposerMenu.svelte/ToolSettings.svelte —
-	   duplicated rather than shared since Svelte scopes component styles
-	   per-file, but it's the same visual vocabulary everywhere a boolean
-	   setting appears. */
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition:
-			transform 0.15s ease,
-			background 0.15s ease;
-	}
-
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
 	}
 
 	.hint {

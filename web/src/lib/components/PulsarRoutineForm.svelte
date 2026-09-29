@@ -7,6 +7,7 @@
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import WizardOverlay from './WizardOverlay.svelte';
 	import WizardButton from './WizardButton.svelte';
+	import Switch from './Switch.svelte';
 	import { untrack } from 'svelte';
 
 	// One form doing double duty as both create and edit, per
@@ -195,10 +196,11 @@
 
 				<div class="settings-row">
 					<span class="row-label">Deep research</span>
-					<label class="switch">
-						<input type="checkbox" bind:checked={deepResearch} />
-						<span class="slider"></span>
-					</label>
+					<Switch
+						label="Deep research"
+						checked={deepResearch}
+						onchange={(v) => (deepResearch = v)}
+					/>
 				</div>
 			</div>
 
@@ -331,8 +333,8 @@
 
 	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
 	   exactly (issue #83's settings-menu unification). Duplicated per-file
-	   for the same reason .switch below is — Svelte scopes component
-	   styles, so there's no shared-import version of this. */
+	   because Svelte scopes component styles, so there's no
+	   shared-import version of this. */
 	/* See SettingsPanel.svelte's .section-head comment — same gold-icon
 	   + rule treatment, replacing the old all-dim .section-label. */
 	.section-head {
@@ -435,54 +437,4 @@
 		color: var(--color-danger);
 	}
 
-	/* Same switch construction as SettingsPanel.svelte/ComposerMenu.svelte —
-	   duplicated, not shared, since Svelte scopes component styles
-	   per-file (see SettingsPanel's own doc comment on this). */
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition:
-			transform 0.15s ease,
-			background 0.15s ease;
-	}
-
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
-	}
 </style>
