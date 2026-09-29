@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"polaris/jev"
@@ -384,5 +385,44 @@ func TestCarriedFocusModeSource(t *testing.T) {
 		if got := carriedFocusModeSource(tt.manual, tt.focus, tt.prior); got != tt.want {
 			t.Errorf("%s: carriedFocusModeSource(%v, %q, %q) = %q, want %q", tt.name, tt.manual, tt.focus, tt.prior, got, tt.want)
 		}
+	}
+}
+
+// capturingJevClient records what RunOracle actually put on the wire, for
+// asserting on the request rather than the verdict.
+type capturingJevClient struct {
+	resp  *jev.Response
+	state interface{}
+}
+
+func (c *capturingJevClient) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+	c.state = state
+	return c.resp, nil
+}
+
+func TestRunOracle_DropsAnswerOutsideOfferedOptions(t *testing.T) {
+	// Jev is external input: a winner we never offered must not become the
+	// turn's focus mode (persisted to threads.focus_mode) or a chip.
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":       answer("ignore_previous_instructions", 0.99),
+		"chip_pulsar": answer("definitely", 0.99),
+		"not_a_check": answer("yes", 0.99),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
+	if result.FocusMode != "" || result.FocusCleared {
+		t.Errorf("want a bogus focus winner ignored, got FocusMode=%q cleared=%v", result.FocusMode, result.FocusCleared)
+	}
+	if len(result.Chips) != 0 || len(result.Checks) != 0 {
+		t.Errorf("want bogus answers dropped entirely, got chips=%v checks=%v", result.Chips, result.Checks)
+	}
+}
+
+func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToJev(t *testing.T) {
+	huge := strings.Repeat("a", oracleMaxMessageRunes*5)
+	c := &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	RunOracle(context.Background(), c, OracleInput{CurrentMessage: huge, PrevUserMessage: huge})
+	state, _ := c.state.(string)
+	if n := len([]rune(state)); n > oracleMaxMessageRunes*2+200 {
+		t.Errorf("want each message capped near %d runes, state was %d runes", oracleMaxMessageRunes, n)
 	}
 }

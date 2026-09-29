@@ -18,6 +18,13 @@ import (
 // needs a much tighter budget than "eventually give up."
 const oracleTimeout = 2500 * time.Millisecond
 
+// oracleMaxMessageRunes caps each message handed to Jev. Classification only
+// needs the gist (the opening of a message carries its intent), and the
+// request body is billed per input token and sent to a third party — a pasted
+// document must not inflate cost/latency or leak wholesale to a classifier
+// that can't use it. Same shape as pulsarSuggestMaxPerMessage.
+const oracleMaxMessageRunes = 2000
+
 // jevAskChoicer is the one jev.Client method RunOracle needs — a seam so
 // tests can inject a stub instead of a live *jev.Client, same spirit as
 // llm/llmtest.MockClient elsewhere in this codebase. *jev.Client satisfies
@@ -125,6 +132,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 
 	p := prompts.Get()
 	questions := make(map[string]jev.ChoiceQuestion, len(p.Oracle.Checks)+len(p.Oracle.Chips))
+	// offered is the option set actually sent per question, kept so Jev's
+	// answers can be validated against it below — a response is external
+	// input, and its Choice ends up persisted (threads.focus_mode) and
+	// substituted into prompt text, so it must be one we offered.
+	offered := make(map[string][]string, len(p.Oracle.Checks)+len(p.Oracle.Chips))
 	for key, check := range p.Oracle.Checks {
 		if check.FirstMessageOnly && !in.IsFirstMessage {
 			continue
@@ -136,6 +148,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			Instructions: p.Oracle.QuestionPreamble + " " + check.Instructions,
 			Criteria:     check.Options,
 		}
+		offered[key] = optionKeys(check.Options)
 	}
 	for key, chip := range p.Oracle.Chips {
 		options := chip.Options
@@ -153,14 +166,16 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			Instructions: p.Oracle.QuestionPreamble + " " + chip.Instructions,
 			Criteria:     options,
 		}
+		offered["chip_"+key] = optionKeys(options)
 	}
 	if len(questions) == 0 {
 		return OracleResult{}
 	}
 
-	state := "Latest message: " + in.CurrentMessage
+	current := truncateRunes(in.CurrentMessage, oracleMaxMessageRunes)
+	state := "Latest message: " + current
 	if in.PrevUserMessage != "" {
-		state = "Previous message: " + in.PrevUserMessage + "\n\nLatest message: " + in.CurrentMessage
+		state = "Previous message: " + truncateRunes(in.PrevUserMessage, oracleMaxMessageRunes) + "\n\nLatest message: " + current
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, oracleTimeout)
@@ -172,6 +187,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	}
 
 	result := OracleResult{CostUSD: resp.Usage.CostUSD}
+	resp.Answers = validAnswers(resp.Answers, offered)
 
 	// high_stakes is resolved first (independent of focus) since the
 	// focus check's own NeverWithHighStakes rule needs its winner.
@@ -358,6 +374,32 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 	out := []string{text}
 	if extra := check.Inject["any"]; extra != "" {
 		out = append(out, extra)
+	}
+	return out
+}
+
+// optionKeys lists a question's option ids (its Criteria keys).
+func optionKeys(options map[string]string) []string {
+	keys := make([]string, 0, len(options))
+	for k := range options {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// validAnswers drops any answer Jev returned for a question we didn't ask, or
+// whose Choice isn't one of the options we offered for it (logged, since a
+// well-behaved Jev never does this). Without it a bogus "focus" winner would
+// be written to threads.focus_mode and echoed into the ## Oracle section via
+// {option}, and a bogus project chip winner would render as a chip label.
+func validAnswers(answers map[string]jev.ChoiceAnswer, offered map[string][]string) map[string]jev.ChoiceAnswer {
+	out := make(map[string]jev.ChoiceAnswer, len(answers))
+	for key, ans := range answers {
+		if !sliceContains(offered[key], ans.Choice) {
+			log.Warn("oracle: dropping jev answer outside the offered options", "question", key, "choice", truncateRunes(ans.Choice, 60))
+			continue
+		}
+		out[key] = ans
 	}
 	return out
 }
