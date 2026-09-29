@@ -24,147 +24,21 @@ import { getUserLocation, requestFreshLocation } from './geolocation';
 import { pulsarState } from './pulsar.svelte';
 import { fieldsState } from './fields.svelte';
 
-function safeParseJSON<T>(json: string): T[] {
-	try {
-		return JSON.parse(json) ?? [];
-	} catch {
-		return [];
-	}
-}
+import { ThreadSearchState } from './threadSearch.svelte';
+import { ToastState } from './toasts.svelte';
+import { VersionState } from './versionCheck.svelte';
+import { fetchEventsByTurn, buildTurnsFromMessages } from './threadTurns';
+import {
+	safeParseJSON,
+	safeParseObject,
+	applyVerification,
+	buildTimelineFromEvents,
+	debugBeacon
+} from './stateHelpers';
 
-function safeParseObject(json: string): Record<string, any> {
-	try {
-		return JSON.parse(json) ?? {};
-	} catch {
-		return {};
-	}
-}
-
-// Sets citations[].verified (the aggregate "found in source" mark the
-// source-list chip uses) from marks — true for any citation whose URL has
-// at least one supported claim. citations is left untouched (same array
-// reference) when marks is empty, so callers that always run this don't
-// force an unnecessary re-render. See ChatTurn.verification's doc comment
-// for why claim_index-level precision lives separately, for the inline
-// chip.
-function applyVerification(citations: Citation[] | undefined, marks: VerificationMark[] | undefined): Citation[] | undefined {
-	if (!citations || !marks || marks.length === 0) return citations;
-	const verifiedUrls = new Set(marks.filter((m) => m.choice === 'supported').map((m) => m.url));
-	if (verifiedUrls.size === 0) return citations;
-	return citations.map((c) => (verifiedUrls.has(c.url) ? { ...c, verified: true } : c));
-}
-
-// TEMPORARY instrumentation for chasing the "thread bump-back" bug (see
-// memory: field_thread_bump_back_root_cause) — fires a fire-and-forget
-// beacon to the server's event log at the handful of places
-// currentThreadId changes or a version-mismatch reload fires, so the next
-// occurrence can be read back from the events table afterward instead of
-// needing the user to have DevTools open at the exact moment it happens.
-// keepalive (not navigator.sendBeacon) is what survives the page unloading
-// (the exact moment a reload/href navigation fires) here — sendBeacon
-// would do the same in a real browser, but its rejection can't be caught
-// the way a plain fetch promise's can, which surfaced as unhandled
-// rejections under happy-dom's polyfill. Remove this and its call sites
-// once the mechanism is confirmed and fixed.
-export function debugBeacon(message: string, data: Record<string, unknown> = {}) {
-	if (typeof fetch === 'undefined') return;
-	fetch('/api/debug-log', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		keepalive: true,
-		body: JSON.stringify({ message, data })
-	}).catch(() => {
-		// Best-effort — never let diagnostics themselves break the app.
-	});
-}
-
-// Rebuilds one turn's timeline from its persisted events (thinking steps,
-// tool call start/finish pairs, compaction) — the same shape handleEvent
-// builds live while a turn streams, so a reopened thread renders
-// identically to one that's still on screen. events must be this turn's
-// slice only, oldest-first (see ListEvents' ORDER BY id ASC).
-function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
-	const timeline: TimelineItem[] = [];
-	for (const evt of events) {
-		const data = safeParseObject(evt.data);
-		if (evt.source === 'turn' && evt.message === 'thinking') {
-			timeline.push({ kind: 'thinking', content: data.content ?? '' });
-		} else if (evt.source === 'turn' && evt.message === 'commentary') {
-			timeline.push({ kind: 'commentary', content: data.content ?? '' });
-		} else if (evt.source === 'turn' && evt.message === 'reasoning') {
-			// Persisted as one row per burst (see gateway/turn.go's
-			// flushReasoning), already complete — done: true, unlike the
-			// live-streaming case where a burst starts as done: false and
-			// gets closed out by closeOpenReasoning once something else
-			// interrupts it.
-			timeline.push({ kind: 'reasoning', content: data.content ?? '', done: true });
-		} else if (evt.source === 'compaction' && evt.message === 'compaction notice shown') {
-			// 'compaction notice shown', not 'thread auto-compacted' — the
-			// latter is the backend's untagged audit row (it feeds the
-			// Auto-compactions stat in store/stats.go) and is written with an
-			// empty turn_id, so it never lands in a turn's event slice and
-			// never reaches here. The rendered note is the row the *next*
-			// turn writes when it actually shows the notice, which is why
-			// this reads the summary off a different message than the live
-			// 'compacted' ServerEvent's name suggests. No cost is applied
-			// here: the compaction's cost is already inside the thread's
-			// stored cost_usd, which openThread assigns to totalCost
-			// wholesale — adding this row's cost_usd too would double-count
-			// it on every reload.
-			timeline.push({ kind: 'compacted', summary: data.summary ?? '' });
-		} else if (evt.source.startsWith('tool.')) {
-			const tool = evt.source.slice('tool.'.length);
-			if (evt.message === 'tool call started') {
-				timeline.push({ kind: 'tool', tool, args: data.args, callId: data.call_id, done: false });
-			} else if (evt.message === 'tool call finished') {
-				// Same call_id-first matching as handleEvent's live
-				// 'tool_result' case (see its doc comment) — persisted
-				// events from two concurrent same-tool calls (e.g. two
-				// memory writes) are just as ambiguous to a name-only
-				// backward scan as the live stream is, so a reopened
-				// thread needs the same fix or the cross-wired-card bug
-				// just reappears on reload.
-				let matched = false;
-				if (data.call_id) {
-					for (let i = timeline.length - 1; i >= 0; i--) {
-						const item = timeline[i];
-						if (item.kind === 'tool' && item.callId === data.call_id && !item.done) {
-							timeline[i] = {
-								...item,
-								result: data.result,
-								citations: data.citations,
-								url: data.url,
-								caption: data.caption,
-								images: data.images,
-								done: true
-							};
-							matched = true;
-							break;
-						}
-					}
-				}
-				if (!matched) {
-					for (let i = timeline.length - 1; i >= 0; i--) {
-						const item = timeline[i];
-						if (item.kind === 'tool' && item.tool === tool && !item.done) {
-							timeline[i] = {
-								...item,
-								result: data.result,
-								citations: data.citations,
-								url: data.url,
-								caption: data.caption,
-								images: data.images,
-								done: true
-							};
-							break;
-						}
-					}
-				}
-			}
-		}
-	}
-	return timeline;
-}
+// Re-exported so existing `import { debugBeacon } from '$lib/state.svelte'` call
+// sites keep working after the helpers moved to stateHelpers.ts.
+export { debugBeacon };
 
 // Exported (not just the singleton below) so tests can construct fresh,
 // isolated instances instead of sharing the one live during a real
@@ -173,14 +47,17 @@ export class AppState {
 	turns = $state<ChatTurn[]>([]);
 	threads = $state<Thread[]>([]);
 
-	// Sidebar's "search past chats" box — see searchThreads' doc comment.
-	// Separate from `threads` (the plain recency list) rather than
-	// filtering it client-side, since this searches every message's full
-	// content via the server's FTS5 index, not just what's already loaded
-	// here.
-	threadSearchQuery = $state('');
-	threadSearchResults = $state<MessageSearchResult[]>([]);
-	threadSearchLoading = $state(false);
+	// Sidebar's "search past chats" box — see ThreadSearchState.search.
+	threadSearch = new ThreadSearchState();
+	get threadSearchQuery() {
+		return this.threadSearch.query;
+	}
+	get threadSearchResults() {
+		return this.threadSearch.results;
+	}
+	get threadSearchLoading() {
+		return this.threadSearch.loading;
+	}
 	models = $state<ModelOption[]>([]);
 	selectedModel = $state<string>('');
 	// threadFocusMode/threadDeepResearch/threadNoResearch are the
@@ -244,12 +121,24 @@ export class AppState {
 	connected = $state(false);
 	busy = $state(false);
 	totalCost = $state(0);
-	version = $state<string>('');
-	// 'bare-metal' | 'docker' | '' (not yet loaded) — see gateway/version.go's
-	// deploymentMode. Purely a display signal for the settings panel's
-	// version-row icon, set alongside version in checkVersion() below.
-	deployment = $state<string>('');
-	versionCheckInterval: number | null = null;
+	// Version polling lives in VersionState; these delegates keep the
+	// appState.version / .deployment surface the settings panel and tests read.
+	versionState = new VersionState(() => ({ busy: this.busy, currentThreadId: this.currentThreadId }));
+	get version() {
+		return this.versionState.version;
+	}
+	set version(v: string) {
+		this.versionState.version = v;
+	}
+	get deployment() {
+		return this.versionState.deployment;
+	}
+	set deployment(v: string) {
+		this.versionState.deployment = v;
+	}
+	get versionCheckInterval() {
+		return this.versionState.interval;
+	}
 
 	// contextTokens is the current thread's last-known prompt+completion
 	// size, from the LLM's own usage numbers — settings.contextWindowTokens
@@ -286,20 +175,14 @@ export class AppState {
 	settings = new SettingsState();
 	audio = new AudioPlayer();
 
-	// Brief, app-level confirmation banners — first use is the copy
-	// buttons in ChatTurnView.svelte, where the per-button checkmark swap
-	// alone turned out to not be a clear enough "yes, that worked" signal
-	// on its own. A plain array (not a single "current toast") so two
-	// quick actions don't cut each other off mid-fade.
-	toasts = $state<{ id: number; message: string }[]>([]);
-	private nextToastId = 0;
+	// Brief, app-level confirmation banners — see ToastState.
+	toastState = new ToastState();
+	get toasts() {
+		return this.toastState.toasts;
+	}
 
 	showToast(message: string, durationMs = 2000) {
-		const id = this.nextToastId++;
-		this.toasts = [...this.toasts, { id, message }];
-		setTimeout(() => {
-			this.toasts = this.toasts.filter((t) => t.id !== id);
-		}, durationMs);
+		this.toastState.show(message, durationMs);
 	}
 
 	// Identifies which thread + turn object an in-flight response belongs
@@ -418,13 +301,6 @@ export class AppState {
 	// clicked last.
 	private openThreadSeq = 0;
 
-	// searchThreads' debounce timer/cancellation state — see its own doc
-	// comment for why both the timer and the seq/AbortController pair are
-	// needed together.
-	private threadSearchSeq = 0;
-	private threadSearchController: AbortController | null = null;
-	private threadSearchDebounce: ReturnType<typeof setTimeout> | null = null;
-
 	private socket: AgentSocket;
 
 	constructor() {
@@ -503,92 +379,12 @@ export class AppState {
 		void this.startVersionCheck();
 	}
 
-	async startVersionCheck() {
-		// Check version immediately on connect
-		await this.checkVersion();
-
-		// Then poll every 30 seconds
-		if (typeof window !== 'undefined') {
-			this.versionCheckInterval = window.setInterval(() => {
-				void this.checkVersion();
-			}, 30000);
-		}
+	startVersionCheck() {
+		return this.versionState.start();
 	}
 
-	async checkVersion() {
-		try {
-			const res = await fetch('/api/version');
-			const data = await res.json();
-			const newVersion = data.version ?? '';
-			// Static for the process's whole lifetime (only a real restart
-			// changes it) — fine to just assign unconditionally on every
-			// poll, unlike version's mismatch-triggers-a-reload dance below.
-			this.deployment = data.deployment ?? '';
-
-			if (this.version && newVersion && this.version !== newVersion) {
-				debugBeacon('checkVersion mismatch detected', {
-					oldVersion: this.version,
-					newVersion,
-					busy: this.busy,
-					currentThreadId: this.currentThreadId
-				});
-				// A new build landed — but reloading immediately would yank
-				// an in-flight turn out from under the user: it wipes
-				// busy/pendingTurn/pendingThreadId client-side while the
-				// turn keeps running server-side regardless. Deferring
-				// until nothing's in flight — and deliberately NOT updating
-				// this.version below so this same branch re-fires — is what
-				// makes the reload land at a safe moment. handleEvent's
-				// 'done'/'error' cases call this again the instant busy
-				// clears, so the retry happens within moments of the turn
-				// finishing rather than waiting out the rest of this 30s
-				// poll interval.
-				//
-				// Navigating to an explicit href (not a bare reload())
-				// matters: a bare reload() trusts window.location.pathname
-				// to already reflect whatever thread is actually current,
-				// but syncURL's replaceState calls only fire from specific
-				// call sites (openThread, newThread, a just-learned new
-				// thread id) — 'done' itself never re-syncs the URL, so any
-				// path where the address bar and currentThreadId can
-				// legitimately drift apart for a moment (confirmed
-				// happening in practice, not just theoretical) turns into
-				// reload() silently landing on whatever the browser's
-				// address bar happened to still say, which can be a
-				// completely unrelated thread from earlier in the session
-				// rather than "the homescreen" this comment used to assume.
-				// Building the URL explicitly from currentThreadId — the
-				// same source of truth syncURL itself uses — removes that
-				// gap by construction instead of relying on timing.
-				if (!this.busy && typeof window !== 'undefined') {
-					const path = this.currentThreadId ? `/t/${this.currentThreadId}` : '/';
-					debugBeacon('checkVersion reloading', {
-						oldVersion: this.version,
-						newVersion,
-						currentThreadId: this.currentThreadId,
-						currentPathname: window.location.pathname,
-						targetPath: path
-					});
-					// Checked before navigating, not after: whether an href
-					// assignment updates window.location synchronously or
-					// only once the new document actually loads isn't
-					// consistent across environments (confirmed different
-					// between real browsers and jsdom), so branching on the
-					// current path up front is the only deterministic way
-					// to pick reload() vs. href — see this block's doc
-					// comment above for why the target must be explicit.
-					if (window.location.pathname === path) {
-						window.location.reload();
-					} else {
-						window.location.href = path;
-					}
-				}
-				return;
-			}
-			this.version = newVersion;
-		} catch (err) {
-			// Silently ignore - don't spam errors for version checks
-		}
+	checkVersion() {
+		return this.versionState.check();
 	}
 
 	toggleSidebar() {
@@ -621,129 +417,14 @@ export class AppState {
 		this.threads = (await res.json()) ?? [];
 	}
 
-	// Debounced, cancellable full-text search over past chat content
-	// (GET /api/threads/search) — called on every keystroke in the
-	// sidebar's search box, so both a client-side debounce (this doesn't
-	// fire a request per character) and the seq/AbortController guard
-	// (a slow response for an earlier keystroke can't clobber a faster
-	// one for a later keystroke) matter here, same reasoning as
-	// SearchState.search() in search.svelte.ts.
 	searchThreads(query: string) {
-		this.threadSearchQuery = query;
-		if (this.threadSearchDebounce !== null) clearTimeout(this.threadSearchDebounce);
-
-		const trimmed = query.trim();
-		if (!trimmed) {
-			this.threadSearchController?.abort();
-			this.threadSearchResults = [];
-			this.threadSearchLoading = false;
-			return;
-		}
-
-		this.threadSearchLoading = true;
-		this.threadSearchDebounce = setTimeout(() => void this.runThreadSearch(trimmed), 250);
+		this.threadSearch.search(query);
 	}
 
-	private async runThreadSearch(query: string) {
-		this.threadSearchController?.abort();
-		const controller = new AbortController();
-		this.threadSearchController = controller;
-		const seq = ++this.threadSearchSeq;
-
-		try {
-			const res = await fetch(`/api/threads/search?q=${encodeURIComponent(query)}`, {
-				signal: controller.signal
-			});
-			if (seq !== this.threadSearchSeq) return; // superseded by a newer keystroke
-			this.threadSearchResults = res.ok ? ((await res.json()) ?? []) : [];
-		} catch {
-			if (seq !== this.threadSearchSeq) return; // includes our own abort() above
-			this.threadSearchResults = [];
-		} finally {
-			if (seq === this.threadSearchSeq) this.threadSearchLoading = false;
-		}
-	}
-
-	// Clears the search box back to the plain recency-ordered thread list —
-	// called by the box's own clear button and when a result is clicked
-	// (opening a thread shouldn't leave a stale search sitting above it).
 	clearThreadSearch() {
-		if (this.threadSearchDebounce !== null) clearTimeout(this.threadSearchDebounce);
-		this.threadSearchController?.abort();
-		this.threadSearchQuery = '';
-		this.threadSearchResults = [];
-		this.threadSearchLoading = false;
-		++this.threadSearchSeq;
+		this.threadSearch.clear();
 	}
 
-	// Shared by openThread and swapVariant — both end up with the exact
-	// same GetThread response shape (see gateway/threads.go's
-	// handleGetThread/handleSwapVariant) and need to turn it into the same
-	// ChatTurn[]/suggestions/variants state, just triggered differently
-	// (navigating to a thread vs. browsing to a different reply within
-	// the one already open).
-	private async fetchEventsByTurn(id: string): Promise<Map<string, StoredEvent[]>> {
-		const eventsByTurn = new Map<string, StoredEvent[]>();
-		const eventsRes = await fetch(`/api/threads/${id}/events`);
-		if (eventsRes.ok) {
-			const events: StoredEvent[] = (await eventsRes.json()) ?? [];
-			for (const evt of events) {
-				if (!evt.turn_id) continue;
-				const group = eventsByTurn.get(evt.turn_id);
-				if (group) group.push(evt);
-				else eventsByTurn.set(evt.turn_id, [evt]);
-			}
-		}
-		return eventsByTurn;
-	}
-
-	private buildTurnsFromMessages(messages: any[], eventsByTurn: Map<string, StoredEvent[]>): ChatTurn[] {
-		return messages.map((m: any) => {
-			const verification = m.verification ? safeParseJSON<VerificationMark>(m.verification) : undefined;
-			return {
-				role: m.role,
-				content: m.content,
-				citations: applyVerification(safeParseJSON<Citation>(m.citations), verification),
-				verification,
-				cards: safeParseJSON<Card>(m.cards),
-				chart: m.chart ? (safeParseObject(m.chart) as unknown as ChartSpec) : undefined,
-				pendingQuestion: m.pending_question ? (safeParseObject(m.pending_question) as PendingQuestion) : undefined,
-				costUsd: m.cost_usd,
-				durationMs: m.duration_ms || undefined,
-				// Oracle mode — oracle_result is JSON-encoded gateway.OracleResult
-				// (see store.Message.OracleResult), same double-encoded shape as
-				// chart/pending_question above. "" for Oracle off/unconfigured.
-				oracleResult: m.oracle_result
-					? (safeParseObject(m.oracle_result) as unknown as OracleResult)
-					: undefined,
-				oracleFocusModeSource: m.focus_mode_source || undefined,
-				costAnswer: m.cost_answer_usd,
-				costVerification: m.cost_verification_usd,
-				costOracle: m.cost_oracle_usd,
-				promptTokens: m.prompt_tokens || undefined,
-				cacheReadTokens: m.cache_read_tokens || undefined,
-				completionTokens: m.completion_tokens || undefined,
-				toolCallCount: m.tool_call_count || undefined,
-				ttftMs: m.ttft_ms || undefined,
-				tokensPerSecond: m.tokens_per_second || undefined,
-				appliedFocusMode: m.applied_focus_mode,
-				appliedModel: m.applied_model,
-				// Both roles now carry their real DB id — see ChatTurn.id's doc
-				// comment (assistant turns need it too, for read-aloud's
-				// persisted-audio attachment; this used to be user-only before
-				// that existed).
-				id: m.id,
-				ttsAudioFile: m.tts_audio_file_id
-					? `/api/workspace/${this.currentThreadId}/${m.tts_audio_file_id}`
-					: undefined,
-				attachments: safeParseJSON<MessageAttachment>(m.attachments),
-				timeline:
-					m.role === 'assistant' && m.turn_id && eventsByTurn.has(m.turn_id)
-						? buildTimelineFromEvents(eventsByTurn.get(m.turn_id)!)
-						: undefined
-			};
-		});
-	}
 
 	async openThread(id: string) {
 		const seq = ++this.openThreadSeq;
@@ -761,7 +442,7 @@ export class AppState {
 		let res: Response;
 		let eventsByTurn: Map<string, StoredEvent[]>;
 		try {
-			[res, eventsByTurn] = await Promise.all([fetch(`/api/threads/${id}`), this.fetchEventsByTurn(id)]);
+			[res, eventsByTurn] = await Promise.all([fetch(`/api/threads/${id}`), fetchEventsByTurn(id)]);
 		} catch {
 			// Network failure (e.g. the brief window right as a restart's
 			// old process goes away and the new one isn't answering yet) —
@@ -836,7 +517,7 @@ export class AppState {
 		// otherwise reopening a thread shows only the bare final answer,
 		// with everything that led up to it gone. Older messages predating
 		// this feature have turn_id "" and simply get no timeline back.
-		let turns = this.buildTurnsFromMessages(messages, eventsByTurn);
+		let turns = buildTurnsFromMessages(messages, eventsByTurn, this.currentThreadId);
 
 		// A turn is still streaming for this exact thread — the user
 		// navigated away mid-generation and came back. The fetch above only
@@ -940,14 +621,14 @@ export class AppState {
 		});
 		if (!res.ok || id !== this.currentThreadId) return; // stale — navigated away mid-request
 		const data = await res.json();
-		const eventsByTurn = await this.fetchEventsByTurn(id);
+		const eventsByTurn = await fetchEventsByTurn(id);
 		this.totalCost = data.cost_usd ?? 0;
 		this.contextTokens = data.context_tokens ?? 0;
 		this.promptTokens = data.prompt_tokens ?? 0;
 		this.cacheReadTokens = data.cache_read_tokens ?? 0;
 		this.variants = data.variants ?? {};
 		const messages = data.messages ?? [];
-		this.turns = this.buildTurnsFromMessages(messages, eventsByTurn);
+		this.turns = buildTurnsFromMessages(messages, eventsByTurn, this.currentThreadId);
 		const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant');
 		this.suggestions = lastAssistant ? safeParseJSON<string>(lastAssistant.suggestions) : [];
 	}
