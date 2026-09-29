@@ -1,8 +1,10 @@
 <script lang="ts">
 	// Oracle mode's "reading" choreography (docs/plans/oracle-mode.md) — one
 	// faint star per enabled check, lit in deterministic zig-zag order, then
-	// joined by a line, then folded away so ChatTurnView.svelte can swap in
-	// the margin note in its place. Ported from mockups/oracle-mode.html's
+	// joined by a line, where it holds fully lit — its stars shimmering slowly,
+	// see the .const.built rule in the stylesheet — until the turn's first real
+	// output folds it away so ChatTurnView.svelte can swap in the margin note in
+	// its place. Ported from mockups/oracle-mode.html's
 	// `buildConstellation`/`play` — same star-position formula and timing,
 	// just driven by Svelte state instead of direct DOM/innerHTML calls.
 	// Self-contained (own timers, own fold-out) rather than living inline in
@@ -10,12 +12,14 @@
 	// ConstellationUsageModal.svelte being its own file.
 	let {
 		checkCount,
-		// Flips true the instant the turn's first real tool call streams in
-		// — Oracle's own "reading" moment shouldn't visibly block the turn
-		// that's already underway, so this cuts the choreography short
-		// (skip straight to fully-lit + folded) instead of playing out its
-		// full ~1s regardless. See the mockup's own comment: "cut short if
-		// the first tool call arrives".
+		// Flips true the instant the turn's first real output streams in (a
+		// tool call, a reasoning step, or the first answer token) — Oracle's
+		// own "reading" moment shouldn't visibly block the turn that's
+		// already underway, so this cuts the choreography short (skip straight
+		// to fully-lit + folded) instead of holding longer. See the mockup's
+		// own comment: "cut short if the first tool call arrives". This is
+		// deliberately the *only* thing that ends the animation — see the
+		// hold note in the playback $effect below.
 		cutShort = false,
 		// Fires once, when the constellation finishes folding (naturally or
 		// via cutShort) — ChatTurnView uses this to swap this component out
@@ -86,7 +90,13 @@
 		at(lineAt, () => {
 			lineDrawn = true;
 		});
-		at(lineAt + 650, fold);
+		// No natural fold timer on purpose: once fully lit, the constellation
+		// holds in place until the turn's first real output arrives (cutShort
+		// above), rather than folding away ~650ms after the line draws. Oracle
+		// usually resolves several seconds before the model emits its first
+		// token, so folding on a timer left a bare margin note (or empty space)
+		// during that wait — the "reading" animation is the nicest thing on
+		// screen then, so it stays until there's real output to show instead.
 		return clearTimers;
 	});
 
@@ -103,6 +113,7 @@
 	class="const"
 	class:visible
 	class:folded
+	class:built={lineDrawn}
 	viewBox="0 0 {width} {height}"
 	preserveAspectRatio="xMinYMid meet"
 >
@@ -114,7 +125,17 @@
 		stroke-dashoffset={lineDrawn ? '0' : '1'}
 	/>
 	{#each stars as star, i (i)}
-		<circle class="star" class:lit={i < litCount} cx={star.x} cy={star.y} r={star.r} />
+		<!-- --i drives the built-state shimmer's per-star phase below; stars
+		     are emitted left to right, so the highlight reads as one soft wave
+		     travelling along the asterism. -->
+		<circle
+			class="star"
+			class:lit={i < litCount}
+			cx={star.x}
+			cy={star.y}
+			r={star.r}
+			style="--i: {i}"
+		/>
 	{/each}
 </svg>
 
@@ -151,5 +172,38 @@
 	}
 	.star.lit {
 		fill: var(--color-accent);
+	}
+
+	/* The svg can sit here fully built for several seconds after Oracle
+	   resolves but before the model emits its first token — see the hold note
+	   in the playback $effect. Rather than a frozen frame during that dead
+	   time, once built the stars themselves shimmer: a soft accent highlight
+	   travels point to point, matching the composer Oracle trigger's glow
+	   (ComposerMenu.svelte's .trigger.oracle.reading::after) in colour and
+	   feel, but painted on the points instead of a band sweeping over them
+	   (which read as a block drawn on top of the constellation). Each star
+	   pulses between its lit accent and a brighter tint, phase-offset by --i
+	   so the bright crest moves left to right; 0.2s x ~17 checks ~= the 3.4s
+	   cycle, roughly one wave per pass. Only the points animate — the joining
+	   line stays a quiet constant backdrop. */
+	.const.built .star.lit {
+		animation: star-shimmer 3.4s ease-in-out infinite;
+		animation-delay: calc(var(--i, 0) * -0.2s);
+	}
+
+	@keyframes star-shimmer {
+		0%,
+		100% {
+			fill: var(--color-accent);
+		}
+		50% {
+			fill: color-mix(in srgb, var(--color-accent) 55%, white);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.const.built .star.lit {
+			animation: none;
+		}
 	}
 </style>
