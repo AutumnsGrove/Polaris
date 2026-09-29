@@ -26,6 +26,7 @@
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
+	import NightSky from '$lib/components/NightSky.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import type { ChatTurn, FocusMode } from '$lib/types';
@@ -673,6 +674,7 @@
 	     empty screen. Switches to the normal scrolling-history layout the
 	     instant the first message is sent. -->
 	<div class="welcome">
+		<NightSky />
 		{#if isWeaverThread}
 			<h1 class="welcome-heading">Talk to <span class="wordmark">Weaver</span></h1>
 			<p class="subtitle wordmark">

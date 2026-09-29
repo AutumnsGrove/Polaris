@@ -87,6 +87,8 @@ with citations.
 - **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
   (extra care with sources on a health question, say), with every change shown and undoable right
   on the reply.
+- **Night-sky start screen** — twinkling stars, a slow comet, and constellations that draw
+  themselves in at random clear spots and fade back out behind "Ask Polaris anything."
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
