@@ -1,0 +1,15 @@
+id: memory-edit-change-one-preference
+category: memory
+kind: memory_edit
+user_message: Actually I prefer answers in Celsius now, not Fahrenheit
+target_memory: feedback-answer-style
+memories:
+- name: feedback-answer-style
+  type: feedback
+  description: How they want answers written - concise, Fahrenheit, no emojis
+  content: |-
+    Keep answers concise and skip the preamble. Use Fahrenheit for temperatures. Never use emojis.
+    Why: they read on a phone and find long or decorated replies tiring.
+    How to apply: every answer, unless they ask for depth.
+must_contain_facts: [Celsius, concise, emoji, phone, How to apply]
+must_not_contain: [Fahrenheit]

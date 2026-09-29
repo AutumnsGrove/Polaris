@@ -1,0 +1,14 @@
+id: memory-edit-keeps-unrelated-details
+category: memory
+kind: memory_edit
+user_message: I moved from Portland to Denver
+target_memory: user-profile
+memories:
+- name: user-profile
+  type: user
+  description: Backend engineer in Portland who runs half marathons and uses a Framework laptop
+  content: |-
+    Backend engineer, mostly Go and SQLite. Lives in Portland, Oregon. Trains for half marathons
+    (goal: sub-1:45 in spring). Daily driver is a Framework 13 running Fedora.
+must_contain_facts: [Denver, Go, SQLite, half marathon, Framework, Fedora, 1:45]
+must_not_contain: [Portland]

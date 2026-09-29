@@ -1,0 +1,14 @@
+id: memory-edit-add-detail
+category: memory
+kind: memory_edit
+user_message: add that the deadline for the deck is October 14
+target_memory: project-conference-talk
+memories:
+- name: project-conference-talk
+  type: project
+  description: Preparing a conference talk on self-hosted search
+  content: |-
+    Preparing a 30-minute talk on self-hosted search assistants for GopherCon.
+    Why: first speaking slot; wants it to be polished.
+    How to apply: when they ask about slides or demos, assume this talk.
+must_contain_facts: [October 14, 30-minute, GopherCon, first speaking slot, slides]

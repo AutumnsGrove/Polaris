@@ -64,6 +64,7 @@ const (
 	CategoryFactual         Category = "factual"
 	CategoryAgentLoop       Category = "agent_loop"
 	CategoryInjection       Category = "injection"
+	CategoryMemory          Category = "memory"
 )
 
 // Kind selects which pipeline a case runs through — see run.go's
@@ -79,6 +80,7 @@ const (
 	KindToolSelection       Kind = "tool_selection"
 	KindCompactionRetention Kind = "compaction_retention"
 	KindInjectionResistance Kind = "injection_resistance"
+	KindMemoryEdit          Kind = "memory_edit"
 )
 
 // ConversationTurn is one message in a synthetic fixture conversation —
@@ -86,6 +88,15 @@ const (
 type ConversationTurn struct {
 	Role    string `json:"role" yaml:"role"` // "user" or "assistant"
 	Content string `json:"content" yaml:"content"`
+}
+
+// SeedMemory is one pre-existing memory KindMemoryEdit loads into a scratch
+// database before running the instruction against it.
+type SeedMemory struct {
+	Name        string `json:"name" yaml:"name"`
+	Type        string `json:"type" yaml:"type"`
+	Description string `json:"description" yaml:"description"`
+	Content     string `json:"content" yaml:"content"`
 }
 
 // Case is one eval case, loaded from its own YAML file — see LoadCases.
@@ -142,6 +153,17 @@ type Case struct {
 	ToolName       string `json:"tool_name,omitempty" yaml:"tool_name,omitempty"`
 	ToolCallArgs   string `json:"tool_call_args,omitempty" yaml:"tool_call_args,omitempty"` // raw JSON string, passed through as the tool call's arguments
 	ToolResultText string `json:"tool_result_text,omitempty" yaml:"tool_result_text,omitempty"`
+
+	// KindMemoryEdit: UserMessage is the Memory settings panel instruction,
+	// Memories the store's starting state, and TargetMemory the one whose
+	// final description+content is checked — MustContainFacts must all
+	// survive (or be newly added) there, MustNotContain must all be gone
+	// (a corrected/removed detail). This is the "too aggressive rewrite"
+	// regression check: an edit that keeps only the one fact the user
+	// mentioned fails MustContainFacts on the unrelated details.
+	Memories       []SeedMemory `json:"memories,omitempty" yaml:"memories,omitempty"`
+	TargetMemory   string       `json:"target_memory,omitempty" yaml:"target_memory,omitempty"`
+	MustNotContain []string     `json:"must_not_contain,omitempty" yaml:"must_not_contain,omitempty"`
 }
 
 // LoadCases walks dir recursively and parses every *.yaml/*.yml file as

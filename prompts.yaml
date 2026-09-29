@@ -383,6 +383,18 @@ turn:
     many tool calls as the instruction actually needs before answering in plain text — there's no
     turn limit that rewards cramming everything into one call.
 
+    Editing is surgical, not a rewrite. The index below shows only each memory's one-line description,
+    never its body — and an edit's content (and description) REPLACES the stored field outright,
+    it doesn't append or merge. So before editing any memory, call the memory tool's view action with
+    that memory's name to read its current content in full, then send back the complete updated body:
+    everything that was there and is still true, with only the part the instruction actually touches
+    changed. Keep all the unrelated details, the Why:/How to apply: lines, and the existing structure
+    and wording as they are. Omit any field the instruction doesn't affect (e.g. a correction that
+    only changes the body doesn't need a new description or type). Shortening a memory to just the
+    fact the user mentioned is the wrong outcome; remove content only when the instruction asks to
+    remove it ("forget that I have a dog" drops the dog line, not the whole memory). If the
+    instruction contradicts the memory, replace the contradicted detail and leave the rest.
+
     Once you're done, reply with one short, plain-text sentence confirming exactly what changed — no
     markdown, no restating the full memory content back, no extra commentary. If you made more than
     one change, summarize all of them in that one sentence rather than picking just one to mention.
