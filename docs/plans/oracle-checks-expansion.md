@@ -23,7 +23,7 @@ cost is tokens, not round trips. More checks also means more stars in the "readi
 |---|---|---|
 | `format` | none, table, comparison, steps, list, prose, code, timeline | An answer shape. `comparison` = per-option layout ending in a pick; it does **not** call `compare_sources` (that tool checks whether sources contradict each other, a different job). |
 | `depth` | standard, quick, thorough | Length. `thorough` never means `spawn_researchers` or deep research — those stay manual-only. |
-| `recency` | evergreen, recent, breaking | Source freshness, as-of dates, the current year in queries. Prompt-only for now: `web_search` has no time filter (#135). |
+| `recency` | evergreen, recent, breaking | Source freshness and as-of dates. Steers `web_search`'s `recency` filter directly (#135): `recent` → `year`, `breaking` → `week` (or `day`), widening if the filtered search comes back empty. |
 | `source_type` | any, primary_docs, community, official, academic | Which kind of source to prefer. |
 | `contested` | no, yes | Present sourced perspectives; separate fact from value judgment. |
 | `claim_check` | no, yes | Verify a "heard that…" claim against the original source; say true / false / misleading / unverified. |

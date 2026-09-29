@@ -1019,8 +1019,8 @@ Name: <a short block title, at most four words>
 				"breaking":  "Something happening now or in the last few days — news, live events, scores, outages.",
 			},
 			Inject: map[string]string{
-				"recent":   "Freshness matters here. Prefer sources from the past year, include the current year in your search queries, check the date on what you cite, and state an \"as of\" date for anything that could have changed since.",
-				"breaking": "This is time-sensitive. Prefer the most recent coverage and the primary source of record, include the current year (and month, if useful) in your queries, and lead with what is confirmed as of now versus still developing. Say plainly how fresh your newest source is.",
+				"recent":   "Freshness matters here. Search with web_search's recency set to \"year\" (widen or drop it if that comes back empty), check the date on what you cite, and state an \"as of\" date for anything that could have changed since.",
+				"breaking": "This is time-sensitive. Search with web_search's recency set to \"week\" (or \"day\" if it is about today; widen it if that comes back empty), prefer the most recent coverage and the primary source of record, and lead with what is confirmed as of now versus still developing. Say plainly how fresh your newest source is.",
 			},
 		},
 		"source_type": {
