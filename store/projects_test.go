@@ -179,3 +179,131 @@ func TestProject_MigrationAddsColumnToExistingDB(t *testing.T) {
 		t.Fatalf("project_id column missing after migration: %v", err)
 	}
 }
+
+func searchHits(t *testing.T, s *Store, q string) map[string]bool {
+	t.Helper()
+	res, err := s.SearchMessages(q, 20)
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, r := range res {
+		ids[r.ThreadID] = true
+	}
+	return ids
+}
+
+// The exclusion is joined at query time, so it must follow a project's
+// setting and a thread's membership live — and hold for an edited thread
+// whose real content sits in a hidden fork (which carries no project_id).
+func TestProject_ExcludeFromChatSearch(t *testing.T) {
+	s := openTestStore(t)
+	private, _ := s.CreateProject(Project{Name: "private", ExcludeFromChatSearch: true})
+	open, _ := s.CreateProject(Project{Name: "open"})
+
+	mk := func(id string, project *string) {
+		t.Helper()
+		if err := s.CreateThread(id, id, "m", "web"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.AddMessage(id, "user", "quetzalcoatl migration notes", "[]", "[]", 0, ""); err != nil {
+			t.Fatal(err)
+		}
+		if project != nil {
+			if err := s.SetThreadProject(id, project); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	mk("in-private", &private.ID)
+	mk("in-open", &open.ID)
+	mk("ungrouped", nil)
+
+	hits := searchHits(t, s, "quetzalcoatl")
+	if hits["in-private"] || !hits["in-open"] || !hits["ungrouped"] {
+		t.Errorf("hits = %v, want everything except the excluded project's thread", hits)
+	}
+
+	// Edited thread: content now lives in a fork variant with no project_id.
+	fork, err := s.ForkThread("in-private", "in-private", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddMessage(fork, "user", "quetzalcoatl revised", "[]", "[]", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetActiveVariant("in-private", fork); err != nil {
+		t.Fatal(err)
+	}
+	if searchHits(t, s, "quetzalcoatl")["in-private"] {
+		t.Error("an edited thread leaked out of an excluded project via its hidden fork")
+	}
+
+	// Live follow-through: flip the setting off, then move the thread out.
+	off := false
+	if _, err := s.UpdateProject(private.ID, ProjectUpdate{ExcludeFromChatSearch: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if !searchHits(t, s, "quetzalcoatl")["in-private"] {
+		t.Error("turning the exclusion off didn't restore the thread to search")
+	}
+}
+
+func TestProject_ConstellationVisibility(t *testing.T) {
+	s := openTestStore(t)
+	hidden, _ := s.CreateProject(Project{Name: "hidden", ConstellationVisible: false})
+	shown, _ := s.CreateProject(Project{Name: "shown", ConstellationVisible: true})
+
+	idle := func(id string) {
+		t.Helper()
+		if _, err := s.db.Exec(`UPDATE messages SET created_at = datetime('now', '-2 hours') WHERE thread_id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inHidden, inShown, ungrouped := seedThread(t, s), seedThread(t, s), seedThread(t, s)
+	for _, id := range []string{inHidden, inShown, ungrouped} {
+		idle(id)
+	}
+	if err := s.SetThreadProject(inHidden, &hidden.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetThreadProject(inShown, &shown.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	eligible := func() map[string]bool {
+		t.Helper()
+		ids, err := s.EligibleConstellationThreads(60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]bool{}
+		for _, id := range ids {
+			m[id] = true
+		}
+		return m
+	}
+	got := eligible()
+	if got[inHidden] || !got[inShown] || !got[ungrouped] {
+		t.Errorf("eligible = %v, want everything except the opted-out project's thread", got)
+	}
+
+	// Backfill goes through the same query, so it inherits the opt-out.
+	bf, err := s.EligibleConstellationThreadsForBackfill(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range bf {
+		if id == inHidden {
+			t.Error("backfill included a thread from a Constellation-hidden project")
+		}
+	}
+
+	// No stale mirror: moving the thread out of the project re-admits it.
+	if err := s.SetThreadProject(inHidden, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !eligible()[inHidden] {
+		t.Error("a thread moved out of the hidden project stayed excluded")
+	}
+}

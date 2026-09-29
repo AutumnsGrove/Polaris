@@ -77,6 +77,19 @@ type ProjectUpdate struct {
 // carry a project_id in the first place).
 const liveThreadFilter = `disabled = 0 AND fork_root_id = '' AND ghost = 0`
 
+// notInProjectWhere builds a "this thread's project has NOT opted out" SQL
+// condition — the shared shape of the chat-search exclusion and the
+// Constellation-visibility gate, both of which are an unconditional skip
+// joined through project_id at query time rather than a flag mirrored onto
+// every thread row (a mirrored copy would go stale the moment a project's
+// setting or a thread's membership changed). A NULL project_id has no
+// matching project row, so NOT EXISTS is true and an ungrouped thread is
+// unaffected. projectIDExpr and optOut are compile-time SQL fragments from
+// this package's own call sites, never user input.
+func notInProjectWhere(projectIDExpr, optOut string) string {
+	return `NOT EXISTS (SELECT 1 FROM projects px WHERE px.id = ` + projectIDExpr + ` AND px.` + optOut + `)`
+}
+
 // projectColumns/scanProject keep GetProject and ListProjects reading the
 // same column list in the same order — a drifted pair of hand-written
 // SELECTs is exactly the kind of bug a positional Scan hides until runtime.
@@ -261,7 +274,10 @@ func (s *Store) SetThreadProject(threadID string, projectID *string) error {
 			return fmt.Errorf("set thread project: %w", err)
 		}
 	}
-	res, err := s.db.Exec(`UPDATE threads SET project_id = ? WHERE id = ? AND `+liveThreadFilter, projectID, threadID)
+	// Not liveThreadFilter: a brand-new thread is bound right after creation
+	// and must not depend on ghost/variant state, and a hidden fork variant
+	// is never a legitimate target anyway (fork_root_id = '' keeps that).
+	res, err := s.db.Exec(`UPDATE threads SET project_id = ? WHERE id = ? AND disabled = 0 AND fork_root_id = ''`, projectID, threadID)
 	if err != nil {
 		return fmt.Errorf("set thread project: %w", err)
 	}

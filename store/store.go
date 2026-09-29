@@ -2379,6 +2379,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		   AND root.source != 'pulsar'
 		   AND root.source != 'weaver'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
+		   AND `+notInProjectWhere(`root.project_id`, `exclude_from_chat_search = 1`)+`
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,
 	)

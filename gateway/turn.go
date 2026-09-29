@@ -183,7 +183,44 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		noteGhostThread(threadID)
 	}
 
+	// project is the one lookup everything project-shaped below reads: the
+	// instructions block, the memory-mode gate, the default-model fallback.
+	// A ghost turn never has one — same "no persisted-store reads leaking
+	// into an incognito session" rule as the global custom instructions and
+	// memory below. For a brand-new thread the project comes from the
+	// message and is validated HERE, before a thread row exists, so a stale
+	// picker (project deleted since the page loaded) errors cleanly instead
+	// of leaving an orphan thread behind — same reasoning as the pulse
+	// linking below, just checked earlier.
+	var project *store.Project
+	if !ghost {
+		switch {
+		case isNewThread && msg.ProjectID != "":
+			p, err := s.db.GetProject(msg.ProjectID)
+			if err != nil {
+				send(ServerEvent{Type: "error", Message: "That project no longer exists."})
+				return
+			}
+			project = p
+		case projectID != "":
+			if p, err := s.db.GetProject(projectID); err == nil {
+				project = p
+			}
+		}
+	}
+	projectID = ""
+	if project != nil {
+		projectID = project.ID
+	}
+
 	requestedModel := msg.Model
+	if requestedModel == "" && project != nil && project.DefaultModel != "" {
+		// Only when the client named no model at all (a bare API caller —
+		// the web composer always sends its own, seeded from the project's
+		// default by the frontend): a project's default_model is a standing
+		// default like the global one, not an override of an explicit choice.
+		requestedModel = project.DefaultModel
+	}
 	if requestedModel == "" {
 		requestedModel = s.effectiveDefaultModel(cfg)
 	}
@@ -239,6 +276,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			logEvent(threadID, "error", "turn", "creating thread failed", map[string]interface{}{"err": err.Error()}, turnID)
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
+		}
+		if project != nil {
+			// Hard failure, same as the pulse link below: a thread that was
+			// meant to be in a project but silently isn't would run this very
+			// turn without the project's instructions/mount and then sit
+			// ungrouped forever, with no repair path.
+			if err := s.db.SetThreadProject(threadID, &project.ID); err != nil {
+				logEvent(threadID, "error", "turn", "linking thread to project failed", map[string]interface{}{"err": err.Error()}, turnID)
+				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
+				return
+			}
 		}
 		if msg.PulsarRoutineID != 0 {
 			// A hard failure here, not a log-and-continue: an unlinked
@@ -668,7 +716,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		ProjectID: projectID,
 	}
 	if !ghost {
-		agentCtx.CustomInstructions = CustomInstructionsFromStore(s.db)
+		agentCtx.CustomInstructions = joinCustomInstructions(
+			CustomInstructionsFromStore(s.db),
+			projectPromptBlock(project, listProjectFiles(cfg.CodeExec.WorkspaceDir, projectID)),
+		)
 		agentCtx.PersonName = PersonNameFromStore(s.db)
 		agentCtx.PersonPronouns = PersonPronounsFromStore(s.db)
 		agentCtx.SearchThreads = s.db.SearchMessages
@@ -731,7 +782,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// these nil is what actually makes the memory tool AND the {memories}
 	// prompt section disappear, not just a tool call that would fail if
 	// attempted.
-	if !ghost && MemoryEnabledFromStore(s.db) {
+	// A project's memory_mode = "none" extends the same condition — the exact
+	// mechanism ghost threads already use for "no memory tool", so there's no
+	// new plumbing in agent/ or tools/ (docs/plans/projects.md, "Memory mode").
+	if !ghost && MemoryEnabledFromStore(s.db) && (project == nil || project.MemoryMode != store.ProjectMemoryNone) {
 		agentCtx.ListMemories = s.db.ListMemories
 		agentCtx.GetMemory = s.db.GetMemory
 		agentCtx.WriteMemory = s.db.CreateMemory
