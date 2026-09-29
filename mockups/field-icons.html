@@ -101,8 +101,8 @@
   <span class="note">Four open corners, the way Lucide draws scan and focus icons. Same stars, no closed edge.</span>
 </button><button class="card" data-id="df3" type="button">
   <span class="glyphs"><span class="g48"><svg width="48" height="48" aria-hidden="true"><use href="#i-df3"/></svg></span><span class="g24"><svg width="24" height="24" aria-hidden="true"><use href="#i-df3"/></svg></span><span class="g16"><svg width="16" height="16" aria-hidden="true"><use href="#i-df3"/></svg></span><span class="g11"><svg width="11" height="11" aria-hidden="true"><use href="#i-df3"/></svg></span></span>
-  <span class="name">Two Corners</span>
-  <span class="note">Only top-left and bottom-right corners. Lighter than four, still implies a framed patch.</span>
+  <span class="name">Two Corners (chosen)</span>
+  <span class="note">Only top-left and bottom-right corners. Lighter than four, still implies a framed patch. Shipped as the Fields icon.</span>
 </button><button class="card" data-id="df4" type="button">
   <span class="glyphs"><span class="g48"><svg width="48" height="48" aria-hidden="true"><use href="#i-df4"/></svg></span><span class="g24"><svg width="24" height="24" aria-hidden="true"><use href="#i-df4"/></svg></span><span class="g16"><svg width="16" height="16" aria-hidden="true"><use href="#i-df4"/></svg></span><span class="g11"><svg width="11" height="11" aria-hidden="true"><use href="#i-df4"/></svg></span></span>
   <span class="name">Open Cluster</span>
@@ -196,7 +196,7 @@
     const c = e.target.closest('.card'); if (c) pick(c.dataset.id);
   });
   const start = (location.hash || '').slice(1);
-  pick(names[start] ? start : 'df2');
+  pick(names[start] ? start : 'df3');
 </script>
 </body>
 </html>
