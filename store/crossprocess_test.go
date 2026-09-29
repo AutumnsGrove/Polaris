@@ -259,15 +259,29 @@ func TestCrossProcessCloseRace(t *testing.T) {
 					atomic.AddInt32(&newProcWrites, 1)
 				}
 				i++
+				// Live traffic is requests, not back-to-back commits. With no
+				// gap this loop re-takes the write lock the instant it frees
+				// it, and SQLite's busy handler is a polling backoff (1, 2,
+				// 5, 10... ms), not a queue — so oldProc's writes starved for
+				// the entire 5s _busy_timeout and failed. That says something
+				// about a zero-gap writer, not about the store, and made this
+				// test flaky (seen as "failed after 5.01s" on writes 1-4).
+				// The gap keeps the contention heavy while letting a polling
+				// writer actually win a turn.
+				time.Sleep(2 * time.Millisecond)
 			}
 		}()
 
 		// oldProc is mid-drain: a few more writes, then Close() — exactly
 		// like cmd/run.go finishing WaitForActiveTurns and returning,
 		// racing against newProc's live traffic above.
+		oldWrites := 0
 		for i := 0; i < 5; i++ {
+			started := time.Now()
 			if _, err := oldProc.AddMessage("t1", "assistant", fmt.Sprintf("old-%d", i), "[]", "[]", 0, ""); err != nil {
-				t.Errorf("iter %d: oldProc.AddMessage: %v", iter, err)
+				t.Errorf("iter %d: oldProc.AddMessage (write %d, failed after %v): %v", iter, i, time.Since(started).Round(time.Millisecond), err)
+			} else {
+				oldWrites++
 			}
 		}
 		if err := oldProc.Close(); err != nil {
@@ -286,7 +300,11 @@ func TestCrossProcessCloseRace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iter %d: newProc.GetMessages: %v", iter, err)
 		}
-		wantAtLeast := int(writes) + 5 // newProc's successful writes + oldProc's 5
+		// Only writes that actually succeeded can be expected to be there: an
+		// errored oldProc write is already reported above, and counting it
+		// here too used to make every such failure look like a second,
+		// "lost write" one (the shortfall was always exactly one per error).
+		wantAtLeast := int(writes) + oldWrites
 		if len(msgs) < wantAtLeast {
 			t.Errorf("iter %d: newProc sees %d messages, want at least %d (writes=%d errs=%d) — a write reported success but is missing, right around oldProc.Close()", iter, len(msgs), wantAtLeast, writes, errs)
 		}

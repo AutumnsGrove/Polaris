@@ -52,6 +52,9 @@ export interface OracleCheckOutcome {
 	// check with no inject map (focus) or one whose fired option/focus
 	// combination has nothing to inject.
 	nudge?: string;
+	// Cleared its own bar but another fired check held its nudge back —
+	// see gateway/oracle.go's CheckOutcome.Suppressed. fired is false then.
+	suppressed?: boolean;
 }
 
 // Mirrors gateway/oracle.go's Chip — one offer surfaced under a reply
@@ -59,6 +62,9 @@ export interface OracleCheckOutcome {
 export interface OracleChip {
 	key: string;
 	label?: string;
+	// Only for key === 'field': the Field to move the thread into. Carried
+	// separately from label because Field names aren't unique.
+	field_id?: string;
 }
 
 // Mirrors gateway/oracle.go's OracleResult 1:1 — RunOracle's whole verdict

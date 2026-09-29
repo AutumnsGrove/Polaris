@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
+	"polaris/store"
 )
 
 // oracleTimeout bounds RunOracle's own Jev call independently of
@@ -25,6 +27,16 @@ const oracleTimeout = 2500 * time.Millisecond
 // document must not inflate cost/latency or leak wholesale to a classifier
 // that can't use it. Same shape as pulsarSuggestMaxPerMessage.
 const oracleMaxMessageRunes = 2000
+
+// oracleURLPattern finds pasted links for the has_url detector. Trailing
+// punctuation is trimmed by the character class rather than after the
+// fact: a link closing a sentence or sitting in parentheses is still just
+// a link, and only whether one exists matters here, not its exact extent.
+var oracleURLPattern = regexp.MustCompile(`https?://[^\s<>"'\)\]]+`)
+
+// oracleSafariChip is the offer chip whose whole purpose is to start a
+// Safari-focus thread, so it is pointless once the turn is already in one.
+const oracleSafariChip = "safari"
 
 // jevAskChoicer is the one jev.Client method RunOracle needs — a seam so
 // tests can inject a stub instead of a live *jev.Client, same spirit as
@@ -64,6 +76,12 @@ type OracleInput struct {
 	// nil map (no fields, or the thread is already in one) skips the
 	// chip check entirely rather than asking Jev to choose among nothing.
 	FieldOptions map[string]string
+	// FieldIDs maps each option name in FieldOptions back to its field's
+	// id. Jev answers with a name (its Criteria keys), but moving a thread
+	// needs the id, and names aren't unique — see OracleFieldOptions. A
+	// chip whose winner has no entry here is dropped rather than offered
+	// with nothing to move to.
+	FieldIDs map[string]string
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -88,6 +106,12 @@ type CheckOutcome struct {
 	// since the turn-info sheet needs to show which nudge came from which
 	// check, not just the combined prompt text.
 	Nudge string `json:"nudge,omitempty"`
+	// Suppressed means the check cleared its own bar but another fired check
+	// (see config.OracleCheckRules.Suppresses) held its nudge back. Fired is
+	// false in that case — nothing was injected — so the info sheet needs
+	// this flag to say "held back" rather than a bare, confusing "Quiet"
+	// next to a high-confidence winner.
+	Suppressed bool `json:"suppressed,omitempty"`
 }
 
 // Chip is one offer surfaced under the reply — the frontend maps Key to
@@ -95,6 +119,8 @@ type CheckOutcome struct {
 type Chip struct {
 	Key   string `json:"key"`
 	Label string `json:"label,omitempty"` // the field name, only for Key=="field"
+	// FieldID is the field to move the thread into, only for Key=="field".
+	FieldID string `json:"field_id,omitempty"`
 }
 
 // OracleResult is RunOracle's whole verdict. It has no side effects —
@@ -253,6 +279,21 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		}
 	}
 
+	// suppressed is resolved before the loop for the same reason
+	// highStakesOption is: answers are walked in sorted key order, and a
+	// check can be held back by one that sorts after it (depth by
+	// emotional).
+	suppressed := map[string]bool{}
+	for key, rule := range rules.Checks {
+		ans, ok := resp.Answers[key]
+		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) {
+			continue
+		}
+		for _, held := range rule.Suppresses {
+			suppressed[held] = true
+		}
+	}
+
 	keys := make([]string, 0, len(resp.Answers))
 	for k := range resp.Answers {
 		keys = append(keys, k)
@@ -270,12 +311,20 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			if !ok {
 				continue
 			}
+			// effectiveFocus (not ActiveFocusMode) so a Safari pick Oracle
+			// made this very turn also suppresses the offer.
+			if chipKey == oracleSafariChip && effectiveFocus == "safari" {
+				continue
+			}
 			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chipRule.Threshold {
-				label := ""
+				label, fieldID := "", ""
 				if chipKey == "field" {
 					label = ans.Choice
+					if fieldID = in.FieldIDs[ans.Choice]; fieldID == "" {
+						continue
+					}
 				}
-				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label})
+				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label, FieldID: fieldID})
 			}
 			continue
 		}
@@ -286,6 +335,10 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			continue
 		}
 		fired := ans.Probabilities[ans.Choice] >= rule.Threshold
+		if fired && suppressed[key] {
+			result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Suppressed: true})
+			continue
+		}
 		result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Fired: fired})
 		if !fired {
 			continue
@@ -303,12 +356,35 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		}
 	}
 
+	// has_url is a detector, not a Jev question: whether a message holds a
+	// link is a regex's job, and spending Jev's tight latency budget on it
+	// would be waste. It's still recorded as a check outcome so it gets a
+	// star in the constellation and a card in the turn-info sheet. Skipped
+	// under Safari for the same reason clarify is — Safari runs its own
+	// pacing and reads sources itself.
+	if effectiveFocus != "safari" && oracleURLPattern.MatchString(in.CurrentMessage) {
+		nudge := p.Oracle.LinkNudge
+		result.Checks = append(result.Checks, CheckOutcome{Key: "has_url", Winner: "yes", Probabilities: map[string]float64{"yes": 1}, Fired: true, Nudge: nudge})
+		result.Injections = append(result.Injections, nudge)
+	}
+
 	// Checks was appended focus-first then in sorted-key order — re-sort
 	// by key alone so the "why" sheet's listing is fully deterministic
 	// regardless of Jev's answer-map iteration order.
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
 	return result
+}
+
+// checkFired reports whether a yes/no-style check's winner is a real answer
+// that cleared its bar. "no"/"none" are the quiet options every check names
+// its default with, so winning one is not "firing" for suppression purposes
+// even at 100% — an emotional check answering "no" must not silence format.
+func checkFired(rule config.OracleCheckRules, ans jev.ChoiceAnswer) bool {
+	if ans.Choice == "no" || ans.Choice == "none" {
+		return false
+	}
+	return ans.Probabilities[ans.Choice] >= rule.Threshold
 }
 
 // resolveFocus applies the focus check's sticky/never-with-high-stakes/
@@ -399,6 +475,52 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 		out = append(out, extra)
 	}
 	return out
+}
+
+// oracleMaxFields caps how many Fields are offered to Jev as chip options.
+// Each becomes a criteria entry billed per input token and sent to a third
+// party, and past a couple dozen the classifier is choosing among near-
+// duplicates anyway. Fields come newest-touched first, so the cap keeps the
+// ones actually in use.
+const oracleMaxFields = 25
+
+// oracleMaxFieldDescRunes truncates each Field's description for the same
+// cost/leak reason as oracleMaxMessageRunes — the opening says what a Field
+// is for.
+const oracleMaxFieldDescRunes = 500
+
+// OracleFieldOptions turns the store's Fields into the field chip's option
+// set (name -> description, what Jev sees) plus the name -> id map RunOracle
+// needs to hand the frontend something it can actually move a thread into.
+//
+// Jev answers with a criteria key, and Field names aren't unique, so a
+// second Field reusing a name is left out rather than made ambiguous (the
+// newer-touched one wins). A Field literally named "none" is left out too:
+// it would overwrite the reserved "doesn't belong to any field" option. An
+// empty description gets a name-based stand-in, since a criteria entry with
+// no text gives Jev nothing to match against.
+func OracleFieldOptions(fields []store.Field) (options, ids map[string]string) {
+	options = make(map[string]string, len(fields))
+	ids = make(map[string]string, len(fields))
+	for _, f := range fields {
+		if len(options) >= oracleMaxFields {
+			break
+		}
+		name := strings.TrimSpace(f.Name)
+		if name == "" || name == "none" {
+			continue
+		}
+		if _, dup := options[name]; dup {
+			continue
+		}
+		desc := truncateRunes(strings.TrimSpace(f.Description), oracleMaxFieldDescRunes)
+		if desc == "" {
+			desc = "Conversations grouped under the Field named \"" + name + "\"."
+		}
+		options[name] = desc
+		ids[name] = f.ID
+	}
+	return options, ids
 }
 
 // optionKeys lists a question's option ids (its Criteria keys).

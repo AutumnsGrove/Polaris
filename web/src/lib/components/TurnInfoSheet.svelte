@@ -257,7 +257,7 @@
 						{#if check}
 							<div>
 								<span>{display.name}</span>
-								<span>{optionLabel(display.key, check.winner)} · {Math.round((check.probabilities[check.winner] ?? 0) * 100)}%</span>
+								<span>{optionLabel(display.key, check.winner)} · {Math.round((check.probabilities[check.winner] ?? 0) * 100)}%{check.suppressed ? ' · held back' : ''}</span>
 							</div>
 						{/if}
 					{/each}

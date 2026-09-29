@@ -51,6 +51,13 @@ type OracleCheckRules struct {
 	// SkipOptionForFocus suppresses one option's injection under the
 	// listed focus modes (intent.product under shopper).
 	SkipOptionForFocus map[string][]string `yaml:"skip_option_for_focus,omitempty"`
+	// Suppresses lists other checks that stay quiet on any turn this one
+	// fires — the way emotional holds back format/depth/source_type: when
+	// someone is distressed, tone matters more than structure, and stacking
+	// "use a table, cite the agency" under "acknowledge them first" reads
+	// as a form letter. Only a *fired* answer suppresses; a check that
+	// merely ran and lost the bar leaves the others alone.
+	Suppresses []string `yaml:"suppresses,omitempty"`
 }
 
 // OnlyFirstMessage reports FirstMessageOnly with nil meaning false.
@@ -87,10 +94,28 @@ func DefaultOracle() OracleConfig {
 			// Safari's Embark step already asks its own clarifying question.
 			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}},
 			"recall":  {Threshold: 0.80},
+			// Answer shape. Safari owns its own format; Brief is already short.
+			"format": {Threshold: 0.75, SkipForFocus: []string{"safari"}},
+			"depth":  {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
+			// Source and evidence guidance. Academic mode already carries its
+			// own source guidance.
+			"recency":     {Threshold: 0.75},
+			"source_type": {Threshold: 0.75, SkipOptionForFocus: map[string][]string{"academic": {"academic"}}},
+			"contested":   {Threshold: 0.80},
+			"claim_check": {Threshold: 0.80},
+			"locale":      {Threshold: 0.75},
+			// What the person is doing. First Principles and Socratic already
+			// teach the same way an "explain" nudge would ask for.
+			"task": {Threshold: 0.75, SkipForFocus: []string{"safari"}, SkipOptionForFocus: map[string][]string{"explain": {"first_principles", "socratic"}}},
+			// Sensitivity: wrongly firing these changes tone, so the bar is high.
+			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify"}},
+			"private_person": {Threshold: 0.85},
+			"premise":        {Threshold: 0.85},
 		},
 		Chips: map[string]OracleChipRules{
 			"pulsar": {Threshold: 0.80},
 			"daily":  {Threshold: 0.80},
+			"safari": {Threshold: 0.85},
 			"field":  {Threshold: 0.75},
 		},
 	}
@@ -137,6 +162,9 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		}
 		if rules.SkipOptionForFocus != nil {
 			base.SkipOptionForFocus = rules.SkipOptionForFocus
+		}
+		if rules.Suppresses != nil {
+			base.Suppresses = rules.Suppresses
 		}
 		out.Checks[key] = base
 	}

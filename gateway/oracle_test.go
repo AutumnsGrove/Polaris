@@ -3,12 +3,15 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
 	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
+	"polaris/store"
 )
 
 // stubJevClient is a canned-response jevAskChoicer for RunOracle tests —
@@ -359,6 +362,13 @@ func TestOracleConfig_ReferencesAreValid(t *testing.T) {
 			}
 		}
 	}
+	for key, rule := range rules.Checks {
+		for _, held := range rule.Suppresses {
+			if _, ok := p.Oracle.Checks[held]; !ok {
+				t.Errorf("oracle.checks.%s.suppresses references %q, which isn't a prompts.yaml check", key, held)
+			}
+		}
+	}
 	for key := range p.Oracle.Checks {
 		if _, ok := rules.Checks[key]; !ok {
 			t.Errorf("prompts.yaml oracle.checks.%s has no rules in config's defaults — it would never run", key)
@@ -422,12 +432,14 @@ func TestCarriedFocusModeSource(t *testing.T) {
 // capturingJevClient records what RunOracle actually put on the wire, for
 // asserting on the request rather than the verdict.
 type capturingJevClient struct {
-	resp  *jev.Response
-	state interface{}
+	resp      *jev.Response
+	state     interface{}
+	questions map[string]jev.ChoiceQuestion
 }
 
 func (c *capturingJevClient) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
 	c.state = state
+	c.questions = questions
 	return c.resp, nil
 }
 
@@ -455,5 +467,275 @@ func TestRunOracle_TruncatesOversizedMessagesBeforeSendingToJev(t *testing.T) {
 	state, _ := c.state.(string)
 	if n := len([]rune(state)); n > oracleMaxMessageRunes*2+200 {
 		t.Errorf("want each message capped near %d runes, state was %d runes", oracleMaxMessageRunes, n)
+	}
+}
+
+func TestRunOracle_HasURLDetectorInjectsWithoutJevAnswering(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "can you summarize (https://example.com/post?a=1) for me"})
+	out := outcomeFor(result, "has_url")
+	if out == nil || !out.Fired || out.Nudge == "" {
+		t.Fatalf("want a fired has_url outcome carrying its nudge, got %+v", out)
+	}
+	if len(result.Injections) != 1 || !containsSubstring(result.Injections[0], "web_read") {
+		t.Errorf("want the link nudge as an injection, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_HasURLQuietWithoutALink(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"focus": answer("off", 0.9)}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "what is http"})
+	if outcomeFor(result, "has_url") != nil {
+		t.Error("want no has_url outcome for a message with no link")
+	}
+}
+
+func TestRunOracle_FormatTableNudges(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":  answer("off", 0.9),
+		"format": answer("table", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "compare these three laptops"})
+	if len(result.Injections) != 1 || !containsSubstring(result.Injections[0], "table") {
+		t.Errorf("want the table nudge, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_FormatNoneAndBelowThresholdStayQuiet(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":  answer("off", 0.9),
+		"format": answer("table", 0.5),
+		"depth":  answer("standard", 0.99),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Injections) != 0 {
+		t.Errorf("want no injections (low-confidence table, standard depth has none), got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_DepthAndFormatNotAskedUnderTheirSkipFocus(t *testing.T) {
+	c := &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "brief"})
+	if _, asked := c.questions["depth"]; asked {
+		t.Error("want depth skipped under Brief focus")
+	}
+	if _, asked := c.questions["format"]; !asked {
+		t.Error("want format still asked under Brief focus")
+	}
+
+	c = &capturingJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{}}}
+	RunOracle(context.Background(), c, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
+	for _, k := range []string{"format", "depth", "task"} {
+		if _, asked := c.questions[k]; asked {
+			t.Errorf("want %s skipped under Safari focus", k)
+		}
+	}
+}
+
+func TestRunOracle_SourceTypeAcademicSkippedUnderAcademicFocus(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"source_type": answer("academic", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "academic"})
+	if len(result.Injections) != 0 {
+		t.Errorf("want no academic source nudge under Academic focus, got %v", result.Injections)
+	}
+	result = RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Injections) != 1 {
+		t.Errorf("want the academic source nudge without Academic focus, got %v", result.Injections)
+	}
+}
+
+func TestRunOracle_NewIntentOptionsInject(t *testing.T) {
+	for _, opt := range []string{"academic_paper", "image", "person_org", "recipe", "travel", "sports", "event", "datetime"} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"intent": answer(opt, 0.9)}}}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+		if len(result.Injections) != 1 {
+			t.Errorf("intent %q: want exactly one injection, got %v", opt, result.Injections)
+		}
+	}
+}
+
+func TestRunOracle_SafariChipFiresAndHidesInSafari(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"chip_safari": answer("yes", 0.95),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+	if len(result.Chips) != 1 || result.Chips[0].Key != "safari" {
+		t.Fatalf("want a safari chip, got %+v", result.Chips)
+	}
+	result = RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
+	if len(result.Chips) != 0 {
+		t.Errorf("want no safari chip when the turn is already in Safari, got %+v", result.Chips)
+	}
+}
+
+func TestRunOracle_EmotionalHoldsBackStructureButNotFacts(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"emotional":   answer("yes", 0.95),
+		"format":      answer("steps", 0.95),
+		"depth":       answer("thorough", 0.95),
+		"source_type": answer("official", 0.95),
+		"task":        answer("plan", 0.95),
+		"clarify":     answer("yes", 0.95),
+		"locale":      answer("yes", 0.95),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", IsFirstMessage: true})
+	if len(result.Injections) != 2 {
+		t.Fatalf("want only emotional + locale to inject, got %d: %v", len(result.Injections), result.Injections)
+	}
+	for _, key := range []string{"format", "depth", "source_type", "task", "clarify"} {
+		out := outcomeFor(result, key)
+		if out == nil || out.Fired || !out.Suppressed || out.Nudge != "" {
+			t.Errorf("%s: want a suppressed, unfired outcome with no nudge (so the sheet can say held back), got %+v", key, out)
+		}
+	}
+	if out := outcomeFor(result, "locale"); out == nil || !out.Fired || out.Suppressed {
+		t.Errorf("locale isn't on emotional's list and must still fire, got %+v", out)
+	}
+}
+
+func TestRunOracle_EmotionalNoOrBelowBarSuppressesNothing(t *testing.T) {
+	for name, emotional := range map[string]jev.ChoiceAnswer{
+		"answered no at full confidence": answer("no", 1.0),
+		"yes but under the bar":          answer("yes", 0.6),
+	} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+			"emotional": emotional,
+			"format":    answer("steps", 0.95),
+		}}}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+		if out := outcomeFor(result, "format"); out == nil || !out.Fired || out.Suppressed {
+			t.Errorf("%s: want format to fire normally, got %+v", name, out)
+		}
+	}
+}
+
+// TestOracleDoc_ListsEveryCheckOptionAndChip keeps docs/oracle.md — the
+// user-facing reference — from drifting behind prompts.yaml. A check added
+// there with no section, or an option with no row, would leave the page
+// quietly wrong; failing here makes the doc part of adding a check.
+func TestOracleDoc_ListsEveryCheckOptionAndChip(t *testing.T) {
+	raw, err := os.ReadFile("../docs/oracle.md")
+	if err != nil {
+		t.Fatalf("reading docs/oracle.md: %v", err)
+	}
+	doc := string(raw)
+	p := prompts.Get()
+
+	for key, check := range p.Oracle.Checks {
+		heading := "— `" + key + "`"
+		start := strings.Index(doc, heading)
+		if start < 0 {
+			t.Errorf("docs/oracle.md has no section for check %q (expected a heading ending %s)", key, heading)
+			continue
+		}
+		section := doc[start:]
+		if end := strings.Index(section, "\n#"); end >= 0 {
+			section = section[:end]
+		}
+		for option := range check.Options {
+			if !strings.Contains(section, "| `"+option+"` |") {
+				t.Errorf("docs/oracle.md's %q section doesn't list option %q", key, option)
+			}
+		}
+	}
+	// Scoped to the Offers section: "safari" is also a focus option, so a
+	// whole-document match would pass with the chip row deleted.
+	offersStart := strings.Index(doc, "\n## Offers")
+	if offersStart < 0 {
+		t.Fatal("docs/oracle.md has no Offers section")
+	}
+	offers := doc[offersStart+1:]
+	if end := strings.Index(offers, "\n## "); end >= 0 {
+		offers = offers[:end]
+	}
+	for key := range p.Oracle.Chips {
+		if !strings.Contains(offers, "| `"+key+"`") {
+			t.Errorf("docs/oracle.md's Offers table doesn't list chip %q", key)
+		}
+	}
+}
+
+func TestOracleFieldOptions(t *testing.T) {
+	fields := []store.Field{
+		{ID: "f1", Name: "Home Lab", Description: "Servers, networking, and self-hosting."},
+		{ID: "f2", Name: "  Garden  ", Description: ""},
+		{ID: "f3", Name: "Home Lab", Description: "A later field reusing the name."},
+		{ID: "f4", Name: "none", Description: "Collides with the reserved option."},
+		{ID: "f5", Name: "   ", Description: "Blank name."},
+		{ID: "f6", Name: "Long", Description: strings.Repeat("x", oracleMaxFieldDescRunes*2)},
+	}
+	options, ids := OracleFieldOptions(fields)
+
+	if ids["Home Lab"] != "f1" {
+		t.Errorf("want the first (most recently touched) Field to win a duplicate name, got id %q", ids["Home Lab"])
+	}
+	for _, skipped := range []string{"none", ""} {
+		if _, ok := options[skipped]; ok {
+			t.Errorf("want %q left out of the options", skipped)
+		}
+	}
+	if !strings.Contains(options["Garden"], "Garden") {
+		t.Errorf("want a name-based stand-in for an empty description, got %q", options["Garden"])
+	}
+	if ids["Garden"] != "f2" {
+		t.Errorf("want the name trimmed to match its id, got %v", ids)
+	}
+	// truncateRunes appends a short " […]" marker after the cut.
+	if got := len([]rune(options["Long"])); got > oracleMaxFieldDescRunes+len([]rune(" […]")) {
+		t.Errorf("want descriptions truncated near %d runes, got %d", oracleMaxFieldDescRunes, got)
+	}
+	if len(options) != len(ids) {
+		t.Errorf("options and ids must stay in step: %d vs %d", len(options), len(ids))
+	}
+}
+
+func TestOracleFieldOptions_CapsHowManyAreSent(t *testing.T) {
+	var fields []store.Field
+	for i := 0; i < oracleMaxFields+10; i++ {
+		fields = append(fields, store.Field{ID: fmt.Sprintf("f%d", i), Name: fmt.Sprintf("Field %d", i), Description: "d"})
+	}
+	options, _ := OracleFieldOptions(fields)
+	if len(options) != oracleMaxFields {
+		t.Errorf("want %d options, got %d", oracleMaxFields, len(options))
+	}
+}
+
+func TestRunOracle_FieldChipCarriesFieldID(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"chip_field": answer("Home Lab", 0.9),
+	}}}
+	in := OracleInput{
+		CurrentMessage: "how do I set up wireguard on my pi",
+		FieldOptions:   map[string]string{"Home Lab": "Servers and networking."},
+		FieldIDs:       map[string]string{"Home Lab": "f1"},
+	}
+	result := RunOracle(context.Background(), stub, in)
+	if len(result.Chips) != 1 || result.Chips[0].Key != "field" || result.Chips[0].Label != "Home Lab" || result.Chips[0].FieldID != "f1" {
+		t.Fatalf("want a field chip labeled Home Lab carrying its id, got %+v", result.Chips)
+	}
+
+	in.FieldIDs = nil
+	result = RunOracle(context.Background(), stub, in)
+	if len(result.Chips) != 0 {
+		t.Errorf("want no chip when the winner has no id to move to, got %+v", result.Chips)
+	}
+}
+
+func TestRunOracle_FieldChipBelowThresholdOrNoneStaysQuiet(t *testing.T) {
+	in := OracleInput{
+		CurrentMessage: "x",
+		FieldOptions:   map[string]string{"Home Lab": "d"},
+		FieldIDs:       map[string]string{"Home Lab": "f1"},
+	}
+	for name, ans := range map[string]jev.ChoiceAnswer{
+		"below the bar": answer("Home Lab", 0.5),
+		"none":          answer("none", 0.99),
+	} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"chip_field": ans}}}
+		if r := RunOracle(context.Background(), stub, in); len(r.Chips) != 0 {
+			t.Errorf("%s: want no chip, got %+v", name, r.Chips)
+		}
 	}
 }
