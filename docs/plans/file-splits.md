@@ -14,7 +14,7 @@ Rules for every stage:
 ## Checklist
 
 - [x] 1. `store/store.go` (3,197 lines → 188): schema, migrations, threads, variants, history, thread_pages, message_search, search_history, compaction, settings, messages, message_setters, usage. Schema/migrations verified byte-identical to HEAD.
-- [ ] 2. `tools/registry.go`: context, citations, cards, chart, image candidates; registry keeps dispatch only
+- [x] 2. `tools/registry.go` (1,339 lines → 107): context, evidence, citations, cards, image_candidates, chart, http; `WizardFinal`/`DailyItemsFinal`/`PendingQuestion`/show-state moved next to their owning tool files
 - [ ] 3. `gateway/turn.go`: decompose the 1,560-line `handleTurn` (needs a `turnState` struct; live-verify)
 - [ ] 4. `web/src/lib/state.svelte.ts`: extract domain modules; `AppState` becomes a thin composition root
 - [ ] 5. `store/constellation.go`: stars, reviews, stats, digest

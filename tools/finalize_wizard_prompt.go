@@ -95,3 +95,27 @@ func handleFinalizeWizardPrompt(argsJSON string, ctx *Context, callID string) st
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "finalize_wizard_prompt", "result": result, "call_id": callID})
 	return result
 }
+
+// WizardFinal is the tuned text the model drafted once it decided the
+// wizard interview had enough to go on — see
+// finalize_wizard_prompt.go. Unlike PendingQuestion this is never
+// persisted anywhere: the whole wizard session is ephemeral, held only in
+// gateway/wizard.go's in-memory session map.
+type WizardFinal struct {
+	Prompt string `json:"prompt"`
+	// Name is an optional suggested routine name — left blank if the
+	// model didn't propose one, in which case the frontend leaves
+	// whatever the user already typed (if anything) alone.
+	Name string `json:"name,omitempty"`
+}
+
+// SetWizardFinal records the turn-ending drafted prompt, if none has been
+// recorded yet this turn — same first-write-wins reasoning as
+// SetPendingQuestion.
+func (c *Context) SetWizardFinal(f *WizardFinal) {
+	c.wizardFinalMu.Lock()
+	defer c.wizardFinalMu.Unlock()
+	if c.WizardFinal == nil {
+		c.WizardFinal = f
+	}
+}

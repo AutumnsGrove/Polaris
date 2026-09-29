@@ -236,3 +236,21 @@ func showCandidateImages(ctx *Context, indices []int, caption, callID string) st
 	})
 	return result
 }
+
+// SetShow records the most recent show call's resolved URL/caption —
+// called from show.go's handleShow alongside its normal ctx.Emit, not
+// instead of it. Safe to call concurrently.
+func (c *Context) SetShow(url, caption string) {
+	c.showMuLock.Lock()
+	defer c.showMuLock.Unlock()
+	c.showURL = url
+	c.showCaption = caption
+}
+
+// ShowSnapshot returns the most recent show call's URL/caption, or ""
+// for both if show was never called this run.
+func (c *Context) ShowSnapshot() (url, caption string) {
+	c.showMuLock.Lock()
+	defer c.showMuLock.Unlock()
+	return c.showURL, c.showCaption
+}

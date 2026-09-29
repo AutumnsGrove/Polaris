@@ -137,3 +137,65 @@ func handleAskUserQuestion(argsJSON string, ctx *Context, callID string) string 
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "ask_user_question", "result": result, "call_id": callID})
 	return result
 }
+
+// PendingQuestion is a clarifying question the model asked instead of
+// answering — see ask_user_question.go. Persisted as part of the
+// assistant message that asked it (store.Message.PendingQuestion) so it
+// survives reloads and restarts: answering it is just sending the next
+// ordinary chat message in the thread, not a live round trip, so there's
+// nothing else to keep alive in memory.
+type PendingQuestion struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	// MultiSelect, when true, lets the user pick more than one of Options
+	// in a single reply (the frontend joins the picks into one
+	// comma-separated answer) instead of the default single tap-to-answer
+	// choice. Only meaningful alongside Options — see ask_user_question.go's
+	// multi_select parameter.
+	MultiSelect   bool `json:"multi_select,omitempty"`
+	WantsLocation bool `json:"wants_location,omitempty"`
+	// WantsWebSearch mirrors WantsLocation's shape for a different missing
+	// capability: set when the model wants to ask whether to turn research
+	// back on for chat mode (NoResearch above) — shows an "enable web
+	// search" action alongside the text input, same as WantsLocation's
+	// "share my location". See ask_user_question.go.
+	WantsWebSearch bool `json:"wants_web_search,omitempty"`
+
+	// Plan, when set, is a Tier 2 Deep Research plan-confirmation question
+	// (docs/plans/deep-research-two-tier.md's "Confirm" step) — the
+	// orchestrator's proposed spawn_researchers fan-out, attached purely
+	// so the frontend can render a richer plan card instead of parsing it
+	// back out of Question's prose. The plan's content is also written
+	// into Question itself, so a client that doesn't render Plan
+	// specially still shows the full plan as normal text — this is an
+	// enhancement, not the source of truth.
+	Plan *ResearchPlan `json:"plan,omitempty"`
+}
+
+// ResearchPlan is PendingQuestion's structured Deep Research plan — see
+// its doc comment above.
+type ResearchPlan struct {
+	// SubAgentObjectives is one entry per sub-agent the orchestrator is
+	// proposing to spawn, matching what it intends to pass to
+	// spawn_researchers if confirmed.
+	SubAgentObjectives []string `json:"sub_agent_objectives"`
+	// EstimatedSearchCalls is an optional rough total-call estimate for
+	// the whole plan — 0 means the orchestrator didn't provide one, not a
+	// claim of "zero calls needed".
+	EstimatedSearchCalls int `json:"estimated_search_calls,omitempty"`
+}
+
+// SetPendingQuestion records the turn-ending question, if none has been
+// recorded yet this turn. First-write-wins rather than overwriting or
+// erroring on a second call — dispatchToolCallsConcurrently could in
+// principle run two ask_user_question calls from the same batch in
+// parallel (the model was told not to, but nothing enforces that), and
+// silently keeping whichever one landed first is a safer failure mode
+// than a data race or a nondeterministic "last one wins".
+func (c *Context) SetPendingQuestion(q *PendingQuestion) {
+	c.pendingQuestionMu.Lock()
+	defer c.pendingQuestionMu.Unlock()
+	if c.PendingQuestion == nil {
+		c.PendingQuestion = q
+	}
+}

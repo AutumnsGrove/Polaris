@@ -80,3 +80,34 @@ func handleFinalizeDailyItems(argsJSON string, ctx *Context, callID string) stri
 	ctx.Emit("tool_result", map[string]interface{}{"tool": "finalize_daily_items", "result": result, "call_id": callID})
 	return result
 }
+
+// DailyItemsFinal is the structured list of distinct stories a Pulsar
+// Daily list-block generation (headlines/trending/custom blocks) drafted
+// once it decided it had enough — see finalize_daily_items.go. Never
+// persisted directly; gateway/pulsar_daily.go reads it off agent.Run's
+// Result and builds store.PulsarDailyBlockItem rows from it.
+type DailyItemsFinal struct {
+	Items []DailyItem `json:"items"`
+}
+
+// DailyItem is one distinct story within a Pulsar Daily list block.
+type DailyItem struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	// Source is a short outlet/site name (e.g. "The Verge"), not the URL
+	// itself — kept separate so the frontend can render "Title — Source"
+	// without parsing a domain out of URL.
+	Source string `json:"source,omitempty"`
+	URL    string `json:"url,omitempty"`
+}
+
+// SetDailyItemsFinal records the turn-ending drafted item list, if none
+// has been recorded yet this turn — same first-write-wins reasoning as
+// SetWizardFinal.
+func (c *Context) SetDailyItemsFinal(f *DailyItemsFinal) {
+	c.dailyItemsFinalMu.Lock()
+	defer c.dailyItemsFinalMu.Unlock()
+	if c.DailyItemsFinal == nil {
+		c.DailyItemsFinal = f
+	}
+}
