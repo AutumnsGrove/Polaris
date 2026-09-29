@@ -4,9 +4,9 @@
 
 **Status: built (2026-09-28, issue #122).** Mockups (`mockups/oracle-mode.html`) and the live Jev
 spike (below) both done; the engine, UI, and settings toggle shipped behind the opt-in
-`oracle_enabled` setting. Known v1 gap: the `field` offer chip is wired end to end but inert —
-it needs the Fields feature (issue #119), which doesn't exist yet, so `OracleInput.FieldOptions`
-is never populated and the check never runs.
+`oracle_enabled` setting. The `field` offer chip shipped inert (the Fields feature, issue #119,
+didn't exist yet, so nothing populated `OracleInput.FieldOptions`); it was wired up on 2026-09-29
+once Fields landed — see "The field chip" in [oracle-checks-expansion.md](oracle-checks-expansion.md).
 
 ## The idea
 

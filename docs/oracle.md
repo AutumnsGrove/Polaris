@@ -301,7 +301,7 @@ suggesting.
 | `pulsar` (80%+) | The answer is something that changes and would be worth re-checking on a schedule. | Set up a Pulsar routine (opens `/pulsar` seeded with the question). |
 | `daily` (80%+) | The topic is worth a daily glance. | Add it to Pulsar Daily (opens `/daily` seeded with the topic). |
 | `safari` (85%+) | A broad subject to study in depth — a field, era, system or concept — not a decision, plan, debate or one-reply question. | Sends the next message itself, asking for an interactive Safari-style walk-through, with Safari picked as the focus. Hidden when the turn is already in Safari. |
-| `field` (75%+) | The message clearly belongs to one of your Fields. | Not wired up yet — nothing supplies the Fields list, so this never fires. |
+| `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. Jev is shown each Field's name and description (up to 25 of the most recently used). |
 
 ## Tuning
 

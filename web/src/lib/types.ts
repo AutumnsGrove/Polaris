@@ -62,6 +62,9 @@ export interface OracleCheckOutcome {
 export interface OracleChip {
 	key: string;
 	label?: string;
+	// Only for key === 'field': the Field to move the thread into. Carried
+	// separately from label because Field names aren't unique.
+	field_id?: string;
 }
 
 // Mirrors gateway/oracle.go's OracleResult 1:1 — RunOracle's whole verdict

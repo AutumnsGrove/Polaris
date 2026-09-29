@@ -36,6 +36,7 @@
 import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
+	import FieldIcon from './FieldIcon.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { goto } from '$app/navigation';
@@ -275,24 +276,27 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 
 	let infoSheetOpen = $state(false);
 
-	// Offer lines (docs/plans/oracle-mode.md's 7a) — only "pulsar"/"daily"
-	// have a real destination today; "field" is included in
-	// prompts.yaml's chip vocabulary for a Fields feature that doesn't
-	// exist anywhere in this codebase yet (gateway/turn.go never actually
-	// populates OracleInput.FieldOptions, so the check can never fire in
-	// practice) — rendered inert rather than either faking a destination
-	// or silently dropping a chip the backend did send.
-	const OFFER_META: Record<string, { icon: typeof Orbit; verb: string; label: (l?: string) => string }> = {
+	// Offer lines (docs/plans/oracle-mode.md's 7a). Pulsar/Daily navigate to
+	// their own page, Safari sends the next turn, and "field" files this
+	// thread under the Field Oracle matched — the chip carries the field's
+	// id (Chip.field_id) since a Field's name isn't unique.
+	const OFFER_META: Record<string, { icon: typeof Orbit | typeof FieldIcon; verb: string; label: (l?: string) => string }> = {
 		pulsar: { icon: Orbit, verb: 'Set up', label: () => 'Check weekly as a <b>Pulsar</b>' },
 		daily: { icon: Sunrise, verb: 'Add', label: () => 'Follow this in <b>Daily</b>' },
 		safari: { icon: Binoculars, verb: 'Explore', label: () => 'Go deeper as a <b>Safari</b>' },
-		field: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a Field'}</b>` }
+		field: { icon: FieldIcon, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a Field'}</b>` }
 	};
 
+	// A field chip is stale the moment the thread is in a Field — whether
+	// this very chip just moved it, the composer picker did, or a later turn
+	// on an older reply re-renders it — so it's filtered against the live
+	// thread instead of only being dropped once, on click.
 	let offers = $derived(
 		(turn.oracleResult?.chips ?? []).flatMap((c) => {
 			const meta = OFFER_META[c.key];
-			return meta ? [{ key: c.key, label: c.label, meta }] : [];
+			if (!meta) return [];
+			if (c.key === 'field' && (!c.field_id || appState.activeFieldId)) return [];
+			return [{ key: c.key, label: c.label, fieldId: c.field_id, meta }];
 		})
 	);
 
@@ -317,8 +321,18 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	const SAFARI_PROMPT =
 		'I want this broken down in more depth, as an interactive, step-by-step exploration in the Safari style.';
 
-	async function activateOffer(key: string) {
+	async function activateOffer(key: string, fieldId?: string, fieldName?: string) {
 		if (offerBusy) return;
+		if (key === 'field') {
+			if (!fieldId) return;
+			offerBusy = key;
+			const err = await appState.moveCurrentThreadToField(fieldId);
+			offerBusy = null;
+			// The chip itself disappears on success (see offers' activeFieldId
+			// filter), so the toast is the only confirmation there is.
+			appState.showToast(err ? `Couldn't move it: ${err}` : `Moved to ${fieldName ?? 'that Field'}`);
+			return;
+		}
 		if (key === 'safari') {
 			appState.send(
 				SAFARI_PROMPT,
@@ -337,10 +351,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			return;
 		}
 		if (key !== 'pulsar' && key !== 'daily') return;
-		// "field" has no real destination yet — see OFFER_META's doc
-		// comment above; tapping it is a no-op until a Fields feature
-		// exists to move the thread into.
-		//
 		// The preceding message is only the right seed when the conversation
 		// *is* the recurring question. On a follow-up ("what about the second
 		// one?") it produces a routine or Daily block that returns nothing
@@ -680,19 +690,18 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 				<WaveformAudioPlayer src={turn.ttsAudioFile} autoplay={appState.audio.justFinishedIndex === index} />
 			{/if}
 			{#if !turn.streaming && offers.length}
-				<!-- 7a: offer lines below the footer — see OFFER_META's doc
-					 comment for why "field" renders without a click handler. -->
+				<!-- 7a: offer lines below the footer — see OFFER_META's doc comment. -->
 				<div class="offer-lines">
 					{#each offers as offer (offer.key)}
 						<button
 							class="offer-line"
 							type="button"
-							disabled={offer.key === 'field' || offerBusy !== null}
-							onclick={() => activateOffer(offer.key)}
+							disabled={offerBusy !== null}
+							onclick={() => activateOffer(offer.key, offer.fieldId, offer.label)}
 						>
 							<offer.meta.icon size={14} />
 							<span>{@html offer.meta.label(offer.label)}</span>
-							<span class="go">{offerBusy === offer.key ? 'Writing…' : offer.meta.verb}</span>
+							<span class="go">{offerBusy === offer.key ? (offer.key === 'field' ? 'Moving…' : 'Writing…') : offer.meta.verb}</span>
 						</button>
 					{/each}
 				</div>

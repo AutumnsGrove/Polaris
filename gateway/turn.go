@@ -889,6 +889,17 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 					priorOracleFocus = thread.FocusMode
 				}
 			}
+			// The field chip is only worth offering for a thread that isn't
+			// already in a Field — fieldID is final here (a new thread born
+			// inside a Field from the composer picker has it set too).
+			var fieldOptions, fieldIDs map[string]string
+			if fieldID == "" {
+				if fields, err := s.db.ListFields(); err != nil {
+					log.Warn("oracle: listing fields for the field chip failed, skipping it", "err", err)
+				} else {
+					fieldOptions, fieldIDs = OracleFieldOptions(fields)
+				}
+			}
 			oracleAttempted = true
 			oracleResult = RunOracle(ctx, s.jev, OracleInput{
 				CurrentMessage:       msg.Content,
@@ -897,6 +908,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				ActiveFocusMode:      msg.FocusMode,
 				IsManualFocus:        isManualFocus,
 				PriorOracleFocusMode: priorOracleFocus,
+				FieldOptions:         fieldOptions,
+				FieldIDs:             fieldIDs,
 				Rules:                cfg.Oracle,
 			})
 			// Recorded on the shared Jev ledger the monthly cap sums (issue

@@ -10,6 +10,7 @@ import (
 	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
+	"polaris/store"
 )
 
 // oracleTimeout bounds RunOracle's own Jev call independently of
@@ -75,6 +76,12 @@ type OracleInput struct {
 	// nil map (no fields, or the thread is already in one) skips the
 	// chip check entirely rather than asking Jev to choose among nothing.
 	FieldOptions map[string]string
+	// FieldIDs maps each option name in FieldOptions back to its field's
+	// id. Jev answers with a name (its Criteria keys), but moving a thread
+	// needs the id, and names aren't unique — see OracleFieldOptions. A
+	// chip whose winner has no entry here is dropped rather than offered
+	// with nothing to move to.
+	FieldIDs map[string]string
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -112,6 +119,8 @@ type CheckOutcome struct {
 type Chip struct {
 	Key   string `json:"key"`
 	Label string `json:"label,omitempty"` // the field name, only for Key=="field"
+	// FieldID is the field to move the thread into, only for Key=="field".
+	FieldID string `json:"field_id,omitempty"`
 }
 
 // OracleResult is RunOracle's whole verdict. It has no side effects —
@@ -308,11 +317,14 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 				continue
 			}
 			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chipRule.Threshold {
-				label := ""
+				label, fieldID := "", ""
 				if chipKey == "field" {
 					label = ans.Choice
+					if fieldID = in.FieldIDs[ans.Choice]; fieldID == "" {
+						continue
+					}
 				}
-				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label})
+				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label, FieldID: fieldID})
 			}
 			continue
 		}
@@ -463,6 +475,52 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 		out = append(out, extra)
 	}
 	return out
+}
+
+// oracleMaxFields caps how many Fields are offered to Jev as chip options.
+// Each becomes a criteria entry billed per input token and sent to a third
+// party, and past a couple dozen the classifier is choosing among near-
+// duplicates anyway. Fields come newest-touched first, so the cap keeps the
+// ones actually in use.
+const oracleMaxFields = 25
+
+// oracleMaxFieldDescRunes truncates each Field's description for the same
+// cost/leak reason as oracleMaxMessageRunes — the opening says what a Field
+// is for.
+const oracleMaxFieldDescRunes = 500
+
+// OracleFieldOptions turns the store's Fields into the field chip's option
+// set (name -> description, what Jev sees) plus the name -> id map RunOracle
+// needs to hand the frontend something it can actually move a thread into.
+//
+// Jev answers with a criteria key, and Field names aren't unique, so a
+// second Field reusing a name is left out rather than made ambiguous (the
+// newer-touched one wins). A Field literally named "none" is left out too:
+// it would overwrite the reserved "doesn't belong to any field" option. An
+// empty description gets a name-based stand-in, since a criteria entry with
+// no text gives Jev nothing to match against.
+func OracleFieldOptions(fields []store.Field) (options, ids map[string]string) {
+	options = make(map[string]string, len(fields))
+	ids = make(map[string]string, len(fields))
+	for _, f := range fields {
+		if len(options) >= oracleMaxFields {
+			break
+		}
+		name := strings.TrimSpace(f.Name)
+		if name == "" || name == "none" {
+			continue
+		}
+		if _, dup := options[name]; dup {
+			continue
+		}
+		desc := truncateRunes(strings.TrimSpace(f.Description), oracleMaxFieldDescRunes)
+		if desc == "" {
+			desc = "Conversations grouped under the Field named \"" + name + "\"."
+		}
+		options[name] = desc
+		ids[name] = f.ID
+	}
+	return options, ids
 }
 
 // optionKeys lists a question's option ids (its Criteria keys).

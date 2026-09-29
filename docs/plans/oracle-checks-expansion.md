@@ -49,6 +49,25 @@ navigate anywhere — it sends the next turn itself, asking for an interactive, 
 walk-through, with Safari picked as a manual focus so it can't be missed by the high Safari bar.
 Hidden when the turn is already in Safari.
 
+## The field chip
+
+Shipped inert with Oracle v1 (no Fields feature existed); wired up 2026-09-29. "Move to **<Field>**"
+files the thread under the Field Jev matched.
+
+- **Options.** `gateway/turn.go` lists the Fields per turn and `OracleFieldOptions` turns them into
+  the chip's name → description options — only when the thread isn't already in a Field (a thread
+  born inside one via the composer picker counts).
+- **Names aren't unique, ids are.** Jev answers with a criteria key (the name), but a move needs the
+  id, so `OracleInput.FieldIDs` maps name → id and the chip carries `field_id`. A duplicate name is
+  left out (most recently touched wins), a Field literally named `none` is left out (it would
+  overwrite the reserved "no field" option), and a winner with no id is dropped rather than offered
+  with nothing to move to.
+- **Cost bounds.** At most 25 Fields, descriptions cut to 500 runes, same reasoning as the message
+  cap: it's billed per token and sent to a third party. An empty description gets a name-based
+  stand-in so the criteria entry isn't blank.
+- **Frontend.** The click calls `appState.moveCurrentThreadToField`; the chip is filtered against
+  `appState.activeFieldId`, so it disappears once the thread is in a Field however that happened.
+
 ## Live findings
 
 - Fired-nudge stacking was real on emotional messages: "laid off, worried about health insurance"

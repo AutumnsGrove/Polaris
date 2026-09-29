@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
+	"polaris/store"
 )
 
 // stubJevClient is a canned-response jevAskChoicer for RunOracle tests —
@@ -651,6 +653,89 @@ func TestOracleDoc_ListsEveryCheckOptionAndChip(t *testing.T) {
 	for key := range p.Oracle.Chips {
 		if !strings.Contains(offers, "| `"+key+"`") {
 			t.Errorf("docs/oracle.md's Offers table doesn't list chip %q", key)
+		}
+	}
+}
+
+func TestOracleFieldOptions(t *testing.T) {
+	fields := []store.Field{
+		{ID: "f1", Name: "Home Lab", Description: "Servers, networking, and self-hosting."},
+		{ID: "f2", Name: "  Garden  ", Description: ""},
+		{ID: "f3", Name: "Home Lab", Description: "A later field reusing the name."},
+		{ID: "f4", Name: "none", Description: "Collides with the reserved option."},
+		{ID: "f5", Name: "   ", Description: "Blank name."},
+		{ID: "f6", Name: "Long", Description: strings.Repeat("x", oracleMaxFieldDescRunes*2)},
+	}
+	options, ids := OracleFieldOptions(fields)
+
+	if ids["Home Lab"] != "f1" {
+		t.Errorf("want the first (most recently touched) Field to win a duplicate name, got id %q", ids["Home Lab"])
+	}
+	for _, skipped := range []string{"none", ""} {
+		if _, ok := options[skipped]; ok {
+			t.Errorf("want %q left out of the options", skipped)
+		}
+	}
+	if !strings.Contains(options["Garden"], "Garden") {
+		t.Errorf("want a name-based stand-in for an empty description, got %q", options["Garden"])
+	}
+	if ids["Garden"] != "f2" {
+		t.Errorf("want the name trimmed to match its id, got %v", ids)
+	}
+	// truncateRunes appends a short " […]" marker after the cut.
+	if got := len([]rune(options["Long"])); got > oracleMaxFieldDescRunes+len([]rune(" […]")) {
+		t.Errorf("want descriptions truncated near %d runes, got %d", oracleMaxFieldDescRunes, got)
+	}
+	if len(options) != len(ids) {
+		t.Errorf("options and ids must stay in step: %d vs %d", len(options), len(ids))
+	}
+}
+
+func TestOracleFieldOptions_CapsHowManyAreSent(t *testing.T) {
+	var fields []store.Field
+	for i := 0; i < oracleMaxFields+10; i++ {
+		fields = append(fields, store.Field{ID: fmt.Sprintf("f%d", i), Name: fmt.Sprintf("Field %d", i), Description: "d"})
+	}
+	options, _ := OracleFieldOptions(fields)
+	if len(options) != oracleMaxFields {
+		t.Errorf("want %d options, got %d", oracleMaxFields, len(options))
+	}
+}
+
+func TestRunOracle_FieldChipCarriesFieldID(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"chip_field": answer("Home Lab", 0.9),
+	}}}
+	in := OracleInput{
+		CurrentMessage: "how do I set up wireguard on my pi",
+		FieldOptions:   map[string]string{"Home Lab": "Servers and networking."},
+		FieldIDs:       map[string]string{"Home Lab": "f1"},
+	}
+	result := RunOracle(context.Background(), stub, in)
+	if len(result.Chips) != 1 || result.Chips[0].Key != "field" || result.Chips[0].Label != "Home Lab" || result.Chips[0].FieldID != "f1" {
+		t.Fatalf("want a field chip labeled Home Lab carrying its id, got %+v", result.Chips)
+	}
+
+	in.FieldIDs = nil
+	result = RunOracle(context.Background(), stub, in)
+	if len(result.Chips) != 0 {
+		t.Errorf("want no chip when the winner has no id to move to, got %+v", result.Chips)
+	}
+}
+
+func TestRunOracle_FieldChipBelowThresholdOrNoneStaysQuiet(t *testing.T) {
+	in := OracleInput{
+		CurrentMessage: "x",
+		FieldOptions:   map[string]string{"Home Lab": "d"},
+		FieldIDs:       map[string]string{"Home Lab": "f1"},
+	}
+	for name, ans := range map[string]jev.ChoiceAnswer{
+		"below the bar": answer("Home Lab", 0.5),
+		"none":          answer("none", 0.99),
+	} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"chip_field": ans}}}
+		if r := RunOracle(context.Background(), stub, in); len(r.Chips) != 0 {
+			t.Errorf("%s: want no chip, got %+v", name, r.Chips)
 		}
 	}
 }
