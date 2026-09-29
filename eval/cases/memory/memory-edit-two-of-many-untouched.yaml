@@ -1,0 +1,14 @@
+id: memory-edit-two-of-many-untouched
+category: memory
+kind: memory_edit
+user_message: my editor is Zed now instead of Neovim
+target_memory: user-dev-setup
+memories:
+- name: user-dev-setup
+  type: user
+  description: Dev setup - Neovim, Fedora, tmux, Tailscale to a home server
+  content: |-
+    Editor: Neovim with a minimal config. OS: Fedora on the laptop. Uses tmux for everything
+    terminal-side. Reaches the home server (a Le Potato) over Tailscale.
+must_contain_facts: [Zed, Fedora, tmux, Tailscale, Le Potato]
+must_not_contain: [Neovim]

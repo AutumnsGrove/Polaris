@@ -1,0 +1,17 @@
+id: memory-edit-ambiguous-name-picks-right-one
+category: memory
+kind: memory_edit
+user_message: I got a new job at Stripe, update that
+target_memory: user-work
+memories:
+- name: user-work
+  type: user
+  description: Senior engineer at a logistics startup; works remotely
+  content: |-
+    Senior engineer at a logistics startup, fully remote. Team of six. Prefers async communication.
+- name: user-hobbies
+  type: user
+  description: Climbing and film photography
+  content: Climbs twice a week at a bouldering gym. Shoots 35mm film.
+must_contain_facts: [Stripe, remote, async]
+must_not_contain: [logistics]

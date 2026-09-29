@@ -1,0 +1,14 @@
+id: memory-edit-remove-one-detail
+category: memory
+kind: memory_edit
+user_message: remove the part about my dog from my personal memory, the rest is still right
+target_memory: user-personal
+memories:
+- name: user-personal
+  type: user
+  description: Lives in Austin with a dog named Biscuit; vegetarian; night owl
+  content: |-
+    Lives in Austin, Texas. Has a dog named Biscuit (beagle mix). Vegetarian for ten years.
+    Night owl - usually working 10pm to 2am.
+must_contain_facts: [Austin, vegetarian, night owl]
+must_not_contain: [Biscuit, beagle]

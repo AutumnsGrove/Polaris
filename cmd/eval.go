@@ -47,7 +47,7 @@ var evalCmd = &cobra.Command{
 func init() {
 	evalCmd.Flags().StringVar(&configPath, "config", "config.yaml", "path to config.yaml (used only for API keys/URLs)")
 	evalCmd.Flags().StringVar(&evalCasesDir, "cases", "eval/cases", "directory of *.yaml case files, one case per file, searched recursively")
-	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support, factual, agent_loop, injection); omit to run every case")
+	evalCmd.Flags().StringVar(&evalCategory, "category", "", "run only this category (format, citation_support, factual, agent_loop, injection, memory); omit to run every case")
 	evalCmd.Flags().IntVar(&evalN, "n", 0, "number of cases to sample (0 = run every matching case)")
 	evalCmd.Flags().Int64Var(&evalSeed, "seed", 0, "sampling seed — omit for a fresh random subset every run, pass an explicit value to reproduce one")
 	evalCmd.Flags().StringVarP(&evalModel, "model", "m", "", "model id for title/suggestions cases (defaults to default_model) — citation_support cases always use Jev regardless of this flag")

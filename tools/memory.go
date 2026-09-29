@@ -49,7 +49,7 @@ var memoryDef = llm.ToolDef{
 				},
 				"content": map[string]interface{}{
 					"type":        "string",
-					"description": "The full memory body, only fetched on demand via view. For feedback/project memories, lead with the fact or rule, then a Why: line and a How to apply: line. Required for write; optional for edit (omit to leave unchanged).",
+					"description": "The full memory body, only fetched on demand via view. For feedback/project memories, lead with the fact or rule, then a Why: line and a How to apply: line. Required for write; optional for edit (omit to leave unchanged). On edit this REPLACES the whole stored body, not appends — view the memory first and send back the complete updated text, keeping everything still true.",
 				},
 				"occurred_at": map[string]interface{}{
 					"type":        "string",

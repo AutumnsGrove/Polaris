@@ -3,11 +3,15 @@ package eval
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"polaris/jev"
 	"polaris/llm"
 	"polaris/prompts"
+	"polaris/store"
 	"polaris/tools"
 )
 
@@ -58,6 +62,8 @@ func RunCase(ctx context.Context, c Case, llmClient llm.ChatClient, jevClient *j
 		return runCompactionRetention(ctx, c, llmClient)
 	case KindInjectionResistance:
 		return runInjectionResistance(ctx, c, llmClient, jevClient)
+	case KindMemoryEdit:
+		return runMemoryEdit(ctx, c, llmClient)
 	default:
 		return Result{Case: c, ErrMessage: fmt.Sprintf("unknown case kind %q", c.Kind)}
 	}
@@ -437,6 +443,102 @@ func runInjectionResistance(ctx context.Context, c Case, llmClient llm.ChatClien
 	result.Pass = answer.Choice == "ignored"
 	if !result.Pass {
 		result.Reason = fmt.Sprintf("jev said the model %q the planted instruction (confidence %.2f): %q", answer.Choice, answer.Confidence, candidateText)
+	}
+	return result
+}
+
+// maxMemoryEditToolTurns matches gateway/memories.go's
+// maxMemoryChatToolTurns — the eval has to give the model the same room to
+// view-then-edit that production does, or it'd fail cases production passes.
+const maxMemoryEditToolTurns = 6
+
+// runMemoryEdit replays gateway/memories.go's handleMemoryChat loop (same
+// MemoryChatSystem prompt, memory tool only, same turn budget) against a
+// scratch SQLite database seeded from c.Memories, then checks the target
+// memory's resulting text by plain containment. The loop is duplicated
+// rather than shared because runMemoryToolLoop hangs off gateway.Server.
+func runMemoryEdit(ctx context.Context, c Case, client llm.ChatClient) Result {
+	if client == nil {
+		return Result{Case: c, ErrMessage: "case needs an LLM client but none was configured"}
+	}
+	dbPath := filepath.Join(os.TempDir(), fmt.Sprintf("polaris-eval-%s-%d.db", c.ID, time.Now().UnixNano()))
+	db, err := store.Open(dbPath)
+	if err != nil {
+		return Result{Case: c, ErrMessage: "opening scratch db: " + err.Error()}
+	}
+	defer func() {
+		db.Close()
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			os.Remove(dbPath + suffix)
+		}
+	}()
+	for _, m := range c.Memories {
+		if err := db.CreateMemory(m.Name, m.Type, m.Description, m.Content, ""); err != nil {
+			return Result{Case: c, ErrMessage: "seeding memory " + m.Name + ": " + err.Error()}
+		}
+	}
+
+	memCtx := &tools.Context{
+		Ctx:          ctx,
+		Emit:         func(string, map[string]interface{}) {},
+		ListMemories: db.ListMemories,
+		GetMemory:    db.GetMemory,
+		WriteMemory:  db.CreateMemory,
+		EditMemory:   db.UpdateMemory,
+		ForgetMemory: db.DeleteMemory,
+	}
+	var defs []llm.ToolDef
+	for _, d := range tools.Defs(memCtx) {
+		if d.Function.Name == "memory" {
+			defs = append(defs, d)
+		}
+	}
+	messages := []llm.ChatMessage{
+		{Role: "system", Content: fmt.Sprintf(prompts.Get().Turn.MemoryChatSystem, tools.MemoryIndexPrompt(memCtx))},
+		{Role: "user", Content: c.UserMessage},
+	}
+
+	result := Result{Case: c}
+	var trace []string
+	for i := 0; i < maxMemoryEditToolTurns; i++ {
+		resp, err := client.ChatCompletionWithTools(ctx, messages, defs, func(string) {}, nil)
+		if err != nil {
+			result.ErrMessage = err.Error()
+			return result
+		}
+		result.CostUSD += resp.CostUSD
+		if len(resp.ToolCalls) == 0 {
+			break
+		}
+		messages = append(messages, llm.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
+		for _, tc := range resp.ToolCalls {
+			trace = append(trace, tc.Function.Arguments)
+			out := tools.Dispatch(tc.Function.Name, tc.Function.Arguments, memCtx, tc.ID)
+			messages = append(messages, llm.ChatMessage{Role: "tool", ToolCallID: tc.ID, Content: out})
+		}
+	}
+	result.RawOutput = strings.Join(trace, "\n")
+
+	m, err := db.GetMemory(c.TargetMemory)
+	if err != nil {
+		result.Reason = fmt.Sprintf("target memory %q missing after run (%v) — tool calls: %s", c.TargetMemory, err, result.RawOutput)
+		return result
+	}
+	text := strings.ToLower(m.Description + "\n" + m.Content)
+	var problems []string
+	for _, f := range c.MustContainFacts {
+		if !strings.Contains(text, strings.ToLower(f)) {
+			problems = append(problems, fmt.Sprintf("lost/missing %q", f))
+		}
+	}
+	for _, f := range c.MustNotContain {
+		if strings.Contains(text, strings.ToLower(f)) {
+			problems = append(problems, fmt.Sprintf("still contains %q", f))
+		}
+	}
+	result.Pass = len(problems) == 0
+	if !result.Pass {
+		result.Reason = fmt.Sprintf("%s; final content: %q", strings.Join(problems, ", "), m.Content)
 	}
 	return result
 }

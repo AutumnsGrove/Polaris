@@ -37,7 +37,9 @@ api_description: >-
 
   Four actions: write (action="write") creates a new memory, and fails if the name is already
   taken — use edit to change an existing one instead. edit (action="edit") updates an existing
-  memory's type/description/content; omit any field you're not changing. view (action="view")
+  memory's type/description/content; omit any field you're not changing. A content or
+  description you do send REPLACES the stored one outright (no merging) — view the memory first and
+  send the complete updated text, keeping every detail that's still true. view (action="view")
   with no name lists every memory's name/type/description (the same index shown above, useful if
   it's grown long); view with a name fetches that one memory's full content. forget
   (action="forget") deletes a memory outright.
