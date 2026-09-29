@@ -9,6 +9,8 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import FieldChips from '$lib/components/FieldChips.svelte';
 	import Switch from '$lib/components/Switch.svelte';
+	import WizardButton from '$lib/components/WizardButton.svelte';
+	import WizardOverlay from '$lib/components/WizardOverlay.svelte';
 	import {
 		PanelLeft,
 		ChevronLeft,
@@ -150,6 +152,16 @@
 		savingInstructions = true;
 		await patch({ custom_instructions: instructions });
 		savingInstructions = false;
+	}
+
+	// The "Help me write this" interview for the instructions textarea (see
+	// WizardOverlay / gateway/wizard.go's field_instructions target).
+	// Accepting only fills the textarea — it never saves, so the draft goes
+	// through the same explicit Save (and 4000-char cap) as hand-typed text
+	// and can still be edited or discarded first.
+	let showInstructionsWizard = $state(false);
+	function acceptWizardInstructions(text: string) {
+		instructions = text;
 	}
 
 	// The omnibox creates the thread AND opens it already mid-turn, rather
@@ -420,6 +432,9 @@
 						Added to every conversation in this <span class="wordmark">Field</span>, after your global custom instructions — never
 						instead of them.
 					</p>
+					<div class="wizard-row">
+						<WizardButton onclick={() => (showInstructionsWizard = true)} />
+					</div>
 					<textarea
 						class="instructions"
 						bind:value={instructions}
@@ -563,6 +578,15 @@
 		</div>
 	{/if}
 </div>
+
+{#if showInstructionsWizard}
+	<WizardOverlay
+		target={{ kind: 'field_instructions', label: name }}
+		seed={instructions}
+		onClose={() => (showInstructionsWizard = false)}
+		onAccept={acceptWizardInstructions}
+	/>
+{/if}
 
 {#if confirming}
 	<ConfirmModal
@@ -781,6 +805,15 @@
 		width: 40px;
 		padding-left: 0;
 		padding-right: 0;
+	}
+
+	/* Right-aligned launcher above the textarea, in the spot a field's
+	   label row would put it elsewhere (Pulsar's routine form) — this tab
+	   has no label, just the hint line above. WizardButton carries its own
+	   bottom margin, so this row adds none. */
+	.wizard-row {
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.instructions-foot {

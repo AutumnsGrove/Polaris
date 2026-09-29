@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
 	import { pulsarDailyState, type PulsarDailyConfigInput } from '$lib/pulsarDaily.svelte';
-	import { X, Sparkles, Plus, Trash2, Newspaper, PenLine, Cpu, CalendarClock } from '@lucide/svelte';
+	import { X, Plus, Trash2, Newspaper, PenLine, Cpu, CalendarClock } from '@lucide/svelte';
 	import type { PulsarDailyCustomBlock } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { autoResize } from '$lib/actions/autoResize';
 	import WizardOverlay from './WizardOverlay.svelte';
+	import WizardButton from './WizardButton.svelte';
 	import { untrack } from 'svelte';
 
 	// customFieldMaxHeight: roughly 5 lines at this field's font-size/line-
@@ -264,14 +265,9 @@
 							<div class="subfield">
 								<div class="field-label-row">
 									<label for="daily-sports-teams">Which teams/leagues?</label>
-									<button
-										type="button"
-										class="wizard-btn"
+									<WizardButton
 										onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
-									>
-										<Sparkles size={12} />
-										Help me write this
-									</button>
+									/>
 								</div>
 								<textarea
 									id="daily-sports-teams"
@@ -287,14 +283,9 @@
 							<div class="subfield">
 								<div class="field-label-row">
 									<label for="daily-custom-{opt.key}">What do you want to see? (optional)</label>
-									<button
-										type="button"
-										class="wizard-btn"
+									<WizardButton
 										onclick={() => (wizardBlock = { key: opt.key, label: opt.label, isCustom: false })}
-									>
-										<Sparkles size={12} />
-										Help me write this
-									</button>
+									/>
 								</div>
 								<textarea
 									id="daily-custom-{opt.key}"
@@ -335,19 +326,14 @@
 									oninput={(e) => (block.title = e.currentTarget.value)}
 									placeholder="Title, e.g. Stock Watchlist"
 								/>
-								<button
-									type="button"
-									class="wizard-btn"
+								<WizardButton
 									onclick={() =>
 										(wizardBlock = {
 											key: block.key,
 											label: block.title || 'this block',
 											isCustom: true
 										})}
-								>
-									<Sparkles size={12} />
-									Help me write this
-								</button>
+								/>
 								<button
 									type="button"
 									class="icon-btn"
@@ -565,28 +551,6 @@
 
 	.field-label-row label {
 		margin-bottom: 0;
-	}
-
-	/* Same wizard-launch button as PulsarRoutineForm.svelte's prompt
-	   field — duplicated, not shared, since Svelte scopes component
-	   styles per-file (see that component's own doc comment on this
-	   convention elsewhere). */
-	.wizard-btn {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		margin-bottom: var(--space-xs);
-		padding: 2px var(--space-sm);
-		border: none;
-		background: transparent;
-		border-radius: var(--radius-full);
-		font-size: 11.5px;
-		font-weight: 600;
-		color: var(--color-accent);
-	}
-
-	.wizard-btn:hover {
-		background: var(--color-accent-soft);
 	}
 
 	/* Full-width, "carved into the surface" field — used for every

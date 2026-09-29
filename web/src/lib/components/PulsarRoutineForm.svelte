@@ -3,9 +3,10 @@
 	import { pulsarState, type PulsarRoutineInput } from '$lib/pulsar.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode, PulsarRoutine } from '$lib/types';
-	import { X, Sparkles, CalendarClock } from '@lucide/svelte';
+	import { X, CalendarClock } from '@lucide/svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import WizardOverlay from './WizardOverlay.svelte';
+	import WizardButton from './WizardButton.svelte';
 	import { untrack } from 'svelte';
 
 	// One form doing double duty as both create and edit, per
@@ -161,10 +162,7 @@
 			<div class="field">
 				<div class="field-label-row">
 					<label for="pulsar-prompt">Prompt</label>
-					<button type="button" class="wizard-btn" onclick={() => (showWizard = true)}>
-						<Sparkles size={12} />
-						Help me write this
-					</button>
+					<WizardButton onclick={() => (showWizard = true)} />
 				</div>
 				<textarea
 					id="pulsar-prompt"
@@ -308,24 +306,6 @@
 
 	.field-label-row label {
 		margin-bottom: 0;
-	}
-
-	.wizard-btn {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		margin-bottom: var(--space-xs);
-		padding: 2px var(--space-sm);
-		border: none;
-		background: transparent;
-		border-radius: var(--radius-full);
-		font-size: 11.5px;
-		font-weight: 600;
-		color: var(--color-accent);
-	}
-
-	.wizard-btn:hover {
-		background: var(--color-accent-soft);
 	}
 
 	.field input,
