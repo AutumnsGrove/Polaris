@@ -7,6 +7,7 @@
 	import { constellationState } from '$lib/constellation.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import ProjectChips from '$lib/components/ProjectChips.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import {
 		PanelLeft,
@@ -47,11 +48,45 @@
 	let confirming = $state<null | { kind: 'project' } | { kind: 'file'; file: ProjectFile }>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 
+	// Day-to-day use is "open a conversation", so that's the default tab and
+	// setup (instructions/files/settings) sits one tap away instead of above
+	// the work. A brand-new project is sent here with ?tab=instructions (see
+	// the hub's create()) so the fill-it-in flow still leads for a new one.
+	type Tab = 'conversations' | 'files' | 'instructions' | 'settings';
+	const TABS: { id: Tab; label: string }[] = [
+		{ id: 'conversations', label: 'Conversations' },
+		{ id: 'files', label: 'Files' },
+		{ id: 'instructions', label: 'Instructions' },
+		{ id: 'settings', label: 'Settings' }
+	];
+	function initialTab(): Tab {
+		const t = page.url.searchParams.get('tab');
+		return TABS.some((x) => x.id === t) ? (t as Tab) : 'conversations';
+	}
+	let tab = $state<Tab>(initialTab());
+	function selectTab(t: Tab) {
+		tab = t;
+		// Mirrored into the URL (replaceState via goto, so Back still leaves the
+		// project rather than stepping through tabs) so a refresh or a shared
+		// link lands on the same tab.
+		const url = new URL(page.url);
+		if (t === 'conversations') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', t);
+		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+	}
+
 	onMount(() => {
 		// Needed only to grey out the Constellation toggle when the feature is
 		// off globally — cheap, and null until loaded.
 		if (!constellationState.config) void constellationState.loadConfig();
 		if (!appState.settings.loaded) void appState.settings.load();
+		// The model picker below reads appState.models, which the layout loads
+		// once at startup — a single fetch that, if it lands while the backend
+		// is restarting, is never retried, leaving the picker with no models.
+		// Ensure it here too. Guarded on empty because loadModels() also
+		// resets the composer's selectedModel to the default, which must not
+		// clobber a choice already made.
+		if (appState.models.length === 0) void appState.loadModels();
 	});
 
 	// Re-runs on a route-to-route navigation between two projects (the sidebar's
@@ -193,6 +228,23 @@
 		return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 	}
 
+	// A saved default model that's no longer in the live list (removed from
+	// config since) must still show as the current value, not silently read as
+	// "use my global default" while the server keeps the old id.
+	let modelMissing = $derived(
+		!!detail?.project.default_model && !appState.models.some((m) => m.id === detail!.project.default_model)
+	);
+
+	function relativeDay(iso: string): string {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+		if (days <= 0) return 'Today';
+		if (days === 1) return 'Yesterday';
+		if (days < 7) return `${days} days ago`;
+		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+
 	let constellationOff = $derived(!!constellationState.config && !constellationState.config.enabled);
 </script>
 
@@ -244,6 +296,11 @@
 	{:else if detail}
 		{@const project = detail.project}
 		<div class="column">
+			<div class="summary">
+				{#if project.description}<p class="summary-desc">{project.description}</p>{/if}
+				<ProjectChips {project} />
+			</div>
+
 			<!-- Omnibox: typing a prompt and sending creates a thread in this
 			     project AND opens it mid-turn. The plain button beside it is the
 			     other case — a blank, unsent composer scoped to the project. -->
@@ -251,7 +308,7 @@
 				<textarea
 					bind:value={prompt}
 					onkeydown={onPromptKeydown}
-					rows="3"
+					rows="2"
 					placeholder="Start a conversation in {project.name}…"
 					aria-label="Start a conversation in this project"
 				></textarea>
@@ -271,211 +328,238 @@
 				</div>
 			</section>
 
-			<section class="card">
-				<h2 class="card-title">About</h2>
-				<input class="text-input" bind:value={name} onblur={saveName} maxlength="100" aria-label="Project name" />
-				<input
-					class="text-input"
-					bind:value={description}
-					onblur={saveDescription}
-					maxlength="300"
-					placeholder="One-line description (shown on the hub)"
-					aria-label="Project description"
-				/>
-				<div class="setting-row">
-					<span class="row-label"><Palette size={15} /> Color</span>
-					<div class="swatches" role="radiogroup" aria-label="Color tag">
-						<button
-							class="swatch none"
-							class:selected={project.color === ''}
-							onclick={() => patch({ color: '' })}
-							role="radio"
-							aria-checked={project.color === ''}
-							aria-label="No color"
-							title="No color"
-						></button>
-						{#each PROJECT_COLORS as c (c)}
-							<button
-								class="swatch"
-								class:selected={project.color === c}
-								style:background={projectColorVar(c)}
-								onclick={() => patch({ color: c })}
-								role="radio"
-								aria-checked={project.color === c}
-								aria-label={c.replace(/-/g, ' ')}
-								title={c.replace(/-/g, ' ')}
-							></button>
-						{/each}
-					</div>
-				</div>
-			</section>
-
-			<section class="card">
-				<h2 class="card-title">Instructions</h2>
-				<p class="hint">
-					Added to every conversation in this project, after your global custom instructions — never
-					instead of them.
-				</p>
-				<textarea
-					class="instructions"
-					bind:value={instructions}
-					rows="6"
-					placeholder="How should Polaris behave in this project? Context, tone, constraints…"
-					aria-label="Project instructions"
-				></textarea>
-				<div class="instructions-foot">
-					<span class="counter" class:over={instructions.length > MAX_INSTRUCTIONS}>
-						{instructions.length} / {MAX_INSTRUCTIONS}
-					</span>
+			<div class="tabs" role="tablist" aria-label="Project sections">
+				{#each TABS as t (t.id)}
 					<button
-						class="btn btn-accent"
-						onclick={saveInstructions}
-						disabled={savingInstructions || instructions === project.custom_instructions || instructions.length > MAX_INSTRUCTIONS}
+						class="tab"
+						class:selected={tab === t.id}
+						role="tab"
+						id="tab-{t.id}"
+						aria-selected={tab === t.id}
+						aria-controls="panel-{t.id}"
+						onclick={() => selectTab(t.id)}
 					>
-						{savingInstructions ? 'Saving…' : 'Save'}
+						{t.label}
+						{#if t.id === 'conversations' && detail.threads.length > 0}<span class="count">{detail.threads.length}</span>{/if}
+						{#if t.id === 'files' && detail.files.length > 0}<span class="count">{detail.files.length}</span>{/if}
+					</button>
+				{/each}
+			</div>
+
+			{#if tab === 'conversations'}
+				<div class="panel" role="tabpanel" id="panel-conversations" aria-labelledby="tab-conversations">
+					{#if detail.threads.length === 0}
+						<p class="muted">
+							No conversations yet — start one above.
+							{#if !project.custom_instructions && detail.files.length === 0}
+								<button class="link" onclick={() => selectTab('instructions')}>Set up this project</button>
+								with instructions or reference files first, if you like.
+							{/if}
+						</p>
+					{/if}
+					<ul class="threads">
+						{#each detail.threads as thread (thread.id)}
+							<li>
+								<button class="thread-row" onclick={() => goto(`/t/${thread.id}`)}>
+									<span class="thread-title">{thread.title || 'Untitled'}</span>
+									<span class="thread-when">{relativeDay(thread.updated_at)}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{:else if tab === 'files'}
+				<div class="panel" role="tabpanel" id="panel-files" aria-labelledby="tab-files">
+					<p class="hint">
+						<Lock size={12} /> Every conversation in this project can read these, but not change them — an
+						edit is saved as a copy in that conversation's own workspace.
+					</p>
+					{#if detail.files.length === 0}
+						<p class="muted">No shared files yet.</p>
+					{/if}
+					<ul class="files">
+						{#each detail.files as file (file.name)}
+							<li class="file">
+								<FileText size={14} />
+								<a
+									class="file-name"
+									href="/api/workspace/{project.id}/{encodeURIComponent(file.name)}"
+									target="_blank"
+									rel="noopener"
+								>
+									{file.name}
+								</a>
+								<span class="file-size">{formatSize(file.size_bytes)}</span>
+								<button
+									class="icon-btn"
+									onclick={() => (confirming = { kind: 'file', file })}
+									title="Remove file"
+									aria-label="Remove {file.name}"
+								>
+									<Trash2 size={14} />
+								</button>
+							</li>
+						{/each}
+					</ul>
+					<input
+						bind:this={fileInput}
+						type="file"
+						multiple
+						accept="image/*,.pdf,.md,.txt,.json,.csv,.yaml,.yml,.xml"
+						hidden
+						onchange={(e) => uploadFiles(e.currentTarget.files)}
+					/>
+					<button class="btn" onclick={() => fileInput?.click()} disabled={uploading}>
+						<Upload size={16} />
+						{uploading ? 'Uploading…' : 'Add files'}
 					</button>
 				</div>
-			</section>
-
-			<section class="card">
-				<h2 class="card-title">Shared files</h2>
-				<p class="hint">
-					<Lock size={12} /> Every conversation in this project can read these, but not change them — an
-					edit is saved as a copy in that conversation's own workspace.
-				</p>
-				{#if detail.files.length === 0}
-					<p class="muted">No shared files yet.</p>
-				{/if}
-				<ul class="files">
-					{#each detail.files as file (file.name)}
-						<li class="file">
-							<FileText size={14} />
-							<a
-								class="file-name"
-								href="/api/workspace/{project.id}/{encodeURIComponent(file.name)}"
-								target="_blank"
-								rel="noopener"
-							>
-								{file.name}
-							</a>
-							<span class="file-size">{formatSize(file.size_bytes)}</span>
-							<button
-								class="icon-btn"
-								onclick={() => (confirming = { kind: 'file', file })}
-								title="Remove file"
-								aria-label="Remove {file.name}"
-							>
-								<Trash2 size={14} />
-							</button>
-						</li>
-					{/each}
-				</ul>
-				<input
-					bind:this={fileInput}
-					type="file"
-					multiple
-					accept="image/*,.pdf,.md,.txt,.json,.csv,.yaml,.yml,.xml"
-					hidden
-					onchange={(e) => uploadFiles(e.currentTarget.files)}
-				/>
-				<button class="btn" onclick={() => fileInput?.click()} disabled={uploading}>
-					<Upload size={16} />
-					{uploading ? 'Uploading…' : 'Add files'}
-				</button>
-			</section>
-
-			<section class="card">
-				<h2 class="card-title">Settings</h2>
-
-				<div class="setting-row">
-					<span class="row-label"><SlidersHorizontal size={15} /> Default focus mode</span>
-					<select
-						value={project.default_focus_mode}
-						onchange={(e) => patch({ default_focus_mode: e.currentTarget.value as Project['default_focus_mode'] })}
-						aria-label="Default focus mode"
-					>
-						<option value="">Use my global default</option>
-						<option value="off">None</option>
-						{#each FOCUS_MODES as mode (mode.id)}
-							<option value={mode.id}>{mode.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="setting-row">
-					<span class="row-label"><Cpu size={15} /> Default model</span>
-					<select
-						value={project.default_model}
-						onchange={(e) => patch({ default_model: e.currentTarget.value })}
-						aria-label="Default model"
-					>
-						<option value="">Use my global default</option>
-						{#each appState.models as m (m.id)}
-							<option value={m.id}>{m.name}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="setting-row">
-					<span class="row-label"><Brain size={15} /> Memory</span>
-					<div class="segmented" role="radiogroup" aria-label="Memory mode">
+			{:else if tab === 'instructions'}
+				<div class="panel" role="tabpanel" id="panel-instructions" aria-labelledby="tab-instructions">
+					<p class="hint">
+						Added to every conversation in this project, after your global custom instructions — never
+						instead of them.
+					</p>
+					<textarea
+						class="instructions"
+						bind:value={instructions}
+						rows="10"
+						placeholder="How should Polaris behave in this project? Context, tone, constraints…"
+						aria-label="Project instructions"
+					></textarea>
+					<div class="instructions-foot">
+						<span class="counter" class:over={instructions.length > MAX_INSTRUCTIONS}>
+							{instructions.length} / {MAX_INSTRUCTIONS}
+						</span>
 						<button
-							class:selected={project.memory_mode === 'default'}
-							onclick={() => patch({ memory_mode: 'default' })}
-							role="radio"
-							aria-checked={project.memory_mode === 'default'}>Default</button
+							class="btn btn-accent"
+							onclick={saveInstructions}
+							disabled={savingInstructions || instructions === project.custom_instructions || instructions.length > MAX_INSTRUCTIONS}
 						>
-						<button
-							class:selected={project.memory_mode === 'none'}
-							onclick={() => patch({ memory_mode: 'none' })}
-							role="radio"
-							aria-checked={project.memory_mode === 'none'}>None</button
-						>
-						<!-- Reserved for the real per-project memory store (plan's
-						     v2) — shown so the picker's shape doesn't change when it
-						     lands, but not selectable until it does. -->
-						<button disabled title="Coming later" role="radio" aria-checked="false">Project-scoped</button>
+							{savingInstructions ? 'Saving…' : 'Save'}
+						</button>
 					</div>
 				</div>
-
-				<div class="setting-row">
-					<span class="row-label">
-						<Orbit size={15} /> Visible to Constellation
-						{#if constellationOff}<span class="row-note">(Constellation is off)</span>{/if}
-					</span>
-					<Switch
-						checked={project.constellation_visible}
-						disabled={constellationOff}
-						label="Visible to Constellation"
-						onchange={(v) => patch({ constellation_visible: v })}
+			{:else}
+				<div class="panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings">
+					<h2 class="panel-title">About</h2>
+					<input class="text-input" bind:value={name} onblur={saveName} maxlength="100" aria-label="Project name" />
+					<input
+						class="text-input"
+						bind:value={description}
+						onblur={saveDescription}
+						maxlength="300"
+						placeholder="One-line description (shown on the hub)"
+						aria-label="Project description"
 					/>
-				</div>
+					<div class="setting-row">
+						<span class="row-label"><Palette size={15} /> Color</span>
+						<div class="swatches" role="radiogroup" aria-label="Color tag">
+							<button
+								class="swatch none"
+								class:selected={project.color === ''}
+								onclick={() => patch({ color: '' })}
+								role="radio"
+								aria-checked={project.color === ''}
+								aria-label="No color"
+								title="No color"
+							></button>
+							{#each PROJECT_COLORS as c (c)}
+								<button
+									class="swatch"
+									class:selected={project.color === c}
+									style:background={projectColorVar(c)}
+									onclick={() => patch({ color: c })}
+									role="radio"
+									aria-checked={project.color === c}
+									aria-label={c.replace(/-/g, ' ')}
+									title={c.replace(/-/g, ' ')}
+								></button>
+							{/each}
+						</div>
+					</div>
 
-				<div class="setting-row">
-					<span class="row-label"><SearchSlash size={15} /> Exclude from chat search</span>
-					<Switch
-						checked={project.exclude_from_chat_search}
-						label="Exclude from chat search"
-						onchange={(v) => patch({ exclude_from_chat_search: v })}
-					/>
-				</div>
-			</section>
+					<h2 class="panel-title spaced">Defaults</h2>
 
-			<section class="card">
-				<h2 class="card-title">Conversations</h2>
-				{#if detail.threads.length === 0}
-					<p class="muted">No conversations yet. Start one above.</p>
-				{/if}
-				<ul class="threads">
-					{#each detail.threads as thread (thread.id)}
-						<li>
-							<button class="thread-row" onclick={() => goto(`/t/${thread.id}`)}>
-								{thread.title || 'Untitled'}
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</section>
+					<div class="setting-row">
+						<span class="row-label"><SlidersHorizontal size={15} /> Default focus mode</span>
+						<select
+							value={project.default_focus_mode}
+							onchange={(e) => patch({ default_focus_mode: e.currentTarget.value as Project['default_focus_mode'] })}
+							aria-label="Default focus mode"
+						>
+							<option value="">Use my global default</option>
+							<option value="off">None</option>
+							{#each FOCUS_MODES as mode (mode.id)}
+								<option value={mode.id}>{mode.label}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="setting-row">
+						<span class="row-label"><Cpu size={15} /> Default model</span>
+						<select
+							value={project.default_model}
+							onchange={(e) => patch({ default_model: e.currentTarget.value })}
+							aria-label="Default model"
+						>
+							<option value="">Use my global default</option>
+							{#if modelMissing}
+								<option value={project.default_model}>{project.default_model} (unavailable)</option>
+							{/if}
+							{#each appState.models as m (m.id)}
+								<option value={m.id}>{m.name}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="setting-row">
+						<span class="row-label"><Brain size={15} /> Memory</span>
+						<div class="segmented" role="radiogroup" aria-label="Memory mode">
+							<button
+								class:selected={project.memory_mode === 'default'}
+								onclick={() => patch({ memory_mode: 'default' })}
+								role="radio"
+								aria-checked={project.memory_mode === 'default'}>Default</button
+							>
+							<button
+								class:selected={project.memory_mode === 'none'}
+								onclick={() => patch({ memory_mode: 'none' })}
+								role="radio"
+								aria-checked={project.memory_mode === 'none'}>None</button
+							>
+							<!-- Reserved for the real per-project memory store (plan's
+							     v2) — shown so the picker's shape doesn't change when it
+							     lands, but not selectable until it does. -->
+							<button disabled title="Coming later" role="radio" aria-checked="false">Project-scoped</button>
+						</div>
+					</div>
+
+					<h2 class="panel-title spaced">Privacy</h2>
+
+					<div class="setting-row">
+						<span class="row-label">
+							<Orbit size={15} /> Visible to Constellation
+							{#if constellationOff}<span class="row-note">(Constellation is off)</span>{/if}
+						</span>
+						<Switch
+							checked={project.constellation_visible}
+							disabled={constellationOff}
+							label="Visible to Constellation"
+							onchange={(v) => patch({ constellation_visible: v })}
+						/>
+					</div>
+
+					<div class="setting-row">
+						<span class="row-label"><SearchSlash size={15} /> Exclude from chat search</span>
+						<Switch
+							checked={project.exclude_from_chat_search}
+							label="Exclude from chat search"
+							onchange={(v) => patch({ exclude_from_chat_search: v })}
+						/>
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -551,7 +635,7 @@
 		padding-bottom: var(--space-4xl);
 	}
 
-	.card,
+	.panel,
 	.omnibox {
 		display: flex;
 		flex-direction: column;
@@ -562,7 +646,7 @@
 		box-shadow: var(--shadow-sm), var(--shadow-glass-edge);
 	}
 
-	.card-title {
+	.panel-title {
 		margin: 0;
 		font-size: 11px;
 		font-weight: 700;
@@ -579,6 +663,79 @@
 		font-size: 12.5px;
 		line-height: 1.5;
 		color: var(--color-text-dim);
+	}
+
+	.panel-title.spaced {
+		margin-top: var(--space-md);
+	}
+
+	.summary {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+	}
+
+	.summary:empty {
+		display: none;
+	}
+
+	.summary-desc {
+		margin: 0;
+		font-size: 13.5px;
+		line-height: 1.5;
+		color: var(--color-text-dim);
+	}
+
+	.tabs {
+		display: flex;
+		gap: var(--space-xs);
+		overflow-x: auto;
+		/* Scrolls sideways on a narrow phone rather than wrapping to two rows. */
+		scrollbar-width: none;
+	}
+
+	.tab {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs);
+		flex-shrink: 0;
+		padding: var(--space-sm) var(--space-md);
+		border: none;
+		border-radius: var(--radius-full);
+		background: transparent;
+		font: inherit;
+		font-size: 13.5px;
+		color: var(--color-text-dim);
+		cursor: pointer;
+		transition:
+			background-color 0.15s var(--ease-out-expo),
+			color 0.15s var(--ease-out-expo);
+	}
+
+	.tab:hover {
+		background: var(--color-surface-2);
+	}
+
+	.tab.selected {
+		background: var(--color-accent-soft);
+		color: var(--color-text);
+		font-weight: 600;
+	}
+
+	.count {
+		font-size: 11.5px;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-dim);
+	}
+
+	.link {
+		border: none;
+		background: transparent;
+		padding: 0;
+		font: inherit;
+		color: var(--color-accent);
+		cursor: pointer;
+		text-decoration: underline;
 	}
 
 	.muted {
@@ -755,6 +912,10 @@
 	}
 
 	.thread-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-md);
 		width: 100%;
 		border: none;
 		border-radius: var(--radius-md);
@@ -766,6 +927,19 @@
 		color: var(--color-text);
 		cursor: pointer;
 		transition: background-color 0.15s var(--ease-out-expo);
+	}
+
+	.thread-title {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.thread-when {
+		flex-shrink: 0;
+		font-size: 12px;
+		color: var(--color-text-dim);
 	}
 
 	.thread-row:hover {

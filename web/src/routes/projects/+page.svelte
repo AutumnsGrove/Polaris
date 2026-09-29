@@ -26,7 +26,9 @@
 			appState.showToast(res.error);
 			return;
 		}
-		void goto(`/projects/${res.data.id}`);
+		// Straight to Instructions: a brand-new project has nothing to open yet,
+		// so the fill-it-in flow leads (the detail view defaults to Conversations).
+		void goto(`/projects/${res.data.id}?tab=instructions`);
 	}
 
 	// A tap on the star must not also open the card it sits on.
