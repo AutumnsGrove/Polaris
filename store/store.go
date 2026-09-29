@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- WHERE query instead of inferring it from title text. Empty for every
 	-- other thread.
 	pulsar_routine_id INTEGER,
+	-- project_id: the Project (see the projects table below and
+	-- docs/plans/projects.md) this thread belongs to, or NULL for an
+	-- ordinary ungrouped thread. Nullable with no default, so every
+	-- pre-Projects thread is simply "not in a project" — the same "add a
+	-- column, only matters going forward" shape as pulsar_routine_id above.
+	-- A real FK, not a bare TEXT: DeleteProject must NULL these out in the
+	-- same transaction that removes the project row (foreign_keys=on, see
+	-- Open), never leave a dangling id.
+	project_id TEXT REFERENCES projects(id),
 	-- seen: whether a pulsar-sourced thread's pulse has actually been
 	-- opened yet — flipped by the same open path continued_in_assistant
 	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
@@ -594,6 +603,45 @@ CREATE TABLE IF NOT EXISTS memories (
 	-- including why a forgotten name can be reused (CreateMemory revives
 	-- a disabled row instead of failing on it).
 	disabled INTEGER NOT NULL DEFAULT 0
+);
+
+-- projects backs Projects (see docs/plans/projects.md, issue #119): a named
+-- container of threads with its own custom instructions, a shared read-only
+-- file pool (<CodeExecWorkspaceDir>/<id>/, never this table's concern), and a
+-- handful of per-project turn defaults. Threads join via threads.project_id.
+-- A deleted project is a real DELETE (no disabled column) — see
+-- store/projects.go's DeleteProject for the orphan-the-threads sequence.
+CREATE TABLE IF NOT EXISTS projects (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	-- description: one line, shown on the hub's card grid.
+	description TEXT NOT NULL DEFAULT '',
+	-- custom_instructions: same free-text shape as the global operator-wide
+	-- field (gateway/settings.go's maxCustomInstructionsChars cap applies),
+	-- appended after it — never instead of it — at turn-context build.
+	custom_instructions TEXT NOT NULL DEFAULT '',
+	-- favorite: 1 = pinned into the sidebar's Projects section, the same
+	-- mechanism threads.favorite is. An unfavorited project is reachable
+	-- only via /projects.
+	favorite INTEGER NOT NULL DEFAULT 0,
+	-- default_focus_mode/default_model: '' = inherit the global standing
+	-- default (settings.defaultFocusMode / settings.defaultModel), not
+	-- "force off" — 'off' is itself a valid focus mode id.
+	default_focus_mode TEXT NOT NULL DEFAULT '',
+	default_model TEXT NOT NULL DEFAULT '',
+	-- memory_mode: 'default' | 'none'. 'project_scoped' is a reserved,
+	-- not-yet-functional value (the plan's v2) — accepted nowhere yet, see
+	-- ValidProjectMemoryMode.
+	memory_mode TEXT NOT NULL DEFAULT 'default',
+	-- constellation_visible: 0 = Weaver skips this project's threads.
+	constellation_visible INTEGER NOT NULL DEFAULT 1,
+	-- exclude_from_chat_search: 1 = SearchMessages skips this project's
+	-- threads entirely.
+	exclude_from_chat_search INTEGER NOT NULL DEFAULT 0,
+	-- color: '' = no tag, else one of app.css's --color-cat-* suffixes.
+	color TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- pulsar_routines backs Pulsar (see docs/plans/pulsar-routines.md): a saved
@@ -1214,6 +1262,11 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 	// jev_usage.source — see the schema comment above (issue #125).
 	`ALTER TABLE jev_usage ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+	// threads.project_id — see the schema comment above (issue #119).
+	// Appended at the end per this file's own established rule (positional
+	// user_version tracking, never insert mid-list). NULL default is also
+	// what SQLite requires to ADD COLUMN ... REFERENCES at all.
+	`ALTER TABLE threads ADD COLUMN project_id TEXT REFERENCES projects(id)`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1334,9 +1387,14 @@ type Thread struct {
 	// every other thread. The frontend uses this to show a "back to
 	// routine" affordance on a pulse's thread view instead of the normal
 	// sidebar-toggle-only header, per the plan doc's "Pulse detail" UI.
-	PulsarRoutineID *int64    `json:"pulsar_routine_id,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	PulsarRoutineID *int64 `json:"pulsar_routine_id,omitempty"`
+	// ProjectID is the Project this thread belongs to (see threads.project_id)
+	// — nil for an ungrouped thread. The frontend reads it for the header's
+	// project pill; gateway/turn.go reads it off GetThreadRaw each turn, since
+	// membership can change between turns (SetThreadProject).
+	ProjectID *string   `json:"project_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Ghost mirrors threads.ghost — see its schema comment. Internal-only:
 	// gateway/turn.go reads this off GetThreadRaw to re-derive ghost status
 	// per turn, but it's never sent to the frontend.
@@ -1827,9 +1885,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, project_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = '' AND ghost = 0`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1846,9 +1904,9 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, ghost, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, ghost, project_id, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.Ghost, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.Ghost, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
