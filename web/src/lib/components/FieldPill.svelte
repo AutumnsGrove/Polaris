@@ -21,7 +21,7 @@
 	title="Field: {field.name}"
 	aria-label="Open Field {field.name}"
 >
-	<FieldIcon size={12} />
+	<FieldIcon size={14} />
 	<span class="name">{field.name}</span>
 </button>
 

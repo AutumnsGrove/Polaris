@@ -377,7 +377,7 @@ surface, detail lives in its own view" split already established by Pulsar/Daily
 ### Thread header: field indicator
 
 A thread that belongs to a field shows a small pill in its chat header (next to the title, ahead
-of `ThreadMenu`'s "…" button) — the same folder icon used in the sidebar's Fields section label,
+of `ThreadMenu`'s "…" button) — the same Deep Field icon (`FieldIcon.svelte`) used in the sidebar's Fields section label,
 plus the field's name and color tag if set. Tapping it navigates to the field's detail view.
 Without this, a thread opened straight from search or a shared link would give no indication it's
 part of a shared-context field at all — the instructions and workspace files silently in play
