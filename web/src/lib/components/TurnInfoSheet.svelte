@@ -54,7 +54,7 @@
 	let offersLabel = $derived.by(() => {
 		const chips = turn.oracleResult?.chips;
 		if (!chips?.length) return 'None';
-		return chips.map((c) => (c.key === 'project' ? (c.label ?? 'Project') : (CHIP_NAMES[c.key] ?? c.key))).join(', ');
+		return chips.map((c) => (c.key === 'field' ? (c.label ?? 'Field') : (CHIP_NAMES[c.key] ?? c.key))).join(', ');
 	});
 
 	// The check's own runner-up option (highest probability that isn't the

@@ -3,11 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { appState } from '$lib/state.svelte';
-	import { projectsState, projectColorVar, PROJECT_COLORS } from '$lib/projects.svelte';
+	import { fieldsState, fieldColorVar, FIELD_COLORS } from '$lib/fields.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-	import ProjectChips from '$lib/components/ProjectChips.svelte';
+	import FieldChips from '$lib/components/FieldChips.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import {
 		PanelLeft,
@@ -26,13 +26,13 @@
 		SlidersHorizontal,
 		Palette
 	} from '@lucide/svelte';
-	import type { Project, ProjectDetail, ProjectFile } from '$lib/types';
+	import type { Field, FieldDetail, FieldFile } from '$lib/types';
 
 	// Mirrors gateway/settings.go's maxCustomInstructionsChars — the server is
 	// the real limit; this just lets the counter turn red before a save 400s.
 	const MAX_INSTRUCTIONS = 4000;
 
-	let detail = $state<ProjectDetail | null>(null);
+	let detail = $state<FieldDetail | null>(null);
 	let notFound = $state(false);
 	let loadError = $state('');
 
@@ -45,12 +45,12 @@
 	let prompt = $state('');
 	let savingInstructions = $state(false);
 	let uploading = $state(false);
-	let confirming = $state<null | { kind: 'project' } | { kind: 'file'; file: ProjectFile }>(null);
+	let confirming = $state<null | { kind: 'field' } | { kind: 'file'; file: FieldFile }>(null);
 	let fileInput: HTMLInputElement | undefined = $state();
 
 	// Day-to-day use is "open a conversation", so that's the default tab and
 	// setup (instructions/files/settings) sits one tap away instead of above
-	// the work. A brand-new project is sent here with ?tab=instructions (see
+	// the work. A brand-new field is sent here with ?tab=instructions (see
 	// the hub's create()) so the fill-it-in flow still leads for a new one.
 	type Tab = 'conversations' | 'files' | 'instructions' | 'settings';
 	const TABS: { id: Tab; label: string }[] = [
@@ -67,7 +67,7 @@
 	function selectTab(t: Tab) {
 		tab = t;
 		// Mirrored into the URL (replaceState via goto, so Back still leaves the
-		// project rather than stepping through tabs) so a refresh or a shared
+		// field rather than stepping through tabs) so a refresh or a shared
 		// link lands on the same tab.
 		const url = new URL(page.url);
 		if (t === 'conversations') url.searchParams.delete('tab');
@@ -89,7 +89,7 @@
 		if (appState.models.length === 0) void appState.loadModels();
 	});
 
-	// Re-runs on a route-to-route navigation between two projects (the sidebar's
+	// Re-runs on a route-to-route navigation between two fields (the sidebar's
 	// pinned shortcuts), which reuses this component instance.
 	$effect(() => {
 		const id = page.params.id;
@@ -100,16 +100,16 @@
 		void load(id);
 	});
 
-	function adopt(d: ProjectDetail) {
+	function adopt(d: FieldDetail) {
 		detail = d;
-		name = d.project.name;
-		description = d.project.description;
-		instructions = d.project.custom_instructions;
+		name = d.field.name;
+		description = d.field.description;
+		instructions = d.field.custom_instructions;
 	}
 
 	async function load(id: string) {
-		const res = await projectsState.loadDetail(id);
-		if (id !== page.params.id) return; // navigated to another project mid-request
+		const res = await fieldsState.loadDetail(id);
+		if (id !== page.params.id) return; // navigated to another field mid-request
 		if (res.ok) {
 			adopt(res.data);
 		} else if (res.error.includes('404') || res.error.toLowerCase().includes('not found')) {
@@ -121,27 +121,27 @@
 
 	// One PATCH path for every setting: applies the server's answer (not the
 	// optimistic value) so a rejected field snaps back, and toasts the reason.
-	async function patch(fields: Partial<Project>): Promise<boolean> {
+	async function patch(fields: Partial<Field>): Promise<boolean> {
 		if (!detail) return false;
-		const res = await projectsState.update(detail.project.id, fields);
+		const res = await fieldsState.update(detail.field.id, fields);
 		if (!res.ok) {
 			appState.showToast(res.error);
 			// Re-sync the buffers so a rejected edit doesn't linger in an input.
-			name = detail.project.name;
-			description = detail.project.description;
+			name = detail.field.name;
+			description = detail.field.description;
 			return false;
 		}
-		detail.project = res.data;
+		detail.field = res.data;
 		return true;
 	}
 
 	async function saveName() {
-		if (!detail || name.trim() === detail.project.name) return;
+		if (!detail || name.trim() === detail.field.name) return;
 		await patch({ name });
 	}
 
 	async function saveDescription() {
-		if (!detail || description === detail.project.description) return;
+		if (!detail || description === detail.field.description) return;
 		await patch({ description });
 	}
 
@@ -154,15 +154,15 @@
 
 	// The omnibox creates the thread AND opens it already mid-turn, rather
 	// than a separate "create, then type" step. Focus mode is resolved here
-	// (project default, else the global one) because send()'s own focus
+	// (field default, else the global one) because send()'s own focus
 	// argument is what the very first turn uses — ChatView's config effect
 	// only seeds the composer for the turns after it.
 	async function startWithPrompt() {
 		const text = prompt.trim();
 		if (!text || !detail || appState.busy) return;
-		const projectFocus = detail.project.default_focus_mode;
-		const focus = projectFocus ? projectFocus : appState.settings.defaultFocusMode;
-		appState.startThreadInProject(detail.project.id);
+		const fieldFocus = detail.field.default_focus_mode;
+		const focus = fieldFocus ? fieldFocus : appState.settings.defaultFocusMode;
+		appState.startThreadInField(detail.field.id);
 		prompt = '';
 		await goto('/');
 		appState.send(text, undefined, focus && focus !== 'off' ? focus : undefined);
@@ -170,7 +170,7 @@
 
 	async function startBlank() {
 		if (!detail) return;
-		appState.startThreadInProject(detail.project.id);
+		appState.startThreadInField(detail.field.id);
 		await goto('/');
 	}
 
@@ -186,7 +186,7 @@
 		if (!list || !detail) return;
 		uploading = true;
 		for (const file of Array.from(list)) {
-			const res = await projectsState.uploadFile(detail.project.id, file);
+			const res = await fieldsState.uploadFile(detail.field.id, file);
 			if (!res.ok) appState.showToast(`${file.name}: ${res.error}`);
 		}
 		uploading = false;
@@ -197,7 +197,7 @@
 	// Reload without clobbering an in-progress edit in the text buffers.
 	async function refreshDetail() {
 		if (!detail) return;
-		const res = await projectsState.loadDetail(detail.project.id);
+		const res = await fieldsState.loadDetail(detail.field.id);
 		if (res.ok) detail = res.data;
 	}
 
@@ -206,19 +206,19 @@
 		confirming = null;
 		if (!target || !detail) return;
 		if (target.kind === 'file') {
-			const res = await projectsState.deleteFile(detail.project.id, target.file.name);
+			const res = await fieldsState.deleteFile(detail.field.id, target.file.name);
 			if (!res.ok) appState.showToast(res.error);
 			await refreshDetail();
 		} else {
-			const res = await projectsState.remove(detail.project.id);
+			const res = await fieldsState.remove(detail.field.id);
 			if (!res.ok) {
 				appState.showToast(res.error);
 				return;
 			}
-			// Threads survive, ungrouped — the sidebar list has no project
+			// Threads survive, ungrouped — the sidebar list has no field
 			// affordance to refresh, but the thread rows' own state does.
 			void appState.loadThreads();
-			void goto('/projects');
+			void goto('/fields');
 		}
 	}
 
@@ -232,7 +232,7 @@
 	// config since) must still show as the current value, not silently read as
 	// "use my global default" while the server keeps the old id.
 	let modelMissing = $derived(
-		!!detail?.project.default_model && !appState.models.some((m) => m.id === detail!.project.default_model)
+		!!detail?.field.default_model && !appState.models.some((m) => m.id === detail!.field.default_model)
 	);
 
 	function relativeDay(iso: string): string {
@@ -249,12 +249,12 @@
 </script>
 
 <svelte:head>
-	<title>{detail ? `${detail.project.name} — Projects` : 'Project'} — Polaris</title>
+	<title>{detail ? `${detail.field.name} — Fields` : 'Field'} — Polaris</title>
 </svelte:head>
 
 <header class="header">
 	<div class="header-left">
-		<button class="icon-btn" onclick={() => goto('/projects')} title="All projects" aria-label="All projects">
+		<button class="icon-btn" onclick={() => goto('/fields')} title="All Fields" aria-label="All Fields">
 			<ChevronLeft size={18} />
 		</button>
 		{#if !appState.sidebarOpen}
@@ -262,25 +262,25 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<h1 class="page-title">{detail?.project.name ?? ''}</h1>
+		<h1 class="page-title">{detail?.field.name ?? ''}</h1>
 	</div>
 	{#if detail}
 		<div class="header-right">
 			<button
 				class="icon-btn"
-				class:pinned={detail.project.favorite}
-				onclick={() => patch({ favorite: !detail!.project.favorite })}
-				title={detail.project.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
-				aria-label={detail.project.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
-				aria-pressed={detail.project.favorite}
+				class:pinned={detail.field.favorite}
+				onclick={() => patch({ favorite: !detail!.field.favorite })}
+				title={detail.field.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
+				aria-label={detail.field.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
+				aria-pressed={detail.field.favorite}
 			>
-				<Star size={17} fill={detail.project.favorite ? 'currentColor' : 'none'} />
+				<Star size={17} fill={detail.field.favorite ? 'currentColor' : 'none'} />
 			</button>
 			<button
 				class="icon-btn"
-				onclick={() => (confirming = { kind: 'project' })}
-				title="Delete project"
-				aria-label="Delete project"
+				onclick={() => (confirming = { kind: 'field' })}
+				title="Delete Field"
+				aria-label="Delete Field"
 			>
 				<Trash2 size={17} />
 			</button>
@@ -290,27 +290,27 @@
 
 <div class="content">
 	{#if notFound}
-		<p class="empty">That project doesn't exist anymore.</p>
+		<p class="empty">That <span class="wordmark">Field</span> doesn't exist anymore.</p>
 	{:else if loadError}
-		<p class="empty">Couldn't load this project: {loadError}</p>
+		<p class="empty">Couldn't load this <span class="wordmark">Field</span>: {loadError}</p>
 	{:else if detail}
-		{@const project = detail.project}
+		{@const field = detail.field}
 		<div class="column">
 			<div class="summary">
-				{#if project.description}<p class="summary-desc">{project.description}</p>{/if}
-				<ProjectChips {project} />
+				{#if field.description}<p class="summary-desc">{field.description}</p>{/if}
+				<FieldChips {field} />
 			</div>
 
 			<!-- Omnibox: typing a prompt and sending creates a thread in this
-			     project AND opens it mid-turn. The plain button beside it is the
-			     other case — a blank, unsent composer scoped to the project. -->
+			     field AND opens it mid-turn. The plain button beside it is the
+			     other case — a blank, unsent composer scoped to the field. -->
 			<section class="omnibox">
 				<textarea
 					bind:value={prompt}
 					onkeydown={onPromptKeydown}
 					rows="2"
-					placeholder="Start a conversation in {project.name}…"
-					aria-label="Start a conversation in this project"
+					placeholder="Start a conversation in {field.name}…"
+					aria-label="Start a conversation in this Field"
 				></textarea>
 				<div class="omnibox-actions">
 					<button class="btn" onclick={startBlank}>
@@ -328,7 +328,7 @@
 				</div>
 			</section>
 
-			<div class="tabs" role="tablist" aria-label="Project sections">
+			<div class="tabs" role="tablist" aria-label="Field sections">
 				{#each TABS as t (t.id)}
 					<button
 						class="tab"
@@ -351,8 +351,8 @@
 					{#if detail.threads.length === 0}
 						<p class="muted">
 							No conversations yet — start one above.
-							{#if !project.custom_instructions && detail.files.length === 0}
-								<button class="link" onclick={() => selectTab('instructions')}>Set up this project</button>
+							{#if !field.custom_instructions && detail.files.length === 0}
+								<button class="link" onclick={() => selectTab('instructions')}>Set up this <span class="wordmark">Field</span></button>
 								with instructions or reference files first, if you like.
 							{/if}
 						</p>
@@ -371,7 +371,7 @@
 			{:else if tab === 'files'}
 				<div class="panel" role="tabpanel" id="panel-files" aria-labelledby="tab-files">
 					<p class="hint">
-						<Lock size={12} /> Every conversation in this project can read these, but not change them — an
+						<Lock size={12} /> Every conversation in this <span class="wordmark">Field</span> can read these, but not change them — an
 						edit is saved as a copy in that conversation's own workspace.
 					</p>
 					{#if detail.files.length === 0}
@@ -383,7 +383,7 @@
 								<FileText size={14} />
 								<a
 									class="file-name"
-									href="/api/workspace/{project.id}/{encodeURIComponent(file.name)}"
+									href="/api/workspace/{field.id}/{encodeURIComponent(file.name)}"
 									target="_blank"
 									rel="noopener"
 								>
@@ -417,15 +417,15 @@
 			{:else if tab === 'instructions'}
 				<div class="panel" role="tabpanel" id="panel-instructions" aria-labelledby="tab-instructions">
 					<p class="hint">
-						Added to every conversation in this project, after your global custom instructions — never
+						Added to every conversation in this <span class="wordmark">Field</span>, after your global custom instructions — never
 						instead of them.
 					</p>
 					<textarea
 						class="instructions"
 						bind:value={instructions}
 						rows="10"
-						placeholder="How should Polaris behave in this project? Context, tone, constraints…"
-						aria-label="Project instructions"
+						placeholder="How should Polaris behave in this Field? Context, tone, constraints…"
+						aria-label="Field instructions"
 					></textarea>
 					<div class="instructions-foot">
 						<span class="counter" class:over={instructions.length > MAX_INSTRUCTIONS}>
@@ -434,7 +434,7 @@
 						<button
 							class="btn btn-accent"
 							onclick={saveInstructions}
-							disabled={savingInstructions || instructions === project.custom_instructions || instructions.length > MAX_INSTRUCTIONS}
+							disabled={savingInstructions || instructions === field.custom_instructions || instructions.length > MAX_INSTRUCTIONS}
 						>
 							{savingInstructions ? 'Saving…' : 'Save'}
 						</button>
@@ -443,35 +443,35 @@
 			{:else}
 				<div class="panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings">
 					<h2 class="panel-title">About</h2>
-					<input class="text-input" bind:value={name} onblur={saveName} maxlength="100" aria-label="Project name" />
+					<input class="text-input" bind:value={name} onblur={saveName} maxlength="100" aria-label="Field name" />
 					<input
 						class="text-input"
 						bind:value={description}
 						onblur={saveDescription}
 						maxlength="300"
 						placeholder="One-line description (shown on the hub)"
-						aria-label="Project description"
+						aria-label="Field description"
 					/>
 					<div class="setting-row">
 						<span class="row-label"><Palette size={15} /> Color</span>
 						<div class="swatches" role="radiogroup" aria-label="Color tag">
 							<button
 								class="swatch none"
-								class:selected={project.color === ''}
+								class:selected={field.color === ''}
 								onclick={() => patch({ color: '' })}
 								role="radio"
-								aria-checked={project.color === ''}
+								aria-checked={field.color === ''}
 								aria-label="No color"
 								title="No color"
 							></button>
-							{#each PROJECT_COLORS as c (c)}
+							{#each FIELD_COLORS as c (c)}
 								<button
 									class="swatch"
-									class:selected={project.color === c}
-									style:background={projectColorVar(c)}
+									class:selected={field.color === c}
+									style:background={fieldColorVar(c)}
 									onclick={() => patch({ color: c })}
 									role="radio"
-									aria-checked={project.color === c}
+									aria-checked={field.color === c}
 									aria-label={c.replace(/-/g, ' ')}
 									title={c.replace(/-/g, ' ')}
 								></button>
@@ -484,8 +484,8 @@
 					<div class="setting-row">
 						<span class="row-label"><SlidersHorizontal size={15} /> Default focus mode</span>
 						<select
-							value={project.default_focus_mode}
-							onchange={(e) => patch({ default_focus_mode: e.currentTarget.value as Project['default_focus_mode'] })}
+							value={field.default_focus_mode}
+							onchange={(e) => patch({ default_focus_mode: e.currentTarget.value as Field['default_focus_mode'] })}
 							aria-label="Default focus mode"
 						>
 							<option value="">Use my global default</option>
@@ -499,13 +499,13 @@
 					<div class="setting-row">
 						<span class="row-label"><Cpu size={15} /> Default model</span>
 						<select
-							value={project.default_model}
+							value={field.default_model}
 							onchange={(e) => patch({ default_model: e.currentTarget.value })}
 							aria-label="Default model"
 						>
 							<option value="">Use my global default</option>
 							{#if modelMissing}
-								<option value={project.default_model}>{project.default_model} (unavailable)</option>
+								<option value={field.default_model}>{field.default_model} (unavailable)</option>
 							{/if}
 							{#each appState.models as m (m.id)}
 								<option value={m.id}>{m.name}</option>
@@ -517,21 +517,21 @@
 						<span class="row-label"><Brain size={15} /> Memory</span>
 						<div class="segmented" role="radiogroup" aria-label="Memory mode">
 							<button
-								class:selected={project.memory_mode === 'default'}
+								class:selected={field.memory_mode === 'default'}
 								onclick={() => patch({ memory_mode: 'default' })}
 								role="radio"
-								aria-checked={project.memory_mode === 'default'}>Default</button
+								aria-checked={field.memory_mode === 'default'}>Default</button
 							>
 							<button
-								class:selected={project.memory_mode === 'none'}
+								class:selected={field.memory_mode === 'none'}
 								onclick={() => patch({ memory_mode: 'none' })}
 								role="radio"
-								aria-checked={project.memory_mode === 'none'}>None</button
+								aria-checked={field.memory_mode === 'none'}>None</button
 							>
-							<!-- Reserved for the real per-project memory store (plan's
+							<!-- Reserved for the real per-field memory store (plan's
 							     v2) — shown so the picker's shape doesn't change when it
 							     lands, but not selectable until it does. -->
-							<button disabled title="Coming later" role="radio" aria-checked="false">Project-scoped</button>
+							<button disabled title="Coming later" role="radio" aria-checked="false"><span class="wordmark">Field</span>-scoped</button>
 						</div>
 					</div>
 
@@ -543,7 +543,7 @@
 							{#if constellationOff}<span class="row-note">(Constellation is off)</span>{/if}
 						</span>
 						<Switch
-							checked={project.constellation_visible}
+							checked={field.constellation_visible}
 							disabled={constellationOff}
 							label="Visible to Constellation"
 							onchange={(v) => patch({ constellation_visible: v })}
@@ -553,7 +553,7 @@
 					<div class="setting-row">
 						<span class="row-label"><SearchSlash size={15} /> Exclude from chat search</span>
 						<Switch
-							checked={project.exclude_from_chat_search}
+							checked={field.exclude_from_chat_search}
 							label="Exclude from chat search"
 							onchange={(v) => patch({ exclude_from_chat_search: v })}
 						/>
@@ -566,11 +566,11 @@
 
 {#if confirming}
 	<ConfirmModal
-		heading={confirming.kind === 'project' ? 'Delete this project?' : 'Remove this file?'}
-		message={confirming.kind === 'project'
+		heading={confirming.kind === 'field' ? 'Delete this Field?' : 'Remove this file?'}
+		message={confirming.kind === 'field'
 			? 'Its conversations are kept — they just become ordinary, ungrouped threads. The shared files are deleted.'
-			: `"${confirming.file.name}" will be removed for every conversation in this project.`}
-		confirmLabel={confirming.kind === 'project' ? 'Delete project' : 'Remove'}
+			: `"${confirming.file.name}" will be removed for every conversation in this Field.`}
+		confirmLabel={confirming.kind === 'field' ? 'Delete Field' : 'Remove'}
 		onConfirm={confirmed}
 		onCancel={() => (confirming = null)}
 	/>
@@ -944,5 +944,13 @@
 
 	.thread-row:hover {
 		background: var(--color-surface-2);
+	}
+
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — every
+	   in-copy mention of "Field" as the feature's name, same as "Pulsar". */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 </style>

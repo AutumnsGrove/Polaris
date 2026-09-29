@@ -162,20 +162,20 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// next turn, with no other client-side signaling.
 	isWeaverThread := msg.Source == "weaver"
 	ghost := isNewThread && msg.Anonymous
-	// projectID is read the same way, off the same root-thread row — never
+	// fieldID is read the same way, off the same root-thread row — never
 	// a fork's own row, since ForkThread's hidden variants don't carry
-	// project_id (see store/projects.go's DeleteProject). Re-read every
+	// field_id (see store/fields.go's DeleteField). Re-read every
 	// turn rather than cached, because a thread can be moved between
-	// projects between turns (SetThreadProject) and the next turn's
+	// fields between turns (SetThreadField) and the next turn's
 	// code_exec mount must follow it. Empty for a brand-new thread here —
-	// a thread born inside a project is bound at creation, not read back.
-	projectID := ""
+	// a thread born inside a field is bound at creation, not read back.
+	fieldID := ""
 	if !isNewThread {
 		if rawThread, err := s.db.GetThreadRaw(threadID); err == nil {
 			isWeaverThread = rawThread.Source == "weaver"
 			ghost = rawThread.Ghost
-			if rawThread.ProjectID != nil {
-				projectID = *rawThread.ProjectID
+			if rawThread.FieldID != nil {
+				fieldID = *rawThread.FieldID
 			}
 		}
 	}
@@ -183,43 +183,43 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		noteGhostThread(threadID)
 	}
 
-	// project is the one lookup everything project-shaped below reads: the
+	// field is the one lookup everything field-shaped below reads: the
 	// instructions block, the memory-mode gate, the default-model fallback.
 	// A ghost turn never has one — same "no persisted-store reads leaking
 	// into an incognito session" rule as the global custom instructions and
-	// memory below. For a brand-new thread the project comes from the
+	// memory below. For a brand-new thread the field comes from the
 	// message and is validated HERE, before a thread row exists, so a stale
-	// picker (project deleted since the page loaded) errors cleanly instead
+	// picker (field deleted since the page loaded) errors cleanly instead
 	// of leaving an orphan thread behind — same reasoning as the pulse
 	// linking below, just checked earlier.
-	var project *store.Project
+	var field *store.Field
 	if !ghost {
 		switch {
-		case isNewThread && msg.ProjectID != "":
-			p, err := s.db.GetProject(msg.ProjectID)
+		case isNewThread && msg.FieldID != "":
+			p, err := s.db.GetField(msg.FieldID)
 			if err != nil {
-				send(ServerEvent{Type: "error", Message: "That project no longer exists."})
+				send(ServerEvent{Type: "error", Message: "That field no longer exists."})
 				return
 			}
-			project = p
-		case projectID != "":
-			if p, err := s.db.GetProject(projectID); err == nil {
-				project = p
+			field = p
+		case fieldID != "":
+			if p, err := s.db.GetField(fieldID); err == nil {
+				field = p
 			}
 		}
 	}
-	projectID = ""
-	if project != nil {
-		projectID = project.ID
+	fieldID = ""
+	if field != nil {
+		fieldID = field.ID
 	}
 
 	requestedModel := msg.Model
-	if requestedModel == "" && project != nil && project.DefaultModel != "" {
+	if requestedModel == "" && field != nil && field.DefaultModel != "" {
 		// Only when the client named no model at all (a bare API caller —
-		// the web composer always sends its own, seeded from the project's
-		// default by the frontend): a project's default_model is a standing
+		// the web composer always sends its own, seeded from the field's
+		// default by the frontend): a field's default_model is a standing
 		// default like the global one, not an override of an explicit choice.
-		requestedModel = project.DefaultModel
+		requestedModel = field.DefaultModel
 	}
 	if requestedModel == "" {
 		requestedModel = s.effectiveDefaultModel(cfg)
@@ -277,13 +277,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			send(ServerEvent{Type: "error", Message: err.Error()})
 			return
 		}
-		if project != nil {
+		if field != nil {
 			// Hard failure, same as the pulse link below: a thread that was
-			// meant to be in a project but silently isn't would run this very
-			// turn without the project's instructions/mount and then sit
+			// meant to be in a field but silently isn't would run this very
+			// turn without the field's instructions/mount and then sit
 			// ungrouped forever, with no repair path.
-			if err := s.db.SetThreadProject(threadID, &project.ID); err != nil {
-				logEvent(threadID, "error", "turn", "linking thread to project failed", map[string]interface{}{"err": err.Error()}, turnID)
+			if err := s.db.SetThreadField(threadID, &field.ID); err != nil {
+				logEvent(threadID, "error", "turn", "linking thread to field failed", map[string]interface{}{"err": err.Error()}, turnID)
 				send(ServerEvent{Type: "error", ThreadID: threadID, Message: err.Error()})
 				return
 			}
@@ -712,13 +712,13 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		// invisible to the model from that turn on. A real bug found live
 		// testing issue #71's multi-attachment support: retrying a message
 		// that had a file attached left the model unable to find it at all.
-		ThreadID:  threadID,
-		ProjectID: projectID,
+		ThreadID: threadID,
+		FieldID:  fieldID,
 	}
 	if !ghost {
 		agentCtx.CustomInstructions = joinCustomInstructions(
 			CustomInstructionsFromStore(s.db),
-			projectPromptBlock(project, listProjectFiles(cfg.CodeExec.WorkspaceDir, projectID)),
+			fieldPromptBlock(field, listFieldFiles(cfg.CodeExec.WorkspaceDir, fieldID)),
 		)
 		agentCtx.PersonName = PersonNameFromStore(s.db)
 		agentCtx.PersonPronouns = PersonPronounsFromStore(s.db)
@@ -782,10 +782,10 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// these nil is what actually makes the memory tool AND the {memories}
 	// prompt section disappear, not just a tool call that would fail if
 	// attempted.
-	// A project's memory_mode = "none" extends the same condition — the exact
+	// A field's memory_mode = "none" extends the same condition — the exact
 	// mechanism ghost threads already use for "no memory tool", so there's no
-	// new plumbing in agent/ or tools/ (docs/plans/projects.md, "Memory mode").
-	if !ghost && MemoryEnabledFromStore(s.db) && (project == nil || project.MemoryMode != store.ProjectMemoryNone) {
+	// new plumbing in agent/ or tools/ (docs/plans/fields.md, "Memory mode").
+	if !ghost && MemoryEnabledFromStore(s.db) && (field == nil || field.MemoryMode != store.FieldMemoryNone) {
 		agentCtx.ListMemories = s.db.ListMemories
 		agentCtx.GetMemory = s.db.GetMemory
 		agentCtx.WriteMemory = s.db.CreateMemory

@@ -125,8 +125,8 @@ func (e *uploadError) Error() string { return e.msg }
 // uploadContentType resolves and validates a multipart file part's content
 // type — the browser's own guess, then an extension-based second try when it
 // had none, then the allowlist. Shared by saveUploadedFile (a chat
-// attachment) and the project detail view's direct upload
-// (gateway/projects_routes.go) so both accept exactly the same set of files.
+// attachment) and the field detail view's direct upload
+// (gateway/fields_routes.go) so both accept exactly the same set of files.
 func (s *Server) uploadContentType(header *multipart.FileHeader) (string, *uploadError) {
 	contentType := header.Header.Get("Content-Type")
 	// "" (no guess at all) and the generic "application/octet-stream" both

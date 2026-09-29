@@ -14,7 +14,7 @@
 		Check,
 		ChevronLeft
 	} from '@lucide/svelte';
-	import { projectsState, projectColorVar } from '$lib/projects.svelte';
+	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import EditTextModal from './EditTextModal.svelte';
@@ -76,10 +76,10 @@
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
 	let regeneratingTitle = $state(false);
-	// The "Move to project" picker replaces the dropdown's contents, same
+	// The "Move to field" picker replaces the dropdown's contents, same
 	// swap-in-place shape as confirmingDelete — a floating second layer over
 	// a ~190px dropdown would just fight it for room on a phone.
-	let movingToProject = $state(false);
+	let movingToField = $state(false);
 	let moveError = $state('');
 	let rootEl: HTMLDivElement | undefined = $state();
 
@@ -87,14 +87,14 @@
 		open = !open;
 		renaming = false;
 		confirmingDelete = false;
-		movingToProject = false;
+		movingToField = false;
 	}
 
 	function close() {
 		open = false;
 		renaming = false;
 		confirmingDelete = false;
-		movingToProject = false;
+		movingToField = false;
 		moveError = '';
 	}
 
@@ -103,15 +103,15 @@
 	// picker so it never shows a stale or empty list.
 	function startMove() {
 		moveError = '';
-		movingToProject = true;
-		void projectsState.load();
+		movingToField = true;
+		void fieldsState.load();
 	}
 
 	// Left open on failure with the server's message shown, same reasoning as
 	// regenerateTitle: a menu that just vanishes with no explanation reads
 	// as the tap having done nothing.
-	async function moveTo(projectId: string | null) {
-		const err = await appState.moveCurrentThreadToProject(projectId);
+	async function moveTo(fieldId: string | null) {
+		const err = await appState.moveCurrentThreadToField(fieldId);
 		if (err) {
 			moveError = err;
 			return;
@@ -199,35 +199,35 @@
 						<button class="dropdown-item danger" onclick={confirmDelete}>Delete</button>
 					</div>
 				</div>
-			{:else if movingToProject}
-				<button class="dropdown-item" onclick={() => (movingToProject = false)}>
+			{:else if movingToField}
+				<button class="dropdown-item" onclick={() => (movingToField = false)}>
 					<ChevronLeft size={14} />
-					<span>Move to project</span>
+					<span>Move to <span class="wordmark">Field</span></span>
 				</button>
 				<div class="divider" role="separator"></div>
-				{#each projectsState.projects as project (project.id)}
-					<button class="dropdown-item" onclick={() => moveTo(project.id)} role="menuitem">
-						<span class="project-dot" style:background={projectColorVar(project.color) ?? 'var(--color-text-dim)'} aria-hidden="true"></span>
-						<span class="project-name">{project.name}</span>
-						{#if appState.activeProjectId === project.id}<Check size={14} />{/if}
+				{#each fieldsState.fields as field (field.id)}
+					<button class="dropdown-item" onclick={() => moveTo(field.id)} role="menuitem">
+						<span class="field-dot" style:background={fieldColorVar(field.color) ?? 'var(--color-text-dim)'} aria-hidden="true"></span>
+						<span class="field-name">{field.name}</span>
+						{#if appState.activeFieldId === field.id}<Check size={14} />{/if}
 					</button>
 				{:else}
 					<!-- Three distinct states, not two: a failed load must not sit on
 					     "Loading…" forever (it did, against a backend that predated
-					     the projects routes) — say so and offer a retry. -->
-					{#if projectsState.error && !projectsState.loaded}
+					     the fields routes) — say so and offer a retry. -->
+					{#if fieldsState.error && !fieldsState.loaded}
 						<div class="info-row move-error">
-							<span>Couldn't load projects.</span>
-							<button class="retry" onclick={() => projectsState.load()}>Retry</button>
+							<span>Couldn't load <span class="wordmark">Fields</span>.</span>
+							<button class="retry" onclick={() => fieldsState.load()}>Retry</button>
 						</div>
 					{:else}
-						<div class="info-row"><span>{projectsState.loaded ? 'No projects yet.' : 'Loading…'}</span></div>
+						<div class="info-row"><span>{fieldsState.loaded ? 'No Fields yet.' : 'Loading…'}</span></div>
 					{/if}
 				{/each}
-				{#if appState.activeProjectId}
+				{#if appState.activeFieldId}
 					<div class="divider" role="separator"></div>
 					<button class="dropdown-item" onclick={() => moveTo(null)} role="menuitem">
-						<span>Remove from project</span>
+						<span>Remove from <span class="wordmark">Field</span></span>
 					</button>
 				{/if}
 				{#if moveError}
@@ -253,7 +253,7 @@
 				</button>
 				<button class="dropdown-item" onclick={startMove} role="menuitem">
 					<FolderInput size={14} />
-					<span>Move to project</span>
+					<span>Move to <span class="wordmark">Field</span></span>
 				</button>
 				<button class="dropdown-item danger" onclick={askDelete} role="menuitem">
 					<Trash2 size={14} />
@@ -377,14 +377,14 @@
 	/* Whitespace-only rows below, not buttons — matches the "no rule
 	   lines" treatment used everywhere else (see SettingsPanel.svelte's
 	   section spacing), just a tonal step instead of a line. */
-	.project-dot {
+	.field-dot {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
 		flex-shrink: 0;
 	}
 
-	.project-name {
+	.field-name {
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
@@ -491,4 +491,11 @@
 		color: var(--color-bg);
 	}
 
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — "Field"
+	   as the feature's name, same as "Pulsar" elsewhere. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
+	}
 </style>

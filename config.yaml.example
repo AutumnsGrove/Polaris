@@ -188,5 +188,5 @@ oracle:
       threshold: 0.80
     daily:
       threshold: 0.80
-    project:
+    field:
       threshold: 0.75

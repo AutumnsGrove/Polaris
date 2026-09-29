@@ -1568,7 +1568,7 @@ func (s *Store) EligibleConstellationThreads(pollIntervalMinutes int) ([]string,
 		WHERE root.disabled = 0
 		  AND root.source != 'pulsar'
 		  AND root.source != 'weaver'
-		  AND `+notInProjectWhere(`root.project_id`, `constellation_visible = 0`)+`
+		  AND `+notInFieldWhere(`root.field_id`, `constellation_visible = 0`)+`
 		  AND (root.active_variant_id = t.id OR (root.active_variant_id = '' AND t.id = root.id))
 		  AND (SELECT MAX(m.created_at) FROM messages m WHERE m.thread_id = t.id) <= datetime('now', '-' || ? || ' minutes')
 		  AND (

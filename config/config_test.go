@@ -304,8 +304,8 @@ func TestMergeOracle_UnsetFieldsInheritDefaults(t *testing.T) {
 		len(f.Sticky) != 1 || len(f.NeverWithHighStakes) != 1 {
 		t.Errorf("want every unset focus field inherited from defaults, got %+v", f)
 	}
-	if got.Checks["research"].Threshold != 0.85 || got.Chips["project"].Threshold != 0.75 {
-		t.Errorf("want untouched checks/chips left at defaults, got %+v / %+v", got.Checks["research"], got.Chips["project"])
+	if got.Checks["research"].Threshold != 0.85 || got.Chips["field"].Threshold != 0.75 {
+		t.Errorf("want untouched checks/chips left at defaults, got %+v / %+v", got.Checks["research"], got.Chips["field"])
 	}
 }
 
