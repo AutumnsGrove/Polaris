@@ -252,6 +252,17 @@ Relevant code beyond the two `gateway/pulsar_scheduler.go`/`pulsar_wizard.go` fi
 `store/pulsar_daily.go`. README's Pulsar/Pulsar Daily bullets are the user-facing description;
 this section is only the "where the code lives" pointer.
 
+## Keeping the in-app help glossary in sync
+
+Polaris keeps accumulating themed names (Pulsar, Constellation, Weaver, Fields, Oracle mode, ...)
+that mean nothing to someone who just installed it. The sidebar's `?` button opens
+`web/src/lib/components/HelpModal.svelte`, whose `TERMS` array is the plain-English glossary
+("Fields = Projects"). **Whenever you add a new user-facing named feature or concept — anything
+with its own name in the UI, sidebar, settings, or README's Features list — add an entry to
+`TERMS` in the same change** (`name`, `means` = the plain-English equivalent, `detail` = one
+sentence on what you do with it). Renaming or removing a feature means updating or deleting its
+entry too. Keep entries short; this is a glossary, not documentation.
+
 ## Keeping README.md / SETUP.md / DEVELOPMENT.md in sync
 
 Docs are split three ways (as of the 2026-09 restructuring): `README.md` is a short pitch + a
