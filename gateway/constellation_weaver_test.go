@@ -122,7 +122,7 @@ func TestRunShootingStar_Revisit_FeedsFilteredDeltaNotRawThread(t *testing.T) {
 
 	mock := &llmtest.MockClient{Responses: []llmtest.Response{
 		{Resp: &llm.ChatResponse{Content: "V8 isolates make Workers faster than Lambda@Edge's containers."}}, // filter pass
-		{Resp: &llm.ChatResponse{Content: "No new star needed, just an addendum noted."}},                   // Weaver's own turn
+		{Resp: &llm.ChatResponse{Content: "No new star needed, just an addendum noted."}},                    // Weaver's own turn
 	}}
 
 	if err := RunShootingStar(context.Background(), db, mock, threadID, "test-model"); err != nil {
