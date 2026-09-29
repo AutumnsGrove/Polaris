@@ -1277,7 +1277,19 @@ func Open(path string) (*Store, error) {
 	// instead of waiting its turn. _journal_mode=WAL lets readers proceed
 	// without blocking on a writer at all, which is what actually makes
 	// the busy_timeout the common case rather than the exception.
-	db, err := sql.Open("sqlite", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
+	//
+	// _txlock=immediate makes every db.Begin() a BEGIN IMMEDIATE, taking the
+	// write lock up front. Every transaction in this package writes, and
+	// with the default deferred BEGIN a transaction first takes a WAL read
+	// snapshot and only then asks for the write lock. If another connection
+	// (in production: the previous process, still draining during a restart
+	// overlap) commits in that gap, SQLite returns SQLITE_BUSY *immediately*
+	// — the busy handler is never invoked, so _busy_timeout above doesn't
+	// help, because waiting can't fix a snapshot that's already stale. Found
+	// via TestCrossProcessCloseRace's flake: ~2% of a transaction's first
+	// write failed in under a millisecond; 0 in 400 with this set. Taking
+	// the lock first turns that into an ordinary wait on the busy handler.
+	db, err := sql.Open("sqlite", path+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
