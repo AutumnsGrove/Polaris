@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
 	import { appState } from '$lib/state.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
 	import { marked } from '$lib/markdown';
@@ -85,6 +85,27 @@
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	// Back used to be a hard-coded goto('/constellation'), which threw away
+	// wherever the person actually came from — the week digest, the inbox, or
+	// the previous star in an A → B → C chain of mini-map hops — and dumped
+	// them on the root every time. Walking real browser history instead
+	// restores that page (and its scroll position, via SvelteKit's own
+	// snapshot handling). `navigation.from` is null only when this page was
+	// the app's entry point (a deep link or fresh reload), where history.back()
+	// would leave the app entirely — that's the one case that still needs the
+	// root fallback. This component is reused across star → star param
+	// changes (see the $effect above), so the flag is sticky: once any
+	// in-app navigation has landed here, later ones can safely go back too.
+	let cameFromInApp = false;
+	afterNavigate((nav) => {
+		if (nav.from) cameFromInApp = true;
+	});
+
+	function goBack() {
+		if (cameFromInApp) history.back();
+		else void goto('/constellation');
 	}
 
 	async function continueInChat() {
@@ -172,7 +193,7 @@
 <svelte:window onclick={handleWindowClick} />
 
 <header class="header">
-	<button class="icon-btn" onclick={() => goto('/constellation')} aria-label="Back">
+	<button class="icon-btn" onclick={goBack} aria-label="Back">
 		<ArrowLeft size={18} />
 	</button>
 	<span class="crumb">{detail?.star.category ?? ''}</span>
