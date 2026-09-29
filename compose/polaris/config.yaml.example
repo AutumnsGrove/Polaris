@@ -190,6 +190,11 @@ oracle:
     # Sensitivity: wrongly firing these changes tone, so the bar is high.
     emotional:
       threshold: 0.85
+      # Tone over structure: someone who's struggling shouldn't also get a
+      # table format, an agency-citation nudge, a step-by-step plan, or a
+      # "stop and ask a question first" stacked on top. High-stakes, locale,
+      # and freshness stay — those carry facts, not tone.
+      suppresses: [format, depth, source_type, task, clarify]
     private_person:
       threshold: 0.85
     premise:

@@ -99,6 +99,12 @@ type CheckOutcome struct {
 	// since the turn-info sheet needs to show which nudge came from which
 	// check, not just the combined prompt text.
 	Nudge string `json:"nudge,omitempty"`
+	// Suppressed means the check cleared its own bar but another fired check
+	// (see config.OracleCheckRules.Suppresses) held its nudge back. Fired is
+	// false in that case — nothing was injected — so the info sheet needs
+	// this flag to say "held back" rather than a bare, confusing "Quiet"
+	// next to a high-confidence winner.
+	Suppressed bool `json:"suppressed,omitempty"`
 }
 
 // Chip is one offer surfaced under the reply — the frontend maps Key to
@@ -264,6 +270,21 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		}
 	}
 
+	// suppressed is resolved before the loop for the same reason
+	// highStakesOption is: answers are walked in sorted key order, and a
+	// check can be held back by one that sorts after it (depth by
+	// emotional).
+	suppressed := map[string]bool{}
+	for key, rule := range rules.Checks {
+		ans, ok := resp.Answers[key]
+		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) {
+			continue
+		}
+		for _, held := range rule.Suppresses {
+			suppressed[held] = true
+		}
+	}
+
 	keys := make([]string, 0, len(resp.Answers))
 	for k := range resp.Answers {
 		keys = append(keys, k)
@@ -302,6 +323,10 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			continue
 		}
 		fired := ans.Probabilities[ans.Choice] >= rule.Threshold
+		if fired && suppressed[key] {
+			result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Suppressed: true})
+			continue
+		}
 		result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Fired: fired})
 		if !fired {
 			continue
@@ -337,6 +362,17 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
 	return result
+}
+
+// checkFired reports whether a yes/no-style check's winner is a real answer
+// that cleared its bar. "no"/"none" are the quiet options every check names
+// its default with, so winning one is not "firing" for suppression purposes
+// even at 100% — an emotional check answering "no" must not silence format.
+func checkFired(rule config.OracleCheckRules, ans jev.ChoiceAnswer) bool {
+	if ans.Choice == "no" || ans.Choice == "none" {
+		return false
+	}
+	return ans.Probabilities[ans.Choice] >= rule.Threshold
 }
 
 // resolveFocus applies the focus check's sticky/never-with-high-stakes/

@@ -51,10 +51,14 @@ Hidden when the turn is already in Safari.
 
 ## Live findings
 
-- Fired-nudge stacking is real on emotional/high-stakes messages: one "laid off, worried about
-  health insurance" prompt injected 7 paragraphs (clarify, emotional, format=steps, high_stakes,
-  locale, recency, source_type=official). Fine for now per the no-cap decision below, but
-  `emotional` arguably should suppress `format`/`depth`/`source_type` — tone over structure.
+- Fired-nudge stacking was real on emotional messages: "laid off, worried about health insurance"
+  injected 7 paragraphs. Fixed with a generic `suppresses` rule (config `oracle.checks.<key>.suppresses`):
+  when `emotional` fires it holds back `format`, `depth`, `source_type`, `task` and `clarify` —
+  tone over structure, and a "stop and ask first" nudge contradicts "acknowledge them first".
+  `high_stakes`, `locale` and `recency` stay, since they carry facts. Live: emotional prompts went
+  from 6–7 paragraphs to 4–5; a non-emotional informational prompt is unchanged at 7. A held-back
+  check reports `suppressed` and the info sheet shows "held back" instead of a bare "Quiet".
+  Only a *fired* answer suppresses ("no" at 100% doesn't).
 - `comparison` vs `table` overlap: a laptop comparison came back `table`. Harmless (both nudge a
   table); merge the two options if it stays noisy.
 - `dev/fakeopenrouter` now treats `standard`/`any`/`answer`/`evergreen` as quiet answers, otherwise
@@ -63,7 +67,7 @@ Hidden when the turn is already in Safari.
 ## Decisions
 
 - **No cap on injections yet.** The system prompt is ~5–6k tokens against a 200k window, and the
-  `## Oracle` section is rebuilt per turn, not accumulated. Revisit if fired checks routinely stack past ~6.
+  `## Oracle` section is rebuilt per turn, not accumulated. Revisit if non-emotional prompts keep stacking past ~6 (a pure how-to about health insurance still hits 7, two of them from `high_stakes`' own option + compare_sources text).
 - **Focus interplay.** `format`/`depth` skip under Safari; `depth` also skips under Brief (already
   short by definition). `source_type: academic` skips under Academic focus.
 - **Thresholds start conservative** (0.75–0.85) with a quiet "none" default on every check, so a wrong

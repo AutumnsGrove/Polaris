@@ -359,6 +359,13 @@ func TestOracleConfig_ReferencesAreValid(t *testing.T) {
 			}
 		}
 	}
+	for key, rule := range rules.Checks {
+		for _, held := range rule.Suppresses {
+			if _, ok := p.Oracle.Checks[held]; !ok {
+				t.Errorf("oracle.checks.%s.suppresses references %q, which isn't a prompts.yaml check", key, held)
+			}
+		}
+	}
 	for key := range p.Oracle.Checks {
 		if _, ok := rules.Checks[key]; !ok {
 			t.Errorf("prompts.yaml oracle.checks.%s has no rules in config's defaults — it would never run", key)
@@ -557,5 +564,46 @@ func TestRunOracle_SafariChipFiresAndHidesInSafari(t *testing.T) {
 	result = RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", ActiveFocusMode: "safari"})
 	if len(result.Chips) != 0 {
 		t.Errorf("want no safari chip when the turn is already in Safari, got %+v", result.Chips)
+	}
+}
+
+func TestRunOracle_EmotionalHoldsBackStructureButNotFacts(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"emotional":   answer("yes", 0.95),
+		"format":      answer("steps", 0.95),
+		"depth":       answer("thorough", 0.95),
+		"source_type": answer("official", 0.95),
+		"task":        answer("plan", 0.95),
+		"clarify":     answer("yes", 0.95),
+		"locale":      answer("yes", 0.95),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", IsFirstMessage: true})
+	if len(result.Injections) != 2 {
+		t.Fatalf("want only emotional + locale to inject, got %d: %v", len(result.Injections), result.Injections)
+	}
+	for _, key := range []string{"format", "depth", "source_type", "task", "clarify"} {
+		out := outcomeFor(result, key)
+		if out == nil || out.Fired || !out.Suppressed || out.Nudge != "" {
+			t.Errorf("%s: want a suppressed, unfired outcome with no nudge (so the sheet can say held back), got %+v", key, out)
+		}
+	}
+	if out := outcomeFor(result, "locale"); out == nil || !out.Fired || out.Suppressed {
+		t.Errorf("locale isn't on emotional's list and must still fire, got %+v", out)
+	}
+}
+
+func TestRunOracle_EmotionalNoOrBelowBarSuppressesNothing(t *testing.T) {
+	for name, emotional := range map[string]jev.ChoiceAnswer{
+		"answered no at full confidence": answer("no", 1.0),
+		"yes but under the bar":          answer("yes", 0.6),
+	} {
+		stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+			"emotional": emotional,
+			"format":    answer("steps", 0.95),
+		}}}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
+		if out := outcomeFor(result, "format"); out == nil || !out.Fired || out.Suppressed {
+			t.Errorf("%s: want format to fire normally, got %+v", name, out)
+		}
 	}
 }
