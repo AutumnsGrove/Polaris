@@ -69,6 +69,13 @@ func TestHandleShow_ImageIndicesShowsOnlyThePickedSubset(t *testing.T) {
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("result = %q, want success", result)
 	}
+	// The model can't see the screen, so the result must spell out order and
+	// warn against positional captions.
+	for _, want := range []string{"1. image 4 — d", "2. image 2 — b", "NOT reliable"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result = %q, want it to contain %q", result, want)
+		}
+	}
 	images, _ := got["images"].([]Card)
 	if len(images) != 2 || images[0].Title != "d" || images[1].Title != "b" {
 		t.Errorf("images = %+v, want candidates 4 then 2 — the model's own order, de-duplicated", images)

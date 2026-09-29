@@ -211,8 +211,23 @@ func showCandidateImages(ctx *Context, indices []int, caption, callID string) st
 	if first == "" {
 		first = images[0].ImageURL
 	}
-	result := fmt.Sprintf("now showing image(s) %s inline in the conversation — the user can see exactly those, "+
-		"so don't re-list or re-describe them in prose beyond what's useful.", strings.Join(shown, ", "))
+	// The model can't see what it just displayed, so the result has to say
+	// what the screen looks like — otherwise it guesses at order/layout in
+	// its caption (seen live: it agonized over which image was "left").
+	var b strings.Builder
+	if len(images) == 1 {
+		fmt.Fprintf(&b, "now showing image %s (%q) inline, large, in the conversation.", shown[0], images[0].Title)
+	} else {
+		fmt.Fprintf(&b, "now showing %d images inline as one photo gallery, in this order:\n", len(images))
+		for i, card := range images {
+			fmt.Fprintf(&b, "%d. image %s — %s (%s)\n", i+1, shown[i], card.Title, card.Subtitle)
+		}
+		b.WriteString("The gallery is a two-column masonry layout that fills down each column, so on-screen " +
+			"position (left/right/top/bottom/first/last) is NOT reliable — never describe images by position. " +
+			"Refer to them by what they show or their title.")
+	}
+	b.WriteString(" The user sees exactly these, so don't re-list them in prose beyond what adds something.")
+	result := b.String()
 	log.Info("show", "images", len(images))
 	ctx.SetShow(first, caption)
 	ctx.Emit("tool_result", map[string]interface{}{

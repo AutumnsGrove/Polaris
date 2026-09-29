@@ -7,7 +7,8 @@ description: >-
 api_description: >-
   Display something right at this point in your reply, with an optional caption. Pass exactly one
   source. image_indices: the numbers of the image_search results worth showing — ONLY the good
-  ones; one renders large, several render as a gallery, and nothing is shown to the user from an
+  ones; one renders large, several render as a masonry gallery (no reliable left/right order, so
+  write captions that name what's in the images, not where they sit), and nothing is shown to the user from an
   image_search until you call this (or highlight, which also displays picked images, as link-out
   cards). url: a remote http(s) image (e.g. one from a page you read).
   path: a file already in your workspace — an image (e.g. a chart code_exec just generated)
