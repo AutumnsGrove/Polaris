@@ -530,6 +530,16 @@ type Context struct {
 	// never reached by code_exec's own handler.
 	ThreadID string
 
+	// ProjectID is the Project the current thread belongs to (docs/plans/
+	// projects.md, issue #119) — empty for an ordinary ungrouped thread, and
+	// also for sub-agent/benchmark contexts with no real thread. Read off the
+	// root thread's row each turn by gateway/turn.go. Non-empty means three
+	// things downstream: code_exec mounts <CodeExecWorkspaceDir>/<ProjectID>/
+	// read-only at /project, the workspace read paths fall back to that
+	// directory for a file the thread's own directory lacks, and
+	// save_to_project is offered (catalog.go's "project_workspace" case).
+	ProjectID string
+
 	// CodeExecEnabled gates the code_exec tool (catalog.go's
 	// "docker_only" Requires case) — true only when gateway's
 	// deploymentMode() reports "docker" AND
@@ -1229,7 +1239,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"finalize_daily_items":   finalizeDailyItemsDef,
 		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
 		"update_star": updateStarDef, "link_stars": linkStarsDef,
-		"compare_sources": compareSourcesDef,
+		"compare_sources": compareSourcesDef, "save_to_project": saveToProjectDef,
 	}
 }
 

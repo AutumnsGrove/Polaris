@@ -16,7 +16,9 @@
 package gateway
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -68,6 +70,18 @@ func (s *Server) handleGetWorkspaceFile(w http.ResponseWriter, r *http.Request) 
 	}
 
 	f, err := os.Open(target)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Second tier: a thread inside a Project can also read the project's
+		// shared, read-only directory (docs/plans/projects.md) — the same
+		// fallback tools/view_image.go's resolveWorkspaceFilePath gives the
+		// tool side, so a `show` of a shared file resolves here too. The
+		// project id comes from the database, never the URL, and the path is
+		// re-checked against the project's own directory (not just the
+		// workspace root) since it's a fresh join.
+		if projectPath := s.projectWorkspacePath(root, threadID, filename); projectPath != "" {
+			f, err = os.Open(projectPath)
+		}
+	}
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -82,4 +96,22 @@ func (s *Server) handleGetWorkspaceFile(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", http.DetectContentType(data))
 	w.Write(data)
+}
+
+// projectWorkspacePath resolves filename inside threadID's project's shared
+// directory, or "" when the thread has no project or the path would escape
+// that directory. Only ever consulted after the thread's own directory
+// missed, so an own file shadows a shared one of the same name.
+func (s *Server) projectWorkspacePath(root, threadID, filename string) string {
+	thread, err := s.db.GetThreadRaw(threadID)
+	if err != nil || thread.ProjectID == nil || *thread.ProjectID == "" {
+		return ""
+	}
+	base := filepath.Join(root, *thread.ProjectID)
+	target := filepath.Join(base, filename)
+	rel, err := filepath.Rel(base, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return ""
+	}
+	return target
 }

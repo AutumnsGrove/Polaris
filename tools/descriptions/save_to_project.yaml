@@ -1,0 +1,13 @@
+name: save_to_project
+requires: project_workspace
+description: >-
+  copy a file from your workspace into this project's shared files, so every other conversation in
+  the project can read it. Only offered inside a project.
+api_description: >-
+  Copy a file from your own workspace into this project's shared file pool, where every other
+  conversation in the project can read it (read-only, under /project in code_exec). The file stays
+  in your workspace too — this is a copy, not a move. Use it for something worth keeping across
+  conversations: a cleaned dataset, a generated report, a file the user asked you to hold onto. Not
+  for scratch files. If the project already has a file with that name, yours is saved under a
+  numbered name (report-2.csv) instead of replacing it — the result tells you the name it actually
+  got, so mention it if it matters.

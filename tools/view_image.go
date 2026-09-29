@@ -267,23 +267,35 @@ func fetchImageBytes(ctx context.Context, rawURL string) (data []byte, mimeType 
 // escape the thread's own workspace root via ".." — the standard defense
 // against a path-traversal read of an unrelated thread's files or the
 // host filesystem beyond the workspace root.
+//
+// A thread inside a Project (ctx.ProjectID set) falls back to the project's
+// shared directory for a file its own directory lacks — a read-only second
+// tier (docs/plans/projects.md). The thread's own file always wins on a name
+// clash, so a private edited copy shadows the shared original of the same
+// name, and each tier is traversal-checked against its own root.
 func resolveWorkspaceFilePath(ctx *Context, relPath string) (string, error) {
 	if ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
 		return "", fmt.Errorf("this deployment has no code-execution workspace configured")
 	}
-	base := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)
-	target := filepath.Join(base, relPath)
-	rel, err := filepath.Rel(base, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes the workspace directory")
+	roots := []string{filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)}
+	if ctx.ProjectID != "" {
+		roots = append(roots, filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ProjectID))
 	}
-	if _, err := os.Stat(target); err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no file %q in this conversation's workspace", relPath)
+	for _, base := range roots {
+		target := filepath.Join(base, relPath)
+		rel, err := filepath.Rel(base, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("path escapes the workspace directory")
 		}
-		return "", fmt.Errorf("opening workspace file: %w", err)
+		if _, err := os.Stat(target); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("opening workspace file: %w", err)
+		}
+		return target, nil
 	}
-	return target, nil
+	return "", fmt.Errorf("no file %q in this conversation's workspace", relPath)
 }
 
 // readWorkspaceImageBytes reads an image file out of the current thread's

@@ -49,6 +49,8 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.PulsarWizard = true
 	ctx.PulsarDailyItems = true
 	ctx.CodeExecEnabled = true
+	ctx.CodeExecWorkspaceDir = "/ws"
+	ctx.ProjectID = "proj" // save_to_project's "project_workspace" gate
 	prompt := ToolsPrompt(ctx)
 
 	// weaver_run tools are deliberately excluded here, not asserted

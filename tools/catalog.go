@@ -21,6 +21,12 @@ var catalogOrder = []string{
 	"weather", "reference_lookup", "github_repo", "github_activity", "dictionary", "music", "books", "movies", "code_exec", "fetch_url",
 	"image_search", "view_image", "show", "highlight", "ask_user_question", "memory", "search_chats", "stars", "spawn_researchers", "finalize_pulsar_prompt",
 	"finalize_daily_items", "search_stars", "read_star", "create_star", "update_star", "link_stars", "compare_sources",
+	// Appended last, not grouped with code_exec/fetch_url/show: catalogOrder
+	// fixes the wire-format tool order that prompt-prefix caching depends on
+	// (see this var's comment), and save_to_project is offered only on a
+	// project thread — putting it mid-list would shift every later tool's
+	// position for those threads relative to ordinary ones.
+	"save_to_project",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -176,6 +182,14 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// PulsarDailyItems doc comment. Never offered on a normal
 		// chat/pulse turn or any other Daily block kind.
 		return ctx.PulsarDailyItems
+	case "project_workspace":
+		// save_to_project copies a file into the project's shared directory,
+		// so it needs both a project to copy into and a configured workspace
+		// root to copy within. ProjectID alone would offer a tool that can
+		// only fail on an install with no code_exec workspace. Structurally
+		// absent from an ordinary thread's tool list, not just refused at
+		// call time — see docs/plans/projects.md.
+		return ctx.ProjectID != "" && ctx.CodeExecWorkspaceDir != ""
 	case "weaver_run":
 		// A Weaver shooting-star run only — see registry.go's WeaverRun
 		// doc comment. Never offered on a normal chat/pulse turn.
@@ -295,6 +309,10 @@ var catalogDefaults = map[string]catalogEntry{
 	"compare_sources": {Name: "compare_sources", Requires: "jev", Category: "research",
 		Description:    "check whether two or more of your own cited sources actually agree on a specific fact.",
 		APIDescription: "Check whether two or more sources you've already read this turn (via web_read) actually agree on a specific fact, using a calibrated comparison rather than your own read of them. Use this when you notice sources might conflict on something specific — not as a routine double-check of everything."},
+	"save_to_project": {Name: "save_to_project", Requires: "project_workspace",
+		Description: "copy a file from your workspace into this project's shared files, so every other conversation in the project can read it.",
+		APIDescription: "Copy a file from your own workspace into this project's shared file pool, where every other conversation in the project can read it (read-only, under /project in code_exec). " +
+			"The file stays in your workspace too. If the project already has a file with that name, the copy is saved under a numbered name instead of replacing it — the result tells you the name it actually got."},
 }
 
 var (

@@ -1,7 +1,8 @@
 # Projects — shared workspace + custom instructions across threads, v1 plan
 
 **Added:** 2026-09-27.
-**Status:** planned, not yet implemented. Tracked as issue
+**Status:** in progress — "Next steps" 1 (store) and 2 (shared-workspace plumbing) landed; 3
+(turn-context wiring) onward not started. Tracked as issue
 [#119](https://github.com/AutumnsGrove/Polaris/issues/119).
 
 ## Why this exists
@@ -115,9 +116,14 @@ Every thread keeps its own private, read-write workspace exactly as it does toda
   `ProjectHostWorkspaceDir string`, set only when the thread has a project — and the host-side
   watcher (`compose/watcher/codeexec.sh`) adds a second bind mount for it with `:ro`. This is what
   actually enforces "editing gets a copy, not the original": the mount itself refuses the write: a
-  script that reads `project/router-configs.txt`, changes it, and tries to save back to that same
+  script that reads `/project/router-configs.txt`, changes it, and tries to save back to that same
   path fails outright, so the model's only path to persisting a change is writing somewhere inside
   its own writable directory. No copy-tracking logic needed — the filesystem does it for free.
+  **Mount path (decided in build): `/project`, not `/workspace/project`.** Nesting it under the
+  read-write `/workspace` bind would make Docker create an empty `project/` directory inside every
+  project thread's own host directory (root-owned, and colliding with any file the thread names
+  `project`); a sibling top-level mount has neither problem. Live-verified 2026-09-29 on real
+  Docker: a write or in-place overwrite under `/project` fails with `Read-only file system`.
 - **Reads fall through two tiers.** `resolveWorkspaceFilePath` (`tools/view_image.go:270`) and
   `gateway/workspace.go`'s `handleGetWorkspaceFile` both currently resolve a single
   `<CodeExecWorkspaceDir>/<ThreadID>/<relPath>`. Both gain a fallback: if the path doesn't exist
@@ -145,7 +151,9 @@ Every thread keeps its own private, read-write workspace exactly as it does toda
   `gateway/turn.go`'s per-turn context build — the same field the memory-mode and
   Constellation/chat-search gates above already read. `save_to_project`'s catalog entry
   (`tools/catalog.go`) gets a new `Requires: "project_workspace"` case in `offered()`:
-  `return ctx.ProjectID != ""`, the exact same shape as the existing `docker_only` →
+  `return ctx.ProjectID != "" && ctx.CodeExecWorkspaceDir != ""` (the workspace half added in
+  build: a project id alone would offer a tool that can only fail on an install with no
+  `code_exec` workspace), the exact same shape as the existing `docker_only` →
   `ctx.CodeExecEnabled` and `memory_store` → `ctx.WriteMemory != nil` cases just above it in that
   switch. A non-project thread never sees `save_to_project` in its offered tool list at all — the
   model can't attempt it, get a rejection, and retry; it simply isn't a tool that thread has, the

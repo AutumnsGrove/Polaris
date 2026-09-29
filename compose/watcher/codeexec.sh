@@ -90,6 +90,9 @@ sys.stdout.write(str(data.get(sys.argv[2], sys.argv[3])))
 }
 
 host_workspace_dir="$(json_get host_workspace_dir "")"
+# Set only for a thread inside a Project (docs/plans/projects.md) — the
+# project's shared file pool, mounted READ-ONLY at /project below.
+project_host_workspace_dir="$(json_get project_host_workspace_dir "")"
 memory_mb="$(json_get memory_limit_mb 384)"
 pids_limit="$(json_get pids_limit 64)"
 timeout_s="$(json_get timeout_seconds 30)"
@@ -161,6 +164,22 @@ container_name="codeexec-${id}"
 # under the configured timeout, was still misreported as timed_out).
 watchdog_fired_file="$(mktemp -u)"
 
+# The project's shared pool, mounted :ro at /project — the mount itself is
+# what makes shared originals immutable from inside the sandbox: a script
+# that reads /project/x.csv, edits it, and writes back to the same path
+# fails at the filesystem, so the only way to keep a change is to write into
+# /workspace (this thread's own directory). No copy-tracking logic needed.
+# mkdir -p first, same as the workspace above: a missing bind source would
+# otherwise be auto-created by the Docker daemon as root. An array (not a
+# plain string) so the path survives spaces; the ${arr[@]+...} form is what
+# makes an EMPTY array safe under `set -u` on bash < 4.4 (macOS's stock
+# bash 3.2 errors on a bare "${arr[@]}" there).
+project_mount_args=()
+if [ -n "$project_host_workspace_dir" ]; then
+	mkdir -p "$project_host_workspace_dir"
+	project_mount_args=(-v "$project_host_workspace_dir:/project:ro")
+fi
+
 docker run --rm --name "$container_name" \
 	--network none \
 	--memory="${memory_mb}m" \
@@ -171,6 +190,7 @@ docker run --rm --name "$container_name" \
 	--read-only \
 	--tmpfs /tmp \
 	-v "$host_workspace_dir:/workspace" \
+	${project_mount_args[@]+"${project_mount_args[@]}"} \
 	-w /workspace \
 	"$SANDBOX_IMAGE" \
 	python -u "$script_name" \

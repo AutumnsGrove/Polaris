@@ -162,10 +162,21 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// next turn, with no other client-side signaling.
 	isWeaverThread := msg.Source == "weaver"
 	ghost := isNewThread && msg.Anonymous
+	// projectID is read the same way, off the same root-thread row — never
+	// a fork's own row, since ForkThread's hidden variants don't carry
+	// project_id (see store/projects.go's DeleteProject). Re-read every
+	// turn rather than cached, because a thread can be moved between
+	// projects between turns (SetThreadProject) and the next turn's
+	// code_exec mount must follow it. Empty for a brand-new thread here —
+	// a thread born inside a project is bound at creation, not read back.
+	projectID := ""
 	if !isNewThread {
 		if rawThread, err := s.db.GetThreadRaw(threadID); err == nil {
 			isWeaverThread = rawThread.Source == "weaver"
 			ghost = rawThread.Ghost
+			if rawThread.ProjectID != nil {
+				projectID = *rawThread.ProjectID
+			}
 		}
 	}
 	if ghost && noteGhostThread != nil {
@@ -653,7 +664,8 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 		// invisible to the model from that turn on. A real bug found live
 		// testing issue #71's multi-attachment support: retrying a message
 		// that had a file attached left the model unable to find it at all.
-		ThreadID: threadID,
+		ThreadID:  threadID,
+		ProjectID: projectID,
 	}
 	if !ghost {
 		agentCtx.CustomInstructions = CustomInstructionsFromStore(s.db)

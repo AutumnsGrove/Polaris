@@ -76,9 +76,16 @@ type codeExecRequest struct {
 	ID               string `json:"id"`
 	Code             string `json:"code"`
 	HostWorkspaceDir string `json:"host_workspace_dir"`
-	MemoryLimitMB    int    `json:"memory_limit_mb"`
-	PidsLimit        int    `json:"pids_limit"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
+	// ProjectHostWorkspaceDir is set only when the thread belongs to a
+	// project (docs/plans/projects.md): the watcher bind-mounts it READ-ONLY
+	// at /project alongside the thread's own read-write /workspace. Empty
+	// means no second mount at all. The mount's :ro is what enforces "edit a
+	// shared original and you get a copy, not the original" — a write to
+	// /project fails at the filesystem, so no copy-tracking logic exists.
+	ProjectHostWorkspaceDir string `json:"project_host_workspace_dir,omitempty"`
+	MemoryLimitMB           int    `json:"memory_limit_mb"`
+	PidsLimit               int    `json:"pids_limit"`
+	TimeoutSeconds          int    `json:"timeout_seconds"`
 }
 
 type codeExecResult struct {
@@ -159,6 +166,25 @@ func handleCodeExec(argsJSON string, ctx *Context, callID string) string {
 		MemoryLimitMB:    ctx.CodeExecMemoryLimitMB,
 		PidsLimit:        ctx.CodeExecPidsLimit,
 		TimeoutSeconds:   ctx.CodeExecTimeoutSeconds,
+	}
+	if ctx.ProjectID != "" {
+		// Created here (same 0o777 + Chmod as the thread's own directory
+		// above) even when empty, rather than left for Docker: a bind mount
+		// whose host source is missing gets auto-created by the daemon as
+		// root, which this container's uid then can't write into when
+		// save_to_project later needs to.
+		projectDir := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ProjectID)
+		if err := os.MkdirAll(projectDir, 0o777); err != nil {
+			result := "error: couldn't prepare the project's shared directory: " + err.Error()
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "code_exec", "result": result, "call_id": callID})
+			return result
+		}
+		if err := os.Chmod(projectDir, 0o777); err != nil {
+			result := "error: couldn't set the project directory's permissions: " + err.Error()
+			ctx.Emit("tool_result", map[string]interface{}{"tool": "code_exec", "result": result, "call_id": callID})
+			return result
+		}
+		req.ProjectHostWorkspaceDir = filepath.Join(ctx.CodeExecHostWorkspaceDir, ctx.ProjectID)
 	}
 
 	resultText, err := runCodeExecRequest(ctx.Ctx, ctx.CodeExecSignalDir, req)
