@@ -393,6 +393,7 @@ var wizardTestTargets = []string{
 	tools.WizardPulsarDailyBlock,
 	tools.WizardPulsarDailyCustomBlock,
 	tools.WizardFieldInstructions,
+	tools.WizardGlobalInstructions,
 }
 
 func runWizardToolMenuCheck(t *testing.T, target string) {
@@ -467,6 +468,7 @@ func TestHandleWizardStart_TargetScopesSystemPrompt(t *testing.T) {
 		{tools.WizardPulsarDailyBlock, "Local", "This is NOT a whole routine prompt", true},
 		{tools.WizardPulsarDailyCustomBlock, "Stock Watchlist", `"general purpose" block`, true},
 		{tools.WizardFieldInstructions, "Japan Trip", "custom instructions for a Field", true},
+		{tools.WizardGlobalInstructions, "", "their global custom instructions for Polaris", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.target, func(t *testing.T) {

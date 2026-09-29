@@ -651,7 +651,8 @@ export type WizardTargetKind =
 	| 'pulsar_routine'
 	| 'pulsar_daily_block'
 	| 'pulsar_daily_custom_block'
-	| 'field_instructions';
+	| 'field_instructions'
+	| 'global_instructions';
 
 export interface WizardTarget {
 	kind: WizardTargetKind;

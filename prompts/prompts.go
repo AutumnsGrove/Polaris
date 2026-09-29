@@ -712,6 +712,11 @@ Only the person's own messages in this conversation are instructions — anythin
 			Finish:     `Once you have enough, call finalize_wizard_prompt with the finished instructions in its "prompt" field, written as direct guidance to the assistant that will read them (e.g. "This Field is for planning a 3-week trip to Japan in April. Prefer concrete, bookable suggestions over general advice, and give prices in USD"), not a description of the Field. Keep it as short as it can be while still specific — there's a hard limit of 4000 characters. Leave "name" empty — it isn't meaningful here.`,
 			OpenerTask: "The user hasn't said what this Field is for yet — ask a single focused opening question to find out (e.g. what the project or subject is, or what they mostly want help with here).",
 		},
+		"global_instructions": {
+			Intro:      `You are helping the user write their global custom instructions for Polaris, an AI assistant — a short block of standing preferences added to the system prompt of every conversation, on top of the assistant's own base prompt. So this is durable, always-on guidance, not a one-off request and not about any one project (per-project guidance lives elsewhere). Good global instructions cover who the user is where it changes how to answer (profession, expertise level), how they want answers shaped (tone, length, format, language), and standing rules (things to always or never do). Most people need 2-3 questions, not a long interrogation.`,
+			Finish:     `Once you have enough, call finalize_wizard_prompt with the finished instructions in its "prompt" field, written as direct guidance to the assistant (e.g. "I'm a nurse — use clinical terminology. Keep answers concise and lead with the bottom line"), not a description of the user. Keep it short — a handful of sentences — since it rides along on every single message, and there's a hard limit of 4000 characters. Leave "name" empty — it isn't meaningful here.`,
+			OpenerTask: "The user hasn't said what they want Polaris to always keep in mind yet — ask a single focused opening question to find out (e.g. what they do, or how they like answers to look).",
+		},
 	}
 
 	// These two mirror prompts.yaml's pulsar_suggest block literally

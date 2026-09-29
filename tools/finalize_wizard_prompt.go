@@ -35,6 +35,7 @@ const (
 	WizardPulsarDailyBlock       = "pulsar_daily_block"
 	WizardPulsarDailyCustomBlock = "pulsar_daily_custom_block"
 	WizardFieldInstructions      = "field_instructions"
+	WizardGlobalInstructions     = "global_instructions"
 )
 
 var finalizeWizardPromptDef = llm.ToolDef{

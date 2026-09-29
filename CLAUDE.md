@@ -254,8 +254,9 @@ code lives" pointer.
 ## The prompt-writing wizard
 
 "Help me write this" is one shared, target-driven interview, not a per-surface feature — Pulsar
-routine prompts, Pulsar Daily block instructions (fixed and custom), and a Field's custom
-instructions all run through the same code (issue #138). It is ephemeral: an in-memory session, zero
+routine prompts, Pulsar Daily block instructions (fixed and custom), a Field's custom
+instructions, and the global custom instructions in Settings all run through the same code
+(issue #138). It is ephemeral: an in-memory session, zero
 `threads`/`messages` rows, a 30-minute TTL swept on the Pulsar scheduler's tick.
 
 - Backend: `gateway/wizard.go` (`POST /api/wizard/start|turn`, sessions, per-turn cost as

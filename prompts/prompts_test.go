@@ -59,7 +59,7 @@ func TestGet_MissingFileFallsBackToDefaults(t *testing.T) {
 // for — kept literal here (not derived from defaults) so a target dropped
 // from buildDefaults fails these tests instead of silently shrinking the
 // set they check.
-var wizardKinds = []string{"pulsar_routine", "pulsar_daily_block", "pulsar_daily_custom_block", "field_instructions"}
+var wizardKinds = []string{"pulsar_routine", "pulsar_daily_block", "pulsar_daily_custom_block", "field_instructions", "global_instructions"}
 
 // TestGet_WizardMissingFileFallsBackToDefaults guards a real bug (from
 // before the wizard was consolidated): fillDefaults never merged the

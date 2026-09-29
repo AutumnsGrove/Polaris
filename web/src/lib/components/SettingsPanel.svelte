@@ -31,6 +31,8 @@
 	import Asterism from './Asterism.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 	import PulsarUsageModal from './PulsarUsageModal.svelte';
+	import WizardButton from './WizardButton.svelte';
+	import WizardOverlay from './WizardOverlay.svelte';
 
 	function close() {
 		appState.settings.open = false;
@@ -49,6 +51,12 @@
 	// ConstellationUsageModal), just reached via a shortcut link from here.
 	let showConstellationUsage = $state(false);
 	let showPulsarUsage = $state(false);
+	// "Help me write this" for the global custom instructions box below —
+	// see WizardOverlay / gateway/wizard.go's global_instructions target.
+	// Unlike a Field's instructions tab (which has an explicit Save), this
+	// box already saves itself (on blur), so accepting a draft goes straight
+	// through setCustomInstructions rather than only filling the textarea.
+	let showInstructionsWizard = $state(false);
 
 	// "About you" pronoun presets — same segmented-control-plus-custom
 	// pattern Constellation's own settings modal used before this moved
@@ -432,6 +440,9 @@
 			<div class="section-head"><NotepadText size={15} /><span class="section-title">Custom instructions</span></div>
 			<div class="settings-group">
 				<div class="settings-row stacked">
+					<div class="wizard-row">
+						<WizardButton onclick={() => (showInstructionsWizard = true)} />
+					</div>
 					<textarea
 						class="custom-instructions-input"
 						placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
@@ -728,6 +739,15 @@
 	<PulsarUsageModal onClose={() => (showPulsarUsage = false)} />
 {/if}
 
+{#if showInstructionsWizard}
+	<WizardOverlay
+		target={{ kind: 'global_instructions' }}
+		seed={appState.settings.customInstructions}
+		onClose={() => (showInstructionsWizard = false)}
+		onAccept={(text) => appState.settings.setCustomInstructions(text)}
+	/>
+{/if}
+
 <style>
 	/* .modal-backdrop/.modal-panel/.modal-panel-header live in app.css —
 	   shared with ComposerMenu.svelte, one popup treatment (including the
@@ -1013,6 +1033,13 @@
 
 	.stacked-input::placeholder {
 		color: var(--color-text-dim);
+	}
+
+	/* Right-aligned launcher above the textarea; WizardButton carries its
+	   own bottom margin, so this row adds none. */
+	.wizard-row {
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.custom-instructions-input {
