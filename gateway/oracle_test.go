@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
 )
@@ -307,41 +308,71 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
-// TestOracleYAML_FocusModeReferencesAreValid guards against prompts.yaml's
-// oracle: block referencing a focus mode that doesn't exist — the same
-// drift TestHandlePutSettings_EveryFocusModeIsAValidDefault guards for
-// default_focus_mode, extended to every field that names a focus mode
-// inside oracle.checks (sticky, never_with_high_stakes, skip_for_focus,
-// option_thresholds, by_focus's outer keys).
-func TestOracleYAML_FocusModeReferencesAreValid(t *testing.T) {
+// TestOracleConfig_ReferencesAreValid guards against config.yaml's oracle:
+// block (its shipped defaults, which config.yaml.example mirrors) naming a
+// focus mode, option or check that doesn't exist — the same drift
+// TestHandlePutSettings_EveryFocusModeIsAValidDefault guards for
+// default_focus_mode. Rules are keyed by check/option name and never fail
+// loudly at runtime: a typo just makes a rule silently never match.
+func TestOracleConfig_ReferencesAreValid(t *testing.T) {
 	validModes := prompts.Get().Agent.FocusModes
 	if len(validModes) == 0 {
 		t.Fatal("prompts.Get().Agent.FocusModes is empty — nothing to check")
 	}
+	p := prompts.Get()
 
 	checkMode := func(field, checkKey, mode string) {
 		if _, ok := validModes[mode]; mode != "" && !ok {
 			t.Errorf("oracle.checks.%s.%s references unknown focus mode %q", checkKey, field, mode)
 		}
 	}
+	checkOption := func(field, checkKey, option string) {
+		if _, ok := p.Oracle.Checks[checkKey].Options[option]; !ok {
+			t.Errorf("oracle.checks.%s.%s references %q, which isn't in prompts.yaml's %s.options", checkKey, field, option, checkKey)
+		}
+	}
 
-	for key, check := range prompts.Get().Oracle.Checks {
-		for _, m := range check.Sticky {
+	rules := config.DefaultOracle()
+	for key, rule := range rules.Checks {
+		if _, ok := p.Oracle.Checks[key]; !ok {
+			t.Errorf("oracle.checks.%s has rules but no prompts.yaml check of that name", key)
+			continue
+		}
+		for _, m := range rule.Sticky {
 			checkMode("sticky", key, m)
+			checkOption("sticky", key, m)
 		}
-		for _, m := range check.NeverWithHighStakes {
+		for _, m := range rule.NeverWithHighStakes {
 			checkMode("never_with_high_stakes", key, m)
+			checkOption("never_with_high_stakes", key, m)
 		}
-		for _, m := range check.SkipForFocus {
+		for _, m := range rule.SkipForFocus {
 			checkMode("skip_for_focus", key, m)
 		}
+		for opt := range rule.OptionThresholds {
+			checkOption("option_thresholds", key, opt)
+		}
+		for opt, modes := range rule.SkipOptionForFocus {
+			checkOption("skip_option_for_focus", key, opt)
+			for _, m := range modes {
+				checkMode("skip_option_for_focus", key, m)
+			}
+		}
+	}
+	for key := range p.Oracle.Checks {
+		if _, ok := rules.Checks[key]; !ok {
+			t.Errorf("prompts.yaml oracle.checks.%s has no rules in config's defaults — it would never run", key)
+		}
+	}
+	for key := range p.Oracle.Chips {
+		if _, ok := rules.Chips[key]; !ok {
+			t.Errorf("prompts.yaml oracle.chips.%s has no rules in config's defaults — it would never run", key)
+		}
+	}
+	// by_focus lives in prompts.yaml but is keyed by focus mode.
+	for key, check := range p.Oracle.Checks {
 		for m := range check.ByFocus {
 			checkMode("by_focus", key, m)
-		}
-		for m := range check.SkipOptionForFocus {
-			for _, focusMode := range check.SkipOptionForFocus[m] {
-				checkMode("skip_option_for_focus", key, focusMode)
-			}
 		}
 	}
 }

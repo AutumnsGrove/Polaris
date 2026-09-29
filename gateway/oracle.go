@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"polaris/config"
 	"polaris/jev"
 	"polaris/prompts"
 )
@@ -63,6 +64,11 @@ type OracleInput struct {
 	// nil map (no projects, or the thread is already in one) skips the
 	// chip check entirely rather than asking Jev to choose among nothing.
 	ProjectOptions map[string]string
+	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
+	// see config.OracleConfig), already merged with the shipped defaults by
+	// config.Load. The zero value means "use the shipped defaults", so a
+	// caller with no config in hand (tests) still gets real behavior.
+	Rules config.OracleConfig
 }
 
 // CheckOutcome is one check's raw result, kept regardless of whether it
@@ -131,6 +137,10 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	}
 
 	p := prompts.Get()
+	rules := in.Rules
+	if rules.Checks == nil && rules.Chips == nil {
+		rules = config.DefaultOracle()
+	}
 	questions := make(map[string]jev.ChoiceQuestion, len(p.Oracle.Checks)+len(p.Oracle.Chips))
 	// offered is the option set actually sent per question, kept so Jev's
 	// answers can be validated against it below — a response is external
@@ -138,10 +148,18 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	// substituted into prompt text, so it must be one we offered.
 	offered := make(map[string][]string, len(p.Oracle.Checks)+len(p.Oracle.Chips))
 	for key, check := range p.Oracle.Checks {
-		if check.FirstMessageOnly && !in.IsFirstMessage {
+		rule, ok := rules.Checks[key]
+		if !ok {
+			// A check defined in prompts.yaml with no policy in config: with
+			// no threshold it would fire on any answer at all, so it stays
+			// off until it has one.
+			log.Warn("oracle: check has no rules in config, skipping it", "check", key)
 			continue
 		}
-		if sliceContains(check.SkipForFocus, in.ActiveFocusMode) {
+		if rule.OnlyFirstMessage() && !in.IsFirstMessage {
+			continue
+		}
+		if sliceContains(rule.SkipForFocus, in.ActiveFocusMode) {
 			continue
 		}
 		questions[key] = jev.ChoiceQuestion{
@@ -151,6 +169,10 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		offered[key] = optionKeys(check.Options)
 	}
 	for key, chip := range p.Oracle.Chips {
+		if _, ok := rules.Chips[key]; !ok {
+			log.Warn("oracle: chip has no rules in config, skipping it", "chip", key)
+			continue
+		}
 		options := chip.Options
 		if key == "project" {
 			if len(in.ProjectOptions) == 0 {
@@ -193,7 +215,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	// focus check's own NeverWithHighStakes rule needs its winner.
 	highStakesOption := ""
 	if hs, ok := resp.Answers["high_stakes"]; ok {
-		if check, ok := p.Oracle.Checks["high_stakes"]; ok && hs.Choice != "none" && hs.Probabilities[hs.Choice] >= check.Threshold {
+		if rule, ok := rules.Checks["high_stakes"]; ok && hs.Choice != "none" && hs.Probabilities[hs.Choice] >= rule.Threshold {
 			highStakesOption = hs.Choice
 		}
 	}
@@ -207,8 +229,8 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	// itself.
 	effectiveFocus := in.ActiveFocusMode
 	if focusAns, ok := resp.Answers["focus"]; ok {
-		if check, ok := p.Oracle.Checks["focus"]; ok {
-			picked, fired := resolveFocus(check, focusAns, in.PriorOracleFocusMode, highStakesOption)
+		if rule, ok := rules.Checks["focus"]; ok {
+			picked, fired := resolveFocus(rule, focusAns, in.PriorOracleFocusMode, highStakesOption)
 			result.Checks = append(result.Checks, CheckOutcome{Key: "focus", Winner: focusAns.Choice, Probabilities: focusAns.Probabilities, Fired: fired})
 			if fired {
 				// picked=="off" is resolveFocus's "retract the mode Oracle
@@ -244,11 +266,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		ans := resp.Answers[key]
 
 		if chipKey, isChip := strings.CutPrefix(key, "chip_"); isChip {
-			chip, ok := p.Oracle.Chips[chipKey]
+			chipRule, ok := rules.Chips[chipKey]
 			if !ok {
 				continue
 			}
-			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chip.Threshold {
+			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chipRule.Threshold {
 				label := ""
 				if chipKey == "project" {
 					label = ans.Choice
@@ -259,10 +281,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		}
 
 		check, ok := p.Oracle.Checks[key]
-		if !ok {
+		rule, hasRule := rules.Checks[key]
+		if !ok || !hasRule {
 			continue
 		}
-		fired := ans.Probabilities[ans.Choice] >= check.Threshold
+		fired := ans.Probabilities[ans.Choice] >= rule.Threshold
 		result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Fired: fired})
 		if !fired {
 			continue
@@ -270,7 +293,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		if key == "research" && ans.Choice == "no" {
 			result.NoResearchHint = true
 		}
-		if sliceContains(check.SkipOptionForFocus[ans.Choice], effectiveFocus) {
+		if sliceContains(rule.SkipOptionForFocus[ans.Choice], effectiveFocus) {
 			continue
 		}
 		injs := resolveInjections(check, ans.Choice, effectiveFocus)
@@ -296,7 +319,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 //   - ("", false)   nothing changes (keep whatever mode the turn already has)
 //   - (mode, true)  Oracle picked that mode
 //   - ("off", true) Oracle cleared the mode it had set — see below
-func resolveFocus(check prompts.OracleCheck, ans jev.ChoiceAnswer, priorOracleFocus, highStakesOption string) (picked string, fired bool) {
+func resolveFocus(check config.OracleCheckRules, ans jev.ChoiceAnswer, priorOracleFocus, highStakesOption string) (picked string, fired bool) {
 	if ans.Choice == "" {
 		return "", false
 	}

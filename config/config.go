@@ -318,6 +318,10 @@ type Config struct {
 	// forever, not to rush a thorough one — the more agentic models
 	// routinely use 5-8 calls on a real multi-part research question.
 	MaxAgentTurns int `yaml:"max_agent_turns"`
+
+	// Oracle is Oracle mode's tuning — thresholds and focus-mode rules, not
+	// prompt text. See oracle.go; Load fills every gap from DefaultOracle.
+	Oracle OracleConfig `yaml:"oracle"`
 }
 
 // ModelConfig describes one entry in the model selector. Provider pins
@@ -527,6 +531,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.MaxAgentTurns <= 0 {
 		cfg.MaxAgentTurns = 50
 	}
+	cfg.Oracle = mergeOracle(cfg.Oracle)
 
 	// Apply registry as base, then merge config overrides
 	if len(registry) == 0 {

@@ -61,7 +61,7 @@ mode is on:
 1. Build Jev's `state`: the current user message, plus the **previous user message** in this thread
    if there is one. A follow-up like "what about the second one?" is unclassifiable on its own; one
    prior message fixes most of that and stays far below Jev's 32k-token context.
-2. Send every enabled check from `prompts.yaml`'s `oracle.checks` as one `AskChoice` request.
+2. Send every enabled check from `prompts.yaml`'s `oracle.checks` as one `AskChoice` request. (Post-launch: thresholds and focus-mode rules moved out of `prompts.yaml` into `config.yaml`'s `oracle:` block — `config/oracle.go`, defaults mirrored in `config.yaml.example` — so prompts.yaml holds wording only.)
 3. For each answer whose winning option clears that check's threshold, apply it: set the turn's
    focus mode / soft-no-research flag, and collect the option's `inject` text.
 4. Build `## Oracle` from the collected injections and add it to the system prompt — **and** to

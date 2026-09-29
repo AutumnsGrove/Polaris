@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func writeTestConfig(t *testing.T, contents string) string {
@@ -285,5 +288,109 @@ func TestResearchWorkerModel_NoneConfiguredFallsBackToDefault(t *testing.T) {
 	}
 	if got.ID != "b" {
 		t.Errorf("ResearchWorkerModel() = %+v, want fallback to DefaultModel (b)", got)
+	}
+}
+
+func TestMergeOracle_UnsetFieldsInheritDefaults(t *testing.T) {
+	got := mergeOracle(OracleConfig{Checks: map[string]OracleCheckRules{
+		"focus": {Threshold: 0.9},
+	}})
+	want := DefaultOracle().Checks["focus"]
+	f := got.Checks["focus"]
+	if f.Threshold != 0.9 {
+		t.Errorf("want configured threshold 0.9, got %v", f.Threshold)
+	}
+	if f.SwitchThreshold != want.SwitchThreshold || f.OptionThresholds["safari"] != 0.85 ||
+		len(f.Sticky) != 1 || len(f.NeverWithHighStakes) != 1 {
+		t.Errorf("want every unset focus field inherited from defaults, got %+v", f)
+	}
+	if got.Checks["research"].Threshold != 0.85 || got.Chips["project"].Threshold != 0.75 {
+		t.Errorf("want untouched checks/chips left at defaults, got %+v / %+v", got.Checks["research"], got.Chips["project"])
+	}
+}
+
+func TestMergeOracle_ExplicitEmptyListClearsDefault(t *testing.T) {
+	got := mergeOracle(OracleConfig{Checks: map[string]OracleCheckRules{
+		"focus":   {Sticky: []string{}},
+		"clarify": {FirstMessageOnly: boolPtr(false)},
+	}})
+	if len(got.Checks["focus"].Sticky) != 0 {
+		t.Errorf("want `sticky: []` to clear the default, got %v", got.Checks["focus"].Sticky)
+	}
+	if got.Checks["clarify"].OnlyFirstMessage() {
+		t.Error("want `first_message_only: false` to override the default true")
+	}
+}
+
+func TestMergeOracle_OutOfRangeThresholdKeepsDefault(t *testing.T) {
+	got := mergeOracle(OracleConfig{
+		Checks: map[string]OracleCheckRules{"research": {Threshold: 85}},
+		Chips:  map[string]OracleChipRules{"pulsar": {Threshold: -1}},
+	})
+	if got.Checks["research"].Threshold != 0.85 || got.Chips["pulsar"].Threshold != 0.80 {
+		t.Errorf("want typo'd thresholds ignored, got %v / %v", got.Checks["research"].Threshold, got.Chips["pulsar"].Threshold)
+	}
+}
+
+func TestMergeOracle_UnknownKeysAreIgnored(t *testing.T) {
+	got := mergeOracle(OracleConfig{Checks: map[string]OracleCheckRules{"nope": {Threshold: 0.5}}})
+	if _, ok := got.Checks["nope"]; ok {
+		t.Error("want a check key with no matching check dropped")
+	}
+}
+
+// The example files document what an unconfigured install runs. If a
+// default changes in oracle.go and the example isn't updated (or vice
+// versa), the file people copy from would lie about the behavior.
+func TestExampleOracleMatchesDefaults(t *testing.T) {
+	for _, path := range []string{"../config.yaml.example", "../compose/polaris/config.yaml.example"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		var parsed struct {
+			Oracle OracleConfig `yaml:"oracle"`
+		}
+		if err := yaml.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("parsing %s: %v", path, err)
+		}
+		if parsed.Oracle.Checks == nil {
+			t.Fatalf("%s has no oracle: block", path)
+		}
+		if !reflect.DeepEqual(mergeOracle(parsed.Oracle), DefaultOracle()) {
+			t.Errorf("%s's oracle: block differs from config.DefaultOracle()", path)
+		}
+		// Merging is not enough on its own — an omitted line would also
+		// merge back to the default — so the example must state every value.
+		if !reflect.DeepEqual(parsed.Oracle, DefaultOracle()) {
+			t.Errorf("%s's oracle: block doesn't state every default explicitly", path)
+		}
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func TestLoad_OracleBlockOverridesAndInherits(t *testing.T) {
+	path := writeTestConfig(t, "openrouter:\n  api_key: k\noracle:\n  checks:\n    research:\n      threshold: 0.6\n")
+	cfg, err := Load(path, []ModelConfig{{ID: "m", Name: "M", Model: "x/y"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Oracle.Checks["research"].Threshold != 0.6 {
+		t.Errorf("want the configured research threshold, got %v", cfg.Oracle.Checks["research"].Threshold)
+	}
+	if cfg.Oracle.Checks["focus"].SwitchThreshold != 0.85 {
+		t.Errorf("want an unconfigured check to inherit defaults, got %+v", cfg.Oracle.Checks["focus"])
+	}
+}
+
+func TestLoad_NoOracleBlockUsesDefaults(t *testing.T) {
+	path := writeTestConfig(t, "openrouter:\n  api_key: k\n")
+	cfg, err := Load(path, []ModelConfig{{ID: "m", Name: "M", Model: "x/y"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Oracle, DefaultOracle()) {
+		t.Errorf("want a config with no oracle: block to equal the defaults, got %+v", cfg.Oracle)
 	}
 }
