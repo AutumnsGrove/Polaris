@@ -136,16 +136,17 @@
 	let activeFocusLabel = $derived(FOCUS_MODES.find((m) => m.id === focusMode)?.label ?? null);
 
 	// Oracle mode's own trigger state (docs/plans/oracle-mode.md's B12) —
-	// the ring only renders when Oracle is actually on (see
-	// SettingsPanel.svelte's toggle); otherwise the plain Plus icon from
-	// before Oracle existed is unchanged. "reading" spins the ring for the
-	// window between sending a turn and Oracle finishing its pre-read.
+	// when Oracle is on (see SettingsPanel.svelte's toggle) the pill takes a
+	// faint gold tint and a small star at its right edge; the Plus stays
+	// where it always was. "reading" sweeps a soft shimmer across the pill
+	// for the window between sending a turn and Oracle finishing its
+	// pre-read. Chosen from mockups/oracle-trigger-options.html (option E).
 	//
 	// That window now has a real end-of-signal: the early 'oracle' event
 	// (turn.oracleResolved, see its doc comment) lands the moment Oracle
 	// actually resolves — typically a couple of seconds in, and often many
 	// seconds before the answer's first token — so keying only off "nothing
-	// has streamed yet" used to keep the ring spinning after Oracle was
+	// has streamed yet" used to keep the shimmer going after Oracle was
 	// already done. The timeline/content fallback stays for a turn Oracle
 	// never ran on (off/unconfigured/over budget), where no event will ever
 	// arrive and the first real output is still the only end-of-reading
@@ -166,14 +167,15 @@
 	let headerTitle = $derived(view === 'focus' ? 'Focus' : view === 'model' ? 'Model' : 'More');
 </script>
 
-<button type="button" class="trigger" onclick={() => (open = true)} aria-label="Attach, focus modes, and model">
-	{#if appState.settings.oracleEnabled}
-		<span class="ring" class:reading={oracleReading}>
-			<Asterism size={14} />
-		</span>
-	{:else}
-		<Plus size={16} />
-	{/if}
+<button
+	type="button"
+	class="trigger"
+	class:oracle={appState.settings.oracleEnabled}
+	class:reading={oracleReading}
+	onclick={() => (open = true)}
+	aria-label="Attach, focus modes, and model"
+>
+	<Plus size={16} />
 	<span class="trigger-label">More</span>
 	{#if activeFocusLabel}
 		<span class="trigger-badge">{activeFocusLabel}</span>
@@ -183,6 +185,9 @@
 	{/if}
 	{#if !research}
 		<span class="trigger-badge chat">Chat mode</span>
+	{/if}
+	{#if appState.settings.oracleEnabled}
+		<span class="oracle-mark" aria-hidden="true"><Asterism size={14} /></span>
 	{/if}
 </button>
 
@@ -337,61 +342,55 @@
 		flex-shrink: 0;
 	}
 
-	/* Oracle mode's ring (docs/plans/oracle-mode.md's B12) — "starlight
-	   through a prism": the full hue wheel at one lightness/chroma, not
-	   RGB-neon-saturated. Ported from mockups/oracle-mode.html's .ring. */
-	.ring {
-		--ring-l: 80%;
-		--ring-c: 0.13;
-		--size: 26px;
-		width: var(--size);
-		height: var(--size);
-		border-radius: var(--radius-full);
+	/* Oracle mode on: the whole pill is faintly gold-tinted and carries a
+	   star at its right edge (docs/plans/oracle-mode.md's B12; picked from
+	   mockups/oracle-trigger-options.html, option E). The earlier
+	   always-on rainbow ring read as decoration, not status. */
+	.trigger.oracle {
+		position: relative;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+	}
+
+	.trigger.oracle:hover {
+		background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-3));
+	}
+
+	.oracle-mark {
 		display: grid;
 		place-items: center;
-		position: relative;
-		flex: none;
-		background: conic-gradient(
-			from 0deg,
-			oklch(var(--ring-l) var(--ring-c) 20),
-			oklch(var(--ring-l) var(--ring-c) 80),
-			oklch(var(--ring-l) var(--ring-c) 140),
-			oklch(var(--ring-l) var(--ring-c) 200),
-			oklch(var(--ring-l) var(--ring-c) 260),
-			oklch(var(--ring-l) var(--ring-c) 320),
-			oklch(var(--ring-l) var(--ring-c) 20)
-		);
+		flex-shrink: 0;
+		color: var(--color-accent);
 	}
 
-	:root[data-theme='light'] .ring {
-		--ring-l: 66%;
-		--ring-c: 0.15;
-	}
-
-	.ring::before {
+	/* While Oracle is still pre-reading: a soft band of light crossing the
+	   pill. pointer-events off so it never swallows the tap. */
+	.trigger.oracle.reading::after {
 		content: '';
 		position: absolute;
-		inset: 1.5px;
-		border-radius: inherit;
-		background: var(--color-surface-2);
+		inset: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			100deg,
+			transparent 30%,
+			color-mix(in srgb, var(--color-accent) 22%, transparent) 50%,
+			transparent 70%
+		);
+		transform: translateX(-100%);
+		animation: oracle-shimmer 1.8s ease-in-out infinite;
 	}
 
-	.ring :global(svg) {
-		position: relative;
-		color: var(--color-text);
-	}
-
-	.ring.reading {
-		animation: ring-spin 2.4s linear infinite;
-	}
-
-	.ring.reading :global(svg) {
-		animation: ring-spin 2.4s linear infinite reverse;
-	}
-
-	@keyframes ring-spin {
+	@keyframes oracle-shimmer {
 		to {
-			transform: rotate(360deg);
+			transform: translateX(100%);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.trigger.oracle.reading::after {
+			animation: none;
+			transform: none;
+			opacity: 0.6;
 		}
 	}
 
