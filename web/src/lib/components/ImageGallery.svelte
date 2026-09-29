@@ -2,7 +2,24 @@
 	import type { Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
 
-	let { cards }: { cards: Card[] } = $props();
+	// preferFull: tiles load full_image_url instead of the deliberately small
+	// thumbnail. Used by show's hand-picked galleries (a few images the model
+	// vouched for, worth showing sharp) but not the end-of-turn attach_gallery
+	// dump of ~10, where thumbnails keep the page light. Some hosts block
+	// hotlinking the full-size file, so a failed load falls back to the
+	// thumbnail once rather than leaving a broken tile.
+	let { cards, preferFull = false }: { cards: Card[]; preferFull?: boolean } = $props();
+
+	function tileSrc(card: Card): string | undefined {
+		return preferFull ? card.full_image_url || card.image_url : card.image_url;
+	}
+
+	function fallBackToThumbnail(e: Event, card: Card) {
+		const img = e.currentTarget as HTMLImageElement;
+		if (img.dataset.fellBack || !card.image_url || img.src === card.image_url) return;
+		img.dataset.fellBack = '1';
+		img.src = card.image_url;
+	}
 
 	// Tapping a tile opens the lightbox (full-screen preview, zoomable by
 	// virtue of just being bigger) instead of navigating straight to the
@@ -15,7 +32,13 @@
 <div class="gallery">
 	{#each cards as card (card.url)}
 		<button class="tile" onclick={() => (previewCard = card)} title={card.title}>
-			<img class="tile-image" src={card.image_url} alt={card.title} loading="lazy" />
+			<img
+				class="tile-image"
+				src={tileSrc(card)}
+				alt={card.title}
+				loading="lazy"
+				onerror={(e) => fallBackToThumbnail(e, card)}
+			/>
 			{#if card.subtitle}
 				<span class="tile-source">{card.subtitle}</span>
 			{/if}

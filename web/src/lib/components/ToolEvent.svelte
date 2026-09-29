@@ -241,6 +241,12 @@
 					class="show-image"
 					src={item.images[0].full_image_url || item.images[0].image_url}
 					alt={item.caption || item.images[0].title}
+					onerror={(e) => {
+						// Full-size host may block hotlinking — fall back to the thumbnail once.
+						const img = e.currentTarget as HTMLImageElement;
+						const thumb = item.images?.[0].image_url;
+						if (thumb && img.src !== thumb) img.src = thumb;
+					}}
 				/>
 			</button>
 			{#if item.caption}
@@ -253,7 +259,7 @@
 			<!-- Several picked results: the same masonry gallery image_search
 			     used to auto-attach at end of turn, but only the chosen
 			     subset, right where the model called show. -->
-			<ImageGallery cards={item.images} />
+			<ImageGallery cards={item.images} preferFull />
 			{#if item.caption}
 				<div class="show-caption">{item.caption}</div>
 			{/if}

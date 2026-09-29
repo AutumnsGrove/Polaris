@@ -1014,8 +1014,15 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// suggestions/title-generation calls after it, which run invisibly
 	// (the answer's already fully rendered) and would otherwise inflate a
 	// short answer's reported time with unrelated background work.
+	// image_search's numbered candidates persist per thread: the model's
+	// history keeps earlier turns' numbered lists, so "show images 2 and 3"
+	// on a follow-up turn must still resolve (issue #124). Saved even when
+	// the turn errors or is stopped — a partial run's numbers may already
+	// be in history.
+	loadImageCandidates(s.db, storageThreadID, agentCtx)
 	turnStart := time.Now()
 	result, err := agent.Run(ctx, agentCtx, history, turnMessage)
+	saveImageCandidates(s.db, storageThreadID, agentCtx)
 	durationMs := time.Since(turnStart).Milliseconds()
 	// Catches a reasoning burst still open when the turn ended — normally
 	// the final answer's "token" events already triggered this via emit

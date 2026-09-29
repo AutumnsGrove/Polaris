@@ -999,12 +999,24 @@ func (c *Context) AddImageCandidate(card Card) int {
 		if existingKey == "" {
 			existingKey = existing.ImageURL
 		}
-		if existingKey == key {
+		// An empty key is a gap left by SeedImageCandidates, never a match.
+		if key != "" && existingKey == key {
 			return i + 1
 		}
 	}
 	c.ImageCandidates = append(c.ImageCandidates, card)
 	return len(c.ImageCandidates)
+}
+
+// SeedImageCandidates preloads the pool with earlier turns' candidates
+// (element i is number i+1; a zero Card is a gap that keeps later numbers
+// where the model was told they were). Called once before a turn runs — the
+// model's history still holds the numbered lists from previous turns, so the
+// numbers it cites must keep resolving.
+func (c *Context) SeedImageCandidates(cards []Card) {
+	c.imageCandidatesMu.Lock()
+	defer c.imageCandidatesMu.Unlock()
+	c.ImageCandidates = append([]Card(nil), cards...)
 }
 
 // ImageCandidate returns the candidate at 1-based number n, or ok=false if
@@ -1015,7 +1027,11 @@ func (c *Context) ImageCandidate(n int) (card Card, ok bool) {
 	if n < 1 || n > len(c.ImageCandidates) {
 		return Card{}, false
 	}
-	return c.ImageCandidates[n-1], true
+	card = c.ImageCandidates[n-1]
+	if card.ImageURL == "" && card.FullImageURL == "" {
+		return Card{}, false // a gap, see SeedImageCandidates
+	}
+	return card, true
 }
 
 // ImageCandidatesSnapshot returns a copy of the candidate pool — same

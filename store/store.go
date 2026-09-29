@@ -374,6 +374,19 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_thread ON events(thread_id);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 
+-- image_candidates is image_search's numbered result pool, persisted per
+-- thread (see image_candidates.go). The model's history keeps the numbered
+-- candidate list from earlier turns, but tools.Context is rebuilt every
+-- turn — without this, "show images 2 and 3" on a follow-up turn cites
+-- numbers the server no longer knows. Its own table rather than reading
+-- events back: events are pruned after 90 days, threads never are.
+CREATE TABLE IF NOT EXISTS image_candidates (
+	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+	num       INTEGER NOT NULL, -- 1-based, the number the model was told
+	card      TEXT NOT NULL,    -- JSON-encoded tools.Card
+	PRIMARY KEY (thread_id, num)
+);
+
 -- api_usage tracks calendar-month call counts for paid, card-on-file
 -- fallback APIs (currently just Parallel's Search API — see
 -- tools/web_search.go's fallback chain) whose free tier has a hard cap
@@ -1858,6 +1871,17 @@ func (s *Store) ForkThread(rootID, srcID string, atIndex int) (string, error) {
 			 SELECT DISTINCT turn_id FROM messages WHERE thread_id = ? AND turn_id != ''
 		 )`,
 		forkID, srcID, forkID,
+	); err != nil {
+		return "", err
+	}
+
+	// The whole candidate pool, not just the prefix's share: the fork's
+	// history still carries the numbered lists, and a superset only means a
+	// few numbers the fork's history never mentions.
+	if _, err := tx.Exec(
+		`INSERT INTO image_candidates (thread_id, num, card)
+		 SELECT ?, num, card FROM image_candidates WHERE thread_id = ?`,
+		forkID, srcID,
 	); err != nil {
 		return "", err
 	}
