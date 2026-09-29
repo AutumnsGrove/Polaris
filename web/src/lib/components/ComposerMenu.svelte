@@ -29,6 +29,7 @@
 		focusModeManual = $bindable(false),
 		deepResearch = $bindable(false),
 		research = $bindable(true),
+		ghostMode = false,
 		onAttach
 	}: {
 		focusMode: FocusMode;
@@ -45,6 +46,11 @@
 		// so a caller that never wires this prop up still gets normal
 		// research behavior rather than accidentally starting in chat mode.
 		research: boolean;
+		// The composer's ghost toggle (ChatView.svelte's ghostMode) — the
+		// Oracle mark/reading UI stays dark when it's on and the
+		// oracle_ghost_enabled opt-in is off, since Oracle won't run. See
+		// oracleActive below.
+		ghostMode?: boolean;
 		onAttach: (files: File[]) => void;
 	} = $props();
 
@@ -164,6 +170,16 @@
 	// small badges for whatever's actually turned on.
 	let activeFocusLabel = $derived(FOCUS_MODES.find((m) => m.id === focusMode)?.label ?? null);
 
+	// Oracle is on AND will actually read this turn — the composer's own
+	// ghost toggle narrows AppState.oracleWillRun further for the
+	// not-yet-sent case (oracleWillRun only sees an in-flight turn and the
+	// open thread, and a ghost aimed at a brand-new thread has neither yet).
+	// A ghost conversation Oracle is going to skip must not advertise
+	// itself with the asterisk or the reading shimmer.
+	let oracleActive = $derived(
+		appState.oracleWillRun && (!ghostMode || appState.settings.oracleGhostEnabled)
+	);
+
 	// Oracle mode's own trigger state (docs/plans/oracle-mode.md's B12) —
 	// when Oracle is on (see SettingsPanel.svelte's toggle) the pill takes a
 	// faint gold tint and a small star at its right edge; the Plus stays
@@ -176,12 +192,12 @@
 	// actually resolves — typically a couple of seconds in, and often many
 	// seconds before the answer's first token — so keying only off "nothing
 	// has streamed yet" used to keep the shimmer going after Oracle was
-	// already done. The timeline/content fallback stays for a turn Oracle
-	// never ran on (off/unconfigured/over budget), where no event will ever
-	// arrive and the first real output is still the only end-of-reading
-	// signal there is.
+	// already done. unconfigured/over budget still falls back to the first
+	// real output (no event will ever arrive); oracleActive above is what
+	// keeps it off entirely for a turn Oracle is going to skip (ghost mode
+	// without the opt-in).
 	let oracleReading = $derived.by(() => {
-		if (!appState.busy) return false;
+		if (!appState.busy || !oracleActive) return false;
 		// The last pushed turn while busy is always the pending assistant
 		// reply (dispatch() pushes user-then-assistant as a pair) —
 		// pendingTurn itself is private to AppState, so this reads the same
@@ -200,7 +216,7 @@
 <button
 	type="button"
 	class="trigger"
-	class:oracle={appState.settings.oracleEnabled}
+	class:oracle={oracleActive}
 	class:reading={oracleReading}
 	onclick={() => (open = true)}
 	aria-label="Attach, focus modes, and model"
@@ -219,7 +235,7 @@
 	{#if !research}
 		<span class="trigger-badge chat">Chat mode</span>
 	{/if}
-	{#if appState.settings.oracleEnabled}
+	{#if oracleActive}
 		<span class="oracle-mark" aria-hidden="true"><Asterism size={14} /></span>
 	{/if}
 </button>

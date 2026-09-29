@@ -1013,3 +1013,55 @@ describe('AppState in-flight thread tracking across navigation', () => {
 		expect(state.totalCost).toBe(2);
 	});
 });
+
+// oracleWillRun is the frontend's mirror of gateway/turn.go's Oracle gate.
+// It exists because isGhostThread alone lagged: it only flips on 'done', so
+// the very first turn of a brand-new ghost thread animated Oracle's pre-read
+// (and advertised the composer's Oracle mark) for a classification the
+// backend had correctly skipped.
+describe('AppState.oracleWillRun', () => {
+	let state: AppState;
+
+	beforeEach(() => {
+		state = new AppState();
+		vi.stubGlobal('fetch', fakeFetch([]));
+	});
+
+	// ghostMode is send()'s 9th parameter — see its doc comment.
+	const sendGhost = () =>
+		state.send('a secret', undefined, undefined, undefined, undefined, undefined, undefined, undefined, true);
+
+	it('is off when Oracle mode is off', () => {
+		state.settings.oracleEnabled = false;
+		expect(state.oracleWillRun).toBe(false);
+	});
+
+	it('is on for an ordinary turn', () => {
+		state.settings.oracleEnabled = true;
+		expect(state.oracleWillRun).toBe(true);
+	});
+
+	it('is off for a brand-new ghost turn unless the opt-in is on', () => {
+		state.settings.oracleEnabled = true;
+		state.settings.oracleGhostEnabled = false;
+		sendGhost();
+		// The repro: the thread isn't marked ghost yet (that waits for 'done'),
+		// so only the in-flight signal can hold the animation back.
+		expect(state.isGhostThread).toBe(false);
+		expect(state.oracleWillRun).toBe(false);
+	});
+
+	it('is on for a ghost turn when the opt-in is on', () => {
+		state.settings.oracleEnabled = true;
+		state.settings.oracleGhostEnabled = true;
+		sendGhost();
+		expect(state.oracleWillRun).toBe(true);
+	});
+
+	it('stays off for an already-open ghost thread with the opt-in off', () => {
+		state.settings.oracleEnabled = true;
+		state.settings.oracleGhostEnabled = false;
+		state.isGhostThread = true;
+		expect(state.oracleWillRun).toBe(false);
+	});
+});

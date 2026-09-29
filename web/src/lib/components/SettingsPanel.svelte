@@ -582,12 +582,26 @@
 						<span class="slider"></span>
 					</label>
 				</div>
+				<div class="settings-row">
+					<span class="row-label">Also in ghost conversations</span>
+					<label class="switch">
+						<input
+							type="checkbox"
+							checked={appState.settings.oracleGhostEnabled}
+							onchange={(e) => appState.settings.setOracleGhostEnabled(e.currentTarget.checked)}
+						/>
+						<span class="slider"></span>
+					</label>
+				</div>
 			</div>
 			<p class="hint">
 				Reads each message before answering and quietly adjusts how <span class="wordmark">Polaris</span>
 				answers — for example, taking extra care with sources on a health question. Anything it
 				changes is shown on the reply, and you can undo it with a tap. Off by default. Each message
-				is also sent to a small helper model, and its cost appears under Usage.
+				is also sent to a small helper model, and its cost appears under Usage. Ghost conversations
+				stay out of this unless you turn on the second switch; even then, Oracle won't offer to set
+				up a Pulsar, add to Daily, or file the chat into a Field from a conversation that's meant to
+				leave no trace.
 			</p>
 
 			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>

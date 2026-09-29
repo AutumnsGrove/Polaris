@@ -38,6 +38,16 @@ var oracleURLPattern = regexp.MustCompile(`https?://[^\s<>"'\)\]]+`)
 // Safari-focus thread, so it is pointless once the turn is already in one.
 const oracleSafariChip = "safari"
 
+// oracleGhostChips is the set of offer chips still offered in a ghost
+// (ephemeral) conversation when Oracle runs there (the oracle_ghost_enabled
+// setting — see OracleInput.Ghost). Only safari qualifies: it just sends the
+// next message in this same thread. The rest each create something that
+// outlives the thread — pulsar and daily set up a scheduled routine/edition,
+// and field files the thread into a Field, which a ghost thread never joins
+// (gateway/protocol.go) and which would also need a store read of the Field
+// list, exactly the kind of leak ghost mode exists to prevent.
+var oracleGhostChips = map[string]bool{oracleSafariChip: true}
+
 // jevAskChoicer is the one jev.Client method RunOracle needs — a seam so
 // tests can inject a stub instead of a live *jev.Client, same spirit as
 // llm/llmtest.MockClient elsewhere in this codebase. *jev.Client satisfies
@@ -82,6 +92,14 @@ type OracleInput struct {
 	// chip whose winner has no entry here is dropped rather than offered
 	// with nothing to move to.
 	FieldIDs map[string]string
+	// Ghost means this is a ghost (ephemeral) conversation Oracle was
+	// explicitly allowed to run in (the oracle_ghost_enabled setting; see
+	// gateway/turn.go's gate). It does not change any classifier check —
+	// only the offer chips: every chip except the ones in oracleGhostChips
+	// is withheld, so nothing permanent is offered from a conversation
+	// meant to vanish. Callers should also leave FieldOptions nil for a
+	// ghost turn (the field chip needs a store read ghost mode avoids).
+	Ghost bool
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -309,6 +327,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		if chipKey, isChip := strings.CutPrefix(key, "chip_"); isChip {
 			chipRule, ok := rules.Chips[chipKey]
 			if !ok {
+				continue
+			}
+			// Ghost turns offer only the chips in oracleGhostChips — see
+			// OracleInput.Ghost and that var's doc comment.
+			if in.Ghost && !oracleGhostChips[chipKey] {
 				continue
 			}
 			// effectiveFocus (not ActiveFocusMode) so a Safari pick Oracle

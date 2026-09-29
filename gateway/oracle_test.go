@@ -302,6 +302,28 @@ func TestRunOracle_FieldChipSkippedWithoutOptions(t *testing.T) {
 	}
 }
 
+// A ghost turn still runs every classifier check and keeps the safari
+// offer (which just continues this thread), but withholds the chips that
+// create something permanent — see oracleGhostChips.
+func TestRunOracle_GhostKeepsSafariChipButWithholdsPermanentOnes(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":       answer("off", 0.9),
+		"chip_pulsar": answer("yes", 0.95),
+		"chip_daily":  answer("yes", 0.95),
+		"chip_safari": answer("yes", 0.90),
+		"chip_field":  answer("Home Lab", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{
+		CurrentMessage: "test",
+		Ghost:          true,
+		FieldOptions:   map[string]string{"Home Lab": "Servers and networking."},
+		FieldIDs:       map[string]string{"Home Lab": "f1"},
+	})
+	if len(result.Chips) != 1 || result.Chips[0].Key != "safari" {
+		t.Errorf("want only the safari chip in a ghost turn, got %+v", result.Chips)
+	}
+}
+
 func containsSubstring(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

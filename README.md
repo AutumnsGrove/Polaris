@@ -87,8 +87,9 @@ with citations.
 - **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
   (extra care with sources on a health question, a table for a comparison, fresher sources for
   breaking news), with every change shown and undoable right on the reply. It can also offer to
-  turn a broad topic into an interactive Safari. See [docs/oracle.md](docs/oracle.md) for every
-  check and what it does.
+  turn a broad topic into an interactive Safari. Off by default in ghost conversations, with a
+  switch to opt those in too (still without the offer to set up a Pulsar, add to Daily, or file
+  the chat into a Field). See [docs/oracle.md](docs/oracle.md) for every check and what it does.
 - **Night-sky start screen** — twinkling stars, a slow comet, and constellations that draw
   themselves in at random clear spots and fade back out behind "Ask Polaris anything."
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;

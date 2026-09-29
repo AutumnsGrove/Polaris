@@ -547,6 +547,7 @@
 					bind:focusModeManual
 					bind:deepResearch
 					bind:research
+					{ghostMode}
 					onAttach={handleAttach}
 				/>
 			{/if}

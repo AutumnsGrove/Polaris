@@ -31,7 +31,7 @@ Guarantees worth knowing:
   what it would have picked.
 - **It only nudges.** Oracle never removes tools from a turn, and it never turns on deep research —
   that stays a deliberate choice.
-- **Ghost threads skip it entirely**, and only the opening of long messages is sent to the classifier.
+- **Ghost threads are your call.** By default a ghost (ephemeral) conversation skips Oracle entirely. Settings → Oracle mode has a second switch, **Also in ghost conversations**, that lets Oracle read and steer those turns too — but only the checks and focus mode: the offer chips that create something permanent (Pulsar, Daily, Field) stay hidden there, since a conversation meant to leave no trace shouldn't offer to file itself somewhere. Only the opening of long messages is sent to the classifier either way.
 
 ## Checks
 
@@ -302,6 +302,8 @@ suggesting.
 | `daily` (80%+) | The topic is worth a daily glance. | Add it to Pulsar Daily (opens `/daily` seeded with the topic). |
 | `safari` (85%+) | A broad subject to study in depth — a field, era, system or concept — not a decision, plan, debate or one-reply question. | Sends the next message itself, asking for an interactive Safari-style walk-through, with Safari picked as the focus. Hidden when the turn is already in Safari. |
 | `field` (75%+) | The message clearly belongs to one of your Fields, and this thread isn't in one yet. | Files the thread under that Field, with a confirmation toast. Jev is shown each Field's name and description (up to 25 of the most recently used). |
+
+In a ghost conversation (with **Also in ghost conversations** on), only `safari` is offered — `pulsar`, `daily`, and `field` all create or move something permanent, which contradicts a thread that vanishes when it ends.
 
 ## Tuning
 

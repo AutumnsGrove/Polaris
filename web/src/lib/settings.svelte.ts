@@ -139,6 +139,15 @@ export class SettingsState {
 	// memoryEnabled's).
 	oracleEnabled = $state(false);
 
+	// Whether Oracle also runs in a ghost (ephemeral) conversation — off by
+	// default, so a ghost turn stays "no extra background intelligence"
+	// unless the operator opts in (see gateway/settings.go's
+	// settingOracleGhostEnabled). Only ever consulted when oracleEnabled is
+	// on too. In a ghost turn Oracle still classifies the message and can
+	// steer the answer, but the offer chips that create something permanent
+	// (Pulsar, Daily, Field) are withheld server-side (see gateway/oracle.go).
+	oracleGhostEnabled = $state(false);
+
 	// Free-text operator steering substituted into prompt.md's
 	// {custom_instructions} placeholder on every turn (see
 	// gateway/settings.go's settingCustomInstructions and
@@ -251,6 +260,7 @@ export class SettingsState {
 		this.disabledTools = data.disabled_tools ?? [];
 		this.memoryEnabled = data.memory_enabled ?? true;
 		this.oracleEnabled = data.oracle_enabled ?? false;
+		this.oracleGhostEnabled = data.oracle_ghost_enabled ?? false;
 		this.customInstructions = data.custom_instructions ?? '';
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
@@ -309,6 +319,11 @@ export class SettingsState {
 	async setOracleEnabled(enabled: boolean) {
 		this.oracleEnabled = enabled;
 		await this.put({ oracle_enabled: enabled });
+	}
+
+	async setOracleGhostEnabled(enabled: boolean) {
+		this.oracleGhostEnabled = enabled;
+		await this.put({ oracle_ghost_enabled: enabled });
 	}
 
 	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —

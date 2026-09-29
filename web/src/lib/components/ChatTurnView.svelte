@@ -252,10 +252,13 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// only while this turn is still streaming and Oracle is actually
 	// enabled, cut short once real output arrives (the "nothing has
 	// streamed yet" window ComposerMenu's ring still falls back to when no
-	// early 'oracle' event ever lands). Ghost threads never run Oracle at
-	// all (see gateway/turn.go's `!ghost` gate), so the animation would be
-	// pure theater there — skipped for the same reason the backend skips
-	// the real classification call.
+	// early 'oracle' event ever lands). Ghost threads run Oracle only when
+	// the separate oracleGhostEnabled setting is on (see gateway/turn.go's
+	// gate); when it isn't, the animation would be pure theater there —
+	// skipped for the same reason the backend skips the real classification
+	// call. appState.oracleWillRun encodes exactly that gate, including the
+	// in-flight-turn ghost state (isGhostThread only flips once the turn is
+	// done, so it alone would still animate the first ghost turn).
 	//
 	// checkCount is a fixed, approximate star count (one per CHECK_DISPLAY
 	// entry, so a new prompts.yaml check adds a star as soon as it has a
@@ -270,7 +273,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// swapped for the note in a layout jump when the turn finished.
 	let constellationFolded = $state(false);
 	let showConstellation = $derived(
-		appState.settings.oracleEnabled && !appState.isGhostThread && turn.streaming && !constellationFolded
+		appState.oracleWillRun && turn.streaming && !constellationFolded
 	);
 	let constellationCutShort = $derived(!!turn.timeline?.length || !!turn.content);
 

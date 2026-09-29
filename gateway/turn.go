@@ -870,7 +870,16 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	// down so its checks-empty-means-nil rule lives in exactly one place.
 	var oracleAttempted bool
 	var oracleResultForEvent *OracleResult
-	if !ghost && !msg.NoOracle && OracleEnabledFromStore(s.db) && s.jev != nil {
+	// Ghost threads are normally skipped entirely (issue #67's "no extra
+	// background intelligence"), but the operator can opt back in with the
+	// separate oracle_ghost_enabled setting: Oracle still classifies the
+	// message and can pick a focus mode/inject guidance, while the offer
+	// chips that create something permanent (pulsar/daily/field) stay
+	// withheld — OracleInput.Ghost carries that distinction into RunOracle,
+	// and the field-options read below is skipped for a ghost turn so no
+	// store read leaks in.
+	oracleInGhost := ghost && OracleGhostEnabledFromStore(s.db)
+	if (!ghost || oracleInGhost) && !msg.NoOracle && OracleEnabledFromStore(s.db) && s.jev != nil {
 		withinOracleBudget := true
 		if used, err := s.db.JevCostThisMonth(); err != nil {
 			log.Warn("oracle: checking jev monthly cost failed, proceeding anyway", "err", err)
@@ -893,7 +902,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 			// already in a Field — fieldID is final here (a new thread born
 			// inside a Field from the composer picker has it set too).
 			var fieldOptions, fieldIDs map[string]string
-			if fieldID == "" {
+			if fieldID == "" && !ghost {
 				if fields, err := s.db.ListFields(); err != nil {
 					log.Warn("oracle: listing fields for the field chip failed, skipping it", "err", err)
 				} else {
@@ -910,6 +919,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 				PriorOracleFocusMode: priorOracleFocus,
 				FieldOptions:         fieldOptions,
 				FieldIDs:             fieldIDs,
+				Ghost:                ghost,
 				Rules:                cfg.Oracle,
 			})
 			// Recorded on the shared Jev ledger the monthly cap sums (issue

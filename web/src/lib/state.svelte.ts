@@ -317,8 +317,10 @@ export class AppState {
 	// 'user_message' cases, which skip the sidebar/URL-visible side
 	// effects a still-ghost thread shouldn't trigger (see isGhostThread's
 	// doc comment for why the thread itself is otherwise a fully real,
-	// server-persisted one now).
-	private pendingGhost = false;
+	// server-persisted one now). $state rather than a plain field because
+	// oracleWillRun below reads it reactively — a ghost turn must not
+	// animate Oracle's pre-read the backend skipped.
+	private pendingGhost = $state(false);
 	// True for as long as the currently open thread is still tagged ghost
 	// server-side (see store.go's ghost schema comment) — a ghost thread
 	// is a fully real, persisted thread from its very first turn under
@@ -331,6 +333,21 @@ export class AppState {
 	// real ghost status per turn from its own DB row regardless of what
 	// this flag says.
 	isGhostThread = $state(false);
+
+	// True when Oracle will actually read this turn's message — the same
+	// gate gateway/turn.go applies (Oracle enabled, and not a ghost turn
+	// unless the oracle_ghost_enabled opt-in is on). The Oracle UI keys off
+	// this instead of appState.settings.oracleEnabled alone so a ghost turn
+	// doesn't play the constellation/reading animation for a classification
+	// the backend skipped. Reads pendingGhost as well as isGhostThread: a
+	// brand-new ghost thread's first turn is already ghost server-side while
+	// isGhostThread is still false (it only flips on 'done'), and the
+	// composer's ghost toggle is composer-local state, so pendingGhost is
+	// the only live ghost signal available during that turn.
+	oracleWillRun = $derived(
+		this.settings.oracleEnabled &&
+			(!(this.pendingGhost || this.isGhostThread) || this.settings.oracleGhostEnabled)
+	);
 
 	// startingWeaverThread (issue #94, "Talk to Weaver") is true only for
 	// the brief pre-send window on /constellation/weaver/new: currentThread

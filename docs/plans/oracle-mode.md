@@ -7,6 +7,9 @@ spike (below) both done; the engine, UI, and settings toggle shipped behind the 
 `oracle_enabled` setting. The `field` offer chip shipped inert (the Fields feature, issue #119,
 didn't exist yet, so nothing populated `OracleInput.FieldOptions`); it was wired up on 2026-09-29
 once Fields landed — see "The field chip" in [oracle-checks-expansion.md](oracle-checks-expansion.md).
+A second opt-in, `oracle_ghost_enabled` (Settings → Oracle mode → "Also in ghost conversations"),
+lets Oracle run in ghost turns too — minus the permanent offer chips (pulsar/daily/field), which
+`gateway/oracle.go`'s `oracleGhostChips` withholds there.
 
 ## The idea
 
