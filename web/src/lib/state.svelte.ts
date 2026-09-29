@@ -28,6 +28,7 @@ import { ThreadSearchState } from './threadSearch.svelte';
 import { ToastState } from './toasts.svelte';
 import { VersionState } from './versionCheck.svelte';
 import { fetchEventsByTurn, buildTurnsFromMessages } from './threadTurns';
+import { applyStreamingEvent, closeOpenReasoning } from './turnEvents';
 import {
 	safeParseJSON,
 	safeParseObject,
@@ -1158,20 +1159,6 @@ export class AppState {
 		});
 	}
 
-	// Reasoning always finishes before the visible answer (or a tool call)
-	// starts, per OpenRouter's ordering guarantee — so whenever something
-	// else is about to land on the timeline, mark any still-open reasoning
-	// item done first, so its UI stops showing a live/streaming state.
-	private closeOpenReasoning(turn: ChatTurn) {
-		const items = turn.timeline;
-		if (!items || items.length === 0) return;
-		const last = items[items.length - 1];
-		if (last.kind === 'reasoning' && !last.done) {
-			last.done = true;
-			turn.timeline = [...items];
-		}
-	}
-
 	private handleEvent(e: ServerEvent) {
 		const eventThreadId = 'thread_id' in e ? e.thread_id : undefined;
 
@@ -1264,112 +1251,6 @@ export class AppState {
 		if (!turn) return;
 
 		switch (e.type) {
-			case 'thinking':
-				this.closeOpenReasoning(turn);
-				turn.timeline = [...(turn.timeline ?? []), { kind: 'thinking', content: e.content }];
-				break;
-
-			case 'reasoning': {
-				const items = turn.timeline ?? [];
-				const last = items[items.length - 1];
-				if (last && last.kind === 'reasoning' && !last.done) {
-					// Still the same reasoning pass — append to it in place
-					// rather than spawning a new timeline item per chunk.
-					last.content += e.content;
-					turn.timeline = [...items];
-				} else {
-					turn.timeline = [...items, { kind: 'reasoning', content: e.content, done: false }];
-				}
-				break;
-			}
-
-			case 'tool_call':
-				this.closeOpenReasoning(turn);
-				turn.timeline = [
-					...(turn.timeline ?? []),
-					{ kind: 'tool', tool: e.tool, args: e.args, callId: e.call_id, done: false }
-				];
-				break;
-
-			case 'tool_result': {
-				const items = [...(turn.timeline ?? [])];
-				// Prefer an exact call_id match — the model can fire two
-				// concurrent calls to the same tool in one turn (e.g. two
-				// memory writes), and goroutine completion order isn't
-				// guaranteed to match launch order, so a name-only backward
-				// scan can attach a result to the wrong card (see
-				// agent/driver.go's dispatchToolCallsConcurrently doc
-				// comment). Fall back to the old name-based scan only when
-				// call_id is missing, for backward compatibility with any
-				// path that doesn't send one.
-				let matched = false;
-				if (e.call_id) {
-					for (let i = items.length - 1; i >= 0; i--) {
-						const item = items[i];
-						if (item.kind === 'tool' && item.callId === e.call_id && !item.done) {
-							items[i] = {
-								...item,
-								result: e.result,
-								provider: e.provider,
-								citations: e.citations,
-								url: e.url,
-								caption: e.caption,
-								images: e.images,
-								done: true
-							};
-							matched = true;
-							break;
-						}
-					}
-				}
-				if (!matched) {
-					for (let i = items.length - 1; i >= 0; i--) {
-						const item = items[i];
-						if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
-							items[i] = {
-								...item,
-								result: e.result,
-								provider: e.provider,
-								citations: e.citations,
-								url: e.url,
-								caption: e.caption,
-								images: e.images,
-								done: true
-							};
-							break;
-						}
-					}
-				}
-				turn.timeline = items;
-				break;
-			}
-
-			case 'cost_update':
-				// Always the full running total, never a delta (see
-				// gateway/protocol.go's doc comment) — overwrite, don't add.
-				// appState.totalCost is untouched here on purpose: it only
-				// moves on 'done'/'suggestions', which already add their
-				// own cost_usd to it once, so adding this too would double-count.
-				turn.costUsd = e.cost_usd;
-				break;
-
-			case 'oracle':
-				// Oracle's verdict, arriving the moment it resolves — well
-				// before 'done' (see gateway/protocol.go's "oracle" doc
-				// comment). Writes the same fields the 'done' case below
-				// writes again later (a harmless same-value overwrite), so
-				// the composer's focus badge and reading ring can react now,
-				// seconds before the answer starts streaming; oracleResolved
-				// is the live-only signal those two key off. costOracle is
-				// not added to any running total here — 'done' owns the
-				// thread-wide cost bookkeeping.
-				turn.oracleResult = e.oracle_result;
-				turn.oracleFocusModeSource = e.oracle_focus_mode_source;
-				turn.appliedFocusMode = e.applied_focus_mode;
-				turn.costOracle = e.cost_oracle_usd;
-				turn.oracleResolved = true;
-				break;
-
 			case 'compacted':
 				// Arrives at the START of the turn after the one that
 				// triggered it, not during the turn that did — compaction is
@@ -1383,37 +1264,13 @@ export class AppState {
 				// above the in-flight gate: it belongs to the turn that is
 				// genuinely in flight right now, so the gate it sits behind
 				// is exactly the right one.
-				this.closeOpenReasoning(turn);
+				closeOpenReasoning(turn);
 				this.totalCost += e.cost_usd ?? 0;
 				turn.timeline = [...(turn.timeline ?? []), { kind: 'compacted', summary: e.content }];
 				break;
 
-			case 'commentary':
-				this.closeOpenReasoning(turn);
-				// Whatever just streamed in live via 'token' for this turn
-				// was this commentary, not the final answer — the server
-				// sends the same text again here as the authoritative
-				// version once it knows that for certain (see
-				// gateway/protocol.go's doc comment on this event). Drop
-				// the flat accumulation and show it as its own timeline
-				// item instead, positioned exactly where it happened
-				// relative to the tool calls before/after it, rather than
-				// letting it silently pile into the real final answer.
-				turn.content = '';
-				turn.timeline = [...(turn.timeline ?? []), { kind: 'commentary', content: e.content }];
-				break;
-
-			case 'token':
-				this.closeOpenReasoning(turn);
-				// e.content can be absent (not just empty) — ServerEvent's
-				// omitempty JSON tag drops the field entirely for an empty
-				// string, so a plain `turn.content += e.content` would
-				// string-concatenate the literal text "undefined" here.
-				turn.content += e.content ?? '';
-				break;
-
 			case 'done': {
-				this.closeOpenReasoning(turn);
+				closeOpenReasoning(turn);
 				turn.streaming = false;
 				turn.citations = e.citations;
 				turn.cards = e.cards;
@@ -1556,7 +1413,7 @@ export class AppState {
 			}
 
 			case 'error':
-				this.closeOpenReasoning(turn);
+				closeOpenReasoning(turn);
 				turn.streaming = false;
 				if (e.error_kind === 'network') {
 					// No raw Go error text on this turn — ChatTurnView
@@ -1573,6 +1430,9 @@ export class AppState {
 				this.pendingIsNewThread = false;
 				this.pendingGhost = false;
 				void this.checkVersion();
+				break;
+			default:
+				applyStreamingEvent(turn, e);
 				break;
 		}
 	}
