@@ -37,7 +37,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
 
 	"polaris/llm"
@@ -184,16 +183,18 @@ func showCandidateImages(ctx *Context, indices []int, caption, callID string) st
 			"and call again with fewer.", len(indices), showMaxImages))
 	}
 
-	// Sorted and de-duplicated: the model's ordering is a listing accident,
-	// and the same image twice is never intended.
-	sorted := append([]int(nil), indices...)
-	sort.Ints(sorted)
+	// The model's own order is kept (first occurrence wins on a repeat): it
+	// often writes a caption that refers to position ("left", "the last
+	// one"), which a re-sort would silently break — seen live in the first
+	// real run of this tool.
 	var images []Card
 	var shown []string
-	for i, n := range sorted {
-		if i > 0 && n == sorted[i-1] {
+	seen := map[int]bool{}
+	for _, n := range indices {
+		if seen[n] {
 			continue
 		}
+		seen[n] = true
 		card, ok := ctx.ImageCandidate(n)
 		if !ok {
 			return fail(fmt.Sprintf("image_index %d is out of range — only %d image(s) found by image_search this turn",

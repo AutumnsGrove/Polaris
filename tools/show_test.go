@@ -70,8 +70,8 @@ func TestHandleShow_ImageIndicesShowsOnlyThePickedSubset(t *testing.T) {
 		t.Fatalf("result = %q, want success", result)
 	}
 	images, _ := got["images"].([]Card)
-	if len(images) != 2 || images[0].Title != "b" || images[1].Title != "d" {
-		t.Errorf("images = %+v, want exactly candidates 2 and 4, de-duplicated and in order", images)
+	if len(images) != 2 || images[0].Title != "d" || images[1].Title != "b" {
+		t.Errorf("images = %+v, want candidates 4 then 2 — the model's own order, de-duplicated", images)
 	}
 	if len(ctx.Cards) != 0 {
 		t.Errorf("Cards = %+v; show renders inline off its own event and must not also feed the end-of-turn gallery", ctx.Cards)
