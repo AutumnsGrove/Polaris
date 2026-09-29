@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Folder } from '@lucide/svelte';
+	import { FolderOpen } from '@lucide/svelte';
 	import { projectColorVar } from '$lib/projects.svelte';
 	import type { Project } from '$lib/types';
 
@@ -21,7 +21,7 @@
 	title="Project: {project.name}"
 	aria-label="Open project {project.name}"
 >
-	<Folder size={12} />
+	<FolderOpen size={12} />
 	<span class="name">{project.name}</span>
 </button>
 

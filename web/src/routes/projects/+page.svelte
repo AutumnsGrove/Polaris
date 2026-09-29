@@ -7,7 +7,7 @@
 	import { projectsState, projectColorVar } from '$lib/projects.svelte';
 	import EditTextModal from '$lib/components/EditTextModal.svelte';
 	import ProjectChips from '$lib/components/ProjectChips.svelte';
-	import { PanelLeft, Plus, Star, Folder } from '@lucide/svelte';
+	import { PanelLeft, Plus, Star, FolderOpen } from '@lucide/svelte';
 	import type { Project } from '$lib/types';
 
 	onMount(() => {
@@ -87,7 +87,7 @@
 				in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 			>
 				<div class="card-top">
-					<Folder size={15} class="card-icon" />
+					<FolderOpen size={15} class="card-icon" />
 					<h2 class="card-name">{project.name}</h2>
 					<button
 						class="pin"

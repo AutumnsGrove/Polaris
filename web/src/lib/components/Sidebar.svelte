@@ -8,7 +8,7 @@
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import { projectsState, projectColorVar } from '$lib/projects.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, Folder } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderOpen } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -273,7 +273,7 @@
 			class:active={page.url.pathname.startsWith('/projects')}
 			onclick={() => goto('/projects')}
 		>
-			<Folder size={16} />
+			<FolderOpen size={16} />
 			<span class="pulsar-label">Projects</span>
 		</button>
 		<div class="thread-search">
@@ -338,7 +338,7 @@
 			     better than a list row whose whole job is just "open this". -->
 			{#if projectsState.favorites.length > 0}
 				<div class="section-label">
-					<Folder size={11} />
+					<FolderOpen size={11} />
 					Projects
 				</div>
 				{#each projectsState.favorites as project, i (project.id)}
