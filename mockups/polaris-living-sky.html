@@ -1,0 +1,242 @@
+<title>Polaris Living Sky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Asimovian&family=Newsreader:opsz,wght@6..72,500;6..72,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one row of live phone-shaped frames, current screen first for comparison.
+   Tokens copied from web/src/app.css so the mockups match the real app. */
+:root {
+  --bg: oklch(15% 0.014 65);
+  --surface: oklch(19% 0.014 65);
+  --surface-2: oklch(23% 0.016 65);
+  --border: oklch(30% 0.016 65);
+  --border-strong: oklch(40% 0.02 65);
+  --text: oklch(93% 0.01 75);
+  --dim: oklch(64% 0.014 70);
+  --accent: oklch(82% 0.17 78);
+  --accent-2: oklch(78% 0.06 235);
+  --font-serif: 'Newsreader', ui-serif, Georgia, serif;
+  --font-wordmark: 'Asimovian', var(--font-serif);
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; padding-inline: 20px; padding-block: 32px 56px; }
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+header h1 { margin: 0 0 8px; font: 700 28px/1.15 var(--font-serif); letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 0; max-width: 62ch; color: var(--dim); }
+.grid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.grid .opt:first-child { flex: 0 1 340px; }
+.grid .opt:last-child { flex: 1 1 480px; }
+.grid .opt:last-child .frame { aspect-ratio: 16 / 10; max-width: none; }
+.grid .opt:last-child .caption { max-width: none; margin: 0; }
+.grid .opt:last-child .welcome h2 { font-size: 46px; }
+.grid .opt:last-child .composer { max-width: 460px; }
+.opt { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.frame { position: relative; aspect-ratio: 9 / 16; width: 100%; max-width: 340px; margin: 0 auto; overflow: hidden; border-radius: 22px; border: 1px solid var(--border); background: var(--bg); isolation: isolate; }
+.frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.glow { position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 60% 45% at 38% 34%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, color-mix(in srgb, var(--accent) 8%, transparent) 35%, transparent 70%); }
+.glow.soft { opacity: .55; }
+.welcome { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+.welcome h2 { margin: 0; font: 700 clamp(28px, 9cqw, 34px)/1.1 var(--font-serif); letter-spacing: -0.02em; text-wrap: balance; }
+.frame { container-type: inline-size; }
+.welcome h2 .wm { font-family: var(--font-wordmark); font-weight: 400; font-size: .88em; letter-spacing: .01em; }
+.welcome .sub { margin: 12px 0 28px; font: italic 400 14px/1.5 var(--font-wordmark); color: var(--dim); }
+.composer { width: 100%; padding: 12px 14px; border-radius: 16px; background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--border); text-align: left; backdrop-filter: blur(6px); }
+.composer .ph { color: var(--dim); font-size: 14px; }
+.composer .row { display: flex; gap: 6px; margin-top: 22px; align-items: center; }
+.chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--dim); }
+.chip.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.send { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); }
+.label { font: 500 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); }
+.opt h3 { margin: 0; font: 700 18px/1.2 var(--font-serif); }
+.opt p { margin: 0; color: var(--dim); font-size: 13.5px; max-width: 34ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.meta span { font: 400 11px var(--font-mono); color: var(--dim); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
+.caption { display: flex; flex-direction: column; gap: 8px; max-width: 340px; margin: 0 auto; width: 100%; }
+button.replay { align-self: flex-start; font: 500 12px var(--font-mono); color: var(--accent); background: none; border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+button.replay:hover, button.replay:focus-visible { border-color: var(--accent); outline: none; }
+footer { max-width: 70ch; color: var(--dim); }
+footer b { color: var(--text); font-weight: 600; }
+</style>
+
+<style>
+.tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.hint { color: var(--dim); font-size: 13px; }
+button.replay[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
+</style>
+<div class="wrap">
+  <header>
+    <h1>A living sky for the start screen</h1>
+    <p>Everything combined: the deep-field parallax and Milky Way, twinkling stars, a comet every so often, and a pool of eight constellations drawn into four corner spots. Each spot picks one at random that is not already on screen. It connects star by star, holds, then disconnects in exactly the reverse order. Shown on a phone and on a desktop-width screen.</p>
+  </header>
+  <div class="tools"><button class="replay" id="ff" type="button" aria-pressed="false">Fast forward: off</button><span class="hint">Move the pointer over a frame to shift the parallax.</span></div>
+  <section class="grid" id="grid"></section>
+  <footer>
+    <p><b>Timing at normal speed.</b> A constellation draws in 4 to 6 seconds, holds for 7, retracts the same way, then its spot rests for 4 to 12 seconds before choosing again, so usually two or three are visible. Shapes are randomly mirrored. The pool is Ursa Minor, Cassiopeia, Cepheus, Ursa Major, Orion, Leo, Scorpius and Cygnus. The comet now crosses roughly every 25 to 40 seconds.</p>
+  </footer>
+</div>
+<script>
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var GOLD = [255, 205, 120], BLUE = [190, 210, 240], WARM = [255, 226, 160];
+  function rng(seed) { return function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+  function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + Math.max(0, a).toFixed(3) + ')'; }
+  function clamp(x) { return Math.max(0, Math.min(1, x)); }
+  function ease(x) { return x * x * (3 - 2 * x); }
+  function field(n, seed, big) {
+    var r = rng(seed), out = [];
+    for (var i = 0; i < n; i++) out.push({ x: r(), y: r(), r: 0.4 + Math.pow(r(), 3) * big, ph: r() * 6.28, sp: 0.4 + r() * 1.4, c: r() < 0.16 ? GOLD : BLUE, a: 0.25 + r() * 0.5 });
+    return out;
+  }
+  function drawStar(g, s, x, y, t, mul) {
+    var a = s.a * (0.65 + 0.35 * Math.sin(t * s.sp + s.ph)) * mul;
+    g.fillStyle = rgba(s.c, a); g.beginPath(); g.arc(x, y, s.r, 0, 6.283); g.fill();
+    if (s.r > 1.3) { g.fillStyle = rgba(s.c, a * 0.12); g.beginPath(); g.arc(x, y, s.r * 4, 0, 6.283); g.fill(); }
+  }
+
+  /* Constellation pool. Points are raw sketches; normalize() shifts each to a 0-origin box and
+     scales its longest side to BOX width-units so every shape fits a corner slot the same way. */
+  var PER = 0.5, HOLD = 7, BOX = 0.3;
+  var pool = [
+    ['URSA MINOR', [[0,0],[-.06,.10],[-.12,.20],[-.17,.32],[-.22,.30],[-.27,.44],[-.17,.46]], [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]]],
+    ['CASSIOPEIA', [[0,.04],[.07,.13],[.16,.06],[.24,.17],[.33,.08]], [[0,1],[1,2],[2,3],[3,4]]],
+    ['CEPHEUS', [[0,0],[.10,.05],[.20,.16],[.13,.24],[.02,.21]], [[0,1],[1,2],[2,3],[3,4],[4,0],[1,4]]],
+    ['URSA MAJOR', [[0,.10],[.10,.16],[.20,.12],[.16,.04],[.28,.02],[.38,.06],[.46,.16]], [[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]]],
+    ['ORION', [[0,0],[.16,.02],[.04,.11],[.08,.12],[.12,.13],[0,.24],[.15,.25]], [[0,1],[1,4],[4,3],[3,2],[2,0],[2,5],[4,6],[6,5]]],
+    ['LEO', [[0,.16],[.03,.09],[.08,.04],[.15,.02],[.17,.09],[.30,.07],[.32,.15]], [[0,1],[1,2],[2,3],[3,4],[4,0],[3,5],[5,6],[6,4]]],
+    ['SCORPIUS', [[0,.04],[.05,.06],[.06,.14],[.05,.22],[.09,.29],[.17,.32],[.23,.27],[.22,.21],[.10,0]], [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[1,8]]],
+    ['CYGNUS', [[.10,0],[.10,.12],[.10,.30],[0,.16],[.22,.08]], [[0,1],[1,2],[1,3],[1,4]]]
+  ].map(function (d) {
+    var xs = d[1].map(function (p) { return p[0]; }), ys = d[1].map(function (p) { return p[1]; });
+    var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+    var k = BOX / Math.max(Math.max.apply(null, xs) - x0, Math.max.apply(null, ys) - y0);
+    var c = { name: d[0], edges: d[2], pts: d[1].map(function (p) { return [(p[0] - x0) * k, (p[1] - y0) * k]; }) };
+    c.bw = Math.max.apply(null, c.pts.map(function (p) { return p[0]; }));
+    c.bh = Math.max.apply(null, c.pts.map(function (p) { return p[1]; }));
+    c.drawT = c.edges.length * PER + 0.4;
+    c.total = c.drawT * 2 + HOLD;
+    /* A star lights when the first edge touching it starts (as a start point) or nearly finishes (as an end point). */
+    c.lit = c.pts.map(function () { return 1e9; });
+    c.edges.forEach(function (e, i) { c.lit[e[0]] = Math.min(c.lit[e[0]], i * PER); c.lit[e[1]] = Math.min(c.lit[e[1]], (i + 1) * PER - 0.15); });
+    return c;
+  });
+  /* Four corner slots, clear of the heading and composer in the middle. */
+  var slotDefs = [{ right: false, bottom: false }, { right: true, bottom: false }, { right: false, bottom: true }, { right: true, bottom: true }];
+
+  function makeSlots(seed) {
+    var r = rng(seed);
+    return slotDefs.map(function (d, i) { return { d: d, cur: null, flip: false, start: 0, next: 1.5 + i * 4 + r() * 2 }; });
+  }
+  function stepSlots(slots, t, r) {
+    slots.forEach(function (S) {
+      if (S.cur && t - S.start > S.cur.total) { S.cur = null; S.next = t + 4 + r() * 8; }
+      if (!S.cur && t >= S.next) {
+        var busy = slots.map(function (o) { return o.cur; }), free = pool.filter(function (c) { return busy.indexOf(c) < 0; });
+        S.cur = free[Math.floor(r() * free.length)]; S.flip = r() < 0.5; S.start = t;
+      }
+    });
+  }
+
+  function drawShape(g, w, h, S, t, ptr) {
+    var C = S.cur; if (!C) return;
+    var u = Math.min(w, h * 0.56), l = reduce ? C.drawT + 1 : t - S.start, v;
+    if (l < C.drawT) v = l;
+    else if (l < C.drawT + HOLD) v = C.drawT;
+    else v = C.drawT - (l - C.drawT - HOLD);
+    var bw = C.bw * u, bh = C.bh * u, mx = w * 0.07, my = h * 0.05;
+    var ox = (S.d.right ? w - mx - bw : mx) + ptr.x * 14, oy = (S.d.bottom ? h - my - bh : my) + ptr.y * 14;
+    function P(i) { var p = C.pts[i]; return [ox + (S.flip ? C.bw - p[0] : p[0]) * u, oy + p[1] * u]; }
+    C.edges.forEach(function (e, i) {
+      var p = ease(clamp((v - i * PER) / PER)); if (p <= 0) return;
+      var a = P(e[0]), b = P(e[1]);
+      g.strokeStyle = rgba(GOLD, 0.32 + 0.06 * Math.sin(t * 0.9 + i)); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p); g.stroke();
+    });
+    C.pts.forEach(function (_, i) {
+      var lit = ease(clamp((v - C.lit[i]) / 0.35)); if (lit <= 0) return;
+      var p = P(i), pulse = 0.85 + 0.15 * Math.sin(t * 1.2 + i * 1.7);
+      g.fillStyle = rgba(GOLD, 0.12 * lit * pulse); g.beginPath(); g.arc(p[0], p[1], 10 * lit, 0, 6.283); g.fill();
+      g.fillStyle = rgba(WARM, (0.7 + 0.3 * pulse) * lit); g.beginPath(); g.arc(p[0], p[1], 1.9, 0, 6.283); g.fill();
+    });
+    var la = clamp((v - C.drawT + 0.9) / 0.9) * 0.5;
+    if (la > 0) {
+      g.font = '500 9px IBM Plex Mono, monospace'; g.fillStyle = rgba(BLUE, la);
+      var tw = g.measureText(C.name).width, ly = S.d.bottom ? oy + bh + 16 : oy - 8;
+      g.fillText(C.name, S.d.right ? ox + bw - tw : ox, ly);
+    }
+  }
+
+  function makeSky() {
+    var layers = [field(60, 31, .6), field(40, 32, 1.1), field(18, 33, 2)], dust = field(220, 77, .5);
+    var speed = [0.004, 0.009, 0.016], par = [6, 14, 28];
+    var ev = null, next = 7, r = rng(9), slots = makeSlots(3), sr = rng(21);
+    function comet(g, w, h, t) {
+      if (!ev && t > next) ev = { t0: t, x0: w * (0.55 + r() * 0.5), y0: h * (0.06 + r() * 0.3), dx: -w * 0.9, dy: h * (0.2 + r() * 0.12), dur: 2.6 };
+      if (!ev) return;
+      var p = (t - ev.t0) / ev.dur;
+      if (p > 1.35) { ev = null; next = t + 24 + r() * 14; return; }
+      var e = 1 - Math.pow(1 - Math.min(p, 1), 2), hx = ev.x0 + ev.dx * e, hy = ev.y0 + ev.dy * e;
+      var fade = p < 0.85 ? 1 : Math.max(0, 1 - (p - 0.85) / 0.5), tl = Math.min(w, h) * 0.36, ang = Math.atan2(ev.dy, ev.dx);
+      var tx = hx - Math.cos(ang) * tl, ty = hy - Math.sin(ang) * tl, gr = g.createLinearGradient(hx, hy, tx, ty);
+      gr.addColorStop(0, rgba(WARM, 0.85 * fade)); gr.addColorStop(0.35, rgba(GOLD, 0.22 * fade)); gr.addColorStop(1, rgba(GOLD, 0));
+      g.strokeStyle = gr; g.lineWidth = 2.2; g.lineCap = 'round'; g.beginPath(); g.moveTo(hx, hy); g.lineTo(tx, ty); g.stroke();
+      g.fillStyle = rgba(GOLD, 0.2 * fade); g.beginPath(); g.arc(hx, hy, 9, 0, 6.283); g.fill();
+      g.fillStyle = 'rgba(255,245,220,' + fade + ')'; g.beginPath(); g.arc(hx, hy, 2.4, 0, 6.283); g.fill();
+    }
+    return function (g, w, h, t, ptr) {
+      var diag = Math.hypot(w, h);
+      g.save(); g.translate(w * 0.5, h * 0.5); g.rotate(-0.5);
+      var band = g.createLinearGradient(0, -diag * 0.16, 0, diag * 0.16);
+      band.addColorStop(0, 'rgba(190,210,240,0)'); band.addColorStop(0.5, 'rgba(200,190,230,0.09)'); band.addColorStop(1, 'rgba(190,210,240,0)');
+      g.fillStyle = band; g.fillRect(-diag, -diag * 0.16, diag * 2, diag * 0.32); g.restore();
+      var sn = Math.sin(-0.5), cs = Math.cos(-0.5);
+      dust.forEach(function (s) {
+        var x = s.x * w, y = s.y * h, d = Math.abs((x - w * 0.5) * sn + (y - h * 0.5) * cs) / (diag * 0.16);
+        if (d < 1) { g.fillStyle = rgba(BLUE, (1 - d) * 0.3); g.fillRect(x, y, 0.9, 0.9); }
+      });
+      layers.forEach(function (L, li) {
+        L.forEach(function (s) { drawStar(g, s, ((s.x + t * speed[li]) % 1) * w + ptr.x * par[li], s.y * h + ptr.y * par[li], t, 0.5 + li * 0.25); });
+      });
+      stepSlots(slots, t, sr);
+      slots.forEach(function (S) { drawShape(g, w, h, S, t, ptr); });
+      comet(g, w, h, t);
+    };
+  }
+
+  var grid = document.getElementById('grid'), live = [], clock = 0, last = null, hidden = false, boost = 1;
+  [['phone', 'Phone'], ['wide', 'Desktop']].forEach(function (d, i) {
+    var el = document.createElement('article'); el.className = 'opt';
+    el.innerHTML = '<div class="frame"><div class="glow" style="opacity:.5"></div><canvas></canvas>' +
+      '<div class="welcome"><h2>Ask <span class="wm">Polaris</span> anything</h2><p class="sub">Your questions, answered with sources from the web.</p>' +
+      '<div class="composer"><div class="ph">Ask anything…</div><div class="row"><span class="chip on">Research</span><span class="chip">Oracle</span><span class="send"></span></div></div></div></div>' +
+      '<div class="caption"><span class="label">' + d[1] + '</span></div>';
+    grid.appendChild(el);
+    var cv = el.querySelector('canvas'), frame = el.querySelector('.frame'), g = cv.getContext('2d'), size = { w: 1, h: 1 }, ptr = { x: 0, y: 0, tx: 0, ty: 0 };
+    function fit() { var b = frame.getBoundingClientRect(), dp = Math.min(2, window.devicePixelRatio || 1); size.w = b.width; size.h = b.height; cv.width = b.width * dp; cv.height = b.height * dp; g.setTransform(dp, 0, 0, dp, 0, 0); }
+    fit(); new ResizeObserver(fit).observe(frame);
+    frame.addEventListener('pointermove', function (e) { var b = frame.getBoundingClientRect(); ptr.tx = (e.clientX - b.left) / b.width - 0.5; ptr.ty = (e.clientY - b.top) / b.height - 0.5; });
+    live.push({ draw: makeSky(), g: g, size: size, ptr: ptr, frame: frame });
+  });
+
+  var ff = document.getElementById('ff');
+  ff.addEventListener('click', function () { boost = boost === 1 ? 3 : 1; ff.setAttribute('aria-pressed', boost > 1); ff.textContent = 'Fast forward: ' + (boost > 1 ? 'on (3x)' : 'off'); });
+  document.addEventListener('visibilitychange', function () { hidden = document.hidden; last = null; });
+  var vis = new Set(), io = new IntersectionObserver(function (es) { es.forEach(function (e) { e.isIntersecting ? vis.add(e.target) : vis.delete(e.target); }); });
+  live.forEach(function (l) { io.observe(l.frame); });
+
+  function tick(now) {
+    if (last !== null) clock += Math.min(0.1, (now - last) / 1000) * boost;
+    last = now;
+    if (!hidden) live.forEach(function (l) {
+      if (!vis.has(l.frame) && !reduce) return;
+      l.ptr.x += (l.ptr.tx - l.ptr.x) * 0.06; l.ptr.y += (l.ptr.ty - l.ptr.y) * 0.06;
+      l.g.clearRect(0, 0, l.size.w, l.size.h);
+      l.draw(l.g, l.size.w, l.size.h, reduce ? 20 : clock, l.ptr);
+    });
+    if (!reduce) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  if (reduce) setTimeout(function () { tick(0); }, 400);
+})();
+</script>
