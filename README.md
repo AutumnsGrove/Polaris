@@ -19,6 +19,9 @@ Ask it something. It decides for itself whether it needs to search the web, read
 look up a nearby place, check the weather, or just answer directly — then streams the answer back
 with citations.
 
+**New here and the names (Pulsar, Constellation, Fields...) are unfamiliar?** Tap the **?** button
+next to Settings at the bottom of the sidebar — it explains each one in plain English.
+
 ## Features
 
 - **Web search** via your own SearXNG instance — no API key, no per-query cost. Falls back through
