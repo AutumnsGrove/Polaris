@@ -233,6 +233,15 @@ func (s *Store) UpdateProject(id string, u ProjectUpdate) (*Project, error) {
 	return s.GetProject(id)
 }
 
+// TouchProject bumps updated_at without changing anything else — UpdateProject
+// with no fields is deliberately a no-op, so activity that isn't a settings
+// edit (a file added to the shared pool) needs its own way to float the
+// project up the hub's recency order. Best-effort: a failure only costs the
+// re-ordering, so it's logged nowhere and returns nothing.
+func (s *Store) TouchProject(id string) {
+	s.db.Exec(`UPDATE projects SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?`, id)
+}
+
 // DeleteProject removes the row and orphans its threads back to ungrouped,
 // in one transaction — threads.project_id is a real FK (foreign_keys=on), so
 // deleting the row first would fail, and orphaning first then crashing

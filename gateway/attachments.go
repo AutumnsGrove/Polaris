@@ -122,19 +122,12 @@ type uploadError struct {
 
 func (e *uploadError) Error() string { return e.msg }
 
-// saveUploadedFile validates and saves one already-opened multipart file
-// part to config.Attachments.Dir under a generated UUID name — the shared
-// core behind both POST /api/upload (a dedicated upload-then-reference
-// call) and POST /api/ask's inline multipart path (upload and ask in one
-// round trip, for a caller like `curl -F file=@modelcard.pdf -F
-// content="highlights from page 50"` that doesn't want a separate upload
-// step first). Never trusts a caller-supplied path or filename for
-// storage — same trust boundary either caller goes through, only the
-// filename is ever kept (for display), never used to name the file on
-// disk.
-func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHeader) (UploadResponse, error) {
-	cfg := s.liveConfig()
-
+// uploadContentType resolves and validates a multipart file part's content
+// type — the browser's own guess, then an extension-based second try when it
+// had none, then the allowlist. Shared by saveUploadedFile (a chat
+// attachment) and the project detail view's direct upload
+// (gateway/projects_routes.go) so both accept exactly the same set of files.
+func (s *Server) uploadContentType(header *multipart.FileHeader) (string, *uploadError) {
 	contentType := header.Header.Get("Content-Type")
 	// "" (no guess at all) and the generic "application/octet-stream" both
 	// mean the browser didn't have a real answer — worth a second try via
@@ -156,13 +149,33 @@ func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHea
 	if parseErr != nil {
 		log.Warn("parsing upload content type failed", "filename", header.Filename, "raw_content_type", contentType, "err", parseErr)
 		s.db.LogEvent("", "warn", "upload", "parsing content type failed", map[string]interface{}{"filename": header.Filename, "err": parseErr.Error()}, "")
-		return UploadResponse{}, &uploadError{http.StatusBadRequest, fmt.Sprintf("couldn't parse content type %q", contentType)}
+		return "", &uploadError{http.StatusBadRequest, fmt.Sprintf("couldn't parse content type %q", contentType)}
 	}
 	contentType = parsedType
 	if !allowedUploadContentType(contentType) {
-		return UploadResponse{}, &uploadError{http.StatusBadRequest,
+		return "", &uploadError{http.StatusBadRequest,
 			fmt.Sprintf("unsupported content type %q — only PDFs, images, and common text/data formats "+
 				"(.md/.txt/.json/.csv/.yaml/.xml) are accepted", contentType)}
+	}
+	return contentType, nil
+}
+
+// saveUploadedFile validates and saves one already-opened multipart file
+// part to config.Attachments.Dir under a generated UUID name — the shared
+// core behind both POST /api/upload (a dedicated upload-then-reference
+// call) and POST /api/ask's inline multipart path (upload and ask in one
+// round trip, for a caller like `curl -F file=@modelcard.pdf -F
+// content="highlights from page 50"` that doesn't want a separate upload
+// step first). Never trusts a caller-supplied path or filename for
+// storage — same trust boundary either caller goes through, only the
+// filename is ever kept (for display), never used to name the file on
+// disk.
+func (s *Server) saveUploadedFile(file multipart.File, header *multipart.FileHeader) (UploadResponse, error) {
+	cfg := s.liveConfig()
+
+	contentType, uerr := s.uploadContentType(header)
+	if uerr != nil {
+		return UploadResponse{}, uerr
 	}
 
 	if err := os.MkdirAll(cfg.Attachments.Dir, 0o755); err != nil {

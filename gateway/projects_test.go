@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -218,5 +220,243 @@ func TestWebSocket_ProjectThread_UnknownProjectErrorsWithoutCreatingThread(t *te
 	threads, err := h.db.ListThreads(10)
 	if err != nil || len(threads) != 0 {
 		t.Errorf("a failed project bind left %d thread(s) behind (err %v)", len(threads), err)
+	}
+}
+
+// --- REST routes ---
+
+func doJSON(t *testing.T, method, url string, body interface{}) (int, []byte) {
+	t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = strings.NewReader(string(b))
+	}
+	req, err := http.NewRequest(method, url, rdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, out
+}
+
+func uploadProjectFile(t *testing.T, url, filename, contentType, content string) (int, string) {
+	t.Helper()
+	var buf strings.Builder
+	mw := multipart.NewWriter(&buf)
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
+	hdr.Set("Content-Type", contentType)
+	part, _ := mw.CreatePart(hdr)
+	part.Write([]byte(content))
+	mw.Close()
+	req, _ := http.NewRequest("POST", url, strings.NewReader(buf.String()))
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+func TestProjectsAPI_CRUDAndValidation(t *testing.T) {
+	h := newTestHarness(t, "")
+
+	for name, body := range map[string]map[string]interface{}{
+		"blank name":       {"name": "  "},
+		"missing name":     {"description": "x"},
+		"unknown model":    {"name": "p", "default_model": "no-such-model"},
+		"bad memory mode":  {"name": "p", "memory_mode": "project_scoped"},
+		"bad focus mode":   {"name": "p", "default_focus_mode": "nonsense"},
+		"bad color":        {"name": "p", "color": "javascript:alert(1)"},
+		"instructions cap": {"name": "p", "custom_instructions": strings.Repeat("x", maxCustomInstructionsChars+1)},
+	} {
+		if code, _ := doJSON(t, "POST", h.url("/api/projects"), body); code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", name, code)
+		}
+	}
+
+	code, out := doJSON(t, "POST", h.url("/api/projects"), map[string]interface{}{
+		"name": "Alpha", "default_focus_mode": "off", "color": "technology", "favorite": true,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("create: %d %s", code, out)
+	}
+	var p store.Project
+	json.Unmarshal(out, &p)
+	if p.ID == "" || !p.ConstellationVisible || p.MemoryMode != "default" || !p.Favorite {
+		t.Errorf("created project = %+v, want constellation_visible defaulting ON, memory default, favorite kept", p)
+	}
+
+	// PATCH is partial: touching one field leaves the rest alone.
+	code, out = doJSON(t, "PATCH", h.url("/api/projects/"+p.ID), map[string]interface{}{"memory_mode": "none"})
+	var patched store.Project
+	json.Unmarshal(out, &patched)
+	if code != http.StatusOK || patched.MemoryMode != "none" || patched.Color != "technology" || !patched.Favorite {
+		t.Errorf("patch: %d %+v", code, patched)
+	}
+
+	var list []store.Project
+	_, out = doJSON(t, "GET", h.url("/api/projects"), nil)
+	json.Unmarshal(out, &list)
+	if len(list) != 1 {
+		t.Errorf("list = %d projects, want 1", len(list))
+	}
+
+	if code, _ := doJSON(t, "PATCH", h.url("/api/projects/nope"), map[string]interface{}{"name": "x"}); code != http.StatusNotFound {
+		t.Errorf("patch missing project: %d, want 404", code)
+	}
+	if code, _ := doJSON(t, "GET", h.url("/api/projects/nope"), nil); code != http.StatusNotFound {
+		t.Errorf("get missing project: %d, want 404", code)
+	}
+	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID), nil); code != http.StatusNoContent {
+		t.Errorf("delete: %d, want 204", code)
+	}
+	if code, _ := doJSON(t, "GET", h.url("/api/projects/"+p.ID), nil); code != http.StatusNotFound {
+		t.Errorf("get after delete: %d, want 404", code)
+	}
+	// An empty list must serialize as [] so the frontend never sees null.
+	if _, out = doJSON(t, "GET", h.url("/api/projects"), nil); strings.TrimSpace(string(out)) != "[]" {
+		t.Errorf("empty list = %s, want []", out)
+	}
+}
+
+func TestProjectsAPI_FilePool(t *testing.T) {
+	h := newTestHarness(t, "")
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	setWorkspaceDir(t, h, workspaceDir)
+	p, _ := h.db.CreateProject(store.Project{Name: "p"})
+	filesURL := h.url("/api/projects/" + p.ID + "/files")
+
+	if code, body := uploadProjectFile(t, filesURL, "notes.md", "text/markdown", "first"); code != http.StatusOK || !strings.Contains(body, `"notes.md"`) {
+		t.Fatalf("upload: %d %s", code, body)
+	}
+	// A duplicate name renames — the same never-overwrite rule save_to_project follows.
+	if code, body := uploadProjectFile(t, filesURL, "notes.md", "text/markdown", "second"); code != http.StatusOK || !strings.Contains(body, `"notes-2.md"`) {
+		t.Errorf("duplicate upload: %d %s, want it renamed to notes-2.md", code, body)
+	}
+	if b, _ := os.ReadFile(filepath.Join(workspaceDir, p.ID, "notes.md")); string(b) != "first" {
+		t.Errorf("the original was overwritten: %q", b)
+	}
+
+	// The upload allowlist is shared with chat attachments; a dotfile is
+	// refused. A path in the client's filename must never escape the
+	// project's directory — pinned as an outcome (nothing lands outside),
+	// not as one line's behavior: Go's mime/multipart already reduces the
+	// filename to its base name before the handler sees it, and the
+	// handler's own filepath.Base is defense in depth behind that.
+	if code, _ := uploadProjectFile(t, filesURL, "run.exe", "application/x-msdownload", "MZ"); code != http.StatusBadRequest {
+		t.Errorf("executable upload: %d, want 400", code)
+	}
+	if code, body := uploadProjectFile(t, filesURL, "../../evil.txt", "text/plain", "x"); code != http.StatusOK || !strings.Contains(body, `"evil.txt"`) {
+		t.Errorf("path-bearing filename: %d %s, want only the base name kept", code, body)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, "evil.txt")); err == nil {
+		t.Error("an upload escaped the project directory")
+	}
+	if code, _ := uploadProjectFile(t, filesURL, ".hidden", "text/plain", "x"); code != http.StatusBadRequest {
+		t.Errorf("dotfile upload: %d, want 400", code)
+	}
+	if code, _ := uploadProjectFile(t, h.url("/api/projects/nope/files"), "a.txt", "text/plain", "x"); code != http.StatusNotFound {
+		t.Errorf("upload to a missing project: %d, want 404", code)
+	}
+
+	var detail struct {
+		Files []ProjectFile `json:"files"`
+	}
+	_, out := doJSON(t, "GET", h.url("/api/projects/"+p.ID), nil)
+	json.Unmarshal(out, &detail)
+	if len(detail.Files) != 3 {
+		t.Errorf("detail lists %d files, want 3: %+v", len(detail.Files), detail.Files)
+	}
+
+	// The pool is readable through the existing workspace route, keyed by
+	// the project id — no new serving code needed for the detail view's links.
+	resp, err := http.Get(h.url("/api/workspace/" + p.ID + "/notes.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	served, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(served) != "first" {
+		t.Errorf("serving a pool file: %d %q", resp.StatusCode, served)
+	}
+
+	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/%2e%2e"), nil); code != http.StatusNotFound {
+		t.Errorf("delete of ..: %d, want 404", code)
+	}
+	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/notes.md"), nil); code != http.StatusNoContent {
+		t.Errorf("delete file: %d, want 204", code)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, p.ID, "notes.md")); err == nil {
+		t.Error("file still on disk after delete")
+	}
+	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/notes.md"), nil); code != http.StatusNotFound {
+		t.Errorf("second delete: %d, want 404", code)
+	}
+}
+
+// Deleting a project removes its shared directory and orphans its threads —
+// and a thread's OWN workspace files (which never lived in the project's
+// directory) are untouched.
+func TestProjectsAPI_DeleteRemovesPoolButNotThreadFiles(t *testing.T) {
+	h := newTestHarness(t, "")
+	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
+	setWorkspaceDir(t, h, workspaceDir)
+	p, _ := h.db.CreateProject(store.Project{Name: "p"})
+	h.db.CreateThread("t1", "kept", "m", "web")
+	h.db.SetThreadProject("t1", &p.ID)
+
+	for _, f := range []string{filepath.Join(p.ID, "shared.txt"), filepath.Join("t1", "mine.txt")} {
+		os.MkdirAll(filepath.Join(workspaceDir, filepath.Dir(f)), 0o755)
+		os.WriteFile(filepath.Join(workspaceDir, f), []byte("x"), 0o644)
+	}
+
+	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID), nil); code != http.StatusNoContent {
+		t.Fatalf("delete: %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, p.ID)); err == nil {
+		t.Error("the project's shared directory survived deletion")
+	}
+	if _, err := os.Stat(filepath.Join(workspaceDir, "t1", "mine.txt")); err != nil {
+		t.Errorf("a thread's own file was lost with its project: %v", err)
+	}
+	th, err := h.db.GetThread("t1")
+	if err != nil || th.ProjectID != nil {
+		t.Errorf("thread not orphaned cleanly: %+v err %v", th, err)
+	}
+}
+
+func TestProjectsAPI_SetThreadProject(t *testing.T) {
+	h := newTestHarness(t, "")
+	p, _ := h.db.CreateProject(store.Project{Name: "p"})
+	h.db.CreateThread("t1", "t", "m", "web")
+	url := h.url("/api/threads/t1/project")
+
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": p.ID}); code != http.StatusNoContent {
+		t.Fatalf("move in: %d", code)
+	}
+	if th, _ := h.db.GetThread("t1"); th.ProjectID == nil || *th.ProjectID != p.ID {
+		t.Errorf("thread not in project after move: %+v", th)
+	}
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": "gone"}); code != http.StatusNotFound {
+		t.Errorf("move to a missing project: %d, want 404", code)
+	}
+	if code, _ := doJSON(t, "PUT", h.url("/api/threads/nope/project"), map[string]interface{}{"project_id": p.ID}); code != http.StatusNotFound {
+		t.Errorf("move a missing thread: %d, want 404", code)
+	}
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": nil}); code != http.StatusNoContent {
+		t.Fatalf("move out: %d", code)
+	}
+	if th, _ := h.db.GetThread("t1"); th.ProjectID != nil {
+		t.Errorf("thread still in a project after move-out: %v", *th.ProjectID)
 	}
 }

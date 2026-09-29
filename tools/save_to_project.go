@@ -116,21 +116,29 @@ func handleSaveToProject(argsJSON string, ctx *Context, callID string) string {
 	return result
 }
 
-// copyIntoDirNoClobber copies src into dir under name, or name-2/name-3/…
-// (before the extension) when that name is taken, and returns the name it
-// actually used. O_EXCL makes "is this name free" and "claim it" one atomic
-// step, so two threads promoting the same filename at the same moment each
-// get their own file instead of one silently overwriting the other — the
-// entire point of the shared pool is that a later promote can never destroy
-// an earlier thread's contribution.
+// copyIntoDirNoClobber copies the file at src into dir under name (see
+// WriteUniqueFile for the collision rule) and returns the name it used.
 func copyIntoDirNoClobber(src, dir, name string) (string, error) {
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
 	in, err := os.Open(src)
 	if err != nil {
 		return "", err
 	}
 	defer in.Close()
+	return WriteUniqueFile(dir, name, in)
+}
+
+// WriteUniqueFile writes r into dir under name, or name-2/name-3/… (before
+// the extension) when that name is taken, and returns the name it actually
+// used. O_EXCL makes "is this name free" and "claim it" one atomic step, so
+// two writers promoting the same filename at the same moment each get their
+// own file instead of one silently overwriting the other — the entire point
+// of a project's shared pool is that a later contribution can never destroy
+// an earlier one. Exported because both paths into the pool share this rule:
+// save_to_project (a thread promoting a file) and the project detail view's
+// direct upload (gateway/projects_routes.go).
+func WriteUniqueFile(dir, name string, r io.Reader) (string, error) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
 
 	candidate := name
 	for n := 2; n < 10000; n++ {
@@ -138,7 +146,7 @@ func copyIntoDirNoClobber(src, dir, name string) (string, error) {
 		// the read-only mount.
 		out, err := os.OpenFile(filepath.Join(dir, candidate), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err == nil {
-			_, copyErr := io.Copy(out, in)
+			_, copyErr := io.Copy(out, r)
 			closeErr := out.Close()
 			if copyErr != nil || closeErr != nil {
 				os.Remove(out.Name())
