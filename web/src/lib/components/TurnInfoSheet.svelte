@@ -179,9 +179,12 @@
 					<div class="cost-head"><span class="k">Cost</span><span class="v">${costHeadline.toFixed(5)}</span></div>
 					{#if costTotal > 0}
 						<div class="cost-bar" aria-hidden="true">
-							<i class="t-answer" style="flex:{Math.max(turn.costAnswer ?? 0, 0.0000001)}"></i>
-							{#if turn.costVerification}<i class="t-verify" style="flex:{turn.costVerification}"></i>{/if}
-							{#if turn.costOracle}<i class="t-oracle" style="flex:{turn.costOracle}"></i>{/if}
+							<!-- Shares of costTotal, so the grow factors sum to 1. Raw dollar amounts (~0.01)
+							     sum to far less than 1, and flex-grow factors below 1 only fill that fraction
+							     of the track — the bar rendered as a couple of stubby dots. -->
+							<i class="t-answer" style="flex:{Math.max(turn.costAnswer ?? 0, 0) / costTotal}"></i>
+							{#if turn.costVerification}<i class="t-verify" style="flex:{turn.costVerification / costTotal}"></i>{/if}
+							{#if turn.costOracle}<i class="t-oracle" style="flex:{turn.costOracle / costTotal}"></i>{/if}
 						</div>
 					{/if}
 					<div class="cost-row">
