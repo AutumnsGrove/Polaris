@@ -282,19 +282,19 @@ func TestRunOracle_ChipsFireAboveThreshold(t *testing.T) {
 	}
 }
 
-func TestRunOracle_ProjectChipSkippedWithoutOptions(t *testing.T) {
+func TestRunOracle_FieldChipSkippedWithoutOptions(t *testing.T) {
 	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
 		"focus": answer("off", 0.9),
 	}}}
-	// No ProjectOptions set — the project chip question shouldn't even be
-	// asked, so a hypothetical stray "chip_project" key in the response
+	// No FieldOptions set — the field chip question shouldn't even be
+	// asked, so a hypothetical stray "chip_field" key in the response
 	// (which can't happen here since our stub only returns what we gave
 	// it) has nothing to match against. This mainly guards RunOracle
 	// doesn't panic/misbehave building the question set with an empty map.
 	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test"})
 	for _, c := range result.Chips {
-		if c.Key == "project" {
-			t.Error("want no project chip without ProjectOptions set")
+		if c.Key == "field" {
+			t.Error("want no field chip without FieldOptions set")
 		}
 	}
 }

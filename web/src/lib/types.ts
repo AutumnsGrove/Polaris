@@ -55,7 +55,7 @@ export interface OracleCheckOutcome {
 }
 
 // Mirrors gateway/oracle.go's Chip — one offer surfaced under a reply
-// (Pulsar/Daily/Project); key maps to a destination icon + verb client-side.
+// (Pulsar/Daily/Field); key maps to a destination icon + verb client-side.
 export interface OracleChip {
 	key: string;
 	label?: string;
@@ -418,11 +418,11 @@ export type ClientMessage =
 			// the server's own "web" default; only Pulsar Daily's
 			// expand-to-chat sets this ("pulsar-daily").
 			source?: string;
-			// Binds a brand-new thread to a Project at creation — see gateway/
-			// protocol.go's ClientMessage.ProjectID. Sent only while
+			// Binds a brand-new thread to a Field at creation — see gateway/
+			// protocol.go's ClientMessage.FieldID. Sent only while
 			// currentThreadId is null; moving an existing thread goes through
-			// PUT /api/threads/{id}/project instead.
-			project_id?: string;
+			// PUT /api/threads/{id}/field instead.
+			field_id?: string;
 			// See gateway/protocol.go's ClientMessage.TitleSeed — cleaner
 			// input for title generation than a synthetic seeded message.
 			title_seed?: string;
@@ -510,10 +510,10 @@ export interface Thread {
 	// undefined for every other thread. Drives ChatView.svelte's "back to
 	// routine" header affordance on a pulse's thread view.
 	pulsar_routine_id?: number;
-	// project_id is set when the thread belongs to a Project (docs/plans/
-	// projects.md) — undefined for an ungrouped thread. Drives the chat
-	// header's project pill and ThreadMenu's "Move to project".
-	project_id?: string;
+	// field_id is set when the thread belongs to a Field (docs/plans/
+	// fields.md) — undefined for an ungrouped thread. Drives the chat
+	// header's field pill and ThreadMenu's "Move to field".
+	field_id?: string;
 	// source mirrors store.Thread.Source — "web" for the normal chat UI,
 	// or a caller-supplied label (e.g. "weaver", "pulsar-daily"). Drives
 	// ChatView.svelte's stripped-composer/back-button branch for a Weaver
@@ -1055,12 +1055,12 @@ export interface WeaverThreadSummary {
 	is_automatic: boolean;
 }
 
-// Project mirrors store.Project's JSON shape — see gateway/projects_routes.go
-// and docs/plans/projects.md. default_focus_mode/default_model are '' to
+// Field mirrors store.Field's JSON shape — see gateway/fields_routes.go
+// and docs/plans/fields.md. default_focus_mode/default_model are '' to
 // inherit the global standing default (settings.defaultFocusMode/
 // defaultModel); 'off' is a real, distinct focus-mode value meaning "this
-// project always starts with none".
-export interface Project {
+// field always starts with none".
+export interface Field {
 	id: string;
 	name: string;
 	description: string;
@@ -1071,24 +1071,24 @@ export interface Project {
 	memory_mode: 'default' | 'none';
 	constellation_visible: boolean;
 	exclude_from_chat_search: boolean;
-	// '' = no tag, else a --color-cat-* suffix (see projects.svelte.ts's
-	// PROJECT_COLORS).
+	// '' = no tag, else a --color-cat-* suffix (see fields.svelte.ts's
+	// FIELD_COLORS).
 	color: string;
 	thread_count: number;
 	created_at: string;
 	updated_at: string;
 }
 
-// ProjectFile is one entry of a project's shared, read-only file pool.
-export interface ProjectFile {
+// FieldFile is one entry of a field's shared, read-only file pool.
+export interface FieldFile {
 	name: string;
 	size_bytes: number;
 }
 
-// ProjectDetail is GET /api/projects/{id}'s body — the detail view's whole
+// FieldDetail is GET /api/fields/{id}'s body — the detail view's whole
 // page in one round trip.
-export interface ProjectDetail {
-	project: Project;
+export interface FieldDetail {
+	field: Field;
 	threads: Thread[];
-	files: ProjectFile[];
+	files: FieldFile[];
 }

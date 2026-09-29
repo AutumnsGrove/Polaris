@@ -71,15 +71,15 @@ func (s *Server) handleGetWorkspaceFile(w http.ResponseWriter, r *http.Request) 
 
 	f, err := os.Open(target)
 	if errors.Is(err, fs.ErrNotExist) {
-		// Second tier: a thread inside a Project can also read the project's
-		// shared, read-only directory (docs/plans/projects.md) — the same
+		// Second tier: a thread inside a Field can also read the field's
+		// shared, read-only directory (docs/plans/fields.md) — the same
 		// fallback tools/view_image.go's resolveWorkspaceFilePath gives the
 		// tool side, so a `show` of a shared file resolves here too. The
-		// project id comes from the database, never the URL, and the path is
-		// re-checked against the project's own directory (not just the
+		// field id comes from the database, never the URL, and the path is
+		// re-checked against the field's own directory (not just the
 		// workspace root) since it's a fresh join.
-		if projectPath := s.projectWorkspacePath(root, threadID, filename); projectPath != "" {
-			f, err = os.Open(projectPath)
+		if fieldPath := s.fieldWorkspacePath(root, threadID, filename); fieldPath != "" {
+			f, err = os.Open(fieldPath)
 		}
 	}
 	if err != nil {
@@ -98,16 +98,16 @@ func (s *Server) handleGetWorkspaceFile(w http.ResponseWriter, r *http.Request) 
 	w.Write(data)
 }
 
-// projectWorkspacePath resolves filename inside threadID's project's shared
-// directory, or "" when the thread has no project or the path would escape
+// fieldWorkspacePath resolves filename inside threadID's field's shared
+// directory, or "" when the thread has no field or the path would escape
 // that directory. Only ever consulted after the thread's own directory
 // missed, so an own file shadows a shared one of the same name.
-func (s *Server) projectWorkspacePath(root, threadID, filename string) string {
+func (s *Server) fieldWorkspacePath(root, threadID, filename string) string {
 	thread, err := s.db.GetThreadRaw(threadID)
-	if err != nil || thread.ProjectID == nil || *thread.ProjectID == "" {
+	if err != nil || thread.FieldID == nil || *thread.FieldID == "" {
 		return ""
 	}
-	base := filepath.Join(root, *thread.ProjectID)
+	base := filepath.Join(root, *thread.FieldID)
 	target := filepath.Join(base, filename)
 	rel, err := filepath.Rel(base, target)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {

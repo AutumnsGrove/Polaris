@@ -2,8 +2,10 @@
 	import { appState } from '$lib/state.svelte';
 	import type { FocusMode } from '$lib/types';
 	import { FOCUS_MODES } from '$lib/focusModes';
-	import { Plus, Image as ImageIcon, Cpu, Microscope, Globe, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal } from '@lucide/svelte';
+	import { Plus, Image as ImageIcon, Cpu, Microscope, Globe, Check, X, ChevronLeft, ChevronRight, SlidersHorizontal, Ban } from '@lucide/svelte';
 	import Asterism from './Asterism.svelte';
+	import FieldIcon from './FieldIcon.svelte';
+	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -56,7 +58,7 @@
 	// worth of copy for options that are picked once and rarely revisited.
 	// The root now shows one line per category with its current value, and
 	// only the category actually being changed expands.
-	let view = $state<'root' | 'focus' | 'model'>('root');
+	let view = $state<'root' | 'focus' | 'field' | 'model'>('root');
 	// Slide direction for the {#key view} transition below — forward into a
 	// picker, backward out of one — so the motion itself reads as "going
 	// deeper" vs. "coming back", not just a generic cross-fade.
@@ -72,9 +74,12 @@
 		reset();
 	}
 
-	function drillInto(next: 'focus' | 'model') {
+	function drillInto(next: 'focus' | 'field' | 'model') {
 		direction = 1;
 		view = next;
+		// The sidebar already loads this at startup, but a Field created in
+		// another tab since then would be missing from the list otherwise.
+		if (next === 'field') void fieldsState.load();
 	}
 
 	function backToRoot() {
@@ -88,6 +93,30 @@
 		focusMode = focusMode === id ? 'off' : id;
 		focusModeManual = true;
 		void appState.persistThreadConfig(appState.selectedModel, focusMode, deepResearch, !research);
+		close();
+	}
+
+	// Filing under a Field is a per-thread fact, not a per-message setting
+	// like focus: an open thread is moved for real (PUT /api/threads/{id}/
+	// field), a not-yet-created one just stages it. Left open on failure with
+	// the server's message shown, same as ThreadMenu's move picker — a sheet
+	// that vanishes reads as the tap having done nothing.
+	let fieldError = $state('');
+	async function selectField(id: string | null) {
+		fieldError = '';
+		const next = appState.activeFieldId === id ? null : id;
+		const err = await appState.setThreadField(next);
+		if (err) {
+			fieldError = err;
+			return;
+		}
+		// A brand-new thread inherits the Field's default focus mode, same
+		// seeding ChatView's config effect does for startThreadInField —
+		// unless a manual pick this session already beat it.
+		if (appState.currentThreadId === null && !focusModeManual) {
+			const fieldFocus = fieldsState.byId(next)?.default_focus_mode;
+			focusMode = fieldFocus ? fieldFocus : appState.settings.defaultFocusMode;
+		}
 		close();
 	}
 
@@ -162,9 +191,10 @@
 			turn?.role === 'assistant' && !turn.oracleResolved && !turn.timeline?.length && !turn.content
 		);
 	});
+	let activeField = $derived(fieldsState.byId(appState.activeFieldId));
 	let selectedModelName = $derived(appState.models.find((m) => m.id === appState.selectedModel)?.name ?? '');
 
-	let headerTitle = $derived(view === 'focus' ? 'Focus' : view === 'model' ? 'Model' : 'More');
+	let headerTitle = $derived(view === 'focus' ? 'Focus' : view === 'field' ? 'Field' : view === 'model' ? 'Model' : 'More');
 </script>
 
 <button
@@ -179,6 +209,9 @@
 	<span class="trigger-label">More</span>
 	{#if activeFocusLabel}
 		<span class="trigger-badge">{activeFocusLabel}</span>
+	{/if}
+	{#if activeField && !appState.isGhostThread}
+		<span class="trigger-badge field">{activeField.name}</span>
 	{/if}
 	{#if deepResearch}
 		<span class="trigger-badge deep">Deep research</span>
@@ -224,6 +257,17 @@
 									<span class="row-value">{activeFocusLabel ?? 'Off'}</span>
 									<ChevronRight size={14} class="row-chevron" />
 								</button>
+
+								<!-- Ghost threads never join a Field (the server ignores it),
+								     so the row would promise something that can't happen. -->
+								{#if !appState.isGhostThread}
+									<button type="button" class="row-btn" onclick={() => drillInto('field')}>
+										<FieldIcon size={16} />
+										<span class="row-label">Field</span>
+										<span class="row-value">{activeField?.name ?? 'None'}</span>
+										<ChevronRight size={14} class="row-chevron" />
+									</button>
+								{/if}
 
 								<div class="row-btn row-static" class:row-disabled={!research}>
 									<Microscope size={16} />
@@ -277,6 +321,41 @@
 										{#if focusMode === mode.id}<Check size={14} class="row-check" />{/if}
 									</button>
 								{/each}
+							</section>
+						{:else if view === 'field'}
+							<section>
+								<button type="button" class="row-btn" onclick={() => selectField(null)}>
+									<Ban size={16} />
+									<span class="row-label">
+										No Field
+										<span class="row-description">An ordinary conversation, on its own</span>
+									</span>
+									{#if !appState.activeFieldId}<Check size={14} class="row-check" />{/if}
+								</button>
+								{#each fieldsState.fields as field (field.id)}
+									<button type="button" class="row-btn" onclick={() => selectField(field.id)}>
+										<span
+											class="field-dot"
+											style:background={fieldColorVar(field.color) ?? 'var(--color-text-dim)'}
+											aria-hidden="true"
+										></span>
+										<span class="row-label">
+											{field.name}
+											{#if field.description}<span class="row-description">{field.description}</span>{/if}
+										</span>
+										{#if appState.activeFieldId === field.id}<Check size={14} class="row-check" />{/if}
+									</button>
+								{/each}
+								{#if fieldError}
+									<p class="field-note error">{fieldError}</p>
+								{:else if fieldsState.error && !fieldsState.loaded}
+									<p class="field-note">
+										Couldn't load your Fields.
+										<button type="button" class="field-retry" onclick={() => fieldsState.load()}>Retry</button>
+									</p>
+								{:else if fieldsState.loaded && fieldsState.fields.length === 0}
+									<p class="field-note">No Fields yet — create one from the Fields page.</p>
+								{/if}
 							</section>
 						{:else if view === 'model'}
 							<section>
@@ -416,6 +495,15 @@
 	.trigger-badge.deep {
 		color: var(--color-accent);
 		background: var(--color-accent-soft);
+	}
+
+	/* A long Field name must not push the other badges off a phone-width
+	   pill — flex-shrink lets it truncate instead. */
+	.trigger-badge.field {
+		flex-shrink: 1;
+		max-width: 9em;
+		color: var(--color-text);
+		background: var(--color-surface-3);
 	}
 
 	/* Distinct from .deep — this is "something's turned OFF", not a boost,
@@ -598,5 +686,33 @@
 	.switch input:checked + .slider::before {
 		transform: translateX(16px);
 		background: var(--color-accent);
+	}
+
+	/* The picker's color dot stands in for a row icon, sized to the 16px
+	   glyph column the other rows use so labels stay aligned. */
+	.field-dot {
+		width: 10px;
+		height: 10px;
+		margin: 0 3px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.field-note {
+		margin: var(--space-sm) var(--space-md);
+		font-size: 12px;
+		color: var(--color-text-dim);
+	}
+
+	.field-note.error {
+		color: var(--color-danger);
+	}
+
+	.field-retry {
+		border: none;
+		background: transparent;
+		color: var(--color-accent);
+		font: inherit;
+		cursor: pointer;
 	}
 </style>

@@ -25,8 +25,8 @@
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
-	import ProjectPill from '$lib/components/ProjectPill.svelte';
-	import { projectsState } from '$lib/projects.svelte';
+	import FieldPill from '$lib/components/FieldPill.svelte';
+	import { fieldsState } from '$lib/fields.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import NightSky from '$lib/components/NightSky.svelte';
 	import { fly } from 'svelte/transition';
@@ -114,9 +114,9 @@
 	// manual choice made from the composer's "+" menu afterward; "off"
 	// is itself a valid loaded value, which is why this checks
 	// settings.loaded rather than the value of defaultFocusMode itself.
-	// The project this thread belongs to, or is about to be created in —
-	// drives the header pill and the welcome line (see AppState.activeProjectId).
-	let activeProject = $derived(projectsState.byId(appState.activeProjectId));
+	// The field this thread belongs to, or is about to be created in —
+	// drives the header pill and the welcome line (see AppState.activeFieldId).
+	let activeField = $derived(fieldsState.byId(appState.activeFieldId));
 
 	let focusModeInitialized = false;
 	$effect(() => {
@@ -156,12 +156,12 @@
 		if (epoch === lastConfigEpoch) return;
 		lastConfigEpoch = epoch;
 		if (appState.currentThreadId === null) {
-			// A project's own default focus mode wins over the global standing
+			// A field's own default focus mode wins over the global standing
 			// default when set ('' inherits — not "force off", which is the
 			// real value 'off'). Same seeding point as the global default, so
 			// a manual pick afterward is still untouched (focusModeManual).
-			const projectFocus = projectsState.byId(appState.pendingProjectId)?.default_focus_mode;
-			focusMode = projectFocus ? projectFocus : appState.settings.defaultFocusMode;
+			const fieldFocus = fieldsState.byId(appState.pendingFieldId)?.default_focus_mode;
+			focusMode = fieldFocus ? fieldFocus : appState.settings.defaultFocusMode;
 			focusModeManual = false;
 			deepResearch = false;
 			research = true;
@@ -617,8 +617,8 @@
 		{#if currentThreadTitle}
 			<h1 class="thread-title" title={currentThreadTitle}>{currentThreadTitle}</h1>
 		{/if}
-		{#if activeProject && !appState.isGhostThread}
-			<ProjectPill project={activeProject} />
+		{#if activeField && !appState.isGhostThread}
+			<FieldPill field={activeField} />
 		{/if}
 	</div>
 	<div class="header-right">
@@ -696,9 +696,9 @@
 			</p>
 		{:else}
 			<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-			{#if activeProject && !appState.isGhostThread}
+			{#if activeField && !appState.isGhostThread}
 				<p class="subtitle wordmark">
-					Working in {activeProject.name} — its instructions and shared files come along.
+					Working in {activeField.name} — its instructions and shared files come along.
 				</p>
 			{:else}
 				<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>

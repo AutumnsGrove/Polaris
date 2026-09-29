@@ -22,7 +22,7 @@ import { AudioPlayer } from './audio.svelte';
 import { SettingsState } from './settings.svelte';
 import { getUserLocation, requestFreshLocation } from './geolocation';
 import { pulsarState } from './pulsar.svelte';
-import { projectsState } from './projects.svelte';
+import { fieldsState } from './fields.svelte';
 
 function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -55,7 +55,7 @@ function applyVerification(citations: Citation[] | undefined, marks: Verificatio
 }
 
 // TEMPORARY instrumentation for chasing the "thread bump-back" bug (see
-// memory: project_thread_bump_back_root_cause) — fires a fire-and-forget
+// memory: field_thread_bump_back_root_cause) — fires a fire-and-forget
 // beacon to the server's event log at the handful of places
 // currentThreadId changes or a version-mismatch reload fires, so the next
 // occurrence can be read back from the events table afterward instead of
@@ -225,19 +225,19 @@ export class AppState {
 	// separately-fetched list entry that could be a beat stale right
 	// after a rename/favorite.
 	currentThread = $state<Thread | null>(null);
-	// pendingProjectId is the Project a NEW (not yet id'd) thread will be
-	// created in — set by startThreadInProject, sent as project_id on that
+	// pendingFieldId is the Field a NEW (not yet id'd) thread will be
+	// created in — set by startThreadInField, sent as field_id on that
 	// thread's first turn only (see dispatch()), and kept afterward so the
-	// header's project pill still has something to read: for a thread created
+	// header's field pill still has something to read: for a thread created
 	// this session currentThread stays null (see openThread's doc comment on
-	// why), so activeProjectId falls back to this. Cleared by newThread()/
+	// why), so activeFieldId falls back to this. Cleared by newThread()/
 	// openThread(), the two real "switch to a different thread" actions —
-	// after an openThread, currentThread.project_id is authoritative.
-	pendingProjectId = $state<string | null>(null);
-	// The project the thread on screen belongs to (or is about to be created
-	// in) — what the header pill, the composer's project chip and
-	// ThreadMenu's "Move to project" all read.
-	activeProjectId = $derived(this.currentThread ? (this.currentThread.project_id ?? null) : this.pendingProjectId);
+	// after an openThread, currentThread.field_id is authoritative.
+	pendingFieldId = $state<string | null>(null);
+	// The field the thread on screen belongs to (or is about to be created
+	// in) — what the header pill, the composer's field chip and
+	// ThreadMenu's "Move to field" all read.
+	activeFieldId = $derived(this.currentThread ? (this.currentThread.field_id ?? null) : this.pendingFieldId);
 	currentThreadId = $state<string | null>(null);
 	connected = $state(false);
 	busy = $state(false);
@@ -774,7 +774,7 @@ export class AppState {
 		});
 		this.currentThreadId = id;
 		this.currentThread = data as Thread;
-		this.pendingProjectId = null;
+		this.pendingFieldId = null;
 		// A stale ghost session's flag must never leak into whichever
 		// thread is opened next — dispatch()'s stickiness check (see
 		// isGhostThread's doc comment) would otherwise treat this thread's
@@ -944,34 +944,49 @@ export class AppState {
 		this.variants = data.variants ?? {};
 	}
 
-	// startThreadInProject opens a blank composer scoped to a project — the
-	// project detail view's "New thread" button and its omnibox both start
-	// here. Seeds the project's default model when it names one this install
+	// startThreadInField opens a blank composer scoped to a field — the
+	// field detail view's "New thread" button and its omnibox both start
+	// here. Seeds the field's default model when it names one this install
 	// actually has (a model removed from config since would otherwise leave
-	// the picker on nothing); the project's default focus mode is applied by
+	// the picker on nothing); the field's default focus mode is applied by
 	// ChatView's config effect, which owns the live composer state. The
-	// caller navigates to '/' afterward — see routes/projects/[id].
-	startThreadInProject(projectId: string) {
+	// caller navigates to '/' afterward — see routes/fields/[id].
+	startThreadInField(fieldId: string) {
 		this.newThread();
-		this.pendingProjectId = projectId;
-		const model = projectsState.byId(projectId)?.default_model;
+		this.pendingFieldId = fieldId;
+		const model = fieldsState.byId(fieldId)?.default_model;
 		if (model && this.models.some((m) => m.id === model)) this.selectedModel = model;
 	}
 
-	// moveCurrentThreadToProject files the open thread under a project (or
-	// out of any, with null) and keeps every reader of activeProjectId in
-	// step — currentThread for an opened thread, pendingProjectId for one
+	// moveCurrentThreadToField files the open thread under a field (or
+	// out of any, with null) and keeps every reader of activeFieldId in
+	// step — currentThread for an opened thread, pendingFieldId for one
 	// created this session. Returns the server's error text on failure.
-	async moveCurrentThreadToProject(projectId: string | null): Promise<string | null> {
+	async moveCurrentThreadToField(fieldId: string | null): Promise<string | null> {
 		const id = this.currentThreadId;
 		if (!id) return 'No open thread';
-		const res = await projectsState.moveThread(id, projectId);
+		const res = await fieldsState.moveThread(id, fieldId);
 		if (!res.ok) return res.error;
-		this.pendingProjectId = projectId;
+		this.pendingFieldId = fieldId;
 		if (this.currentThread) {
-			this.currentThread = { ...this.currentThread, project_id: projectId ?? undefined };
+			this.currentThread = { ...this.currentThread, field_id: fieldId ?? undefined };
 		}
 		void this.loadThreads();
+		return null;
+	}
+
+	// setThreadField is the composer picker's entry point: files the open
+	// thread under a field, or — for a brand-new thread with no id yet —
+	// stages the field as pendingFieldId so the first message creates the
+	// thread already inside it (the same path startThreadInField takes, minus
+	// the navigation). Also seeds the field's default model on that staged
+	// path, for the same reason startThreadInField does. null = out of any
+	// field. Returns the server's error text on failure.
+	async setThreadField(fieldId: string | null): Promise<string | null> {
+		if (this.currentThreadId !== null) return this.moveCurrentThreadToField(fieldId);
+		this.pendingFieldId = fieldId;
+		const model = fieldId ? fieldsState.byId(fieldId)?.default_model : '';
+		if (model && this.models.some((m) => m.id === model)) this.selectedModel = model;
 		return null;
 	}
 
@@ -985,7 +1000,7 @@ export class AppState {
 		if (this.busy) this.pendingAbandoned = true;
 
 		debugBeacon('currentThreadId set (newThread)', { from: this.currentThreadId, busy: this.busy });
-		this.pendingProjectId = null;
+		this.pendingFieldId = null;
 		this.currentThreadId = null;
 		this.currentThread = null;
 		this.turns = [];
@@ -1436,7 +1451,7 @@ export class AppState {
 			source,
 			// Only a brand-new thread is bound at creation; a later turn's
 			// stray value is ignored server-side too (see gateway/protocol.go).
-			project_id: this.currentThreadId === null ? (this.pendingProjectId ?? undefined) : undefined,
+			field_id: this.currentThreadId === null ? (this.pendingFieldId ?? undefined) : undefined,
 			title_seed: titleSeed,
 			anonymous: isGhost || undefined,
 			voice_mode: voiceMode || undefined

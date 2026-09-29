@@ -6,13 +6,14 @@
 	import { searchState } from '$lib/search.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
-	import { projectsState, projectColorVar } from '$lib/projects.svelte';
+	import FieldIcon from '$lib/components/FieldIcon.svelte';
+	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderOpen, FolderSymlink } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { Thread, SearchHistoryEntry, MessageSearchResult, Project } from '$lib/types';
+	import type { Thread, SearchHistoryEntry, MessageSearchResult, Field } from '$lib/types';
 
 	// The sidebar SHELL (this component, its layout/collapse/mobile-overlay
 	// behavior) is shared between Atlas and the chat assistant — see
@@ -47,9 +48,9 @@
 		// pulsarState.loadUnreadCounts() above — the sidebar's own dot
 		// indicator needs to be accurate the moment the app loads.
 		void pulsarDailyState.checkForNewEdition(localStorage.getItem('polaris-daily-last-seen'));
-		// Same reasoning: the pinned-projects section must be accurate the
-		// moment the app loads, not only after /projects is first visited.
-		void projectsState.load();
+		// Same reasoning: the pinned-fields section must be accurate the
+		// moment the app loads, not only after /fields is first visited.
+		void fieldsState.load();
 	});
 
 	// True on the two routes that render the chat view (the homepage and
@@ -136,16 +137,16 @@
 		<div class="thread-meta">
 			<div class="thread-title">{thread.title || 'Untitled'}</div>
 		</div>
-		<!-- A thread that belongs to a project wears a small marker, so a
-		     conversation that carries a project's instructions and shared
+		<!-- A thread that belongs to a field wears a small marker, so a
+		     conversation that carries a field's instructions and shared
 		     files is recognizable in the list without opening it. Tinted with
-		     the project's color tag when it has one. -->
-		{#if thread.project_id}
-			{@const project = projectsState.byId(thread.project_id)}
+		     the field's color tag when it has one. -->
+		{#if thread.field_id}
+			{@const field = fieldsState.byId(thread.field_id)}
 			<span
-				class="project-mark"
-				style:color={project ? projectColorVar(project.color) : null}
-				title={project ? `In project: ${project.name}` : 'In a project'}
+				class="field-mark"
+				style:color={field ? fieldColorVar(field.color) : null}
+				title={field ? `In Field: ${field.name}` : 'In a Field'}
 			>
 				<FolderSymlink size={12} />
 			</span>
@@ -153,23 +154,23 @@
 	</div>
 {/snippet}
 
-<!-- A pinned project: a shortcut into /projects/<id>, not a nested thread
+<!-- A pinned field: a shortcut into /fields/<id>, not a nested thread
      tree — the sidebar stays a fast-nav surface and the detail view is where
-     a project's own threads live (docs/plans/projects.md, "Sidebar"). The
-     row's dot wears the project's color tag when it has one. -->
-{#snippet projectRow(project: Project, i: number)}
+     a field's own threads live (docs/plans/fields.md, "Sidebar"). The
+     row's dot wears the field's color tag when it has one. -->
+{#snippet fieldRow(field: Field, i: number)}
 	<div
 		class="thread-item"
-		class:active={page.url.pathname === `/projects/${project.id}`}
-		onclick={() => goto(`/projects/${project.id}`)}
-		onkeydown={(e) => e.key === 'Enter' && goto(`/projects/${project.id}`)}
+		class:active={page.url.pathname === `/fields/${field.id}`}
+		onclick={() => goto(`/fields/${field.id}`)}
+		onkeydown={(e) => e.key === 'Enter' && goto(`/fields/${field.id}`)}
 		role="button"
 		tabindex="0"
 		in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 	>
-		<span class="thread-dot" style:background={projectColorVar(project.color)} aria-hidden="true"></span>
+		<span class="thread-dot" style:background={fieldColorVar(field.color)} aria-hidden="true"></span>
 		<div class="thread-meta">
-			<div class="thread-title">{project.name}</div>
+			<div class="thread-title">{field.name}</div>
 		</div>
 	</div>
 {/snippet}
@@ -284,11 +285,11 @@
 		</button>
 		<button
 			class="pulsar-entry"
-			class:active={page.url.pathname.startsWith('/projects')}
-			onclick={() => goto('/projects')}
+			class:active={page.url.pathname.startsWith('/fields')}
+			onclick={() => goto('/fields')}
 		>
-			<FolderOpen size={16} />
-			<span class="pulsar-label">Projects</span>
+			<FieldIcon size={16} />
+			<span class="pulsar-label">Fields</span>
 		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
@@ -350,13 +351,13 @@
 			     moved to ThreadMenu.svelte (the "..." menu in the chat header)
 			     since managing the thread you're actually looking at fits there
 			     better than a list row whose whole job is just "open this". -->
-			{#if projectsState.favorites.length > 0}
+			{#if fieldsState.favorites.length > 0}
 				<div class="section-label">
-					<FolderOpen size={11} />
-					Projects
+					<FieldIcon size={11} />
+					<span class="section-wordmark">Fields</span>
 				</div>
-				{#each projectsState.favorites as project, i (project.id)}
-					{@render projectRow(project, i)}
+				{#each fieldsState.favorites as field, i (field.id)}
+					{@render fieldRow(field, i)}
 				{/each}
 			{/if}
 			{#if favorites.length > 0}
@@ -369,11 +370,11 @@
 				{/each}
 			{/if}
 			<!-- Labelled whenever ANYTHING pinned precedes them (favorited
-			     threads or pinned projects) — without it the ordinary list runs
-			     straight on from the Projects rows and reads as if those threads
-			     lived inside a project. Found by looking at the live screenshot,
+			     threads or pinned fields) — without it the ordinary list runs
+			     straight on from the Fields rows and reads as if those threads
+			     lived inside a field. Found by looking at the live screenshot,
 			     not by an assertion. -->
-			{#if recents.length > 0 && (favorites.length > 0 || projectsState.favorites.length > 0)}
+			{#if recents.length > 0 && (favorites.length > 0 || fieldsState.favorites.length > 0)}
 				<div class="section-label">Recents</div>
 			{/if}
 			{#each recents as thread, i (thread.id)}
@@ -681,7 +682,7 @@
 		min-width: 0;
 	}
 
-	.project-mark {
+	.field-mark {
 		display: inline-flex;
 		flex-shrink: 0;
 		color: var(--color-text-dim);
@@ -796,5 +797,16 @@
 			border-right: 1px solid var(--color-border);
 			transform: translateX(-100%);
 		}
+	}
+
+	/* The pinned-Fields section header gets the same reserved brand face as
+	   the "Fields" nav entry above; kept off the 18px .wordmark rule since
+	   this label is 10.5px, uppercase, and tracked wide like its siblings. */
+	.section-wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: 0.04em;
+		font-size: 12px;
 	}
 </style>

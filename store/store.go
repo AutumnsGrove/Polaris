@@ -122,15 +122,15 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- WHERE query instead of inferring it from title text. Empty for every
 	-- other thread.
 	pulsar_routine_id INTEGER,
-	-- project_id: the Project (see the projects table below and
-	-- docs/plans/projects.md) this thread belongs to, or NULL for an
+	-- field_id: the Field (see the fields table below and
+	-- docs/plans/fields.md) this thread belongs to, or NULL for an
 	-- ordinary ungrouped thread. Nullable with no default, so every
-	-- pre-Projects thread is simply "not in a project" — the same "add a
+	-- pre-Fields thread is simply "not in a field" — the same "add a
 	-- column, only matters going forward" shape as pulsar_routine_id above.
-	-- A real FK, not a bare TEXT: DeleteProject must NULL these out in the
-	-- same transaction that removes the project row (foreign_keys=on, see
+	-- A real FK, not a bare TEXT: DeleteField must NULL these out in the
+	-- same transaction that removes the field row (foreign_keys=on, see
 	-- Open), never leave a dangling id.
-	project_id TEXT REFERENCES projects(id),
+	field_id TEXT REFERENCES fields(id),
 	-- seen: whether a pulsar-sourced thread's pulse has actually been
 	-- opened yet — flipped by the same open path continued_in_assistant
 	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
@@ -605,13 +605,13 @@ CREATE TABLE IF NOT EXISTS memories (
 	disabled INTEGER NOT NULL DEFAULT 0
 );
 
--- projects backs Projects (see docs/plans/projects.md, issue #119): a named
+-- fields backs Fields (see docs/plans/fields.md, issue #119): a named
 -- container of threads with its own custom instructions, a shared read-only
 -- file pool (<CodeExecWorkspaceDir>/<id>/, never this table's concern), and a
--- handful of per-project turn defaults. Threads join via threads.project_id.
--- A deleted project is a real DELETE (no disabled column) — see
--- store/projects.go's DeleteProject for the orphan-the-threads sequence.
-CREATE TABLE IF NOT EXISTS projects (
+-- handful of per-field turn defaults. Threads join via threads.field_id.
+-- A deleted field is a real DELETE (no disabled column) — see
+-- store/fields.go's DeleteField for the orphan-the-threads sequence.
+CREATE TABLE IF NOT EXISTS fields (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
 	-- description: one line, shown on the hub's card grid.
@@ -620,22 +620,22 @@ CREATE TABLE IF NOT EXISTS projects (
 	-- field (gateway/settings.go's maxCustomInstructionsChars cap applies),
 	-- appended after it — never instead of it — at turn-context build.
 	custom_instructions TEXT NOT NULL DEFAULT '',
-	-- favorite: 1 = pinned into the sidebar's Projects section, the same
-	-- mechanism threads.favorite is. An unfavorited project is reachable
-	-- only via /projects.
+	-- favorite: 1 = pinned into the sidebar's Fields section, the same
+	-- mechanism threads.favorite is. An unfavorited field is reachable
+	-- only via /fields.
 	favorite INTEGER NOT NULL DEFAULT 0,
 	-- default_focus_mode/default_model: '' = inherit the global standing
 	-- default (settings.defaultFocusMode / settings.defaultModel), not
 	-- "force off" — 'off' is itself a valid focus mode id.
 	default_focus_mode TEXT NOT NULL DEFAULT '',
 	default_model TEXT NOT NULL DEFAULT '',
-	-- memory_mode: 'default' | 'none'. 'project_scoped' is a reserved,
+	-- memory_mode: 'default' | 'none'. 'field_scoped' is a reserved,
 	-- not-yet-functional value (the plan's v2) — accepted nowhere yet, see
-	-- ValidProjectMemoryMode.
+	-- ValidFieldMemoryMode.
 	memory_mode TEXT NOT NULL DEFAULT 'default',
-	-- constellation_visible: 0 = Weaver skips this project's threads.
+	-- constellation_visible: 0 = Weaver skips this field's threads.
 	constellation_visible INTEGER NOT NULL DEFAULT 1,
-	-- exclude_from_chat_search: 1 = SearchMessages skips this project's
+	-- exclude_from_chat_search: 1 = SearchMessages skips this field's
 	-- threads entirely.
 	exclude_from_chat_search INTEGER NOT NULL DEFAULT 0,
 	-- color: '' = no tag, else one of app.css's --color-cat-* suffixes.
@@ -1262,11 +1262,11 @@ var migrations = []string{
 	`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
 	// jev_usage.source — see the schema comment above (issue #125).
 	`ALTER TABLE jev_usage ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
-	// threads.project_id — see the schema comment above (issue #119).
+	// threads.field_id — see the schema comment above (issue #119).
 	// Appended at the end per this file's own established rule (positional
 	// user_version tracking, never insert mid-list). NULL default is also
 	// what SQLite requires to ADD COLUMN ... REFERENCES at all.
-	`ALTER TABLE threads ADD COLUMN project_id TEXT REFERENCES projects(id)`,
+	`ALTER TABLE threads ADD COLUMN field_id TEXT REFERENCES fields(id)`,
 }
 
 func Open(path string) (*Store, error) {
@@ -1295,6 +1295,9 @@ func Open(path string) (*Store, error) {
 	// serializing all of it through one connection costs nothing
 	// noticeable.
 	db.SetMaxOpenConns(1)
+	if err := renameProjectsToFields(db); err != nil {
+		return nil, err
+	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
@@ -1302,6 +1305,60 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{db: db}, nil
+}
+
+// renameProjectsToFields carries a database created while this feature was
+// still called "Projects" over to its final name, Fields. It has to run
+// BEFORE the `schema` constant: that constant's CREATE TABLE IF NOT EXISTS
+// fields would otherwise happily create a second, empty table beside the
+// real projects one, orphaning every existing group. It can't be an entry
+// in `migrations` for the same reason (those run after the schema).
+//
+// SQLite rewrites the threads.project_id -> projects(id) foreign key on its
+// own when the referenced table is renamed (legacy_alter_table is off by
+// default), so only the table and the column need naming here. Both steps
+// check current state instead of trusting a version counter, which makes a
+// fresh database (neither exists yet) and an already-renamed one no-ops.
+func renameProjectsToFields(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'projects'`,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("checking for legacy projects table: %w", err)
+	}
+	if n > 0 {
+		if _, err := db.Exec(`ALTER TABLE projects RENAME TO fields`); err != nil {
+			return fmt.Errorf("renaming projects table to fields: %w", err)
+		}
+	}
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('threads') WHERE name = 'project_id'`,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("checking for legacy threads.project_id column: %w", err)
+	}
+	if n > 0 {
+		if _, err := db.Exec(`ALTER TABLE threads RENAME COLUMN project_id TO field_id`); err != nil {
+			return fmt.Errorf("renaming threads.project_id to field_id: %w", err)
+		}
+	}
+	// The save_to_project tool became save_to_field. An operator who turned
+	// it off has its old name in the disabled_tools JSON list, which would
+	// otherwise silently re-enable the renamed tool. Idempotent, so it needs
+	// no "did the rename just happen" gating; only a brand-new database
+	// (no settings table yet) skips it.
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'`,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("checking for settings table: %w", err)
+	}
+	if n > 0 {
+		if _, err := db.Exec(
+			`UPDATE settings SET value = replace(value, '"save_to_project"', '"save_to_field"') WHERE key = 'disabled_tools'`,
+		); err != nil {
+			return fmt.Errorf("renaming save_to_project in disabled_tools: %w", err)
+		}
+	}
+	return nil
 }
 
 // applyMigrations runs whichever entries in `migrations` haven't been
@@ -1388,11 +1445,11 @@ type Thread struct {
 	// routine" affordance on a pulse's thread view instead of the normal
 	// sidebar-toggle-only header, per the plan doc's "Pulse detail" UI.
 	PulsarRoutineID *int64 `json:"pulsar_routine_id,omitempty"`
-	// ProjectID is the Project this thread belongs to (see threads.project_id)
+	// FieldID is the Field this thread belongs to (see threads.field_id)
 	// — nil for an ungrouped thread. The frontend reads it for the header's
-	// project pill; gateway/turn.go reads it off GetThreadRaw each turn, since
-	// membership can change between turns (SetThreadProject).
-	ProjectID *string   `json:"project_id,omitempty"`
+	// field pill; gateway/turn.go reads it off GetThreadRaw each turn, since
+	// membership can change between turns (SetThreadField).
+	FieldID   *string   `json:"field_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	// Ghost mirrors threads.ghost — see its schema comment. Internal-only:
@@ -1885,9 +1942,9 @@ func (s *Store) VariantIndices(rootID string) ([]int, error) {
 func (s *Store) GetThread(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, project_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, used_transponder, pulsar_routine_id, field_id, created_at, updated_at
 		 FROM threads WHERE id = ? AND disabled = 0 AND fork_root_id = '' AND ghost = 0`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.UsedTransponder, &t.PulsarRoutineID, &t.FieldID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1904,9 +1961,9 @@ func (s *Store) GetThread(id string) (*Thread, error) {
 func (s *Store) GetThreadRaw(id string) (*Thread, error) {
 	var t Thread
 	err := s.db.QueryRow(
-		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, ghost, project_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, compacted_summary, compacted_through_id, source, favorite, focus_mode, deep_research, no_research, ghost, field_id, created_at, updated_at
 		 FROM threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.Ghost, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.CompactedSummary, &t.CompactedThroughID, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.NoResearch, &t.Ghost, &t.FieldID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1936,7 +1993,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, project_id, created_at, updated_at
+		`SELECT id, title, model, cost_usd, context_tokens, source, favorite, focus_mode, deep_research, pulsar_routine_id, field_id, created_at, updated_at
 		 FROM threads
 		 WHERE disabled = 0 AND fork_root_id = '' AND ghost = 0 AND source != 'pulsar' AND source != 'weaver' AND (source != 'atlas' OR continued_in_assistant = 1)
 		 ORDER BY updated_at DESC LIMIT ?`,
@@ -1950,7 +2007,7 @@ func (s *Store) ListThreads(limit int) ([]Thread, error) {
 	var threads []Thread
 	for rows.Next() {
 		var t Thread
-		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Model, &t.CostUSD, &t.ContextTokens, &t.Source, &t.Favorite, &t.FocusMode, &t.DeepResearch, &t.PulsarRoutineID, &t.FieldID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
@@ -2379,7 +2436,7 @@ func (s *Store) SearchMessages(query string, limit int) ([]MessageSearchResult, 
 		   AND root.source != 'pulsar'
 		   AND root.source != 'weaver'
 		   AND (root.source != 'atlas' OR root.continued_in_assistant = 1)
-		   AND `+notInProjectWhere(`root.project_id`, `exclude_from_chat_search = 1`)+`
+		   AND `+notInFieldWhere(`root.field_id`, `exclude_from_chat_search = 1`)+`
 		 ORDER BY rank LIMIT ?`,
 		ftsQuery, limit,
 	)

@@ -89,9 +89,9 @@ func DefaultOracle() OracleConfig {
 			"recall":  {Threshold: 0.80},
 		},
 		Chips: map[string]OracleChipRules{
-			"pulsar":  {Threshold: 0.80},
-			"daily":   {Threshold: 0.80},
-			"project": {Threshold: 0.75},
+			"pulsar": {Threshold: 0.80},
+			"daily":  {Threshold: 0.80},
+			"field":  {Threshold: 0.75},
 		},
 	}
 }

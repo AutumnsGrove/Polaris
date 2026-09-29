@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { FolderOpen } from '@lucide/svelte';
-	import { projectColorVar } from '$lib/projects.svelte';
-	import type { Project } from '$lib/types';
+	import FieldIcon from './FieldIcon.svelte';
+	import { fieldColorVar } from '$lib/fields.svelte';
+	import type { Field } from '$lib/types';
 
-	// The chat header's "this conversation belongs to a project" marker (docs/
-	// plans/projects.md, "Thread header: project indicator"). Without it a
+	// The chat header's "this conversation belongs to a field" marker (docs/
+	// plans/fields.md, "Thread header: field indicator"). Without it a
 	// thread opened straight from search would give no sign it carries a
-	// project's instructions and shared files — context silently in play for
-	// the turn but invisible on screen. Tapping it opens the project.
-	let { project }: { project: Project } = $props();
+	// field's instructions and shared files — context silently in play for
+	// the turn but invisible on screen. Tapping it opens the field.
+	let { field }: { field: Field } = $props();
 
-	let tint = $derived(projectColorVar(project.color));
+	let tint = $derived(fieldColorVar(field.color));
 </script>
 
 <button
 	class="pill"
 	style:--tint={tint ?? 'var(--color-text-dim)'}
-	onclick={() => goto(`/projects/${project.id}`)}
-	title="Project: {project.name}"
-	aria-label="Open project {project.name}"
+	onclick={() => goto(`/fields/${field.id}`)}
+	title="Field: {field.name}"
+	aria-label="Open Field {field.name}"
 >
-	<FolderOpen size={12} />
-	<span class="name">{project.name}</span>
+	<FieldIcon size={14} />
+	<span class="name">{field.name}</span>
 </button>
 
 <style>

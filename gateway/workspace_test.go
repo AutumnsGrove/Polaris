@@ -176,24 +176,24 @@ func TestHandleGetWorkspaceFile_NoWorkspaceConfigured(t *testing.T) {
 	}
 }
 
-// A thread inside a Project can read the project's shared directory through
+// A thread inside a Field can read the field's shared directory through
 // the same route (so `show` of a shared file works), the thread's own file
-// wins a name clash, and a thread OUTSIDE the project never sees it.
-func TestHandleGetWorkspaceFile_ProjectFallback(t *testing.T) {
+// wins a name clash, and a thread OUTSIDE the field never sees it.
+func TestHandleGetWorkspaceFile_FieldFallback(t *testing.T) {
 	h := newTestHarness(t, "")
 	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
 	setWorkspaceDir(t, h, workspaceDir)
 
-	p, err := h.db.CreateProject(store.Project{Name: "p"})
+	p, err := h.db.CreateField(store.Field{Name: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"in-project", "outside"} {
+	for _, id := range []string{"in-field", "outside"} {
 		if err := h.db.CreateThread(id, id, "m", "web"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := h.db.SetThreadProject("in-project", &p.ID); err != nil {
+	if err := h.db.SetThreadField("in-field", &p.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -208,7 +208,7 @@ func TestHandleGetWorkspaceFile_ProjectFallback(t *testing.T) {
 	}
 	write(p.ID, "shared.txt", "from the pool")
 	write(p.ID, "both.txt", "shared version")
-	write("in-project", "both.txt", "own version")
+	write("in-field", "both.txt", "own version")
 
 	get := func(thread, file string) (int, string) {
 		t.Helper()
@@ -221,21 +221,21 @@ func TestHandleGetWorkspaceFile_ProjectFallback(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	if code, body := get("in-project", "shared.txt"); code != http.StatusOK || body != "from the pool" {
-		t.Errorf("project thread reading a shared file: %d %q", code, body)
+	if code, body := get("in-field", "shared.txt"); code != http.StatusOK || body != "from the pool" {
+		t.Errorf("field thread reading a shared file: %d %q", code, body)
 	}
-	if code, body := get("in-project", "both.txt"); code != http.StatusOK || body != "own version" {
+	if code, body := get("in-field", "both.txt"); code != http.StatusOK || body != "own version" {
 		t.Errorf("own file should shadow the shared one: %d %q", code, body)
 	}
 	if code, _ := get("outside", "shared.txt"); code != http.StatusNotFound {
-		t.Errorf("a thread outside the project read the project's file: status %d, want 404", code)
+		t.Errorf("a thread outside the field read the field's file: status %d, want 404", code)
 	}
 	// {filename} is one URL segment, so ".." (percent-encoded past net/http's
 	// path cleaning) is the only traversal-capable value — and the thread's
 	// own tier already resolves it to an existing directory, so the request
-	// never reaches the project tier's own Rel check (kept as defense in
+	// never reaches the field tier's own Rel check (kept as defense in
 	// depth). The point here is only that nothing is ever served for it.
-	if code, _ := get("in-project", "%2e%2e"); code == http.StatusOK {
+	if code, _ := get("in-field", "%2e%2e"); code == http.StatusOK {
 		t.Errorf("encoded traversal was served with 200")
 	}
 }

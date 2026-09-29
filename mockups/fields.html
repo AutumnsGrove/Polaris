@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Projects — mockup</title>
+<title>Fields — mockup</title>
 <style>
 @import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
 @import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
@@ -16,9 +16,9 @@
    dark-media / [data-theme] blocks, not reinvented. This mockup
    exists to show real product screens, so it uses the real palette.
    Swatch-* tokens are a subset of the existing --color-cat-* scale
-   (same hues, same formula), reused for the project color-tag
+   (same hues, same formula), reused for the field color-tag
    picker instead of inventing a new palette. Companion to
-   docs/plans/projects.md (issue #119).
+   docs/plans/fields.md (issue #119).
    --------------------------------------------------------------- */
 :root {
 	color-scheme: light;
@@ -265,13 +265,13 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 }
 #view-hub h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
 #view-hub .hub-header p { margin: 0; color: var(--color-text-dim); font-size: 13px; }
-.project-grid {
+.field-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 	gap: var(--space-lg);
 	padding: var(--space-xl);
 }
-.project-card {
+.field-card {
 	position: relative;
 	background: var(--color-surface-2);
 	border: 1px solid var(--color-border);
@@ -284,17 +284,17 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 	cursor: pointer;
 	transition: border-color .15s ease;
 }
-.project-card:hover { border-color: var(--color-border-strong); border-left-color: var(--tag, var(--color-border-strong)); }
-.project-card .row-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
-.project-card .name { font-weight: 600; font-size: 15px; }
-.project-card .desc { color: var(--color-text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.6em; }
-.project-card .meta { font-size: 11.5px; color: var(--color-text-dim); display: flex; justify-content: space-between; }
-.project-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.project-card.new {
+.field-card:hover { border-color: var(--color-border-strong); border-left-color: var(--tag, var(--color-border-strong)); }
+.field-card .row-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
+.field-card .name { font-weight: 600; font-size: 15px; }
+.field-card .desc { color: var(--color-text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.6em; }
+.field-card .meta { font-size: 11.5px; color: var(--color-text-dim); display: flex; justify-content: space-between; }
+.field-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.field-card.new {
 	align-items: center; justify-content: center; text-align: center;
 	border-style: dashed; color: var(--color-text-dim); min-height: 168px;
 }
-.project-card.new:hover { color: var(--color-accent-strong); border-color: var(--color-accent); }
+.field-card.new:hover { color: var(--color-accent-strong); border-color: var(--color-accent); }
 
 /* ================= VIEW 2: Detail ================= */
 #view-detail .detail-header {
@@ -402,7 +402,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 .mock-chatheader { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 .mock-chatheader .titleblock { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .mock-chatheader .t { font-weight: 600; font-size: 14px; }
-.project-pill {
+.field-pill {
 	display: inline-flex; align-items: center; gap: 5px;
 	font-size: 11px; font-weight: 500; color: var(--color-accent-strong);
 	background: var(--color-accent-soft); padding: 3px 9px 3px 7px;
@@ -432,7 +432,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 	.stage { padding: var(--space-lg) var(--space-md) 60px; }
 	.detail-scroll, .integration-grid { padding: var(--space-lg); }
 	#view-hub .hub-header, #view-detail .detail-header { padding: var(--space-lg); flex-wrap: wrap; }
-	.project-grid { padding: var(--space-lg); grid-template-columns: 1fr 1fr; }
+	.field-grid { padding: var(--space-lg); grid-template-columns: 1fr 1fr; }
 }
 </style>
 </head>
@@ -440,10 +440,10 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 
 <div class="review-bar">
 	<span class="brand">Polaris</span>
-	<span class="note">Projects — design mockup, not the live app</span>
+	<span class="note">Fields — design mockup, not the live app</span>
 	<div class="tabs" role="tablist" aria-label="Screen">
 		<button data-tab="hub" aria-current="true">Hub</button>
-		<button data-tab="detail">Project detail</button>
+		<button data-tab="detail">Field detail</button>
 		<button data-tab="integration">Sidebar &amp; menu</button>
 	</div>
 	<div class="theme-toggle" role="group" aria-label="Theme preview">
@@ -457,7 +457,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
      glyph is genuinely the same glyph on every card, row, and menu — Brain
      (memory), Cpu (default model), SlidersHorizontal (focus mode), Orbit
      (Constellation/Weaver), search-with-slash (chat-search exclusion),
-     folder (project), filled star (favorite/pin). -->
+     folder (field), filled star (favorite/pin). -->
 <svg width="0" height="0" style="position:absolute">
 	<defs>
 		<g id="i-brain" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -508,21 +508,21 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 <div class="stage">
 
 	<!-- ============================================================ -->
-	<!-- VIEW 1 — /projects hub                                       -->
+	<!-- VIEW 1 — /fields hub                                       -->
 	<!-- ============================================================ -->
 	<section id="view-hub">
-		<p class="stage-caption">A dedicated route, same tier as <code>/pulsar</code> / <code>/daily</code> / <code>/constellation</code>. The star pins a project into the sidebar — most projects here stay unpinned and live only in this hub. Chips only appear for settings that differ from their default, using the same icons the settings panel uses.</p>
+		<p class="stage-caption">A dedicated route, same tier as <code>/pulsar</code> / <code>/daily</code> / <code>/constellation</code>. The star pins a field into the sidebar — most fields here stay unpinned and live only in this hub. Chips only appear for settings that differ from their default, using the same icons the settings panel uses.</p>
 		<div class="screen">
 			<div class="hub-header">
 				<div>
-					<h1>Projects</h1>
+					<h1>Fields</h1>
 					<p>Shared instructions and files for threads that belong together.</p>
 				</div>
-				<button class="btn btn-accent"><svg class="icon" viewBox="0 0 24 24"><use href="#i-plus"/></svg> New project</button>
+				<button class="btn btn-accent"><svg class="icon" viewBox="0 0 24 24"><use href="#i-plus"/></svg> New field</button>
 			</div>
-			<div class="project-grid">
+			<div class="field-grid">
 
-				<div class="project-card" style="--tag:var(--swatch-tech)">
+				<div class="field-card" style="--tag:var(--swatch-tech)">
 					<div class="row-top">
 						<div class="name">Home network rebuild</div>
 						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
@@ -535,7 +535,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="meta"><span>7 threads</span><span>updated 2d ago</span></div>
 				</div>
 
-				<div class="project-card" style="--tag:var(--swatch-space)">
+				<div class="field-card" style="--tag:var(--swatch-space)">
 					<div class="row-top">
 						<div class="name">Theros one-shot prep</div>
 						<button class="icon-btn starred" title="Pinned to sidebar"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
@@ -547,7 +547,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="meta"><span>12 threads</span><span>updated yesterday</span></div>
 				</div>
 
-				<div class="project-card" style="--tag:var(--swatch-finance)">
+				<div class="field-card" style="--tag:var(--swatch-finance)">
 					<div class="row-top">
 						<div class="name">Budget after bankruptcy</div>
 						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
@@ -560,7 +560,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="meta"><span>4 threads</span><span>updated 5d ago</span></div>
 				</div>
 
-				<div class="project-card" style="--tag:var(--swatch-career)">
+				<div class="field-card" style="--tag:var(--swatch-career)">
 					<div class="row-top">
 						<div class="name">Coding reference</div>
 						<button class="icon-btn" title="Not pinned — tap to pin"><svg class="icon" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><use href="#i-star"/></svg></button>
@@ -570,9 +570,9 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="meta"><span>21 threads</span><span>updated 3h ago</span></div>
 				</div>
 
-				<div class="project-card new">
+				<div class="field-card new">
 					<svg class="icon" style="width:22px;height:22px;margin-bottom:8px;" viewBox="0 0 24 24"><use href="#i-plus"/></svg>
-					Start a new project
+					Start a new field
 				</div>
 
 			</div>
@@ -580,10 +580,10 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 	</section>
 
 	<!-- ============================================================ -->
-	<!-- VIEW 2 — project detail                                      -->
+	<!-- VIEW 2 — field detail                                      -->
 	<!-- ============================================================ -->
 	<section id="view-detail" hidden>
-		<p class="stage-caption">An omnibox up top starts a thread the instant you send — same as claude.ai's own project page — with a separate "New thread" button for opening a blank composer instead. Settings on the right use the same five icons as the hub cards.</p>
+		<p class="stage-caption">An omnibox up top starts a thread the instant you send — same as claude.ai's own field page — with a separate "New thread" button for opening a blank composer instead. Settings on the right use the same five icons as the hub cards.</p>
 		<div class="screen">
 			<div class="detail-header">
 				<button class="btn" style="padding:8px;"><svg class="icon" viewBox="0 0 24 24"><use href="#i-chevron-left"/></svg></button>
@@ -614,7 +614,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 							<h2>Instructions</h2>
 							<textarea class="textinput" rows="5">Assume UniFi gear (UDM-SE, three U6-Pros) and a Ting fiber ONT. When I paste a speed test, compare it against the plan's rated 940/880. Flag anything that looks like a DNS problem before blaming the ISP.</textarea>
 							<div class="charcount">612 / 4000</div>
-							<p class="hint">Added to every thread in this project, alongside your global custom instructions.</p>
+							<p class="hint">Added to every thread in this field, alongside your global custom instructions.</p>
 						</div>
 
 						<div class="card">
@@ -649,7 +649,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 
 					<div class="col-side">
 						<div class="card">
-							<h2>Project settings</h2>
+							<h2>Field settings</h2>
 
 							<div class="setting-row">
 								<span class="field-label"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-sliders"/></svg>Default focus mode</span>
@@ -677,13 +677,13 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 								<div class="segmented">
 									<button aria-current="true">Default</button>
 									<button>None</button>
-									<button class="reserved" title="Isolated per-project memory — planned for v2">Project-scoped<span class="tag">soon</span></button>
+									<button class="reserved" title="Isolated per-field memory — planned for v2">Field-scoped<span class="tag">soon</span></button>
 								</div>
 							</div>
 
 							<div class="setting-row">
 								<div class="row-top">
-									<span class="field-label" style="margin:0;"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-orbit"/></svg>Let Weaver read this project</span>
+									<span class="field-label" style="margin:0;"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-orbit"/></svg>Let Weaver read this field</span>
 									<div class="switch on"></div>
 								</div>
 							</div>
@@ -712,8 +712,8 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 						</div>
 
 						<div class="danger-zone">
-							<button class="btn btn-danger">Delete project</button>
-							<p>Threads move back to your regular list, untouched. Shared workspace files are deleted with the project.</p>
+							<button class="btn btn-danger">Delete field</button>
+							<p>Threads move back to your regular list, untouched. Shared workspace files are deleted with the field.</p>
 						</div>
 					</div>
 				</div>
@@ -725,7 +725,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 	<!-- VIEW 3 — sidebar + thread menu integration                   -->
 	<!-- ============================================================ -->
 	<section id="view-integration" hidden>
-		<p class="stage-caption">Only pinned projects show in the sidebar — same favorite mechanism threads already have, not a full listing. A thread that belongs to a project carries a small pill in its header; tapping it goes back to the project.</p>
+		<p class="stage-caption">Only pinned fields show in the sidebar — same favorite mechanism threads already have, not a full listing. A thread that belongs to a field carries a small pill in its header; tapping it goes back to the field.</p>
 		<div class="screen">
 			<div class="integration-grid">
 
@@ -733,10 +733,10 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="mini-sidebar">
 						<div class="wordmark">Polaris</div>
 
-						<div class="section-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Projects</div>
+						<div class="section-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Fields</div>
 						<div class="proj-row"><span class="dot" style="background:var(--swatch-tech)"></span>Home network rebuild <span class="chev">›</span></div>
 						<div class="proj-row"><span class="dot" style="background:var(--swatch-space)"></span>Theros one-shot prep <span class="chev">›</span></div>
-						<div class="sidebar-footnote">2 pinned — 2 more in the Projects hub</div>
+						<div class="sidebar-footnote">2 pinned — 2 more in the Fields hub</div>
 
 						<div class="section-label" style="margin-top:var(--space-lg);"><svg class="icon" fill="currentColor" viewBox="0 0 24 24"><use href="#i-star"/></svg>Favorites</div>
 						<div class="thread-row-mini">Comparing mortgage refi offers</div>
@@ -751,7 +751,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 					<div class="mock-chatheader">
 						<div class="titleblock">
 							<span class="t">Comparing mesh vs. a wired backhaul AP</span>
-							<span class="project-pill"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Home network rebuild</span>
+							<span class="field-pill"><svg class="icon sm" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Home network rebuild</span>
 						</div>
 						<div class="menu-wrap">
 							<button class="btn" style="padding:7px 9px;">
@@ -768,14 +768,14 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 								</div>
 								<div class="menu-item" style="position:relative;">
 									<svg class="icon" viewBox="0 0 24 24"><use href="#i-folder"/></svg>
-									Move to project
+									Move to field
 									<span class="arrow">›</span>
 									<div class="submenu">
 										<div class="menu-item current">✓ Home network rebuild</div>
 										<div class="menu-item">Theros one-shot prep</div>
 										<div class="menu-item">Budget after bankruptcy</div>
 										<div class="menu-item">Coding reference</div>
-										<div class="menu-item" style="border-top:1px solid var(--color-border); margin-top:4px; padding-top:10px;">Remove from project</div>
+										<div class="menu-item" style="border-top:1px solid var(--color-border); margin-top:4px; padding-top:10px;">Remove from field</div>
 									</div>
 								</div>
 								<div class="menu-item danger">
@@ -789,7 +789,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 						A wired backhaul avoids the mesh radios' airtime tax entirely — since the U6-Pros already have a switch port at each end, that's the same conclusion the earlier "Why did the office one keep dropping" thread landed on…
 					</div>
 					<div style="padding: var(--space-lg); background: var(--color-bg);">
-						<div class="callout"><b>Shared context in action:</b> this reply can reference the office-AP thread's finding directly because both threads live in the same project — same workspace, same instructions, no re-explaining. The pill above the reply is the only thing on this screen that says so.</div>
+						<div class="callout"><b>Shared context in action:</b> this reply can reference the office-AP thread's finding directly because both threads live in the same field — same workspace, same instructions, no re-explaining. The pill above the reply is the only thing on this screen that says so.</div>
 					</div>
 				</div>
 
@@ -838,7 +838,7 @@ select:focus, .textinput:focus { outline: 2px solid var(--color-accent-2); outli
 				sw.setAttribute('aria-current', 'true');
 			});
 		});
-		document.querySelectorAll('.project-card .icon-btn').forEach(function (star) {
+		document.querySelectorAll('.field-card .icon-btn').forEach(function (star) {
 			star.addEventListener('click', function (e) {
 				e.stopPropagation();
 				star.classList.toggle('starred');

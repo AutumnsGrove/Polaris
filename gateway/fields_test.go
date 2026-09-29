@@ -18,34 +18,34 @@ import (
 	"polaris/store"
 )
 
-func TestProjectPromptBlock(t *testing.T) {
-	if got := projectPromptBlock(nil, []string{"a"}); got != "" {
-		t.Errorf("nil project should produce no block, got %q", got)
+func TestFieldPromptBlock(t *testing.T) {
+	if got := fieldPromptBlock(nil, []string{"a"}); got != "" {
+		t.Errorf("nil field should produce no block, got %q", got)
 	}
 
-	p := &store.Project{Name: "Budget", CustomInstructions: "  Answer in metric.  "}
-	bare := projectPromptBlock(p, nil)
-	if !strings.Contains(bare, "## Project: Budget") || !strings.Contains(bare, "Answer in metric.") {
+	p := &store.Field{Name: "Budget", CustomInstructions: "  Answer in metric.  "}
+	bare := fieldPromptBlock(p, nil)
+	if !strings.Contains(bare, "## Field: Budget") || !strings.Contains(bare, "Answer in metric.") {
 		t.Errorf("block missing name/instructions: %q", bare)
 	}
-	if strings.Contains(bare, "/project") {
-		t.Errorf("a project with no shared files shouldn't talk about a shared directory: %q", bare)
+	if strings.Contains(bare, "/field") {
+		t.Errorf("a field with no shared files shouldn't talk about a shared directory: %q", bare)
 	}
 
-	withFiles := projectPromptBlock(p, []string{"a.csv", "b.md"})
-	for _, want := range []string{"a.csv, b.md", "read-only", "/project", "save_to_project"} {
+	withFiles := fieldPromptBlock(p, []string{"a.csv", "b.md"})
+	for _, want := range []string{"a.csv, b.md", "read-only", "/field", "save_to_field"} {
 		if !strings.Contains(withFiles, want) {
 			t.Errorf("block missing %q: %q", want, withFiles)
 		}
 	}
 
 	// A pool that accumulates across many threads must not balloon the prompt.
-	many := make([]string, maxProjectPromptFiles+7)
+	many := make([]string, maxFieldPromptFiles+7)
 	for i := range many {
 		many[i] = fmt.Sprintf("f%03d.txt", i)
 	}
-	capped := projectPromptBlock(p, many)
-	if strings.Contains(capped, fmt.Sprintf("f%03d.txt", maxProjectPromptFiles)) || !strings.Contains(capped, "and 7 more") {
+	capped := fieldPromptBlock(p, many)
+	if strings.Contains(capped, fmt.Sprintf("f%03d.txt", maxFieldPromptFiles)) || !strings.Contains(capped, "and 7 more") {
 		t.Errorf("file list not capped with an overflow note: %q", capped)
 	}
 }
@@ -64,7 +64,7 @@ func TestJoinCustomInstructions(t *testing.T) {
 	}
 }
 
-func TestListProjectFiles(t *testing.T) {
+func TestListFieldFiles(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "p1")
 	if err := os.MkdirAll(filepath.Join(dir, "subdir"), 0o755); err != nil {
@@ -75,17 +75,17 @@ func TestListProjectFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got := listProjectFiles(root, "p1")
+	got := listFieldFiles(root, "p1")
 	if strings.Join(got, ",") != "a.txt,b.txt" {
 		t.Errorf("got %v, want sorted regular non-dot files only", got)
 	}
-	if listProjectFiles(root, "never-created") != nil || listProjectFiles("", "p1") != nil {
+	if listFieldFiles(root, "never-created") != nil || listFieldFiles("", "p1") != nil {
 		t.Error("a missing directory or unconfigured workspace should list nothing")
 	}
 }
 
-// projectTurnServer is a fake LLM that records every request body.
-func projectTurnServer(t *testing.T) (srv *httptest.Server, bodies func() []string) {
+// fieldTurnServer is a fake LLM that records every request body.
+func fieldTurnServer(t *testing.T) (srv *httptest.Server, bodies func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var recorded []string
@@ -112,21 +112,21 @@ func projectTurnServer(t *testing.T) (srv *httptest.Server, bodies func() []stri
 }
 
 // End to end through a real WebSocket turn and the real request body: a
-// thread born in a project is bound to it, its instructions reach the
+// thread born in a field is bound to it, its instructions reach the
 // model (and keep reaching it on a continuation, re-read off the root row),
 // memory_mode=none withholds the memory tool, and an ordinary thread gets
 // none of it.
-func TestWebSocket_ProjectThread_InstructionsMemoryAndBinding(t *testing.T) {
-	srv, bodies := projectTurnServer(t)
+func TestWebSocket_FieldThread_InstructionsMemoryAndBinding(t *testing.T) {
+	srv, bodies := fieldTurnServer(t)
 	h := newTestHarness(t, srv.URL)
 
-	alpha, err := h.db.CreateProject(store.Project{
-		Name: "Alpha", CustomInstructions: "ALWAYS-ANSWER-IN-HAIKU", MemoryMode: store.ProjectMemoryNone,
+	alpha, err := h.db.CreateField(store.Field{
+		Name: "Alpha", CustomInstructions: "ALWAYS-ANSWER-IN-HAIKU", MemoryMode: store.FieldMemoryNone,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	beta, err := h.db.CreateProject(store.Project{Name: "Beta", CustomInstructions: "BETA-RULES"})
+	beta, err := h.db.CreateField(store.Field{Name: "Beta", CustomInstructions: "BETA-RULES"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,15 +149,15 @@ func TestWebSocket_ProjectThread_InstructionsMemoryAndBinding(t *testing.T) {
 	}
 
 	// Turn 1: new thread inside Alpha.
-	alphaThread := threadOf(send(map[string]interface{}{"content": "hi", "project_id": alpha.ID}))
+	alphaThread := threadOf(send(map[string]interface{}{"content": "hi", "field_id": alpha.ID}))
 	th, err := h.db.GetThread(alphaThread)
-	if err != nil || th.ProjectID == nil || *th.ProjectID != alpha.ID {
-		t.Fatalf("thread not bound to its project at creation: %+v err %v", th, err)
+	if err != nil || th.FieldID == nil || *th.FieldID != alpha.ID {
+		t.Fatalf("thread not bound to its field at creation: %+v err %v", th, err)
 	}
-	// Turn 2: continuation with NO project_id — must still be in Alpha.
+	// Turn 2: continuation with NO field_id — must still be in Alpha.
 	send(map[string]interface{}{"content": "and again", "thread_id": alphaThread})
-	// Turn 3: a project with default memory keeps the memory tool.
-	send(map[string]interface{}{"content": "hi", "project_id": beta.ID})
+	// Turn 3: a field with default memory keeps the memory tool.
+	send(map[string]interface{}{"content": "hi", "field_id": beta.ID})
 	// Turn 4: ordinary thread.
 	send(map[string]interface{}{"content": "hi"})
 
@@ -174,16 +174,16 @@ func TestWebSocket_ProjectThread_InstructionsMemoryAndBinding(t *testing.T) {
 	names := toolBearingRequestToolNames(t, chatBodies)
 
 	for i, label := range []string{"alpha turn 1", "alpha continuation"} {
-		if !strings.Contains(chatBodies[i], "ALWAYS-ANSWER-IN-HAIKU") || !strings.Contains(chatBodies[i], "## Project: Alpha") {
-			t.Errorf("%s: project instructions never reached the model", label)
+		if !strings.Contains(chatBodies[i], "ALWAYS-ANSWER-IN-HAIKU") || !strings.Contains(chatBodies[i], "## Field: Alpha") {
+			t.Errorf("%s: field instructions never reached the model", label)
 		}
 		if contains(names[i], "memory") {
 			t.Errorf("%s: memory tool offered despite memory_mode=none: %v", label, names[i])
 		}
-		if contains(names[i], "save_to_project") {
+		if contains(names[i], "save_to_field") {
 			// No workspace configured in the default test config, so the tool
-			// is (correctly) not offered — see catalog.go's project_workspace.
-			t.Errorf("%s: save_to_project offered with no code_exec workspace configured", label)
+			// is (correctly) not offered — see catalog.go's field_workspace.
+			t.Errorf("%s: save_to_field offered with no code_exec workspace configured", label)
 		}
 	}
 	if !strings.Contains(chatBodies[2], "BETA-RULES") || strings.Contains(chatBodies[2], "ALWAYS-ANSWER-IN-HAIKU") {
@@ -192,23 +192,23 @@ func TestWebSocket_ProjectThread_InstructionsMemoryAndBinding(t *testing.T) {
 	if !contains(names[2], "memory") {
 		t.Errorf("beta (default memory mode) lost the memory tool: %v", names[2])
 	}
-	if strings.Contains(chatBodies[3], "## Project:") || strings.Contains(chatBodies[3], "BETA-RULES") {
-		t.Error("an ordinary thread got project content")
+	if strings.Contains(chatBodies[3], "## Field:") || strings.Contains(chatBodies[3], "BETA-RULES") {
+		t.Error("an ordinary thread got field content")
 	}
 	if !contains(names[3], "memory") {
 		t.Errorf("ordinary thread lost the memory tool: %v", names[3])
 	}
 }
 
-// A stale picker (project deleted since the page loaded) must error cleanly
+// A stale picker (field deleted since the page loaded) must error cleanly
 // BEFORE a thread row exists, not leave an orphan behind.
-func TestWebSocket_ProjectThread_UnknownProjectErrorsWithoutCreatingThread(t *testing.T) {
-	srv, _ := projectTurnServer(t)
+func TestWebSocket_FieldThread_UnknownFieldErrorsWithoutCreatingThread(t *testing.T) {
+	srv, _ := fieldTurnServer(t)
 	h := newTestHarness(t, srv.URL)
 	conn := dialWS(t, h)
 
 	if err := conn.WriteJSON(map[string]interface{}{
-		"type": "message", "content": "hi", "model": "test-model", "project_id": "no-such-project",
+		"type": "message", "content": "hi", "model": "test-model", "field_id": "no-such-field",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestWebSocket_ProjectThread_UnknownProjectErrorsWithoutCreatingThread(t *te
 	}
 	threads, err := h.db.ListThreads(10)
 	if err != nil || len(threads) != 0 {
-		t.Errorf("a failed project bind left %d thread(s) behind (err %v)", len(threads), err)
+		t.Errorf("a failed field bind left %d thread(s) behind (err %v)", len(threads), err)
 	}
 }
 
@@ -246,7 +246,7 @@ func doJSON(t *testing.T, method, url string, body interface{}) (int, []byte) {
 	return resp.StatusCode, out
 }
 
-func uploadProjectFile(t *testing.T, url, filename, contentType, content string) (int, string) {
+func uploadFieldFile(t *testing.T, url, filename, contentType, content string) (int, string) {
 	t.Helper()
 	var buf strings.Builder
 	mw := multipart.NewWriter(&buf)
@@ -267,80 +267,80 @@ func uploadProjectFile(t *testing.T, url, filename, contentType, content string)
 	return resp.StatusCode, string(b)
 }
 
-func TestProjectsAPI_CRUDAndValidation(t *testing.T) {
+func TestFieldsAPI_CRUDAndValidation(t *testing.T) {
 	h := newTestHarness(t, "")
 
 	for name, body := range map[string]map[string]interface{}{
 		"blank name":       {"name": "  "},
 		"missing name":     {"description": "x"},
 		"unknown model":    {"name": "p", "default_model": "no-such-model"},
-		"bad memory mode":  {"name": "p", "memory_mode": "project_scoped"},
+		"bad memory mode":  {"name": "p", "memory_mode": "field_scoped"},
 		"bad focus mode":   {"name": "p", "default_focus_mode": "nonsense"},
 		"bad color":        {"name": "p", "color": "javascript:alert(1)"},
 		"instructions cap": {"name": "p", "custom_instructions": strings.Repeat("x", maxCustomInstructionsChars+1)},
 	} {
-		if code, _ := doJSON(t, "POST", h.url("/api/projects"), body); code != http.StatusBadRequest {
+		if code, _ := doJSON(t, "POST", h.url("/api/fields"), body); code != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", name, code)
 		}
 	}
 
-	code, out := doJSON(t, "POST", h.url("/api/projects"), map[string]interface{}{
+	code, out := doJSON(t, "POST", h.url("/api/fields"), map[string]interface{}{
 		"name": "Alpha", "default_focus_mode": "off", "color": "technology", "favorite": true,
 	})
 	if code != http.StatusOK {
 		t.Fatalf("create: %d %s", code, out)
 	}
-	var p store.Project
+	var p store.Field
 	json.Unmarshal(out, &p)
 	if p.ID == "" || !p.ConstellationVisible || p.MemoryMode != "default" || !p.Favorite {
-		t.Errorf("created project = %+v, want constellation_visible defaulting ON, memory default, favorite kept", p)
+		t.Errorf("created field = %+v, want constellation_visible defaulting ON, memory default, favorite kept", p)
 	}
 
 	// PATCH is partial: touching one field leaves the rest alone.
-	code, out = doJSON(t, "PATCH", h.url("/api/projects/"+p.ID), map[string]interface{}{"memory_mode": "none"})
-	var patched store.Project
+	code, out = doJSON(t, "PATCH", h.url("/api/fields/"+p.ID), map[string]interface{}{"memory_mode": "none"})
+	var patched store.Field
 	json.Unmarshal(out, &patched)
 	if code != http.StatusOK || patched.MemoryMode != "none" || patched.Color != "technology" || !patched.Favorite {
 		t.Errorf("patch: %d %+v", code, patched)
 	}
 
-	var list []store.Project
-	_, out = doJSON(t, "GET", h.url("/api/projects"), nil)
+	var list []store.Field
+	_, out = doJSON(t, "GET", h.url("/api/fields"), nil)
 	json.Unmarshal(out, &list)
 	if len(list) != 1 {
-		t.Errorf("list = %d projects, want 1", len(list))
+		t.Errorf("list = %d fields, want 1", len(list))
 	}
 
-	if code, _ := doJSON(t, "PATCH", h.url("/api/projects/nope"), map[string]interface{}{"name": "x"}); code != http.StatusNotFound {
-		t.Errorf("patch missing project: %d, want 404", code)
+	if code, _ := doJSON(t, "PATCH", h.url("/api/fields/nope"), map[string]interface{}{"name": "x"}); code != http.StatusNotFound {
+		t.Errorf("patch missing field: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, "GET", h.url("/api/projects/nope"), nil); code != http.StatusNotFound {
-		t.Errorf("get missing project: %d, want 404", code)
+	if code, _ := doJSON(t, "GET", h.url("/api/fields/nope"), nil); code != http.StatusNotFound {
+		t.Errorf("get missing field: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID), nil); code != http.StatusNoContent {
+	if code, _ := doJSON(t, "DELETE", h.url("/api/fields/"+p.ID), nil); code != http.StatusNoContent {
 		t.Errorf("delete: %d, want 204", code)
 	}
-	if code, _ := doJSON(t, "GET", h.url("/api/projects/"+p.ID), nil); code != http.StatusNotFound {
+	if code, _ := doJSON(t, "GET", h.url("/api/fields/"+p.ID), nil); code != http.StatusNotFound {
 		t.Errorf("get after delete: %d, want 404", code)
 	}
 	// An empty list must serialize as [] so the frontend never sees null.
-	if _, out = doJSON(t, "GET", h.url("/api/projects"), nil); strings.TrimSpace(string(out)) != "[]" {
+	if _, out = doJSON(t, "GET", h.url("/api/fields"), nil); strings.TrimSpace(string(out)) != "[]" {
 		t.Errorf("empty list = %s, want []", out)
 	}
 }
 
-func TestProjectsAPI_FilePool(t *testing.T) {
+func TestFieldsAPI_FilePool(t *testing.T) {
 	h := newTestHarness(t, "")
 	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
 	setWorkspaceDir(t, h, workspaceDir)
-	p, _ := h.db.CreateProject(store.Project{Name: "p"})
-	filesURL := h.url("/api/projects/" + p.ID + "/files")
+	p, _ := h.db.CreateField(store.Field{Name: "p"})
+	filesURL := h.url("/api/fields/" + p.ID + "/files")
 
-	if code, body := uploadProjectFile(t, filesURL, "notes.md", "text/markdown", "first"); code != http.StatusOK || !strings.Contains(body, `"notes.md"`) {
+	if code, body := uploadFieldFile(t, filesURL, "notes.md", "text/markdown", "first"); code != http.StatusOK || !strings.Contains(body, `"notes.md"`) {
 		t.Fatalf("upload: %d %s", code, body)
 	}
-	// A duplicate name renames — the same never-overwrite rule save_to_project follows.
-	if code, body := uploadProjectFile(t, filesURL, "notes.md", "text/markdown", "second"); code != http.StatusOK || !strings.Contains(body, `"notes-2.md"`) {
+	// A duplicate name renames — the same never-overwrite rule save_to_field follows.
+	if code, body := uploadFieldFile(t, filesURL, "notes.md", "text/markdown", "second"); code != http.StatusOK || !strings.Contains(body, `"notes-2.md"`) {
 		t.Errorf("duplicate upload: %d %s, want it renamed to notes-2.md", code, body)
 	}
 	if b, _ := os.ReadFile(filepath.Join(workspaceDir, p.ID, "notes.md")); string(b) != "first" {
@@ -349,37 +349,37 @@ func TestProjectsAPI_FilePool(t *testing.T) {
 
 	// The upload allowlist is shared with chat attachments; a dotfile is
 	// refused. A path in the client's filename must never escape the
-	// project's directory — pinned as an outcome (nothing lands outside),
+	// field's directory — pinned as an outcome (nothing lands outside),
 	// not as one line's behavior: Go's mime/multipart already reduces the
 	// filename to its base name before the handler sees it, and the
 	// handler's own filepath.Base is defense in depth behind that.
-	if code, _ := uploadProjectFile(t, filesURL, "run.exe", "application/x-msdownload", "MZ"); code != http.StatusBadRequest {
+	if code, _ := uploadFieldFile(t, filesURL, "run.exe", "application/x-msdownload", "MZ"); code != http.StatusBadRequest {
 		t.Errorf("executable upload: %d, want 400", code)
 	}
-	if code, body := uploadProjectFile(t, filesURL, "../../evil.txt", "text/plain", "x"); code != http.StatusOK || !strings.Contains(body, `"evil.txt"`) {
+	if code, body := uploadFieldFile(t, filesURL, "../../evil.txt", "text/plain", "x"); code != http.StatusOK || !strings.Contains(body, `"evil.txt"`) {
 		t.Errorf("path-bearing filename: %d %s, want only the base name kept", code, body)
 	}
 	if _, err := os.Stat(filepath.Join(workspaceDir, "evil.txt")); err == nil {
-		t.Error("an upload escaped the project directory")
+		t.Error("an upload escaped the field directory")
 	}
-	if code, _ := uploadProjectFile(t, filesURL, ".hidden", "text/plain", "x"); code != http.StatusBadRequest {
+	if code, _ := uploadFieldFile(t, filesURL, ".hidden", "text/plain", "x"); code != http.StatusBadRequest {
 		t.Errorf("dotfile upload: %d, want 400", code)
 	}
-	if code, _ := uploadProjectFile(t, h.url("/api/projects/nope/files"), "a.txt", "text/plain", "x"); code != http.StatusNotFound {
-		t.Errorf("upload to a missing project: %d, want 404", code)
+	if code, _ := uploadFieldFile(t, h.url("/api/fields/nope/files"), "a.txt", "text/plain", "x"); code != http.StatusNotFound {
+		t.Errorf("upload to a missing field: %d, want 404", code)
 	}
 
 	var detail struct {
-		Files []ProjectFile `json:"files"`
+		Files []FieldFile `json:"files"`
 	}
-	_, out := doJSON(t, "GET", h.url("/api/projects/"+p.ID), nil)
+	_, out := doJSON(t, "GET", h.url("/api/fields/"+p.ID), nil)
 	json.Unmarshal(out, &detail)
 	if len(detail.Files) != 3 {
 		t.Errorf("detail lists %d files, want 3: %+v", len(detail.Files), detail.Files)
 	}
 
 	// The pool is readable through the existing workspace route, keyed by
-	// the project id — no new serving code needed for the detail view's links.
+	// the field id — no new serving code needed for the detail view's links.
 	resp, err := http.Get(h.url("/api/workspace/" + p.ID + "/notes.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -390,73 +390,73 @@ func TestProjectsAPI_FilePool(t *testing.T) {
 		t.Errorf("serving a pool file: %d %q", resp.StatusCode, served)
 	}
 
-	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/%2e%2e"), nil); code != http.StatusNotFound {
+	if code, _ := doJSON(t, "DELETE", h.url("/api/fields/"+p.ID+"/files/%2e%2e"), nil); code != http.StatusNotFound {
 		t.Errorf("delete of ..: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/notes.md"), nil); code != http.StatusNoContent {
+	if code, _ := doJSON(t, "DELETE", h.url("/api/fields/"+p.ID+"/files/notes.md"), nil); code != http.StatusNoContent {
 		t.Errorf("delete file: %d, want 204", code)
 	}
 	if _, err := os.Stat(filepath.Join(workspaceDir, p.ID, "notes.md")); err == nil {
 		t.Error("file still on disk after delete")
 	}
-	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID+"/files/notes.md"), nil); code != http.StatusNotFound {
+	if code, _ := doJSON(t, "DELETE", h.url("/api/fields/"+p.ID+"/files/notes.md"), nil); code != http.StatusNotFound {
 		t.Errorf("second delete: %d, want 404", code)
 	}
 }
 
-// Deleting a project removes its shared directory and orphans its threads —
-// and a thread's OWN workspace files (which never lived in the project's
+// Deleting a field removes its shared directory and orphans its threads —
+// and a thread's OWN workspace files (which never lived in the field's
 // directory) are untouched.
-func TestProjectsAPI_DeleteRemovesPoolButNotThreadFiles(t *testing.T) {
+func TestFieldsAPI_DeleteRemovesPoolButNotThreadFiles(t *testing.T) {
 	h := newTestHarness(t, "")
 	workspaceDir := filepath.Join(t.TempDir(), "workspaces")
 	setWorkspaceDir(t, h, workspaceDir)
-	p, _ := h.db.CreateProject(store.Project{Name: "p"})
+	p, _ := h.db.CreateField(store.Field{Name: "p"})
 	h.db.CreateThread("t1", "kept", "m", "web")
-	h.db.SetThreadProject("t1", &p.ID)
+	h.db.SetThreadField("t1", &p.ID)
 
 	for _, f := range []string{filepath.Join(p.ID, "shared.txt"), filepath.Join("t1", "mine.txt")} {
 		os.MkdirAll(filepath.Join(workspaceDir, filepath.Dir(f)), 0o755)
 		os.WriteFile(filepath.Join(workspaceDir, f), []byte("x"), 0o644)
 	}
 
-	if code, _ := doJSON(t, "DELETE", h.url("/api/projects/"+p.ID), nil); code != http.StatusNoContent {
+	if code, _ := doJSON(t, "DELETE", h.url("/api/fields/"+p.ID), nil); code != http.StatusNoContent {
 		t.Fatalf("delete: %d", code)
 	}
 	if _, err := os.Stat(filepath.Join(workspaceDir, p.ID)); err == nil {
-		t.Error("the project's shared directory survived deletion")
+		t.Error("the field's shared directory survived deletion")
 	}
 	if _, err := os.Stat(filepath.Join(workspaceDir, "t1", "mine.txt")); err != nil {
-		t.Errorf("a thread's own file was lost with its project: %v", err)
+		t.Errorf("a thread's own file was lost with its field: %v", err)
 	}
 	th, err := h.db.GetThread("t1")
-	if err != nil || th.ProjectID != nil {
+	if err != nil || th.FieldID != nil {
 		t.Errorf("thread not orphaned cleanly: %+v err %v", th, err)
 	}
 }
 
-func TestProjectsAPI_SetThreadProject(t *testing.T) {
+func TestFieldsAPI_SetThreadField(t *testing.T) {
 	h := newTestHarness(t, "")
-	p, _ := h.db.CreateProject(store.Project{Name: "p"})
+	p, _ := h.db.CreateField(store.Field{Name: "p"})
 	h.db.CreateThread("t1", "t", "m", "web")
-	url := h.url("/api/threads/t1/project")
+	url := h.url("/api/threads/t1/field")
 
-	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": p.ID}); code != http.StatusNoContent {
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"field_id": p.ID}); code != http.StatusNoContent {
 		t.Fatalf("move in: %d", code)
 	}
-	if th, _ := h.db.GetThread("t1"); th.ProjectID == nil || *th.ProjectID != p.ID {
-		t.Errorf("thread not in project after move: %+v", th)
+	if th, _ := h.db.GetThread("t1"); th.FieldID == nil || *th.FieldID != p.ID {
+		t.Errorf("thread not in field after move: %+v", th)
 	}
-	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": "gone"}); code != http.StatusNotFound {
-		t.Errorf("move to a missing project: %d, want 404", code)
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"field_id": "gone"}); code != http.StatusNotFound {
+		t.Errorf("move to a missing field: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, "PUT", h.url("/api/threads/nope/project"), map[string]interface{}{"project_id": p.ID}); code != http.StatusNotFound {
+	if code, _ := doJSON(t, "PUT", h.url("/api/threads/nope/field"), map[string]interface{}{"field_id": p.ID}); code != http.StatusNotFound {
 		t.Errorf("move a missing thread: %d, want 404", code)
 	}
-	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"project_id": nil}); code != http.StatusNoContent {
+	if code, _ := doJSON(t, "PUT", url, map[string]interface{}{"field_id": nil}); code != http.StatusNoContent {
 		t.Fatalf("move out: %d", code)
 	}
-	if th, _ := h.db.GetThread("t1"); th.ProjectID != nil {
-		t.Errorf("thread still in a project after move-out: %v", *th.ProjectID)
+	if th, _ := h.db.GetThread("t1"); th.FieldID != nil {
+		t.Errorf("thread still in a field after move-out: %v", *th.FieldID)
 	}
 }

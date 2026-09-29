@@ -275,16 +275,16 @@
 	let infoSheetOpen = $state(false);
 
 	// Offer lines (docs/plans/oracle-mode.md's 7a) — only "pulsar"/"daily"
-	// have a real destination today; "project" is included in
-	// prompts.yaml's chip vocabulary for a Projects feature that doesn't
+	// have a real destination today; "field" is included in
+	// prompts.yaml's chip vocabulary for a Fields feature that doesn't
 	// exist anywhere in this codebase yet (gateway/turn.go never actually
-	// populates OracleInput.ProjectOptions, so the check can never fire in
+	// populates OracleInput.FieldOptions, so the check can never fire in
 	// practice) — rendered inert rather than either faking a destination
 	// or silently dropping a chip the backend did send.
 	const OFFER_META: Record<string, { icon: typeof Orbit; verb: string; label: (l?: string) => string }> = {
 		pulsar: { icon: Orbit, verb: 'Set up', label: () => 'Check weekly as a <b>Pulsar</b>' },
 		daily: { icon: Sunrise, verb: 'Add', label: () => 'Follow this in <b>Daily</b>' },
-		project: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a project'}</b>` }
+		field: { icon: Orbit, verb: 'Move', label: (l) => `Move to <b>${l ? escapeHtml(l) : 'a Field'}</b>` }
 	};
 
 	let offers = $derived(
@@ -308,8 +308,8 @@
 
 	async function activateOffer(key: string) {
 		if (offerBusy || (key !== 'pulsar' && key !== 'daily')) return;
-		// "project" has no real destination yet — see OFFER_META's doc
-		// comment above; tapping it is a no-op until a Projects feature
+		// "field" has no real destination yet — see OFFER_META's doc
+		// comment above; tapping it is a no-op until a Fields feature
 		// exists to move the thread into.
 		//
 		// The preceding message is only the right seed when the conversation
@@ -652,13 +652,13 @@
 			{/if}
 			{#if !turn.streaming && offers.length}
 				<!-- 7a: offer lines below the footer — see OFFER_META's doc
-					 comment for why "project" renders without a click handler. -->
+					 comment for why "field" renders without a click handler. -->
 				<div class="offer-lines">
 					{#each offers as offer (offer.key)}
 						<button
 							class="offer-line"
 							type="button"
-							disabled={offer.key === 'project' || offerBusy !== null}
+							disabled={offer.key === 'field' || offerBusy !== null}
 							onclick={() => activateOffer(offer.key)}
 						>
 							<offer.meta.icon size={14} />

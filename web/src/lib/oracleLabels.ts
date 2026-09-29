@@ -28,7 +28,7 @@ const INTENT_LABELS: Record<string, string> = {
 
 // The note and offer labels are rendered with {@html} so they can carry
 // <b> emphasis; anything not from a fixed developer-authored set (an
-// unrecognized focus mode id, a project name) goes through this first.
+// unrecognized focus mode id, a field name) goes through this first.
 export function escapeHtml(text: string): string {
 	return text
 		.replaceAll('&', '&amp;')
@@ -197,8 +197,8 @@ export function checkStateLabel(checkKey: string, fired: boolean): string {
 }
 
 // Offer-chip key -> display name, for TurnInfoSheet's quiet-list "Offers"
-// row — see gateway/oracle.go's Chip doc comment. "project" carries its
-// own Label (the project name) rather than a fixed name here.
+// row — see gateway/oracle.go's Chip doc comment. "field" carries its
+// own Label (the field name) rather than a fixed name here.
 export const CHIP_NAMES: Record<string, string> = {
 	pulsar: 'Pulsar',
 	daily: 'Daily'

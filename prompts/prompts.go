@@ -240,10 +240,10 @@ type Set struct {
 		// the shared framing text.
 		QuestionPreamble string                 `yaml:"question_preamble"`
 		Checks           map[string]OracleCheck `yaml:"checks"`
-		// Chips are offer-only checks (Pulsar/Daily/Project) — no Inject,
+		// Chips are offer-only checks (Pulsar/Daily/Field) — no Inject,
 		// just a threshold and, for Pulsar/Daily, a fixed Options set.
-		// Project's Options is left empty in prompts.yaml and built at
-		// request time from the store's project list instead.
+		// Field's Options is left empty in prompts.yaml and built at
+		// request time from the store's field list instead.
 		Chips map[string]OracleChip `yaml:"chips"`
 	} `yaml:"oracle"`
 }
@@ -969,12 +969,12 @@ Once you have enough, call finalize_pulsar_prompt with the finished instructions
 				"yes": "A topic, story, or situation worth a daily glance.",
 			},
 		},
-		// project's Options is built at request time from the store's
-		// project list (every project name -> its description, plus
-		// "none" -> "Doesn't clearly belong to any project") — see
+		// field's Options is built at request time from the store's
+		// field list (every field name -> its description, plus
+		// "none" -> "Doesn't clearly belong to any field") — see
 		// gateway/oracle.go.
-		"project": {
-			Instructions: "Which of the person's projects, if any, does this message clearly belong to?",
+		"field": {
+			Instructions: "Which of the person's Fields (named groups of related conversations), if any, does this message clearly belong to?",
 		},
 	}
 

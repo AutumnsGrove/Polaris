@@ -268,9 +268,9 @@ func fetchImageBytes(ctx context.Context, rawURL string) (data []byte, mimeType 
 // against a path-traversal read of an unrelated thread's files or the
 // host filesystem beyond the workspace root.
 //
-// A thread inside a Project (ctx.ProjectID set) falls back to the project's
+// A thread inside a Field (ctx.FieldID set) falls back to the field's
 // shared directory for a file its own directory lacks — a read-only second
-// tier (docs/plans/projects.md). The thread's own file always wins on a name
+// tier (docs/plans/fields.md). The thread's own file always wins on a name
 // clash, so a private edited copy shadows the shared original of the same
 // name, and each tier is traversal-checked against its own root.
 func resolveWorkspaceFilePath(ctx *Context, relPath string) (string, error) {
@@ -278,8 +278,8 @@ func resolveWorkspaceFilePath(ctx *Context, relPath string) (string, error) {
 		return "", fmt.Errorf("this deployment has no code-execution workspace configured")
 	}
 	roots := []string{filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)}
-	if ctx.ProjectID != "" {
-		roots = append(roots, filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ProjectID))
+	if ctx.FieldID != "" {
+		roots = append(roots, filepath.Join(ctx.CodeExecWorkspaceDir, ctx.FieldID))
 	}
 	for _, base := range roots {
 		target := filepath.Join(base, relPath)

@@ -58,12 +58,12 @@ type OracleInput struct {
 	// SwitchThreshold. Empty means nothing to be sticky about or switch
 	// away from.
 	PriorOracleFocusMode string
-	// ProjectOptions, if non-nil, enables the project chip — project name
-	// -> description, built from the store's project list at request
-	// time (prompts.yaml's project chip ships with no static options). A
-	// nil map (no projects, or the thread is already in one) skips the
+	// FieldOptions, if non-nil, enables the field chip — field name
+	// -> description, built from the store's field list at request
+	// time (prompts.yaml's field chip ships with no static options). A
+	// nil map (no fields, or the thread is already in one) skips the
 	// chip check entirely rather than asking Jev to choose among nothing.
-	ProjectOptions map[string]string
+	FieldOptions map[string]string
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -91,10 +91,10 @@ type CheckOutcome struct {
 }
 
 // Chip is one offer surfaced under the reply — the frontend maps Key to
-// its destination icon/verb (Pulsar/Daily/Project).
+// its destination icon/verb (Pulsar/Daily/Field).
 type Chip struct {
 	Key   string `json:"key"`
-	Label string `json:"label,omitempty"` // the project name, only for Key=="project"
+	Label string `json:"label,omitempty"` // the field name, only for Key=="field"
 }
 
 // OracleResult is RunOracle's whole verdict. It has no side effects —
@@ -174,15 +174,15 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			continue
 		}
 		options := chip.Options
-		if key == "project" {
-			if len(in.ProjectOptions) == 0 {
+		if key == "field" {
+			if len(in.FieldOptions) == 0 {
 				continue
 			}
-			options = make(map[string]string, len(in.ProjectOptions)+1)
-			for name, desc := range in.ProjectOptions {
+			options = make(map[string]string, len(in.FieldOptions)+1)
+			for name, desc := range in.FieldOptions {
 				options[name] = desc
 			}
-			options["none"] = "Doesn't clearly belong to any project."
+			options["none"] = "Doesn't clearly belong to any field."
 		}
 		questions["chip_"+key] = jev.ChoiceQuestion{
 			Instructions: p.Oracle.QuestionPreamble + " " + chip.Instructions,
@@ -272,7 +272,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			}
 			if ans.Choice != "no" && ans.Choice != "none" && ans.Probabilities[ans.Choice] >= chipRule.Threshold {
 				label := ""
-				if chipKey == "project" {
+				if chipKey == "field" {
 					label = ans.Choice
 				}
 				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label})
@@ -414,7 +414,7 @@ func optionKeys(options map[string]string) []string {
 // whose Choice isn't one of the options we offered for it (logged, since a
 // well-behaved Jev never does this). Without it a bogus "focus" winner would
 // be written to threads.focus_mode and echoed into the ## Oracle section via
-// {option}, and a bogus project chip winner would render as a chip label.
+// {option}, and a bogus field chip winner would render as a chip label.
 func validAnswers(answers map[string]jev.ChoiceAnswer, offered map[string][]string) map[string]jev.ChoiceAnswer {
 	out := make(map[string]jev.ChoiceAnswer, len(answers))
 	for key, ans := range answers {

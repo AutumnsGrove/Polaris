@@ -3,7 +3,7 @@ import { buildOracleNote, escapeHtml, focusSwitch } from './oracleLabels';
 import type { OracleResult } from './types';
 
 describe('escapeHtml', () => {
-	it('neutralizes markup so a project name or unknown mode id cannot inject into {@html}', () => {
+	it('neutralizes markup so a field name or unknown mode id cannot inject into {@html}', () => {
 		expect(escapeHtml('<img src=x onerror="alert(1)">&')).toBe(
 			'&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;'
 		);

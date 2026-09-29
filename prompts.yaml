@@ -1150,8 +1150,8 @@ oracle:
       options:
         no: Not something to follow day to day.
         yes: A topic, story, or situation worth a daily glance.
-    project:
+    field:
       instructions: >-
-        Which of the person's projects, if any, does this message clearly belong to?
-      # options are built at request time: every project name → its
-      # description, plus none → "Doesn't clearly belong to any project."
+        Which of the person's Fields (named groups of related conversations), if any, does this message clearly belong to?
+      # options are built at request time: every field name → its
+      # description, plus none → "Doesn't clearly belong to any field."

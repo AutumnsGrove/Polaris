@@ -1,12 +1,12 @@
-// projects_routes.go is the REST API for Projects (docs/plans/projects.md,
+// fields_routes.go is the REST API for Fields (docs/plans/fields.md,
 // issue #119): CRUD, the shared-file pool's upload/list/delete, and moving a
-// thread between projects. See projects.go for the per-turn prompt side.
+// thread between fields. See fields.go for the per-turn prompt side.
 //
-// Every handler that touches the filesystem resolves the project through the
+// Every handler that touches the filesystem resolves the field through the
 // database FIRST and joins only the row's own id into a path — the URL's id
 // never reaches filepath.Join unverified, so a made-up id can't address an
 // arbitrary directory under the workspace root (thread directories live
-// beside project ones there).
+// beside field ones there).
 package gateway
 
 import (
@@ -25,20 +25,20 @@ import (
 )
 
 const (
-	maxProjectNameChars        = 100
-	maxProjectDescriptionChars = 300
+	maxFieldNameChars        = 100
+	maxFieldDescriptionChars = 300
 )
 
-// projectColorPattern accepts an app.css --color-cat-* suffix ("technology",
+// fieldColorPattern accepts an app.css --color-cat-* suffix ("technology",
 // "nature-environment") without enumerating them here — the palette is a
 // frontend/CSS concern, and an unknown value just renders untinted. The
 // pattern only keeps junk (and anything that could ride into a CSS
 // variable name) out of the column.
-var projectColorPattern = regexp.MustCompile(`^[a-z][a-z-]{0,39}$`)
+var fieldColorPattern = regexp.MustCompile(`^[a-z][a-z-]{0,39}$`)
 
-// projectFields is the editable surface shared by create and patch. Pointers
+// fieldInput is the editable surface shared by create and patch. Pointers
 // so a patch can leave a field alone and still clear one to its empty value.
-type projectFields struct {
+type fieldInput struct {
 	Name                  *string `json:"name"`
 	Description           *string `json:"description"`
 	CustomInstructions    *string `json:"custom_instructions"`
@@ -52,17 +52,17 @@ type projectFields struct {
 }
 
 // validate returns a user-facing message for the first bad field, or "".
-func (f projectFields) validate(models map[string]bool) string {
+func (f fieldInput) validate(models map[string]bool) string {
 	if f.Name != nil {
 		name := strings.TrimSpace(*f.Name)
 		if name == "" {
 			return "name is required"
 		}
-		if len([]rune(name)) > maxProjectNameChars {
+		if len([]rune(name)) > maxFieldNameChars {
 			return "name must be 100 characters or fewer"
 		}
 	}
-	if f.Description != nil && len([]rune(*f.Description)) > maxProjectDescriptionChars {
+	if f.Description != nil && len([]rune(*f.Description)) > maxFieldDescriptionChars {
 		return "description must be 300 characters or fewer"
 	}
 	if f.CustomInstructions != nil && len(*f.CustomInstructions) > maxCustomInstructionsChars {
@@ -70,7 +70,7 @@ func (f projectFields) validate(models map[string]bool) string {
 	}
 	if f.DefaultFocusMode != nil {
 		// "" inherits the global default; "off" is a real, distinct choice
-		// (this project always starts with no focus mode), not "inherit".
+		// (this field always starts with no focus mode), not "inherit".
 		if m := *f.DefaultFocusMode; m != "" && m != "off" && !validFocusModes[m] {
 			return "unknown default_focus_mode"
 		}
@@ -78,10 +78,10 @@ func (f projectFields) validate(models map[string]bool) string {
 	if f.DefaultModel != nil && *f.DefaultModel != "" && !models[*f.DefaultModel] {
 		return "unknown default_model"
 	}
-	if f.MemoryMode != nil && !store.ValidProjectMemoryMode(*f.MemoryMode) {
+	if f.MemoryMode != nil && !store.ValidFieldMemoryMode(*f.MemoryMode) {
 		return "memory_mode must be \"default\" or \"none\""
 	}
-	if f.Color != nil && *f.Color != "" && !projectColorPattern.MatchString(*f.Color) {
+	if f.Color != nil && *f.Color != "" && !fieldColorPattern.MatchString(*f.Color) {
 		return "invalid color"
 	}
 	return ""
@@ -99,21 +99,21 @@ func (s *Server) liveModelIDs() map[string]bool {
 	return ids
 }
 
-func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.db.ListProjects()
+func (s *Server) handleListFields(w http.ResponseWriter, r *http.Request) {
+	fields, err := s.db.ListFields()
 	if err != nil {
-		log.Warn("listing projects failed", "err", err)
+		log.Warn("listing fields failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if projects == nil {
-		projects = []store.Project{} // [] not null, so the frontend never special-cases it
+	if fields == nil {
+		fields = []store.Field{} // [] not null, so the frontend never special-cases it
 	}
-	writeJSON(w, projects)
+	writeJSON(w, fields)
 }
 
-func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
-	var req projectFields
+func (s *Server) handleCreateField(w http.ResponseWriter, r *http.Request) {
+	var req fieldInput
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -126,23 +126,23 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
-	p := store.Project{
+	p := store.Field{
 		Name:                 *req.Name,
 		ConstellationVisible: true, // opt-out, matching how every thread behaves today
 	}
-	applyProjectFields(&p, req)
-	created, err := s.db.CreateProject(p)
+	applyFieldInput(&p, req)
+	created, err := s.db.CreateField(p)
 	if err != nil {
-		log.Warn("creating project failed", "err", err)
+		log.Warn("creating field failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.db.LogEvent("", "info", "projects", "project created", map[string]interface{}{"project_id": created.ID, "name": created.Name}, "")
+	s.db.LogEvent("", "info", "fields", "field created", map[string]interface{}{"field_id": created.ID, "name": created.Name}, "")
 	writeJSON(w, created)
 }
 
-// applyProjectFields copies the fields a request actually set onto p.
-func applyProjectFields(p *store.Project, f projectFields) {
+// applyFieldInput copies the fields a request actually set onto p.
+func applyFieldInput(p *store.Field, f fieldInput) {
 	if f.Description != nil {
 		p.Description = *f.Description
 	}
@@ -172,24 +172,24 @@ func applyProjectFields(p *store.Project, f projectFields) {
 	}
 }
 
-// ProjectFile is one entry of a project's shared pool, as listed on the
+// FieldFile is one entry of a field's shared pool, as listed on the
 // detail view.
-type ProjectFile struct {
+type FieldFile struct {
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"size_bytes"`
 }
 
-// projectDetail is GET /api/projects/{id}'s body: everything the detail view
+// fieldDetail is GET /api/fields/{id}'s body: everything the detail view
 // renders in one round trip.
-type projectDetail struct {
-	Project *store.Project `json:"project"`
+type fieldDetail struct {
+	Field   *store.Field   `json:"field"`
 	Threads []store.Thread `json:"threads"`
-	Files   []ProjectFile  `json:"files"`
+	Files   []FieldFile    `json:"files"`
 }
 
-// projectDir returns the project's shared directory, or "" when no workspace
+// fieldDir returns the field's shared directory, or "" when no workspace
 // is configured. id must already have been verified against the database.
-func (s *Server) projectDir(id string) string {
+func (s *Server) fieldDir(id string) string {
 	root := s.liveConfig().CodeExec.WorkspaceDir
 	if root == "" {
 		return ""
@@ -197,8 +197,8 @@ func (s *Server) projectDir(id string) string {
 	return filepath.Join(root, id)
 }
 
-func listProjectFileInfo(dir string) []ProjectFile {
-	files := []ProjectFile{}
+func listFieldFileInfo(dir string) []FieldFile {
+	files := []FieldFile{}
 	if dir == "" {
 		return files
 	}
@@ -211,46 +211,46 @@ func listProjectFileInfo(dir string) []ProjectFile {
 			continue
 		}
 		if info, err := e.Info(); err == nil {
-			files = append(files, ProjectFile{Name: e.Name(), SizeBytes: info.Size()})
+			files = append(files, FieldFile{Name: e.Name(), SizeBytes: info.Size()})
 		}
 	}
 	return files
 }
 
-// loadProject answers 404/500 itself and returns nil when it did.
-func (s *Server) loadProject(w http.ResponseWriter, id string) *store.Project {
-	p, err := s.db.GetProject(id)
-	if errors.Is(err, store.ErrProjectNotFound) {
-		http.Error(w, "project not found", http.StatusNotFound)
+// loadField answers 404/500 itself and returns nil when it did.
+func (s *Server) loadField(w http.ResponseWriter, id string) *store.Field {
+	p, err := s.db.GetField(id)
+	if errors.Is(err, store.ErrFieldNotFound) {
+		http.Error(w, "field not found", http.StatusNotFound)
 		return nil
 	}
 	if err != nil {
-		log.Warn("loading project failed", "id", id, "err", err)
+		log.Warn("loading field failed", "id", id, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
 	return p
 }
 
-func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
-	p := s.loadProject(w, r.PathValue("id"))
+func (s *Server) handleGetField(w http.ResponseWriter, r *http.Request) {
+	p := s.loadField(w, r.PathValue("id"))
 	if p == nil {
 		return
 	}
-	threads, err := s.db.ListProjectThreads(p.ID)
+	threads, err := s.db.ListFieldThreads(p.ID)
 	if err != nil {
-		log.Warn("listing project threads failed", "id", p.ID, "err", err)
+		log.Warn("listing field threads failed", "id", p.ID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if threads == nil {
 		threads = []store.Thread{}
 	}
-	writeJSON(w, projectDetail{Project: p, Threads: threads, Files: listProjectFileInfo(s.projectDir(p.ID))})
+	writeJSON(w, fieldDetail{Field: p, Threads: threads, Files: listFieldFileInfo(s.fieldDir(p.ID))})
 }
 
-func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
-	var req projectFields
+func (s *Server) handleUpdateField(w http.ResponseWriter, r *http.Request) {
+	var req fieldInput
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -259,61 +259,61 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
-	updated, err := s.db.UpdateProject(r.PathValue("id"), store.ProjectUpdate{
+	updated, err := s.db.UpdateField(r.PathValue("id"), store.FieldUpdate{
 		Name: req.Name, Description: req.Description, CustomInstructions: req.CustomInstructions,
 		Favorite: req.Favorite, DefaultFocusMode: req.DefaultFocusMode, DefaultModel: req.DefaultModel,
 		MemoryMode: req.MemoryMode, ConstellationVisible: req.ConstellationVisible,
 		ExcludeFromChatSearch: req.ExcludeFromChatSearch, Color: req.Color,
 	})
-	if errors.Is(err, store.ErrProjectNotFound) {
+	if errors.Is(err, store.ErrFieldNotFound) {
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
-		log.Warn("updating project failed", "id", r.PathValue("id"), "err", err)
+		log.Warn("updating field failed", "id", r.PathValue("id"), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, updated)
 }
 
-// handleDeleteProject removes the project row (orphaning its threads back to
+// handleDeleteField removes the field row (orphaning its threads back to
 // ungrouped, in one transaction) and THEN its shared directory — that order,
 // because a leftover directory is harmless while a deleted directory under a
-// project that failed to delete is not. Threads keep every file of their own:
-// their workspaces were never inside the project's directory.
-func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
-	p := s.loadProject(w, r.PathValue("id"))
+// field that failed to delete is not. Threads keep every file of their own:
+// their workspaces were never inside the field's directory.
+func (s *Server) handleDeleteField(w http.ResponseWriter, r *http.Request) {
+	p := s.loadField(w, r.PathValue("id"))
 	if p == nil {
 		return
 	}
-	if err := s.db.DeleteProject(p.ID); err != nil {
-		log.Warn("deleting project failed", "id", p.ID, "err", err)
+	if err := s.db.DeleteField(p.ID); err != nil {
+		log.Warn("deleting field failed", "id", p.ID, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if dir := s.projectDir(p.ID); dir != "" {
+	if dir := s.fieldDir(p.ID); dir != "" {
 		if err := os.RemoveAll(dir); err != nil {
-			log.Warn("removing project directory failed", "id", p.ID, "dir", dir, "err", err)
+			log.Warn("removing field directory failed", "id", p.ID, "dir", dir, "err", err)
 		}
 	}
-	s.db.LogEvent("", "info", "projects", "project deleted", map[string]interface{}{"project_id": p.ID, "name": p.Name}, "")
+	s.db.LogEvent("", "info", "fields", "field deleted", map[string]interface{}{"field_id": p.ID, "name": p.Name}, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleUploadProjectFile is the project detail view's "add to shared files"
+// handleUploadFieldFile is the field detail view's "add to shared files"
 // — an explicit, deliberate path straight into the pool, unlike a chat
 // attachment (which lands in that thread's own workspace and is only shared
-// via save_to_project). A name collision renames rather than overwrites, the
-// same rule save_to_project follows.
-func (s *Server) handleUploadProjectFile(w http.ResponseWriter, r *http.Request) {
-	p := s.loadProject(w, r.PathValue("id"))
+// via save_to_field). A name collision renames rather than overwrites, the
+// same rule save_to_field follows.
+func (s *Server) handleUploadFieldFile(w http.ResponseWriter, r *http.Request) {
+	p := s.loadField(w, r.PathValue("id"))
 	if p == nil {
 		return
 	}
-	dir := s.projectDir(p.ID)
+	dir := s.fieldDir(p.ID)
 	if dir == "" {
-		http.Error(w, "this deployment has no workspace configured for shared project files", http.StatusServiceUnavailable)
+		http.Error(w, "this deployment has no workspace configured for shared field files", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -354,7 +354,7 @@ func (s *Server) handleUploadProjectFile(w http.ResponseWriter, r *http.Request)
 	}
 	saved, err := tools.WriteUniqueFile(dir, name, io.LimitReader(file, maxUploadBytes+1))
 	if err != nil {
-		log.Warn("saving project file failed", "id", p.ID, "err", err)
+		log.Warn("saving field file failed", "id", p.ID, "err", err)
 		http.Error(w, "couldn't save the file (max 100MB)", http.StatusInternalServerError)
 		return
 	}
@@ -368,13 +368,13 @@ func (s *Server) handleUploadProjectFile(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "file too large (max 100MB)", http.StatusRequestEntityTooLarge)
 		return
 	}
-	// Touch the project so an upload counts as activity in the hub's recency order.
-	s.db.TouchProject(p.ID)
-	writeJSON(w, ProjectFile{Name: saved, SizeBytes: info.Size()})
+	// Touch the field so an upload counts as activity in the hub's recency order.
+	s.db.TouchField(p.ID)
+	writeJSON(w, FieldFile{Name: saved, SizeBytes: info.Size()})
 }
 
-func (s *Server) handleDeleteProjectFile(w http.ResponseWriter, r *http.Request) {
-	p := s.loadProject(w, r.PathValue("id"))
+func (s *Server) handleDeleteFieldFile(w http.ResponseWriter, r *http.Request) {
+	p := s.loadField(w, r.PathValue("id"))
 	if p == nil {
 		return
 	}
@@ -386,7 +386,7 @@ func (s *Server) handleDeleteProjectFile(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	dir := s.projectDir(p.ID)
+	dir := s.fieldDir(p.ID)
 	if dir == "" {
 		http.NotFound(w, r)
 		return
@@ -405,30 +405,30 @@ func (s *Server) handleDeleteProjectFile(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSetThreadProject moves a thread into a project, or out of any project
-// with {"project_id": null}. Deliberately a separate route from PATCH
-// /api/threads/{id} (title etc.) and from the turn's project_id field — a
+// handleSetThreadField moves a thread into a field, or out of any field
+// with {"field_id": null}. Deliberately a separate route from PATCH
+// /api/threads/{id} (title etc.) and from the turn's field_id field — a
 // re-home is a distinct, explicit action, and a stray field on an ordinary
 // message must never silently move a conversation.
-func (s *Server) handleSetThreadProject(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSetThreadField(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProjectID *string `json:"project_id"`
+		FieldID *string `json:"field_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.ProjectID != nil && *req.ProjectID == "" {
-		req.ProjectID = nil // "" and null both mean "remove from project"
+	if req.FieldID != nil && *req.FieldID == "" {
+		req.FieldID = nil // "" and null both mean "remove from field"
 	}
-	err := s.db.SetThreadProject(r.PathValue("id"), req.ProjectID)
+	err := s.db.SetThreadField(r.PathValue("id"), req.FieldID)
 	switch {
-	case errors.Is(err, store.ErrProjectNotFound):
-		http.Error(w, "project not found", http.StatusNotFound)
+	case errors.Is(err, store.ErrFieldNotFound):
+		http.Error(w, "field not found", http.StatusNotFound)
 	case errors.Is(err, sql.ErrNoRows):
 		http.NotFound(w, r)
 	case err != nil:
-		log.Warn("moving thread to project failed", "thread_id", r.PathValue("id"), "err", err)
+		log.Warn("moving thread to field failed", "thread_id", r.PathValue("id"), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
 		w.WriteHeader(http.StatusNoContent)

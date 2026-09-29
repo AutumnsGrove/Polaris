@@ -56,13 +56,13 @@ type ClientMessage struct {
 	// normal Assistant sidebar, unlike source = "pulsar" pulses — see
 	// store.go's ListThreads filter).
 	Source string `json:"source,omitempty"`
-	// ProjectID binds a brand-new thread to a Project at creation (docs/
-	// plans/projects.md, issue #119) — the project detail view's omnibox and
+	// FieldID binds a brand-new thread to a Field at creation (docs/
+	// plans/fields.md, issue #119) — the field detail view's omnibox and
 	// "New thread" button send it. Only read when ThreadID is empty; moving an
-	// existing thread goes through PUT /api/threads/{id}/project instead, so
+	// existing thread goes through PUT /api/threads/{id}/field instead, so
 	// a stray value on a later turn can't silently re-home a conversation.
-	// Ignored for an anonymous (ghost) thread, which never joins a project.
-	ProjectID string `json:"project_id,omitempty"`
+	// Ignored for an anonymous (ghost) thread, which never joins a field.
+	FieldID string `json:"field_id,omitempty"`
 	// TitleSeed, when set on a brand-new thread, is what generateTitle
 	// summarizes instead of msg.Content — still a real LLM-generated
 	// title, just fed cleaner input. Pulsar Daily's expand-to-chat sets

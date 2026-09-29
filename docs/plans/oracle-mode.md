@@ -4,8 +4,8 @@
 
 **Status: built (2026-09-28, issue #122).** Mockups (`mockups/oracle-mode.html`) and the live Jev
 spike (below) both done; the engine, UI, and settings toggle shipped behind the opt-in
-`oracle_enabled` setting. Known v1 gap: the `project` offer chip is wired end to end but inert —
-it needs the Projects feature (issue #119), which doesn't exist yet, so `OracleInput.ProjectOptions`
+`oracle_enabled` setting. Known v1 gap: the `field` offer chip is wired end to end but inert —
+it needs the Fields feature (issue #119), which doesn't exist yet, so `OracleInput.FieldOptions`
 is never populated and the check never runs.
 
 ## The idea
@@ -49,7 +49,7 @@ carries a whole map of questions, each evaluated in parallel and in isolation ag
   changes per-turn cost, and a wrong pick is a worse failure than a wrong nudge. Revisit once v1's
   classification accuracy has been observed on real prompts.
 - **Smart chips are offers, never actions.** Oracle can suggest "Make this a Pulsar", "Move to a
-  project", "Add to Daily" under the reply; nothing happens unless tapped.
+  field", "Add to Daily" under the reply; nothing happens unless tapped.
 
 ## How it works
 
@@ -165,7 +165,7 @@ Plus the chip checks, which don't inject anything and only surface offers under 
 |---|---|---|
 | `chip_pulsar` | `yes` / `no` | "Make this a Pulsar" — recurring information (prices, scores, an ongoing story, a release date). |
 | `chip_daily` | `yes` / `no` | "Add to Daily" — something to keep an eye on each morning, as a Pulsar Daily custom block. |
-| `chip_project` | project names + `none` | "Move to *Project*" — only asked when the thread isn't already in a project, and only if projects exist. Option set is built at request time from the store, not from `prompts.yaml`. |
+| `chip_field` | field names + `none` | "Move to *Field*" — only asked when the thread isn't already in a field, and only if fields exist. Option set is built at request time from the store, not from `prompts.yaml`. |
 
 Chip checks run in the same Jev request as everything else, so the chips are ready well before the
 LLM-generated follow-up suggestions — they render **above** those suggestions.
@@ -460,12 +460,12 @@ oracle:
       options:
         no: Not something to follow day to day.
         yes: A topic, story, or situation worth a daily glance.
-    project:
+    field:
       threshold: 0.75
       instructions: >-
-        Which of the person's projects, if any, does this message clearly belong to?
-      # options are built at request time: every project name → its
-      # description, plus none → "Doesn't clearly belong to any project."
+        Which of the person's fields, if any, does this message clearly belong to?
+      # options are built at request time: every field name → its
+      # description, plus none → "Doesn't clearly belong to any field."
 ```
 
 ## UI
@@ -501,7 +501,7 @@ driving a scripted turn through `dev/stack.sh --fake-llm`). **Decided with the o
   glows once; tapping it undoes the switch for that message.
 - **Offers — separate lines under the footer (7a).** Full-width lines above the follow-up
   suggestions, each with its destination's icon (Sunrise for Daily, Orbit for Pulsar, a folder for
-  projects) and a verb on the right ("Add", "Set up", "Move"). The Pulsar line first derives a
+  fields) and a verb on the right ("Add", "Set up", "Move"). The Pulsar line first derives a
   standalone recurring prompt from the whole conversation (`POST /api/pulsar/suggest`,
   `gateway/pulsar_suggest.go`) instead of seeding the form with the preceding message verbatim — a
   follow-up like "what about the second one?" is unanswerable once the routine fires with no thread

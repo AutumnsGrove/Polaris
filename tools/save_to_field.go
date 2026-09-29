@@ -1,13 +1,13 @@
-// save_to_project is the one deliberate way a file joins a Project's shared
-// pool (docs/plans/projects.md, issue #119). A thread's own workspace is
-// private and read-write; the project's directory is mounted read-only into
-// every project thread's sandbox, so nothing lands there by accident — a
+// save_to_field is the one deliberate way a file joins a Field's shared
+// pool (docs/plans/fields.md, issue #119). A thread's own workspace is
+// private and read-write; the field's directory is mounted read-only into
+// every field thread's sandbox, so nothing lands there by accident — a
 // file gets there only because the model (or user, via the model) chose to
 // promote it. One primitive rather than a fetch_url-only flag, so a
 // code_exec-generated file has the same path in as a downloaded one.
 //
-// Only offered on a project thread with a configured workspace — catalog.go's
-// "project_workspace" case — so this handler's own checks are defense in
+// Only offered on a field thread with a configured workspace — catalog.go's
+// "field_workspace" case — so this handler's own checks are defense in
 // depth, not the primary gate.
 package tools
 
@@ -22,19 +22,19 @@ import (
 	"polaris/llm"
 )
 
-var saveToProjectDef = llm.ToolDef{
+var saveToFieldDef = llm.ToolDef{
 	Type: "function",
 	Function: llm.ToolFunctionDef{
-		Name: "save_to_project",
+		Name: "save_to_field",
 		// Description is populated at call time from
-		// tools/descriptions/save_to_project.yaml — see tools/catalog.go.
+		// tools/descriptions/save_to_field.yaml — see tools/catalog.go.
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"filename": map[string]interface{}{
 					"type": "string",
 					"description": "Path (relative to this conversation's own workspace) of the file to copy into the " +
-						"project's shared files. Only the file's base name is kept in the project.",
+						"field's shared files. Only the file's base name is kept in the field.",
 				},
 			},
 			"required": []string{"filename"},
@@ -42,33 +42,33 @@ var saveToProjectDef = llm.ToolDef{
 	},
 }
 
-func init() { Register("save_to_project", handleSaveToProject) }
+func init() { Register("save_to_field", handleSaveToField) }
 
-func handleSaveToProject(argsJSON string, ctx *Context, callID string) string {
+func handleSaveToField(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
 		Filename string `json:"filename"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return emitToolError(ctx, "save_to_project", nil, "error: "+err.Error(), callID)
+		return emitToolError(ctx, "save_to_field", nil, "error: "+err.Error(), callID)
 	}
 	callArgs := map[string]interface{}{"filename": args.Filename}
-	ctx.Emit("tool_call", map[string]interface{}{"tool": "save_to_project", "args": callArgs, "call_id": callID})
+	ctx.Emit("tool_call", map[string]interface{}{"tool": "save_to_field", "args": callArgs, "call_id": callID})
 
 	fail := func(msg string) string {
 		result := "error: " + msg
-		ctx.Emit("tool_result", map[string]interface{}{"tool": "save_to_project", "result": result, "call_id": callID})
+		ctx.Emit("tool_result", map[string]interface{}{"tool": "save_to_field", "result": result, "call_id": callID})
 		return result
 	}
 
-	if ctx.ProjectID == "" || ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
-		return fail("this conversation isn't part of a project")
+	if ctx.FieldID == "" || ctx.CodeExecWorkspaceDir == "" || ctx.ThreadID == "" {
+		return fail("this conversation isn't part of a field")
 	}
 	if args.Filename == "" {
 		return fail("filename is required")
 	}
 
-	// The source is the thread's OWN directory only — never the project
-	// fallback resolveWorkspaceFilePath allows for reads. Copying a project
+	// The source is the thread's OWN directory only — never the field
+	// fallback resolveWorkspaceFilePath allows for reads. Copying a field
 	// file onto itself under a new name is never what anyone wants.
 	ownDir := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ThreadID)
 	src := filepath.Join(ownDir, args.Filename)
@@ -90,29 +90,29 @@ func handleSaveToProject(argsJSON string, ctx *Context, callID string) string {
 		return fail(fmt.Sprintf("%q isn't a regular file", args.Filename))
 	}
 
-	projectDir := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.ProjectID)
+	fieldDir := filepath.Join(ctx.CodeExecWorkspaceDir, ctx.FieldID)
 	// 0o777 + Chmod for the same cross-UID reason code_exec documents on its
 	// own workspace directory: the host-side watcher bind-mounts this and a
 	// different uid must be able to traverse it.
-	if err := os.MkdirAll(projectDir, 0o777); err != nil {
-		return fail("couldn't prepare the project's shared directory: " + err.Error())
+	if err := os.MkdirAll(fieldDir, 0o777); err != nil {
+		return fail("couldn't prepare the field's shared directory: " + err.Error())
 	}
-	if err := os.Chmod(projectDir, 0o777); err != nil {
-		return fail("couldn't set the project directory's permissions: " + err.Error())
+	if err := os.Chmod(fieldDir, 0o777); err != nil {
+		return fail("couldn't set the field directory's permissions: " + err.Error())
 	}
 
-	savedAs, err := copyIntoDirNoClobber(src, projectDir, filepath.Base(args.Filename))
+	savedAs, err := copyIntoDirNoClobber(src, fieldDir, filepath.Base(args.Filename))
 	if err != nil {
 		return fail("couldn't copy the file: " + err.Error())
 	}
 
-	result := fmt.Sprintf("saved %q to the project's shared files", savedAs)
+	result := fmt.Sprintf("saved %q to the field's shared files", savedAs)
 	if savedAs != filepath.Base(args.Filename) {
-		result = fmt.Sprintf("the project already had a file named %q, so this was saved as %q instead — nothing was overwritten",
+		result = fmt.Sprintf("the field already had a file named %q, so this was saved as %q instead — nothing was overwritten",
 			filepath.Base(args.Filename), savedAs)
 	}
-	log.Info("save_to_project", "project_id", ctx.ProjectID, "thread_id", ctx.ThreadID, "saved_as", savedAs)
-	ctx.Emit("tool_result", map[string]interface{}{"tool": "save_to_project", "result": result, "call_id": callID})
+	log.Info("save_to_field", "field_id", ctx.FieldID, "thread_id", ctx.ThreadID, "saved_as", savedAs)
+	ctx.Emit("tool_result", map[string]interface{}{"tool": "save_to_field", "result": result, "call_id": callID})
 	return result
 }
 
@@ -132,10 +132,10 @@ func copyIntoDirNoClobber(src, dir, name string) (string, error) {
 // used. O_EXCL makes "is this name free" and "claim it" one atomic step, so
 // two writers promoting the same filename at the same moment each get their
 // own file instead of one silently overwriting the other — the entire point
-// of a project's shared pool is that a later contribution can never destroy
+// of a field's shared pool is that a later contribution can never destroy
 // an earlier one. Exported because both paths into the pool share this rule:
-// save_to_project (a thread promoting a file) and the project detail view's
-// direct upload (gateway/projects_routes.go).
+// save_to_field (a thread promoting a file) and the field detail view's
+// direct upload (gateway/fields_routes.go).
 func WriteUniqueFile(dir, name string, r io.Reader) (string, error) {
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)

@@ -4,37 +4,38 @@
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import { appState } from '$lib/state.svelte';
-	import { projectsState, projectColorVar } from '$lib/projects.svelte';
+	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import EditTextModal from '$lib/components/EditTextModal.svelte';
-	import ProjectChips from '$lib/components/ProjectChips.svelte';
-	import { PanelLeft, Plus, Star, FolderOpen } from '@lucide/svelte';
-	import type { Project } from '$lib/types';
+	import FieldChips from '$lib/components/FieldChips.svelte';
+	import { PanelLeft, Plus, Star } from '@lucide/svelte';
+	import FieldIcon from '$lib/components/FieldIcon.svelte';
+	import type { Field } from '$lib/types';
 
 	onMount(() => {
-		void projectsState.load();
+		void fieldsState.load();
 	});
 
 	let creating = $state(false);
 
-	// A project is born with just a name — everything else (instructions,
+	// A field is born with just a name — everything else (instructions,
 	// defaults, files) is edited in its own detail view, so create drops
 	// straight into it rather than making the hub a second, cramped editor.
 	async function create(name: string) {
 		creating = false;
-		const res = await projectsState.create({ name });
+		const res = await fieldsState.create({ name });
 		if (!res.ok) {
 			appState.showToast(res.error);
 			return;
 		}
-		// Straight to Instructions: a brand-new project has nothing to open yet,
+		// Straight to Instructions: a brand-new field has nothing to open yet,
 		// so the fill-it-in flow leads (the detail view defaults to Conversations).
-		void goto(`/projects/${res.data.id}?tab=instructions`);
+		void goto(`/fields/${res.data.id}?tab=instructions`);
 	}
 
 	// A tap on the star must not also open the card it sits on.
-	async function togglePin(e: MouseEvent, project: Project) {
+	async function togglePin(e: MouseEvent, field: Field) {
 		e.stopPropagation();
-		const res = await projectsState.update(project.id, { favorite: !project.favorite });
+		const res = await fieldsState.update(field.id, { favorite: !field.favorite });
 		if (!res.ok) appState.showToast(res.error);
 	}
 
@@ -46,7 +47,7 @@
 </script>
 
 <svelte:head>
-	<title>Projects — Polaris</title>
+	<title>Fields — Polaris</title>
 </svelte:head>
 
 <header class="header">
@@ -56,60 +57,60 @@
 				<PanelLeft size={18} />
 			</button>
 		{/if}
-		<h1 class="page-title">Projects</h1>
+		<h1 class="page-title"><span class="wordmark">Fields</span></h1>
 	</div>
 	<div class="header-right">
 		<button class="btn btn-accent" onclick={() => (creating = true)}>
 			<Plus size={16} />
-			New project
+			New <span class="wordmark">Field</span>
 		</button>
 	</div>
 </header>
 
 <div class="content">
-	{#if projectsState.error && !projectsState.loaded}
-		<p class="empty">Couldn't load your projects. Check the connection and try again.</p>
-	{:else if projectsState.loaded && projectsState.projects.length === 0}
+	{#if fieldsState.error && !fieldsState.loaded}
+		<p class="empty">Couldn't load your <span class="wordmark">Fields</span>. Check the connection and try again.</p>
+	{:else if fieldsState.loaded && fieldsState.fields.length === 0}
 		<p class="empty">
-			No projects yet. A project groups conversations that share the same instructions and reference
+			No <span class="wordmark">Fields</span> yet. A <span class="wordmark">Field</span> groups conversations that share the same instructions and reference
 			files — try "Budget rebuild" or "Trip planning".
 		</p>
 	{/if}
 
 	<div class="grid">
-		{#each projectsState.projects as project, i (project.id)}
+		{#each fieldsState.fields as field, i (field.id)}
 			<div
 				class="card"
-				style:--tint={projectColorVar(project.color)}
-				class:tinted={!!projectColorVar(project.color)}
-				onclick={() => goto(`/projects/${project.id}`)}
-				onkeydown={(e) => e.key === 'Enter' && goto(`/projects/${project.id}`)}
+				style:--tint={fieldColorVar(field.color)}
+				class:tinted={!!fieldColorVar(field.color)}
+				onclick={() => goto(`/fields/${field.id}`)}
+				onkeydown={(e) => e.key === 'Enter' && goto(`/fields/${field.id}`)}
 				role="button"
 				tabindex="0"
 				in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 			>
 				<div class="card-top">
-					<FolderOpen size={15} class="card-icon" />
-					<h2 class="card-name">{project.name}</h2>
+					<FieldIcon size={15} class="card-icon" />
+					<h2 class="card-name">{field.name}</h2>
 					<button
 						class="pin"
-						class:pinned={project.favorite}
-						onclick={(e) => togglePin(e, project)}
-						title={project.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
-						aria-label={project.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
-						aria-pressed={project.favorite}
+						class:pinned={field.favorite}
+						onclick={(e) => togglePin(e, field)}
+						title={field.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
+						aria-label={field.favorite ? 'Unpin from sidebar' : 'Pin to sidebar'}
+						aria-pressed={field.favorite}
 					>
-						<Star size={15} fill={project.favorite ? 'currentColor' : 'none'} />
+						<Star size={15} fill={field.favorite ? 'currentColor' : 'none'} />
 					</button>
 				</div>
-				{#if project.description}
-					<p class="card-desc">{project.description}</p>
+				{#if field.description}
+					<p class="card-desc">{field.description}</p>
 				{/if}
 				<div class="card-bottom">
-					<ProjectChips {project} />
+					<FieldChips {field} />
 					<span class="card-meta">
-						{project.thread_count}
-						{project.thread_count === 1 ? 'thread' : 'threads'} · {updatedLabel(project.updated_at)}
+						{field.thread_count}
+						{field.thread_count === 1 ? 'thread' : 'threads'} · {updatedLabel(field.updated_at)}
 					</span>
 				</div>
 			</div>
@@ -119,8 +120,8 @@
 
 {#if creating}
 	<EditTextModal
-		heading="New project"
-		placeholder="Project name"
+		heading="New Field"
+		placeholder="Field name"
 		maxLength={100}
 		onSave={create}
 		onCancel={() => (creating = false)}
@@ -153,6 +154,15 @@
 	.page-title {
 		margin: 0;
 		font-size: 20px;
+	}
+
+	/* Reserved brand-face treatment (see app.css's --font-wordmark) — this
+	   page's title, "New Field" button, and empty-state copy render the
+	   literal word "Field(s)" as a name, same as "Pulsar" on its own page. */
+	.wordmark {
+		font-family: var(--font-wordmark);
+		font-weight: 400;
+		letter-spacing: 0.02em;
 	}
 
 	.content {

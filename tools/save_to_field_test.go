@@ -8,15 +8,15 @@ import (
 	"testing"
 )
 
-// projectTestContext returns a Context inside a project, with a real temp
+// fieldTestContext returns a Context inside a field, with a real temp
 // workspace root and the thread's own directory already created.
-func projectTestContext(t *testing.T) (ctx *Context, root string) {
+func fieldTestContext(t *testing.T) (ctx *Context, root string) {
 	t.Helper()
 	root = t.TempDir()
 	ctx = newTestContext()
 	ctx.CodeExecWorkspaceDir = root
 	ctx.ThreadID = "thread-1"
-	ctx.ProjectID = "proj-1"
+	ctx.FieldID = "proj-1"
 	if err := os.MkdirAll(filepath.Join(root, "thread-1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -33,42 +33,42 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func TestCatalogEntry_Offered_ProjectWorkspace(t *testing.T) {
-	entry := catalogEntry{Name: "save_to_project", Requires: "project_workspace"}
+func TestCatalogEntry_Offered_FieldWorkspace(t *testing.T) {
+	entry := catalogEntry{Name: "save_to_field", Requires: "field_workspace"}
 
 	ordinary := newTestContext()
 	ordinary.CodeExecWorkspaceDir = "/ws"
 	if entry.offered(ordinary) {
-		t.Error("save_to_project offered on a thread with no project — it must be absent from the tool list, not just refused")
+		t.Error("save_to_field offered on a thread with no field — it must be absent from the tool list, not just refused")
 	}
 
-	inProject := newTestContext()
-	inProject.CodeExecWorkspaceDir = "/ws"
-	inProject.ProjectID = "p"
-	if !entry.offered(inProject) {
-		t.Error("save_to_project not offered on a project thread with a workspace")
+	inField := newTestContext()
+	inField.CodeExecWorkspaceDir = "/ws"
+	inField.FieldID = "p"
+	if !entry.offered(inField) {
+		t.Error("save_to_field not offered on a field thread with a workspace")
 	}
 
-	// A project id with no workspace root configured would offer a tool that
+	// A field id with no workspace root configured would offer a tool that
 	// can only fail.
 	noWorkspace := newTestContext()
-	noWorkspace.ProjectID = "p"
+	noWorkspace.FieldID = "p"
 	if entry.offered(noWorkspace) {
-		t.Error("save_to_project offered with no workspace configured")
+		t.Error("save_to_field offered with no workspace configured")
 	}
 }
 
-func TestSaveToProject_CopiesAndKeepsOriginal(t *testing.T) {
-	ctx, root := projectTestContext(t)
+func TestSaveToField_CopiesAndKeepsOriginal(t *testing.T) {
+	ctx, root := fieldTestContext(t)
 	writeFile(t, filepath.Join(root, "thread-1", "report.csv"), "a,b\n1,2\n")
 
-	result := handleSaveToProject(`{"filename":"report.csv"}`, ctx, "c1")
+	result := handleSaveToField(`{"filename":"report.csv"}`, ctx, "c1")
 	if strings.HasPrefix(result, "error:") {
 		t.Fatalf("unexpected error: %s", result)
 	}
 	got, err := os.ReadFile(filepath.Join(root, "proj-1", "report.csv"))
 	if err != nil || string(got) != "a,b\n1,2\n" {
-		t.Errorf("project copy = %q, err %v", got, err)
+		t.Errorf("field copy = %q, err %v", got, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "thread-1", "report.csv")); err != nil {
 		t.Errorf("the thread's own copy should remain (copy, not move): %v", err)
@@ -77,12 +77,12 @@ func TestSaveToProject_CopiesAndKeepsOriginal(t *testing.T) {
 
 // A later promote must never destroy an earlier thread's contribution — the
 // whole reason the pool is safe to share.
-func TestSaveToProject_NameCollisionRenamesInsteadOfOverwriting(t *testing.T) {
-	ctx, root := projectTestContext(t)
+func TestSaveToField_NameCollisionRenamesInsteadOfOverwriting(t *testing.T) {
+	ctx, root := fieldTestContext(t)
 	writeFile(t, filepath.Join(root, "proj-1", "notes.md"), "ORIGINAL")
 	writeFile(t, filepath.Join(root, "thread-1", "notes.md"), "second")
 
-	result := handleSaveToProject(`{"filename":"notes.md"}`, ctx, "c1")
+	result := handleSaveToField(`{"filename":"notes.md"}`, ctx, "c1")
 	if !strings.Contains(result, `"notes-2.md"`) {
 		t.Errorf("result should name the auto-renamed file, got %q", result)
 	}
@@ -95,14 +95,14 @@ func TestSaveToProject_NameCollisionRenamesInsteadOfOverwriting(t *testing.T) {
 
 	// And a third goes to -3, not back onto -2.
 	writeFile(t, filepath.Join(root, "thread-1", "notes.md"), "third")
-	handleSaveToProject(`{"filename":"notes.md"}`, ctx, "c2")
+	handleSaveToField(`{"filename":"notes.md"}`, ctx, "c2")
 	if got, _ := os.ReadFile(filepath.Join(root, "proj-1", "notes-3.md")); string(got) != "third" {
 		t.Errorf("third copy = %q, want it in notes-3.md", got)
 	}
 }
 
-func TestSaveToProject_Rejections(t *testing.T) {
-	ctx, root := projectTestContext(t)
+func TestSaveToField_Rejections(t *testing.T) {
+	ctx, root := fieldTestContext(t)
 	writeFile(t, filepath.Join(root, "thread-1", "ok.txt"), "x")
 	writeFile(t, filepath.Join(root, "secret.txt"), "outside the thread's dir")
 	writeFile(t, filepath.Join(root, "proj-1", "shared.txt"), "already shared")
@@ -121,43 +121,43 @@ func TestSaveToProject_Rejections(t *testing.T) {
 		{"directory", "adir"},
 		{"missing", "nope.txt"},
 		{"empty", ""},
-		// Reading falls back to the project dir, but promoting must not:
+		// Reading falls back to the field dir, but promoting must not:
 		// copying a shared file onto itself under a new name is never intended.
-		{"file that only exists in the project", "shared.txt"},
+		{"file that only exists in the field", "shared.txt"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			args, _ := json.Marshal(map[string]string{"filename": c.filename})
-			if result := handleSaveToProject(string(args), ctx, "c"); !strings.HasPrefix(result, "error:") {
+			if result := handleSaveToField(string(args), ctx, "c"); !strings.HasPrefix(result, "error:") {
 				t.Errorf("got %q, want an error", result)
 			}
 		})
 	}
 	if _, err := os.Stat(filepath.Join(root, "proj-1", "secret.txt")); err == nil {
-		t.Error("a traversal/symlink attempt leaked a file into the project pool")
+		t.Error("a traversal/symlink attempt leaked a file into the field pool")
 	}
 	if _, err := os.Stat(filepath.Join(root, "proj-1", "link.txt")); err == nil {
-		t.Error("a symlink was followed into the project pool")
+		t.Error("a symlink was followed into the field pool")
 	}
 }
 
-func TestSaveToProject_NotInAProject(t *testing.T) {
-	ctx, _ := projectTestContext(t)
-	ctx.ProjectID = ""
-	if result := handleSaveToProject(`{"filename":"x"}`, ctx, "c"); !strings.HasPrefix(result, "error:") {
-		t.Errorf("got %q, want an error when the thread has no project", result)
+func TestSaveToField_NotInAField(t *testing.T) {
+	ctx, _ := fieldTestContext(t)
+	ctx.FieldID = ""
+	if result := handleSaveToField(`{"filename":"x"}`, ctx, "c"); !strings.HasPrefix(result, "error:") {
+		t.Errorf("got %q, want an error when the thread has no field", result)
 	}
 }
 
-func TestResolveWorkspaceFilePath_ProjectFallback(t *testing.T) {
-	ctx, root := projectTestContext(t)
+func TestResolveWorkspaceFilePath_FieldFallback(t *testing.T) {
+	ctx, root := fieldTestContext(t)
 	writeFile(t, filepath.Join(root, "proj-1", "shared.csv"), "shared")
 	writeFile(t, filepath.Join(root, "proj-1", "both.txt"), "shared version")
 	writeFile(t, filepath.Join(root, "thread-1", "both.txt"), "own version")
 
 	got, err := resolveWorkspaceFilePath(ctx, "shared.csv")
 	if err != nil || got != filepath.Join(root, "proj-1", "shared.csv") {
-		t.Errorf("shared file: got %q, err %v, want the project's path", got, err)
+		t.Errorf("shared file: got %q, err %v, want the field's path", got, err)
 	}
 	// The thread's own file shadows the shared original of the same name.
 	got, err = resolveWorkspaceFilePath(ctx, "both.txt")
@@ -168,21 +168,21 @@ func TestResolveWorkspaceFilePath_ProjectFallback(t *testing.T) {
 		t.Error("traversal out of the workspace was allowed")
 	}
 
-	// An ordinary thread must not see a project's files at all, even when a
-	// project directory happens to exist beside it.
-	ctx.ProjectID = ""
+	// An ordinary thread must not see a field's files at all, even when a
+	// field directory happens to exist beside it.
+	ctx.FieldID = ""
 	if _, err := resolveWorkspaceFilePath(ctx, "shared.csv"); err == nil {
-		t.Error("a non-project thread resolved a file out of a project directory")
+		t.Error("a non-field thread resolved a file out of a field directory")
 	}
 }
 
-func TestCodeExecRequest_ProjectDirOmittedWhenEmpty(t *testing.T) {
+func TestCodeExecRequest_FieldDirOmittedWhenEmpty(t *testing.T) {
 	b, _ := json.Marshal(codeExecRequest{ID: "x", HostWorkspaceDir: "/h/t"})
-	if strings.Contains(string(b), "project_host_workspace_dir") {
-		t.Errorf("an ordinary request should carry no project field at all: %s", b)
+	if strings.Contains(string(b), "field_host_workspace_dir") {
+		t.Errorf("an ordinary request should carry no field field at all: %s", b)
 	}
-	b, _ = json.Marshal(codeExecRequest{ID: "x", HostWorkspaceDir: "/h/t", ProjectHostWorkspaceDir: "/h/p"})
-	if !strings.Contains(string(b), `"project_host_workspace_dir":"/h/p"`) {
-		t.Errorf("project request missing its field (codeexec.sh reads this exact key): %s", b)
+	b, _ = json.Marshal(codeExecRequest{ID: "x", HostWorkspaceDir: "/h/t", FieldHostWorkspaceDir: "/h/p"})
+	if !strings.Contains(string(b), `"field_host_workspace_dir":"/h/p"`) {
+		t.Errorf("field request missing its field (codeexec.sh reads this exact key): %s", b)
 	}
 }
