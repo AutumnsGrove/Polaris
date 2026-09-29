@@ -6,12 +6,13 @@
 	import { searchState } from '$lib/search.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
+	import { projectsState, projectColorVar } from '$lib/projects.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, Folder } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
-	import type { Thread, SearchHistoryEntry, MessageSearchResult } from '$lib/types';
+	import type { Thread, SearchHistoryEntry, MessageSearchResult, Project } from '$lib/types';
 
 	// The sidebar SHELL (this component, its layout/collapse/mobile-overlay
 	// behavior) is shared between Atlas and the chat assistant — see
@@ -46,6 +47,9 @@
 		// pulsarState.loadUnreadCounts() above — the sidebar's own dot
 		// indicator needs to be accurate the moment the app loads.
 		void pulsarDailyState.checkForNewEdition(localStorage.getItem('polaris-daily-last-seen'));
+		// Same reasoning: the pinned-projects section must be accurate the
+		// moment the app loads, not only after /projects is first visited.
+		void projectsState.load();
 	});
 
 	// True on the two routes that render the chat view (the homepage and
@@ -131,6 +135,27 @@
 		<span class="thread-dot" aria-hidden="true"></span>
 		<div class="thread-meta">
 			<div class="thread-title">{thread.title || 'Untitled'}</div>
+		</div>
+	</div>
+{/snippet}
+
+<!-- A pinned project: a shortcut into /projects/<id>, not a nested thread
+     tree — the sidebar stays a fast-nav surface and the detail view is where
+     a project's own threads live (docs/plans/projects.md, "Sidebar"). The
+     row's dot wears the project's color tag when it has one. -->
+{#snippet projectRow(project: Project, i: number)}
+	<div
+		class="thread-item"
+		class:active={page.url.pathname === `/projects/${project.id}`}
+		onclick={() => goto(`/projects/${project.id}`)}
+		onkeydown={(e) => e.key === 'Enter' && goto(`/projects/${project.id}`)}
+		role="button"
+		tabindex="0"
+		in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
+	>
+		<span class="thread-dot" style:background={projectColorVar(project.color)} aria-hidden="true"></span>
+		<div class="thread-meta">
+			<div class="thread-title">{project.name}</div>
 		</div>
 	</div>
 {/snippet}
@@ -243,6 +268,14 @@
 			<Galaxy size={16} />
 			<span class="pulsar-label">Constellation</span>
 		</button>
+		<button
+			class="pulsar-entry"
+			class:active={page.url.pathname.startsWith('/projects')}
+			onclick={() => goto('/projects')}
+		>
+			<Folder size={16} />
+			<span class="pulsar-label">Projects</span>
+		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
 			<input
@@ -303,6 +336,15 @@
 			     moved to ThreadMenu.svelte (the "..." menu in the chat header)
 			     since managing the thread you're actually looking at fits there
 			     better than a list row whose whole job is just "open this". -->
+			{#if projectsState.favorites.length > 0}
+				<div class="section-label">
+					<Folder size={11} />
+					Projects
+				</div>
+				{#each projectsState.favorites as project, i (project.id)}
+					{@render projectRow(project, i)}
+				{/each}
+			{/if}
 			{#if favorites.length > 0}
 				<div class="section-label">
 					<Star size={11} fill="currentColor" />
@@ -311,9 +353,14 @@
 				{#each favorites as thread, i (thread.id)}
 					{@render threadRow(thread, i)}
 				{/each}
-				{#if recents.length > 0}
-					<div class="section-label">Recents</div>
-				{/if}
+			{/if}
+			<!-- Labelled whenever ANYTHING pinned precedes them (favorited
+			     threads or pinned projects) — without it the ordinary list runs
+			     straight on from the Projects rows and reads as if those threads
+			     lived inside a project. Found by looking at the live screenshot,
+			     not by an assertion. -->
+			{#if recents.length > 0 && (favorites.length > 0 || projectsState.favorites.length > 0)}
+				<div class="section-label">Recents</div>
 			{/if}
 			{#each recents as thread, i (thread.id)}
 				{@render threadRow(thread, i)}

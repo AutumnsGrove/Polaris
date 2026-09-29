@@ -418,6 +418,11 @@ export type ClientMessage =
 			// the server's own "web" default; only Pulsar Daily's
 			// expand-to-chat sets this ("pulsar-daily").
 			source?: string;
+			// Binds a brand-new thread to a Project at creation — see gateway/
+			// protocol.go's ClientMessage.ProjectID. Sent only while
+			// currentThreadId is null; moving an existing thread goes through
+			// PUT /api/threads/{id}/project instead.
+			project_id?: string;
 			// See gateway/protocol.go's ClientMessage.TitleSeed — cleaner
 			// input for title generation than a synthetic seeded message.
 			title_seed?: string;
@@ -505,6 +510,10 @@ export interface Thread {
 	// undefined for every other thread. Drives ChatView.svelte's "back to
 	// routine" header affordance on a pulse's thread view.
 	pulsar_routine_id?: number;
+	// project_id is set when the thread belongs to a Project (docs/plans/
+	// projects.md) — undefined for an ungrouped thread. Drives the chat
+	// header's project pill and ThreadMenu's "Move to project".
+	project_id?: string;
 	// source mirrors store.Thread.Source — "web" for the normal chat UI,
 	// or a caller-supplied label (e.g. "weaver", "pulsar-daily"). Drives
 	// ChatView.svelte's stripped-composer/back-button branch for a Weaver
@@ -1044,4 +1053,42 @@ export interface WeaverThreadSummary {
 	// "Talk to Weaver" session — see the Go struct's own doc comment for
 	// how this is actually derived (there's no direct foreign key for it).
 	is_automatic: boolean;
+}
+
+// Project mirrors store.Project's JSON shape — see gateway/projects_routes.go
+// and docs/plans/projects.md. default_focus_mode/default_model are '' to
+// inherit the global standing default (settings.defaultFocusMode/
+// defaultModel); 'off' is a real, distinct focus-mode value meaning "this
+// project always starts with none".
+export interface Project {
+	id: string;
+	name: string;
+	description: string;
+	custom_instructions: string;
+	favorite: boolean;
+	default_focus_mode: FocusMode | '';
+	default_model: string;
+	memory_mode: 'default' | 'none';
+	constellation_visible: boolean;
+	exclude_from_chat_search: boolean;
+	// '' = no tag, else a --color-cat-* suffix (see projects.svelte.ts's
+	// PROJECT_COLORS).
+	color: string;
+	thread_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+// ProjectFile is one entry of a project's shared, read-only file pool.
+export interface ProjectFile {
+	name: string;
+	size_bytes: number;
+}
+
+// ProjectDetail is GET /api/projects/{id}'s body — the detail view's whole
+// page in one round trip.
+export interface ProjectDetail {
+	project: Project;
+	threads: Thread[];
+	files: ProjectFile[];
 }

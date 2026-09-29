@@ -1,6 +1,20 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
-	import { MoreHorizontal, Pencil, RefreshCw, Trash2, TriangleAlert, Gauge, Coins, Star, Zap } from '@lucide/svelte';
+	import {
+		MoreHorizontal,
+		Pencil,
+		RefreshCw,
+		Trash2,
+		TriangleAlert,
+		Gauge,
+		Coins,
+		Star,
+		Zap,
+		FolderInput,
+		Check,
+		ChevronLeft
+	} from '@lucide/svelte';
+	import { projectsState, projectColorVar } from '$lib/projects.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import EditTextModal from './EditTextModal.svelte';
@@ -62,18 +76,47 @@
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
 	let regeneratingTitle = $state(false);
+	// The "Move to project" picker replaces the dropdown's contents, same
+	// swap-in-place shape as confirmingDelete — a floating second layer over
+	// a ~190px dropdown would just fight it for room on a phone.
+	let movingToProject = $state(false);
+	let moveError = $state('');
 	let rootEl: HTMLDivElement | undefined = $state();
 
 	function toggle() {
 		open = !open;
 		renaming = false;
 		confirmingDelete = false;
+		movingToProject = false;
 	}
 
 	function close() {
 		open = false;
 		renaming = false;
 		confirmingDelete = false;
+		movingToProject = false;
+		moveError = '';
+	}
+
+	// The list loads on app start (Sidebar), but a phone that opened straight
+	// onto a thread may not have resolved it yet — refetch on opening the
+	// picker so it never shows a stale or empty list.
+	function startMove() {
+		moveError = '';
+		movingToProject = true;
+		void projectsState.load();
+	}
+
+	// Left open on failure with the server's message shown, same reasoning as
+	// regenerateTitle: a menu that just vanishes with no explanation reads
+	// as the tap having done nothing.
+	async function moveTo(projectId: string | null) {
+		const err = await appState.moveCurrentThreadToProject(projectId);
+		if (err) {
+			moveError = err;
+			return;
+		}
+		close();
 	}
 
 	// Rename opens the full EditTextModal instead of an inline dropdown
@@ -156,6 +199,30 @@
 						<button class="dropdown-item danger" onclick={confirmDelete}>Delete</button>
 					</div>
 				</div>
+			{:else if movingToProject}
+				<button class="dropdown-item" onclick={() => (movingToProject = false)}>
+					<ChevronLeft size={14} />
+					<span>Move to project</span>
+				</button>
+				<div class="divider" role="separator"></div>
+				{#each projectsState.projects as project (project.id)}
+					<button class="dropdown-item" onclick={() => moveTo(project.id)} role="menuitem">
+						<span class="project-dot" style:background={projectColorVar(project.color) ?? 'var(--color-text-dim)'} aria-hidden="true"></span>
+						<span class="project-name">{project.name}</span>
+						{#if appState.activeProjectId === project.id}<Check size={14} />{/if}
+					</button>
+				{:else}
+					<div class="info-row"><span>{projectsState.loaded ? 'No projects yet.' : 'Loading…'}</span></div>
+				{/each}
+				{#if appState.activeProjectId}
+					<div class="divider" role="separator"></div>
+					<button class="dropdown-item" onclick={() => moveTo(null)} role="menuitem">
+						<span>Remove from project</span>
+					</button>
+				{/if}
+				{#if moveError}
+					<div class="info-row move-error">{moveError}</div>
+				{/if}
 			{:else}
 				<button class="dropdown-item" onclick={toggleFavorite} role="menuitem">
 					<Star size={14} fill={favorite ? 'currentColor' : 'none'} class={favorite ? 'favorited' : ''} />
@@ -173,6 +240,10 @@
 				>
 					<RefreshCw size={14} class={regeneratingTitle ? 'spin' : ''} />
 					<span>{regeneratingTitle ? 'Regenerating…' : 'Regenerate title'}</span>
+				</button>
+				<button class="dropdown-item" onclick={startMove} role="menuitem">
+					<FolderInput size={14} />
+					<span>Move to project</span>
 				</button>
 				<button class="dropdown-item danger" onclick={askDelete} role="menuitem">
 					<Trash2 size={14} />
@@ -296,6 +367,25 @@
 	/* Whitespace-only rows below, not buttons — matches the "no rule
 	   lines" treatment used everywhere else (see SettingsPanel.svelte's
 	   section spacing), just a tonal step instead of a line. */
+	.project-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.project-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.move-error {
+		color: var(--color-danger);
+	}
+
 	.divider {
 		height: 1px;
 		margin: var(--space-sm) var(--space-xs);

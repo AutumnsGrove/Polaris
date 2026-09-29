@@ -1,8 +1,10 @@
 # Projects — shared workspace + custom instructions across threads, v1 plan
 
 **Added:** 2026-09-27.
-**Status:** in progress — "Next steps" 1 (store) and 2 (shared-workspace plumbing) landed; 3
-(turn-context wiring) onward not started. Tracked as issue
+**Status:** v1 implemented and live-verified 2026-09-29 — every "Next steps" item landed, plus a
+REST API (`gateway/projects_routes.go`) the plan didn't list separately. Not yet exercised against
+the potato's real Docker deployment or a live Weaver poll (the Constellation opt-out is covered at
+the query level, not through a real Weaver run, which costs money). Tracked as issue
 [#119](https://github.com/AutumnsGrove/Polaris/issues/119).
 
 ## Why this exists

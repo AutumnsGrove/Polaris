@@ -25,6 +25,8 @@
 	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
 	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
+	import ProjectPill from '$lib/components/ProjectPill.svelte';
+	import { projectsState } from '$lib/projects.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
 	import NightSky from '$lib/components/NightSky.svelte';
 	import { fly } from 'svelte/transition';
@@ -112,6 +114,10 @@
 	// manual choice made from the composer's "+" menu afterward; "off"
 	// is itself a valid loaded value, which is why this checks
 	// settings.loaded rather than the value of defaultFocusMode itself.
+	// The project this thread belongs to, or is about to be created in —
+	// drives the header pill and the welcome line (see AppState.activeProjectId).
+	let activeProject = $derived(projectsState.byId(appState.activeProjectId));
+
 	let focusModeInitialized = false;
 	$effect(() => {
 		if (appState.settings.loaded && !focusModeInitialized) {
@@ -150,7 +156,12 @@
 		if (epoch === lastConfigEpoch) return;
 		lastConfigEpoch = epoch;
 		if (appState.currentThreadId === null) {
-			focusMode = appState.settings.defaultFocusMode;
+			// A project's own default focus mode wins over the global standing
+			// default when set ('' inherits — not "force off", which is the
+			// real value 'off'). Same seeding point as the global default, so
+			// a manual pick afterward is still untouched (focusModeManual).
+			const projectFocus = projectsState.byId(appState.pendingProjectId)?.default_focus_mode;
+			focusMode = projectFocus ? projectFocus : appState.settings.defaultFocusMode;
 			focusModeManual = false;
 			deepResearch = false;
 			research = true;
@@ -606,6 +617,9 @@
 		{#if currentThreadTitle}
 			<h1 class="thread-title" title={currentThreadTitle}>{currentThreadTitle}</h1>
 		{/if}
+		{#if activeProject && !appState.isGhostThread}
+			<ProjectPill project={activeProject} />
+		{/if}
 	</div>
 	<div class="header-right">
 		{#if appState.turns.length === 0 && !isWeaverThread}
@@ -682,7 +696,13 @@
 			</p>
 		{:else}
 			<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-			<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
+			{#if activeProject && !appState.isGhostThread}
+				<p class="subtitle wordmark">
+					Working in {activeProject.name} — its instructions and shared files come along.
+				</p>
+			{:else}
+				<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
+			{/if}
 		{/if}
 		<div class="welcome-composer">
 			{@render composerForm()}

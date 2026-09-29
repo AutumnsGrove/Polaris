@@ -99,6 +99,11 @@ with citations.
   search tool access, that's deleted the moment it ends unless you promote it into a regular
   thread. Its real cost still counts toward your regular usage totals, so spend never goes
   unaccounted for. Available over the WebSocket chat client and `POST /api/ask`/`/api/ask/stream`.
+- **Projects** (`/projects`) — a named group of conversations that share custom instructions and a
+  pool of reference files, plus per-project defaults for model, focus mode, and memory, and opt-outs
+  from Constellation and chat search. Shared files are read-only to every conversation in the
+  project (an edit becomes a private copy); pin a project to keep it in the sidebar. Shared files
+  need the `code_exec` sandbox's workspace configured.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
   of a bare text chip.
 - **Settings panel** — theme, default model, the Memory list above, and a one-click
