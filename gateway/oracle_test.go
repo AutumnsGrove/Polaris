@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -604,6 +605,52 @@ func TestRunOracle_EmotionalNoOrBelowBarSuppressesNothing(t *testing.T) {
 		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x"})
 		if out := outcomeFor(result, "format"); out == nil || !out.Fired || out.Suppressed {
 			t.Errorf("%s: want format to fire normally, got %+v", name, out)
+		}
+	}
+}
+
+// TestOracleDoc_ListsEveryCheckOptionAndChip keeps docs/oracle.md — the
+// user-facing reference — from drifting behind prompts.yaml. A check added
+// there with no section, or an option with no row, would leave the page
+// quietly wrong; failing here makes the doc part of adding a check.
+func TestOracleDoc_ListsEveryCheckOptionAndChip(t *testing.T) {
+	raw, err := os.ReadFile("../docs/oracle.md")
+	if err != nil {
+		t.Fatalf("reading docs/oracle.md: %v", err)
+	}
+	doc := string(raw)
+	p := prompts.Get()
+
+	for key, check := range p.Oracle.Checks {
+		heading := "— `" + key + "`"
+		start := strings.Index(doc, heading)
+		if start < 0 {
+			t.Errorf("docs/oracle.md has no section for check %q (expected a heading ending %s)", key, heading)
+			continue
+		}
+		section := doc[start:]
+		if end := strings.Index(section, "\n#"); end >= 0 {
+			section = section[:end]
+		}
+		for option := range check.Options {
+			if !strings.Contains(section, "| `"+option+"` |") {
+				t.Errorf("docs/oracle.md's %q section doesn't list option %q", key, option)
+			}
+		}
+	}
+	// Scoped to the Offers section: "safari" is also a focus option, so a
+	// whole-document match would pass with the chip row deleted.
+	offersStart := strings.Index(doc, "\n## Offers")
+	if offersStart < 0 {
+		t.Fatal("docs/oracle.md has no Offers section")
+	}
+	offers := doc[offersStart+1:]
+	if end := strings.Index(offers, "\n## "); end >= 0 {
+		offers = offers[:end]
+	}
+	for key := range p.Oracle.Chips {
+		if !strings.Contains(offers, "| `"+key+"`") {
+			t.Errorf("docs/oracle.md's Offers table doesn't list chip %q", key)
 		}
 	}
 }
