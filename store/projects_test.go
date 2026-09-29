@@ -307,3 +307,30 @@ func TestProject_ConstellationVisibility(t *testing.T) {
 		t.Error("a thread moved out of the hidden project stayed excluded")
 	}
 }
+
+// The sidebar renders its project marker from ListThreads' rows, so that
+// query must carry project_id — it didn't, because it was added to the
+// single-thread reads first.
+func TestListThreads_CarriesProjectID(t *testing.T) {
+	s := openTestStore(t)
+	p, _ := s.CreateProject(Project{Name: "p"})
+	for _, id := range []string{"in", "out"} {
+		if err := s.CreateThread(id, id, "m", "web"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetThreadProject("in", &p.ID); err != nil {
+		t.Fatal(err)
+	}
+	threads, err := s.ListThreads(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*string{}
+	for _, th := range threads {
+		got[th.ID] = th.ProjectID
+	}
+	if got["in"] == nil || *got["in"] != p.ID || got["out"] != nil {
+		t.Errorf("ListThreads project_ids = in:%v out:%v, want in:%q out:nil", got["in"], got["out"], p.ID)
+	}
+}

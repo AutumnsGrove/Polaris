@@ -8,7 +8,7 @@
 	import { pulsarDailyState } from '$lib/pulsarDaily.svelte';
 	import { projectsState, projectColorVar } from '$lib/projects.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderOpen } from '@lucide/svelte';
+	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderOpen, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -136,6 +136,20 @@
 		<div class="thread-meta">
 			<div class="thread-title">{thread.title || 'Untitled'}</div>
 		</div>
+		<!-- A thread that belongs to a project wears a small marker, so a
+		     conversation that carries a project's instructions and shared
+		     files is recognizable in the list without opening it. Tinted with
+		     the project's color tag when it has one. -->
+		{#if thread.project_id}
+			{@const project = projectsState.byId(thread.project_id)}
+			<span
+				class="project-mark"
+				style:color={project ? projectColorVar(project.color) : null}
+				title={project ? `In project: ${project.name}` : 'In a project'}
+			>
+				<FolderSymlink size={12} />
+			</span>
+		{/if}
 	</div>
 {/snippet}
 
@@ -665,6 +679,13 @@
 	.thread-meta {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.project-mark {
+		display: inline-flex;
+		flex-shrink: 0;
+		color: var(--color-text-dim);
+		opacity: 0.8;
 	}
 
 	/* Hover-revealed, same idea as the star affordance ThreadMenu.svelte
