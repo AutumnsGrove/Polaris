@@ -14,6 +14,9 @@
 
 	const POLL_INTERVALS = [15, 30, 60, 120, 240];
 
+	// The on/off switch lives in the main Settings panel now (so the sidebar
+	// entry can hide when it's off) — this modal just carries the saved value
+	// through its own full-overwrite save.
 	let enabled = $state(constellationState.config?.enabled ?? false);
 	let pollInterval = $state(constellationState.config?.poll_interval_minutes ?? 60);
 	let model = $state(constellationState.config?.model ?? '');
@@ -69,18 +72,6 @@
 
 		<div class="settings-group">
 			<div class="settings-row">
-				<div>
-					<div class="row-label">Enabled</div>
-					<div class="row-hint">
-						Weaver checks for new threads and builds your library automatically.
-					</div>
-				</div>
-				<label class="switch">
-					<input type="checkbox" bind:checked={enabled} />
-					<span class="slider"></span>
-				</label>
-			</div>
-			<div class="settings-row">
 				<span class="row-label">Check every</span>
 				<select bind:value={pollInterval}>
 					{#each POLL_INTERVALS as mins (mins)}
@@ -123,49 +114,6 @@
 {/if}
 
 <style>
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 36px;
-		height: 20px;
-		flex-shrink: 0;
-	}
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-	.slider {
-		position: absolute;
-		inset: 0;
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-full);
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-	.slider::before {
-		content: '';
-		position: absolute;
-		width: 14px;
-		height: 14px;
-		left: 2px;
-		top: 2px;
-		background: var(--color-text-dim);
-		border-radius: 50%;
-		transition:
-			transform 0.15s ease,
-			background 0.15s ease;
-	}
-	.switch input:checked + .slider {
-		background: color-mix(in srgb, var(--color-accent) 30%, transparent);
-		border-color: var(--color-accent);
-	}
-	.switch input:checked + .slider::before {
-		transform: translateX(16px);
-		background: var(--color-accent);
-	}
-
 	.settings-group {
 		border-radius: var(--radius-lg);
 		background: var(--color-surface-2);
@@ -188,12 +136,6 @@
 	.row-label {
 		font-size: 14px;
 		font-weight: 500;
-	}
-	.row-hint {
-		font-size: 11.5px;
-		color: var(--color-text-dim);
-		margin-top: 2px;
-		line-height: 1.4;
 	}
 	.settings-row select {
 		font: inherit;

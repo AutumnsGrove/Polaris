@@ -9,7 +9,9 @@
 	import FieldIcon from '$lib/components/FieldIcon.svelte';
 	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import PulsarUnreadBadge from './PulsarUnreadBadge.svelte';
-	import { Plus, PanelLeftClose, Settings, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
+	import HelpModal from './HelpModal.svelte';
+	import { constellationState } from '$lib/constellation.svelte';
+	import { Plus, PanelLeftClose, Settings, CircleHelp, Star, Search, X, Orbit, Sunrise, Galaxy, FolderSymlink } from '@lucide/svelte';
 	import { edgeSwipeSidebar } from '$lib/actions/edgeSwipeSidebar';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -51,7 +53,12 @@
 		// Same reasoning: the pinned-fields section must be accurate the
 		// moment the app loads, not only after /fields is first visited.
 		void fieldsState.load();
+		// Decides whether the Constellation entry renders at all, so it has
+		// to be known at app load, not only once /constellation is visited.
+		if (!constellationState.config) void constellationState.loadConfig();
 	});
+
+	let showHelp = $state(false);
 
 	// True on the two routes that render the chat view (the homepage and
 	// any /t/<id> thread route) — shared by startNewThread and
@@ -257,13 +264,35 @@
 		</button>
 		<button
 			class="pulsar-entry"
+			class:active={page.url.pathname.startsWith('/fields')}
+			onclick={() => goto('/fields')}
+		>
+			<FieldIcon size={16} />
+			<span class="pulsar-label">Fields</span>
+		</button>
+		<!-- Hidden until the config has loaded AND says enabled: an unknown
+		     state shows nothing rather than flashing the entry for a
+		     deployment that has Constellation off. The on/off switch lives in
+		     the main Settings panel. -->
+		{#if constellationState.config?.enabled}
+			<button
+				class="pulsar-entry"
+				class:active={page.url.pathname.startsWith('/constellation')}
+				onclick={() => goto('/constellation')}
+			>
+				<Galaxy size={16} />
+				<span class="pulsar-label">Constellation</span>
+			</button>
+		{/if}
+		<button
+			class="pulsar-entry"
 			class:active={page.url.pathname.startsWith('/pulsar')}
 			onclick={() => goto('/pulsar')}
 		>
 			<Orbit size={16} />
 			<span class="pulsar-label">Pulsar</span>
 			<PulsarUnreadBadge count={pulsarState.totalUnread} />
-		</button>
+			</button>
 		<button
 			class="pulsar-entry daily-entry"
 			class:active={page.url.pathname.startsWith('/daily')}
@@ -274,22 +303,6 @@
 			{#if pulsarDailyState.hasNewEdition}
 				<span class="daily-dot" title="New edition"></span>
 			{/if}
-		</button>
-		<button
-			class="pulsar-entry"
-			class:active={page.url.pathname.startsWith('/constellation')}
-			onclick={() => goto('/constellation')}
-		>
-			<Galaxy size={16} />
-			<span class="pulsar-label">Constellation</span>
-		</button>
-		<button
-			class="pulsar-entry"
-			class:active={page.url.pathname.startsWith('/fields')}
-			onclick={() => goto('/fields')}
-		>
-			<FieldIcon size={16} />
-			<span class="pulsar-label">Fields</span>
 		</button>
 		<div class="thread-search">
 			<Search size={14} class="icon-search" aria-hidden="true" />
@@ -386,11 +399,18 @@
 	<div class="status">
 		<span class="dot" class:connected={appState.connected}></span>
 		<span class="status-text">{appState.connected ? 'connected' : 'reconnecting…'}</span>
+		<button class="icon-btn" onclick={() => (showHelp = true)} title="What's what" aria-label="Help: what each feature is">
+			<CircleHelp size={15} />
+		</button>
 		<button class="icon-btn settings-btn" onclick={() => appState.settings.toggle()} title="Settings">
 			<Settings size={15} />
 		</button>
 	</div>
 </aside>
+
+{#if showHelp}
+	<HelpModal onClose={() => (showHelp = false)} />
+{/if}
 
 <style>
 	.sidebar {
