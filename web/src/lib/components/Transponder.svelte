@@ -3,10 +3,20 @@
 	import { fade } from 'svelte/transition';
 	import { appState } from '$lib/state.svelte';
 	import { synthesizeStream } from '$lib/speech';
-	import { Mic, PhoneOff, X, Loader2, Volume2 } from '@lucide/svelte';
-	import type { TimelineItem } from '$lib/types';
+	import { PhoneOff, X, Volume2 } from '@lucide/svelte';
+	import {
+		computePeaks,
+		pickMimeType,
+		stripInlineMarkdownLinks,
+		citationHost,
+		formatElapsed,
+		type ThinkingChip
+	} from '$lib/transponderHelpers';
 	import ToolEvent from './ToolEvent.svelte';
 	import HighlightCarousel from './HighlightCarousel.svelte';
+	import TransponderOrb from './TransponderOrb.svelte';
+	import TranscriptBubble from './TranscriptBubble.svelte';
+	import ThinkingChips from './ThinkingChips.svelte';
 
 	// Full-screen push-to-talk call UI onto the current thread — see
 	// docs/plans/transponder.md. Not a parallel thread type: it sends over
@@ -224,33 +234,6 @@
 		orbScale = 1;
 	}
 
-	// Peak amplitude per playbackPeakResolutionMs-wide bucket, normalized
-	// against this clip's own loudest bucket and exponent-exaggerated —
-	// mirrors WaveformAudioPlayer.svelte's decodePeaks() almost exactly
-	// (same reasoning: Kokoro's output has a narrow dynamic range, so
-	// stretching each clip's own peaks to fill 0..1 first reads far less
-	// flat than a fixed-constant normalization would).
-	function computePeaks(buffer: AudioBuffer): number[] {
-		const channel = buffer.getChannelData(0);
-		const bucketSize = Math.max(1, Math.floor((playbackPeakResolutionMs / 1000) * buffer.sampleRate));
-		const raw: number[] = [];
-		let maxPeak = 0;
-		for (let i = 0; i < channel.length; i += bucketSize) {
-			let peak = 0;
-			const end = Math.min(i + bucketSize, channel.length);
-			for (let j = i; j < end; j++) {
-				const abs = Math.abs(channel[j]);
-				if (abs > peak) peak = abs;
-			}
-			raw.push(peak);
-			if (peak > maxPeak) maxPeak = peak;
-		}
-		return raw.map((peak) => {
-			const normalized = maxPeak > 0 ? peak / maxPeak : 0;
-			return Math.max(0.08, Math.pow(normalized, 2.2));
-		});
-	}
-
 	// How far apart (in buckets) the 5 sampled bars are spread — see
 	// startPlaybackVisualizer's doc comment for why this isn't 1 (adjacent
 	// buckets).
@@ -285,10 +268,6 @@
 			rafId = requestAnimationFrame(tick);
 		};
 		rafId = requestAnimationFrame(tick);
-	}
-
-	function pickMimeType(): string {
-		return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
 	}
 
 	async function startRecording() {
@@ -656,7 +635,7 @@
 			decodeCtx = new AudioContext();
 			const arrayBuffer = await blob.arrayBuffer();
 			const buffer = await decodeCtx.decodeAudioData(arrayBuffer);
-			playbackPeaks = computePeaks(buffer);
+			playbackPeaks = computePeaks(buffer, playbackPeakResolutionMs);
 		} catch (err) {
 			// Cosmetic only — the orb just falls back to its resting state
 			// (startPlaybackVisualizer's own empty-array guard), playback
@@ -693,23 +672,6 @@
 		else stopAnalyserLoop();
 	});
 
-	// Condensed chip label for the Thinking screen — a shorter cousin of
-	// ToolEvent.svelte's label(), since this screen only ever shows a
-	// glanceable "what's it doing" list, not the full expandable detail
-	// the normal timeline gives each tool call. Includes reasoning bursts
-	// alongside tool calls — a model that's doing extended hidden thinking
-	// with no tool calls at all previously showed nothing but a static
-	// "Thinking…" the whole time, which read as stuck/broken rather than
-	// genuinely working.
-	type ThinkingChip = Extract<TimelineItem, { kind: 'tool' }> | Extract<TimelineItem, { kind: 'reasoning' }>;
-	function chipLabel(item: ThinkingChip): string {
-		if (item.kind === 'reasoning') return item.done ? 'Reasoned' : 'Reasoning…';
-		if (item.tool === 'web_search') return `Searching: ${item.args?.query ?? ''}`;
-		if (item.tool === 'web_read') return `Reading: ${item.args?.url ?? ''}`;
-		if (item.tool === 'weather') return `Checking the weather`;
-		if (item.tool === 'code_exec') return 'Running code';
-		return item.tool;
-	}
 	let toolChips = $derived(
 		(turn?.timeline ?? []).filter(
 			(i): i is ThinkingChip => i.kind === 'tool' || i.kind === 'reasoning'
@@ -735,17 +697,6 @@
 	// snapshot), not on the timeline item that triggered the call — see
 	// ChatTurnView.svelte's own highlightCards derivation and doc comment.
 	let highlightCards = $derived((turn?.cards ?? []).filter((c) => c.kind === 'highlight'));
-	let chipListEl: HTMLDivElement | undefined = $state();
-	// Keeps the newest chip in view as more stream in — without this, once
-	// the list is taller than its capped max-height, a fresh chip appends
-	// below the fold and the "what's happening right now" signal this
-	// screen exists for goes invisible again, just via a different
-	// mechanism than the original unbounded-height bug.
-	$effect(() => {
-		toolChips.length;
-		queueMicrotask(() => chipListEl?.scrollTo({ top: chipListEl.scrollHeight, behavior: 'smooth' }));
-	});
-
 	function handleClose() {
 		if (mediaRecorder && mediaRecorder.state === 'recording') {
 			// Drop, don't send — same reasoning as cancelCall's override
@@ -769,35 +720,6 @@
 		speakGeneration++;
 	});
 
-	// voice_mode_instruction (prompts.yaml) already tells the model to
-	// avoid "reciting citations inline", but that's a request, not a
-	// guarantee — live-caught: a reply came back with real markdown link
-	// syntax ([Investor Relations](https://...)) sitting in turn.content,
-	// and .reply-card renders that content as plain text (see its own doc
-	// comment — deliberately not real markdown, unlike ChatView's), so the
-	// raw brackets/parens/URL show up on screen verbatim even though the
-	// audio itself (synthesized from the same string) never read it
-	// aloud. Strips just the [text](url) -> text shape rather than pulling
-	// in the full marked+DOMPurify pipeline ChatView uses — Transponder's
-	// reply card was never meant to render real markdown, only to avoid
-	// leaking its syntax when the model doesn't fully comply.
-	function stripInlineMarkdownLinks(text: string): string {
-		return text.replace(/\[([^\]]+)\]\((?:[^()\s]+)\)/g, '$1');
-	}
-
-	function citationHost(url: string): string {
-		try {
-			return new URL(url).hostname.replace(/^www\./, '');
-		} catch {
-			return url;
-		}
-	}
-
-	function formatElapsed(sec: number): string {
-		const m = Math.floor(sec / 60);
-		const s = sec % 60;
-		return `${m}:${s.toString().padStart(2, '0')}`;
-	}
 </script>
 
 <div class="transponder">
@@ -828,46 +750,19 @@
 			     (an earlier version of this screen did) breaks touch-event
 			     continuity: touchend can fail to fire at all once its
 			     original target has been removed from the DOM. -->
-			<button
-				type="button"
-				class="orb mic-orb"
-				class:listening={phase === 'listening'}
-				style:transform={phase === 'listening' ? `scale(${orbScale})` : undefined}
+			<TransponderOrb
+				variant="mic"
+				listening={phase === 'listening'}
+				{transcribing}
 				disabled={appState.busy || transcribing}
-				onclick={toggleMode ? handleMicClick : undefined}
-				onmousedown={toggleMode ? undefined : handleMicDown}
-				onmouseup={toggleMode ? undefined : handleMicUp}
-				onmouseleave={toggleMode ? undefined : handleMicUp}
-				ontouchstart={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicDown();
-						}}
-				ontouchend={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicUp();
-						}}
-				aria-label={toggleMode
-					? phase === 'listening'
-						? 'Tap to stop and send'
-						: 'Tap to record'
-					: 'Hold to record'}
-			>
-				{#if phase === 'listening' && transcribing}
-					<Loader2 size={28} color="var(--color-accent)" class="spin" />
-				{:else if phase === 'listening'}
-					<div class="bars">
-						{#each barLevels as level, i (i)}
-							<div class="bar" style:height="{16 + level * 40}px"></div>
-						{/each}
-					</div>
-				{:else}
-					<Mic size={40} color="var(--color-accent)" />
-				{/if}
-			</button>
+				{barLevels}
+				scale={phase === 'listening' ? orbScale : undefined}
+				{toggleMode}
+				onDown={handleMicDown}
+				onUp={handleMicUp}
+				onToggle={handleMicClick}
+				label={toggleMode ? (phase === 'listening' ? 'Tap to stop and send' : 'Tap to record') : 'Hold to record'}
+			/>
 			<div class="idle-copy">
 				{#if phase === 'idle'}
 					<div class="idle-title">Talk to Polaris</div>
@@ -886,50 +781,19 @@
 			     the operator needs to be able to redo a question the moment
 			     they realize the transcript was wrong, without waiting out
 			     the rest of the (now-pointless) generation first. -->
-			<button
-				type="button"
-				class="orb thinking-orb"
-				onclick={toggleMode ? handleMicClick : undefined}
-				onmousedown={toggleMode ? undefined : handleMicDown}
-				onmouseup={toggleMode ? undefined : handleMicUp}
-				onmouseleave={toggleMode ? undefined : handleMicUp}
-				ontouchstart={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicDown();
-						}}
-				ontouchend={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicUp();
-						}}
-				aria-label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
-			>
-				<div class="spinner"></div>
-				<Loader2 size={26} color="var(--color-accent-2)" class="spin" />
-			</button>
+			<TransponderOrb
+				variant="thinking"
+				{barLevels}
+				{toggleMode}
+				onDown={handleMicDown}
+				onUp={handleMicUp}
+				onToggle={handleMicClick}
+				label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
+			/>
 			{#if lastTranscript}
-				<div class="transcript-bubble">
-					<span class="transcript-label">You said</span>
-					{lastTranscript}
-				</div>
+				<TranscriptBubble text={lastTranscript} />
 			{/if}
-			{#if toolChips.length > 0}
-				<div class="chip-list" bind:this={chipListEl}>
-					{#each toolChips as item, i (i)}
-						<div class="chip">
-							{#if !item.done}
-								<Loader2 size={11} color="var(--color-accent-2)" class="spin" />
-							{/if}
-							{chipLabel(item)}
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="thinking-copy">Thinking…</div>
-			{/if}
+			<ThinkingChips chips={toolChips} />
 		{:else if phase === 'speaking'}
 			<!-- The orb itself is the tap target here too, same as Idle/
 			     Listening (see .mic-orb's doc comment) — a separate small
@@ -937,37 +801,17 @@
 			     round mid-Speaking, and it was easy to miss entirely (no
 			     label, low-contrast, tucked in a corner). One consistent
 			     "the orb is always the mic" mental model instead. -->
-			<button
-				type="button"
-				class="orb speaking-orb"
-				class:paused={!isPlaying}
-				style:transform={isPlaying ? `scale(${orbScale})` : undefined}
-				onclick={toggleMode ? handleMicClick : undefined}
-				onmousedown={toggleMode ? undefined : handleMicDown}
-				onmouseup={toggleMode ? undefined : handleMicUp}
-				onmouseleave={toggleMode ? undefined : handleMicUp}
-				ontouchstart={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicDown();
-						}}
-				ontouchend={toggleMode
-					? undefined
-					: (e) => {
-							e.preventDefault();
-							handleMicUp();
-						}}
-				aria-label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
-			>
-				<!-- Real decoded-peaks data via barLevels, not a canned loop
-				     — see startPlaybackVisualizer's doc comment. -->
-				<div class="bars">
-					{#each barLevels as level, i (i)}
-						<div class="bar" style:height="{14 + level * 34}px"></div>
-					{/each}
-				</div>
-			</button>
+			<TransponderOrb
+				variant="speaking"
+				paused={!isPlaying}
+				scale={isPlaying ? orbScale : undefined}
+				{barLevels}
+				{toggleMode}
+				onDown={handleMicDown}
+				onUp={handleMicUp}
+				onToggle={handleMicClick}
+				label={toggleMode ? 'Tap to interrupt and record' : 'Hold to interrupt and record'}
+			/>
 			{#if hasAnyChunkToPlay && !isPlaying}
 				<!-- Unconditional on !isPlaying, not just shown after a caught
 				     error — see beginSpeaking's doc comment on why
@@ -983,10 +827,7 @@
 				</button>
 			{/if}
 			{#if lastTranscript}
-				<div class="transcript-bubble">
-					<span class="transcript-label">You said</span>
-					{lastTranscript}
-				</div>
+				<TranscriptBubble text={lastTranscript} />
 			{/if}
 			{#if turn?.content}
 				<div class="reply-card">{stripInlineMarkdownLinks(turn.content)}</div>
@@ -1176,105 +1017,15 @@
 	   flex-shrink: 0 across the board makes "scroll for more" the only
 	   thing that happens under pressure, never "crush what's already
 	   there" — matches the operator's own framing (afford the space
-	   without overwhelming the rest of the screen). */
-	.stage > * {
+	   without overwhelming the rest of the screen).
+
+	   :global(*), not a bare `*`: the orb, "You said" bubble and thinking
+	   chips are child components, and Svelte scopes a plain `.stage > *` to
+	   elements owned by THIS component only — it silently stops matching
+	   child-component roots, which brings the squashed-oval bug straight
+	   back. Caught by diffing computed styles before/after extracting them. */
+	.stage > :global(*) {
 		flex-shrink: 0;
-	}
-
-	.orb {
-		border-radius: var(--radius-full);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: radial-gradient(circle at 35% 30%, var(--color-surface-3), var(--color-surface) 70%);
-		border: 1px solid var(--color-border-strong);
-		/* Live-caught, confirmed via a documented Firefox WebRender bug
-		   (bugzil.la/1662069, bugzil.la/731113): a border-radius circle
-		   combined with transform: scale() at fractional scale factors can
-		   mis-rasterize — visible as seam/line artifacts along the
-		   circle's axes, worst exactly when the scale factor is changing
-		   (which it constantly is here, every animation frame). will-change
-		   hints the browser to promote this to its own stable GPU layer
-		   and rasterize once, scaling the resulting bitmap smoothly,
-		   instead of re-rasterizing the vector shape at a new fractional
-		   factor every frame — the actual workaround that thread's
-		   reporters found, not a guess. */
-		will-change: transform;
-		/* No transition on transform, deliberately — style:transform here
-		   is already updated by JS on every animation frame (~60fps) while
-		   audio is active. A CSS transition trying to interpolate toward a
-		   target a 60fps loop keeps yanking away is a real, confirmed-live
-		   source of visual tearing/snapping ("the element stretching too
-		   far") — the orb's own pulse-ring box-shadow keyframe (removed)
-		   was a second, independent animation compounding the same
-		   problem, running on its own uncoordinated 1.8s schedule against
-		   the real scale updates. JS driving the value every frame IS the
-		   animation; a second system animating toward it just fights it. */
-		/* Also fixes: a brief system "move/drag" cursor (renders as a
-		   crosshair/plus in some browsers) flashed over the orb during a
-		   press-and-hold — the orb's own bar children change height every
-		   animation frame while held, and without this the browser can
-		   read a mousedown-and-hold over fast-changing content as an
-		   ambiguous drag/selection attempt and show its own drag-affordance
-		   cursor instead of the plain pointer this button actually wants. */
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-user-drag: none;
-	}
-
-	.bars,
-	.bar {
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-user-drag: none;
-	}
-
-	/* The push-to-talk control itself in Idle/Listening — a real <button>,
-	   not a decorative div, so it can carry the same hold/tap handlers as
-	   VoiceButton.svelte's .mic-btn (see the template's doc comment on why
-	   this stays one element across both phases). */
-	.mic-orb {
-		width: 168px;
-		height: 168px;
-		padding: 0;
-		cursor: pointer;
-		animation: breathe 3.6s var(--ease-out-expo) infinite;
-	}
-
-	.mic-orb:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-
-	.mic-orb.listening {
-		width: 148px;
-		height: 148px;
-		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-		animation: none;
-	}
-
-	.thinking-orb {
-		position: relative;
-		width: 148px;
-		height: 148px;
-		padding: 0;
-		cursor: pointer;
-		border-color: var(--color-border-strong);
-	}
-
-	.speaking-orb {
-		width: 128px;
-		height: 128px;
-		padding: 0;
-		cursor: pointer;
-		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-	}
-
-	/* !isPlaying: dim to signal "not producing anything right now" — a
-	   moving orb over silence read as "still working" rather than what it
-	   actually was, "stuck". */
-	.speaking-orb.paused {
-		opacity: 0.6;
 	}
 
 	.tap-to-play-btn {
@@ -1288,29 +1039,6 @@
 		border-radius: var(--radius-full);
 		font-size: 13px;
 		font-weight: 600;
-	}
-
-	.spinner {
-		position: absolute;
-		inset: 0;
-		border-radius: var(--radius-full);
-		border: 2px solid transparent;
-		border-top-color: var(--color-accent-2);
-		border-right-color: color-mix(in srgb, var(--color-accent-2) 25%, transparent);
-		animation: spin 1.6s linear infinite;
-	}
-
-	.bars {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.bar {
-		width: 4px;
-		border-radius: 2px;
-		background: var(--color-accent);
-		transition: height 0.06s linear;
 	}
 
 	.idle-copy {
@@ -1328,41 +1056,6 @@
 	.idle-sub {
 		font-size: 14px;
 		color: var(--color-text-dim);
-	}
-
-	.thinking-copy {
-		font-size: 15px;
-		color: var(--color-text-dim);
-		font-style: italic;
-	}
-
-	.chip-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-xs);
-		max-width: 300px;
-		/* Capped and internally scrollable, same reasoning as .reply-card/
-		   .transcript-bubble — a research-heavy turn can run to a dozen+
-		   web_search/web_read chips (live-caught, see the screenshot this
-		   was reported from), which without a cap just kept growing and
-		   crushed everything else in .stage regardless of the safe-center
-		   fix. Auto-scrolls to the newest chip (see the chipList bind:this
-		   + $effect below) so the live "what's happening right now" chip
-		   is always the one visible, not buried above the fold. */
-		max-height: 220px;
-		overflow-y: auto;
-	}
-
-	.chip {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		color: var(--color-text-dim);
-		background: var(--color-surface-3);
-		border-radius: var(--radius-full);
-		padding: 6px 10px;
-		width: fit-content;
 	}
 
 	.reply-card {
@@ -1383,38 +1076,6 @@
 		font-size: 15px;
 		line-height: 1.55;
 		color: var(--color-text);
-	}
-
-	/* What the STT model actually heard — deliberately smaller/dimmer than
-	   .reply-card so it reads as "for reference" rather than competing
-	   with the assistant's own answer, but still fully legible: the whole
-	   point is catching a bad transcription immediately, in the call
-	   itself, not after leaving Transponder to read the thread. */
-	.transcript-bubble {
-		width: 100%;
-		max-width: 300px;
-		/* A long push-to-talk hold can transcribe to several sentences —
-		   capped and internally scrollable so it can't push the orb/reply/
-		   footer around or blow out the fixed-height call screen. */
-		max-height: 96px;
-		overflow-y: auto;
-		background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-md);
-		padding: var(--space-sm) var(--space-md);
-		font-size: 13px;
-		line-height: 1.45;
-		color: var(--color-text-dim);
-	}
-
-	.transcript-label {
-		display: block;
-		font-size: 10px;
-		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--color-accent);
-		margin-bottom: 2px;
 	}
 
 	.citation-row {
@@ -1588,11 +1249,6 @@
 		font-weight: 600;
 	}
 
-	@keyframes breathe {
-		0%, 100% { transform: scale(1); }
-		50% { transform: scale(1.03); }
-	}
-
 	@keyframes spin {
 		to { transform: rotate(360deg); }
 	}
@@ -1601,10 +1257,4 @@
 		animation: spin 1s linear infinite;
 	}
 
-	@media (prefers-reduced-motion: reduce) {
-		.mic-orb,
-		.speaking-orb {
-			animation: none;
-		}
-	}
 </style>
