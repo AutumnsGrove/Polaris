@@ -29,6 +29,20 @@ func (s *Server) handleListFieldMemories(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, memories)
 }
 
+// handleFieldMemoryChat is the Field page's "tell it what to remember" box:
+// the same instruction-driven memory tool loop Settings uses, bound to this
+// field's own store only (never global, regardless of the field's mode —
+// this box manages the field's memories).
+func (s *Server) handleFieldMemoryChat(w http.ResponseWriter, r *http.Request) {
+	f := s.loadField(w, r.PathValue("id"))
+	if f == nil {
+		return
+	}
+	s.serveMemoryChat(w, r, fieldOnlyClosures(s.db, f.ID),
+		func() ([]store.Memory, error) { return s.db.ListFieldMemoriesFull(f.ID) },
+		"field memory changed via field page chat")
+}
+
 func (s *Server) handleUpdateFieldMemory(w http.ResponseWriter, r *http.Request) {
 	f := s.loadField(w, r.PathValue("id"))
 	if f == nil {

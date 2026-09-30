@@ -136,6 +136,14 @@ const maxMemoryChatToolTurns = 6
 // file's sibling turn.go — the settings panel has no chat history to show
 // for it, just an instruction in and a confirmation + refreshed list out.
 func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
+	s.serveMemoryChat(w, r, newMemoryClosures(s.db, nil, memoryGlobal), s.db.ListMemoriesFull, "memory changed via settings panel chat")
+}
+
+// serveMemoryChat is handleMemoryChat's body, shared with a Field page's own
+// memory box (issue #133) — the two differ only in which store the memory
+// tool is bound to (c), how the refreshed list is read back (listFull), and
+// the event-log line.
+func (s *Server) serveMemoryChat(w http.ResponseWriter, r *http.Request, c memoryClosures, listFull func() ([]store.Memory, error), logMsg string) {
 	var req struct {
 		Instruction string `json:"instruction"`
 	}
@@ -157,20 +165,20 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.FinishTurn()
 
-	confirmation, err := s.runMemoryToolLoop(r.Context(), prompts.Get().Turn.MemoryChatSystem, instruction, maxMemoryChatToolTurns)
+	confirmation, err := s.runMemoryToolLoop(r.Context(), c, prompts.Get().Turn.MemoryChatSystem, instruction, maxMemoryChatToolTurns)
 	if err != nil {
 		log.Warn("memory chat completion failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	memories, err := s.db.ListMemoriesFull()
+	memories, err := listFull()
 	if err != nil {
 		log.Warn("listing memories after memory chat failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.db.LogEvent("", "info", "memory", "memory changed via settings panel chat", map[string]interface{}{"instruction": instruction}, "")
+	s.db.LogEvent("", "info", "memory", logMsg, map[string]interface{}{"instruction": instruction}, "")
 	writeJSON(w, map[string]interface{}{"message": confirmation, "memories": memories})
 }
 
@@ -181,16 +189,17 @@ func (s *Server) handleMemoryChat(w http.ResponseWriter, r *http.Request) {
 // gateway/memory_import.go), which differ only in their system prompt,
 // user message, and turn budget. systemPromptFmt is formatted with the
 // current memory index exactly like every other %s-templated prompt in
-// prompts.yaml.
-func (s *Server) runMemoryToolLoop(ctx context.Context, systemPromptFmt, userMessage string, maxTurns int) (string, error) {
+// prompts.yaml. c picks which store the memory tool is bound to — the global
+// list for settings/import, one field's own store for a Field page.
+func (s *Server) runMemoryToolLoop(ctx context.Context, c memoryClosures, systemPromptFmt, userMessage string, maxTurns int) (string, error) {
 	memCtx := &tools.Context{
 		Ctx:          ctx,
 		Emit:         func(string, map[string]interface{}) {},
-		ListMemories: s.db.ListMemories,
-		GetMemory:    s.db.GetMemory,
-		WriteMemory:  s.db.CreateMemory,
-		EditMemory:   s.db.UpdateMemory,
-		ForgetMemory: s.db.DeleteMemory,
+		ListMemories: c.list,
+		GetMemory:    c.get,
+		WriteMemory:  c.write,
+		EditMemory:   c.edit,
+		ForgetMemory: c.forget,
 	}
 	memoryOnlyDefs := memoryOnlyToolDefs(memCtx)
 

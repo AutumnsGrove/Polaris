@@ -54,7 +54,7 @@ func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.FinishTurn()
 
-	summary, err := s.runMemoryToolLoop(r.Context(), prompts.Get().Turn.MemoryImportSystem, dump, maxMemoryImportToolTurns)
+	summary, err := s.runMemoryToolLoop(r.Context(), newMemoryClosures(s.db, nil, memoryGlobal), prompts.Get().Turn.MemoryImportSystem, dump, maxMemoryImportToolTurns)
 	if err != nil {
 		log.Warn("memory import completion failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

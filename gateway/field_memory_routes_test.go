@@ -64,6 +64,47 @@ func TestFieldMemoryAPI_ListEditForgetScopedPerField(t *testing.T) {
 	}
 }
 
+// The Field page's "tell it what to remember" box: the instruction-driven
+// tool loop must write into THIS field's store (never global, never a
+// sibling's) and hand back only this field's refreshed list.
+func TestFieldMemoryChat_WritesToFieldStoreOnly(t *testing.T) {
+	srv := sequencedSSEServer(t, []string{
+		toolCallSSEBody(`{"index":0,"id":"call_1","type":"function","function":{"name":"memory",` +
+			`"arguments":"{\"action\":\"write\",\"name\":\"codename\",\"type\":\"project\",\"description\":\"codename is ORCA-7\",\"content\":\"ORCA-7\"}"}}`),
+		textSSEBody("Saved the codename."),
+	})
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+	a, _ := h.db.CreateField(store.Field{Name: "a", MemoryMode: store.FieldMemoryBoth})
+	b, _ := h.db.CreateField(store.Field{Name: "b", MemoryMode: store.FieldMemoryBoth})
+	_ = h.db.CreateMemory("global-one", "user", "g", "g", "")
+
+	code, out := doJSON(t, "POST", h.url("/api/fields/"+a.ID+"/memories/chat"), map[string]string{"instruction": "remember the codename is ORCA-7"})
+	if code != http.StatusOK {
+		t.Fatalf("chat: %d %s", code, out)
+	}
+	var resp struct {
+		Message  string         `json:"message"`
+		Memories []store.Memory `json:"memories"`
+	}
+	_ = json.Unmarshal(out, &resp)
+	if resp.Message != "Saved the codename." || len(resp.Memories) != 1 || resp.Memories[0].Name != "codename" {
+		t.Errorf("response = %+v, want only a's new memory (no global entry)", resp)
+	}
+	if g, _ := h.db.ListMemories(); len(g) != 1 || g[0].Name != "global-one" {
+		t.Errorf("global list changed by a field chat: %+v", g)
+	}
+	if bl, _ := h.db.ListFieldMemories(b.ID); len(bl) != 0 {
+		t.Errorf("sibling field gained entries: %+v", bl)
+	}
+	if code, _ := doJSON(t, "POST", h.url("/api/fields/"+a.ID+"/memories/chat"), map[string]string{"instruction": "  "}); code != http.StatusBadRequest {
+		t.Errorf("blank instruction: %d, want 400", code)
+	}
+	if code, _ := doJSON(t, "POST", h.url("/api/fields/nope/memories/chat"), map[string]string{"instruction": "x"}); code != http.StatusNotFound {
+		t.Errorf("unknown field: %d, want 404", code)
+	}
+}
+
 func TestFieldsAPI_MemoryModeValidation(t *testing.T) {
 	h := newTestHarness(t, "")
 	for _, m := range []string{"default", "field_only", "both", "none"} {
