@@ -18,6 +18,23 @@ func mustParseTime(t *testing.T, layout, value string) time.Time {
 
 func timePtr(t time.Time) *time.Time { return &t }
 
+// A routine opted out of Oracle must fire with NoOracle set; one opted in
+// must not (the global oracle_enabled gate in turn.go is independent).
+func TestPulseClientMessage_NoOracleFollowsUseOracle(t *testing.T) {
+	for _, tc := range []struct {
+		useOracle bool
+		wantNo    bool
+	}{{true, false}, {false, true}} {
+		msg := pulseClientMessage(store.PulsarRoutine{ID: 7, Name: "r", Prompt: "p", UseOracle: tc.useOracle})
+		if msg.NoOracle != tc.wantNo {
+			t.Errorf("UseOracle=%v: NoOracle = %v, want %v", tc.useOracle, msg.NoOracle, tc.wantNo)
+		}
+		if msg.Source != "pulsar" || msg.PulsarRoutineID != 7 {
+			t.Errorf("UseOracle=%v: message lost its pulsar identity: %+v", tc.useOracle, msg)
+		}
+	}
+}
+
 func TestIsRoutineDue_Daily(t *testing.T) {
 	now := mustParseTime(t, "2006-01-02 15:04", "2026-09-03 07:05")
 	longAgo := mustParseTime(t, "2006-01-02 15:04", "2026-08-01 00:00")

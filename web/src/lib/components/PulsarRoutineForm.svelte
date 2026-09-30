@@ -66,6 +66,11 @@
 	// state.svelte.ts's openThread does for threads.
 	let focusMode = $state<FocusMode>(untrack(() => (routine?.focus_mode as FocusMode) || 'off'));
 	let deepResearch = $state(untrack(() => routine?.deep_research ?? false));
+	// Defaults on, matching the column's DEFAULT 1 — a routine only opts
+	// *out* of Oracle. Always submitted as-is, even while the global setting
+	// greys the switch out, so the stored value round-trips untouched and
+	// re-enabling Oracle restores whatever each routine had (issue #141).
+	let useOracle = $state(untrack(() => routine?.use_oracle ?? true));
 	let scheduleType = $state<'daily' | 'weekly' | 'monthly'>(untrack(() => routine?.schedule_type ?? 'daily'));
 	// Separate default per schedule type so switching the dropdown back
 	// and forth doesn't leave a monthly day-of-month string sitting in a
@@ -109,6 +114,7 @@
 			// server-side, 'off' is only this form's own sentinel for it.
 			focus_mode: focusMode === 'off' ? ('' as FocusMode) : focusMode,
 			deep_research: deepResearch,
+			use_oracle: useOracle,
 			schedule_type: scheduleType,
 			schedule_params: scheduleParams,
 			time_of_day: timeOfDay
@@ -202,7 +208,20 @@
 						onchange={(v) => (deepResearch = v)}
 					/>
 				</div>
+
+				<div class="settings-row">
+					<span class="row-label">Use Oracle mode</span>
+					<Switch
+						label="Use Oracle mode"
+						checked={useOracle}
+						disabled={!appState.settings.oracleEnabled}
+						onchange={(v) => (useOracle = v)}
+					/>
+				</div>
 			</div>
+			{#if !appState.settings.oracleEnabled}
+				<p class="hint">Oracle mode is off in Settings, so routines run without it.</p>
+			{/if}
 
 			<div class="section-head"><CalendarClock size={15} /><span class="section-title">Schedule</span></div>
 			<div class="settings-group">

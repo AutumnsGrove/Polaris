@@ -250,6 +250,25 @@ func (s *Server) firePulseRecovered(r store.PulsarRoutine) {
 // on this, so send only needs to notice a failure to log, unlike
 // handleAsk's non-streaming call (gateway/ask.go) which also collects the
 // answer text for its HTTP response.
+// pulseClientMessage builds the turn a routine's pulse runs as. Split out of
+// firePulse so the routine-to-message mapping is testable without a live
+// handleTurn.
+func pulseClientMessage(r store.PulsarRoutine) ClientMessage {
+	return ClientMessage{
+		Type:         "message",
+		Content:      r.Prompt,
+		Model:        r.Model,
+		Source:       "pulsar",
+		FocusMode:    r.FocusMode,
+		DeepResearch: r.DeepResearch,
+		// Only ever opts a routine out: turn.go's Oracle gate still requires
+		// the global oracle_enabled setting independently (issue #141).
+		NoOracle:          !r.UseOracle,
+		PulsarRoutineID:   r.ID,
+		PulsarRoutineName: r.Name,
+	}
+}
+
 func (s *Server) firePulse(r store.PulsarRoutine) {
 	// Same shutdown-draining registration handleAsk/handleWS use before
 	// calling handleTurn — without it, a pulse firing during a restart's
@@ -275,16 +294,7 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 		return
 	}
 
-	msg := ClientMessage{
-		Type:              "message",
-		Content:           r.Prompt,
-		Model:             r.Model,
-		Source:            "pulsar",
-		FocusMode:         r.FocusMode,
-		DeepResearch:      r.DeepResearch,
-		PulsarRoutineID:   r.ID,
-		PulsarRoutineName: r.Name,
-	}
+	msg := pulseClientMessage(r)
 	// Best-effort: a lookup failure shouldn't block the pulse itself from
 	// firing, just fall back to no prior-report context this one time —
 	// same reasoning as handleTurn's other best-effort DB reads (e.g.

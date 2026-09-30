@@ -549,6 +549,7 @@ export interface PulsarRoutine {
 	model: string;
 	focus_mode: FocusMode;
 	deep_research: boolean;
+	use_oracle: boolean;
 	schedule_type: 'daily' | 'weekly' | 'monthly';
 	schedule_params: string;
 	time_of_day: string;

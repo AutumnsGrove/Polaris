@@ -663,6 +663,12 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 	model TEXT NOT NULL,
 	focus_mode TEXT NOT NULL DEFAULT '',
 	deep_research INTEGER NOT NULL DEFAULT 0,
+	-- use_oracle: whether this routine's pulses may run through Oracle mode
+	-- (issue #141). Subordinate to the global oracle_enabled setting — it can
+	-- only opt a routine *out* (gateway sets NoOracle from it), never force
+	-- Oracle on when the operator has it off. Defaults to 1 so every routine
+	-- keeps the behavior it had before this column existed.
+	use_oracle INTEGER NOT NULL DEFAULT 1,
 	-- schedule_type: 'daily' | 'weekly' | 'monthly'. schedule_params holds
 	-- whatever schedule_type needs beyond time_of_day — empty for daily,
 	-- a weekday name (e.g. "monday") for weekly, a 1-31 day-of-month

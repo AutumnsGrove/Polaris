@@ -8,7 +8,7 @@ import (
 func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 	s := openTestStore(t)
 
-	id, err := s.CreatePulsarRoutine("Daily news", "Give me today's tech news", "deepseek", "researcher", false, "daily", "", "07:00")
+	id, err := s.CreatePulsarRoutine("Daily news", "Give me today's tech news", "deepseek", "researcher", false, true, "daily", "", "07:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPulsarRoutine: %v", err)
 	}
-	if r.Name != "Daily news" || r.ScheduleType != "daily" || r.TimeOfDay != "07:00" || r.DeepResearch {
+	if r.Name != "Daily news" || r.ScheduleType != "daily" || r.TimeOfDay != "07:00" || r.DeepResearch || !r.UseOracle {
 		t.Errorf("GetPulsarRoutine returned %+v, want the values just written", r)
 	}
 	if r.LastRunAt != nil {
@@ -27,7 +27,7 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 		t.Errorf("ArchivedAt should be unset for a new routine, got %+v", r.ArchivedAt)
 	}
 
-	if _, err := s.CreatePulsarRoutine("GW3 weekly", "Guild Wars 3 news roundup", "deepseek", "", true, "weekly", "monday", "09:00"); err != nil {
+	if _, err := s.CreatePulsarRoutine("GW3 weekly", "Guild Wars 3 news roundup", "deepseek", "", true, false, "weekly", "monday", "09:00"); err != nil {
 		t.Fatalf("CreatePulsarRoutine (second): %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 		t.Fatalf("got %d active routines, want 2: %+v", len(active), active)
 	}
 
-	if err := s.UpdatePulsarRoutine(id, "Daily tech news", "Give me today's tech news, brief", "luna", "brief", false, "daily", "", "08:00"); err != nil {
+	if err := s.UpdatePulsarRoutine(id, "Daily tech news", "Give me today's tech news, brief", "luna", "brief", false, false, "daily", "", "08:00"); err != nil {
 		t.Fatalf("UpdatePulsarRoutine: %v", err)
 	}
 	r, err = s.GetPulsarRoutine(id)
@@ -48,6 +48,20 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 	}
 	if r.Name != "Daily tech news" || r.Model != "luna" || r.FocusMode != "brief" || r.TimeOfDay != "08:00" {
 		t.Errorf("GetPulsarRoutine after update returned %+v, want the edited values", r)
+	}
+	if r.UseOracle {
+		t.Errorf("UseOracle = true after update to false, want false")
+	}
+
+	// The list path scans use_oracle too, not just GetPulsarRoutine.
+	listed, err := s.ListActivePulsarRoutines()
+	if err != nil {
+		t.Fatalf("ListActivePulsarRoutines after update: %v", err)
+	}
+	for _, lr := range listed {
+		if lr.UseOracle {
+			t.Errorf("listed routine %q has UseOracle = true, want false (both routines were written false)", lr.Name)
+		}
 	}
 
 	if _, err := s.GetPulsarRoutine(999999); err != ErrPulsarRoutineNotFound {
@@ -58,7 +72,7 @@ func TestPulsarRoutine_CreateGetListUpdate(t *testing.T) {
 func TestPulsarRoutine_ArchiveUnarchive(t *testing.T) {
 	s := openTestStore(t)
 
-	id, err := s.CreatePulsarRoutine("openclaw repo", "Any news on the openclaw repo?", "deepseek", "", false, "daily", "", "07:00")
+	id, err := s.CreatePulsarRoutine("openclaw repo", "Any news on the openclaw repo?", "deepseek", "", false, true, "daily", "", "07:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine: %v", err)
 	}
@@ -111,7 +125,7 @@ func TestPulsarRoutine_ArchiveUnarchive(t *testing.T) {
 func TestPulsarRoutine_LastRun(t *testing.T) {
 	s := openTestStore(t)
 
-	id, err := s.CreatePulsarRoutine("Daily news", "news", "deepseek", "", false, "daily", "", "07:00")
+	id, err := s.CreatePulsarRoutine("Daily news", "news", "deepseek", "", false, true, "daily", "", "07:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine: %v", err)
 	}
@@ -135,7 +149,7 @@ func TestPulsarRoutine_LastRun(t *testing.T) {
 func TestPulsarPulses_ListAndUnreadCounts(t *testing.T) {
 	s := openTestStore(t)
 
-	routineID, err := s.CreatePulsarRoutine("Daily news", "news", "deepseek", "", false, "daily", "", "07:00")
+	routineID, err := s.CreatePulsarRoutine("Daily news", "news", "deepseek", "", false, true, "daily", "", "07:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine: %v", err)
 	}
@@ -189,7 +203,7 @@ func TestPulsarPulses_ListAndUnreadCounts(t *testing.T) {
 func TestLatestPulseReport(t *testing.T) {
 	s := openTestStore(t)
 
-	routineID, err := s.CreatePulsarRoutine("GW3 weekly", "Guild Wars 3 news", "deepseek", "", false, "weekly", "monday", "09:00")
+	routineID, err := s.CreatePulsarRoutine("GW3 weekly", "Guild Wars 3 news", "deepseek", "", false, true, "weekly", "monday", "09:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine: %v", err)
 	}

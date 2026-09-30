@@ -46,6 +46,7 @@ type pulsarRoutineRequest struct {
 	Model          string `json:"model"`
 	FocusMode      string `json:"focus_mode"`
 	DeepResearch   bool   `json:"deep_research"`
+	UseOracle      bool   `json:"use_oracle"`
 	ScheduleType   string `json:"schedule_type"`
 	ScheduleParams string `json:"schedule_params"`
 	TimeOfDay      string `json:"time_of_day"`
@@ -100,7 +101,7 @@ func (s *Server) handleCreatePulsarRoutine(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	id, err := s.db.CreatePulsarRoutine(req.Name, req.Prompt, req.Model, req.FocusMode, req.DeepResearch, req.ScheduleType, req.ScheduleParams, req.TimeOfDay)
+	id, err := s.db.CreatePulsarRoutine(req.Name, req.Prompt, req.Model, req.FocusMode, req.DeepResearch, req.UseOracle, req.ScheduleType, req.ScheduleParams, req.TimeOfDay)
 	if err != nil {
 		log.Warn("creating pulsar routine failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -137,7 +138,7 @@ func (s *Server) handleUpdatePulsarRoutine(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := s.db.UpdatePulsarRoutine(id, req.Name, req.Prompt, req.Model, req.FocusMode, req.DeepResearch, req.ScheduleType, req.ScheduleParams, req.TimeOfDay); err != nil {
+	if err := s.db.UpdatePulsarRoutine(id, req.Name, req.Prompt, req.Model, req.FocusMode, req.DeepResearch, req.UseOracle, req.ScheduleType, req.ScheduleParams, req.TimeOfDay); err != nil {
 		if errors.Is(err, store.ErrPulsarRoutineNotFound) {
 			http.Error(w, "routine not found", http.StatusNotFound)
 		} else {

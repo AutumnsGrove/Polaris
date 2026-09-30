@@ -31,6 +31,7 @@ type PulsarRoutine struct {
 	Model          string `json:"model"`
 	FocusMode      string `json:"focus_mode"`
 	DeepResearch   bool   `json:"deep_research"`
+	UseOracle      bool   `json:"use_oracle"`
 	ScheduleType   string `json:"schedule_type"`
 	ScheduleParams string `json:"schedule_params"`
 	TimeOfDay      string `json:"time_of_day"`
@@ -44,11 +45,11 @@ type PulsarRoutine struct {
 }
 
 // CreatePulsarRoutine inserts a new active routine, returning its id.
-func (s *Store) CreatePulsarRoutine(name, prompt, model, focusMode string, deepResearch bool, scheduleType, scheduleParams, timeOfDay string) (int64, error) {
+func (s *Store) CreatePulsarRoutine(name, prompt, model, focusMode string, deepResearch, useOracle bool, scheduleType, scheduleParams, timeOfDay string) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO pulsar_routines (name, prompt, model, focus_mode, deep_research, schedule_type, schedule_params, time_of_day)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, prompt, model, focusMode, deepResearch, scheduleType, scheduleParams, timeOfDay,
+		`INSERT INTO pulsar_routines (name, prompt, model, focus_mode, deep_research, use_oracle, schedule_type, schedule_params, time_of_day)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, prompt, model, focusMode, deepResearch, useOracle, scheduleType, scheduleParams, timeOfDay,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("create pulsar routine: %w", err)
@@ -61,13 +62,13 @@ func (s *Store) CreatePulsarRoutine(name, prompt, model, focusMode string, deepR
 // plan doc's "Routine lifecycle"). Does not touch archived_at/last_run_at;
 // editing an archived routine is allowed (its form is reachable from the
 // archive section) but doesn't itself unarchive it.
-func (s *Store) UpdatePulsarRoutine(id int64, name, prompt, model, focusMode string, deepResearch bool, scheduleType, scheduleParams, timeOfDay string) error {
+func (s *Store) UpdatePulsarRoutine(id int64, name, prompt, model, focusMode string, deepResearch, useOracle bool, scheduleType, scheduleParams, timeOfDay string) error {
 	res, err := s.db.Exec(
 		`UPDATE pulsar_routines SET
-			name = ?, prompt = ?, model = ?, focus_mode = ?, deep_research = ?,
+			name = ?, prompt = ?, model = ?, focus_mode = ?, deep_research = ?, use_oracle = ?,
 			schedule_type = ?, schedule_params = ?, time_of_day = ?
 		 WHERE id = ?`,
-		name, prompt, model, focusMode, deepResearch, scheduleType, scheduleParams, timeOfDay, id,
+		name, prompt, model, focusMode, deepResearch, useOracle, scheduleType, scheduleParams, timeOfDay, id,
 	)
 	if err != nil {
 		return fmt.Errorf("update pulsar routine: %w", err)
@@ -127,9 +128,9 @@ func (s *Store) SetPulsarRoutineLastRun(id int64, when string) error {
 func (s *Store) GetPulsarRoutine(id int64) (*PulsarRoutine, error) {
 	var r PulsarRoutine
 	err := s.db.QueryRow(
-		`SELECT id, name, prompt, model, focus_mode, deep_research, schedule_type, schedule_params, time_of_day, created_at, last_run_at, archived_at
+		`SELECT id, name, prompt, model, focus_mode, deep_research, use_oracle, schedule_type, schedule_params, time_of_day, created_at, last_run_at, archived_at
 		 FROM pulsar_routines WHERE id = ?`, id,
-	).Scan(&r.ID, &r.Name, &r.Prompt, &r.Model, &r.FocusMode, &r.DeepResearch, &r.ScheduleType, &r.ScheduleParams, &r.TimeOfDay, &r.CreatedAt, &r.LastRunAt, &r.ArchivedAt)
+	).Scan(&r.ID, &r.Name, &r.Prompt, &r.Model, &r.FocusMode, &r.DeepResearch, &r.UseOracle, &r.ScheduleType, &r.ScheduleParams, &r.TimeOfDay, &r.CreatedAt, &r.LastRunAt, &r.ArchivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrPulsarRoutineNotFound
 	}
@@ -154,7 +155,7 @@ func (s *Store) ListArchivedPulsarRoutines() ([]PulsarRoutine, error) {
 
 func (s *Store) queryPulsarRoutines(whereOrderBy string) ([]PulsarRoutine, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, prompt, model, focus_mode, deep_research, schedule_type, schedule_params, time_of_day, created_at, last_run_at, archived_at
+		`SELECT id, name, prompt, model, focus_mode, deep_research, use_oracle, schedule_type, schedule_params, time_of_day, created_at, last_run_at, archived_at
 		 FROM pulsar_routines ` + whereOrderBy,
 	)
 	if err != nil {
@@ -165,7 +166,7 @@ func (s *Store) queryPulsarRoutines(whereOrderBy string) ([]PulsarRoutine, error
 	routines := []PulsarRoutine{}
 	for rows.Next() {
 		var r PulsarRoutine
-		if err := rows.Scan(&r.ID, &r.Name, &r.Prompt, &r.Model, &r.FocusMode, &r.DeepResearch, &r.ScheduleType, &r.ScheduleParams, &r.TimeOfDay, &r.CreatedAt, &r.LastRunAt, &r.ArchivedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Prompt, &r.Model, &r.FocusMode, &r.DeepResearch, &r.UseOracle, &r.ScheduleType, &r.ScheduleParams, &r.TimeOfDay, &r.CreatedAt, &r.LastRunAt, &r.ArchivedAt); err != nil {
 			return nil, fmt.Errorf("list pulsar routines: %w", err)
 		}
 		routines = append(routines, r)

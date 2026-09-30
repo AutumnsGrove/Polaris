@@ -11,10 +11,10 @@ import "testing"
 func TestGetPulsarStats_Aggregates(t *testing.T) {
 	s := openTestStore(t)
 
-	if _, err := s.CreatePulsarRoutine("Daily news", "prompt", "test-model", "default", false, "daily", "", "07:00"); err != nil {
+	if _, err := s.CreatePulsarRoutine("Daily news", "prompt", "test-model", "default", false, true, "daily", "", "07:00"); err != nil {
 		t.Fatalf("CreatePulsarRoutine (active): %v", err)
 	}
-	archivedID, err := s.CreatePulsarRoutine("Old routine", "prompt", "test-model", "default", false, "daily", "", "08:00")
+	archivedID, err := s.CreatePulsarRoutine("Old routine", "prompt", "test-model", "default", false, true, "daily", "", "08:00")
 	if err != nil {
 		t.Fatalf("CreatePulsarRoutine (to archive): %v", err)
 	}
