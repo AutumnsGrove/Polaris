@@ -125,12 +125,7 @@ health question, a table for a comparison, fresher sources for breaking news). T
 below is that reading step: one star per check, joined by a line once it's decided. Anything it changes
 is shown on the reply and can be undone with a tap. It's off by default.
 
-<table>
-<tr>
-<td width="50%" align="center"><img src="screenshots/oracle-desktop.gif" alt="The Oracle reading animation: stars light up one by one, then join into a line"></td>
-<td width="50%" align="center"><img src="screenshots/oracle-phone.gif" alt="The Oracle reading animation on a phone"></td>
-</tr>
-</table>
+<p align="center"><img src="screenshots/oracle-desktop.gif" alt="The Oracle reading animation: stars light up one by one, then join into a line" width="480"></p>
 
 <table>
 <tr>

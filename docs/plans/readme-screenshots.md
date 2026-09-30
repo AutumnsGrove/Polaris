@@ -31,7 +31,7 @@ Status: `[x]` captured + published, `[-]` dropped.
 - [x] Pulsar: routine list (cropped) + a fired routine's report
 - [x] The Daily: desktop three-column, plus a tall variant
 - [x] Constellation library (9 stars from 5 "Jane Doe" threads) — phone + desktop
-- [x] Oracle mode: GIF of the "reading" constellation (phone + desktop) + Settings panel
+- [x] Oracle mode: GIF of the "reading" constellation (one GIF, shown once — a phone copy was redundant) + Settings panel
 - [x] Transponder idle state — phone
 - [x] Settings + Help (`?`) glossary — phone + desktop
 - [-] Branching switcher, ghost threads, expanded tool trace (trace is visible in the hero)
