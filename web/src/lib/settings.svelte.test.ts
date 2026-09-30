@@ -30,6 +30,18 @@ describe('SettingsState.load', () => {
 		expect(settings.contextWindowTokens).toBe(200_000);
 	});
 
+	it('loads the TTS voice roster and persists a pick', async () => {
+		const voices = [{ id: 'af_sky', name: 'Sky', gender: 'female', accent: 'american' }];
+		vi.stubGlobal('fetch', fakeFetch({ tts_voice: 'af_sky', tts_voices: voices }));
+		const settings = new SettingsState();
+		await settings.load();
+		expect(settings.ttsVoice).toBe('af_sky');
+		expect(settings.ttsVoices).toEqual(voices);
+
+		await settings.setTTSVoice('bm_daniel');
+		expect(settings.ttsVoice).toBe('bm_daniel');
+	});
+
 	it('applies voice_input_mode from the server, defaulting to toggle for anything else', async () => {
 		vi.stubGlobal('fetch', fakeFetch({ voice_input_mode: 'hold' }));
 		const settings = new SettingsState();

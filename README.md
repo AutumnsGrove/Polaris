@@ -57,7 +57,8 @@ next to Settings at the bottom of the sidebar — it explains each one in plain 
   links, falling back to a plain web search if Foursquare isn't configured. Uses browser
   geolocation for "near me" questions when available (see [SETUP.md](SETUP.md#configuration)).
 - **Voice** — hold a button to record a memo (transcribed via Voxtral), and hear replies read
-  aloud in a real voice (Kokoro-82M), streamed sentence by sentence as they're ready.
+  aloud in a real voice (Kokoro-82M), streamed sentence by sentence as they're ready. Pick from
+  four voices (American/British, female/male) in Settings.
 - **Transponder** — a full-screen, hands-free call mode: push-to-talk to speak, get a spoken reply
   back (with sources still visible on screen), and keep going without touching the keyboard.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox

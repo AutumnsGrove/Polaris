@@ -492,6 +492,15 @@ export interface ToggleableTool {
 	description: string;
 }
 
+// Mirrors voice.Voice (voice/voices.go) — one entry in the curated Kokoro
+// roster the Settings Voice picker offers.
+export interface TTSVoice {
+	id: string;
+	name: string;
+	gender: 'female' | 'male';
+	accent: 'american' | 'british';
+}
+
 export interface ModelPricing {
 	prompt_per_m: number;
 	completion_per_m: number;

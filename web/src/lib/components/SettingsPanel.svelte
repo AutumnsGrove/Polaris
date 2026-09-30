@@ -19,7 +19,11 @@
 		User,
 		Mic,
 		MapPin,
-		Galaxy
+		Galaxy,
+		Venus,
+		Mars,
+		Play,
+		Square
 	} from '@lucide/svelte';
 	import { constellationState } from '$lib/constellation.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
@@ -36,7 +40,35 @@
 	import WizardButton from './WizardButton.svelte';
 	import WizardOverlay from './WizardOverlay.svelte';
 
+	// Voice previews are pre-rendered static clips (dev/gen-voice-samples.sh),
+	// so they play instantly and cost nothing. One shared element: starting
+	// another voice, or tapping the playing one again, stops the current clip.
+	let playingVoice = $state<string | null>(null);
+	let previewAudio: HTMLAudioElement | null = null;
+
+	function stopPreview() {
+		previewAudio?.pause();
+		previewAudio = null;
+		playingVoice = null;
+	}
+
+	function togglePreview(id: string) {
+		const wasPlaying = playingVoice === id;
+		stopPreview();
+		if (wasPlaying) return;
+		const audio = new Audio(`/voice-samples/${id}.mp3`);
+		previewAudio = audio;
+		playingVoice = id;
+		audio.addEventListener('ended', () => {
+			if (previewAudio === audio) stopPreview();
+		});
+		audio.play().catch(() => {
+			if (previewAudio === audio) stopPreview();
+		});
+	}
+
 	function close() {
+		stopPreview();
 		appState.settings.open = false;
 	}
 
@@ -536,6 +568,46 @@
 				behavior.
 			</p>
 
+			{#if appState.settings.ttsVoices.length > 0}
+				<div class="settings-group">
+					<div class="settings-row stacked">
+						<span class="row-label">Reading voice</span>
+						<div class="voice-grid" role="radiogroup" aria-label="Reading voice">
+							{#each appState.settings.ttsVoices as v (v.id)}
+								<div class="voice-option" class:active={appState.settings.ttsVoice === v.id}>
+									<button
+										class="voice-select"
+										role="radio"
+										aria-checked={appState.settings.ttsVoice === v.id}
+										onclick={() => appState.settings.setTTSVoice(v.id)}
+									>
+										<span class="voice-flag" aria-hidden="true">{v.accent === 'british' ? '🇬🇧' : '🇺🇸'}</span>
+										<span class="voice-name">{v.name}</span>
+										<span
+											class="voice-gender"
+											role="img"
+											aria-label={`${v.accent === 'british' ? 'British' : 'American'} ${v.gender}`}
+										>
+											{#if v.gender === 'female'}<Venus size={14} />{:else}<Mars size={14} />{/if}
+										</span>
+									</button>
+									<button
+										class="voice-preview"
+										aria-label={playingVoice === v.id ? `Stop ${v.name} preview` : `Preview ${v.name}`}
+										onclick={() => togglePreview(v.id)}
+									>
+										{#if playingVoice === v.id}<Square size={12} />{:else}<Play size={12} />{/if}
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				</div>
+				<p class="hint">
+					Used when reading an answer aloud and in Transponder calls. Tap ▶ to hear a voice.
+				</p>
+			{/if}
+
 			<div class="section-head"><MapPin size={15} /><span class="section-title">Location</span></div>
 			<div class="settings-group">
 				<div class="settings-row stacked">
@@ -948,6 +1020,77 @@
 		color: var(--color-text);
 		font-weight: 600;
 		box-shadow: var(--shadow-xs);
+	}
+
+	/* 2x2 grid of selectable voice cards — same recessed-track/raised-active
+	   language as .theme-toggle, but a grid since four labelled options
+	   (flag + name + gender) don't fit one row on a phone. */
+	.voice-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-xs);
+		background: var(--color-bg);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-well);
+		padding: var(--space-xs);
+	}
+
+	.voice-option {
+		display: flex;
+		align-items: center;
+		border-radius: calc(var(--radius-md) - 3px);
+		font-size: 13px;
+		color: var(--color-text-dim);
+		transition: background-color 0.15s var(--ease-out-expo), color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
+	}
+
+	.voice-option:hover {
+		color: var(--color-text);
+	}
+
+	/* Two sibling buttons (select + preview) inside one card — a button
+	   can't nest another button, and tapping play mustn't change the pick. */
+	.voice-select {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		border: none;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		padding: var(--space-sm) var(--space-xs) var(--space-sm) var(--space-md);
+		min-width: 0;
+	}
+
+	.voice-preview {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: transparent;
+		color: inherit;
+		padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-sm);
+	}
+
+	.voice-preview:hover {
+		color: var(--color-accent);
+	}
+
+	.voice-option.active {
+		background: var(--color-surface-3);
+		color: var(--color-text);
+		font-weight: 600;
+		box-shadow: var(--shadow-xs);
+	}
+
+	.voice-name {
+		flex: 1;
+		text-align: left;
+	}
+
+	.voice-gender {
+		display: flex;
 	}
 
 	.person-pronoun-toggle {

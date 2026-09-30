@@ -8,10 +8,11 @@ Bug 1 (autoplay unlock) and Fix 2 (persisted WAV + waveform scrubber) landed in 
 `AudioPlayer.unlock()` in `web/src/lib/audio.svelte.ts` and
 `web/src/lib/components/WaveformAudioPlayer.svelte`. Bug 2 (focus/voice-mode reinforcement) landed
 in `c6e74c3` ("Re-anchor focus/voice-mode instructions to fix multi-turn drift") — see
-`modeReinforcement` in `agent/driver.go`. **Bug 3 (a TTS voice picker in Settings) was never
-built** — `SettingsPanel.svelte`'s Voice section still has no voice dropdown next to the model
-picker; `config.Voice.TTSVoice` is still a single static config value. Tracked as
-[issue #114](https://github.com/AutumnsGrove/Polaris/issues/114). This unblocked
+`modeReinforcement` in `agent/driver.go`. **Bug 3 (a TTS voice picker in Settings) shipped later**
+([issue #114](https://github.com/AutumnsGrove/Polaris/issues/114), 2026-09-30): a four-voice
+curated roster (`voice/voices.go`) stored as the `tts_voice` setting and shown as a 2x2
+flag/gender card grid in `SettingsPanel.svelte`'s Voice section; `config.Voice.TTSVoice` remains
+the fallback when nothing has been picked. This unblocked
 `docs/plans/transponder.md` as intended. See `docs/plans/transponder.md` for the feature this
 unblocks (named Transponder — see that doc's top note for why), and the "Telephone Mode — Call
 Screen Mockups" canvas artifact from the same planning session for UI mockups (call screens plus

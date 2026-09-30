@@ -1,5 +1,5 @@
 import { getManualLocation, setManualLocation as persistManualLocation } from './geolocation';
-import type { FocusMode, ToggleableTool } from './types';
+import type { FocusMode, ToggleableTool, TTSVoice } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
@@ -113,6 +113,12 @@ export class SettingsState {
 	// send — the original behavior). See gateway/settings.go's
 	// settingVoiceInputMode for why 'toggle' is the default.
 	voiceInputMode = $state<'hold' | 'toggle'>('toggle');
+
+	// Read-aloud voice picker — ttsVoices is the backend's curated roster
+	// (voice.Voices), ttsVoice the currently effective voice ID. Both come
+	// from GET /api/settings so IDs are never hardcoded here.
+	ttsVoices = $state<TTSVoice[]>([]);
+	ttsVoice = $state('');
 
 	// Tools section — see gateway/settings.go's toggleable_tools/
 	// disabled_tools and ToolSettings.svelte. toggleableTools is static
@@ -255,6 +261,8 @@ export class SettingsState {
 		this.defaultModel = data.default_model ?? '';
 		this.defaultFocusMode = (data.default_focus_mode || 'off') as FocusMode;
 		this.voiceInputMode = data.voice_input_mode === 'hold' ? 'hold' : 'toggle';
+		this.ttsVoices = data.tts_voices ?? [];
+		this.ttsVoice = data.tts_voice ?? '';
 		this.contextWindowTokens = data.context_window_tokens ?? 200_000;
 		this.toggleableTools = data.toggleable_tools ?? [];
 		this.disabledTools = data.disabled_tools ?? [];
@@ -299,6 +307,11 @@ export class SettingsState {
 	async setVoiceInputMode(mode: 'hold' | 'toggle') {
 		this.voiceInputMode = mode;
 		await this.put({ voice_input_mode: mode });
+	}
+
+	async setTTSVoice(id: string) {
+		this.ttsVoice = id;
+		await this.put({ tts_voice: id });
 	}
 
 	// Flips one tool's enabled state and persists the whole updated list —
