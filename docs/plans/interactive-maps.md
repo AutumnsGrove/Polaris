@@ -81,8 +81,8 @@ show_map({
 - New component under `web/src/lib/components/`, rendered by a `ToolEvent.svelte` branch (same pattern
   `show` used) and reloaded from persisted events (`buildTimelineFromEvents` must thread the new
   fields through — this exact gap was caught live for `show`).
-- **Geographic:** MapLibre GL JS vs Leaflet is an open decision (below). Layers are real map layers,
-  which is what makes toggles instant.
+- **Geographic:** Leaflet (decided; see Decisions). Layers are real map layers, which is what makes
+  toggles instant.
 - **Image:** a small pan/zoom viewer with an SVG annotation overlay in image pixel space; extends or
   sits beside `ImageLightbox.svelte` rather than duplicating it.
 - Expand button opens the full-screen state (screen 2). Marker ↔ list selection state lives in a
@@ -92,36 +92,45 @@ show_map({
   draws on").
 - Theme: map style switches with the UI theme (dark default), same idea as `CodeExecThemePrompt`.
 
-### The model can't see a live map
+### Snapshot: every `show_map` call also saves a static image
 
-`view_image` reviews pixels; an interactive map has none server-side. Options, in order of preference:
+The model can't see a live interactive map, and `view_image` reviews pixels. Rather than build a
+separate review path, **`show_map` always renders a static snapshot server-side, saves it to the
+thread's workspace, and names the file in its tool result** (e.g. `snapshot: map-1.png`). Then
+`view_image` `path: "map-1.png"` (`see` mode) works with no extra plumbing, and `show`/Save to Field can
+use the same file.
 
-1. **Trust the data.** Coordinates from geocoding/Foursquare are exact; the model's job is choosing
-   what to draw, not where pixels land. Good enough for markers/rings/routes.
-2. **Snapshot for self-review (later).** A server-side static render (tile stitch + the same shapes
-   via Pillow, or a headless render) written to the workspace so `view_image` `see` can check "does
-   this look right" — also doubles as the fallback for non-browser surfaces (CLI `polaris search`,
-   Pulsar Daily). Deliberately deferred: build it only if step 1 proves insufficient.
+- **Rendered in the handler, synchronously**, so the file exists before the model's next step. (A
+  browser-side canvas export was rejected: it only exists once the card loads, and non-browser surfaces
+  like the CLI's `polaris search` or Pulsar Daily would get nothing.)
+- **Geographic:** fetch the tiles covering the bounds, stitch, draw markers/shapes/labels in Go using
+  the same Web Mercator math the spike validates. Pillow is not an option here: it lives only in the
+  network-less sandbox, and this runs in the Polaris process. Library choice (stdlib `image` +
+  `golang.org/x/image`, or a small 2D drawing lib) is settled in the spike.
+- **Image kind:** base image plus shapes flattened in pixel space; also what "Save to Field" writes, and
+  the original file is untouched.
+- The snapshot is a **flat render of all default-on layers**, not of the viewer's current toggle state.
+- Cost of this choice: a second renderer to keep visually consistent with the Leaflet card, and a
+  server-side tile fetch (below). Both accepted for the value of one uniform review/fallback path.
 
 ### Tiles and the network
 
-- The frontend fetches tiles **from the user's browser**, so there is no server-side SSRF surface for
-  tile fetching, but the tile host must be allowed by whatever CSP/proxy setup the app has — check
-  before building.
-- Public `tile.openstreetmap.org` is for light use with attribution; verify its **current** usage
-  policy before shipping. Make the tile URL template a config field (`config.yaml`) so a keyed provider
-  or a self-hosted tile server can be swapped in without a code change. Always render the attribution
-  string.
-- If a server-side snapshot is later built, it needs its own tile cache, a per-call tile cap, a real
-  User-Agent, and `SafeDialContext` like the other fetchers.
-- Tailscale-only phone use means tile requests go over the phone's normal connection, not through the
-  Polaris host — nothing to proxy unless CSP forces it.
+- **Browser side:** the Leaflet card fetches tiles from the user's browser; the tile host must be
+  allowed by whatever CSP/proxy setup the app has — check before building.
+- **Server side (snapshot):** the handler fetches tiles itself, so it needs `SafeDialContext` like the
+  other fetchers, a per-call tile cap (~16), an on-disk/in-memory tile cache, and a real `User-Agent`.
+  These requests originate from the potato, so the public OSM policy applies to them directly.
+- **Default source: public `tile.openstreetmap.org`**, with the URL template in `config.yaml` so a keyed
+  provider or self-hosted server can be swapped in without a code change. Verify OSM's **current**
+  usage policy before shipping. Always render the attribution string, on the card and stamped onto
+  snapshots.
 
 ### Image kind specifics (the GW2 case)
 
 - Sources: workspace file (from `fetch_url`, which already lands images there) or remote `url`.
-- The **original is never modified.** The annotated result is an overlay rendered client-side; "Save to
-  Field" / download writes a flattened copy into the workspace.
+- The **original is never modified.** In the app the annotations are an overlay rendered client-side;
+  the server-side snapshot (above) is the flattened copy that lands in the workspace and is what "Save
+  to Field" uses.
 - GW2's own map is a tile pyramid (`tiles.guildwars2.com/{continent}/{floor}/{zoom}/{x}/{y}.jpg`) with
   coordinates from `api.guildwars2.com/v2/continents`/`maps`/`pois`. Wiki region maps are ordinary
   images. v1 handles ordinary images only; a GW2 tile source is a later, optional extension, not a
@@ -130,32 +139,44 @@ show_map({
 ## Implementation phases
 
 1. **Spike (live, per repo culture).** `curl` a few OSM tiles and confirm marker/circle placement math
-   against known coordinates; prototype `MapCard` with hardcoded data in the real app; decide
-   Leaflet vs MapLibre from an actual phone.
+   against known coordinates; prototype `MapCard` (Leaflet) with hardcoded data in the real app on a
+   real phone; pick the Go drawing approach for snapshots.
 2. **Tool + plumbing.** `tools/show_map.go` (+ `descriptions/show_map.yaml`, catalog entry, tests),
-   event schema, persisted-event threading, `web/src/lib/types.ts`.
+   event schema, persisted-event threading, `web/src/lib/types.ts`; server-side snapshot renderer
+   (tile fetch + cache, stitch, draw) writing to the workspace and naming the file in the result;
+   per-turn and payload caps.
 3. **Frontend.** `MapCard` inline + expanded; marker/list selection; layer toggles; theming.
-4. **Image kind.** Pan/zoom viewer + SVG overlay; flatten/save.
+4. **Image kind.** Pan/zoom viewer + SVG overlay; flatten (shared with the snapshot path) and save.
 5. **Live verification.** Drive the real app with `dev/fakeopenrouter` queuing scripted `show_map`
    calls (including an update-by-id turn and a hard reload) via Playwright, then a real-model pass on
    the potato. Confirm a disabled tool isn't offered (`/_control/calls`).
 6. **Docs.** `README.md` Features line, `HelpModal` `TERMS` entry, `SETUP.md` if a tile key/URL config is
    added, `DEVELOPMENT.md` only if architecture notes change.
-7. **Optional:** static snapshot for model self-review / non-browser surfaces; GW2 tile source.
+7. **Optional:** GW2 tile source.
 
-## Open decisions
+## Decisions
 
-- **Leaflet or MapLibre GL JS.** Leaflet: small, simple, raster tiles, fine on phones. MapLibre:
-  smoother, vector tiles/rotation, noticeably heavier. Decide in the spike on real hardware.
-- **Tile provider default.** Public OSM tiles vs a keyed provider vs self-hosted. Ship with a
-  configurable URL either way.
-- **Is the static snapshot worth building** for model self-review, or is trusting the data enough?
-- **Pins from `nearby_search`.** Should `nearby_search` results auto-offer a map card, or only when
-  the model calls `show_map` explicitly? (Leaning explicit, to keep answers calm.)
-- **Per-turn cap** on `show_map` calls. `show` has none; a map is heavier than an image, so a small cap
-  may be reasonable.
-- **Persistence size.** Marker/shape payloads are stored in the transcript; cap counts to keep
-  events small.
+Settled 2026-09-30:
+
+- **Leaflet**, not MapLibre GL JS: small, raster tiles, enough for pins/circles/routes/toggles, lower
+  risk on a phone browser. Revisit only if it feels bad on a real phone in the spike.
+- **Public OSM tiles by default, URL template configurable** in `config.yaml`. Verify current OSM usage
+  policy before shipping.
+- **Every `show_map` call auto-saves a static snapshot** to the workspace, rendered server-side in the
+  handler, with the filename in the tool result so `view_image` can review it (see "Snapshot").
+- **`nearby_search` never auto-attaches a map card.** Only an explicit `show_map` call does; prompt
+  guidance nudges the model toward `show_map` for location questions.
+- **Per-turn cap: 3 `show_map` calls.** Heavier than `show` (tiles + render); an over-cap call returns a
+  clear "already showed N maps this turn" error.
+- **Payload cap: 50 markers and 30 shapes per call**, with a "trim it down" error beyond that, to keep
+  persisted transcript events small.
+
+## Still open
+
+- Exact Go drawing approach for the snapshot renderer (settled in the spike).
+- Whether the snapshot should be re-rendered on update-by-id calls (leaning yes: same filename bumped,
+  e.g. `map-1.png` -> `map-1-v2.png`, so `view_image` never reads a stale file).
+- Tile cache location and eviction (a Docker volume path under the existing data dir vs in-memory only).
 
 ## Non-goals
 
