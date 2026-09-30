@@ -25,7 +25,7 @@
 		!!focus ||
 			field.default_focus_mode === 'off' ||
 			!!field.default_model ||
-			field.memory_mode === 'none' ||
+			field.memory_mode !== 'default' ||
 			!field.constellation_visible ||
 			field.exclude_from_chat_search
 	);
@@ -44,6 +44,8 @@
 		{/if}
 		{#if field.memory_mode === 'none'}
 			<span class="chip" title="Memory off in this Field"><Brain size={12} /></span>
+		{:else if field.memory_mode === 'field_only' || field.memory_mode === 'both'}
+			<span class="chip" title={field.memory_mode === 'both' ? 'Field memories + your regular ones' : 'Field-only memories'}><Brain size={12} /></span>
 		{/if}
 		{#if !field.constellation_visible}
 			<span class="chip" title="Hidden from Constellation"><Orbit size={12} /></span>

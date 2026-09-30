@@ -1108,7 +1108,10 @@ export interface Field {
 	favorite: boolean;
 	default_focus_mode: FocusMode | '';
 	default_model: string;
-	memory_mode: 'default' | 'none';
+	// default = global memory only; field_only = this Field's own store;
+	// both = the Field's store + global read-only (writes go to the Field);
+	// none = no memory. See store.ValidFieldMemoryMode.
+	memory_mode: 'default' | 'field_only' | 'both' | 'none';
 	constellation_visible: boolean;
 	exclude_from_chat_search: boolean;
 	// '' = no tag, else a --color-cat-* suffix (see fields.svelte.ts's

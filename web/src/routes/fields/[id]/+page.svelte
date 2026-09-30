@@ -8,6 +8,7 @@
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import FieldChips from '$lib/components/FieldChips.svelte';
+	import FieldMemoryList from '$lib/components/FieldMemoryList.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import WizardButton from '$lib/components/WizardButton.svelte';
 	import WizardOverlay from '$lib/components/WizardOverlay.svelte';
@@ -33,6 +34,18 @@
 	// Mirrors gateway/settings.go's maxCustomInstructionsChars — the server is
 	// the real limit; this just lets the counter turn red before a save 400s.
 	const MAX_INSTRUCTIONS = 4000;
+
+	// The four memory modes (issue #133). "Global" is the stored value
+	// 'default' — today's behavior, so existing Fields need no migration.
+	const MEMORY_MODES: { id: Field['memory_mode']; label: string; hint: string }[] = [
+		{ id: 'default', label: 'Global', hint: 'Uses your regular memories, like any other chat.' },
+		{ id: 'field_only', label: 'Field', hint: 'Uses only memories saved inside this Field. Your regular memories stay out of it.' },
+		{ id: 'both', label: 'Both', hint: 'Reads this Field’s memories and your regular ones, but only ever saves to this Field.' },
+		{ id: 'none', label: 'None', hint: 'No memory at all in this Field.' }
+	];
+	// Settings → Memory off overrides a Field's mode: it never turns your
+	// regular memories back on, so the hint says what is actually in effect.
+	let globalMemoryOff = $derived(!appState.settings.memoryEnabled);
 
 	let detail = $state<FieldDetail | null>(null);
 	let notFound = $state(false);
@@ -531,24 +544,26 @@
 					<div class="setting-row">
 						<span class="row-label"><Brain size={15} /> Memory</span>
 						<div class="segmented" role="radiogroup" aria-label="Memory mode">
-							<button
-								class:selected={field.memory_mode === 'default'}
-								onclick={() => patch({ memory_mode: 'default' })}
-								role="radio"
-								aria-checked={field.memory_mode === 'default'}>Default</button
-							>
-							<button
-								class:selected={field.memory_mode === 'none'}
-								onclick={() => patch({ memory_mode: 'none' })}
-								role="radio"
-								aria-checked={field.memory_mode === 'none'}>None</button
-							>
-							<!-- Reserved for the real per-field memory store (plan's
-							     v2) — shown so the picker's shape doesn't change when it
-							     lands, but not selectable until it does. -->
-							<button disabled title="Coming later" role="radio" aria-checked="false"><span class="wordmark">Field</span>-scoped</button>
+							{#each MEMORY_MODES as m (m.id)}
+								<button
+									class:selected={field.memory_mode === m.id}
+									onclick={() => patch({ memory_mode: m.id })}
+									role="radio"
+									aria-checked={field.memory_mode === m.id}>{m.label}</button
+								>
+							{/each}
 						</div>
 					</div>
+					<p class="hint">
+						{MEMORY_MODES.find((m) => m.id === field.memory_mode)?.hint}
+						{#if globalMemoryOff && (field.memory_mode === 'default' || field.memory_mode === 'both')}
+							Memory is off in Settings, so {field.memory_mode === 'both' ? 'only this Field’s own memories are used' : 'nothing is used'}.
+						{/if}
+					</p>
+
+					{#if field.memory_mode === 'field_only' || field.memory_mode === 'both'}
+						<FieldMemoryList fieldId={field.id} />
+					{/if}
 
 					<h2 class="panel-title spaced">Privacy</h2>
 
