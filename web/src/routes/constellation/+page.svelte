@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { select } from 'd3-selection';
 	import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 	import { appState } from '$lib/state.svelte';
@@ -24,7 +25,21 @@
 	} from '@lucide/svelte';
 	import type { Star } from '$lib/types';
 
-	let view = $state<'library' | 'map'>('library');
+	// Library/Map lives in the URL (?view=map), not component state: the map
+	// has no route of its own, so a plain $state meant tapping into a star and
+	// hitting Back re-mounted this page in its default Library view. Tab
+	// switches use replaceState so they don't stack history entries — Back from
+	// a star returns to exactly the tab you left, and one more Back leaves
+	// Constellation rather than walking through tab toggles.
+	const view = $derived<'library' | 'map'>(page.url.searchParams.get('view') === 'map' ? 'map' : 'library');
+	function setView(v: 'library' | 'map') {
+		if (v === view) return;
+		void goto(v === 'map' ? '?view=map' : page.url.pathname, {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
 	let showSettings = $state(false);
 
 	onMount(() => {
@@ -444,11 +459,11 @@
 </div>
 
 <div class="tabbar">
-	<button class="tab" class:active={view === 'library'} onclick={() => (view = 'library')}>
+	<button class="tab" class:active={view === 'library'} onclick={() => setView('library')}>
 		<Library size={18} />
 		<span>Library</span>
 	</button>
-	<button class="tab" class:active={view === 'map'} onclick={() => (view = 'map')}>
+	<button class="tab" class:active={view === 'map'} onclick={() => setView('map')}>
 		<MapIcon size={18} />
 		<span>Map</span>
 	</button>
