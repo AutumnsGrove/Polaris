@@ -48,7 +48,13 @@
 			<span class="chip" title={field.memory_mode === 'both' ? 'Field memories + your regular ones' : 'Field-only memories'}><Brain size={12} /></span>
 		{/if}
 		{#if !field.constellation_visible}
-			<span class="chip" title="Hidden from Constellation"><Galaxy size={12} /></span>
+			<span class="chip struck" title="Hidden from Constellation">
+				<Galaxy size={12} />
+				<svg class="strike" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+					<path class="strike-gap" d="M3 21 21 3" />
+					<path class="strike-line" d="M3 21 21 3" />
+				</svg>
+			</span>
 		{/if}
 		{#if field.exclude_from_chat_search}
 			<span class="chip" title="Excluded from chat search"><SearchSlash size={12} /></span>
@@ -72,5 +78,32 @@
 		border-radius: var(--radius-full);
 		background: var(--color-surface-3);
 		color: var(--color-text-dim);
+	}
+
+	/* A chip's presence normally means "this setting is on", so a bare Galaxy
+	   read as Constellation being enabled when the field is actually hidden
+	   from it. The strike marks it as off; the gap stroke (chip-background
+	   colored, wider than the line) keeps the line legible over the glyph at
+	   12px. */
+	.struck {
+		position: relative;
+	}
+
+	.strike {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		fill: none;
+		stroke-linecap: round;
+	}
+
+	.strike-gap {
+		stroke: var(--color-surface-3);
+		stroke-width: 6;
+	}
+
+	.strike-line {
+		stroke: currentColor;
+		stroke-width: 2;
 	}
 </style>
