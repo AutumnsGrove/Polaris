@@ -7,12 +7,7 @@ search API, running as a single Go binary with the web UI embedded inside it.
 You're lost at sea with no way to know the answer yourself. Polaris is the fixed point you
 triangulate against — it doesn't know things, it knows how to go find out.
 
-<table>
-<tr>
-<td width="68%"><img src="docs/screenshots/chat-desktop-split.webp" alt="Polaris answering a question with visible searches and citations, shown in dark and light themes"></td>
-<td width="32%"><img src="docs/screenshots/chat-phone-split.webp" alt="The same answer on a phone"></td>
-</tr>
-</table>
+<p align="center"><img src="docs/screenshots/chat-desktop-split.webp" alt="Polaris answering a question with visible searches and citations, shown in dark and light themes" width="860"></p>
 
 Built phone-first, and it fills out a desktop window too. **[More screenshots →](docs/SHOWCASE.md)**
 
