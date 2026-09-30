@@ -3,32 +3,18 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import ChatTurnView from '$lib/components/ChatTurnView.svelte';
-	import ComposerMenu from '$lib/components/ComposerMenu.svelte';
-	import VoiceButton from '$lib/components/VoiceButton.svelte';
 	import Transponder from '$lib/components/Transponder.svelte';
+	import ChatComposer from '$lib/components/ChatComposer.svelte';
+	import ChatHeader from '$lib/components/ChatHeader.svelte';
+	import WelcomeScreen from '$lib/components/WelcomeScreen.svelte';
+	import JumpToBottomButton from '$lib/components/JumpToBottomButton.svelte';
 	import {
-		Send,
-		Square,
-		PanelLeft,
-		Paperclip,
-		X,
 		Loader2,
-		ArrowDown,
 		TriangleAlert,
 		RotateCcw,
-		MessageCirclePlus,
-		ChevronLeft,
-		Ghost,
-		BookmarkPlus,
-		MicAudioLines
 	} from '@lucide/svelte';
-	import { autoResize } from '$lib/actions/autoResize';
 	import { uploadAttachment } from '$lib/upload';
-	import ThreadMenu from '$lib/components/ThreadMenu.svelte';
-	import FieldPill from '$lib/components/FieldPill.svelte';
 	import { fieldsState } from '$lib/fields.svelte';
-	import ModeToggle from '$lib/components/ModeToggle.svelte';
-	import NightSky from '$lib/components/NightSky.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import type { ChatTurn, FocusMode } from '$lib/types';
@@ -486,201 +472,39 @@
 </script>
 
 {#snippet composerForm()}
-	<form
-		class="composer"
-		onsubmit={(e) => {
-			e.preventDefault();
-			submit();
-		}}
-	>
-		<div class="textarea-wrap">
-			{#if !input}
-				<!-- A native placeholder attribute can't mix fonts within its
-				     text, so the "Polaris" wordmark treatment used everywhere
-				     else (see .welcome-heading .wordmark) needs this overlay
-				     instead — invisible to interaction (pointer-events: none)
-				     and hidden the instant there's real input, so it never
-				     competes with what's actually being typed. Skipped
-				     entirely for a Weaver session — "Ask Polaris" would be
-				     actively misleading for a turn that never reaches the
-				     main assistant at all. -->
-				{#if !isWeaverThread}
-					<div class="fake-placeholder" aria-hidden="true">
-						Ask <span class="wordmark">Polaris</span>…
-					</div>
-				{/if}
-			{/if}
-			<textarea
-				rows="1"
-				bind:value={input}
-				onkeydown={onKeydown}
-				onpaste={onPaste}
-				use:autoResize={{ value: input, maxHeight: 200 }}
-				placeholder={isWeaverThread ? 'Tell Weaver what to fix…' : undefined}
-				aria-label={isWeaverThread ? 'Tell Weaver what to fix' : 'Ask Polaris'}
-			></textarea>
-		</div>
-
-		{#if attachedFiles.length > 0}
-			<div class="attachment-chips">
-				{#each attachedFiles as file, i (file.name + i)}
-					<div class="attachment-chip">
-						<Paperclip size={13} />
-						<span class="attachment-name">{file.name}</span>
-						<button
-							type="button"
-							onclick={() => removeAttachment(i)}
-							disabled={uploading}
-							aria-label="Remove attachment"
-						>
-							<X size={13} />
-						</button>
-					</div>
-				{/each}
-			</div>
-		{/if}
-
-		<div class="composer-toolbar">
-			{#if !isWeaverThread}
-				<ComposerMenu
-					bind:focusMode
-					bind:focusModeManual
-					bind:deepResearch
-					bind:research
-					{ghostMode}
-					onAttach={handleAttach}
-				/>
-			{/if}
-			<div class="toolbar-spacer"></div>
-			{#if !isWeaverThread}
-				<button
-					type="button"
-					class="call-btn"
-					disabled={busyElsewhere}
-					title="Talk to Polaris"
-					onclick={() => (showTransponder = true)}
-				>
-					<MicAudioLines size={16} />
-				</button>
-				<VoiceButton bind:value={input} bind:sttCostUsd={voiceCostUsd} />
-			{/if}
-			<button
-				type={appState.busyOnCurrentThread ? 'button' : 'submit'}
-				class="send-btn"
-				class:stop={appState.busyOnCurrentThread}
-				disabled={uploading || busyElsewhere || (!appState.busyOnCurrentThread && !input.trim())}
-				title={appState.busyOnCurrentThread
-					? 'Stop generating'
-					: busyElsewhere
-						? 'A response is still generating in another thread'
-						: uploading
-							? 'Uploading…'
-							: 'Send'}
-				onclick={() => {
-					if (appState.busyOnCurrentThread) appState.stopGeneration();
-				}}
-			>
-				{#if appState.busyOnCurrentThread}
-					<Square size={14} fill="currentColor" />
-				{:else if uploading}
-					<Loader2 size={14} class="spin" />
-				{:else}
-					<Send size={16} />
-				{/if}
-			</button>
-		</div>
-	</form>
+	<ChatComposer
+		bind:input
+		bind:focusMode
+		bind:focusModeManual
+		bind:deepResearch
+		bind:research
+		bind:voiceCostUsd
+		{ghostMode}
+		{attachedFiles}
+		{uploading}
+		{isWeaverThread}
+		{busyElsewhere}
+		onSubmit={submit}
+		{onKeydown}
+		{onPaste}
+		onAttach={handleAttach}
+		onRemoveAttachment={removeAttachment}
+		onCall={() => (showTransponder = true)}
+	/>
 {/snippet}
 
 <svelte:head>
 	<title>{pageTitle}</title>
 </svelte:head>
 
-<header class="header">
-	<div class="header-left">
-		{#if pulsarBackRoutineId}
-			<button
-				class="icon-btn"
-				onclick={() => goto(`/pulsar/${pulsarBackRoutineId}`)}
-				title="Back to routine"
-			>
-				<ChevronLeft size={18} />
-			</button>
-		{:else if isWeaverThread}
-			<button class="icon-btn" onclick={() => goto('/constellation')} title="Back to Constellation">
-				<ChevronLeft size={18} />
-			</button>
-		{:else if !appState.sidebarOpen}
-			<button class="icon-btn" onclick={() => appState.toggleSidebar()} title="Open sidebar">
-				<PanelLeft size={18} />
-			</button>
-		{/if}
-		{#if currentThreadTitle}
-			<h1 class="thread-title" title={currentThreadTitle}>{currentThreadTitle}</h1>
-		{/if}
-		{#if activeField && !appState.isGhostThread}
-			<FieldPill field={activeField} />
-		{/if}
-	</div>
-	<div class="header-right">
-		{#if appState.turns.length === 0 && !isWeaverThread}
-			<!-- Homepage only — gated on turns.length, not
-			     !appState.currentThreadId: a ghost thread DOES get a real
-			     currentThreadId now (see state.svelte.ts's isGhostThread doc
-			     comment), same as any other thread, so that check alone
-			     would let this row and the New-thread/ThreadMenu controls
-			     below both try to render at once for a ghost session's
-			     first turn onward. turns.length is what actually means
-			     "still the empty-composer moment", same as a normal thread.
-			     Also excluded for a Weaver session (issue #94) — ghost
-			     mode/model switching are both main-assistant concerns that
-			     don't apply to a tool-driven Weaver turn. -->
-			<button
-				type="button"
-				class="icon-btn"
-				onclick={() => (ghostMode = !ghostMode)}
-				title={ghostMode
-					? 'Ghost mode is on — nothing about this chat will be saved'
-					: 'Start a ghost chat — no history, no memory, no personalization'}
-				aria-label="Toggle ghost mode"
-				aria-pressed={ghostMode}
-			>
-				<Ghost size={17} class={ghostMode ? 'ghost-filled' : ''} />
-			</button>
-			<ModeToggle mode="assistant" />
-		{/if}
-		{#if appState.currentThreadId && appState.isGhostThread}
-			<!-- Still ghost: no ThreadMenu (nothing to rename/favorite/
-			     delete on a thread the sidebar doesn't even show yet — see
-			     store.go's ghost schema comment) — just the one action that
-			     matters, keeping this conversation for good. -->
-			<button
-				class="icon-btn"
-				onclick={() => appState.promote()}
-				title="Save this chat permanently"
-				aria-label="Save this chat permanently"
-			>
-				<BookmarkPlus size={17} />
-			</button>
-		{:else if appState.currentThreadId}
-			<button
-				class="icon-btn"
-				onclick={() => appState.newThread()}
-				title="New thread"
-				aria-label="New thread"
-			>
-				<MessageCirclePlus size={17} />
-			</button>
-			<ThreadMenu
-				threadId={appState.currentThreadId}
-				threadTitle={currentThreadTitle}
-				favorite={currentThread?.favorite ?? false}
-				createdAt={currentThread?.created_at}
-				updatedAt={currentThread?.updated_at}
-			/>
-		{/if}
-	</div>
-</header>
+<ChatHeader
+	bind:ghostMode
+	{pulsarBackRoutineId}
+	{isWeaverThread}
+	{currentThreadTitle}
+	{currentThread}
+	{activeField}
+/>
 
 {#if !showTransponder}
 {#if appState.turns.length === 0}
@@ -688,27 +512,9 @@
 	     landing view, instead of sitting pinned at the bottom of a mostly
 	     empty screen. Switches to the normal scrolling-history layout the
 	     instant the first message is sent. -->
-	<div class="welcome">
-		<NightSky />
-		{#if isWeaverThread}
-			<h1 class="welcome-heading">Talk to <span class="wordmark">Weaver</span></h1>
-			<p class="subtitle wordmark">
-				Tell it what's wrong across your stars — it can search, read, merge, and update them.
-			</p>
-		{:else}
-			<h1 class="welcome-heading">Ask <span class="wordmark">Polaris</span> anything</h1>
-			{#if activeField && !appState.isGhostThread}
-				<p class="subtitle wordmark">
-					Working in {activeField.name} — its instructions and shared files come along.
-				</p>
-			{:else}
-				<p class="subtitle wordmark">Your questions, answered with sources from the web.</p>
-			{/if}
-		{/if}
-		<div class="welcome-composer">
+		<WelcomeScreen {isWeaverThread} {activeField}>
 			{@render composerForm()}
-		</div>
-	</div>
+		</WelcomeScreen>
 {:else}
 	<div class="timeline-wrap">
 		<div class="timeline-scroll" bind:this={scrollEl} onscroll={handleTimelineScroll}>
@@ -760,15 +566,7 @@
 			{/if}
 		</div>
 		{#if !pinnedToBottom}
-			<button
-				class="jump-to-bottom"
-				onclick={scrollToBottom}
-				aria-label="Scroll to latest"
-				title="Scroll to latest"
-			>
-				<ArrowDown size={16} />
-				{#if appState.busyOnCurrentThread}<span class="jump-to-bottom-dot" aria-hidden="true"></span>{/if}
-			</button>
+			<JumpToBottomButton busy={appState.busyOnCurrentThread} onClick={scrollToBottom} />
 		{/if}
 	</div>
 	{@render composerForm()}
@@ -792,183 +590,6 @@
 {/if}
 
 <style>
-	.header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		/* Directional shadow instead of a rule — the header floats a hair
-		   above the timeline scrolling underneath it, same light-source
-		   logic as the sidebar's own right-edge shadow. */
-		box-shadow: 0 8px 16px -14px rgba(0, 0, 0, 0.5);
-		background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-		/* Installed as a standalone PWA (apple-mobile-web-app-status-bar-style:
-		   black-translucent), iOS draws the status bar over the page instead
-		   of pushing content down like ordinary Safari does — without this,
-		   the status bar's clock/battery area sits directly on top of the
-		   sidebar toggle button, making it untappable. Falls back to the
-		   plain 12px on browsers without safe-area support, same pattern as
-		   the composer's safe-area-inset-bottom handling below. */
-		padding: max(var(--space-md), env(safe-area-inset-top)) var(--space-lg) var(--space-md);
-		gap: var(--space-md);
-	}
-
-	.header-left {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		min-width: 0;
-		flex: 1;
-	}
-
-	/* Replaces the model selector, which moved into the composer's "+"
-	   sheet — clamped to 3 lines since generated titles ("Debugging a
-	   Go goroutine leak in the SearXNG client") routinely run past what
-	   fits on one line at a readable size, and a regenerated title
-	   (drawing on the whole thread instead of just the opening message)
-	   only makes that more likely, not less. */
-	.thread-title {
-		margin: 0;
-		min-width: 0;
-		font-family: var(--font-serif);
-		font-size: 15px;
-		font-weight: 600;
-		line-height: 1.3;
-		color: var(--color-text);
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.header-right {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		flex-shrink: 0;
-	}
-
-	/* A filled amber background here (first attempt) read as shouting for
-	   a header action that isn't actually the primary one — plain
-	   .icon-btn, same quiet treatment as the sidebar toggle and the "..."
-	   trigger right next to it, so the icon's shape alone communicates
-	   what it does instead of a competing pill of color. */
-
-	/* Ghost mode's "on" state tints the glyph itself in the accent color —
-	   no fill (unlike ThreadMenu's favorited star): the Ghost icon's eyes
-	   are their own separate paths, and setting fill="currentColor" on the
-	   whole icon fills them in solid along with the body, erasing the
-	   detail that makes it read as a ghost at all. A plain color change
-	   keeps the outline intact and still clearly reads as "on". */
-	.icon-btn :global(svg.ghost-filled) {
-		color: var(--color-accent);
-	}
-
-	/* The welcome state is the ONE screen in the app allowed a committed
-	   color treatment — a subtle off-center radial wash of the starlight
-	   accent behind the heading. Not a card, not glass, not a gradient
-	   applied to text. Just a soft distant-sun cast on the ground the
-	   composer sits on. Positioned above/left of center so it feels
-	   observed rather than staged. */
-	.welcome {
-		position: relative;
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-sm);
-		padding: var(--space-4xl) var(--space-xl);
-		text-align: center;
-		/* A first attempt here removed this entirely to stop mobile
-		   browsers from auto-scrolling this container to bring a
-		   newly-focused input into view — but that just traded one bug
-		   for another: with nowhere to scroll, the keyboard shrinking
-		   available height clipped the heading/composer instead of
-		   scrolling them, a squashed/"crunched" look. The real fix for
-		   the page-jumping was locking body itself (see app.css) — once
-		   the *page* can't scroll, a local scrollable container here is
-		   exactly as safe as .timeline-scroll already is in the
-		   conversation view, which never had this problem. */
-		overflow-y: auto;
-		isolation: isolate;
-	}
-
-	.welcome::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: var(--z-behind);
-		background:
-			radial-gradient(
-				ellipse 60% 45% at 38% 34%,
-				color-mix(in srgb, var(--color-accent) 22%, transparent) 0%,
-				color-mix(in srgb, var(--color-accent) 8%, transparent) 35%,
-				transparent 70%
-			);
-		pointer-events: none;
-	}
-
-	:root[data-theme='light'] .welcome::before {
-		background:
-			radial-gradient(
-				ellipse 60% 45% at 38% 34%,
-				color-mix(in srgb, var(--color-accent) 14%, transparent) 0%,
-				color-mix(in srgb, var(--color-accent) 5%, transparent) 40%,
-				transparent 70%
-			);
-	}
-
-	.welcome-heading {
-		margin: 0 0 var(--space-xs) 0;
-		font-family: var(--font-serif);
-		/* Real hero scale — this is the one heading in the app allowed to
-		   run large, since there's no competing content on this screen. */
-		font-size: clamp(36px, 6vw, 56px);
-		font-weight: 700;
-		letter-spacing: -0.02em;
-		line-height: 1.1;
-		color: var(--color-text);
-	}
-
-	.welcome-heading .wordmark {
-		font-family: var(--font-wordmark);
-		font-weight: 400;
-		font-size: 0.88em;
-		letter-spacing: 0.01em;
-	}
-
-	.welcome .subtitle {
-		margin: var(--space-md) 0 var(--space-3xl) 0;
-		color: var(--color-text-dim);
-		line-height: 1.5;
-	}
-
-	.welcome .subtitle.wordmark {
-		font-family: var(--font-wordmark);
-		font-weight: 400;
-		font-style: italic;
-		font-size: 17px;
-		letter-spacing: 0.01em;
-	}
-
-	.welcome-composer {
-		width: 100%;
-		max-width: 640px;
-	}
-
-	.welcome-composer :global(.composer) {
-		border-top: none;
-		padding: 0 0 var(--space-md) 0;
-	}
-
-	/* Composer inside the welcome state gets a touch more presence —
-	   a soft accent ring on focus that ties back to the hero glow.
-	   Regular in-conversation composer stays plain. */
-	.welcome-composer :global(textarea:focus) {
-		box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
-	}
-
 	/* Wraps .timeline-scroll so .jump-to-bottom can be positioned relative
 	   to the scrolling viewport, not the whole page. */
 	.timeline-wrap {
@@ -986,58 +607,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-xl);
-	}
-
-	/* Appears once the user scrolls away from the bottom (see
-	   pinnedToBottom) — same "jump to latest" affordance Claude/ChatGPT
-	   show while a reply is streaming, so scrolling up to read doesn't
-	   mean losing your place once you're ready to catch up. The pulsing
-	   dot only shows while a turn is actually in flight — otherwise this
-	   is just "you're not at the bottom", not "something new is arriving". */
-	.jump-to-bottom {
-		position: absolute;
-		bottom: 16px;
-		left: 50%;
-		transform: translateX(-50%);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: var(--radius-full);
-		border: none;
-		background: var(--color-surface-2);
-		color: var(--color-text);
-		box-shadow: 0 4px 16px color-mix(in srgb, black 20%, transparent), var(--shadow-glass-edge);
-		transition:
-			background-color 0.15s var(--ease-out-expo),
-			transform 0.15s var(--ease-out-expo);
-	}
-
-	.jump-to-bottom:hover {
-		background: var(--color-surface-3);
-		transform: translateX(-50%) translateY(-1px);
-	}
-
-	.jump-to-bottom-dot {
-		position: absolute;
-		top: -2px;
-		right: -2px;
-		width: 9px;
-		height: 9px;
-		border-radius: var(--radius-full);
-		background: var(--color-accent);
-		animation: jump-to-bottom-pulse 1.4s ease-in-out infinite;
-	}
-
-	@keyframes jump-to-bottom-pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.4;
-		}
 	}
 
 	/* A real recovery moment, not a quiet dead end — sized and weighted
@@ -1126,256 +695,6 @@
 		background: var(--color-surface-3);
 		transform: translateY(-1px);
 		box-shadow: var(--shadow-sm);
-	}
-
-	/* Column now, not a single row — the textarea sits on its own line
-	   with room to breathe, the model/focus/attach controls that used to
-	   crowd it live in .composer-toolbar underneath instead (see
-	   ComposerMenu's "+" sheet, which absorbed the old inline model
-	   selector — a row of 4-5 small controls doesn't survive phone
-	   width, one thumb-reachable entry point does). */
-	.composer {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm);
-		box-shadow: 0 -8px 16px -14px rgba(0, 0, 0, 0.5);
-		padding: var(--space-lg);
-		/* Clears iOS Safari's bottom toolbar / home-indicator area — falls
-		   back to the plain 12px on browsers without safe-area support. */
-		padding-bottom: max(var(--space-md), env(safe-area-inset-bottom));
-	}
-
-	.composer-toolbar {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-	}
-
-	.toolbar-spacer {
-		flex: 1;
-	}
-
-	/* Mirrors VoiceButton's own .mic-btn treatment (that component's style
-	   is scoped and unreachable from here) — same recedes-until-relevant
-	   secondary-control look as the rest of the toolbar. */
-	.call-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid transparent;
-		background: transparent;
-		border-radius: var(--radius-md);
-		width: 38px;
-		height: 38px;
-		color: var(--color-text-dim);
-		flex-shrink: 0;
-		transition:
-			border-color 0.18s var(--ease-out-expo),
-			background-color 0.18s var(--ease-out-expo),
-			color 0.18s var(--ease-out-expo),
-			transform 0.18s var(--ease-out-expo);
-	}
-
-	.call-btn:hover:not(:disabled) {
-		border-color: var(--color-border);
-		background: var(--color-surface-2);
-		color: var(--color-text);
-		transform: translateY(-1px);
-	}
-
-	.call-btn:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-
-	.attachment-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-	}
-
-	.attachment-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-sm);
-		align-self: flex-start;
-		max-width: 100%;
-		border: none;
-		background: var(--color-surface-2);
-		border-radius: var(--radius-full);
-		padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-md);
-		font-size: 12.5px;
-		color: var(--color-text-dim);
-		box-shadow: var(--shadow-xs);
-	}
-
-	.attachment-chip .attachment-name {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.attachment-chip button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 20px;
-		height: 20px;
-		border-radius: var(--radius-full);
-		flex-shrink: 0;
-		color: var(--color-text-dim);
-	}
-
-	.attachment-chip button:hover {
-		background: var(--color-surface-3);
-		color: var(--color-text);
-	}
-
-	.textarea-wrap {
-		position: relative;
-		display: flex;
-	}
-
-	.fake-placeholder {
-		position: absolute;
-		inset: 0;
-		/* Not display: flex — a flex container treats a whitespace-only
-		   text node between two inline elements as display: none (per the
-		   flexbox spec's anonymous-item handling), which silently ate the
-		   space between "Ask" and the "Polaris" span. Padding alone
-		   already centers a single line of text the same height as the
-		   textarea's own single row, so flex's vertical centering was
-		   never actually needed here. */
-		padding: var(--space-lg) var(--space-lg);
-		font-size: 16px;
-		line-height: 1.5;
-		font-family: var(--font-sans);
-		color: var(--color-text-dim);
-		pointer-events: none;
-		white-space: nowrap;
-		/* Horizontal-only: still truncates on narrow screens the same as
-		   before. Vertical clipping is what was cutting the wordmark span
-		   below down to a thin sliver — see .fake-placeholder .wordmark. */
-		overflow-x: hidden;
-		overflow-y: visible;
-	}
-
-	.fake-placeholder .wordmark {
-		font-family: var(--font-wordmark);
-		font-weight: 400;
-		/* Asimovian's glyph metrics run taller than Lexend's at the same
-		   font-size — inherited from the 1.5 line-height above, this
-		   overflowed the placeholder's fixed-height box and, combined with
-		   overflow: hidden, rendered as a squashed sliver instead of full
-		   letterforms. A tighter line-height here (this span only — the
-		   welcome heading's much larger wordmark instance never needed
-		   this, it already has plenty of room) keeps it within the box
-		   without needing the vertical clip that caused this at all. */
-		line-height: 1.2;
-	}
-
-	textarea {
-		width: 100%;
-		resize: none;
-		/* Carved-in well at rest instead of a flat hairline box — the accent
-		   border only appears on focus (below), so idle the composer reads
-		   as a soft trough in the surface, not a form field. */
-		border: 1px solid transparent;
-		background: var(--color-surface-2);
-		box-shadow: var(--shadow-well);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg) var(--space-lg);
-		/* 16px, not 14 — anything smaller makes iOS Safari zoom the whole
-		   page in on focus (it does this for any input/textarea under
-		   16px), which is what was pushing the send button out of the
-		   viewport. autoResize (see the action import above) handles
-		   height, growing with content up to its maxHeight before
-		   scrolling — same shape as Claude's composer, instead of a
-		   fixed single row that just scrolls its own content out of view. */
-		font-size: 16px;
-		line-height: 1.5;
-		font-family: var(--font-sans);
-		color: var(--color-text);
-		outline: none;
-		/* A taller resting height than the bare single-row minimum — the
-		   composer now carries its own toolbar underneath instead of
-		   cramming everything onto one line, so it can afford to feel
-		   like a real writing surface instead of a thin search bar. */
-		min-height: 56px;
-		max-height: 200px;
-		overflow-y: auto;
-		transition:
-			border-color 0.15s var(--ease-out-expo),
-			background-color 0.15s var(--ease-out-expo),
-			box-shadow 0.15s var(--ease-out-expo);
-	}
-
-	textarea:hover {
-		background: var(--color-surface-3);
-	}
-
-	textarea:focus {
-		border-color: var(--color-accent);
-		background: var(--color-surface);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
-	}
-
-	.send-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid transparent;
-		background: var(--color-accent);
-		color: oklch(18% 0.02 75);
-		border-radius: var(--radius-md);
-		width: 38px;
-		height: 38px;
-		box-shadow: 0 1px 2px rgba(15, 10, 5, 0.25);
-		transition:
-			background-color 0.18s var(--ease-out-expo),
-			transform 0.18s var(--ease-out-expo),
-			box-shadow 0.18s var(--ease-out-expo),
-			opacity 0.15s var(--ease-out-expo);
-	}
-
-	:root[data-theme='light'] .send-btn {
-		color: oklch(98% 0.005 80);
-		box-shadow: 0 1px 2px rgba(60, 48, 32, 0.14);
-	}
-
-	.send-btn:hover:not(:disabled) {
-		background: var(--color-accent-strong);
-		transform: translateY(-1px);
-		box-shadow:
-			0 6px 16px -6px color-mix(in srgb, var(--color-accent) 55%, transparent),
-			0 2px 4px rgba(15, 10, 5, 0.3);
-	}
-
-	.send-btn:active:not(:disabled) {
-		transform: translateY(0);
-		box-shadow: 0 1px 2px rgba(15, 10, 5, 0.25);
-	}
-
-	.send-btn:disabled {
-		opacity: 0.35;
-		cursor: default;
-		box-shadow: none;
-	}
-
-	/* Stop mode: deliberately not the accent gold — that's reserved for
-	   the primary "send" action, and a stop control shouldn't read as
-	   another CTA competing with it. A quiet neutral chip that stays
-	   legible without stealing attention from the streaming answer. */
-	.send-btn.stop {
-		background: var(--color-surface-3);
-		color: var(--color-text);
-		box-shadow: none;
-	}
-
-	.send-btn.stop:hover {
-		background: var(--color-border-strong);
-		transform: none;
-		box-shadow: none;
 	}
 
 	:global(.spin) {
