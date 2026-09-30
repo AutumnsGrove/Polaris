@@ -82,30 +82,34 @@ var Registry = []config.ModelConfig{
 		// architecture.input_modalities (["text","image"]), unlike the V4
 		// Flash entry it replaces.
 		//
-		// Unlike deepseek-pro above, the official "deepseek" tag is the
-		// primary route here, not excluded — re-checked the reasoning
-		// rather than copying deepseek-pro's exclusion. Its
-		// pricing.overrides only double the rate (to $0.30/$1.20 per M,
-		// matching the third-party fp8 tier below) during a narrow weekday
-		// window (01:00-04:00 and 06:00-10:00 UTC, ~21% of the week); the
-		// other ~79% of the time, incl. all weekend, it's $0.15/$0.60 with
-		// $0.003/M cache reads — cheaper than every third-party endpoint
-		// in the survey at every hour, not just off-peak. That's the
-		// opposite of deepseek-pro's official route, whose list price
-		// loses to third-party even off-peak — a genuinely different
-		// pricing shape per model, not a fixed platform rule, so don't
-		// copy this endpoint's inclusion/exclusion onto other models
-		// without re-running the survey.
-		// Fireworks is the fallback: flat (no time-of-day pricing),
-		// $0.22/$0.66 per M, 98.98% uptime, 943,718-token max completion —
-		// beats every fp8 third-party provider in the survey (GMICloud,
-		// Novita, etc., all $0.30/$1.20) on price while staying reliable,
-		// so it's a better second rung than reusing deepseek-pro's known-
-		// good fp8 providers here.
+		// Provider order, re-surveyed and live-spiked 2026-09-30 (pinned
+		// each with allow_fallbacks:false, ~12.8k-token prefix, 3 calls):
+		// DeepInfra (fp8, $0.14/$0.42, $0.0042/M cache reads) first, then
+		// StreamLake (fp8, $0.147/$0.588, $0.00294/M reads), AtlasCloud
+		// (fp8, $0.114/$0.456, $0.0114/M reads), Fireworks (flat
+		// $0.22/$0.66; the "fireworks" tag, not "fireworks/us" at 2x), and
+		// the official route last. All five hit their prompt cache on the
+		// second identical request (~99% of tokens cached) and billed
+		// exactly the listed rates. Cache reads dominate an agent thread's
+		// cost, so they drove the ranking, not input price: per 100k
+		// cached + 5k fresh + 2k out, DeepInfra ~0.196c, StreamLake ~0.221c,
+		// official off-peak ~0.225c, official peak ~0.45c. Several
+		// cheap-input endpoints (Wafer, Relace, Io Net, CoreWeave) lose to
+		// the official route because their cache reads are 3-13x higher.
+		//
+		// Official is last, not excluded: it is the fastest (~123 tok/s vs
+		// ~40-60 for the third-party fp8 tier) and most reliable (99.99%
+		// uptime), but its pricing.overrides double the rate to
+		// $0.30/$1.20/$0.006 on weekdays 01:00-04:00 and 06:00-10:00 UTC
+		// (~21% of the week); otherwise $0.15/$0.60/$0.003. DeepInfra and
+		// StreamLake list a `discount` (30%/51%) on their endpoints; if
+		// those are promotional, re-run the survey when they lapse. Don't
+		// copy this order onto other models without re-running the survey —
+		// pricing shape differs per model.
 		ID:          "deepseek",
 		Name:        "DeepSeek V4.1 Flash",
 		Model:       "deepseek/deepseek-v4.1-flash",
-		Provider:    []string{"deepseek", "fireworks"},
+		Provider:    []string{"deepinfra/fp8", "streamlake/fp8", "atlas-cloud/fp8", "fireworks", "deepseek"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
@@ -113,9 +117,8 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		// Off-peak official rate (~79% of the week, see comment above) —
-		// the number that actually applies most of the time.
-		Pricing: &config.PricingConfig{PromptPerM: 0.15, CompletionPerM: 0.60},
+		// Primary route's (DeepInfra) list rate; see the comment above.
+		Pricing: &config.PricingConfig{PromptPerM: 0.14, CompletionPerM: 0.42},
 	},
 	{
 		// GPT-6 Luna, released 2026-09-22 alongside GPT-6 Sol — the
