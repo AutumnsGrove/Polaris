@@ -3,8 +3,9 @@
 **Added: 2026-09-30.**
 
 **Status: proposed — design mockups approved, nothing built.** Mockups (four phone screens, clickable
-pins/toggles) live in a private Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>.
-Tracked in the GitHub issue filed alongside this doc.
+pins/toggles) are saved at `mockups/interactive-maps.html` (standalone, open in a browser); the
+original canvas is also a private Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>.
+Tracked in issue #143.
 
 ## The idea
 
