@@ -76,9 +76,8 @@ CREATE TABLE IF NOT EXISTS fields (
                                                             -- FOCUS_MODES' ids otherwise
     default_model             TEXT NOT NULL DEFAULT '',   -- '' = inherit settings.defaultModel; a
                                                             -- model id otherwise
-    memory_mode               TEXT NOT NULL DEFAULT 'default', -- 'default' | 'none' (v1); 'field_scoped'
-                                                            -- is a reserved, not-yet-functional value —
-                                                            -- see "Memory mode" below
+    memory_mode               TEXT NOT NULL DEFAULT 'default', -- 'default' | 'field_only' | 'both' |
+                                                            -- 'none' — see "Memory mode" below
     constellation_visible     INTEGER NOT NULL DEFAULT 1,  -- 0 = Weaver skips this field's threads
     exclude_from_chat_search  INTEGER NOT NULL DEFAULT 0,  -- 1 = SearchMessages skips this field's
                                                             -- threads entirely
@@ -258,13 +257,30 @@ disappear — `tools.MemoryIndexPrompt` (`tools/memory.go:275`) returns `""` out
 (`&& fieldMemoryMode != "none"`) — zero new plumbing in `agent/driver.go` or `tools/memory.go`,
 reusing exactly the mechanism ghost threads already rely on for "no memory tool."
 
-Three-way picker, only two modes functional in v1:
-- **Default** — behaves exactly as every non-field thread does today (reads/writes the one
-  global table). No code change beyond the gate above.
+Four-way picker (the original three-way shape shipped in v1 with the third slot reserved; the
+field-scoped store landed with issue #133, and its one slot became two):
+- **Global** (`default`) — behaves exactly as every non-field thread does today (reads/writes the
+  one global table). No code change beyond the gate above.
+- **Field** (`field_only`) — the field's own store only (`field_memories`, keyed
+  `(field_id, name)`), for both reads and writes. Global memory is invisible.
+- **Both** (`both`) — reads the field's store first, then global (entries tagged `(field)` /
+  `(global)` in the index). Writes go to the field's store **only**: a field thread can never
+  write, edit, or forget a global memory. A field write whose name already exists globally is
+  rejected with "save it under a different name", so the two stores never hold a same-named pair
+  that a bare `view` would silently shadow (a global memory saved *later* with a field's name can
+  still collide; the field's entry wins a bare view).
 - **None** — memory tool and index fully absent from the turn, as described.
-- **Field-scoped** *(reserved, shown disabled/greyed in v1's UI, "coming later")* — the real v2
-  work: an isolated per-field memory store. Building the picker's shape now means v2 only has to
-  make the third option functional, not redesign the control.
+
+The global Memory switch in Settings still applies on top: with it off, **Global** has nothing
+left to show, and **Both** falls back to Field-only; **Field** is unaffected, since it never
+touched global memory. The resolution lives in `gateway/field_memory.go`'s
+`resolveMemoryAccess`; the five tool closures are bound there too, so the `memory` tool itself
+needed no field awareness.
+
+A Field's Settings tab lists its own memories with the same component Settings uses
+(`MemoryManager.svelte`, behind a `MemorySource`), backed by `/api/fields/{id}/memories[/chat]`.
+There is no "add" route — entries appear by the model saving them, or via that box's
+"tell it what to remember". Deleting a field deletes its memories (`ON DELETE CASCADE`).
 
 ### Constellation / Weaver visibility
 
@@ -407,9 +423,7 @@ list, plus "Remove from field" when the thread already has one).
 
 ## Explicitly out of scope for v1
 
-- **Field-scoped memory store (v1.5/v2)** — the real isolated-memory work described above. The
-  picker's third slot is reserved and visibly disabled in v1 specifically so this can land later
-  without a UI redesign.
+- ~~**Field-scoped memory store (v1.5/v2)**~~ — shipped, issue #133; see "Memory mode" above.
 - **Public/shared field pages** — unrelated to issue #120 (public thread sharing); if that ships
   first, a field-level equivalent is a separate future decision, not bundled here.
 - **Nested fields / fields-within-fields** — one flat namespace only.

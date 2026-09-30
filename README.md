@@ -108,7 +108,8 @@ next to Settings at the bottom of the sidebar — it explains each one in plain 
   unaccounted for. Available over the WebSocket chat client and `POST /api/ask`/`/api/ask/stream`.
 - **Fields** (`/fields`) — a named group of conversations that share custom instructions (a "help
   me write this" interview can draft them for you) and a pool of reference files, plus per-Field defaults for model, focus mode, and memory, and opt-outs
-  from Constellation and chat search. Shared files are read-only to every conversation in the
+  from Constellation and chat search. A Field's memory can be global (as usual), its own private
+  store, both (its own plus your regular ones, read-only), or off. Shared files are read-only to every conversation in the
   Field (an edit becomes a private copy); pin a Field to keep it in the sidebar, or file a conversation under one from the composer's More menu. Shared files
   need the `code_exec` sandbox's workspace configured.
 - **Illustrated sources** — citations carry a thumbnail when one's genuinely available, instead
