@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Brain, Cpu, Orbit, SearchSlash, SlidersHorizontal } from '@lucide/svelte';
+	import { Brain, Cpu, Galaxy, SearchSlash, SlidersHorizontal } from '@lucide/svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import { appState } from '$lib/state.svelte';
 	import type { Field } from '$lib/types';
@@ -48,7 +48,7 @@
 			<span class="chip" title={field.memory_mode === 'both' ? 'Field memories + your regular ones' : 'Field-only memories'}><Brain size={12} /></span>
 		{/if}
 		{#if !field.constellation_visible}
-			<span class="chip" title="Hidden from Constellation"><Orbit size={12} /></span>
+			<span class="chip" title="Hidden from Constellation"><Galaxy size={12} /></span>
 		{/if}
 		{#if field.exclude_from_chat_search}
 			<span class="chip" title="Excluded from chat search"><SearchSlash size={12} /></span>
