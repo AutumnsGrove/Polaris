@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polaris — interactive maps mockups</title>
+<!-- Design mockups for docs/plans/interactive-maps.md (issue #143). Standalone: open in a browser.
+     Four 390x844 phone screens; pins, list rows, sheet handle and layer toggles are live.
+     Map art, place names and walking times are made-up sample content, and screen 4's region map is a
+     stand-in illustration, not a real wiki image. -->
+<style>
+:root{
+  --bg:oklch(15% 0.014 65);--surface:oklch(19% 0.014 65);--surface-2:oklch(23% 0.016 65);--surface-3:oklch(28% 0.018 65);
+  --border:oklch(30% 0.016 65);--border-strong:oklch(40% 0.02 65);--text:oklch(93% 0.01 75);--dim:oklch(64% 0.014 70);
+  --accent:oklch(82% 0.17 78);--accent-strong:oklch(72% 0.18 74);--accent-soft:oklch(82% 0.17 78 / .16);
+  --accent-2:oklch(78% 0.06 235);--on-accent:oklch(20% 0.02 65);
+  --land:oklch(21% 0.014 65);--water:oklch(26% 0.035 235);--park:oklch(24% 0.035 150);
+  --road:oklch(29% 0.016 65);--road-major:oklch(36% 0.02 70);
+}
+*{box-sizing:border-box}
+body{margin:0;background:oklch(12% 0.012 65);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+h1{font-size:15px;font-weight:600;margin:0 0 4px}
+header{padding:24px 24px 0;max-width:1000px}
+header p{margin:0;font-size:13px;color:var(--dim);line-height:1.5}
+.row{display:flex;flex-wrap:wrap;gap:32px;padding:24px}
+figure{margin:0}
+figcaption{font-size:12px;color:var(--dim);margin-bottom:8px}
+.phone{position:relative;width:390px;height:844px;background:var(--bg);overflow:hidden;border:1px solid var(--border);border-radius:24px;display:flex;flex-direction:column}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent-2)}
+/* chat chrome */
+.bar{height:52px;flex-shrink:0;padding:0 8px;display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--border)}
+.bar b{font-size:15px;letter-spacing:.02em}
+.iconbtn{width:44px;height:44px;background:none;border:0;display:flex;align-items:center;justify-content:center}
+.scroll{flex-grow:1;padding:20px 16px 0;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.q{font-size:15px;line-height:1.45}
+.prose{font-family:Georgia,"Times New Roman",serif;font-size:16px;line-height:1.6}
+.cite{font-family:system-ui,sans-serif;font-size:11px;color:var(--accent-2);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+.trace{display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;background:none;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--dim);text-align:left}
+.composer{flex-shrink:0;padding:12px 16px 24px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.composer .in{flex-grow:1;height:48px;padding:0 18px;display:flex;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:24px;font-size:15px;color:var(--dim)}
+.composer button{width:48px;height:48px;border-radius:24px;border:0;background:var(--accent);display:flex;align-items:center;justify-content:center}
+/* map card */
+.card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden}
+.map{position:relative}
+.map svg.base{position:absolute;left:0;top:0;display:block}
+.chip{position:absolute;height:28px;padding:0 12px;display:flex;align-items:center;background:oklch(15% 0.014 65 / .88);border:1px solid var(--border);border-radius:14px;font-size:12px}
+.fab{width:44px;height:44px;background:none;border:0;display:flex;align-items:center;justify-content:center;position:absolute}
+.fab span{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:oklch(15% 0.014 65 / .88);border:1px solid var(--border);border-radius:17px}
+.attr{position:absolute;left:10px;bottom:6px;font-size:9px;color:var(--dim)}
+.foot{padding:12px 14px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--border)}
+.foot .grow{flex-grow:1;min-width:0}
+.foot .name{font-size:15px;font-weight:600}
+.foot .meta{font-size:12px;color:var(--dim);margin-top:2px}
+.btn-out{font-size:13px;padding:10px 14px;border:1px solid var(--border-strong);border-radius:10px;text-decoration:none;color:var(--text);background:none;min-height:44px;display:inline-flex;align-items:center}
+.landmark{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;transform:rotate(45deg);background:var(--accent-2);border:2px solid var(--bg)}
+.lm-label{position:absolute;font-size:11px;color:var(--accent-2);white-space:nowrap}
+/* pins */
+.pin{position:absolute;width:44px;height:44px;padding:0;background:none;border:0;display:flex;align-items:center;justify-content:center}
+.pin i{font-style:normal;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:700;border:2px solid var(--bg);width:28px;height:28px;font-size:13px;background:var(--accent-strong);color:var(--on-accent)}
+.pin.on{z-index:3}
+.pin.on i{width:36px;height:36px;background:var(--accent);box-shadow:0 0 0 4px oklch(82% 0.17 78 / .28)}
+.pin .tag{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;font-size:12px;padding:3px 8px;border-radius:8px;background:oklch(15% 0.014 65 / .92);border:1px solid var(--border);display:none}
+.pin.on .tag{display:block}
+.static-pin{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid var(--bg);background:var(--accent-strong);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.static-pin.muted{border-color:var(--border-strong);background:var(--surface-3);color:var(--dim)}
+/* screen 2 */
+.full{position:relative;background:var(--land)}
+.search{position:absolute;left:16px;right:16px;top:16px;height:48px;display:flex;align-items:center;background:oklch(19% 0.014 65 / .94);border:1px solid var(--border);border-radius:24px}
+.search span{flex-grow:1;font-size:14px}.search em{font-style:normal;padding-right:16px;font-size:12px;color:var(--dim)}
+.ctl{position:absolute;right:12px;top:84px;display:flex;flex-direction:column;gap:8px}
+.ctl button{width:44px;height:44px;border-radius:22px;background:oklch(19% 0.014 65 / .94);border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.sheet{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border-top:1px solid var(--border);border-radius:20px 20px 0 0;transition:height .25s ease;height:430px}
+.sheet.closed{height:236px}
+.handle{width:100%;height:28px;background:none;border:0;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.handle i{width:40px;height:4px;border-radius:2px;background:var(--border-strong)}
+.sheet .hd{padding:0 16px;display:flex;align-items:baseline;justify-content:space-between;flex-shrink:0}
+.sheet .hd b{font-size:16px}.sheet .hd span{font-size:12px;color:var(--dim)}
+.chips{padding:12px 16px 8px;display:flex;gap:8px;flex-shrink:0}
+.chips span{padding:7px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);color:var(--dim)}
+.chips span.on{background:var(--accent-soft);border-color:oklch(82% 0.17 78 / .5);color:var(--accent)}
+.rows{padding:0 8px;display:flex;flex-direction:column;overflow:hidden}
+.prow{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;min-height:56px;border:0;border-radius:12px;background:none;text-align:left}
+.prow.on{background:oklch(82% 0.17 78 / .14)}
+.prow .b{flex-shrink:0;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--surface-3)}
+.prow.on .b{background:var(--accent);color:var(--on-accent)}
+.prow .n{display:block;font-size:15px;font-weight:600}.prow .m{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.acts{padding:8px 16px;display:flex;gap:8px;flex-shrink:0}
+.sheet.closed .acts{display:none}
+.acts a{flex-grow:1;text-align:center;padding:13px 0;border-radius:12px;font-size:14px;text-decoration:none;border:1px solid var(--border-strong);color:var(--text)}
+.acts a.primary{background:var(--accent);color:var(--on-accent);font-weight:600;border:0}
+/* layer toggles */
+.layers{padding:12px 14px;border-top:1px solid var(--border)}
+.tgl-row{display:flex;gap:8px}
+.tgl{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-radius:22px;font-size:13px;background:none;border:1px solid var(--border);color:var(--dim)}
+.tgl i{width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+.tgl[aria-pressed="true"]{background:var(--accent-soft);border-color:oklch(82% 0.17 78 / .5);color:var(--accent)}
+.tgl[aria-pressed="true"] i{background:var(--accent)}
+.ann{transition:opacity .2s ease}.ann.off{opacity:0}
+.pill{position:absolute;right:8px;top:8px;height:44px;padding:0 14px;display:flex;align-items:center;gap:8px;border-radius:22px;font-size:13px;background:oklch(15% 0.014 65 / .92);border:1px solid var(--border-strong)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+.pill[aria-pressed="true"] i{background:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Interactive maps — mockups</h1>
+  <p>Companion to <code>docs/plans/interactive-maps.md</code> (issue #143). Tap pins, list rows, the sheet handle and the layer toggles. Sample content only.</p>
+</header>
+
+<div class="row">
+
+<!-- 1 · Map card in chat -->
+<figure>
+<figcaption>1 · Map card in chat</figcaption>
+<div class="phone">
+  <div class="bar"><button class="iconbtn" aria-label="Open sidebar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(64% 0.014 70)" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><b>Polaris</b></div>
+  <div class="scroll">
+    <div><div class="lbl">You</div><div class="q">Where can I get coffee near the Space Needle?</div></div>
+    <button class="trace"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><span>3 steps · web_search, nearby_search, show_map</span></button>
+    <div class="prose">Three coffee spots are within a ten-minute walk. <b>Café One</b> is the closest, about two minutes away <span class="cite">1</span>; the other two sit a little further east <span class="cite">2</span> <span class="cite">3</span>.</div>
+    <div class="card">
+      <div class="map" id="m1" style="height:300px">
+        <svg class="base" width="358" height="300" viewBox="0 0 358 300" aria-hidden="true">
+          <rect width="358" height="300" fill="oklch(21% 0.014 65)"/>
+          <path d="M0 0H120C100 60 70 110 85 170C95 220 40 260 0 285Z" fill="oklch(26% 0.035 235)"/>
+          <rect x="220" y="196" width="100" height="70" rx="10" fill="oklch(24% 0.035 150)"/>
+          <g transform="rotate(-12 190 150)" stroke="oklch(29% 0.016 65)" stroke-width="5" fill="none"><path d="M-80 20H440M-80 68H440M-80 116H440M-80 164H440M-80 212H440M-80 260H440M-80 308H440"/><path d="M60 -100V420M116 -100V420M172 -100V420M228 -100V420M284 -100V420M340 -100V420M396 -100V420"/></g>
+          <path d="M-10 250C90 210 200 170 380 90" stroke="oklch(36% 0.02 70)" stroke-width="9" fill="none" stroke-linecap="round"/>
+          <path d="M170 -10C180 80 200 200 230 320" stroke="oklch(36% 0.02 70)" stroke-width="9" fill="none" stroke-linecap="round"/>
+          <text x="250" y="132" font-size="9" fill="oklch(52% 0.014 70)" transform="rotate(-24 250 132)">Main St</text>
+          <text x="232" y="256" font-size="9" fill="oklch(52% 0.014 70)" transform="rotate(75 232 256)">2nd Ave</text>
+          <text x="238" y="236" font-size="9" fill="oklch(56% 0.05 150)">Park</text>
+          <text x="20" y="80" font-size="9" fill="oklch(56% 0.05 235)" font-style="italic">Bay</text>
+        </svg>
+        <div class="landmark" style="left:179px;top:150px"></div><div class="lm-label" style="left:190px;top:156px">Space Needle</div>
+        <div class="chip" style="left:12px;top:12px">Coffee near Space Needle</div>
+        <button class="fab" style="right:4px;top:4px" aria-label="Expand map"><span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></span></button>
+        <div class="attr">© OpenStreetMap contributors</div>
+      </div>
+      <div class="foot"><div class="grow"><div class="name" id="m1name"></div><div class="meta" id="m1meta"></div></div><a class="btn-out" href="#">Directions</a></div>
+    </div>
+  </div>
+  <div class="composer"><div class="in">Ask anything</div><button aria-label="Send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(20% 0.02 65)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+</div>
+</figure>
+
+<!-- 2 · Expanded map -->
+<figure>
+<figcaption>2 · Expanded map</figcaption>
+<div class="phone full" id="m2">
+  <svg width="390" height="844" viewBox="0 0 390 844" style="position:absolute;left:0;top:0;display:block" aria-hidden="true">
+    <rect width="390" height="844" fill="oklch(21% 0.014 65)"/>
+    <path d="M0 0H160C130 120 100 220 125 340C140 430 70 520 0 580Z" fill="oklch(26% 0.035 235)"/>
+    <rect x="250" y="400" width="110" height="96" rx="12" fill="oklch(24% 0.035 150)"/>
+    <g transform="rotate(-14 195 422)" stroke="oklch(29% 0.016 65)" stroke-width="6" fill="none"><path d="M-100 40H500M-100 110H500M-100 180H500M-100 250H500M-100 320H500M-100 390H500M-100 460H500M-100 530H500M-100 600H500M-100 670H500M-100 740H500M-100 810H500M-100 880H500"/><path d="M-40 -100V950M30 -100V950M100 -100V950M170 -100V950M240 -100V950M310 -100V950M380 -100V950M450 -100V950"/></g>
+    <path d="M-20 420C110 350 250 280 420 190" stroke="oklch(36% 0.02 70)" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <path d="M190 -20C200 120 225 300 270 520" stroke="oklch(36% 0.02 70)" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <text x="300" y="228" font-size="11" fill="oklch(52% 0.014 70)" transform="rotate(-26 300 228)">Main St</text>
+    <text x="238" y="330" font-size="11" fill="oklch(52% 0.014 70)" transform="rotate(78 238 330)">2nd Ave</text>
+    <text x="272" y="452" font-size="11" fill="oklch(56% 0.05 150)">Park</text>
+    <text x="34" y="170" font-size="11" fill="oklch(56% 0.05 235)" font-style="italic">Bay</text>
+  </svg>
+  <div class="landmark" style="left:215px;top:250px;width:16px;height:16px;margin:-8px 0 0 -8px"></div><div class="lm-label" style="left:228px;top:256px;font-size:12px">Space Needle</div>
+  <div class="search"><button class="iconbtn" aria-label="Close map"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><span>Coffee near Space Needle</span><em>3 places</em></div>
+  <div class="ctl">
+    <button aria-label="Zoom in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button aria-label="Zoom out"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+    <button aria-label="Recenter on my location"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  </div>
+  <div class="sheet" id="sheet">
+    <button class="handle" id="handle" aria-label="Expand or collapse list"><i></i></button>
+    <div class="hd"><b>Nearby coffee</b><span>via Foursquare · sorted by distance</span></div>
+    <div class="chips"><span class="on">All</span><span>Open now</span><span>Under 5 min</span></div>
+    <div class="rows" id="rows"></div>
+    <div class="acts"><a class="primary" href="#">Directions</a><a href="#">Ask about this place</a></div>
+  </div>
+</div>
+</figure>
+
+<!-- 3 · Drawn-on annotations -->
+<figure>
+<figcaption>3 · Drawn-on annotations</figcaption>
+<div class="phone">
+  <div class="bar"><button class="iconbtn" aria-label="Open sidebar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(64% 0.014 70)" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><b>Polaris</b></div>
+  <div class="scroll">
+    <div><div class="lbl">You</div><div class="q">Which of those are a ten-minute walk, and how do I get to the closest one?</div></div>
+    <div class="prose">Three are inside the ring. Café Four is just outside it. The dashed route to Café One is about four minutes.</div>
+    <div class="card">
+      <div class="map" style="height:380px">
+        <svg class="base" width="358" height="380" viewBox="0 0 358 380" aria-hidden="true">
+          <rect width="358" height="380" fill="oklch(21% 0.014 65)"/>
+          <path d="M0 0H100C80 90 50 160 65 230C75 290 30 330 0 350Z" fill="oklch(26% 0.035 235)"/>
+          <rect x="240" y="262" width="100" height="80" rx="10" fill="oklch(24% 0.035 150)"/>
+          <g stroke="oklch(29% 0.016 65)" stroke-width="5" fill="none"><path d="M-20 30H380M-20 80H380M-20 130H380M-20 180H380M-20 230H380M-20 280H380M-20 330H380"/><path d="M60 -10V400M110 -10V400M160 -10V400M210 -10V400M260 -10V400M310 -10V400"/></g>
+          <path d="M-10 260C90 230 220 170 380 120" stroke="oklch(36% 0.02 70)" stroke-width="9" fill="none" stroke-linecap="round"/>
+          <g class="ann" id="l-ring"><circle cx="179" cy="190" r="95" fill="oklch(82% 0.17 78 / .10)" stroke="oklch(82% 0.17 78)" stroke-width="2.5" stroke-dasharray="7 5"/></g>
+          <g class="ann" id="l-route"><path d="M179 190V140H150" fill="none" stroke="oklch(78% 0.06 235)" stroke-width="4" stroke-dasharray="2 7" stroke-linecap="round" stroke-linejoin="round"/></g>
+          <g class="ann" id="l-label">
+            <rect x="246" y="92" width="78" height="20" rx="10" fill="oklch(15% 0.014 65 / .92)" stroke="oklch(82% 0.17 78 / .6)"/><text x="285" y="106" font-size="11" fill="oklch(82% 0.17 78)" text-anchor="middle">10 min walk</text>
+            <g id="l-route-label"><rect x="186" y="155" width="46" height="20" rx="10" fill="oklch(15% 0.014 65 / .92)" stroke="oklch(78% 0.06 235 / .7)"/><text x="209" y="169" font-size="11" fill="oklch(78% 0.06 235)" text-anchor="middle">4 min</text></g>
+          </g>
+        </svg>
+        <div class="landmark" style="left:179px;top:190px"></div>
+        <div class="static-pin" style="left:150px;top:140px;width:30px;height:30px;margin:-15px 0 0 -15px;background:var(--accent)">1</div>
+        <div class="static-pin" style="left:234px;top:220px">2</div>
+        <div class="static-pin" style="left:120px;top:240px">3</div>
+        <div class="static-pin muted" style="left:300px;top:80px">4</div>
+        <div class="chip" style="left:12px;top:12px">Drawn by Polaris</div>
+        <div class="attr">© OpenStreetMap contributors</div>
+      </div>
+      <div class="layers"><div class="lbl" style="margin-bottom:8px">Layers</div>
+        <div class="tgl-row">
+          <button class="tgl" data-layer="l-ring" aria-pressed="true"><i></i>Radius</button>
+          <button class="tgl" data-layer="l-route" aria-pressed="true"><i></i>Route</button>
+          <button class="tgl" data-layer="l-label" aria-pressed="true"><i></i>Labels</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="composer"><div class="in">Ask anything</div><button aria-label="Send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(20% 0.02 65)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+</div>
+</figure>
+
+<!-- 4 · Any image -->
+<figure>
+<figcaption>4 · Any image, not just streets</figcaption>
+<div class="phone">
+  <div class="bar"><button class="iconbtn" aria-label="Open sidebar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(64% 0.014 70)" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><b>Polaris</b></div>
+  <div class="scroll">
+    <div><div class="lbl">You</div><div class="q">In Guild Wars 2, where does the meta event happen in this region?</div></div>
+    <div class="prose">It happens in the marked area, east of the river. I took the region map from the wiki and drew on a copy, so the original is untouched.</div>
+    <div class="card">
+      <div class="map" style="height:380px">
+        <svg class="base" width="358" height="380" viewBox="0 0 358 380" aria-hidden="true">
+          <rect width="358" height="380" fill="oklch(27% 0.03 135)"/>
+          <path d="M0 260C60 240 90 300 150 310C220 322 260 360 358 350V380H0Z" fill="oklch(24% 0.04 235)"/>
+          <circle cx="70" cy="90" r="46" fill="oklch(30% 0.045 150)"/><circle cx="110" cy="130" r="38" fill="oklch(30% 0.045 150)"/><circle cx="310" cy="70" r="40" fill="oklch(30% 0.045 150)"/>
+          <path d="M150 0C170 60 130 110 160 170C185 220 150 260 170 320" fill="none" stroke="oklch(42% 0.08 235)" stroke-width="8" stroke-linecap="round"/>
+          <path d="M232 236L250 204L268 236ZM262 244L284 208L306 244ZM206 250L222 224L238 250Z" fill="oklch(40% 0.02 70)"/>
+          <path d="M20 40C90 20 120 60 200 50C270 40 300 80 340 60" fill="none" stroke="oklch(64% 0.014 70 / .7)" stroke-width="1.5" stroke-dasharray="3 5"/>
+          <text x="24" y="34" font-size="12" font-family="Georgia, serif" font-style="italic" fill="oklch(78% 0.02 75)">[Region name]</text>
+          <g class="ann" id="img-ann">
+            <path d="M204 122C218 96 274 98 292 128C308 158 268 190 236 184C208 178 190 148 204 122Z" fill="oklch(82% 0.17 78 / .14)" stroke="oklch(82% 0.17 78)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M120 60C150 68 178 88 200 112" fill="none" stroke="oklch(82% 0.17 78)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M186 100L201 113L182 118" fill="none" stroke="oklch(82% 0.17 78)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="60" y="44" width="86" height="26" rx="13" fill="oklch(15% 0.014 65 / .94)" stroke="oklch(82% 0.17 78)"/><text x="103" y="61" font-size="12" fill="oklch(82% 0.17 78)" text-anchor="middle">Event area</text>
+          </g>
+        </svg>
+        <div class="chip" style="left:12px;bottom:28px">Pinch to zoom · drag to pan</div>
+        <button class="pill" id="img-toggle" aria-pressed="true"><i></i>Annotations</button>
+        <div class="attr" style="color:oklch(78% 0.02 75)">Illustrative stand-in for a wiki map image</div>
+      </div>
+      <div class="foot"><div class="grow"><div style="font-size:13px">Region map · <span style="color:var(--accent-2)">wiki.guildwars2.com</span></div><div class="meta">Annotated copy · original file unchanged</div></div><button class="btn-out">Save to Field</button></div>
+    </div>
+  </div>
+  <div class="composer"><div class="in">Ask anything</div><button aria-label="Send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(20% 0.02 65)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+</div>
+</figure>
+
+</div>
+
+<script>
+// Sample data — made up for the mockup.
+var P1 = [
+  {n:1,name:'Café One',x:150,y:128,meta:'2 min walk · Espresso bar'},
+  {n:2,name:'Café Two',x:252,y:178,meta:'7 min walk · Roaster and bakery'},
+  {n:3,name:'Café Three',x:130,y:224,meta:'9 min walk · Counter service'}
+];
+var P2 = [
+  {n:1,name:'Café One',x:168,y:330,meta:'2 min walk · Espresso bar'},
+  {n:2,name:'Café Two',x:292,y:208,meta:'7 min walk · Roaster and bakery'},
+  {n:3,name:'Café Three',x:150,y:214,meta:'9 min walk · Counter service'}
+];
+function pins(host, list, sel, onPick){
+  host.querySelectorAll('.pin').forEach(function(e){e.remove();});
+  list.forEach(function(p){
+    var b=document.createElement('button');
+    b.className='pin'+(p.n===sel?' on':'');
+    b.style.left=(p.x-22)+'px'; b.style.top=(p.y-22)+'px';
+    b.setAttribute('aria-label',p.name+', '+p.meta);
+    b.innerHTML='<i>'+p.n+'</i><span class="tag">'+p.name+'</span>';
+    b.onclick=function(){onPick(p.n);};
+    host.appendChild(b);
+  });
+}
+// Screen 1
+var sel1=1;
+function draw1(){
+  var cur=P1.find(function(p){return p.n===sel1;});
+  pins(document.getElementById('m1'),P1,sel1,function(n){sel1=n;draw1();});
+  document.getElementById('m1name').textContent=cur.name;
+  document.getElementById('m1meta').textContent=cur.meta;
+}
+draw1();
+// Screen 2
+var sel2=1;
+function draw2(){
+  pins(document.getElementById('m2'),P2,sel2,function(n){sel2=n;draw2();});
+  document.getElementById('rows').innerHTML=P2.map(function(p){
+    return '<button class="prow'+(p.n===sel2?' on':'')+'" data-n="'+p.n+'"><span class="b">'+p.n+'</span><span><span class="n">'+p.name+'</span><span class="m">'+p.meta+'</span></span></button>';
+  }).join('');
+  document.querySelectorAll('#rows .prow').forEach(function(r){r.onclick=function(){sel2=+r.dataset.n;draw2();};});
+}
+draw2();
+document.getElementById('handle').onclick=function(){document.getElementById('sheet').classList.toggle('closed');};
+// Screen 3
+document.querySelectorAll('.tgl').forEach(function(t){
+  t.onclick=function(){
+    var on=t.getAttribute('aria-pressed')!=='true';
+    t.setAttribute('aria-pressed',on);
+    document.getElementById(t.dataset.layer).classList.toggle('off',!on);
+    // the route's time label follows the Route layer, like a shape carrying its own label
+    if(t.dataset.layer==='l-route') document.getElementById('l-route-label').style.opacity=on?1:0;
+  };
+});
+// Screen 4
+var it=document.getElementById('img-toggle');
+it.onclick=function(){
+  var on=it.getAttribute('aria-pressed')!=='true';
+  it.setAttribute('aria-pressed',on);
+  document.getElementById('img-ann').classList.toggle('off',!on);
+};
+</script>
+</body>
+</html>
