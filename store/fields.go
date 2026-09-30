@@ -19,18 +19,28 @@ import (
 // 500, same reasoning as ErrMemoryNotFound.
 var ErrFieldNotFound = errors.New("field not found")
 
-// Field memory modes. "field_scoped" (a real isolated per-field memory
-// store) is the plan's v2 — deliberately absent here so nothing can persist
-// a mode that would silently behave like "default".
+// Field memory modes (issue #133). What a turn in the field reads/writes:
+//
+//	default    global memory only (reads and writes), as outside any field
+//	field_only the field's own store only (reads and writes)
+//	both       reads the field's store first, then global; writes go to the
+//	           field's store only — a field thread can never write global
+//	none       no memory at all
 const (
-	FieldMemoryDefault = "default"
-	FieldMemoryNone    = "none"
+	FieldMemoryDefault   = "default"
+	FieldMemoryFieldOnly = "field_only"
+	FieldMemoryBoth      = "both"
+	FieldMemoryNone      = "none"
 )
 
 // ValidFieldMemoryMode reports whether m is a memory_mode this build
 // actually implements.
 func ValidFieldMemoryMode(m string) bool {
-	return m == FieldMemoryDefault || m == FieldMemoryNone
+	switch m {
+	case FieldMemoryDefault, FieldMemoryFieldOnly, FieldMemoryBoth, FieldMemoryNone:
+		return true
+	}
+	return false
 }
 
 // Field is one row of the fields table (see its schema comment for what

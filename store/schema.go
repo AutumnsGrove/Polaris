@@ -608,6 +608,27 @@ CREATE TABLE IF NOT EXISTS memories (
 	disabled INTEGER NOT NULL DEFAULT 0
 );
 
+-- field_memories is a Field's own memory store (issue #133), used when its
+-- memory_mode is 'field_only' or 'both'. A separate table rather than a
+-- scope column on memories: memories.name is that table's PRIMARY KEY and
+-- SQLite can't change a primary key without rebuilding the table, while this
+-- one is keyed (field_id, name) so two fields (or a field and the global
+-- list) can each hold the same slug. Same columns/soft-delete semantics as
+-- memories otherwise (see its comments). ON DELETE CASCADE, not a soft
+-- flag: a deleted field's memories go with it, same as its shared files.
+CREATE TABLE IF NOT EXISTS field_memories (
+	field_id TEXT NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL,
+	description TEXT NOT NULL,
+	content TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	occurred_at TEXT NOT NULL DEFAULT '',
+	disabled INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (field_id, name)
+);
+
 -- fields backs Fields (see docs/plans/fields.md, issue #119): a named
 -- container of threads with its own custom instructions, a shared read-only
 -- file pool (<CodeExecWorkspaceDir>/<id>/, never this table's concern), and a
@@ -632,9 +653,9 @@ CREATE TABLE IF NOT EXISTS fields (
 	-- "force off" — 'off' is itself a valid focus mode id.
 	default_focus_mode TEXT NOT NULL DEFAULT '',
 	default_model TEXT NOT NULL DEFAULT '',
-	-- memory_mode: 'default' | 'none'. 'field_scoped' is a reserved,
-	-- not-yet-functional value (the plan's v2) — accepted nowhere yet, see
-	-- ValidFieldMemoryMode.
+	-- memory_mode: 'default' (global memory only) | 'field_only' (this
+	-- field's own store, field_memories) | 'both' (field store first, then
+	-- global read-only) | 'none'. See ValidFieldMemoryMode and issue #133.
 	memory_mode TEXT NOT NULL DEFAULT 'default',
 	-- constellation_visible: 0 = Weaver skips this field's threads.
 	constellation_visible INTEGER NOT NULL DEFAULT 1,

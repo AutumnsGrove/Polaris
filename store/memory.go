@@ -51,7 +51,17 @@ type MemoryIndexEntry struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
 	OccurredAt  string `json:"occurred_at"`
+	// Scope is "" for an ordinary (global) entry, or MemoryScopeField/
+	// MemoryScopeGlobal when a field turn merges two stores and the model
+	// needs to tell them apart (see the field_memories schema comment).
+	Scope string `json:"scope,omitempty"`
 }
+
+// Memory index scopes — only ever set on a merged ("both" mode) listing.
+const (
+	MemoryScopeField  = "field"
+	MemoryScopeGlobal = "global"
+)
 
 // CreateMemory inserts a brand-new memory, failing with ErrMemoryExists if
 // an active memory already has that name — see the memory tool's "write"
