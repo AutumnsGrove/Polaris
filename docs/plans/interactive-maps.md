@@ -173,7 +173,7 @@ time.
 5. **Live verification.** Drive the real app with `dev/fakeopenrouter` queuing scripted `show_map`
    calls (including an update-by-id turn and a hard reload) via Playwright, then a real-model pass on
    the potato. Confirm a disabled tool isn't offered (`/_control/calls`).
-6. **Docs.** `README.md` Features line, `HelpModal` `TERMS` entry, `SETUP.md` if a tile key/URL config is
+6. **Docs.** `docs/FEATURES.md` entry, `HelpModal` `TERMS` entry, `SETUP.md` if a tile key/URL config is
    added, `DEVELOPMENT.md` only if architecture notes change.
 7. **Optional:** GW2 tile source.
 

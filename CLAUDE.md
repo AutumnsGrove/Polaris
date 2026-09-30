@@ -281,22 +281,26 @@ Polaris keeps accumulating themed names (Pulsar, Constellation, Weaver, Fields, 
 that mean nothing to someone who just installed it. The sidebar's `?` button opens
 `web/src/lib/components/HelpModal.svelte`, whose `TERMS` array is the plain-English glossary
 ("Fields = Projects"). **Whenever you add a new user-facing named feature or concept — anything
-with its own name in the UI, sidebar, settings, or README's Features list — add an entry to
+with its own name in the UI, sidebar, settings, or `docs/FEATURES.md` — add an entry to
 `TERMS` in the same change** (`name`, `means` = the plain-English equivalent, `detail` = one
 sentence on what you do with it). Renaming or removing a feature means updating or deleting its
 entry too. Keep entries short; this is a glossary, not documentation.
 
 ## Keeping README.md / SETUP.md / DEVELOPMENT.md in sync
 
-Docs are split three ways (as of the 2026-09 restructuring): `README.md` is a short pitch + a
-trimmed feature list + license, `SETUP.md` is the all-in-one install/config/backup reference, and
-`DEVELOPMENT.md` covers architecture, frontend dev, the CLI, and deployment internals. When a
-change adds or meaningfully changes a user-facing tool or feature, update `README.md`'s Features
-list — one or two lines, what it does, not why it's built that way (no fallback-chain internals,
-no historical bugs, no design-tradeoff narrative; that belongs in code comments or `docs/plans/`).
-If the change adds a new requirement (an API key, a Docker-only gate, a config field), add it to
+Docs are split four ways (as of the 2026-09 restructuring, and again when screenshots landed):
+`README.md` is a short pitch + hero screenshots + a handful of highlight bullets + license,
+`docs/FEATURES.md` is the complete feature list (the README's old long list, moved), `SETUP.md` is
+the all-in-one install/config/backup reference, and `DEVELOPMENT.md` covers architecture, frontend
+dev, the CLI, and deployment internals. When a change adds or meaningfully changes a user-facing
+tool or feature, update `docs/FEATURES.md` — one or two lines, what it does, not why it's built that
+way (no fallback-chain internals, no historical bugs, no design-tradeoff narrative; that belongs in
+code comments or `docs/plans/`) — and touch `README.md`'s Highlights only if it's a headline
+feature. `docs/SHOWCASE.md` is the screenshot gallery (images in `docs/screenshots/`, how they were
+made in `docs/plans/readme-screenshots.md`); a redesigned screen is a reason to re-shoot, but each
+re-shoot adds to git history, so batch them. If the change adds a new requirement (an API key, a Docker-only gate, a config field), add it to
 `SETUP.md`'s Requirements section too. If it changes the architecture diagram, the CLI, or how the
-app is built/deployed, that's `DEVELOPMENT.md`. Don't let any of the three creep back into a
+app is built/deployed, that's `DEVELOPMENT.md`. Don't let the README, SETUP, or DEVELOPMENT creep back into a
 500-line wall — that's the exact problem this split fixed.
 
 ## Conventions worth knowing before editing Go here
