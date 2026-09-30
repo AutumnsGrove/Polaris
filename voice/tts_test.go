@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -52,7 +54,7 @@ func TestSpeak_ReturnsAudioBytes(t *testing.T) {
 	defer srv.Close()
 
 	client := NewTTSClient(srv.URL, "key", "kokoro", "bf_lily", "mp3", "")
-	audio, err := client.Speak("Hello there")
+	audio, err := client.Speak("Hello there", "")
 	if err != nil {
 		t.Fatalf("Speak returned error: %v", err)
 	}
@@ -67,6 +69,45 @@ func TestSpeak_ReturnsAudioBytes(t *testing.T) {
 	}
 }
 
+func TestSpeak_VoiceOverrideBeatsConfiguredDefault(t *testing.T) {
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Write([]byte("audio"))
+	}))
+	defer srv.Close()
+
+	client := NewTTSClient(srv.URL, "key", "kokoro", "bf_lily", "mp3", "")
+	if _, err := client.Speak("hi", "am_onyx"); err != nil {
+		t.Fatalf("Speak returned error: %v", err)
+	}
+	if gotBody["voice"] != "am_onyx" {
+		t.Errorf("voice = %v, want the per-call override am_onyx", gotBody["voice"])
+	}
+}
+
+// Every roster voice needs its pre-rendered picker preview — a voice added
+// to Voices without re-running dev/gen-voice-samples.sh would 404 on ▶.
+func TestEveryVoiceHasPreviewSample(t *testing.T) {
+	for _, v := range Voices {
+		path := filepath.Join("..", "web", "static", "voice-samples", v.ID+".mp3")
+		if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+			t.Errorf("missing or empty preview sample %s (run dev/gen-voice-samples.sh)", path)
+		}
+	}
+}
+
+func TestIsValidVoice(t *testing.T) {
+	for _, id := range []string{"bf_lily", "af_sky", "am_onyx", "bm_daniel"} {
+		if !IsValidVoice(id) {
+			t.Errorf("IsValidVoice(%q) = false, want true", id)
+		}
+	}
+	if IsValidVoice("") || IsValidVoice("af_bella") {
+		t.Error("IsValidVoice accepted an ID outside the curated roster")
+	}
+}
+
 func TestSpeak_PinsProvider(t *testing.T) {
 	var gotBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +118,7 @@ func TestSpeak_PinsProvider(t *testing.T) {
 	defer srv.Close()
 
 	client := NewTTSClient(srv.URL, "key", "kokoro", "bf_lily", "mp3", "Together")
-	if _, err := client.Speak("Hello there"); err != nil {
+	if _, err := client.Speak("Hello there", ""); err != nil {
 		t.Fatalf("Speak returned error: %v", err)
 	}
 
@@ -99,7 +140,7 @@ func TestSpeak_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewTTSClient(srv.URL, "key", "kokoro", "bf_lily", "mp3", "")
-	if _, err := client.Speak("hi"); err == nil {
+	if _, err := client.Speak("hi", ""); err == nil {
 		t.Fatal("expected an error for a 502 response")
 	}
 }

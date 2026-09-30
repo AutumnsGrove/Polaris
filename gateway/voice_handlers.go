@@ -72,7 +72,7 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	audio, err := s.tts.Speak(req.Text)
+	audio, err := s.tts.Speak(req.Text, TTSVoiceFromStore(s.db))
 	if err != nil {
 		log.Warn("TTS failed", "err", err)
 		s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "TTS failed", map[string]interface{}{"err": err.Error()}, "")
@@ -177,9 +177,13 @@ func (s *Server) handleSpeakStream(w http.ResponseWriter, r *http.Request) {
 	persist := req.ThreadID != "" && req.MessageID != 0
 	var pcmBuf bytes.Buffer
 
+	// Resolved once up front so every chunk of one answer uses the same
+	// voice even if the picker changes mid-synthesis.
+	ttsVoice := TTSVoiceFromStore(s.db)
+
 	var totalCost float64
 	for i, chunk := range chunks {
-		pcm, err := s.tts.SpeakWithFormat(chunk, "pcm")
+		pcm, err := s.tts.SpeakWithFormat(chunk, "pcm", ttsVoice)
 		if err != nil {
 			log.Warn("TTS stream chunk failed", "seq", i, "err", err)
 			s.db.LogEvent(req.ThreadID, "warn", "voice.speak", "TTS stream chunk failed",

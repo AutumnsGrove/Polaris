@@ -8,6 +8,7 @@ import (
 	"polaris/agent"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/voice"
 )
 
 const (
@@ -26,6 +27,11 @@ const (
 	// early) that it went mostly unused in favor of the iOS keyboard's
 	// own dictation button instead.
 	settingVoiceInputMode = "voice_input_mode"
+	// settingTTSVoice is the Settings picker's chosen Kokoro voice ID (one of
+	// voice.Voices). Unset or no-longer-valid means "" — TTSClient then falls
+	// back to config.yaml's voice.tts_voice, so existing installs sound
+	// exactly as before until someone picks.
+	settingTTSVoice = "tts_voice"
 	// settingOracleEnabled stores "true" to turn Oracle mode on (docs/
 	// plans/oracle-mode.md, issue #122); any other value (including
 	// unset) means off — opposite default polarity from
@@ -223,6 +229,20 @@ func PersonPronounsFromStore(db *store.Store) string {
 	return val
 }
 
+// TTSVoiceFromStore returns the picked voice ID, or "" (use the configured
+// default) for a nil db, read error, unset value, or an ID no longer in the
+// curated roster — same fail-open convention as the other FromStore readers.
+func TTSVoiceFromStore(db *store.Store) string {
+	if db == nil {
+		return ""
+	}
+	val, err := db.GetSetting(settingTTSVoice)
+	if err != nil || !voice.IsValidVoice(val) {
+		return ""
+	}
+	return val
+}
+
 // ThemeFromStore reads the theme setting for tools.Context.UITheme (see
 // tools.CodeExecThemePrompt) — same "default rather than fail" reasoning
 // as MemoryEnabledFromStore/CustomInstructionsFromStore above. A nil db, a
@@ -280,6 +300,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if !validVoiceInputModes[voiceInputMode] {
 		voiceInputMode = "toggle"
 	}
+	// Effective voice, not just the stored pick: with nothing picked the
+	// picker should highlight whatever config.yaml is actually speaking with.
+	ttsVoice := all[settingTTSVoice]
+	if !voice.IsValidVoice(ttsVoice) {
+		ttsVoice = cfg.Voice.TTSVoice
+	}
 
 	// disabledTools defaults to an empty (non-nil) slice rather than the
 	// zero value of a nil map read — writeJSON encodes a nil []string as
@@ -295,6 +321,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"default_model":         s.effectiveDefaultModel(cfg),
 		"default_focus_mode":    all[settingDefaultFocusMode],
 		"voice_input_mode":      voiceInputMode,
+		"tts_voice":             ttsVoice,
+		"tts_voices":            voice.Voices,
 		"context_window_tokens": cfg.ContextWindowTokens,
 		"disabled_tools":        disabledTools,
 		// toggleable_tools is static catalog data (name + description), not
@@ -317,6 +345,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultModel       *string   `json:"default_model"`
 		DefaultFocusMode   *string   `json:"default_focus_mode"`
 		VoiceInputMode     *string   `json:"voice_input_mode"`
+		TTSVoice           *string   `json:"tts_voice"`
 		DisabledTools      *[]string `json:"disabled_tools"`
 		MemoryEnabled      *bool     `json:"memory_enabled"`
 		OracleEnabled      *bool     `json:"oracle_enabled"`
@@ -386,6 +415,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "voice input mode changed", map[string]interface{}{"voice_input_mode": *req.VoiceInputMode}, "")
+	}
+	if req.TTSVoice != nil {
+		if !voice.IsValidVoice(*req.TTSVoice) {
+			http.Error(w, "unknown tts_voice", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingTTSVoice, *req.TTSVoice); err != nil {
+			log.Warn("saving tts_voice setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving tts_voice setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "tts voice changed", map[string]interface{}{"tts_voice": *req.TTSVoice}, "")
 	}
 	if req.DisabledTools != nil {
 		valid := make(map[string]bool)

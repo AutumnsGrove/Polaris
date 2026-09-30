@@ -88,9 +88,12 @@ func (c *TTSClient) EstimateCost(text string) float64 {
 }
 
 // Speak synthesizes text and returns the raw audio bytes, using the
-// client's configured format (cfg.Voice.TTSFormat).
-func (c *TTSClient) Speak(text string) ([]byte, error) {
-	return c.SpeakWithFormat(text, c.format)
+// client's configured format (cfg.Voice.TTSFormat). voice overrides the
+// client's configured default for this one call (the Settings picker's
+// choice, resolved per request so concurrent calls never race on shared
+// client state); empty means use the configured default.
+func (c *TTSClient) Speak(text, voice string) ([]byte, error) {
+	return c.SpeakWithFormat(text, c.format, voice)
 }
 
 // SpeakWithFormat is Speak with an explicit response_format override,
@@ -98,11 +101,14 @@ func (c *TTSClient) Speak(text string) ([]byte, error) {
 // streaming path (gateway/voice_handlers.go's handleSpeakStream) always
 // wants "pcm" regardless of cfg.Voice.TTSFormat, since it needs raw
 // samples it can concatenate byte-exact into one persisted file.
-func (c *TTSClient) SpeakWithFormat(text, format string) ([]byte, error) {
+func (c *TTSClient) SpeakWithFormat(text, format, voice string) ([]byte, error) {
+	if voice == "" {
+		voice = c.voice
+	}
 	payload := map[string]any{
 		"model":           c.model,
 		"input":           text,
-		"voice":           c.voice,
+		"voice":           voice,
 		"response_format": format,
 	}
 	if c.provider != "" {

@@ -289,6 +289,61 @@ func TestHandlePutSettings_RejectsUnknownVoiceInputMode(t *testing.T) {
 	}
 }
 
+func TestHandlePutSettings_TTSVoiceRoundTrips(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	get := func() map[string]interface{} {
+		resp, err := http.Get(h.url("/api/settings"))
+		if err != nil {
+			t.Fatalf("GET /api/settings: %v", err)
+		}
+		defer resp.Body.Close()
+		var settings map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&settings)
+		return settings
+	}
+
+	before := get()
+	if before["tts_voice"] != "bf_lily" {
+		t.Errorf("tts_voice = %v, want config default bf_lily before any pick", before["tts_voice"])
+	}
+	if voices, _ := before["tts_voices"].([]interface{}); len(voices) != 4 {
+		t.Errorf("tts_voices has %d entries, want the 4 curated voices", len(voices))
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{"tts_voice": "bm_daniel"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	if got := get()["tts_voice"]; got != "bm_daniel" {
+		t.Errorf("tts_voice = %v, want bm_daniel", got)
+	}
+	if got := TTSVoiceFromStore(h.db); got != "bm_daniel" {
+		t.Errorf("TTSVoiceFromStore = %q, want bm_daniel", got)
+	}
+}
+
+func TestHandlePutSettings_RejectsUnknownTTSVoice(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+
+	body, _ := json.Marshal(map[string]interface{}{"tts_voice": "af_bella"})
+	req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), bytes.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/settings: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for a voice outside the curated roster", resp.StatusCode)
+	}
+}
+
 func TestHandlePutSettings_RejectsUnknownFocusMode(t *testing.T) {
 	h := newTestHarness(t, "http://127.0.0.1:1")
 
