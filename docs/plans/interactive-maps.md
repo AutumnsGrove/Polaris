@@ -122,8 +122,31 @@ use the same file.
   These requests originate from the potato, so the public OSM policy applies to them directly.
 - **Default source: public `tile.openstreetmap.org`**, with the URL template in `config.yaml` so a keyed
   provider or self-hosted server can be swapped in without a code change. Verify OSM's **current**
-  usage policy before shipping. Always render the attribution string, on the card and stamped onto
-  snapshots.
+  usage policy before shipping (including how it expects cached tiles and cache headers to be
+  honored). Always render the attribution string, on the card and stamped onto snapshots.
+
+### Tile cache
+
+One cache **shared by every chat**, persisted across restarts, so a place looked up once is free next
+time.
+
+- **Location: its own directory in the `polaris-data` named volume** (`/data/tile-cache`, config
+  `tile_cache.dir`, defaulting to a `tile-cache` folder next to `database.path` the way `backups` does),
+  *not* under `workspaces/`. `workspaces/` is the host bind mount (mode 777, cross-uid, see
+  `install.sh`) that exists so the sandbox can see per-thread files; the cache is only ever touched by
+  the Polaris process, and a top-level `workspaces/tile-cache` would sit in the same namespace as
+  thread/field IDs that `resolveWorkspaceFilePath` treats as roots. Snapshots themselves still go in
+  the *thread's* workspace, since `view_image`/`show` need to read them.
+- **Layout:** one file per tile keyed by source + z/x/y (e.g. `<source-hash>/<z>/<x>/<y>.png`), so
+  switching the tile URL template never serves another provider's tiles.
+- **Recency:** a cache hit bumps the file's mtime (not atime — `noatime`/`relatime` mounts make atime
+  unreliable). A tile idle for **30 days** is deleted. Because every use refreshes the clock, areas you
+  keep coming back to stay indefinitely and one-off places age out on their own; no separate
+  "important area" logic is needed.
+- **Pruning:** a once-a-day sweep in the same no-external-cron style as `backup.go`'s snapshot job (or
+  piggy-backing on the Pulsar scheduler's tick), removing files past the 30-day idle cutoff.
+- **Size backstop:** an overall size ceiling (default ~500 MB, configurable) evicting least-recently-used
+  first, since the potato's disk is finite and a busy week of map lookups shouldn't be able to fill it.
 
 ### Image kind specifics (the GW2 case)
 
@@ -168,15 +191,17 @@ Settled 2026-09-30:
   guidance nudges the model toward `show_map` for location questions.
 - **Per-turn cap: 3 `show_map` calls.** Heavier than `show` (tiles + render); an over-cap call returns a
   clear "already showed N maps this turn" error.
+- **An update-by-id call writes a new snapshot filename** (`map-1.png` -> `map-1-v2.png`) so
+  `view_image` never reads a stale file; earlier versions stay in the workspace.
+- **Shared tile cache** across all chats, persisted, entries idle for 30 days pruned, recency refreshed
+  on every hit (see "Tile cache"; lives in the `polaris-data` volume, not `workspaces/`).
 - **Payload cap: 50 markers and 30 shapes per call**, with a "trim it down" error beyond that, to keep
   persisted transcript events small.
 
 ## Still open
 
 - Exact Go drawing approach for the snapshot renderer (settled in the spike).
-- Whether the snapshot should be re-rendered on update-by-id calls (leaning yes: same filename bumped,
-  e.g. `map-1.png` -> `map-1-v2.png`, so `view_image` never reads a stale file).
-- Tile cache location and eviction (a Docker volume path under the existing data dir vs in-memory only).
+- Exact size-ceiling default for the tile cache (~500 MB proposed).
 
 ## Non-goals
 
