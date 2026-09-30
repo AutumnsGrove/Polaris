@@ -18,26 +18,26 @@
 		X,
 		Volume2,
 		Loader2,
-		ChevronRight,
-		ChevronLeft,
 		Copy,
 		Link2,
-		Paperclip,
-		CheckCheck,
 		Info,
-		WifiOff,
 		Orbit,
 		Sunrise,
 		Binoculars
 	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
-	import { renderInlineCitations } from '$lib/citations';
+	import { renderInlineCitations, sourceHostname as hostname } from '$lib/citations';
 import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
 	import FieldIcon from './FieldIcon.svelte';
 	import TurnInfoSheet from './TurnInfoSheet.svelte';
+	import AttachmentChips from './AttachmentChips.svelte';
+	import NetworkErrorBanner from './NetworkErrorBanner.svelte';
+	import SourcesList from './SourcesList.svelte';
+	import VariantSwitcher from './VariantSwitcher.svelte';
+	import OfferLines from './OfferLines.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import { goto } from '$app/navigation';
 	import { fly } from 'svelte/transition';
@@ -90,13 +90,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			-1
 		)
 	);
-
-	// Sources start collapsed — a 15-result answer was burying the actual
-	// answer under a wall of full-width pills. Count-only toggle up front,
-	// full list is one click away for anyone who wants to skim every
-	// source at once; inline citation chips (see renderInlineCitations)
-	// already open a source directly, so this isn't the only way in.
-	let sourcesOpen = $state(false);
 
 	// Content can originate from fetched web pages (via web_read) as well
 	// as the model itself, so sanitize before injecting as HTML — treat
@@ -165,19 +158,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			saveEdit();
 		} else if (e.key === 'Escape') {
 			cancelEdit();
-		}
-	}
-
-	function hostname(url: string): string {
-		// search_chats citations use a relative "/t/{id}" URL, not a full
-		// one — new URL() throws with no base for those (caught below,
-		// falling through to returning the raw path), which read as a fake
-		// domain in the source-list footer instead of anything sensible.
-		if (url.startsWith('/t/')) return 'This chat';
-		try {
-			return new URL(url).hostname;
-		} catch {
-			return url;
 		}
 	}
 
@@ -395,32 +375,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 {#if turn.role === 'user'}
 	<div class="row row-user" in:fly={{ y: 10, duration: 260, easing: quintOut }}>
 		{#if turn.attachments?.length && !editing}
-			<div class="attachment-chips">
-				{#each turn.attachments as attachment, i (attachment.filename + i)}
-					{#if attachment.workspace_file_id && appState.currentThreadId}
-						<!-- workspace_file_id is only known once the server
-							round-trips a reload (see buildTurnsFromMessages) — a
-							just-sent message shows the plain cosmetic chip below
-							until then, same as before this unification. Uploads now
-							persist for the thread's life instead of being deleted
-							after one read, so this is a real download, not just a
-							label. -->
-						<a
-							class="attachment-chip attachment-chip-link"
-							href={`/api/workspace/${appState.currentThreadId}/${attachment.workspace_file_id}`}
-							download={attachment.filename}
-						>
-							<Paperclip size={12} />
-							<span>{attachment.filename}</span>
-						</a>
-					{:else}
-						<div class="attachment-chip">
-							<Paperclip size={12} />
-							<span>{attachment.filename}</span>
-						</div>
-					{/if}
-				{/each}
-			</div>
+			<AttachmentChips attachments={turn.attachments} threadId={appState.currentThreadId} />
 		{/if}
 		<div class="user-block" class:editing>
 			{#if editing}
@@ -494,27 +449,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			{/if}
 
 			{#if turn.errorKind === 'network'}
-				<!-- Distinct from the generic "Error: <raw Go text>" bubble a
-				     non-network turn failure still falls back to (see the
-				     'error' case in state.svelte.ts) — this is specifically the
-				     "never even reached the provider" case (dropped wifi, DNS
-				     failure, timeout), which deserves a plain "try again"
-				     rather than surfacing text like "read tcp 10.0.0.5:1234->
-				     ...: operation timed out" that means nothing to look at
-				     and leaks a local IP besides. Mirrors ChatView.svelte's
-				     .interrupted banner (same dangling-turn idea, different
-				     trigger: that one is a turn with no error event at all,
-				     this one got a real one). -->
-				<div class="network-error">
-					<div class="network-error-message">
-						<WifiOff size={15} />
-						<span>Couldn't reach the AI provider — check your connection and try again.</span>
-					</div>
-					<button class="btn btn-accent" onclick={() => appState.retry(index)} disabled={appState.busy}>
-						<RotateCcw size={15} />
-						Retry
-					</button>
-				</div>
+				<NetworkErrorBanner disabled={appState.busy} onRetry={() => appState.retry(index)} />
 			{:else if turn.content}
 				<div class="prose" bind:this={proseEl}>{@html renderedHtml}</div>
 			{:else if turn.streaming}
@@ -562,47 +497,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			{/if}
 
 			{#if turn.citations?.length}
-				<div class="sources">
-					<button class="sources-toggle" onclick={() => (sourcesOpen = !sourcesOpen)}>
-						<span class="sources-count">{turn.citations.length}</span>
-						<span>{turn.citations.length === 1 ? 'Source' : 'Sources'}</span>
-						<ChevronRight size={12} class={sourcesOpen ? 'chevron open' : 'chevron'} />
-					</button>
-					<span
-						class="sources-info"
-						title="A check mark means that specific claim was checked against its source — absence doesn't mean the source is wrong, just not (yet) checked."
-					>
-						<Info size={12} />
-					</span>
-					{#if sourcesOpen}
-						<div class="citations">
-							{#each turn.citations as c, i (c.url)}
-								<a
-									class="source-chip"
-									href={c.url}
-									target="_blank"
-									rel="noreferrer"
-									title={c.verified ? `${c.title || c.url} — found in source` : c.title || c.url}
-								>
-									{#if c.image_url}
-										<img class="source-thumb" src={c.image_url} alt="" loading="lazy" />
-									{:else}
-										<span class="source-index">{i + 1}</span>
-									{/if}
-									<span class="source-text">
-										<span class="source-title">
-											{#if c.verified}
-												<CheckCheck size={11} class="source-verified-icon" />
-											{/if}
-											<span class="source-title-text">{c.title || hostname(c.url)}</span>
-										</span>
-										<span class="source-domain">{hostname(c.url)}</span>
-									</span>
-								</a>
-							{/each}
-						</div>
-					{/if}
-				</div>
+				<SourcesList citations={turn.citations} />
 			{/if}
 
 			{#if !turn.streaming && turn.errorKind !== 'network'}
@@ -611,25 +506,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 				     answer, and the banner above already has its own Retry. -->
 				<div class="turn-footer">
 					{#if variantGroup && variantGroup.ids.length > 1}
-						<div class="variant-switcher">
-							<button
-								class="icon-btn"
-								onclick={() => browseVariant(-1)}
-								disabled={variantPosition <= 0}
-								title="Previous response"
-							>
-								<ChevronLeft size={13} />
-							</button>
-							<span class="variant-position">{variantPosition + 1}/{variantGroup.ids.length}</span>
-							<button
-								class="icon-btn"
-								onclick={() => browseVariant(1)}
-								disabled={variantPosition >= variantGroup.ids.length - 1}
-								title="Next response"
-							>
-								<ChevronRight size={13} />
-							</button>
-						</div>
+					<VariantSwitcher position={variantPosition} total={variantGroup.ids.length} onBrowse={browseVariant} />
 					{/if}
 					<!-- Cost moved into TurnInfoSheet's own three-tier breakdown
 						 (docs/plans/oracle-mode.md) — the footer now keeps only
@@ -694,20 +571,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			{/if}
 			{#if !turn.streaming && offers.length}
 				<!-- 7a: offer lines below the footer — see OFFER_META's doc comment. -->
-				<div class="offer-lines">
-					{#each offers as offer (offer.key)}
-						<button
-							class="offer-line"
-							type="button"
-							disabled={offerBusy !== null}
-							onclick={() => activateOffer(offer.key, offer.fieldId, offer.label)}
-						>
-							<offer.meta.icon size={14} />
-							<span>{@html offer.meta.label(offer.label)}</span>
-							<span class="go">{offerBusy === offer.key ? (offer.key === 'field' ? 'Moving…' : 'Writing…') : offer.meta.verb}</span>
-						</button>
-					{/each}
-				</div>
+					<OfferLines {offers} busy={offerBusy} onActivate={activateOffer} />
 			{/if}
 			{#if infoSheetOpen}
 				<TurnInfoSheet {turn} {index} onClose={() => (infoSheetOpen = false)} />
@@ -725,42 +589,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		flex-direction: column;
 		align-items: flex-end;
 		gap: var(--space-sm);
-	}
-
-	.row-user .attachment-chips {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-		gap: var(--space-sm);
-	}
-
-	.row-user .attachment-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-xs);
-		max-width: 640px;
-		border: none;
-		background: var(--color-surface-2);
-		border-radius: var(--radius-full);
-		padding: var(--space-xs) var(--space-md);
-		font-size: 12px;
-		color: var(--color-text-dim);
-		box-shadow: var(--shadow-xs);
-	}
-
-	.row-user .attachment-chip span {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.row-user .attachment-chip-link {
-		text-decoration: none;
-		cursor: pointer;
-	}
-
-	.row-user .attachment-chip-link:hover {
-		background: var(--color-surface-3);
 	}
 
 	.row-assistant {
@@ -943,84 +771,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		}
 	}
 
-	/* 7a offer lines (docs/plans/oracle-mode.md) — one row per Oracle chip,
-	   ported from mockups/oracle-mode.html's .offer-lines/.offer-line. */
-	.offer-lines {
-		display: flex;
-		flex-direction: column;
-		margin-top: var(--space-sm);
-		border-top: 1px solid var(--color-border);
-	}
-
-	.offer-line {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		width: 100%;
-		border: none;
-		background: none;
-		padding: var(--space-sm) 0;
-		border-bottom: 1px solid var(--color-border);
-		font-size: 13px;
-		color: var(--color-text-dim);
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.offer-line:disabled {
-		cursor: default;
-		opacity: 0.6;
-	}
-
-	.offer-line :global(svg) {
-		flex-shrink: 0;
-		color: var(--color-accent);
-	}
-
-	.offer-line :global(b) {
-		color: var(--color-text);
-		font-weight: 500;
-	}
-
-	.offer-line .go {
-		margin-left: auto;
-		flex-shrink: 0;
-		color: var(--color-accent);
-		font-size: 12.5px;
-		font-weight: 500;
-	}
-
-	/* Same layout as ChatView.svelte's .interrupted banner, but on the
-	   danger palette instead of the neutral surface — this is a real
-	   failure with a concrete cause (no response at all), not just "still
-	   waiting"/"session dropped, nothing lost yet". */
-	.network-error {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-lg);
-		flex-wrap: wrap;
-		background: var(--color-danger-bg);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg);
-	}
-
-	.network-error-message {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		flex: 1;
-		min-width: 220px;
-		font-size: 13.5px;
-		line-height: 1.4;
-		color: var(--color-text-dim);
-	}
-
-	.network-error-message :global(svg) {
-		flex-shrink: 0;
-		color: var(--color-danger);
-	}
-
 	/* A static "…" reads as stalled, not working — a slow, low-amplitude
 	   breathing fade (not a spinner; nothing here should look busy or
 	   mechanical) is enough to signal "still here" during the gap before
@@ -1037,84 +787,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		50% {
 			opacity: 1;
 		}
-	}
-
-	.sources {
-		margin-top: var(--space-md);
-	}
-
-	.sources-toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-xs);
-		border: none;
-		background: transparent;
-		padding: var(--space-xs) 0;
-		font-size: 12px;
-		color: var(--color-text-dim);
-		transition: color 0.15s var(--ease-out-expo);
-	}
-
-	.sources-toggle:hover {
-		color: var(--color-text);
-	}
-
-	/* Explains what an absent check mark does and doesn't mean — see
-	   docs/plans/source-verification-badge.md's UI section: "no mark"
-	   covers three different real states (not checked, not supported,
-	   below confidence threshold), so it should never read as "this
-	   source is bad." cursor: help, not pointer — this is a tooltip
-	   target, not a click target. */
-	.sources-info {
-		display: inline-flex;
-		align-items: center;
-		color: var(--color-text-dim);
-		cursor: help;
-	}
-
-	.sources-count {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 16px;
-		height: 16px;
-		padding: 0 var(--space-xs);
-		border-radius: var(--radius-full);
-		background: var(--color-surface-3);
-		font-size: 10px;
-		font-variant-numeric: tabular-nums;
-		color: var(--color-text-dim);
-	}
-
-	.citations {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-		margin-top: var(--space-sm);
-	}
-
-	/* Fixed max-width + ellipsis is the whole fix — a 90-character arXiv
-	   title no longer forces its own pill to the width of the page. Index
-	   badge gives a stable visual anchor since these aren't referenced by
-	   number anywhere else in the answer text (the model just hyperlinks
-	   inline); it's a scan aid, not a citation marker. */
-	.source-chip {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		max-width: 220px;
-		border: none;
-		background: var(--color-surface-2);
-		border-radius: var(--radius-sm);
-		padding: var(--space-xs) var(--space-sm);
-		text-decoration: none;
-		box-shadow: var(--shadow-xs);
-		transition: background-color 0.15s var(--ease-out-expo), box-shadow 0.15s var(--ease-out-expo);
-	}
-
-	.source-chip:hover {
-		background: var(--color-surface-3);
-		box-shadow: var(--shadow-sm);
 	}
 
 	/* Named inline citation chips — the model's [Title](URL) links land
@@ -1168,79 +840,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		color: var(--color-accent-2);
 	}
 
-	.source-index {
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 15px;
-		height: 15px;
-		border-radius: 50%;
-		background: color-mix(in srgb, var(--color-accent-2) 20%, transparent);
-		color: var(--color-accent-2);
-		font-size: 9.5px;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-	}
-
-	/* Takes over from .source-index whenever a citation carries a real
-	   thumbnail (see tools/registry.go's Citation.ImageURL) — a slightly
-	   rounded square (not a circle) since it's showing real art (album
-	   covers, etc.), not an abstract badge. Kept small and compressed on
-	   purpose, per the same "calm over clever" brief every other bit of
-	   chrome in this app follows — it should read as a recognizable
-	   thumbnail at a glance, not a decorative hero image. */
-	.source-thumb {
-		flex-shrink: 0;
-		width: 28px;
-		height: 28px;
-		border-radius: var(--radius-sm);
-		object-fit: cover;
-		box-shadow: var(--shadow-xs);
-	}
-
-	.source-text {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-xs);
-	}
-
-	.source-title {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-		min-width: 0;
-		font-size: 12px;
-		color: var(--color-text);
-	}
-
-	.source-title-text {
-		min-width: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	/* The source-list chip's own aggregate "found in source" mark — see
-	   ChatTurnView.svelte's .source-chip loop and Citation.verified's doc
-	   comment. Same --color-accent-2 treatment as the inline chip's own
-	   mark above, just via a real Svelte icon component here instead of
-	   raw SVG (this markup isn't DOM-string-injected like the inline
-	   chips are). */
-	.source-title :global(.source-verified-icon) {
-		flex-shrink: 0;
-		color: var(--color-accent-2);
-	}
-
-	.source-domain {
-		font-size: 10px;
-		color: var(--color-text-dim);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
 	.turn-footer {
 		display: flex;
 		align-items: center;
@@ -1253,29 +852,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		font-size: 11px;
 		color: var(--color-text-dim);
 		margin-right: var(--space-xs);
-		font-variant-numeric: tabular-nums;
-	}
-
-	/* Leads the footer, not tucked in with the utility icons — browsing
-	   past replies is a real navigation action, not a minor aside like
-	   copy/read-aloud. The position readout sits in a shallow well (same
-	   "carved, not drawn" language as inputs/readouts elsewhere) between
-	   its two arrows so it reads as one compact control. */
-	.variant-switcher {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		margin-right: var(--space-sm);
-	}
-
-	.variant-position {
-		min-width: 28px;
-		padding: var(--space-xs) var(--space-xs);
-		border-radius: var(--radius-sm);
-		box-shadow: var(--shadow-well);
-		text-align: center;
-		font-size: 11px;
-		color: var(--color-text-dim);
 		font-variant-numeric: tabular-nums;
 	}
 

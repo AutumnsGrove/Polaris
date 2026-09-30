@@ -127,3 +127,19 @@ function friendlySiteName(url: string): string | null {
 		.map((word) => word[0].toUpperCase() + word.slice(1))
 		.join(' ');
 }
+
+// The domain shown under a source chip and in "copy with sources" output.
+// Shared by the sources list (SourcesList.svelte) and ChatTurnView's copy
+// action, which both need exactly the same label.
+export function sourceHostname(url: string): string {
+	// search_chats citations use a relative "/t/{id}" URL, not a full
+	// one — new URL() throws with no base for those (caught below,
+	// falling through to returning the raw path), which read as a fake
+	// domain in the source-list footer instead of anything sensible.
+	if (url.startsWith('/t/')) return 'This chat';
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return url;
+	}
+}
