@@ -27,7 +27,7 @@
 		Lock,
 		Brain,
 		Cpu,
-		Orbit,
+		Galaxy,
 		SearchSlash,
 		SlidersHorizontal,
 		Palette,
@@ -590,7 +590,7 @@
 
 					<div class="setting-row">
 						<span class="row-label">
-							<Orbit size={15} /> Visible to Constellation
+							<Galaxy size={15} /> Visible to Constellation
 							{#if constellationOff}<span class="row-note">(Constellation is off)</span>{/if}
 						</span>
 						<Switch
