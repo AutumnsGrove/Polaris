@@ -475,7 +475,8 @@ func resolveFocus(check config.OracleCheckRules, ans jev.ChoiceAnswer, priorOrac
 // stacking on top of it (see the plan doc's "A variant replaces the
 // default text; it doesn't stack on top of it"). ByFocus is looked up by
 // the winning option first, then the "any" sentinel (an override that
-// applies no matter which option fired, e.g. high_stakes.by_focus.brief).
+// applies no matter which option fired, e.g. high_stakes.by_focus.brief —
+// but only to an option that has inject text of its own; see below).
 // Outside any ByFocus override, Inject["any"] (if present) is appended as
 // its own second paragraph alongside the option's own text — e.g.
 // high_stakes' compare_sources hint, which applies "in addition to
@@ -485,7 +486,12 @@ func resolveInjections(check prompts.OracleCheck, option, focusMode string) []st
 		if text, ok := byFocus[option]; ok {
 			return []string{strings.ReplaceAll(text, "{option}", option)}
 		}
-		if text, ok := byFocus["any"]; ok {
+		// Only for an option that would have injected on its own: a winner
+		// with no Inject text (high_stakes' "none") is the check saying
+		// "nothing to add", and letting the any-override fire there made
+		// every Brief turn carry "This looks like a none question" — wrong
+		// on its face and a spurious nudge on the most common outcome.
+		if text, ok := byFocus["any"]; ok && check.Inject[option] != "" {
 			return []string{strings.ReplaceAll(text, "{option}", option)}
 		}
 	}

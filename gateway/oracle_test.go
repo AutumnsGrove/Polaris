@@ -428,6 +428,39 @@ func TestOracleYAML_ByFocusOptionsAreRealOptions(t *testing.T) {
 	}
 }
 
+// high_stakes' Brief override is keyed "any" (applies whichever option
+// fired), but a "none" winner means "nothing to add" — it has no inject text
+// of its own. The override used to fire there anyway, putting "This looks
+// like a none question" in every Brief turn's prompt.
+func TestResolveInjections_AnyOverrideSkipsOptionWithNoInject(t *testing.T) {
+	check := prompts.Get().Oracle.Checks["high_stakes"]
+
+	if got := resolveInjections(check, "none", "brief"); len(got) != 0 {
+		t.Errorf("none under brief = %q, want no injection", got)
+	}
+	if got := resolveInjections(check, "none", "off"); len(got) != 0 {
+		t.Errorf("none outside brief = %q, want no injection", got)
+	}
+
+	// A real winner still gets the Brief override, with {option} filled in.
+	got := resolveInjections(check, "medical", "brief")
+	if len(got) != 1 || !strings.Contains(got[0], "This looks like a medical question") || strings.Contains(got[0], "{option}") {
+		t.Errorf("medical under brief = %q, want the any-override naming medical", got)
+	}
+}
+
+// An override keyed to a specific option is explicit, so it still applies
+// even where the option has no base inject text.
+func TestResolveInjections_ExplicitByFocusOptionStillApplies(t *testing.T) {
+	check := prompts.OracleCheck{
+		Inject:  map[string]string{},
+		ByFocus: map[string]map[string]string{"brief": {"quiet": "Be quiet."}},
+	}
+	if got := resolveInjections(check, "quiet", "brief"); len(got) != 1 || got[0] != "Be quiet." {
+		t.Errorf("explicit by_focus option = %q, want [\"Be quiet.\"]", got)
+	}
+}
+
 // The frontend re-sends a thread's sticky focus mode on every message
 // flagged non-manual, so a mode Oracle set earlier arrives looking like a
 // plain default. If that turn's source were recorded as "default", the next
