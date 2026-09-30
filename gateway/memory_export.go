@@ -38,6 +38,13 @@ func (s *Server) handleExportMemories(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	writeMemoryExport(w, memories, "polaris-memories", "Polaris memory export")
+}
+
+// writeMemoryExport renders memories as the plain-text backup dump — shared
+// by the global export and a Field's own (issue #133), which differ only in
+// the file-name prefix and the heading line.
+func writeMemoryExport(w http.ResponseWriter, memories []store.Memory, filePrefix, heading string) {
 
 	byType := make(map[string][]store.Memory, len(memoryExportTypeOrder))
 	for _, m := range memories {
@@ -45,7 +52,7 @@ func (s *Server) handleExportMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Polaris memory export — %s\n", time.Now().Format("2006-01-02"))
+	fmt.Fprintf(&sb, "# %s — %s\n", heading, time.Now().Format("2006-01-02"))
 	for _, t := range memoryExportTypeOrder {
 		rows := byType[t]
 		if len(rows) == 0 {
@@ -68,7 +75,7 @@ func (s *Server) handleExportMemories(w http.ResponseWriter, r *http.Request) {
 	// Content-Disposition: attachment — the browser downloads it directly
 	// from a plain <a href> click, no client-side JS (fetch + Blob + a
 	// synthetic click) needed to trigger a "save file" prompt.
-	filename := fmt.Sprintf("polaris-memories-%s.txt", time.Now().Format("2006-01-02"))
+	filename := fmt.Sprintf("%s-%s.txt", filePrefix, time.Now().Format("2006-01-02"))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Write([]byte(sb.String()))

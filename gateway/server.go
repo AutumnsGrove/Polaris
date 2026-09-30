@@ -554,6 +554,8 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("DELETE /api/fields/{id}", s.handleDeleteField)
 	s.mux.HandleFunc("GET /api/fields/{id}/memories", s.handleListFieldMemories)
 	s.mux.HandleFunc("POST /api/fields/{id}/memories/chat", s.handleFieldMemoryChat)
+	s.mux.HandleFunc("POST /api/fields/{id}/memories/import", s.handleImportFieldMemories)
+	s.mux.HandleFunc("GET /api/fields/{id}/memories/export", s.handleExportFieldMemories)
 	s.mux.HandleFunc("PATCH /api/fields/{id}/memories/{name}", s.handleUpdateFieldMemory)
 	s.mux.HandleFunc("DELETE /api/fields/{id}/memories/{name}", s.handleDeleteFieldMemory)
 	s.mux.HandleFunc("POST /api/fields/{id}/files", s.handleUploadFieldFile)

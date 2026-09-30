@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -102,6 +103,61 @@ func TestFieldMemoryChat_WritesToFieldStoreOnly(t *testing.T) {
 	}
 	if code, _ := doJSON(t, "POST", h.url("/api/fields/nope/memories/chat"), map[string]string{"instruction": "x"}); code != http.StatusNotFound {
 		t.Errorf("unknown field: %d, want 404", code)
+	}
+}
+
+// Import (another AI's dump) into a Field writes that field's own store only,
+// and export contains only that field's memories — same as the global pair.
+func TestFieldMemoryImportExport_ScopedToTheField(t *testing.T) {
+	srv := sequencedSSEServer(t, []string{
+		toolCallSSEBody(`{"index":0,"id":"call_1","type":"function","function":{"name":"memory",` +
+			`"arguments":"{\"action\":\"write\",\"name\":\"user-role\",\"type\":\"user\",\"description\":\"backend engineer\",\"content\":\"backend engineer\"}"}}`),
+		textSSEBody("Imported 1 memory."),
+	})
+	defer srv.Close()
+	h := newTestHarness(t, srv.URL)
+	a, _ := h.db.CreateField(store.Field{Name: "Alpha", MemoryMode: store.FieldMemoryFieldOnly})
+	b, _ := h.db.CreateField(store.Field{Name: "Bravo", MemoryMode: store.FieldMemoryFieldOnly})
+	_ = h.db.CreateMemory("global-one", "user", "g", "g", "")
+	_ = h.db.CreateFieldMemory(b.ID, "bravo-only", "project", "b", "b", "")
+
+	code, out := doJSON(t, "POST", h.url("/api/fields/"+a.ID+"/memories/import"), map[string]string{"dump": "backend engineer"})
+	if code != http.StatusOK {
+		t.Fatalf("import: %d %s", code, out)
+	}
+	var resp struct {
+		Message  string         `json:"message"`
+		Memories []store.Memory `json:"memories"`
+	}
+	_ = json.Unmarshal(out, &resp)
+	if len(resp.Memories) != 1 || resp.Memories[0].Name != "user-role" {
+		t.Errorf("import response = %+v, want only a's imported memory", resp.Memories)
+	}
+	if g, _ := h.db.ListMemories(); len(g) != 1 || g[0].Name != "global-one" {
+		t.Errorf("a field import changed the global list: %+v", g)
+	}
+	if bl, _ := h.db.ListFieldMemories(b.ID); len(bl) != 1 || bl[0].Name != "bravo-only" {
+		t.Errorf("a field import touched a sibling: %+v", bl)
+	}
+	if code, _ := doJSON(t, "POST", h.url("/api/fields/"+a.ID+"/memories/import"), map[string]string{"dump": "  "}); code != http.StatusBadRequest {
+		t.Errorf("blank dump: %d, want 400", code)
+	}
+
+	resp2, err := http.Get(h.url("/api/fields/" + a.ID + "/memories/export"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	body, _ := io.ReadAll(resp2.Body)
+	text := string(body)
+	if resp2.StatusCode != http.StatusOK || !strings.Contains(text, "user-role") || !strings.Contains(text, "Alpha") {
+		t.Errorf("export = %d %q, want a's memory and its name", resp2.StatusCode, text)
+	}
+	if strings.Contains(text, "global-one") || strings.Contains(text, "bravo-only") {
+		t.Errorf("export leaked another store: %q", text)
+	}
+	if cd := resp2.Header.Get("Content-Disposition"); !strings.Contains(cd, "polaris-field-memories-") {
+		t.Errorf("Content-Disposition = %q", cd)
 	}
 }
 

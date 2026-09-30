@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"polaris/prompts"
+	"polaris/store"
 )
 
 // maxMemoryImportToolTurns is far higher than maxMemoryChatToolTurns (6) —
@@ -33,6 +34,13 @@ func (s *Server) handleMemoryExportPrompt(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
+	s.serveMemoryImport(w, r, newMemoryClosures(s.db, nil, memoryGlobal), s.db.ListMemoriesFull, "memories imported from another AI via settings panel")
+}
+
+// serveMemoryImport is handleMemoryImport's body, shared with a Field page's
+// own import (issue #133): same parse/dedup/write pass, bound to a different
+// store (c) with its own read-back (listFull) and event-log line.
+func (s *Server) serveMemoryImport(w http.ResponseWriter, r *http.Request, c memoryClosures, listFull func() ([]store.Memory, error), logMsg string) {
 	var req struct {
 		Dump string `json:"dump"`
 	}
@@ -54,19 +62,19 @@ func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.FinishTurn()
 
-	summary, err := s.runMemoryToolLoop(r.Context(), newMemoryClosures(s.db, nil, memoryGlobal), prompts.Get().Turn.MemoryImportSystem, dump, maxMemoryImportToolTurns)
+	summary, err := s.runMemoryToolLoop(r.Context(), c, prompts.Get().Turn.MemoryImportSystem, dump, maxMemoryImportToolTurns)
 	if err != nil {
 		log.Warn("memory import completion failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	memories, err := s.db.ListMemoriesFull()
+	memories, err := listFull()
 	if err != nil {
 		log.Warn("listing memories after import failed", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.db.LogEvent("", "info", "memory", "memories imported from another AI via settings panel", map[string]interface{}{"dump_chars": len(dump)}, "")
+	s.db.LogEvent("", "info", "memory", logMsg, map[string]interface{}{"dump_chars": len(dump)}, "")
 	writeJSON(w, map[string]interface{}{"message": summary, "memories": memories})
 }

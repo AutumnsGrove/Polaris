@@ -43,6 +43,34 @@ func (s *Server) handleFieldMemoryChat(w http.ResponseWriter, r *http.Request) {
 		"field memory changed via field page chat")
 }
 
+// handleImportFieldMemories is the Field page's "bring memories from another
+// AI": the global import pass, writing into this field's own store.
+func (s *Server) handleImportFieldMemories(w http.ResponseWriter, r *http.Request) {
+	f := s.loadField(w, r.PathValue("id"))
+	if f == nil {
+		return
+	}
+	s.serveMemoryImport(w, r, fieldOnlyClosures(s.db, f.ID),
+		func() ([]store.Memory, error) { return s.db.ListFieldMemoriesFull(f.ID) },
+		"field memories imported from another AI via field page")
+}
+
+// handleExportFieldMemories downloads this field's memories in the same
+// plain-text format as the global export.
+func (s *Server) handleExportFieldMemories(w http.ResponseWriter, r *http.Request) {
+	f := s.loadField(w, r.PathValue("id"))
+	if f == nil {
+		return
+	}
+	memories, err := s.db.ListFieldMemoriesFull(f.ID)
+	if err != nil {
+		log.Warn("listing field memories for export failed", "field", f.ID, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeMemoryExport(w, memories, "polaris-field-memories", "Polaris Field memory export — "+f.Name)
+}
+
 func (s *Server) handleUpdateFieldMemory(w http.ResponseWriter, r *http.Request) {
 	f := s.loadField(w, r.PathValue("id"))
 	if f == nil {
