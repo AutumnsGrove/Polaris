@@ -145,7 +145,7 @@ time.
   "important area" logic is needed.
 - **Pruning:** a once-a-day sweep in the same no-external-cron style as `backup.go`'s snapshot job (or
   piggy-backing on the Pulsar scheduler's tick), removing files past the 30-day idle cutoff.
-- **Size backstop:** an overall size ceiling (default ~500 MB, configurable) evicting least-recently-used
+- **Size backstop:** an overall size ceiling (default 1 GB, configurable) evicting least-recently-used
   first, since the potato's disk is finite and a busy week of map lookups shouldn't be able to fill it.
 
 ### Image kind specifics (the GW2 case)
@@ -201,7 +201,6 @@ Settled 2026-09-30:
 ## Still open
 
 - Exact Go drawing approach for the snapshot renderer (settled in the spike).
-- Exact size-ceiling default for the tile cache (~500 MB proposed).
 
 ## Non-goals
 
