@@ -1,24 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fade, fly } from 'svelte/transition';
+	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { searchState } from '$lib/search.svelte';
 	import { appState } from '$lib/state.svelte';
 	import ModeToggle from '$lib/components/ModeToggle.svelte';
-	import {
-		Search as SearchIcon,
-		SlidersHorizontal,
-		Globe,
-		Earth,
-		X,
-		Sparkles,
-		Telescope,
-		PanelLeft,
-		ChevronLeft,
-		ChevronRight
-	} from '@lucide/svelte';
+	import AtlasOmnibox from '$lib/components/AtlasOmnibox.svelte';
+	import AtlasWelcome from '$lib/components/AtlasWelcome.svelte';
+	import QuickAnswerCard from '$lib/components/QuickAnswerCard.svelte';
+	import SearchResultItem from '$lib/components/SearchResultItem.svelte';
+	import PageScrubber from '$lib/components/PageScrubber.svelte';
+	import { PanelLeft } from '@lucide/svelte';
 	import type { SearchResult, RankState } from '$lib/types';
 
 	// Tracks the query the address bar has already been synced to (either
@@ -83,23 +77,6 @@
 
 	function rankStateOf(r: SearchResult): RankState {
 		return localRankOverrides[r.url] ?? (r.rank_state as RankState) ?? 'default';
-	}
-
-	function domainOf(url: string): string {
-		try {
-			return new URL(url).hostname.replace(/^www\./, '');
-		} catch {
-			return url;
-		}
-	}
-
-	// Deterministic per-domain color for the favicon monogram — same spirit
-	// as the mockup's hand-picked colors, but generated so every domain
-	// gets one instead of just the handful in the sample data.
-	function faviconHue(domain: string): number {
-		let h = 0;
-		for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) % 360;
-		return h;
 	}
 
 	function togglePopover(url: string) {
@@ -196,15 +173,6 @@
 	let isStartScreen = $derived(
 		!searchState.lastQuery && !searchState.loading && !searchState.error
 	);
-
-	const rankLabels: Record<RankState, string> = {
-		block: 'Block',
-		lower: 'Lower',
-		default: 'Default',
-		raise: 'Raise',
-		pin: 'Pin',
-		'': 'Default'
-	};
 </script>
 
 <svelte:head>
@@ -212,16 +180,7 @@
 </svelte:head>
 
 {#snippet omniboxForm()}
-	<form class="omnibox" onsubmit={submitSearch}>
-		<SearchIcon size={16} class="icon-search" />
-		<input
-			type="text"
-			bind:value={searchState.query}
-			placeholder="Search the web"
-			spellcheck="false"
-		/>
-		<span class="hint">? for answer</span>
-	</form>
+	<AtlasOmnibox bind:value={searchState.query} onSubmit={submitSearch} />
 {/snippet}
 
 <div class="atlas-page" bind:this={atlasPageEl}>
@@ -282,51 +241,11 @@
 			     the same way before the first message. Once a search runs,
 			     this whole block gives way to the compact header version
 			     above (see the fly transition on it) instead of staying put. -->
-			<div class="welcome" out:fade={{ duration: 150 }}>
-				<!-- The plain lucide Earth outline, not the desk-globe photo
-				     (atlas-touch-icon.png) used everywhere else — that one
-				     has a stand/arm molded into the artwork, which spins
-				     along with the sphere and reads as broken, not
-				     delightful. A bare sphere has no "wrong way up" to
-				     violate. -->
-				<Earth size={44} class="welcome-mark" aria-hidden="true" />
-				<h1 class="welcome-heading">Atlas</h1>
-				<p class="welcome-tagline">Point it anywhere.</p>
-				<div class="welcome-omnibox">
-					{@render omniboxForm()}
-				</div>
-			</div>
-		{:else if searchState.quickAnswerLoading}
-			<section class="quick-answer">
-				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
-				<p class="qa-loading">Thinking…</p>
-			</section>
-		{:else if searchState.quickAnswerError}
-			<section class="quick-answer">
-				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
-				<p class="qa-loading">{searchState.quickAnswerError}</p>
-			</section>
-		{:else if searchState.quickAnswer}
-			<section class="quick-answer">
-				<div class="qa-label"><Sparkles size={13} />Quick Answer</div>
-				<p class="qa-text">{searchState.quickAnswer.text}</p>
-				{#if searchState.quickAnswer.citations.length > 0}
-					<div class="qa-sources">
-						{#each searchState.quickAnswer.citations as c, i (c.url)}
-							<a class="qa-source" href={c.url} target="_blank" rel="noreferrer">
-								<span class="qa-source-n">{i + 1}</span>
-								{c.site_name || domainOf(c.url)}
-							</a>
-						{/each}
-					</div>
-				{/if}
-				{#if searchState.quickAnswer.threadId}
-					<a class="qa-continue" href="/t/{searchState.quickAnswer.threadId}">
-						<Telescope size={13} />
-						Continue in Assistant
-					</a>
-				{/if}
-			</section>
+			<AtlasWelcome>
+				{@render omniboxForm()}
+			</AtlasWelcome>
+		{:else}
+			<QuickAnswerCard />
 		{/if}
 
 		{#if searchState.loading}
@@ -355,80 +274,14 @@
 			<h2 class="results-heading">Web results</h2>
 			<ol class="results">
 				{#each searchState.results as r (r.url)}
-					{@const domain = domainOf(r.url)}
-					{@const hue = faviconHue(domain)}
-					{@const state = rankStateOf(r)}
-					<li class="result">
-						<div class="result-top">
-							<span class="favicon" style="background: hsl({hue} 45% 45%)">
-								{domain.charAt(0).toUpperCase()}
-							</span>
-							<span class="result-url">{domain}</span>
-						</div>
-						<div class="result-title-row">
-							<h3><a href={r.url} target="_blank" rel="noreferrer">{r.title}</a></h3>
-							<div class="result-actions">
-								<button
-									class="tune-btn"
-									class:adjusted={state !== 'default'}
-									type="button"
-									aria-label={`Adjust ranking for ${domain}`}
-									onclick={(e) => {
-										e.stopPropagation();
-										togglePopover(r.url);
-									}}
-								>
-									<SlidersHorizontal size={15} />
-								</button>
-								{#if openPopoverFor === r.url}
-									<div class="rank-popover" role="dialog" aria-label="Domain ranking">
-										<div class="popover-head">
-											<span class="popover-domain"><Globe size={13} />{domain}</span>
-											<button
-												class="popover-close"
-												type="button"
-												aria-label="Close"
-												onclick={() => (openPopoverFor = null)}
-											>
-												<X size={14} />
-											</button>
-										</div>
-										<div class="rank-group">
-											{#each ['block', 'lower', 'default', 'raise', 'pin'] as opt (opt)}
-												<button
-													type="button"
-													class="rank-option"
-													class:selected={state === opt}
-													data-state={opt}
-													onclick={() => setRank(r, domain, opt as RankState)}
-												>
-													{rankLabels[opt as RankState]}
-												</button>
-											{/each}
-										</div>
-										<p class="popover-help">
-											{#if state === 'block'}
-												This domain will be <b>excluded</b> from results.
-											{:else}
-												This domain ranks <b>{rankLabels[state].toLowerCase()}</b>.
-											{/if}
-										</p>
-										{#if r.engines && r.engines.length > 0}
-											<div class="popover-section">
-												<p class="popover-label">Found via</p>
-												<div class="engine-chips">
-													{#each r.engines as engine (engine)}
-														<span class="engine-chip">{engine}</span>
-													{/each}
-												</div>
-											</div>
-										{/if}
-									</div>
-								{/if}
-							</div>
-						</div>
-						<p class="snippet">{r.content}</p>
-					</li>
+					<SearchResultItem
+						result={r}
+						state={rankStateOf(r)}
+						popoverOpen={openPopoverFor === r.url}
+						onTogglePopover={() => togglePopover(r.url)}
+						onClosePopover={() => (openPopoverFor = null)}
+						onSetRank={setRank}
+					/>
 				{/each}
 			</ol>
 
@@ -442,56 +295,7 @@
 			     anyone actually reads this far and clicks, so "Next"
 			     disables itself instead of leading into a dead end. -->
 			{#if searchState.page > 1 || searchState.hasMore}
-				<!-- Google's own stretched-logo page picker, Atlas's take —
-				     see pageLetterCount's doc comment for why this shows the
-				     full run of 10 up front rather than growing one letter
-				     per page actually reached. Centered, on its own, above
-				     the numbered/chevron row below — that one stays the
-				     precise, always-correct way to move a page at a time;
-				     this one is the fun, speculative "jump anywhere" one. -->
-				<div class="page-wordmark" role="group" aria-label="Jump to a page">
-					<span
-						>Atl{#each Array.from({ length: pageLetterCount }, (_, i) => i + 1) as n (n)}<button
-								type="button"
-								class="pw-a"
-								class:active={n === searchState.page}
-								disabled={n === searchState.page}
-								aria-label={`Page ${n}`}
-								onclick={() => goToPage(n)}>a</button
-							>{/each}s</span
-					>
-				</div>
-				<nav class="pagination" aria-label="Search result pages">
-					<button
-						type="button"
-						class="page-nav"
-						disabled={searchState.page <= 1}
-						onclick={() => goToPage(searchState.page - 1)}
-						aria-label="Previous page"
-					>
-						<ChevronLeft size={16} />
-					</button>
-					{#each Array.from({ length: Math.min(searchState.page, 12) }, (_, i) => i + 1) as n (n)}
-						<button
-							type="button"
-							class="page-num"
-							class:active={n === searchState.page}
-							aria-current={n === searchState.page ? 'page' : undefined}
-							onclick={() => goToPage(n)}
-						>
-							{n}
-						</button>
-					{/each}
-					<button
-						type="button"
-						class="page-nav"
-						disabled={!searchState.hasMore}
-						onclick={() => goToPage(searchState.page + 1)}
-						aria-label="Next page"
-					>
-						<ChevronRight size={16} />
-					</button>
-				</nav>
+				<PageScrubber page={searchState.page} hasMore={searchState.hasMore} letterCount={pageLetterCount} onGoTo={goToPage} />
 			{/if}
 		{/if}
 	</main>
@@ -654,103 +458,10 @@
 		margin-left: var(--space-sm);
 	}
 
-	/* The stretched-wordmark page picker — see pageLetterCount's doc
-	   comment. Its own row, centered, above the precise numbered/chevron
-	   pagination below rather than folded into either the header or that
-	   row. */
-	.page-wordmark {
-		display: flex;
-		justify-content: center;
-		margin: var(--space-xs) 0 var(--space-lg);
-	}
-
-	.page-wordmark span {
-		font-family: var(--font-wordmark);
-		font-size: 26px;
-		font-weight: 400;
-		letter-spacing: 0.02em;
-		color: var(--ink-muted);
-	}
-
-	/* Each "a" is a real page link. Real padding on all sides, not just
-	   letter-spacing on the parent — this needs to be an actually
-	   tappable target on a phone, not just a visually-spaced glyph, so
-	   the hit area is padding (which is part of the target) rather than
-	   margin (which isn't). disabled (the current page's own letter)
-	   gets the "you are here" color without a separate affordance for
-	   "this one doesn't do anything". */
-	.pw-a {
-		appearance: none;
-		border: none;
-		background: transparent;
-		padding: var(--space-sm) var(--space-xs);
-		margin: 0;
-		font: inherit;
-		color: inherit;
-		cursor: pointer;
-		border-radius: var(--radius-sm);
-	}
-
-	.pw-a:hover:not(:disabled) {
-		color: var(--accent);
-		background: var(--paper-sunken);
-	}
-
-	.pw-a.active {
-		color: var(--accent);
-		cursor: default;
-	}
-
-	.pw-a:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 1px;
-	}
-
 	.header-actions {
 		display: flex;
 		align-items: center;
 		gap: var(--space-md);
-	}
-
-	.omnibox {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		background: var(--paper-raised);
-		border: 1px solid var(--line-strong);
-		border-radius: var(--radius-md);
-		padding: var(--space-md) var(--space-lg);
-	}
-
-	.omnibox:focus-within {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 3px var(--accent-soft);
-	}
-
-	.omnibox :global(.icon-search) {
-		flex: none;
-		color: var(--ink-faint);
-	}
-
-	.omnibox input {
-		flex: 1;
-		border: none;
-		outline: none;
-		background: transparent;
-		font-size: 16px;
-		color: var(--ink);
-		min-width: 0;
-	}
-
-	.omnibox .hint {
-		flex: none;
-		font-size: 11px;
-		color: var(--ink-faint);
-		background: var(--paper-sunken);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-sm);
-		padding: var(--space-xs) var(--space-sm);
-		white-space: nowrap;
 	}
 
 	.meta-line {
@@ -766,104 +477,6 @@
 
 	main {
 		padding: var(--space-2xl) var(--space-xl) var(--space-6xl);
-	}
-
-	/* Start screen — centered branding + the omnibox itself, unified with
-	   ChatView's own welcome state (same idea: a floating composer/search
-	   bar before the first turn, pinned to the header once there's a
-	   reason to pin it). Fills most of the space below the sticky header
-	   so it reads as an actual landing moment, not a stray banner. */
-	.welcome {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		text-align: center;
-		gap: var(--space-sm);
-		min-height: min(60vh, 520px);
-		isolation: isolate;
-	}
-
-	.welcome::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: var(--z-behind);
-		background: radial-gradient(
-			ellipse 55% 45% at 50% 32%,
-			var(--accent-soft) 0%,
-			color-mix(in srgb, var(--accent-soft) 55%, transparent) 40%,
-			transparent 72%
-		);
-		pointer-events: none;
-	}
-
-	/* A globe that turns — the one piece of motion this screen gets, slow
-	   and continuous enough to read as ambient rather than attention-
-	   seeking (a full turn takes longer than anyone spends looking at an
-	   empty search page). Pauses on hover so it doesn't fight a click,
-	   and drops out entirely under reduced motion. :global() because the
-	   class lands on the <svg> Earth's own component renders, not on
-	   anything this file draws directly — same pattern as .icon-search
-	   below. */
-	.welcome :global(.welcome-mark) {
-		color: var(--ink-faint);
-		margin-bottom: var(--space-xs);
-		animation: welcome-mark-spin 34s linear infinite;
-	}
-
-	.welcome :global(.welcome-mark:hover) {
-		animation-play-state: paused;
-		color: var(--accent);
-	}
-
-	@keyframes welcome-mark-spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.welcome :global(.welcome-mark) {
-			animation: none;
-		}
-	}
-
-	/* Same hero treatment ChatView.svelte gives "Polaris" in its own
-	   welcome heading — the app's name set in the Asimovian display face
-	   at a scale nothing else on this page uses. */
-	.welcome-heading {
-		margin: 0;
-		font-family: var(--font-wordmark);
-		font-size: clamp(34px, 6vw, 52px);
-		font-weight: 400;
-		letter-spacing: 0.01em;
-		color: var(--ink);
-	}
-
-	.welcome-tagline {
-		margin: 0 0 var(--space-xl);
-		font-family: ui-serif, Georgia, serif;
-		font-style: italic;
-		font-size: 15px;
-		color: var(--ink-faint);
-	}
-
-	.welcome-omnibox {
-		width: 100%;
-		max-width: 560px;
-	}
-
-	/* A touch more presence than the pinned-header version — same idea as
-	   ChatView's .welcome-composer focus ring — since this instance is
-	   the whole point of the screen, not a secondary control up top. */
-	.welcome-omnibox :global(.omnibox) {
-		padding: var(--space-lg) var(--space-lg);
-	}
-
-	.welcome-omnibox :global(.omnibox:focus-within) {
-		box-shadow: 0 0 0 4px var(--accent-soft);
 	}
 
 	.status-line {
@@ -889,97 +502,6 @@
 		text-decoration: underline;
 	}
 
-	.quick-answer {
-		background: var(--paper-raised);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-md);
-		padding: var(--space-lg) var(--space-xl) var(--space-lg);
-		margin-bottom: var(--space-2xl);
-	}
-
-	.qa-label {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: 11.5px;
-		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--accent);
-		margin-bottom: var(--space-md);
-	}
-
-	.qa-loading {
-		margin: 0;
-		font-size: 14px;
-		color: var(--ink-faint);
-	}
-
-	.qa-text {
-		font-family: ui-serif, Georgia, serif;
-		font-size: 16px;
-		line-height: 1.6;
-		color: var(--ink);
-		margin: 0 0 var(--space-lg);
-		max-width: 68ch;
-		white-space: pre-wrap;
-	}
-
-	.qa-sources {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-		padding-top: var(--space-md);
-		border-top: 1px solid var(--line);
-	}
-
-	.qa-source {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: 12px;
-		color: var(--ink-muted);
-		background: var(--paper-sunken);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-full);
-		padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-sm);
-		text-decoration: none;
-	}
-
-	.qa-source:hover {
-		border-color: var(--line-strong);
-		color: var(--ink);
-	}
-
-	.qa-source-n {
-		font-size: 10px;
-		font-weight: 700;
-		color: var(--accent);
-		background: var(--accent-soft);
-		border-radius: var(--radius-full);
-		width: 15px;
-		height: 15px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex: none;
-	}
-
-	.qa-continue {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-sm);
-		margin-top: var(--space-lg);
-		font-size: 12.5px;
-		font-weight: 600;
-		color: var(--accent);
-		text-decoration: none;
-	}
-
-	.qa-continue:hover {
-		text-decoration: underline;
-	}
-
 	.results-heading {
 		font-size: 11.5px;
 		font-weight: 600;
@@ -995,306 +517,6 @@
 		padding: 0;
 	}
 
-	.result {
-		padding: var(--space-lg) var(--space-xs);
-		border-bottom: 1px solid var(--line);
-	}
-
-	.result:first-of-type {
-		padding-top: var(--space-sm);
-	}
-
-	.result-top {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		margin-bottom: var(--space-sm);
-	}
-
-	.favicon {
-		width: 20px;
-		height: 20px;
-		border-radius: var(--radius-sm);
-		flex: none;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 10.5px;
-		font-weight: 700;
-		color: white;
-	}
-
-	.result-url {
-		font-size: 12.5px;
-		color: var(--ink-muted);
-	}
-
-	.result-title-row {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--space-md);
-		margin-bottom: var(--space-sm);
-		position: relative;
-	}
-
-	.result h3 {
-		margin: 0;
-		font-family: ui-serif, Georgia, serif;
-		font-size: 18px;
-		font-weight: 600;
-		line-height: 1.35;
-	}
-
-	.result h3 a {
-		color: inherit;
-		text-decoration: none;
-	}
-
-	.result h3 a:hover {
-		color: var(--accent);
-		text-decoration: underline;
-	}
-
-	.result-actions {
-		position: relative;
-		flex: none;
-	}
-
-	.tune-btn {
-		appearance: none;
-		border: 1px solid transparent;
-		background: transparent;
-		border-radius: var(--radius-sm);
-		width: 28px;
-		height: 28px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--ink-faint);
-		cursor: pointer;
-	}
-
-	.tune-btn:hover {
-		background: var(--paper-sunken);
-		color: var(--ink-muted);
-	}
-
-	.tune-btn.adjusted {
-		color: var(--accent);
-	}
-
-	.rank-popover {
-		position: absolute;
-		top: 34px;
-		right: 0;
-		width: 280px;
-		background: var(--paper-raised);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-md);
-		box-shadow:
-			0 18px 40px var(--shadow-ambient),
-			0 3px 10px var(--shadow-ambient);
-		z-index: var(--z-popover);
-		padding: var(--space-lg) var(--space-lg) var(--space-lg);
-	}
-
-	.popover-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: var(--space-lg);
-	}
-
-	.popover-domain {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--ink);
-	}
-
-	.popover-domain :global(svg) {
-		color: var(--ink-faint);
-	}
-
-	.popover-close {
-		appearance: none;
-		border: none;
-		background: transparent;
-		color: var(--ink-faint);
-		cursor: pointer;
-		width: 24px;
-		height: 24px;
-		border-radius: var(--radius-sm);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.popover-close:hover {
-		background: var(--paper-sunken);
-	}
-
-	.rank-group {
-		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		gap: var(--space-xs);
-		margin-bottom: var(--space-md);
-	}
-
-	.rank-option {
-		appearance: none;
-		font-size: 10px;
-		font-weight: 600;
-		padding: var(--space-sm) var(--space-xs);
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--paper);
-		color: var(--ink-muted);
-		cursor: pointer;
-		text-align: center;
-	}
-
-	.rank-option[data-state='block'].selected {
-		background: var(--rank-block-soft);
-		color: var(--rank-block);
-		border-color: var(--line-strong);
-	}
-
-	.rank-option[data-state='lower'].selected {
-		background: var(--rank-lower-soft);
-		color: var(--ink);
-		border-color: var(--line-strong);
-	}
-
-	.rank-option[data-state='default'].selected {
-		background: var(--rank-default-soft);
-		color: var(--ink);
-		border-color: var(--line-strong);
-	}
-
-	.rank-option[data-state='raise'].selected {
-		background: var(--rank-raise-soft);
-		color: var(--rank-raise);
-		border-color: var(--line-strong);
-	}
-
-	.rank-option[data-state='pin'].selected {
-		background: var(--rank-pin-soft);
-		color: var(--rank-pin);
-		border-color: var(--line-strong);
-	}
-
-	.popover-help {
-		font-size: 12px;
-		line-height: 1.5;
-		color: var(--ink-faint);
-		margin: 0 0 var(--space-md);
-	}
-
-	.popover-help b {
-		color: var(--ink-muted);
-		font-weight: 600;
-	}
-
-	.popover-section {
-		padding-top: var(--space-md);
-		border-top: 1px solid var(--line);
-	}
-
-	.popover-label {
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-		margin: 0 0 var(--space-sm);
-	}
-
-	.engine-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-	}
-
-	.engine-chip {
-		font-size: 11.5px;
-		font-weight: 600;
-		color: var(--ink-muted);
-		background: var(--paper-sunken);
-		border: 1px solid var(--line);
-		border-radius: var(--radius-full);
-		padding: var(--space-xs) var(--space-md);
-	}
-
-	.snippet {
-		margin: 0;
-		font-size: 13.5px;
-		line-height: 1.55;
-		color: var(--ink-muted);
-		max-width: 68ch;
-	}
-
-	.pagination {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-wrap: wrap;
-		gap: var(--space-sm);
-		margin-top: var(--space-md);
-		padding-top: var(--space-xl);
-	}
-
-	.page-nav,
-	.page-num {
-		appearance: none;
-		border: 1px solid var(--line);
-		background: var(--paper-raised);
-		color: var(--ink-muted);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.page-nav {
-		width: 34px;
-		height: 34px;
-		flex: none;
-	}
-
-	.page-nav:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-
-	.page-nav:not(:disabled):hover {
-		border-color: var(--line-strong);
-		color: var(--ink);
-	}
-
-	.page-num {
-		min-width: 34px;
-		height: 34px;
-		padding: 0 var(--space-xs);
-		font-size: 13px;
-		font-weight: 600;
-	}
-
-	.page-num:hover {
-		border-color: var(--line-strong);
-		color: var(--ink);
-	}
-
-	.page-num.active {
-		background: var(--accent-soft);
-		border-color: var(--accent-soft-line);
-		color: var(--accent);
-	}
-
 	@media (max-width: 640px) {
 		.top-inner {
 			padding: var(--space-md) var(--space-lg) var(--space-lg);
@@ -1302,22 +524,8 @@
 		.wordmark .name .sub {
 			display: none;
 		}
-		.omnibox .hint {
-			display: none;
-		}
 		main {
 			padding: var(--space-xl) var(--space-lg) var(--space-5xl);
-		}
-		.result h3 {
-			font-size: 16.5px;
-		}
-		.rank-popover {
-			position: fixed;
-			left: 16px;
-			right: 16px;
-			top: auto;
-			bottom: 16px;
-			width: auto;
 		}
 	}
 </style>
