@@ -79,7 +79,7 @@ func (f fieldInput) validate(models map[string]bool) string {
 		return "unknown default_model"
 	}
 	if f.MemoryMode != nil && !store.ValidFieldMemoryMode(*f.MemoryMode) {
-		return "memory_mode must be \"default\" or \"none\""
+		return "memory_mode must be \"default\", \"field_only\", \"both\" or \"none\""
 	}
 	if f.Color != nil && *f.Color != "" && !fieldColorPattern.MatchString(*f.Color) {
 		return "invalid color"

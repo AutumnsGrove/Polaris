@@ -12,6 +12,17 @@ import (
 	"fmt"
 )
 
+// ErrMemoryNameInGlobal is returned (by the gateway's merged "both"-mode
+// write closure, not the store itself) when a field memory's name is
+// already a live global memory. Rejecting it up front means the two stores
+// never hold a same-named pair that one bare view would silently shadow.
+var ErrMemoryNameInGlobal = errors.New("memory name already exists in global memory")
+
+// ErrGlobalMemoryReadOnly is returned when a field turn tries to edit or
+// forget a name that only exists in global memory — field turns read global
+// memory in "both" mode but never write it.
+var ErrGlobalMemoryReadOnly = errors.New("global memory is read-only from a field")
+
 // CreateFieldMemory mirrors CreateMemory: a name matching a forgotten
 // (disabled) row revives it; a name matching a live row is ErrMemoryExists.
 // It deliberately doesn't know about the global store — rejecting a name

@@ -8,6 +8,12 @@ api_description: >-
   the full text of that index.
 
 
+  When you are working inside a Field, anything you write belongs to that Field only — it is never
+  visible outside it. If entries are tagged "(field)" or "(global)", the "(global)" ones are the
+  user's regular memories: you can read them, but you cannot edit or forget them, and a new memory
+  can't reuse a global memory's name.
+
+
   Default to NOT writing. Most personal details mentioned in passing don't clear the bar — a
   single offhand remark ("I take my coffee black", "I'm bad with directions") only belongs in
   memory if it's the kind of thing that would change how you answer many future, unrelated

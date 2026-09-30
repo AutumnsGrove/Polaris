@@ -208,16 +208,24 @@ func (t *turnRun) wireMemory() {
 	// these nil is what actually makes the memory tool AND the {memories}
 	// prompt section disappear, not just a tool call that would fail if
 	// attempted.
-	// A field's memory_mode = "none" extends the same condition — the exact
-	// mechanism ghost threads already use for "no memory tool", so there's no
-	// new plumbing in agent/ or tools/ (docs/plans/fields.md, "Memory mode").
-	if !t.ghost && MemoryEnabledFromStore(t.s.db) && (t.field == nil || t.field.MemoryMode != store.FieldMemoryNone) {
-		t.agentCtx.ListMemories = t.s.db.ListMemories
-		t.agentCtx.GetMemory = t.s.db.GetMemory
-		t.agentCtx.WriteMemory = t.s.db.CreateMemory
-		t.agentCtx.EditMemory = t.s.db.UpdateMemory
-		t.agentCtx.ForgetMemory = t.s.db.DeleteMemory
+	// A field's memory_mode picks which store(s) the closures bind to, with
+	// "none" (and ghost) leaving them unwired — the same mechanism ghost
+	// threads already use for "no memory tool", so there's no new plumbing in
+	// agent/ or tools/. resolveMemoryAccess also applies the global Memory
+	// switch (field_memory.go, issue #133).
+	if t.ghost {
+		return
 	}
+	access := resolveMemoryAccess(t.field, MemoryEnabledFromStore(t.s.db))
+	if access == memoryNone {
+		return
+	}
+	c := newMemoryClosures(t.s.db, t.field, access)
+	t.agentCtx.ListMemories = c.list
+	t.agentCtx.GetMemory = c.get
+	t.agentCtx.WriteMemory = c.write
+	t.agentCtx.EditMemory = c.edit
+	t.agentCtx.ForgetMemory = c.forget
 }
 
 // wireWeaver switches a Weaver thread onto Weaver's own agent loop and tools.

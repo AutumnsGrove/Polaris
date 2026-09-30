@@ -147,6 +147,9 @@ func handleMemoryWrite(ctx *Context, name, memType, description, content, occurr
 		if err == store.ErrMemoryExists {
 			return fmt.Sprintf("error: a memory named %q already exists — use action=edit to update it", name)
 		}
+		if err == store.ErrMemoryNameInGlobal {
+			return fmt.Sprintf("error: a global memory named %q already exists — global memory is read-only here, so save this one under a different name", name)
+		}
 		return "error: " + err.Error()
 	}
 	return fmt.Sprintf("saved memory %q\n\n%s", name, formatMemoryBody(memType, description, content, occurredAt))
@@ -190,6 +193,9 @@ func handleMemoryEdit(ctx *Context, name, memType, description, content, occurre
 		return "error: occurred_at must be a plain YYYY-MM-DD date, or omitted"
 	}
 	if err := ctx.EditMemory(name, memType, description, content, occurredAt); err != nil {
+		if err == store.ErrGlobalMemoryReadOnly {
+			return fmt.Sprintf("error: %q is a global memory, which is read-only here — write a new memory under a different name to record a correction", name)
+		}
 		if err == store.ErrMemoryNotFound {
 			return fmt.Sprintf("error: no memory named %q — use action=write to create it", name)
 		}
@@ -247,6 +253,9 @@ func handleMemoryForget(ctx *Context, name string) string {
 		return "error: name is required to forget a memory"
 	}
 	if err := ctx.ForgetMemory(name); err != nil {
+		if err == store.ErrGlobalMemoryReadOnly {
+			return fmt.Sprintf("error: %q is a global memory, which is read-only here and can't be forgotten from this field", name)
+		}
 		if err == store.ErrMemoryNotFound {
 			return fmt.Sprintf("no memory named %q", name)
 		}
@@ -302,10 +311,18 @@ func formatMemoryIndex(entries []store.MemoryIndexEntry) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
+		// Scope is only set on a merged field+global listing, where the
+		// tag is what keeps a field memory distinguishable from a global
+		// one (which is read-only there); an unscoped entry renders
+		// exactly as it always has.
+		name := e.Name
+		if e.Scope != "" {
+			name += " (" + e.Scope + ")"
+		}
 		if e.OccurredAt == "" {
-			fmt.Fprintf(&sb, "- [%s] %s: %s", e.Type, e.Name, e.Description)
+			fmt.Fprintf(&sb, "- [%s] %s: %s", e.Type, name, e.Description)
 		} else {
-			fmt.Fprintf(&sb, "- [%s, %s] %s: %s", e.Type, e.OccurredAt, e.Name, e.Description)
+			fmt.Fprintf(&sb, "- [%s, %s] %s: %s", e.Type, e.OccurredAt, name, e.Description)
 		}
 	}
 	return sb.String()
