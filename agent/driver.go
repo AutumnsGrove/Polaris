@@ -485,6 +485,18 @@ type Result struct {
 	// (docs/plans/oracle-mode.md), added after issue #107 only exposed
 	// the input side.
 	CompletionTokens int
+	// LastPromptTokens is the LAST call's input size alone (cached tokens
+	// included) — how big the context the model actually saw was, as
+	// opposed to PromptTokens' sum over every call. A turn with tool calls
+	// re-sends the whole prefix once per call (chat-completion APIs are
+	// stateless), so the sum reads as "2x-3x the prompt" for a turn that
+	// only ever had one ~16K-token context; this is the number to watch
+	// when judging prompt bloat. Distinct from ContextTokens above, which
+	// adds the completion and feeds the context-window meter.
+	LastPromptTokens int
+	// LLMCalls is how many model calls the loop made this turn — what
+	// PromptTokens is a sum over, so the sheet can say "32K across 2 calls".
+	LLMCalls int
 	// Transcript is every message this turn put on the wire, in order,
 	// after the replayed history — the model-facing user message (with any
 	// attachment notes or Pulsar report folded in), mode reinforcement,
@@ -541,6 +553,7 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	// (web_read's filter pass, a spawned sub-agent) has its own unrelated
 	// prefix and would just blur the number.
 	var promptTokens, cacheReadTokens, completionTokens int
+	var lastPromptTokens, llmCalls int
 	// turnStart is where this turn's own messages begin — everything
 	// before it is the system prompt plus replayed history.
 	turnStart := 1 + len(history)
@@ -548,6 +561,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		r.PromptTokens = promptTokens
 		r.CacheReadTokens = cacheReadTokens
 		r.CompletionTokens = completionTokens
+		r.LastPromptTokens = lastPromptTokens
+		r.LLMCalls = llmCalls
 		transcript := make([]llm.ChatMessage, 0, len(messages)-turnStart+1)
 		transcript = append(transcript, messages[turnStart:]...)
 		r.Transcript = append(transcript, llm.ChatMessage{Role: "assistant", Content: r.Answer})
@@ -610,6 +625,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		promptTokens += resp.PromptTokens
 		cacheReadTokens += resp.CacheReadTokens
 		completionTokens += resp.CompletionTokens
+		lastPromptTokens = resp.PromptTokens
+		llmCalls++
 		// Live-only running total, not persisted (logTurnEvent has no case
 		// for it) and not additive — the footer used to sit at $0.00 for
 		// the entire turn, only learning the real spend from "done" once
@@ -834,6 +851,8 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 	promptTokens += resp.PromptTokens
 	cacheReadTokens += resp.CacheReadTokens
 	completionTokens += resp.CompletionTokens
+	lastPromptTokens = resp.PromptTokens
+	llmCalls++
 
 	answerText := resp.Content
 	if calls := parsePseudoToolCalls(resp.Content); len(calls) > 0 {

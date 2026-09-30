@@ -291,6 +291,11 @@ export type ServerEvent =
 			// This turn's summed output tokens — see
 			// gateway/protocol.go's ServerEvent.CompletionTokens doc comment.
 			completion_tokens?: number;
+			// The turn's final model call's input size, and how many calls
+			// prompt_tokens above sums over — see
+			// gateway/protocol.go's ServerEvent.LastPromptTokens.
+			last_prompt_tokens?: number;
+			llm_calls?: number;
 			// How long agent.Run took to produce this answer, in
 			// milliseconds — see StoredMessage.duration_ms.
 			duration_ms?: number;
@@ -860,6 +865,10 @@ export interface ChatTurn {
 	// This turn's summed output tokens — see store.Message.CompletionTokens's
 	// doc comment.
 	completionTokens?: number;
+	// The final model call's input size (the real context size) and how
+	// many calls promptTokens sums over — see agent.Result.LastPromptTokens.
+	lastPromptTokens?: number;
+	llmCalls?: number;
 	toolCallCount?: number;
 	ttftMs?: number;
 	tokensPerSecond?: number;

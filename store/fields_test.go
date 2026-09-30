@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -162,7 +163,21 @@ func TestField_MigrationAddsColumnToExistingDB(t *testing.T) {
 	if _, err := s.db.Exec(`ALTER TABLE threads DROP COLUMN field_id`); err != nil {
 		t.Fatalf("simulating a pre-Fields database: %v", err)
 	}
-	if _, err := s.db.Exec(`PRAGMA user_version = ` + strconv.Itoa(len(migrations)-1)); err != nil {
+	// Located by content, not assumed to be the last entry: migrations are
+	// append-only, so anything added after field_id would otherwise make a
+	// hardcoded len(migrations)-1 rewind to the wrong slot. Later
+	// migrations re-running against columns the fresh schema already has
+	// just hit applyMigrations' tolerated "duplicate column" skip.
+	fieldIDMigration := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "threads ADD COLUMN field_id") {
+			fieldIDMigration = i
+		}
+	}
+	if fieldIDMigration < 0 {
+		t.Fatal("threads.field_id migration not found in migrations")
+	}
+	if _, err := s.db.Exec(`PRAGMA user_version = ` + strconv.Itoa(fieldIDMigration)); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

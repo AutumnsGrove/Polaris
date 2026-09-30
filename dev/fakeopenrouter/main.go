@@ -146,6 +146,12 @@ type queuedResponse struct {
 	// verify a tool's internal filter-pass LLM call actually gets counted
 	// toward a thread's total cost, not silently dropped).
 	Cost float64 `json:"cost,omitempty"`
+	// PromptTokens scripts this response's reported usage.prompt_tokens
+	// (default 0, like Cost) — what makes a token display (the turn-info
+	// sheet's "Context" vs summed "Tokens in") exercisable end to end
+	// against a live server. Script a growing value across a tool turn's
+	// responses to see the last-call-vs-sum distinction.
+	PromptTokens int `json:"prompt_tokens,omitempty"`
 }
 
 // defaultReply is what every call gets when the queue is empty — lets a
@@ -266,7 +272,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		finishChunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "tool_calls"}},
-			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": resp.Cost},
+			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
 			"model":   "fake-openrouter",
 		})
 		sseLine(string(finishChunk))
@@ -295,7 +301,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		finishChunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "stop"}},
-			"usage":   map[string]interface{}{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost": resp.Cost},
+			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
 			"model":   "fake-openrouter",
 		})
 		sseLine(string(finishChunk))

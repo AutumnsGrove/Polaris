@@ -1289,6 +1289,8 @@ export class AppState {
 				turn.promptTokens = e.prompt_tokens;
 				turn.cacheReadTokens = e.cache_read_tokens;
 				turn.completionTokens = e.completion_tokens;
+				turn.lastPromptTokens = e.last_prompt_tokens;
+				turn.llmCalls = e.llm_calls;
 				turn.toolCallCount = e.tool_call_count;
 				turn.ttftMs = e.ttft_ms;
 				turn.tokensPerSecond = e.tokens_per_second;

@@ -17,6 +17,14 @@ func (s *Store) SetMessageCompletionTokens(messageID int64, completionTokens int
 	return err
 }
 
+// SetMessageCallStats records the turn's last-call input size and model-call
+// count — see the last_prompt_tokens schema comment for why the summed
+// prompt_tokens alone misleads about context size.
+func (s *Store) SetMessageCallStats(messageID int64, lastPromptTokens, llmCalls int) error {
+	_, err := s.db.Exec(`UPDATE messages SET last_prompt_tokens = ?, llm_calls = ? WHERE id = ?`, lastPromptTokens, llmCalls, messageID)
+	return err
+}
+
 // SetMessageTranscript records a turn's exact wire transcript — see the
 // transcript schema comment. Post-hoc UPDATE, same shape as
 // SetMessageCacheUsage.

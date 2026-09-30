@@ -90,6 +90,11 @@ type Message struct {
 	// CompletionTokens is this turn's summed output tokens — see the
 	// schema comment above messages.completion_tokens.
 	CompletionTokens int `json:"completion_tokens,omitempty"`
+	// LastPromptTokens/LLMCalls are the turn's final call's input size and
+	// its model-call count — see the schema comment above
+	// messages.last_prompt_tokens.
+	LastPromptTokens int `json:"last_prompt_tokens,omitempty"`
+	LLMCalls         int `json:"llm_calls,omitempty"`
 	// CostAnswerUSD/CostVerificationUSD/CostOracleUSD are CostUSD's
 	// three-tier split — see the schema comment above
 	// messages.cost_answer_usd.
@@ -173,7 +178,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 	rows, err := s.db.Query(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, transcript, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens, last_prompt_tokens, llm_calls
 		FROM messages WHERE thread_id = ? ORDER BY id ASC`,
 		threadID,
 	)
@@ -187,7 +192,7 @@ func (s *Store) GetMessages(threadID string) ([]Message, error) {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 			&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.Transcript, &m.CreatedAt,
-			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens); err != nil {
+			&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls); err != nil {
 			return nil, err
 		}
 		m.Attachments = withLegacyAttachmentFallback(m.Attachments, m.AttachmentFilename, m.AttachmentContentType, m.WorkspaceFileID)
@@ -207,12 +212,12 @@ func (s *Store) GetMessageByID(id int64) (Message, error) {
 	err := s.db.QueryRow(
 		`SELECT id, thread_id, role, content, citations, suggestions, cost_usd, turn_id, duration_ms,
 			attachment_filename, attachment_content_type, workspace_file_id, attachments, cards, chart, pending_question, tts_audio_file_id, verification, created_at,
-			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens
+			prompt_tokens, cache_read_tokens, oracle_result, focus_mode_source, cost_answer_usd, cost_verification_usd, cost_oracle_usd, ttft_ms, tokens_per_second, tool_call_count, applied_focus_mode, applied_model, completion_tokens, last_prompt_tokens, llm_calls
 		FROM messages WHERE id = ?`,
 		id,
 	).Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Citations, &m.Suggestions, &m.CostUSD, &m.TurnID, &m.DurationMs,
 		&m.AttachmentFilename, &m.AttachmentContentType, &m.WorkspaceFileID, &m.Attachments, &m.Cards, &m.Chart, &m.PendingQuestion, &m.TTSAudioFileID, &m.Verification, &m.CreatedAt,
-		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens)
+		&m.PromptTokens, &m.CacheReadTokens, &m.OracleResult, &m.FocusModeSource, &m.CostAnswerUSD, &m.CostVerificationUSD, &m.CostOracleUSD, &m.TTFTMs, &m.TokensPerSecond, &m.ToolCallCount, &m.AppliedFocusMode, &m.AppliedModel, &m.CompletionTokens, &m.LastPromptTokens, &m.LLMCalls)
 	if err != nil {
 		return Message{}, err
 	}

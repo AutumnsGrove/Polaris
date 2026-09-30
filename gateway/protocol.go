@@ -368,6 +368,12 @@ type ServerEvent struct {
 	// doesn't sum this into a running thread total, just displays it per
 	// turn in the sheet.
 	CompletionTokens int `json:"completion_tokens,omitempty"`
+	// LastPromptTokens/LLMCalls are the turn's final model call's input
+	// size and how many calls PromptTokens above sums over — see
+	// agent.Result.LastPromptTokens. omitempty for the same reason as
+	// CompletionTokens: displayed per turn, never summed into a thread total.
+	LastPromptTokens int `json:"last_prompt_tokens,omitempty"`
+	LLMCalls         int `json:"llm_calls,omitempty"`
 	// PendingQuestion mirrors store.Message.PendingQuestion for the live
 	// "done" event — see the doc comment above.
 	PendingQuestion *tools.PendingQuestion `json:"pending_question,omitempty"`

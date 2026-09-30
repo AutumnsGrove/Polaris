@@ -216,4 +216,8 @@ var migrations = []string{
 	// user_version tracking, never insert mid-list). NULL default is also
 	// what SQLite requires to ADD COLUMN ... REFERENCES at all.
 	`ALTER TABLE threads ADD COLUMN field_id TEXT REFERENCES fields(id)`,
+	// messages.last_prompt_tokens / llm_calls — see the schema comment
+	// above. Appended at the end, same positional-index rule as above.
+	`ALTER TABLE messages ADD COLUMN last_prompt_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE messages ADD COLUMN llm_calls INTEGER NOT NULL DEFAULT 0`,
 }

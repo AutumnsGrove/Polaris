@@ -303,6 +303,42 @@ func TestRun_PlainAnswerNoToolCalls(t *testing.T) {
 	}
 }
 
+// A tool turn re-sends the whole prefix on every model call, so PromptTokens
+// (a sum, feeding the cache-hit ratio) is a multiple of the real context
+// size. LastPromptTokens must be the final call's input alone — 130 here,
+// not the 230 sum — and LLMCalls the count PromptTokens sums over.
+func TestRun_LastPromptTokensIsFinalCallNotSum(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"hmm"}`},
+					}},
+					PromptTokens: 100, CompletionTokens: 4,
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Done", PromptTokens: 130, CompletionTokens: 3}, Chunks: []string{"Done"}},
+		},
+	}
+	ctx := newTestContext(mock, &recordingEmit{}, 5)
+
+	result, err := Run(context.Background(), ctx, nil, "question")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.PromptTokens != 230 {
+		t.Errorf("PromptTokens = %d, want 230 (sum over both calls)", result.PromptTokens)
+	}
+	if result.LastPromptTokens != 130 {
+		t.Errorf("LastPromptTokens = %d, want 130 (final call only)", result.LastPromptTokens)
+	}
+	if result.LLMCalls != 2 {
+		t.Errorf("LLMCalls = %d, want 2", result.LLMCalls)
+	}
+}
+
 func TestRun_ToolCallThenAnswer(t *testing.T) {
 	mock := &llmtest.MockClient{
 		Responses: []llmtest.Response{

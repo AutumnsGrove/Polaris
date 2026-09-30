@@ -294,6 +294,15 @@ CREATE TABLE IF NOT EXISTS messages (
 	-- added for the turn-info sheet's "tokens out" stat (docs/plans/
 	-- oracle-mode.md).
 	completion_tokens INTEGER NOT NULL DEFAULT 0,
+	-- last_prompt_tokens/llm_calls: the turn's LAST model call's input
+	-- size and how many calls the turn made. prompt_tokens above is a
+	-- sum over every call (needed for the cache-hit ratio), and a tool
+	-- turn re-sends the whole prefix per call, so it reads as a multiple
+	-- of the real context size — last_prompt_tokens is that real size,
+	-- the number to watch when judging prompt bloat. 0 on rows from
+	-- before this existed (no way to reconstruct it in hindsight).
+	last_prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	llm_calls INTEGER NOT NULL DEFAULT 0,
 	-- cost_answer_usd/cost_verification_usd/cost_oracle_usd: the same
 	-- total cost_usd above, split by what spent it (docs/plans/
 	-- oracle-mode.md's "three-tier cost") — the main answer (plus

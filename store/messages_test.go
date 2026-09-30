@@ -145,6 +145,36 @@ func TestSetMessageDuration_RecordsElapsedTime(t *testing.T) {
 	}
 }
 
+func TestSetMessageCallStats_RoundTrips(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	assistantID, err := s.AddMessage("t1", "assistant", "answer", "[]", "[]", 0, "")
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	if err := s.SetMessageCallStats(assistantID, 16123, 3); err != nil {
+		t.Fatalf("SetMessageCallStats: %v", err)
+	}
+
+	msgs, err := s.GetMessages("t1")
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if msgs[0].LastPromptTokens != 16123 || msgs[0].LLMCalls != 3 {
+		t.Errorf("GetMessages: LastPromptTokens=%d LLMCalls=%d, want 16123/3", msgs[0].LastPromptTokens, msgs[0].LLMCalls)
+	}
+	got, err := s.GetMessageByID(assistantID)
+	if err != nil {
+		t.Fatalf("GetMessageByID: %v", err)
+	}
+	if got.LastPromptTokens != 16123 || got.LLMCalls != 3 {
+		t.Errorf("GetMessageByID: LastPromptTokens=%d LLMCalls=%d, want 16123/3", got.LastPromptTokens, got.LLMCalls)
+	}
+}
+
 // Issue #107's thread-level hit % is summed from per-message rows on read,
 // so a fork has to carry its shared prefix's usage along with the messages
 // themselves — otherwise an edited thread's hit % would silently reset to

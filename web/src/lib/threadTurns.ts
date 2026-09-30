@@ -62,6 +62,8 @@ export function buildTurnsFromMessages(
 			promptTokens: m.prompt_tokens || undefined,
 			cacheReadTokens: m.cache_read_tokens || undefined,
 			completionTokens: m.completion_tokens || undefined,
+			lastPromptTokens: m.last_prompt_tokens || undefined,
+			llmCalls: m.llm_calls || undefined,
 			toolCallCount: m.tool_call_count || undefined,
 			ttftMs: m.ttft_ms || undefined,
 			tokensPerSecond: m.tokens_per_second || undefined,

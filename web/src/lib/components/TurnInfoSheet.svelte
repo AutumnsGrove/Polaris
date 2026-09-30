@@ -154,7 +154,11 @@
 				>
 			</div>
 			<div class="stat-cell">
-				<span class="k">Tokens in</span>
+				<span class="k">Context</span>
+				<span class="v">{turn.lastPromptTokens !== undefined ? turn.lastPromptTokens.toLocaleString() : '—'}</span>
+			</div>
+			<div class="stat-cell">
+				<span class="k">Tokens in{turn.llmCalls && turn.llmCalls > 1 ? ` (${turn.llmCalls} calls)` : ''}</span>
 				<span class="v">
 					{#if turn.promptTokens !== undefined}
 						{turn.promptTokens.toLocaleString()}{#if turn.cacheReadTokens}<small

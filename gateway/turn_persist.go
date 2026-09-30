@@ -131,6 +131,10 @@ func (t *turnRun) persistAnswer() bool {
 		log.Warn("failed to record completion tokens", "err", err)
 		t.logEvent(t.storageThreadID, "warn", "turn", "recording completion tokens failed", map[string]interface{}{"err": err.Error()}, t.turnID)
 	}
+	if err := t.s.db.SetMessageCallStats(t.assistantMsgID, t.result.LastPromptTokens, t.result.LLMCalls); err != nil {
+		log.Warn("failed to record call stats", "err", err)
+		t.logEvent(t.storageThreadID, "warn", "turn", "recording call stats failed", map[string]interface{}{"err": err.Error()}, t.turnID)
+	}
 
 	if len(t.result.Cards) > 0 {
 		if cardsJSON, err := json.Marshal(t.result.Cards); err != nil {
@@ -219,6 +223,8 @@ func (t *turnRun) finishTurn() {
 		PromptTokens:          t.result.PromptTokens,
 		CacheReadTokens:       t.result.CacheReadTokens,
 		CompletionTokens:      t.result.CompletionTokens,
+		LastPromptTokens:      t.result.LastPromptTokens,
+		LLMCalls:              t.result.LLMCalls,
 		PendingQuestion:       t.result.PendingQuestion,
 		OracleResult:          t.oracleResultForEvent,
 		OracleFocusModeSource: t.oracleFocusModeSource,
