@@ -8,7 +8,8 @@
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import FieldChips from '$lib/components/FieldChips.svelte';
-	import FieldMemoryList from '$lib/components/FieldMemoryList.svelte';
+	import MemoryManager from '$lib/components/MemoryManager.svelte';
+	import { FieldMemorySource } from '$lib/fieldMemory.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import WizardButton from '$lib/components/WizardButton.svelte';
 	import WizardOverlay from '$lib/components/WizardOverlay.svelte';
@@ -48,6 +49,12 @@
 	let globalMemoryOff = $derived(!appState.settings.memoryEnabled);
 
 	let detail = $state<FieldDetail | null>(null);
+	// Derived from the id alone (a string, compared by value) so a save —
+	// which replaces the whole field object — doesn't recreate the source and
+	// drop the memory list's loaded state; it only changes when navigating
+	// to a different Field.
+	let fieldId = $derived(detail?.field.id ?? '');
+	let memorySource = $derived(fieldId ? new FieldMemorySource(fieldId) : null);
 	let notFound = $state(false);
 	let loadError = $state('');
 
@@ -561,8 +568,17 @@
 						{/if}
 					</p>
 
-					{#if field.memory_mode === 'field_only' || field.memory_mode === 'both'}
-						<FieldMemoryList fieldId={field.id} />
+					{#if (field.memory_mode === 'field_only' || field.memory_mode === 'both') && memorySource}
+						{#key fieldId}
+							<div class="field-memories">
+								<MemoryManager
+									source={memorySource}
+									subject="in this Field"
+									placeholder="e.g. The project codename is ORCA-7"
+									emptyText="Nothing saved yet — it'll remember things worth carrying forward from this Field's chats."
+								/>
+							</div>
+						{/key}
 					{/if}
 
 					<h2 class="panel-title spaced">Privacy</h2>
@@ -692,6 +708,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		color: var(--color-text-dim);
+	}
+
+	.field-memories {
+		margin-top: var(--space-lg);
 	}
 
 	.hint {
