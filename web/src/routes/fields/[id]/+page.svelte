@@ -9,6 +9,8 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import FieldChips from '$lib/components/FieldChips.svelte';
 	import MemoryManager from '$lib/components/MemoryManager.svelte';
+	import MemoryImport from '$lib/components/MemoryImport.svelte';
+	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { FieldMemorySource } from '$lib/fieldMemory.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import WizardButton from '$lib/components/WizardButton.svelte';
@@ -28,7 +30,8 @@
 		Orbit,
 		SearchSlash,
 		SlidersHorizontal,
-		Palette
+		Palette,
+		X
 	} from '@lucide/svelte';
 	import type { Field, FieldDetail, FieldFile } from '$lib/types';
 
@@ -180,6 +183,7 @@
 	// through the same explicit Save (and 4000-char cap) as hand-typed text
 	// and can still be edited or discarded first.
 	let showInstructionsWizard = $state(false);
+	let showMemoryImport = $state(false);
 	function acceptWizardInstructions(text: string) {
 		instructions = text;
 	}
@@ -576,6 +580,7 @@
 									subject="in this Field"
 									placeholder="e.g. The project codename is ORCA-7"
 									emptyText="Nothing saved yet — it'll remember things worth carrying forward from this Field's chats."
+									onImport={() => (showMemoryImport = true)}
 								/>
 							</div>
 						{/key}
@@ -609,6 +614,22 @@
 		</div>
 	{/if}
 </div>
+
+{#if showMemoryImport && memorySource}
+	<!-- Settings shows the same MemoryImport as a subpage of its panel; a
+	     Field page has no panel to swap, so it gets the same modal shell. -->
+	<div class="modal-backdrop" role="presentation">
+		<button class="modal-backdrop-close" onclick={() => (showMemoryImport = false)} aria-label="Close"></button>
+		<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Import memories">
+			<div class="sheet-handle" use:swipeToDismiss={() => (showMemoryImport = false)} aria-hidden="true"></div>
+			<div class="modal-panel-header">
+				<h2>Import memories</h2>
+				<button class="icon-btn" onclick={() => (showMemoryImport = false)} title="Close"><X size={18} /></button>
+			</div>
+			<MemoryImport source={memorySource} />
+		</div>
+	</div>
+{/if}
 
 {#if showInstructionsWizard}
 	<WizardOverlay

@@ -3,6 +3,12 @@
 	import { Copy, Check, LoaderPinwheel, Send, Paperclip } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
+	import type { MemorySource } from '$lib/memorySource';
+
+	// Which store the pasted dump is imported into — the global list from
+	// Settings, or one Field's own (issue #133). The export prompt below is
+	// the same text either way.
+	let { source }: { source: MemorySource } = $props();
 
 	// Re-fetched every time this subpage mounts — see
 	// SettingsState.loadExportPrompt's doc comment for why there's no
@@ -55,8 +61,8 @@
 
 	async function submitImport() {
 		const text = dump.trim();
-		if (!text || appState.settings.importBusy) return;
-		const ok = await appState.settings.importMemories(text);
+		if (!text || source.importBusy) return;
+		const ok = await source.importMemories(text);
 		// Cleared only on a genuine success, not on whether importMessage
 		// happens to be non-empty — that's an LLM-generated summary and
 		// could in principle come back empty on a real success, which used
@@ -106,7 +112,7 @@
 		placeholder="Paste the other assistant's reply here"
 		bind:value={dump}
 		use:autoResize={{ value: dump, maxHeight: 320 }}
-		disabled={appState.settings.importBusy}
+		disabled={source.importBusy}
 	></textarea>
 	<input
 		type="file"
@@ -118,7 +124,7 @@
 	<button
 		class="btn attach-btn"
 		onclick={() => fileInput?.click()}
-		disabled={appState.settings.importBusy}
+		disabled={source.importBusy}
 	>
 		<Paperclip size={13} />
 		{attachedFilename || 'Attach a .txt file instead'}
@@ -126,16 +132,16 @@
 	<button
 		class="btn import-btn"
 		onclick={submitImport}
-		disabled={!dump.trim() || appState.settings.importBusy}
+		disabled={!dump.trim() || source.importBusy}
 	>
-		{#if appState.settings.importBusy}
+		{#if source.importBusy}
 			<LoaderPinwheel size={14} class="spin" /> Reading…
 		{:else}
 			<Send size={14} /> Import
 		{/if}
 	</button>
-	{#if appState.settings.importMessage}
-		<p class="hint import-confirmation">{appState.settings.importMessage}</p>
+	{#if source.importMessage}
+		<p class="hint import-confirmation">{source.importMessage}</p>
 	{/if}
 </section>
 

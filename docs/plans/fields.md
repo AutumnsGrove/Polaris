@@ -280,7 +280,10 @@ needed no field awareness.
 A Field's Settings tab lists its own memories with the same component Settings uses
 (`MemoryManager.svelte`, behind a `MemorySource`), backed by `/api/fields/{id}/memories[/chat]`.
 There is no "add" route — entries appear by the model saving them, or via that box's
-"tell it what to remember". Deleting a field deletes its memories (`ON DELETE CASCADE`).
+"tell it what to remember". Import ("bring memories from another AI", `MemoryImport.svelte`) and
+the plain-text export are shared the same way: `/api/fields/{id}/memories/import` and
+`/export` reuse `serveMemoryImport` / `writeMemoryExport` against the field's store. Deleting a
+field deletes its memories (`ON DELETE CASCADE`).
 
 ### Constellation / Weaver visibility
 

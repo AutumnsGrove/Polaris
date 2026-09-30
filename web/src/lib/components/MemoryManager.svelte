@@ -9,8 +9,9 @@
 	// The memory list + "tell it what to change" UI, shared by Settings
 	// (the global store, see MemorySettings.svelte) and a Field's page (that
 	// Field's own store, issue #133) — each passes its own `source`.
-	// onImport/exportHref are optional because only the global list has
-	// import/export; a Field's memories don't.
+	// onImport is how the parent opens its import subpage (navigation is the
+	// parent's — Settings swaps a panel, a Field page opens a modal); the
+	// export link comes from the source.
 	// subject completes "What would you like Polaris to remember ___?"
 	// (kept as text, not a snippet: the wordmark span's style is scoped to
 	// this component, so it has to be rendered here).
@@ -19,15 +20,13 @@
 		subject,
 		placeholder,
 		emptyText,
-		onImport,
-		exportHref
+		onImport
 	}: {
 		source: MemorySource;
 		subject: string;
 		placeholder: string;
 		emptyText: string;
-		onImport?: () => void;
-		exportHref?: string;
+		onImport: () => void;
 	} = $props();
 
 	// Re-fetched every time this mounts (the panel unmounts this entirely
@@ -153,11 +152,9 @@
 	{#if source.message}
 		<p class="hint chat-confirmation">{source.message}</p>
 	{/if}
-	{#if onImport}
-		<button class="btn import-link-btn" onclick={onImport}>
-			<Download size={14} /> Bring memories from another AI
-		</button>
-	{/if}
+	<button class="btn import-link-btn" onclick={onImport}>
+		<Download size={14} /> Bring memories from another AI
+	</button>
 </section>
 
 <section class="memory-list">
@@ -219,11 +216,9 @@
 				{/if}
 			</div>
 		{/each}
-		{#if exportHref}
-			<a class="btn export-btn" href={exportHref} download>
-				<FileDown size={14} /> Export all memories
-			</a>
-		{/if}
+		<a class="btn export-btn" href={source.exportHref} download>
+			<FileDown size={14} /> Export all memories
+		</a>
 	{/if}
 </section>
 

@@ -10,11 +10,44 @@ export class FieldMemorySource implements MemorySource {
 	loaded = $state(false);
 	busy = $state(false);
 	message = $state('');
+	importBusy = $state(false);
+	importMessage = $state('');
 
 	constructor(private fieldId: string) {}
 
 	private get base() {
 		return `/api/fields/${this.fieldId}/memories`;
+	}
+
+	get exportHref() {
+		return `${this.base}/export`;
+	}
+
+	// Same contract as SettingsState.importMemories: true only on a real
+	// success, so the caller keeps a long pasted dump on failure.
+	async importMemories(dump: string): Promise<boolean> {
+		this.importBusy = true;
+		this.importMessage = '';
+		try {
+			const res = await fetch(`${this.base}/import`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ dump })
+			});
+			if (!res.ok) {
+				this.importMessage = "Couldn't parse that — try pasting the whole export again.";
+				return false;
+			}
+			const data = await res.json();
+			this.importMessage = data.message ?? '';
+			this.memories = data.memories ?? this.memories;
+			return true;
+		} catch {
+			this.importMessage = 'Could not reach the server — try again.';
+			return false;
+		} finally {
+			this.importBusy = false;
+		}
 	}
 
 	async load() {

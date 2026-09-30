@@ -26,6 +26,7 @@
 	import type { FocusMode } from '$lib/types';
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import MemorySettings from './MemorySettings.svelte';
+	import { globalMemorySource } from '$lib/memorySource';
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
 	import Switch from './Switch.svelte';
@@ -348,7 +349,7 @@
 				<button class="icon-btn" onclick={close} title="Close"><X size={18} /></button>
 			</div>
 
-			<MemoryImport />
+			<MemoryImport source={globalMemorySource(appState.settings)} />
 		{:else if showMemory}
 			<div class="modal-panel-header">
 				<button class="icon-btn" onclick={() => (showMemory = false)} title="Back to settings">
