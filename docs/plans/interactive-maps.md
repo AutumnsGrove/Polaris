@@ -120,10 +120,18 @@ use the same file.
 - **Server side (snapshot):** the handler fetches tiles itself, so it needs `SafeDialContext` like the
   other fetchers, a per-call tile cap (~16), an on-disk/in-memory tile cache, and a real `User-Agent`.
   These requests originate from the potato, so the public OSM policy applies to them directly.
-- **Default source: public `tile.openstreetmap.org`**, with the URL template in `config.yaml` so a keyed
-  provider or self-hosted server can be swapped in without a code change. Verify OSM's **current**
-  usage policy before shipping (including how it expects cached tiles and cache headers to be
-  honored). Always render the attribution string, on the card and stamped onto snapshots.
+- **Two tile sources, not one (spike finding, 2026-10-01).** OSM's policy
+  (<https://operations.osmfoundation.org/policies/tiles/>) permits interactive viewing where the client
+  requests only the current viewport's tiles, but forbids "headless bot rendering" and bulk/offline use
+  on `tile.openstreetmap.org`, with violators "blocked without notice." So:
+  - **Live card (browser):** public OSM by default, URL template in `config.yaml`. Compliant as long as
+    Leaflet only requests the viewport and the Referer header isn't suppressed (no restrictive
+    `Referrer-Policy`). Attribution must be visible, not behind a toggle.
+  - **Snapshots (server):** a *separate* configurable template (`maps.snapshot_tile_url`) pointing at a
+    keyed free-tier provider or self-hosted server, never public OSM. If unset, the snapshot is skipped
+    and the tool result says so rather than silently hitting OSM.
+- Always render the attribution string, on the card and stamped onto snapshots (the snapshot provider's
+  own attribution, which may differ from OSM's).
 
 ### Tile cache
 
@@ -198,9 +206,20 @@ Settled 2026-09-30:
 - **Payload cap: 50 markers and 30 shapes per call**, with a "trim it down" error beyond that, to keep
   persisted transcript events small.
 
+Settled 2026-10-01 (spike):
+
+- **Go snapshot renderer: stdlib `image`/`image/draw` + `golang.org/x/image` only, no 2D drawing lib.**
+  Validated against a real tile: Web Mercator projection put a pin for the Space Needle
+  (47.6205, -122.3493) at z15 inside tile 5247/11442 at pixel (126.7, 16.4), visually on the landmark;
+  `radius_m` circles size via `metres_per_pixel = 156543.03392 * cos(lat) / 2^z`. Rings are per-pixel
+  distance-falloff antialiased, pins filled discs, polylines thick Bresenham. Still to pick when building:
+  an embedded TTF via `x/image/font/opentype` (`basicfont` 7x13 is too small/ugly for labels).
+- **Snapshots never fetch from public OSM** (policy bans headless rendering); they use a separate
+  configurable tile source. Live card keeps public OSM as the default.
+
 ## Still open
 
-- Exact Go drawing approach for the snapshot renderer (settled in the spike).
+- Which snapshot tile provider to recommend/default (free-tier terms, key handling, attribution text).
 
 ## Non-goals
 
