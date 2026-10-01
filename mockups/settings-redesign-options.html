@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings redesign — layout options</title>
+<style>
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-400.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-500.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-600.css');
+@import url('https://cdn.jsdelivr.net/fontsource/css/lexend@5/latin-700.css');
+
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-strong: oklch(72% 0.18 74);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-danger: oklch(65% 0.19 25);
+	--shadow-xs: 0 1px 2px rgba(15, 10, 5, 0.22), 0 1px 1px rgba(15, 10, 5, 0.14);
+	--shadow-well: inset 0 1px 3px rgba(10, 6, 3, 0.35), inset 0 0 0 1px rgba(10, 6, 3, 0.18);
+	--shadow-lg: 0 24px 60px -16px rgba(10, 6, 3, 0.55), 0 8px 24px -8px rgba(10, 6, 3, 0.4);
+	--radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-xl: 22px; --radius-full: 999px;
+	--space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px; --space-xl: 24px; --space-2xl: 32px;
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: 'Lexend', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+
+/* ---------- page chrome ---------- */
+.page-head { max-width: 1240px; margin: 0 auto; padding: var(--space-2xl) var(--space-xl) 0; }
+.page-head h1 { font-size: 1.3rem; margin: 0 0 var(--space-sm); }
+.page-head p { color: var(--color-text-dim); max-width: 820px; line-height: 1.6; font-size: 0.9rem; margin: 0 0 var(--space-md); }
+.audit { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-md); margin: var(--space-lg) 0 0; }
+.audit div { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); font-size: .82rem; line-height: 1.5; color: var(--color-text-dim); }
+.audit b { display: block; color: var(--color-text); font-weight: 600; margin-bottom: 2px; }
+.options { max-width: 1240px; margin: 0 auto; padding: var(--space-xl) var(--space-xl) var(--space-2xl); display: flex; flex-direction: column; gap: 56px; }
+.option-head { margin-bottom: var(--space-lg); }
+.option-head h2 { font-size: 1.05rem; margin: 0 0 4px; }
+.option-head h2 span { color: var(--color-accent); margin-right: 8px; }
+.option-head p { margin: 0; color: var(--color-text-dim); font-size: .85rem; line-height: 1.6; max-width: 820px; }
+.pros { display: flex; gap: var(--space-xl); flex-wrap: wrap; margin-top: var(--space-sm); font-size: .8rem; color: var(--color-text-dim); }
+.pros b { color: var(--color-text); font-weight: 600; }
+.frames { display: flex; gap: var(--space-2xl); flex-wrap: wrap; align-items: flex-start; }
+.frame-label { font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-dim); margin-bottom: var(--space-sm); }
+
+/* ---------- phone sheet (mirrors .modal-panel on mobile) ---------- */
+.sheet { width: 390px; max-width: 100%; background: var(--color-surface-2); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); padding: var(--space-md) var(--space-lg) var(--space-xl); position: relative; overflow: hidden; }
+.sheet.tall { max-height: 860px; overflow-y: auto; scrollbar-width: none; }
+.grab { width: 36px; height: 4px; border-radius: 4px; background: var(--color-border-strong); margin: 0 auto var(--space-md); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-sm) 0 var(--space-lg); }
+.sheet-head h3 { font-family: var(--font-serif); font-size: 1.15rem; margin: 0; font-weight: 700; }
+.sheet-head.center { }
+.sheet-head.center h3 { position: absolute; left: 50%; transform: translateX(-50%); }
+.hbtn { background: none; border: 0; color: var(--color-text-dim); padding: 6px; display: grid; place-items: center; border-radius: var(--radius-full); }
+.hbtn svg { width: 20px; height: 20px; }
+.hicons { display: flex; gap: 4px; }
+
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- THE SHARED ROW ANATOMY (all three options use this) ---------- */
+.group-label { font-size: .68rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-dim); margin: var(--space-xl) 0 var(--space-sm) var(--space-xs); }
+.group-label:first-of-type { margin-top: var(--space-sm); }
+.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); overflow: hidden; }
+.row { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg); min-height: 56px; }
+.row + .row { border-top: 1px solid var(--color-border); }
+.row .lead { color: var(--color-accent); display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--color-accent-soft); flex: none; }
+.row .txt { flex: 1; min-width: 0; }
+.row .t { font-size: .92rem; font-weight: 500; line-height: 1.3; }
+.row .d { font-size: .76rem; color: var(--color-text-dim); line-height: 1.4; margin-top: 2px; }
+.row .val { color: var(--color-text-dim); font-size: .85rem; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.row .chev { color: var(--color-text-dim); }
+.row.stack { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
+.row.link { cursor: pointer; }
+
+.select { background: var(--color-surface-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 7px 10px 7px 12px; font-size: .85rem; display: flex; align-items: center; gap: 8px; color: var(--color-text); }
+.select svg { width: 14px; height: 14px; color: var(--color-text-dim); }
+.input { background: var(--color-surface-3); box-shadow: var(--shadow-well); border-radius: var(--radius-md); padding: 9px 12px; font-size: .85rem; color: var(--color-text-dim); }
+textarea.input { width: 100%; border: 0; min-height: 76px; font: inherit; font-size: .85rem; resize: none; }
+.seg { display: flex; background: var(--color-bg); box-shadow: var(--shadow-well); border-radius: var(--radius-md); padding: 3px; gap: 2px; }
+.seg span { flex: 1; text-align: center; padding: 6px 12px; border-radius: 8px; font-size: .8rem; color: var(--color-text-dim); white-space: nowrap; display: flex; gap: 6px; align-items: center; justify-content: center; }
+.seg span.on { background: var(--color-surface-3); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-xs); }
+.seg svg { width: 14px; height: 14px; }
+.sw { width: 44px; height: 26px; border-radius: 99px; background: var(--color-surface-3); border: 1px solid var(--color-border-strong); position: relative; flex: none; }
+.sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--color-text-dim); transition: .2s; }
+.sw.on { background: var(--color-accent-soft); border-color: var(--color-accent-strong); }
+.sw.on::after { left: 21px; background: var(--color-accent); }
+.btn { background: var(--color-surface-3); border: 1px solid var(--color-border); color: var(--color-text); border-radius: var(--radius-md); padding: 7px 12px; font: inherit; font-size: .82rem; font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
+.btn svg { width: 15px; height: 15px; }
+.btn.wide { width: 100%; justify-content: center; padding: 11px; }
+.accent-link { color: var(--color-accent); font-size: .8rem; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
+.accent-link svg { width: 15px; height: 15px; }
+.mono { font-family: var(--font-mono); font-size: .78rem; background: var(--color-bg); padding: 4px 8px; border-radius: var(--radius-sm); }
+
+/* the ONE disclosure pattern for long copy: tap "i" -> note expands inside the card */
+details.more { border-top: 1px solid var(--color-border); }
+details.more summary { list-style: none; padding: 9px var(--space-lg); font-size: .74rem; color: var(--color-text-dim); display: flex; gap: 6px; align-items: center; cursor: pointer; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary svg { width: 13px; height: 13px; }
+details.more[open] summary { color: var(--color-accent); }
+details.more p { margin: 0; padding: 0 var(--space-lg) var(--space-md); font-size: .76rem; line-height: 1.55; color: var(--color-text-dim); }
+.note-pill { font-size: .66rem; padding: 2px 8px; border-radius: 99px; background: var(--color-surface-3); color: var(--color-text-dim); margin-left: 6px; font-weight: 500; }
+
+/* ---------- Option B: drill-in ---------- */
+.hub-card .row { min-height: 64px; }
+
+/* ---------- Option C: tabs ---------- */
+.tabs { display: flex; gap: 4px; background: var(--color-bg); box-shadow: var(--shadow-well); border-radius: var(--radius-lg); padding: 4px; margin-bottom: var(--space-sm); }
+.tabs span { flex: 1; text-align: center; padding: 8px 4px; border-radius: var(--radius-md); font-size: .78rem; color: var(--color-text-dim); font-weight: 500; }
+.tabs span.on { background: var(--color-surface-3); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-xs); }
+
+/* ---------- Desktop ---------- */
+.desk { width: 760px; max-width: 100%; background: var(--color-surface-2); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); display: grid; grid-template-columns: 200px 1fr; overflow: hidden; min-height: 620px; }
+.desk nav { background: var(--color-surface); border-right: 1px solid var(--color-border); padding: var(--space-xl) var(--space-md); display: flex; flex-direction: column; gap: 2px; }
+.desk nav h3 { font-family: var(--font-serif); margin: 0 0 var(--space-lg) var(--space-sm); font-size: 1.15rem; }
+.desk nav a { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-radius: var(--radius-md); font-size: .85rem; color: var(--color-text-dim); }
+.desk nav a.on { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+.desk main { padding: var(--space-xl) var(--space-xl) var(--space-2xl); }
+.desk main h4 { font-family: var(--font-serif); font-size: 1.05rem; margin: 0 0 var(--space-lg); }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+	<h1>Settings redesign — three layout options</h1>
+	<p>Built from the live panel's own tokens (<code>--color-*</code>, <code>--radius-*</code>, <code>--space-*</code>, Lexend + serif title, gold accent, the same switch/segmented/select controls). All three share one <b>row anatomy</b> and one <b>disclosure pattern</b>; they differ only in how the 13 sections are organised. Tap the “Why / details” lines to see the expand behaviour.</p>
+	<div class="audit">
+		<div><b>Mixed section chrome today</b>Some sections have an icon header + card, some a card with a button, “Updates” has full-width buttons outside any card, Voice has two cards back-to-back with a hint wedged between.</div>
+		<div><b>Uneven description weight</b>Hints range from nothing (Theme) to a 9-line paragraph (Oracle mode). The long ones push the next section’s header off-screen.</div>
+		<div><b>Odd spacing</b>Hint sits tight under its card but ~40px of air above the next header, so hints read as belonging to nothing. Pronouns wrap to a second row; “Reading voice” card butts into the Mic hint.</div>
+		<div><b>One 2,500px scroll</b>13 sections, no way to jump, and rarely-touched things (Updates, Tools) share equal weight with daily ones (Model, Focus).</div>
+	</div>
+</div>
+
+<div class="options">
+
+<!-- ======================================================= OPTION A -->
+<section>
+	<div class="option-head">
+		<h2><span>A</span>Grouped list — one scroll, tighter structure</h2>
+		<p>Keeps today’s single scrolling sheet, but sections collapse into five labelled groups (the small caps label style the Usage view already uses). Every row is icon + title + at most one dim line; anything longer lives behind a single “Details” disclosure. Least change, least risk.</p>
+		<div class="pros"><span><b>Pro:</b> everything still visible by scrolling; closest to today</span><span><b>Con:</b> still a long page (~1,400px vs 2,500px)</span></div>
+	</div>
+	<div class="frames">
+		<div>
+			<div class="frame-label">Phone</div>
+			<div class="sheet">
+				<div class="grab"></div>
+				<div class="sheet-head"><h3>Settings</h3><div class="hicons"><button class="hbtn" data-i="info"></button><button class="hbtn" data-i="x"></button></div></div>
+
+				<div class="group-label">General</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="sun"></span><div class="txt"><div class="t">Theme</div></div><div class="seg"><span class="on"><i data-i="moon"></i>Dark</span><span><i data-i="sunsm"></i>Light</span></div></div>
+					<div class="row"><span class="lead" data-i="cpu"></span><div class="txt"><div class="t" style="white-space:nowrap">Default model</div><div class="d">For new threads</div></div><div class="select">DeepSeek V4.1 <i data-i="chevd"></i></div></div>
+					<div class="row"><span class="lead" data-i="target"></span><div class="txt"><div class="t">Default focus</div><div class="d">Applied to every new message</div></div><div class="select">Off <i data-i="chevd"></i></div></div>
+				</div>
+
+				<div class="group-label">You</div>
+				<div class="card">
+					<div class="row stack"><div style="display:flex;gap:12px;align-items:center"><span class="lead" data-i="notes"></span><div class="txt"><div class="t">Instructions</div><div class="d">Steers every answer</div></div><span class="accent-link"><i data-i="spark"></i>Help me write</span></div><textarea class="input" placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."></textarea></div>
+					<details class="more"><summary><i data-i="info"></i>Details</summary><p>Added on top of <code>prompt.md</code>. Edit that file directly for anything more involved than a short standing preference.</p></details>
+					<div class="row"><span class="lead" data-i="user"></span><div class="txt"><div class="t">Name</div></div><div class="input" style="width:150px">e.g. Alex</div></div>
+					<div class="row stack"><div class="t" style="padding-left:44px">Pronouns</div><div class="seg"><span>he/him</span><span>she/her</span><span>they/them</span><span>Custom</span></div></div>
+					<div class="row"><span class="lead" data-i="pin"></span><div class="txt"><div class="t">Location</div><div class="d">Fallback for “near me”</div></div><div class="input" style="width:130px">Seattle, WA</div></div>
+					<details class="more"><summary><i data-i="info"></i>Details</summary><p>Used when the browser can’t provide a real location (it needs https://, not this app’s plain Tailscale IP). Ignored once a GPS fix is available.</p></details>
+				</div>
+
+				<div class="group-label">Voice</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="mic"></span><div class="txt"><div class="t">Mic button</div></div><div class="seg"><span class="on">Tap</span><span>Hold</span></div></div>
+					<div class="row link"><span class="lead" data-i="vol"></span><div class="txt"><div class="t">Reading voice</div><div class="d">Used for read-aloud and calls</div></div><div class="val">Lily <i class="chev" data-i="chevr"></i></div></div>
+				</div>
+
+				<div class="group-label">Features</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="brain"></span><div class="txt"><div class="t">Memory</div><div class="d">Remember things across chats</div></div><div class="sw on"></div></div>
+					<div class="row link"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">What Polaris remembers</div></div><span class="btn"><i data-i="brain"></i>Manage</span></div>
+					<div class="row"><span class="lead" data-i="oracle"></span><div class="txt"><div class="t">Oracle mode</div><div class="d">Adjusts answers per question</div></div><div class="sw"></div></div>
+					<div class="row"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">Also in ghost chats</div></div><div class="sw"></div></div>
+					<details class="more"><summary><i data-i="info"></i>Details</summary><p>Reads each message before answering and quietly adjusts how Polaris answers. Changes show on the reply and can be undone. Each message also goes to a small helper model; cost appears under Usage.</p></details>
+					<div class="row"><span class="lead" data-i="galaxy"></span><div class="txt"><div class="t">Constellation</div><div class="d">Weaver builds your library of stars</div></div><div class="sw"></div></div>
+					<div class="row link"><span class="lead" data-i="wrench"></span><div class="txt"><div class="t">Tools</div><div class="d">Which tools Polaris can use</div></div><div class="val"><i class="chev" data-i="chevr"></i></div></div>
+				</div>
+
+				<div class="group-label">System</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="refresh"></span><div class="txt"><div class="t">Version</div></div><span class="mono">r50.8280048</span></div>
+					<div class="row link"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">Update Polaris</div><div class="d">Pull latest, rebuild, restart</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">Restart Polaris</div><div class="d">Restart only — no pull, no rebuild</div></div><i class="chev" data-i="chevr"></i></div>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- ======================================================= OPTION B -->
+<section>
+	<div class="option-head">
+		<h2><span>B</span>Drill-in hub — short top level, details one tap down</h2>
+		<p>The top screen is a short list of six categories, each showing a one-glance summary of its current values. Tapping drills into a page using the exact sub-view pattern Usage and Memory already use (back chevron, centred serif title). Nothing needs scrolling to find a category; long explanations get room to breathe on their own page.</p>
+		<div class="pros"><span><b>Pro:</b> best phone ergonomics; scales as features are added; reuses an existing pattern</span><span><b>Con:</b> every change is 2 taps; can’t eyeball everything at once</span></div>
+	</div>
+	<div class="frames">
+		<div>
+			<div class="frame-label">Top level</div>
+			<div class="sheet">
+				<div class="grab"></div>
+				<div class="sheet-head"><h3>Settings</h3><div class="hicons"><button class="hbtn" data-i="x"></button></div></div>
+				<div class="card hub-card">
+					<div class="row link"><span class="lead" data-i="sun"></span><div class="txt"><div class="t">Appearance &amp; defaults</div><div class="d">Dark · DeepSeek V4.1 Flash · Focus off</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" data-i="user"></span><div class="txt"><div class="t">About you</div><div class="d">Name, pronouns, location, instructions</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" data-i="mic"></span><div class="txt"><div class="t">Voice</div><div class="d">Tap to toggle · Lily</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" data-i="brain"></span><div class="txt"><div class="t">Memory &amp; Oracle</div><div class="d">Memory on · Oracle off</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" data-i="wrench"></span><div class="txt"><div class="t">Tools &amp; Constellation</div><div class="d">All tools on · Constellation off</div></div><i class="chev" data-i="chevr"></i></div>
+					<div class="row link"><span class="lead" data-i="refresh"></span><div class="txt"><div class="t">Updates</div><div class="d">r50.8280048 · up to date</div></div><i class="chev" data-i="chevr"></i></div>
+				</div>
+				<div class="group-label">Also</div>
+				<div class="card hub-card">
+					<div class="row link"><span class="lead" data-i="info"></span><div class="txt"><div class="t">Usage</div><div class="d">$0.00 last 30 days</div></div><i class="chev" data-i="chevr"></i></div>
+				</div>
+			</div>
+		</div>
+		<div>
+			<div class="frame-label">Drilled in: Memory &amp; Oracle</div>
+			<div class="sheet">
+				<div class="grab"></div>
+				<div class="sheet-head center"><button class="hbtn" data-i="chevl"></button><h3>Memory &amp; Oracle</h3><button class="hbtn" data-i="x"></button></div>
+				<div class="group-label">Memory</div>
+				<div class="card">
+					<div class="row"><div class="txt"><div class="t">Remember things across chats</div></div><div class="sw on"></div></div>
+					<div class="row link"><div class="txt"><div class="t">What Polaris remembers</div><div class="d">View, add, or forget</div></div><i class="chev" data-i="chevr"></i></div>
+				</div>
+				<div class="group-label">Oracle mode</div>
+				<div class="card">
+					<div class="row"><div class="txt"><div class="t">Enabled</div><div class="d">Reads each message and adjusts the answer</div></div><div class="sw"></div></div>
+					<div class="row"><div class="txt"><div class="t">Also in ghost conversations</div></div><div class="sw"></div></div>
+					<details class="more" open><summary><i data-i="info"></i>How it works</summary><p>Oracle reads each message before answering and quietly adjusts how Polaris answers — for example, taking extra care with sources on a health question. Anything it changes is shown on the reply, and you can undo it with a tap. Off by default.</p><p style="padding-top:0">Each message is also sent to a small helper model; its cost appears under Usage. Ghost conversations stay out of this unless you turn on the second switch.</p></details>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- ======================================================= OPTION C -->
+<section>
+	<div class="option-head">
+		<h2><span>C</span>Tabs on phone, sidebar on desktop — same content, adaptive nav</h2>
+		<p>A segmented tab bar (the control Polaris already uses for Theme/Mic) pins under the title on phone; on desktop the modal becomes a two-pane layout with a left rail. Each tab is a short, scannable page using the shared row anatomy, so it’s one tap to reach anything and only the active category scrolls.</p>
+		<div class="pros"><span><b>Pro:</b> fast jumping, desktop finally uses its width, one tap to anything</span><span><b>Con:</b> a new navigation concept for the app; tab count is capped (~4 on a phone)</span></div>
+	</div>
+	<div class="frames">
+		<div>
+			<div class="frame-label">Phone — “Features” tab</div>
+			<div class="sheet">
+				<div class="grab"></div>
+				<div class="sheet-head"><h3>Settings</h3><div class="hicons"><button class="hbtn" data-i="info"></button><button class="hbtn" data-i="x"></button></div></div>
+				<div class="tabs"><span>General</span><span>You</span><span class="on">Features</span><span>System</span></div>
+				<div class="group-label">Assistant</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="brain"></span><div class="txt"><div class="t">Memory</div><div class="d">Remember things across chats</div></div><div class="sw on"></div></div>
+					<div class="row link"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">What Polaris remembers</div></div><span class="btn"><i data-i="brain"></i>Manage</span></div>
+					<div class="row"><span class="lead" data-i="oracle"></span><div class="txt"><div class="t">Oracle mode</div><div class="d">Adjusts answers per question</div></div><div class="sw"></div></div>
+					<details class="more"><summary><i data-i="info"></i>Details</summary><p>Reads each message before answering and quietly adjusts how Polaris answers. Changes show on the reply and can be undone. Costs appear under Usage.</p></details>
+				</div>
+				<div class="group-label">Library</div>
+				<div class="card">
+					<div class="row"><span class="lead" data-i="galaxy"></span><div class="txt"><div class="t">Constellation</div><div class="d">Weaver builds your library of stars</div></div><div class="sw"></div></div>
+					<div class="row link"><span class="lead" data-i="wrench"></span><div class="txt"><div class="t">Tools</div><div class="d">Which tools Polaris can use</div></div><i class="chev" data-i="chevr"></i></div>
+				</div>
+			</div>
+		</div>
+		<div>
+			<div class="frame-label">Desktop — two-pane</div>
+			<div class="desk">
+				<nav><h3>Settings</h3>
+					<a data-i2="sun">General</a><a data-i2="user">You</a><a data-i2="mic">Voice</a><a class="on" data-i2="brain">Features</a><a data-i2="refresh">System</a><a data-i2="info" style="margin-top:auto">Usage</a>
+				</nav>
+				<main>
+					<h4>Features</h4>
+					<div class="card">
+						<div class="row"><span class="lead" data-i="brain"></span><div class="txt"><div class="t">Memory</div><div class="d">Remember things across chats</div></div><div class="sw on"></div></div>
+						<div class="row link"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">What Polaris remembers</div></div><span class="btn"><i data-i="brain"></i>Manage</span></div>
+						<div class="row"><span class="lead" data-i="oracle"></span><div class="txt"><div class="t">Oracle mode</div><div class="d">Adjusts answers per question</div></div><div class="sw"></div></div>
+						<div class="row"><span class="lead" style="visibility:hidden"></span><div class="txt"><div class="t">Also in ghost conversations</div></div><div class="sw"></div></div>
+						<div class="row"><span class="lead" data-i="galaxy"></span><div class="txt"><div class="t">Constellation</div><div class="d">Weaver builds your library of stars</div></div><div class="sw"></div></div>
+						<div class="row link"><span class="lead" data-i="wrench"></span><div class="txt"><div class="t">Tools</div><div class="d">Which tools Polaris can use</div></div><i class="chev" data-i="chevr"></i></div>
+					</div>
+				</main>
+			</div>
+		</div>
+	</div>
+</section>
+
+</div>
+
+<script>
+const P = {
+	x: '<path d="M18 6 6 18M6 6l12 12"/>',
+	info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+	chevr: '<path d="m9 18 6-6-6-6"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevd: '<path d="m6 9 6 6 6-6"/>',
+	sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+	sunsm: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>',
+	moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+	cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M9 2v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/>',
+	target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+	notes: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>',
+	user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+	pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+	mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/>',
+	vol: '<path d="M11 5 6 9H2v6h4l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+	brain: '<path d="M12 5a3 3 0 1 0-5.9 1A4 4 0 0 0 5 14a4 4 0 0 0 7 2.5M12 5a3 3 0 1 1 5.9 1A4 4 0 0 1 19 14a4 4 0 0 1-7 2.5M12 5v13"/>',
+	oracle: '<circle cx="6" cy="18" r="2"/><circle cx="12" cy="8" r="2"/><circle cx="19" cy="15" r="2"/><path d="m7.5 16.5 3-6.5M13.5 9.5l4 4"/>',
+	galaxy: '<circle cx="12" cy="12" r="2"/><path d="M12 6a6 6 0 1 1-6 6M12 2a10 10 0 1 1-10 10"/>',
+	wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-3 3-2.4-.6-.6-2.4 3-3Z"/>',
+	refresh: '<path d="M21 12a9 9 0 0 0-15.5-6.2L3 8M3 3v5h5M3 12a9 9 0 0 0 15.5 6.2L21 16M21 21v-5h-5"/>',
+	spark: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2Z"/>'
+};
+const svg = k => `<svg class="i" viewBox="0 0 24 24">${P[k]}</svg>`;
+document.querySelectorAll('[data-i]').forEach(el => { el.insertAdjacentHTML('afterbegin', svg(el.dataset.i)); });
+document.querySelectorAll('i[data-i]').forEach(el => { el.outerHTML = svg(el.dataset.i); });
+document.querySelectorAll('[data-i2]').forEach(el => el.insertAdjacentHTML('afterbegin', svg(el.dataset.i2)));
+</script>
+</body>
+</html>
