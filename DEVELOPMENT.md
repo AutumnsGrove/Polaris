@@ -78,6 +78,11 @@ pid), so `pnpm run dev`'s real Node child doesn't survive as an orphan holding :
 existing `searxng-dev` container is reused (`docker start`) rather than recreated on every run —
 see below for how it's created the first time.
 
+`start`/`restart` refuse to run (before stopping anything) if a process outside the stack — say a
+stale `polaris run` from an earlier session — has `polaris.db` open, and `status` flags it too.
+Every Polaris process runs the Pulsar scheduler, so a leftover older binary on the same database
+silently fires routines with its old code. Pass `--force` to override.
+
 ### Local dev SearXNG (Docker)
 
 ```bash

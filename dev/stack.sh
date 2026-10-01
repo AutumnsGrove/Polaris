@@ -54,8 +54,10 @@ FAKE_LLM_PORT=18901
 # or to catch a thread genuinely mid-turn in the browser.
 FAKE_LLM=0
 FAKE_LLM_DELAY=0
+FORCE=0
 for arg in "$@"; do
 	case "$arg" in
+		--force) FORCE=1 ;;
 		--fake-llm) FAKE_LLM=1 ;;
 		--fake-llm-delay=*) FAKE_LLM=1; FAKE_LLM_DELAY="${arg#--fake-llm-delay=}" ;;
 	esac
@@ -145,6 +147,38 @@ port_listening() {
 	lsof -ti:"$1" >/dev/null 2>&1
 }
 
+# Prints "pid<TAB>command" for every process holding config.yaml's database
+# open that this script doesn't own — i.e. isn't the backend we launched or
+# one of its descendants. Port-clearing and the pidfiles only cover what the
+# stack itself started, so a stale `polaris run` left over from some earlier
+# session (a /tmp test binary, a forgotten terminal) is invisible to
+# restart. It's a real hazard, not a cosmetic one: every Polaris process
+# runs the Pulsar scheduler, so the stale one's older code kept firing
+# routines against the live DB and persisting their messages — pulses with
+# no stats, and no Oracle at all, while the fresh backend looked healthy.
+foreign_db_holders() {
+	local db="$ROOT/polaris.db" pid p ours=""
+	is_alive backend && ours="$(cat "$(pidfile backend)")"
+	for pid in $(lsof -t "$db" 2>/dev/null | sort -u); do
+		p="$pid"
+		local owned=0
+		while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+			if [ -n "$ours" ] && [ "$p" = "$ours" ]; then owned=1; break; fi
+			p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+		done
+		[ "$owned" = "0" ] && printf '%s\t%s\n' "$pid" "$(ps -o command= -p "$pid" | cut -c1-120)"
+	done
+	return 0
+}
+
+warn_foreign_db_holders() {
+	local holders; holders="$(foreign_db_holders)"
+	[ -z "$holders" ] && return 0
+	echo "WARNING: another process has polaris.db open — not part of this stack:" >&2
+	echo "$holders" | sed 's/^/  pid /' >&2
+	return 1
+}
+
 do_stop() {
 	echo "Stopping dev stack..."
 	stop_proc vite
@@ -154,6 +188,18 @@ do_stop() {
 	free_port "$VITE_PORT"
 	free_port "$BACKEND_PORT"
 	free_port "$FAKE_LLM_PORT"
+}
+
+# Runs before anything is stopped, so a refused `restart` leaves the
+# working stack untouched instead of half torn down.
+guard_db() {
+	warn_foreign_db_holders && return 0
+	if [ "$FORCE" = "1" ]; then
+		echo "  --force given, continuing anyway." >&2
+		return 0
+	fi
+	echo "Refusing to start: two Polaris processes would share one database (both run the Pulsar scheduler). Kill the above, or pass --force." >&2
+	exit 1
 }
 
 do_start() {
@@ -218,6 +264,7 @@ do_status() {
 		printf "%-12s %-8s %-10s %s\n" "searxng" "-" "$SEARXNG_PORT" "down"
 	fi
 	echo
+	warn_foreign_db_holders || echo
 	echo "Logs: $STATE_DIR/{vite,backend,codeexec,fakellm}.log"
 }
 
@@ -229,18 +276,18 @@ do_status() {
 cmd="restart"
 for arg in "$@"; do
 	case "$arg" in
-		--fake-llm | --fake-llm-delay=*) ;;
+		--fake-llm | --fake-llm-delay=* | --force) ;;
 		*) cmd="$arg"; break ;;
 	esac
 done
 
 case "$cmd" in
-	start) do_start ;;
+	start) guard_db; do_start ;;
 	stop) do_stop ;;
-	restart) do_stop; do_start ;;
+	restart) guard_db; do_stop; do_start ;;
 	status) do_status ;;
 	*)
-		echo "Usage: $0 [start|stop|restart|status] [--fake-llm] [--fake-llm-delay=DURATION]" >&2
+		echo "Usage: $0 [start|stop|restart|status] [--fake-llm] [--fake-llm-delay=DURATION] [--force]" >&2
 		exit 1
 		;;
 esac
