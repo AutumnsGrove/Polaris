@@ -12,6 +12,7 @@ import (
 	"polaris/llm"
 	"polaris/parallel"
 	"polaris/places"
+	"polaris/reddit"
 	"polaris/search"
 	"polaris/store"
 	"polaris/tavily"
@@ -31,6 +32,7 @@ type Context struct {
 	Foursquare *places.FoursquareClient // nil if not configured — nearby_search falls back to SearXNG
 	Tavily     *tavily.Client           // nil if not configured — web_read's JS-render/paywall fallback and its force_tavily argument are both skipped without it
 	Brave      *brave.Client            // nil if not configured — web_search's degraded-SearXNG fallback tries this first, ahead of Parallel/Tavily (see tools/web_search.go)
+	Reddit     *reddit.Client           // nil is fine — web_read builds an RSS-only client on demand, so Reddit URLs are readable without any key (see the reddit package)
 	Parallel   *parallel.Client         // nil if not configured — web_search's degraded-SearXNG fallback (tried after Brave, before Tavily) is skipped without it
 	LLM        llm.ChatClient           // the model selected for this thread; reused by web_read's optional filter pass
 

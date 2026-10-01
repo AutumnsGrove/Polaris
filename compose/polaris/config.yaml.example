@@ -54,6 +54,10 @@ ollama:
   base_url: "http://host.docker.internal:11434"
   embed_model: "nomic-embed-text"
 
+reddit:
+  client_id: "${REDDIT_CLIENT_ID}"
+  client_secret: "${REDDIT_CLIENT_SECRET}"
+
 github:
   token: "${GITHUB_TOKEN}"
 

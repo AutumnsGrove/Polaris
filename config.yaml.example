@@ -36,6 +36,10 @@ ollama:
   base_url: "http://localhost:11434"   # optional — empty disables agent.Run's query-similarity stale-search signal (agent/query_similarity.go) only, nothing else. Point at a LOCAL Ollama instance serving embed_model, never a shared/remote one — see config.Config's Ollama field doc comment.
   embed_model: "nomic-embed-text"   # defaults to this if left empty
 
+reddit:
+  client_id: "${REDDIT_CLIENT_ID}"       # optional — Reddit blocks ordinary page fetches, so web_read reads Reddit through its API with these credentials, falling back to Reddit's public RSS feeds (flat text, rate-limited, no key) when empty or when the API call fails. New app registrations are mostly refused now, but an existing app's credentials (e.g. an old third-party-client app) keep working. https://www.reddit.com/prefs/apps
+  client_secret: "${REDDIT_CLIENT_SECRET}"   # leave empty for an "installed app" credential (those have no secret)
+
 github:
   token: "${GITHUB_TOKEN}"   # optional — github_repo works unauthenticated (60 requests/hour); a token raises that to 5000/hour. No scopes needed for public repos. https://github.com/settings/tokens
 

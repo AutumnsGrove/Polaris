@@ -89,6 +89,24 @@ type Config struct {
 		APIKey string `yaml:"api_key"`
 	} `yaml:"brave"`
 
+	Reddit struct {
+		// ClientID/ClientSecret are an optional Reddit Data API app's
+		// credentials, used by web_read for Reddit URLs (see the reddit
+		// package's doc comment for why plain fetching no longer works).
+		// Empty never disables Reddit support — web_read falls back to
+		// Reddit's public RSS feeds, which are flat and rate-limited but
+		// need no key. New app registrations are mostly refused now, but
+		// credentials that already exist (e.g. an old third-party-client
+		// app) keep working. ClientSecret may stay empty for an
+		// "installed app" credential (those have no secret). UserAgent is
+		// optional; Reddit throttles generic ones, so the default is
+		// already a descriptive "platform:app:version" string.
+		// https://www.reddit.com/prefs/apps
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		UserAgent    string `yaml:"user_agent"`
+	} `yaml:"reddit"`
+
 	GitHub struct {
 		// Token is an optional personal access token attached to
 		// github_repo's API calls. Unlike Foursquare/Tavily's API keys,
@@ -456,6 +474,7 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	warnIfEnvSetButUnconfigured("BRAVE_API_KEY", cfg.Brave.APIKey, "brave.api_key")
 	warnIfEnvSetButUnconfigured("PARALLEL_API_KEY", cfg.Parallel.APIKey, "parallel.api_key")
 	warnIfEnvSetButUnconfigured("TAVILY_API_KEY", cfg.Tavily.APIKey, "tavily.api_key")
+	warnIfEnvSetButUnconfigured("REDDIT_CLIENT_ID", cfg.Reddit.ClientID, "reddit.client_id")
 	if cfg.BlockedSourcesFile == "" {
 		cfg.BlockedSourcesFile = "./blocked_sources.txt"
 	}

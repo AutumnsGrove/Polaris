@@ -60,6 +60,7 @@ func (t *turnRun) buildAgentContext() {
 		BraveUsageThisMonth:    func() (int, error) { return t.s.db.GetAPIUsage("brave") },
 		IncrementBraveUsage:    func() error { _, err := t.s.db.IncrementAPIUsage("brave"); return err },
 		Parallel:               t.s.parallel,
+		Reddit:                 t.s.reddit,
 		ParallelUsageThisMonth: func() (int, error) { return t.s.db.GetAPIUsage("parallel") },
 		IncrementParallelUsage: func() error { _, err := t.s.db.IncrementAPIUsage("parallel"); return err },
 		Jev:                    t.s.jev,
