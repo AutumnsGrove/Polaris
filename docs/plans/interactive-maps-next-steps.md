@@ -131,6 +131,7 @@ The first live test used an isolated second instance so nothing touched real dat
 
 **Incident worth remembering:** the first isolated instance was started from a *copy of the real
 `config.yaml`*, which included real Cloudflare R2 credentials, so it uploaded a backup of its empty
-throwaway database to the operator's real bucket (`polaris-20261001-170527.db`). Nothing was deleted,
-but that object should be removed manually (a `restore-remote` would otherwise pick it as the newest
-backup). Build test configs from scratch with `${VAR}` placeholders instead.
+throwaway database to the operator's real bucket (`polaris-20261001-170527.db`). Nothing real was
+deleted. The stray object was verified (303,104 bytes, 0 threads, 0 messages) and removed with
+`wrangler r2 object delete` the same day, so it is resolved; it would otherwise have been picked as the
+newest backup by a `restore-remote`. Build test configs from scratch with `${VAR}` placeholders instead.
