@@ -251,7 +251,9 @@ Settled 2026-10-01 (spike):
 - **Snapshot tile provider: Geoapify is the leading candidate (2026-10-01 research), not yet final.** It
   is the only hosted provider found that explicitly permits caching/storing tiles (its FAQ, not its formal
   Terms, so get that in writing from support before shipping). Free tier 3,000 credits/day at 0.25 credit
-  per tile (~4 credits per 16-tile snapshot); `dark-matter` style; 256px XYZ
+  per tile (~4 credits per 16-tile snapshot); `osm-bright` style (light, chosen 2026-10-01 over `dark-matter`, whose near-black streets and labels were
+  too low-contrast to read — the snapshot exists for the *model* to review via `view_image`, so legibility
+  beats matching the dark UI; the live card keeps its dark OSM treatment); 256px XYZ
   `https://maps.geoapify.com/v1/tile/{style}/{z}/{x}/{y}.png?apiKey=KEY`; attribution "Powered by
   Geoapify | © OpenStreetMap contributors". The key rides in the URL query, so the renderer/cache key
   (source hash) and logs must exclude it. Rejected for banning server-side caching/proxying: Stadia,

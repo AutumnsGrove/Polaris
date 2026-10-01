@@ -16,11 +16,13 @@ import (
 // PRODUCT.md): gold for places, pale blue for the landmark and drawings, a
 // warm grey for out-of-range pins. No neon.
 var (
-	colGold     = color.RGBA{232, 184, 74, 255}
-	colLandmark = color.RGBA{169, 196, 232, 255}
-	colMuted    = color.RGBA{128, 120, 108, 255}
-	colInk      = color.RGBA{29, 26, 22, 255}
-	colText     = color.RGBA{236, 230, 220, 255}
+	colGold  = color.RGBA{232, 184, 74, 255}
+	colMuted = color.RGBA{128, 120, 108, 255}
+	colInk   = color.RGBA{29, 26, 22, 255}
+	colHalo  = color.RGBA{255, 255, 255, 255}
+	// colRing is the drawn-annotation blue, deepened from the live card's pale
+	// --color-accent-2: pale blue vanishes on a light basemap.
+	colRing = color.RGBA{38, 99, 176, 255}
 )
 
 // pt is a canvas-space pixel position.
@@ -46,9 +48,24 @@ func (c canvas) blend(x, y int, col color.RGBA, a float64) {
 // pixel of ramp instead of a stair-step.
 func coverage(d float64) float64 { return math.Max(0, math.Min(1, 0.5-d)) }
 
+// clip narrows a float bounding box to the canvas, as inclusive integer pixel
+// ranges. Every drawing loop goes through it: a shape's own size is
+// model-controlled (a radius_m of 500 km at a close zoom is millions of pixels
+// across), so iterating its raw bounding box would hang the render, while the
+// canvas is a fixed 768x512.
+func (c canvas) clip(minX, minY, maxX, maxY float64) (x0, y0, x1, y1 int) {
+	r := c.img.Rect
+	x0 = int(math.Max(float64(r.Min.X), math.Floor(minX)))
+	y0 = int(math.Max(float64(r.Min.Y), math.Floor(minY)))
+	x1 = int(math.Min(float64(r.Max.X-1), math.Ceil(maxX)))
+	y1 = int(math.Min(float64(r.Max.Y-1), math.Ceil(maxY)))
+	return
+}
+
 func (c canvas) fillCircle(cx, cy, r float64, col color.RGBA, alpha float64) {
-	for y := int(cy - r - 1); y <= int(cy+r+1); y++ {
-		for x := int(cx - r - 1); x <= int(cx+r+1); x++ {
+	x0, y0, x1, y1 := c.clip(cx-r-1, cy-r-1, cx+r+1, cy+r+1)
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
 			d := math.Hypot(float64(x)+0.5-cx, float64(y)+0.5-cy) - r
 			c.blend(x, y, col, coverage(d)*alpha)
 		}
@@ -57,8 +74,9 @@ func (c canvas) fillCircle(cx, cy, r float64, col color.RGBA, alpha float64) {
 
 func (c canvas) strokeCircle(cx, cy, r, w float64, col color.RGBA, alpha float64) {
 	ext := r + w
-	for y := int(cy - ext - 1); y <= int(cy+ext+1); y++ {
-		for x := int(cx - ext - 1); x <= int(cx+ext+1); x++ {
+	x0, y0, x1, y1 := c.clip(cx-ext-1, cy-ext-1, cx+ext+1, cy+ext+1)
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
 			d := math.Abs(math.Hypot(float64(x)+0.5-cx, float64(y)+0.5-cy)-r) - w/2
 			c.blend(x, y, col, coverage(d)*alpha)
 		}
@@ -79,10 +97,9 @@ func (c canvas) strokePath(pts []pt, w float64, col color.RGBA, d dash) {
 			continue
 		}
 		ux, uy := (b.x-a.x)/segLen, (b.y-a.y)/segLen
-		minX, maxX := math.Min(a.x, b.x)-w, math.Max(a.x, b.x)+w
-		minY, maxY := math.Min(a.y, b.y)-w, math.Max(a.y, b.y)+w
-		for y := int(minY); y <= int(maxY)+1; y++ {
-			for x := int(minX); x <= int(maxX)+1; x++ {
+		x0, y0, x1, y1 := c.clip(math.Min(a.x, b.x)-w, math.Min(a.y, b.y)-w, math.Max(a.x, b.x)+w, math.Max(a.y, b.y)+w)
+		for y := y0; y <= y1; y++ {
+			for x := x0; x <= x1; x++ {
 				px, py := float64(x)+0.5-a.x, float64(y)+0.5-a.y
 				t := math.Max(0, math.Min(segLen, px*ux+py*uy)) // along-segment position, clamped
 				dist := math.Hypot(px-t*ux, py-t*uy)
@@ -107,8 +124,9 @@ func (c canvas) fillPolygon(pts []pt, col color.RGBA, alpha float64) {
 		minX, maxX = math.Min(minX, p.x), math.Max(maxX, p.x)
 		minY, maxY = math.Min(minY, p.y), math.Max(maxY, p.y)
 	}
-	for y := int(minY); y <= int(maxY)+1; y++ {
-		for x := int(minX); x <= int(maxX)+1; x++ {
+	x0, y0, x1, y1 := c.clip(minX, minY, maxX, maxY)
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
 			fx, fy := float64(x)+0.5, float64(y)+0.5
 			inside := false
 			for i, j := 0, len(pts)-1; i < len(pts); j, i = i, i+1 {
@@ -170,16 +188,17 @@ func textWidth(f font.Face, s string) float64 {
 	return float64(font.MeasureString(f, s)) / 64
 }
 
-// drawText draws s with its baseline-left at (x, y), over a dark halo so it stays
-// readable on any tile colour. The halo is the same string stamped at the eight
-// neighbouring offsets.
-func (c canvas) drawText(x, y float64, s string, f font.Face, fg color.RGBA) {
+// drawText draws s with its baseline-left at (x, y), over a contrasting halo so
+// it stays readable on any tile colour. The halo is the same string stamped at
+// the eight neighbouring offsets. The snapshot uses a light basemap (osm-bright,
+// chosen because the model reads it via view_image — see the plan doc), so
+// callers pass dark text over a light halo.
+func (c canvas) drawText(x, y float64, s string, f font.Face, fg, halo color.RGBA) {
 	draw := func(ox, oy float64, col color.RGBA) {
 		d := &font.Drawer{Dst: c.img, Src: image.NewUniform(col), Face: f,
 			Dot: fixed.Point26_6{X: fixed.I(int(x + ox)), Y: fixed.I(int(y + oy))}}
 		d.DrawString(s)
 	}
-	halo := color.RGBA{colInk.R, colInk.G, colInk.B, 255}
 	for _, o := range [][2]float64{{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}} {
 		draw(o[0], o[1], halo)
 	}

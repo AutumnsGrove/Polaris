@@ -33,7 +33,7 @@ parallel:
   api_key: "${PARALLEL_API_KEY}"   # optional — web_search's fallback when SearXNG itself is degraded (see search.SearchResponse.Degraded), tried after Brave, before Tavily. Free tier: 5,000 searches/month, but the account has a card on file — see store.Store's api_usage table, which enforces that cap in code rather than trusting the free tier not to bill overage. https://parallel.ai
 
 maps:
-  snapshot_tile_url: "https://maps.geoapify.com/v1/tile/dark-matter/{z}/{x}/{y}.png?apiKey={api_key}"   # optional — show_map's server-side snapshot (the image view_image can review). The interactive card needs none of this. Must NOT be tile.openstreetmap.org: its policy bans server-side/headless rendering. {api_key} is filled in from snapshot_api_key.
+  snapshot_tile_url: "https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={api_key}"   # optional — show_map's server-side snapshot (the image view_image can review). The interactive card needs none of this. Must NOT be tile.openstreetmap.org: its policy bans server-side/headless rendering. {api_key} is filled in from snapshot_api_key.
   snapshot_api_key: "${GEOAPIFY_API_KEY}"   # blank = no snapshots, show_map still works. Free, 3,000 credits/day (~4 per snapshot). https://www.geoapify.com
   # tile_cache_dir: "./tile-cache"   # defaults to a tile-cache folder next to the database
   # tile_cache_idle_days: 30         # a tile unused this long is pruned; every use refreshes it

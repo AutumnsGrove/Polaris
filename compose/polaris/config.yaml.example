@@ -44,7 +44,7 @@ parallel:
 # Never point snapshot_tile_url at tile.openstreetmap.org — its policy bans
 # server-side/headless rendering. Tiles are cached in /data/tile-cache.
 maps:
-  snapshot_tile_url: "https://maps.geoapify.com/v1/tile/dark-matter/{z}/{x}/{y}.png?apiKey={api_key}"
+  snapshot_tile_url: "https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={api_key}"
   snapshot_api_key: "${GEOAPIFY_API_KEY}"
 
 ollama:
