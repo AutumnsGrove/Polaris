@@ -27,6 +27,9 @@ var catalogOrder = []string{
 	// field thread — putting it mid-list would shift every later tool's
 	// position for those threads relative to ordinary ones.
 	"save_to_field",
+	// Also appended last, for the same prompt-prefix-caching reason as
+	// save_to_field above — a mid-list insert would shift every later tool.
+	"show_map",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -316,6 +319,11 @@ var catalogDefaults = map[string]catalogEntry{
 	"compare_sources": {Name: "compare_sources", Requires: "jev", Category: "research",
 		Description:    "check whether two or more of your own cited sources actually agree on a specific fact.",
 		APIDescription: "Check whether two or more sources you've already read this turn (via web_read) actually agree on a specific fact, using a calibrated comparison rather than your own read of them. Use this when you notice sources might conflict on something specific — not as a routine double-check of everything."},
+	// Not Category "research": it displays what other tools found, it doesn't
+	// look anything up, so chat mode (NoResearch) keeps it, like show.
+	"show_map": {Name: "show_map", Description: "show an interactive map with pins and drawn-on shapes, or annotate an image, inline in the conversation.",
+		APIDescription: "Show an interactive map (kind: \"map\") or an annotated image (kind: \"image\") inline in your reply. " +
+			"You give coordinates and shapes as data; the user can pan, zoom, tap pins and toggle layers."},
 	"save_to_field": {Name: "save_to_field", Requires: "field_workspace",
 		Description: "copy a file from your workspace into this field's shared files, so every other conversation in the field can read it.",
 		APIDescription: "Copy a file from your own workspace into this field's shared file pool, where every other conversation in the field can read it (read-only, under /field in code_exec). " +

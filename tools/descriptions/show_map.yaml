@@ -1,0 +1,23 @@
+name: show_map
+description: >-
+  show an interactive map with pins and drawn-on shapes (a radius ring, a route), or annotate an
+  image, inline in the conversation.
+api_description: >-
+  Show an interactive map or an annotated image right at this point in your reply. The user can pan,
+  zoom, tap pins, and toggle layers. You provide coordinates as data; never describe positions in
+  pixels or try to draw anything yourself. Use this when the answer is about WHERE things are: places
+  near somewhere, a route, a radius, how far apart things are, or "circle this on that map". Don't
+  use it for a single address someone didn't ask to see, and it is not a substitute for naming the
+  places in your reply.
+  kind "map": a real geographic map. Give center (a place name or "lat, lon"; optional zoom) or
+  bounds, or just markers and it frames them. Pins use lat/lon; take coordinates from tool results
+  you actually have (nearby_search gives them), never from memory. Shapes: circle (lat, lon,
+  radius_m — e.g. 800 for roughly a 10-minute walk), polyline/polygon/arrow (points as [lat, lon]).
+  kind "image": any picture (path in your workspace, or a remote url) used as the base, with pins and
+  shapes in the image's own pixel coordinates (x, y); the original is never modified. You can only
+  know pixel positions if you looked at the image first (view_image).
+  Group shapes into layers (e.g. "radius", "route") so the user can toggle them. Mark the reference
+  point kind "landmark" and anything out of range kind "muted". Pin ids are optional but let you change
+  the card later: within the same turn, call show_map again with update set to the id in the result to
+  add, replace, or remove (remove_ids) pins and shapes instead of stacking a second map. At most 3
+  show_map calls per turn, 50 pins and 30 shapes each.

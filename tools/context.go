@@ -601,6 +601,10 @@ type Context struct {
 	showURL     string
 	showCaption string
 
+	// showMap is this turn's show_map call counter and card store (the cap and
+	// update-by-id state) — see show_map.go's showMapState.
+	showMap showMapState
+
 	// PendingQuestion, once set, tells agent.Run to end the turn right
 	// after this batch of tool calls instead of looping back to the
 	// model — see ask_user_question.go. Unlike Citations/Cards this is
