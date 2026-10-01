@@ -30,8 +30,9 @@ GHCR, updated by a host-side watcher. There's no other install path.
   `REDDIT_CLIENT_SECRET` unless it's an "installed app" credential) so `web_read` can read Reddit
   threads with their comments. Reddit blocks ordinary page fetches, so without them Polaris falls
   back to Reddit's public RSS feeds — flat text, rate-limited, and Reddit may close them. Reddit
-  mostly refuses new app registrations now, but an existing app's credentials (e.g. one made for an
-  old third-party Reddit client) keep working
+  refuses new app registrations and API access requests now (ours was denied), so only an existing
+  app's credentials (e.g. one made for an old third-party Reddit client) will work; most installs
+  should expect Reddit reads to be unreliable
 - Optional: a [GitHub personal access token](https://github.com/settings/tokens) so `github_repo`
   can make 5000 requests/hour instead of GitHub's unauthenticated 60/hour cap — works fine with no
   token for occasional lookups

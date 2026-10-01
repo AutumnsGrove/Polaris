@@ -13,5 +13,7 @@ api_description: >-
   absolute last resort for when you already have specific reason to believe a plain read gave
   stale data (e.g. a live-updating page) — it costs a real, limited paid credit, so don't set it
   by default.
-  Reddit URLs work (threads with their comments, subreddit and search pages) — pass the normal
-  reddit.com link; force_tavily doesn't help there.
+  Reddit is unreliable: Reddit blocks bots, so a reddit.com read only sometimes works (a flat,
+  rate-limited text feed), and often fails outright. Don't count on it or retry it, and
+  force_tavily doesn't help there — treat a Reddit link as a bonus source, and lean on search
+  snippets and other sites when a read fails.
