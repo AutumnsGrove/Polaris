@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -205,6 +206,32 @@ type Config struct {
 		// disk.
 		RetentionDays int `yaml:"retention_days"`
 	} `yaml:"backup"`
+
+	// Maps configures show_map's server-side snapshot (docs/plans/
+	// interactive-maps.md). The live card draws tiles in the user's own browser
+	// from public OSM and needs none of this; this is only for the static image
+	// Polaris renders itself, which must NOT hit tile.openstreetmap.org (its
+	// policy bans headless rendering). Empty SnapshotTileURL or SnapshotAPIKey
+	// disables snapshots — show_map still works, the model is just told no
+	// snapshot was made.
+	Maps struct {
+		// SnapshotTileURL is an XYZ template with {z}/{x}/{y} and, if the
+		// provider wants a key, {api_key}. The key is substituted at request
+		// time only and scrubbed from errors/logs; it is never part of the
+		// tile cache's key.
+		SnapshotTileURL string `yaml:"snapshot_tile_url"`
+		SnapshotAPIKey  string `yaml:"snapshot_api_key"`
+		// TileCacheDir defaults to a "tile-cache" folder next to the database
+		// (the way Backup.Dir does) — deliberately not under the per-thread
+		// workspaces directory, which is the sandbox-visible bind mount.
+		TileCacheDir string `yaml:"tile_cache_dir"`
+		// TileCacheIdleDays: a tile unused this long is pruned. Every cache hit
+		// refreshes recency, so frequently used areas stay indefinitely.
+		TileCacheIdleDays int `yaml:"tile_cache_idle_days"`
+		// TileCacheMaxMB is the size ceiling; past it, least recently used
+		// tiles go first. A backstop for the potato's finite disk.
+		TileCacheMaxMB int `yaml:"tile_cache_max_mb"`
+	} `yaml:"maps"`
 
 	R2 struct {
 		// AccountID/AccessKeyID/SecretAccessKey/Bucket together enable
@@ -474,6 +501,16 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	}
 	if cfg.Backup.RetentionDays <= 0 {
 		cfg.Backup.RetentionDays = backup.DefaultRetentionDays
+	}
+	if cfg.Maps.TileCacheDir == "" {
+		// Depends on Database.Path already being defaulted above.
+		cfg.Maps.TileCacheDir = filepath.Join(filepath.Dir(cfg.Database.Path), "tile-cache")
+	}
+	if cfg.Maps.TileCacheIdleDays <= 0 {
+		cfg.Maps.TileCacheIdleDays = 30
+	}
+	if cfg.Maps.TileCacheMaxMB <= 0 {
+		cfg.Maps.TileCacheMaxMB = 1024
 	}
 	if cfg.Attachments.Dir == "" {
 		cfg.Attachments.Dir = "./attachments"
