@@ -2,10 +2,13 @@
 
 **Added: 2026-09-30.**
 
-**Status: proposed — design mockups approved, nothing built.** Mockups (four phone screens, clickable
-pins/toggles) are saved at `mockups/interactive-maps.html` (standalone, open in a browser); the
-original canvas is also a private Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>.
-Tracked in issue #143.
+**Status (2026-10-01): paused, working but unpolished — see `interactive-maps-next-steps.md`.** The
+backend (`show_map`, snapshot renderer, tile cache, gateway plumbing) and a first `MapCard` frontend are
+built and were live-tested with a real model; the card's *look* is not good enough and the basemap
+decision is open. Kept as a draft PR rather than merged. Mockups (four phone screens, clickable
+pins/toggles) are saved at `mockups/interactive-maps.html` (standalone, open in a browser), with a real
+Leaflet prototype at `mockups/interactive-maps-leaflet.html`; the original canvas is also a private
+Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>. Tracked in issue #143.
 
 ## The idea
 
