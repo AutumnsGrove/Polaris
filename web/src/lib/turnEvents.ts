@@ -1,4 +1,5 @@
 import type { ChatTurn, ServerEvent } from './types';
+import { toolResultFields } from './toolResultFields';
 
 // Reasoning always finishes before the visible answer (or a tool call)
 // starts, per OpenRouter's ordering guarantee — so whenever something
@@ -64,16 +65,7 @@ export function applyStreamingEvent(turn: ChatTurn, e: ServerEvent): void {
 				for (let i = items.length - 1; i >= 0; i--) {
 					const item = items[i];
 					if (item.kind === 'tool' && item.callId === e.call_id && !item.done) {
-						items[i] = {
-							...item,
-							result: e.result,
-							provider: e.provider,
-							citations: e.citations,
-							url: e.url,
-							caption: e.caption,
-							images: e.images,
-							done: true
-						};
+						items[i] = { ...item, ...toolResultFields(e) };
 						matched = true;
 						break;
 					}
@@ -83,16 +75,7 @@ export function applyStreamingEvent(turn: ChatTurn, e: ServerEvent): void {
 				for (let i = items.length - 1; i >= 0; i--) {
 					const item = items[i];
 					if (item.kind === 'tool' && item.tool === e.tool && !item.done) {
-						items[i] = {
-							...item,
-							result: e.result,
-							provider: e.provider,
-							citations: e.citations,
-							url: e.url,
-							caption: e.caption,
-							images: e.images,
-							done: true
-						};
+						items[i] = { ...item, ...toolResultFields(e) };
 						break;
 					}
 				}

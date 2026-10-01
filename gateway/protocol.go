@@ -322,6 +322,11 @@ type ServerEvent struct {
 	// Cards because Cards is the turn-wide end-of-message bucket; these
 	// belong where the model chose to show them. Empty for every other tool.
 	Images []tools.Card `json:"images,omitempty"`
+	// Map is show_map's tool_result payload: the complete, server-resolved
+	// state of one interactive map/image card (geocoding and update merging
+	// already applied), rendered by the frontend's MapCard. The card draws from
+	// this, never from the tool_call's args. Nil for every other tool.
+	Map *tools.MapPayload `json:"map,omitempty"`
 	// CostUSD and ContextTokens deliberately lack omitempty: 0 is a
 	// legitimate value for both (a stopped turn that never reached an LLM
 	// call costs exactly $0), and omitempty would drop the field from the

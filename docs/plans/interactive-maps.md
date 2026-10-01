@@ -2,10 +2,13 @@
 
 **Added: 2026-09-30.**
 
-**Status: proposed — design mockups approved, nothing built.** Mockups (four phone screens, clickable
-pins/toggles) are saved at `mockups/interactive-maps.html` (standalone, open in a browser); the
-original canvas is also a private Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>.
-Tracked in issue #143.
+**Status (2026-10-01): paused, working but unpolished — see `interactive-maps-next-steps.md`.** The
+backend (`show_map`, snapshot renderer, tile cache, gateway plumbing) and a first `MapCard` frontend are
+built and were live-tested with a real model; the card's *look* is not good enough and the basemap
+decision is open. Kept as a draft PR rather than merged. Mockups (four phone screens, clickable
+pins/toggles) are saved at `mockups/interactive-maps.html` (standalone, open in a browser), with a real
+Leaflet prototype at `mockups/interactive-maps-leaflet.html`; the original canvas is also a private
+Claude artifact: <https://claude.ai/artifact/FwCFagzugkgKf1uBVmQJyj>. Tracked in issue #143.
 
 ## The idea
 
@@ -92,6 +95,35 @@ show_map({
   draws on").
 - Theme: map style switches with the UI theme (dark default), same idea as `CodeExecThemePrompt`.
 
+### Event schema and persistence (read from the code 2026-10-01)
+
+`show` needed no new persistence machinery, and neither does this, but the threading has to be exact:
+
+- `tool_call` carries the model's raw `args`; `tool_result` carries a **server-resolved `map` object**
+  (new field, alongside `url`/`caption`/`images`). The card renders from `map`, never from `args`:
+  geocoding (`center: "place name"` -> lat/lon), update-by-id merging, and defaults all happen in the
+  handler, so the stored result is the full, final state of the card.
+- `map` shape: `{ kind, title, view: {center, zoom} | {bounds}, markers[], shapes[], layers[],
+  image?: {url, width, height}, snapshot?: "map-1.png", attribution }`.
+- Persisting and replaying `tool.show_map` events means adding `map` in **four** places or reload
+  silently renders a bare chip (the exact gap `show` hit): `ServerEvent`'s `tool_result` and
+  `TimelineItem` in `web/src/lib/types.ts`, `applyStreamingEvent` in `web/src/lib/turnEvents.ts`, and
+  *both* match branches (call_id and name fallback) in `buildTimelineFromEvents`
+  (`web/src/lib/stateHelpers.ts`), which duplicate the field copy: extract it rather than add a fifth
+  copy.
+- **Size:** `store.truncateEventStrings` (20,000-byte `maxEventDataBytes`) only trims *top-level
+  string* values. A nested `map` object is stored untruncated, so the 50-marker / 30-shape cap in the
+  handler is the only thing bounding it. Because `args` is also persisted ("tool call started"), a
+  call stores roughly 2x its payload; the caps have to be sized with that in mind.
+- **Update-by-id** re-emits a *complete* merged `map` in the new result (the card for that call updates
+  in place; it does not diff on the client), so a card is always reconstructible from its own event.
+- **Catalog:** append `show_map` at the *end* of `catalogOrder` (`tools/catalog.go`), like
+  `save_to_field`: the order is the wire-format tool list that prompt-prefix caching depends on, so a
+  mid-list insert shifts every later tool.
+- **Per-turn cap (3):** there is no existing per-turn call counter to reuse, so `tools.Context` gets a
+  small mutex-guarded counter (same pattern as `SetShow`); over-cap returns an error result through
+  the existing `showError`-style helper (result only, no second `tool_call`).
+
 ### Snapshot: every `show_map` call also saves a static image
 
 The model can't see a live interactive map, and `view_image` reviews pixels. Rather than build a
@@ -120,10 +152,18 @@ use the same file.
 - **Server side (snapshot):** the handler fetches tiles itself, so it needs `SafeDialContext` like the
   other fetchers, a per-call tile cap (~16), an on-disk/in-memory tile cache, and a real `User-Agent`.
   These requests originate from the potato, so the public OSM policy applies to them directly.
-- **Default source: public `tile.openstreetmap.org`**, with the URL template in `config.yaml` so a keyed
-  provider or self-hosted server can be swapped in without a code change. Verify OSM's **current**
-  usage policy before shipping (including how it expects cached tiles and cache headers to be
-  honored). Always render the attribution string, on the card and stamped onto snapshots.
+- **Two tile sources, not one (spike finding, 2026-10-01).** OSM's policy
+  (<https://operations.osmfoundation.org/policies/tiles/>) permits interactive viewing where the client
+  requests only the current viewport's tiles, but forbids "headless bot rendering" and bulk/offline use
+  on `tile.openstreetmap.org`, with violators "blocked without notice." So:
+  - **Live card (browser):** public OSM by default, URL template in `config.yaml`. Compliant as long as
+    Leaflet only requests the viewport and the Referer header isn't suppressed (no restrictive
+    `Referrer-Policy`). Attribution must be visible, not behind a toggle.
+  - **Snapshots (server):** a *separate* configurable template (`maps.snapshot_tile_url`) pointing at a
+    keyed free-tier provider or self-hosted server, never public OSM. If unset, the snapshot is skipped
+    and the tool result says so rather than silently hitting OSM.
+- Always render the attribution string, on the card and stamped onto snapshots (the snapshot provider's
+  own attribution, which may differ from OSM's).
 
 ### Tile cache
 
@@ -198,9 +238,51 @@ Settled 2026-09-30:
 - **Payload cap: 50 markers and 30 shapes per call**, with a "trim it down" error beyond that, to keep
   persisted transcript events small.
 
+Settled 2026-10-01 (spike):
+
+- **Go snapshot renderer: stdlib `image`/`image/draw` + `golang.org/x/image` only, no 2D drawing lib.**
+  Validated against a real tile: Web Mercator projection put a pin for the Space Needle
+  (47.6205, -122.3493) at z15 inside tile 5247/11442 at pixel (126.7, 16.4), visually on the landmark;
+  `radius_m` circles size via `metres_per_pixel = 156543.03392 * cos(lat) / 2^z`. Rings are per-pixel
+  distance-falloff antialiased, pins filled discs, polylines thick Bresenham. Still to pick when building:
+  an embedded TTF via `x/image/font/opentype` (`basicfont` 7x13 is too small/ugly for labels).
+- **Snapshots never fetch from public OSM** (policy bans headless rendering); they use a separate
+  configurable tile source. Live card keeps public OSM as the default.
+
+Built 2026-10-01 (snapshot + tool, backend only; frontend not started):
+
+- **Update-by-id is same-turn only.** Card state lives on the turn's `tools.Context`, which doesn't
+  survive to the next turn, so "add a fourth pin" in a *later* message means a fresh `show_map` call
+  (the transcript still shows the model the earlier result). Persisting cards across turns would need
+  them reloaded from stored events; deliberately not done for v1.
+- **Snapshots need a workspace.** The file is written to `CodeExecWorkspaceDir/<thread>/`, which
+  `gateway/turn_context.go` only sets when the code sandbox is configured; `view_image` resolves paths
+  through the same directory, so the two features rise and fall together. Without one the card still
+  works and the result tells the model it can't `view_image` it.
+- **Public OSM is refused in code**, not just by convention: `tools.NewMapSnapshot` returns nil (snapshots
+  off, warning logged) for any `*.openstreetmap.org` URL.
+- **Known limits:** snapshot labels don't avoid each other (a route label can sit under a pin label);
+  `kind: "image"` cards get no snapshot until phase 4; `source_index` (pin -> citation link) was dropped
+  from v1.
+- Renderer: `mapsnap/` (fixed 768x512 canvas, so at most 12 tiles by construction; a failed tile is grey +
+  counted, only zero tiles is an error; every draw loop clips to the canvas because shape sizes are
+  model-controlled and an unclipped 500 km ring hung the first test run).
+
 ## Still open
 
-- Exact Go drawing approach for the snapshot renderer (settled in the spike).
+- **Snapshot tile provider: Geoapify is the leading candidate (2026-10-01 research), not yet final.** It
+  is the only hosted provider found that explicitly permits caching/storing tiles (its FAQ, not its formal
+  Terms, so get that in writing from support before shipping). Free tier 3,000 credits/day at 0.25 credit
+  per tile (~4 credits per 16-tile snapshot); `osm-bright` style (light, chosen 2026-10-01 over `dark-matter`, whose near-black streets and labels were
+  too low-contrast to read — the snapshot exists for the *model* to review via `view_image`, so legibility
+  beats matching the dark UI; the live card keeps its dark OSM treatment); 256px XYZ
+  `https://maps.geoapify.com/v1/tile/{style}/{z}/{x}/{y}.png?apiKey=KEY`; attribution "Powered by
+  Geoapify | © OpenStreetMap contributors". The key rides in the URL query, so the renderer/cache key
+  (source hash) and logs must exclude it. Rejected for banning server-side caching/proxying: Stadia,
+  MapTiler, CARTO, Thunderforest, HERE (Mapbox unclear). Fallback: self-hosted OSM tile server (heavy on
+  the potato).
+- Live-card finding: OSM returns "Access blocked" tiles to any page without a Referer, e.g. a `file://`
+  mockup, so the real card must be served over http(s) and never set a restrictive `Referrer-Policy`.
 
 ## Non-goals
 

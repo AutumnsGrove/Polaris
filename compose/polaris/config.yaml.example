@@ -39,6 +39,16 @@ brave:
 parallel:
   api_key: "${PARALLEL_API_KEY}"
 
+# show_map's server-side snapshot. The interactive card needs none of this (it
+# loads public OSM tiles in your browser); leave the key blank to skip snapshots.
+# Never point snapshot_tile_url at tile.openstreetmap.org — its policy bans
+# server-side/headless rendering. Tiles are cached in /data/tile-cache.
+maps:
+  snapshot_tile_url: "https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={api_key}"
+  snapshot_api_key: "${GEOAPIFY_API_KEY}"
+  # The credit stamped on every snapshot — use your provider's required wording.
+  snapshot_attribution: "Powered by Geoapify | © OpenStreetMap contributors"
+
 ollama:
   # docker-compose.yml's extra_hosts entry routes host.docker.internal to
   # the Docker bridge gateway — but that alone isn't enough: Ollama

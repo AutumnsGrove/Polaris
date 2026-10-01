@@ -124,6 +124,9 @@ func (e *turnEmitter) emit(eventType string, payload map[string]interface{}) {
 	if v, ok := payload["images"].([]tools.Card); ok {
 		evt.Images = v
 	}
+	if v, ok := payload["map"].(*tools.MapPayload); ok {
+		evt.Map = v
+	}
 	if v, ok := payload["cost_usd"].(float64); ok {
 		evt.CostUSD = v
 	}
@@ -178,6 +181,13 @@ func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEven
 		data := map[string]interface{}{
 			"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID,
 			"url": evt.URL, "caption": evt.Caption, "images": evt.Images,
+		}
+		// Only when present: a nil *MapPayload in the map would serialize as
+		// "map": null on every other tool's event. The persisted copy is what a
+		// reopened thread rebuilds the card from (buildTimelineFromEvents), so
+		// it has to carry the whole resolved payload, not a reference to it.
+		if evt.Map != nil {
+			data["map"] = evt.Map
 		}
 		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", data, turnID)
 	case "agent_nudge":

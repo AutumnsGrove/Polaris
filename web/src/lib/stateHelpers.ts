@@ -1,4 +1,5 @@
 import type { Citation, StoredEvent, TimelineItem, VerificationMark } from './types';
+import { toolResultFields } from './toolResultFields';
 
 export function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -105,15 +106,7 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 					for (let i = timeline.length - 1; i >= 0; i--) {
 						const item = timeline[i];
 						if (item.kind === 'tool' && item.callId === data.call_id && !item.done) {
-							timeline[i] = {
-								...item,
-								result: data.result,
-								citations: data.citations,
-								url: data.url,
-								caption: data.caption,
-								images: data.images,
-								done: true
-							};
+							timeline[i] = { ...item, ...toolResultFields(data) };
 							matched = true;
 							break;
 						}
@@ -123,15 +116,7 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 					for (let i = timeline.length - 1; i >= 0; i--) {
 						const item = timeline[i];
 						if (item.kind === 'tool' && item.tool === tool && !item.done) {
-							timeline[i] = {
-								...item,
-								result: data.result,
-								citations: data.citations,
-								url: data.url,
-								caption: data.caption,
-								images: data.images,
-								done: true
-							};
+							timeline[i] = { ...item, ...toolResultFields(data) };
 							break;
 						}
 					}
