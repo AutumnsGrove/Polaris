@@ -16,7 +16,12 @@
 		Cpu,
 		Target,
 		NotepadText,
-		User,
+		IdCard,
+		UsersRound,
+		Volume2,
+		BookOpenText,
+		Ghost,
+		Tag,
 		Mic,
 		MapPin,
 		Galaxy,
@@ -34,6 +39,7 @@
 	import MemoryImport from './MemoryImport.svelte';
 	import ToolSettings from './ToolSettings.svelte';
 	import Switch from './Switch.svelte';
+	import SettingsRow from './SettingsRow.svelte';
 	import Asterism from './Asterism.svelte';
 	import ConstellationUsageModal from './ConstellationUsageModal.svelte';
 	import PulsarUsageModal from './PulsarUsageModal.svelte';
@@ -402,7 +408,7 @@
 			</div>
 
 			<ToolSettings />
-		{:else}
+{:else}
 			<div class="modal-panel-header">
 				<h2>Settings</h2>
 				<div class="header-actions">
@@ -413,379 +419,324 @@
 				</div>
 			</div>
 
-			<div class="section-head"><SunMoon size={15} /><span class="section-title">Appearance</span></div>
+			<div class="settings-label usage-section-label">General</div>
 			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Theme</span>
-					<div class="theme-toggle">
-						<button
-							class:active={appState.settings.theme === 'dark'}
-							onclick={() => appState.settings.setTheme('dark')}
-						>
-							<Moon size={14} /> Dark
-						</button>
-						<button
-							class:active={appState.settings.theme === 'light'}
-							onclick={() => appState.settings.setTheme('light')}
-						>
-							<Sun size={14} /> Light
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<div class="section-head"><Cpu size={15} /><span class="section-title">Model</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Default model</span>
-					<select
-						value={appState.settings.defaultModel}
-						onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
-					>
-						{#each appState.models as model (model.id)}
-							<option value={model.id}>{model.name}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
-			<p class="hint">
-				Applies to new threads. You can still switch models per-thread from the chat header.
-			</p>
-
-			<div class="section-head"><Target size={15} /><span class="section-title">Focus</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Default focus mode</span>
-					<select
-						value={appState.settings.defaultFocusMode}
-						onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
-					>
-						<option value="off">Off</option>
-						{#each FOCUS_MODES as mode (mode.id)}
-							<option value={mode.id}>{mode.label}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
-			<p class="hint">
-				Applied to every new message until changed from the composer's "+" menu.
-			</p>
-
-			<div class="section-head"><NotepadText size={15} /><span class="section-title">Custom instructions</span></div>
-			<div class="settings-group">
-				<div class="settings-row stacked">
-					<div class="wizard-row">
-						<WizardButton onclick={() => (showInstructionsWizard = true)} />
-					</div>
-					<textarea
-						class="custom-instructions-input"
-						placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
-						maxlength="4000"
-						value={appState.settings.customInstructions}
-						onblur={(e) => appState.settings.setCustomInstructions(e.currentTarget.value)}
-					></textarea>
-				</div>
-			</div>
-			<p class="hint">
-				Added to every answer as steering, on top of <code>prompt.md</code>. Edit
-				<code>prompt.md</code> directly for anything more involved than a short standing
-				preference.
-			</p>
-
-			<div class="section-head"><User size={15} /><span class="section-title">About you</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Name</span>
-					<input
-						type="text"
-						class="inline-input"
-						placeholder="e.g. Alex"
-						maxlength="80"
-						value={appState.settings.personName}
-						onblur={(e) => appState.settings.setPersonName(e.currentTarget.value)}
-					/>
-				</div>
-				<div class="settings-row stacked">
-					<span class="row-label">Pronouns</span>
-					<div class="theme-toggle person-pronoun-toggle">
-						{#each PRONOUN_PRESETS as preset (preset)}
+				<SettingsRow icon={SunMoon} title="Theme">
+					{#snippet control()}
+						<div class="theme-toggle">
 							<button
-								type="button"
-								class:active={pronounChoice === preset}
-								onclick={() => choosePronoun(preset)}
+								class:active={appState.settings.theme === 'dark'}
+								onclick={() => appState.settings.setTheme('dark')}
 							>
-								{preset}
+								<Moon size={14} /> Dark
 							</button>
-						{/each}
-						<button
-							type="button"
-							class:active={pronounChoice === 'custom'}
-							onclick={() => choosePronoun('custom')}
+							<button
+								class:active={appState.settings.theme === 'light'}
+								onclick={() => appState.settings.setTheme('light')}
+							>
+								<Sun size={14} /> Light
+							</button>
+						</div>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={Cpu} title="Default model" desc="Used for new threads">
+					{#snippet control()}
+						<select
+							aria-label="Default model"
+							value={appState.settings.defaultModel}
+							onchange={(e) => appState.settings.setDefaultModel(e.currentTarget.value, () => appState.loadModels())}
 						>
-							Custom
-						</button>
-					</div>
-					{#if pronounChoice === 'custom'}
+							{#each appState.models as model (model.id)}
+								<option value={model.id}>{model.name}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={Target} title="Default focus" desc="Applied to new messages">
+					{#snippet control()}
+						<select
+							aria-label="Default focus mode"
+							value={appState.settings.defaultFocusMode}
+							onchange={(e) => appState.settings.setDefaultFocusMode(e.currentTarget.value as FocusMode)}
+						>
+							<option value="off">Off</option>
+							{#each FOCUS_MODES as mode (mode.id)}
+								<option value={mode.id}>{mode.label}</option>
+							{/each}
+						</select>
+					{/snippet}
+				</SettingsRow>
+			</div>
+
+			<div class="settings-label usage-section-label">You</div>
+			<div class="settings-group">
+				<SettingsRow icon={NotepadText} title="Custom instructions" desc="Steers every answer">
+					{#snippet children()}
+						<div class="wizard-row">
+							<WizardButton onclick={() => (showInstructionsWizard = true)} />
+						</div>
+						<textarea
+							class="custom-instructions-input"
+							aria-label="Custom instructions"
+							placeholder="e.g. Always answer in French. I'm a nurse — use clinical terminology."
+							maxlength="4000"
+							value={appState.settings.customInstructions}
+							onblur={(e) => appState.settings.setCustomInstructions(e.currentTarget.value)}
+						></textarea>
+					{/snippet}
+					{#snippet details()}
+						Added to every answer on top of <code>prompt.md</code>. Edit <code>prompt.md</code> directly
+						for anything more involved than a short standing preference.
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={IdCard} title="Name">
+					{#snippet control()}
 						<input
 							type="text"
-							class="stacked-input"
-							placeholder="e.g. ze/zir"
-							maxlength="40"
-							value={customPronouns}
-							onblur={(e) => appState.settings.setPersonPronouns(e.currentTarget.value)}
+							class="inline-input"
+							aria-label="Name"
+							placeholder="e.g. Alex"
+							maxlength="80"
+							value={appState.settings.personName}
+							onblur={(e) => appState.settings.setPersonName(e.currentTarget.value)}
 						/>
-					{/if}
-				</div>
-			</div>
-			<p class="hint">
-				Used by both this assistant and Constellation's Weaver — without it, either has to guess
-				pronouns from context (and can guess wrong).
-			</p>
-
-			<div class="section-head"><Mic size={15} /><span class="section-title">Voice</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Mic button</span>
-					<div class="theme-toggle">
-						<button
-							class:active={appState.settings.voiceInputMode === 'toggle'}
-							onclick={() => appState.settings.setVoiceInputMode('toggle')}
-						>
-							Tap to toggle
-						</button>
-						<button
-							class:active={appState.settings.voiceInputMode === 'hold'}
-							onclick={() => appState.settings.setVoiceInputMode('hold')}
-						>
-							Hold to talk
-						</button>
-					</div>
-				</div>
-			</div>
-			<p class="hint">
-				"Tap to toggle" starts recording on the first tap and stops on the second — no need to
-				keep a finger down for the whole memo. "Hold to talk" is the original press-and-hold
-				behavior.
-			</p>
-
-			{#if appState.settings.ttsVoices.length > 0}
-				<div class="settings-group">
-					<div class="settings-row stacked">
-						<span class="row-label">Reading voice</span>
-						<div class="voice-grid" role="radiogroup" aria-label="Reading voice">
-							{#each appState.settings.ttsVoices as v (v.id)}
-								<div class="voice-option" class:active={appState.settings.ttsVoice === v.id}>
-									<button
-										class="voice-select"
-										role="radio"
-										aria-checked={appState.settings.ttsVoice === v.id}
-										onclick={() => appState.settings.setTTSVoice(v.id)}
-									>
-										<span class="voice-flag" aria-hidden="true">{v.accent === 'british' ? '🇬🇧' : '🇺🇸'}</span>
-										<span class="voice-name">{v.name}</span>
-										<span
-											class="voice-gender"
-											role="img"
-											aria-label={`${v.accent === 'british' ? 'British' : 'American'} ${v.gender}`}
-										>
-											{#if v.gender === 'female'}<Venus size={14} />{:else}<Mars size={14} />{/if}
-										</span>
-									</button>
-									<button
-										class="voice-preview"
-										aria-label={playingVoice === v.id ? `Stop ${v.name} preview` : `Preview ${v.name}`}
-										onclick={() => togglePreview(v.id)}
-									>
-										{#if playingVoice === v.id}<Square size={12} />{:else}<Play size={12} />{/if}
-									</button>
-								</div>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={UsersRound} title="Pronouns" desc="Used by Polaris and Constellation's Weaver">
+					{#snippet children()}
+						<div class="theme-toggle person-pronoun-toggle">
+							{#each PRONOUN_PRESETS as preset (preset)}
+								<button
+									type="button"
+									class:active={pronounChoice === preset}
+									onclick={() => choosePronoun(preset)}
+								>
+									{preset}
+								</button>
 							{/each}
+							<button
+								type="button"
+								class:active={pronounChoice === 'custom'}
+								onclick={() => choosePronoun('custom')}
+							>
+								Custom
+							</button>
 						</div>
-					</div>
-				</div>
-				<p class="hint">
-					Used when reading an answer aloud and in Transponder calls. Tap ▶ to hear a voice.
-				</p>
-			{/if}
+						{#if pronounChoice === 'custom'}
+							<input
+								type="text"
+								class="stacked-input"
+								aria-label="Custom pronouns"
+								placeholder="e.g. ze/zir"
+								maxlength="40"
+								value={customPronouns}
+								onblur={(e) => appState.settings.setPersonPronouns(e.currentTarget.value)}
+							/>
+						{/if}
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={MapPin} title="Location" desc="For “near me” questions">
+					{#snippet control()}
+						<input
+							type="text"
+							class="inline-input"
+							aria-label="Location"
+							placeholder="e.g. Seattle, WA"
+							value={appState.settings.manualLocation}
+							onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
+						/>
+					{/snippet}
+					{#snippet details()}
+						Used when the browser can't get your real location (it needs https://, not this app's plain
+						Tailscale IP). Ignored automatically once a real GPS fix is available.
+					{/snippet}
+				</SettingsRow>
+			</div>
 
-			<div class="section-head"><MapPin size={15} /><span class="section-title">Location</span></div>
+			<div class="settings-label usage-section-label">Voice</div>
 			<div class="settings-group">
-				<div class="settings-row stacked">
-					<input
-						type="text"
-						class="stacked-input"
-						placeholder="e.g. Seattle, WA"
-						value={appState.settings.manualLocation}
-						onchange={(e) => appState.settings.setManualLocation(e.currentTarget.value)}
-					/>
-				</div>
-			</div>
-			<p class="hint">
-				Used by "near me" questions when the browser can't get your real location (it needs
-				https://, not this app's plain Tailscale IP). Ignored automatically once a real GPS fix
-				is available.
-			</p>
-
-			<div class="section-head"><Brain size={15} /><span class="section-title">Memory</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Enabled</span>
-					<Switch
-						label="Memory enabled"
-						checked={appState.settings.memoryEnabled}
-						onchange={(v) => appState.settings.setMemoryEnabled(v)}
-					/>
-				</div>
-			</div>
-			<div class:section-disabled={!appState.settings.memoryEnabled}>
-				<div class="settings-group">
-					<div class="settings-row">
-						<span class="row-label">What <span class="wordmark">Polaris</span> remembers about you</span>
-						<button
-							class="btn manage-btn"
-							onclick={() => appState.settings.memoryEnabled && (showMemory = true)}
-							disabled={!appState.settings.memoryEnabled}
-						>
-							<Brain size={14} /> Manage
-						</button>
-					</div>
-				</div>
-				<p class="hint">
-					View, edit by telling <span class="wordmark">Polaris</span> what to change, or forget things
-					it's saved across conversations.
-				</p>
-			</div>
-
-			<div class="section-head"><Asterism size={15} /><span class="section-title">Oracle mode</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Enabled</span>
-					<Switch
-						label="Oracle mode enabled"
-						checked={appState.settings.oracleEnabled}
-						onchange={(v) => appState.settings.setOracleEnabled(v)}
-					/>
-				</div>
-				<div class="settings-row">
-					<span class="row-label">Also in ghost conversations</span>
-					<Switch
-						label="Oracle mode in ghost conversations"
-						checked={appState.settings.oracleGhostEnabled}
-						onchange={(v) => appState.settings.setOracleGhostEnabled(v)}
-					/>
-				</div>
-			</div>
-			<p class="hint">
-				Reads each message before answering and quietly adjusts how <span class="wordmark">Polaris</span>
-				answers — for example, taking extra care with sources on a health question. Anything it
-				changes is shown on the reply, and you can undo it with a tap. Off by default. Each message
-				is also sent to a small helper model, and its cost appears under Usage. Ghost conversations
-				stay out of this unless you turn on the second switch; even then, Oracle won't offer to set
-				up a Pulsar, add to Daily, or file the chat into a Field from a conversation that's meant to
-				leave no trace.
-			</p>
-
-			<div class="section-head"><Galaxy size={15} /><span class="section-title">Constellation</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Enabled</span>
-					<Switch
-						label="Constellation enabled"
-						checked={constellationState.config?.enabled ?? false}
-						disabled={!constellationState.config}
-						onchange={(v) => void constellationState.setEnabled(v)}
-					/>
-				</div>
-			</div>
-			<p class="hint">
-				Weaver checks your recent threads on a schedule and builds your personal library of stars.
-				Turning this off also hides Constellation from the sidebar. Check interval and model are
-				in Constellation's own settings.
-			</p>
-
-			<div class="section-head"><Wrench size={15} /><span class="section-title">Tools</span></div>
-			<div class="settings-group">
-				<div class="settings-row">
-					<span class="row-label">Which tools <span class="wordmark">Polaris</span> can use</span>
-					<button class="btn manage-btn" onclick={() => (showTools = true)}>
-						<Wrench size={14} /> Manage
-					</button>
-				</div>
-			</div>
-			<p class="hint">
-				Turn off individual tools, or use the composer's "+" menu to turn off research entirely
-				for a plain chat.
-			</p>
-
-			<div class="section-head"><RefreshCw size={15} /><span class="section-title">Updates</span></div>
-			{#if appState.version}
-				<div class="settings-group">
-					<div class="settings-row">
-						<span class="row-label">Version</span>
-						<span class="version-info">
-							<code class="version">{appState.version}</code>
-							{#if appState.deployment === 'docker'}
-								<span class="deployment-icon" title="Running in Docker">
-									<Container size={13} />
-								</span>
-							{:else if appState.deployment === 'bare-metal'}
-								<span class="deployment-icon" title="Running bare-metal">
-									<Server size={13} />
-								</span>
-							{/if}
-						</span>
-					</div>
-				</div>
-			{/if}
-			<div class="update-actions">
-				<button
-					class="btn update-btn"
-					onclick={() => appState.settings.pushUpdate(() => appState.busy)}
-					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+				<SettingsRow
+					icon={Mic}
+					title="Mic button"
+					desc={appState.settings.voiceInputMode === 'toggle'
+						? 'Tap to start and stop'
+						: 'Hold while speaking'}
 				>
-					<RefreshCw
-						size={14}
-						class={appState.settings.updateKind === 'update' &&
-						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
-							? 'spin'
-							: ''}
-					/>
-					{#if appState.settings.updateKind === 'update' && appState.settings.updateState === 'updating'}
-						Pulling & building…
-					{:else if appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'}
-						Restarting…
-					{:else}
-						Update <span class="wordmark">Polaris</span>
-					{/if}
-				</button>
+					{#snippet control()}
+						<div class="theme-toggle">
+							<button
+								class:active={appState.settings.voiceInputMode === 'toggle'}
+								onclick={() => appState.settings.setVoiceInputMode('toggle')}
+							>
+								Tap
+							</button>
+							<button
+								class:active={appState.settings.voiceInputMode === 'hold'}
+								onclick={() => appState.settings.setVoiceInputMode('hold')}
+							>
+								Hold
+							</button>
+						</div>
+					{/snippet}
+				</SettingsRow>
+				{#if appState.settings.ttsVoices.length > 0}
+					<SettingsRow
+						icon={Volume2}
+						title="Reading voice"
+						desc="Read-aloud and calls · tap ▶ to preview"
+					>
+						{#snippet children()}
+							<div class="voice-grid" role="radiogroup" aria-label="Reading voice">
+								{#each appState.settings.ttsVoices as v (v.id)}
+									<div class="voice-option" class:active={appState.settings.ttsVoice === v.id}>
+										<button
+											class="voice-select"
+											role="radio"
+											aria-checked={appState.settings.ttsVoice === v.id}
+											onclick={() => appState.settings.setTTSVoice(v.id)}
+										>
+											<span class="voice-flag" aria-hidden="true">{v.accent === 'british' ? '🇬🇧' : '🇺🇸'}</span>
+											<span class="voice-name">{v.name}</span>
+											<span
+												class="voice-gender"
+												role="img"
+												aria-label={`${v.accent === 'british' ? 'British' : 'American'} ${v.gender}`}
+											>
+												{#if v.gender === 'female'}<Venus size={14} />{:else}<Mars size={14} />{/if}
+											</span>
+										</button>
+										<button
+											class="voice-preview"
+											aria-label={playingVoice === v.id ? `Stop ${v.name} preview` : `Preview ${v.name}`}
+											onclick={() => togglePreview(v.id)}
+										>
+											{#if playingVoice === v.id}<Square size={12} />{:else}<Play size={12} />{/if}
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/snippet}
+					</SettingsRow>
+				{/if}
+			</div>
+
+			<div class="settings-label usage-section-label">Features</div>
+			<div class="settings-group">
+				<SettingsRow icon={Brain} title="Memory" desc="Remember things across conversations">
+					{#snippet control()}
+						<Switch
+							label="Memory enabled"
+							checked={appState.settings.memoryEnabled}
+							onchange={(v) => appState.settings.setMemoryEnabled(v)}
+						/>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow
+					icon={BookOpenText}
+					title="What Polaris remembers"
+					desc="View, edit, or forget"
+					disabled={!appState.settings.memoryEnabled}
+					onclick={() => (showMemory = true)}
+				/>
+				<SettingsRow icon={Asterism} title="Oracle mode" desc="Quietly adjusts answers per question">
+					{#snippet control()}
+						<Switch
+							label="Oracle mode enabled"
+							checked={appState.settings.oracleEnabled}
+							onchange={(v) => appState.settings.setOracleEnabled(v)}
+						/>
+					{/snippet}
+					{#snippet details()}
+						Reads each message before answering and quietly adjusts how Polaris answers — for example,
+						taking extra care with sources on a health question. Anything it changes is shown on the reply,
+						and you can undo it with a tap. Off by default. Each message is also sent to a small helper
+						model, and its cost appears under Usage. Ghost conversations stay out of this unless you turn
+						on the second switch; even then, Oracle won't offer to set up a Pulsar, add to Daily, or file
+						the chat into a Field from a conversation that's meant to leave no trace.
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={Ghost} title="Also in ghost conversations">
+					{#snippet control()}
+						<Switch
+							label="Oracle mode in ghost conversations"
+							checked={appState.settings.oracleGhostEnabled}
+							onchange={(v) => appState.settings.setOracleGhostEnabled(v)}
+						/>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={Galaxy} title="Constellation" desc="Weaver builds your library of stars">
+					{#snippet control()}
+						<Switch
+							label="Constellation enabled"
+							checked={constellationState.config?.enabled ?? false}
+							disabled={!constellationState.config}
+							onchange={(v) => void constellationState.setEnabled(v)}
+						/>
+					{/snippet}
+					{#snippet details()}
+						Weaver checks your recent threads on a schedule and builds your personal library of stars.
+						Turning this off also hides Constellation from the sidebar. Check interval and model are in
+						Constellation's own settings.
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow
+					icon={Wrench}
+					title="Tools"
+					desc="Turn individual tools on or off"
+					onclick={() => (showTools = true)}
+				/>
+			</div>
+
+			<div class="settings-label usage-section-label">System</div>
+			<div class="settings-group">
+				{#if appState.version}
+					<SettingsRow
+						icon={appState.deployment === 'docker' ? Container : appState.deployment === 'bare-metal' ? Server : Tag}
+						title="Version"
+						desc={appState.deployment === 'docker'
+							? 'Running in Docker'
+							: appState.deployment === 'bare-metal'
+								? 'Running bare-metal'
+								: undefined}
+					>
+						{#snippet control()}
+							<code class="version">{appState.version}</code>
+						{/snippet}
+					</SettingsRow>
+				{/if}
+				<SettingsRow
+					icon={RefreshCw}
+					title="Update Polaris"
+					desc={appState.settings.updateKind === 'update' && appState.settings.updateState === 'updating'
+						? 'Pulling & building…'
+						: appState.settings.updateKind === 'update' && appState.settings.updateState === 'restarting'
+							? 'Restarting…'
+							: 'Pull the latest code, rebuild, restart'}
+					spin={appState.settings.updateKind === 'update' &&
+						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
+					chevron={false}
+					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
+					onclick={() => appState.settings.pushUpdate(() => appState.busy)}
+				/>
 				<!-- No pull, no rebuild — just kills and cleanly restarts the
 				     running binary. Separate from Update Polaris because running
 				     the full update flow just to force a restart still does a
 				     real (if usually no-op) git pull and go build first, which
 				     can stall for no benefit when there's nothing new to pull. -->
-				<button
-					class="btn restart-btn"
-					onclick={() => appState.settings.pushRestart(() => appState.busy)}
+				<SettingsRow
+					icon={RotateCw}
+					title="Restart Polaris"
+					desc={appState.settings.updateKind === 'restart' &&
+					(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
+						? 'Restarting…'
+						: 'Restart only — no pull, no rebuild'}
+					spin={appState.settings.updateKind === 'restart' &&
+						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
+					chevron={false}
 					disabled={appState.settings.updateState !== 'idle' && appState.settings.updateState !== 'error'}
-				>
-					<RotateCw
-						size={14}
-						class={appState.settings.updateKind === 'restart' &&
-						(appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')
-							? 'spin'
-							: ''}
-					/>
-					{#if appState.settings.updateKind === 'restart' && (appState.settings.updateState === 'updating' || appState.settings.updateState === 'restarting')}
-						Restarting…
-					{:else}
-						Restart <span class="wordmark">Polaris</span>
-					{/if}
-				</button>
+					onclick={() => appState.settings.pushRestart(() => appState.busy)}
+				/>
 			</div>
-			<p class="hint">
-				<strong>Update</strong> pulls the latest code, rebuilds, then restarts.
-				<strong>Restart</strong> just cleanly restarts the running process — no pull, no rebuild.
-			</p>
 			{#if appState.settings.updateLog}
 				<pre class="log">{appState.settings.updateLog}</pre>
 			{/if}
@@ -816,7 +767,14 @@
 	   mobile bottom-sheet behavior) for the whole app instead of two
 	   copies to keep in sync by hand. Same for .usage-big-cost/
 	   .usage-section-label/.usage-stat-group/.usage-stat-row, shared with
-	   ConstellationUsageModal.svelte's own Usage section. */
+	   ConstellationUsageModal.svelte's own Usage section.
+
+	   The main settings view is built from SettingsRow inside one card per
+	   group (General / You / Voice / Features / System), labelled with the
+	   same small-caps .usage-section-label the Usage view uses. A row is
+	   icon + title + at most one dim line; anything longer goes behind the
+	   row's "Details" disclosure rather than a hint paragraph, so no section
+	   outweighs its neighbours. */
 
 	.header-actions {
 		display: flex;
@@ -824,43 +782,15 @@
 		gap: var(--space-xs);
 	}
 
-	/* Card-grouped row pattern, matching ConstellationSettingsModal.svelte
-	   exactly (issue #83 — bringing every settings surface onto one visual
-	   language instead of N divergent ones). Duplicated here rather than
-	   shared: Svelte scopes component styles per-file, so this is
-	   copy-once-per-component by design, not an oversight.
-
-	   .section-label used to be the header treatment (11px uppercase,
-	   --color-text-dim) — the same dim color .hint uses below, so a
-	   header and its own caption text read as one undifferentiated gray
-	   block. .section-head/.section-title (a gold icon + full-text-color
-	   title + a full-width rule) replaces it; see
-	   mockups/settings-header-hierarchy.html option D for the full set of
-	   alternatives this was picked from. */
-	.section-head {
-		display: flex;
-		align-items: center;
-		gap: 9px;
-		margin-top: var(--space-2xl);
-		margin-bottom: var(--space-xs);
+	/* .usage-section-label's own :first-of-type reset never matches here
+	   (the header above is also a div), and its --space-lg top margin is
+	   tighter than the breathing room between whole groups wants. */
+	.settings-label {
+		margin-top: var(--space-xl);
 	}
 
-	/* The very first header sits right under the panel's own title bar —
-	   no previous section to separate itself from, so it skips the
-	   between-sections gap every other header gets. */
-	.modal-panel-header + .section-head {
+	.modal-panel-header + .settings-label {
 		margin-top: 0;
-	}
-
-	.section-head :global(svg) {
-		color: var(--color-accent);
-		flex-shrink: 0;
-	}
-
-	.section-title {
-		font-size: 15px;
-		font-weight: 600;
-		color: var(--color-text);
 	}
 
 	.settings-group {
@@ -868,56 +798,9 @@
 		background: var(--color-surface-2);
 		border: 1px solid var(--color-border);
 		overflow: hidden;
-		/* Tight on purpose — the gap that actually separates one section
-		   from the next now lives on .section-head's margin-top, so this
-		   only needs to hug the .hint paragraph directly below it. */
-		margin-bottom: var(--space-xs);
 	}
 
-	.settings-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-md) var(--space-lg);
-		border-bottom: 1px solid var(--color-border);
-		font-size: 14px;
-	}
-
-	.settings-row:last-child {
-		border-bottom: none;
-	}
-
-	/* Used where a row's control doesn't fit beside its label on one line
-	   (a full segmented control, a full-width text field) — label on its
-	   own line, content below it, instead of forcing a cramped inline fit. */
-	.settings-row.stacked {
-		flex-direction: column;
-		align-items: stretch;
-		gap: var(--space-sm);
-	}
-
-	.row-label {
-		font-size: 14px;
-		font-weight: 500;
-	}
-
-	/* .btn's default background (--color-surface-2) is the exact same
-	   token .settings-row's own background uses, so a manage-btn sitting
-	   inside one was only ever visible via its hover state — at rest it
-	   read as plain text, no different from .row-label next to it. Same
-	   surface-3 + border fix the select/inline-input below already use
-	   to stand out against a settings-row. */
-	.manage-btn {
-		background: var(--color-surface-3);
-		border: 1px solid var(--color-border);
-	}
-
-	.manage-btn:hover:not(:disabled) {
-		border-color: var(--color-border-strong);
-	}
-
-	.settings-row select {
+	.settings-group select {
 		font: inherit;
 		font-size: 13px;
 		background: var(--color-surface-3);
@@ -925,11 +808,17 @@
 		border-radius: var(--radius-md);
 		color: var(--color-text);
 		padding: var(--space-xs) var(--space-sm);
+		/* Fixed width so a long model name truncates inside the select
+		   instead of squeezing the row's title onto two lines on a phone
+		   (a select's intrinsic width is its longest option). */
+		width: 10.5rem;
+		max-width: 100%;
+		text-overflow: ellipsis;
 	}
 
-	/* Compact, inline field beside its own row-label (Name) — sized like
-	   the select above it, not stretched full-width the way a stacked
-	   field is. */
+	/* Compact, inline field beside its own row title (Name, Location) —
+	   sized like the select above, not stretched full-width the way a
+	   stacked field is. */
 	.inline-input {
 		font: inherit;
 		font-size: 13px;
@@ -939,6 +828,7 @@
 		color: var(--color-text);
 		padding: var(--space-xs) var(--space-sm);
 		width: 140px;
+		max-width: 100%;
 	}
 
 	.usage-empty {
@@ -946,17 +836,6 @@
 		font-size: 13.5px;
 		color: var(--color-text-dim);
 		padding: var(--space-2xl) 0;
-	}
-
-	/* Dims the rest of a section (everything below its own on/off row)
-	   when that section's feature is turned off — e.g. Memory's "What
-	   Polaris remembers"/hint once Enabled is switched off. pointer-events
-	   is the real block for anything without its own disabled attribute;
-	   the Manage button also gets disabled directly (see the markup above)
-	   for proper keyboard/screen-reader behavior, not just a dimmed look. */
-	.section-disabled {
-		opacity: 0.45;
-		pointer-events: none;
 	}
 
 	.hint {
@@ -1093,15 +972,24 @@
 		display: flex;
 	}
 
+	/* Four presets don't fit one phone-width row beside their label, so the
+	   track wraps (and every pill grows to share the row). */
 	.person-pronoun-toggle {
 		flex-wrap: wrap;
 	}
 
+	.person-pronoun-toggle button {
+		flex: 1 1 auto;
+		justify-content: center;
+		padding-inline: var(--space-sm);
+	}
+
 	/* Full-width, "carved into the surface" field — used wherever a
-	   .settings-row.stacked's control is a free-text field rather than a
-	   toggle/segmented-control (custom pronouns, manual location). */
+	   row's below-content is a free-text field rather than a
+	   toggle/segmented-control (custom pronouns). */
 	.stacked-input {
 		width: 100%;
+		margin-top: var(--space-sm);
 		border: none;
 		background: var(--color-surface-3);
 		border-radius: var(--radius-md);
@@ -1151,30 +1039,6 @@
 		box-shadow: var(--shadow-well);
 	}
 
-	.version-info {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-	}
-
-	/* Matches PRODUCT.md's "calm over clever" — a plain muted glyph, not a
-	   colored badge; a hover title is enough to name it explicitly. */
-	.deployment-icon {
-		display: inline-flex;
-		color: var(--color-text-dim);
-	}
-
-	.update-actions {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm);
-	}
-
-	.update-btn,
-	.restart-btn {
-		width: 100%;
-	}
-
 	.log {
 		margin-top: var(--space-md);
 		padding: var(--space-md) var(--space-md);
@@ -1190,16 +1054,6 @@
 		max-height: 180px;
 		overflow-y: auto;
 		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-	}
-
-	/* Same reserved-brand-face treatment used everywhere else "Polaris"
-	   appears as a name (ChatView's welcome heading, the sidebar wordmark,
-	   ModeToggle's switcher) — never left in the surrounding sans-serif. */
-	.wordmark {
-		font-family: var(--font-wordmark);
-		font-weight: 400;
-		font-size: 1.05em;
-		letter-spacing: 0.02em;
 	}
 
 	:global(.spin) {
