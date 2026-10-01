@@ -7,6 +7,7 @@
 	import ImageLightbox from './ImageLightbox.svelte';
 	import ImageGallery from './ImageGallery.svelte';
 	import ArtifactViewer from './ArtifactViewer.svelte';
+	import MapCard from './MapCard.svelte';
 	import {
 		Search,
 		FileText,
@@ -225,6 +226,17 @@
 			<pre class="tool-result">{item.summary}</pre>
 		{/if}
 	</div>
+{:else if item.tool === 'show_map' && (item.map || !item.done)}
+	<!-- Only while pending or once a card exists: a call that errored has no `map` and
+	     falls through to the ordinary tool chip below, so the failure stays visible. -->
+	{#if item.map}
+		<MapCard map={item.map} />
+	{:else}
+		<div class="show-loading">
+			<Loader2 size={14} color="var(--color-text-dim)" class="spin" />
+			<span>Preparing map…</span>
+		</div>
+	{/if}
 {:else if item.tool === 'show'}
 	<div class="show-artifact">
 		{#if !item.done}

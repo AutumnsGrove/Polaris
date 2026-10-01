@@ -238,6 +238,9 @@ export type ServerEvent =
 			// results to render inline at this call. See
 			// gateway/protocol.go's ServerEvent.Images.
 			images?: Card[];
+			// show_map's payload: the complete, server-resolved card — see
+			// tools/show_map.go and gateway/protocol.go's ServerEvent.Map.
+			map?: MapPayload;
 			call_id?: string;
 	  }
 	| { type: 'token'; thread_id?: string; content: string }
@@ -753,6 +756,62 @@ export interface StoredEvent {
 	created_at: string;
 }
 
+// show_map's card, mirroring tools.MapPayload field for field. Geographic cards
+// (kind 'map') use lat/lon; image cards use x/y in the image's own pixel space.
+export interface MapMarker {
+	id: string;
+	lat?: number;
+	lon?: number;
+	x?: number;
+	y?: number;
+	label: string;
+	kind?: 'place' | 'landmark' | 'muted';
+	detail?: string;
+}
+
+export interface MapShape {
+	id: string;
+	type: 'circle' | 'polyline' | 'polygon' | 'arrow';
+	lat?: number;
+	lon?: number;
+	x?: number;
+	y?: number;
+	radius_m?: number;
+	radius_px?: number;
+	// [lat, lon] pairs on a map card, [x, y] pairs on an image card.
+	points?: number[][];
+	label?: string;
+	layer: string;
+}
+
+export interface MapLayer {
+	id: string;
+	label: string;
+	default_on: boolean;
+}
+
+export interface MapView {
+	center?: [number, number];
+	zoom?: number;
+	bounds?: [[number, number], [number, number]];
+	place_name?: string;
+}
+
+export interface MapPayload {
+	id: string;
+	version: number;
+	kind: 'map' | 'image';
+	title?: string;
+	view: MapView;
+	image?: { url: string; path?: string };
+	markers: MapMarker[];
+	shapes: MapShape[];
+	layers: MapLayer[];
+	attribution?: string;
+	// Workspace filename of the server-rendered static snapshot, when one exists.
+	snapshot?: string;
+}
+
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
 	| { kind: 'reasoning'; content: string; done: boolean }
@@ -774,6 +833,8 @@ export type TimelineItem =
 			url?: string;
 			caption?: string;
 			images?: Card[];
+			// show_map's resolved card — see ServerEvent's tool_result case.
+			map?: MapPayload;
 			done: boolean;
 			// Mirrors ServerEvent's call_id — lets handleEvent's tool_result
 			// case match this exact call instead of falling back to a
