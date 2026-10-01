@@ -92,6 +92,35 @@ show_map({
   draws on").
 - Theme: map style switches with the UI theme (dark default), same idea as `CodeExecThemePrompt`.
 
+### Event schema and persistence (read from the code 2026-10-01)
+
+`show` needed no new persistence machinery, and neither does this, but the threading has to be exact:
+
+- `tool_call` carries the model's raw `args`; `tool_result` carries a **server-resolved `map` object**
+  (new field, alongside `url`/`caption`/`images`). The card renders from `map`, never from `args`:
+  geocoding (`center: "place name"` -> lat/lon), update-by-id merging, and defaults all happen in the
+  handler, so the stored result is the full, final state of the card.
+- `map` shape: `{ kind, title, view: {center, zoom} | {bounds}, markers[], shapes[], layers[],
+  image?: {url, width, height}, snapshot?: "map-1.png", attribution }`.
+- Persisting and replaying `tool.show_map` events means adding `map` in **four** places or reload
+  silently renders a bare chip (the exact gap `show` hit): `ServerEvent`'s `tool_result` and
+  `TimelineItem` in `web/src/lib/types.ts`, `applyStreamingEvent` in `web/src/lib/turnEvents.ts`, and
+  *both* match branches (call_id and name fallback) in `buildTimelineFromEvents`
+  (`web/src/lib/stateHelpers.ts`), which duplicate the field copy: extract it rather than add a fifth
+  copy.
+- **Size:** `store.truncateEventStrings` (20,000-byte `maxEventDataBytes`) only trims *top-level
+  string* values. A nested `map` object is stored untruncated, so the 50-marker / 30-shape cap in the
+  handler is the only thing bounding it. Because `args` is also persisted ("tool call started"), a
+  call stores roughly 2x its payload; the caps have to be sized with that in mind.
+- **Update-by-id** re-emits a *complete* merged `map` in the new result (the card for that call updates
+  in place; it does not diff on the client), so a card is always reconstructible from its own event.
+- **Catalog:** append `show_map` at the *end* of `catalogOrder` (`tools/catalog.go`), like
+  `save_to_field`: the order is the wire-format tool list that prompt-prefix caching depends on, so a
+  mid-list insert shifts every later tool.
+- **Per-turn cap (3):** there is no existing per-turn call counter to reuse, so `tools.Context` gets a
+  small mutex-guarded counter (same pattern as `SetShow`); over-cap returns an error result through
+  the existing `showError`-style helper (result only, no second `tool_call`).
+
 ### Snapshot: every `show_map` call also saves a static image
 
 The model can't see a live interactive map, and `view_image` reviews pixels. Rather than build a
