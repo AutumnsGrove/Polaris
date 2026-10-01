@@ -352,6 +352,7 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 		SearXNG:                s.searxng,
 		Blocklist:              s.blocklist,
 		Tavily:                 s.tavily,
+		Reddit:                 s.reddit,
 		TavilyUsageThisMonth:   func() (int, error) { return s.db.GetAPIUsage("tavily") },
 		IncrementTavilyUsage:   func() error { _, err := s.db.IncrementAPIUsage("tavily"); return err },
 		Brave:                  s.brave,

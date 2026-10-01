@@ -17,7 +17,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   ("just the prices"). Handles PDFs directly; falls back to archive.org, then Tavily's Extract API,
   for dead links and JS-rendered pages. Can also skip straight to a real, JS-rendering read as a
   deliberate last resort when a plain read looks stale (e.g. a live-updating page), within Tavily's
-  own monthly cap.
+  own monthly cap. Reddit threads (with comments), subreddits, and search pages are read through
+  Reddit's API when credentials are configured, or its public RSS feeds otherwise.
 - **YouTube transcripts** — reads a video's captions straight from its watch page via `yt-dlp`, so
   a shared link is as researchable as any article.
 - **Weather** — current conditions and a short forecast via Open-Meteo, no API key.

@@ -14,6 +14,7 @@ import (
 
 	"polaris/llm"
 	"polaris/llm/llmtest"
+	"polaris/reddit"
 	"polaris/search"
 	"polaris/tavily"
 )
@@ -893,4 +894,86 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 	if !strings.HasPrefix(result, "error:") {
 		t.Errorf("result = %q, want an error when every fallback is unavailable", result)
 	}
+}
+
+// fakeRedditServer answers the reddit package's token, API and RSS
+// endpoints, plus counts any hit on a generic-chain fallback host so the
+// test can prove Reddit URLs never reach it.
+func fakeRedditServer(t *testing.T, apiStatus int) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"tok","expires_in":3600}`))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/.rss") {
+			w.Write([]byte(`<feed xmlns="http://www.w3.org/2005/Atom"><title>r/golang</title><entry><title>Feed entry</title><author><name>/u/z</name></author><updated>2026-09-30T00:00:00Z</updated><content type="html">&lt;div class="md"&gt;rss body&lt;/div&gt;</content></entry></feed>`))
+			return
+		}
+		if apiStatus != 0 {
+			w.WriteHeader(apiStatus)
+			return
+		}
+		w.Write([]byte(`[{"data":{"children":[{"kind":"t3","data":{"title":"Real thread","subreddit_name_prefixed":"r/golang","author":"op","score":9,"num_comments":1,"created_utc":1760000000,"selftext":"op text","is_self":true}}]}},{"data":{"children":[{"kind":"t1","data":{"author":"c","score":3,"body":"a comment","replies":""}}]}}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// Regression for "Reddit threads return NOTHING": Reddit answers the generic
+// fetch with a 200 JS-challenge page, so web_read must route Reddit URLs to
+// the reddit package instead of the free-fetch/Wayback/Tavily chain — which
+// here is wired to fail the test if anything in it is touched.
+func TestHandleWebRead_RedditUsesRedditClientNotGenericChain(t *testing.T) {
+	srv := fakeRedditServer(t, 0)
+	tavilyHits := 0
+	tavilySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { tavilyHits++ }))
+	defer tavilySrv.Close()
+
+	ctx := &Context{
+		Ctx:                  context.Background(),
+		Reddit:               reddit.NewClientForTest("id", "secret", srv.URL),
+		Tavily:               tavily.NewClientForTest("k", tavilySrv.URL),
+		TavilyUsageThisMonth: func() (int, error) { return 0, nil },
+		IncrementTavilyUsage: func() error { t.Error("Tavily credit spent on a Reddit URL"); return nil },
+		Emit:                 func(string, map[string]interface{}) {},
+	}
+	out := handleWebRead(`{"url":"https://www.reddit.com/r/golang/comments/abc/real_thread/","force_tavily":true}`, ctx, "c1")
+
+	if strings.HasPrefix(out, "error:") || !strings.Contains(out, "Real thread") || !strings.Contains(out, "a comment") {
+		t.Fatalf("result = %q, want the thread and its comments", out)
+	}
+	if tavilyHits != 0 {
+		t.Errorf("tavily hit %d times, want 0 — Reddit refuses it, and force_tavily must not bypass the Reddit path", tavilyHits)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].SiteName != "Reddit" {
+		t.Errorf("Citations = %+v, want one citation labelled Reddit", ctx.Citations)
+	}
+}
+
+func TestHandleWebRead_RedditFallsBackToRSSWhenAPIDown(t *testing.T) {
+	srv := fakeRedditServer(t, http.StatusForbidden)
+	ctx := &Context{Ctx: context.Background(), Reddit: reddit.NewClientForTest("id", "secret", srv.URL), Emit: func(string, map[string]interface{}) {}}
+	out := handleWebRead(`{"url":"https://old.reddit.com/r/golang/comments/abc/x/"}`, ctx, "c1")
+	if !strings.Contains(out, "rss body") {
+		t.Errorf("result = %q, want the RSS fallback's content", out)
+	}
+}
+
+func TestHandleWebRead_RedditNilClientStillAttemptsRSS(t *testing.T) {
+	// No Context.Reddit at all (e.g. a Context built by a path that never
+	// wired one) must degrade to RSS-only, not panic. The real feed host is
+	// unreachable in tests, so just assert a clean tool error, not a crash.
+	ctx := &Context{Ctx: canceledCtx(), Emit: func(string, map[string]interface{}) {}}
+	out := handleWebRead(`{"url":"https://www.reddit.com/r/golang/"}`, ctx, "c1")
+	if !strings.HasPrefix(out, "error:") || !strings.Contains(out, "Reddit") {
+		t.Errorf("result = %q, want a Reddit-specific error", out)
+	}
+}
+
+func canceledCtx() context.Context {
+	c, cancel := context.WithCancel(context.Background())
+	cancel()
+	return c
 }
