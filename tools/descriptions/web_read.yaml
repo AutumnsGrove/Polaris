@@ -13,3 +13,7 @@ api_description: >-
   absolute last resort for when you already have specific reason to believe a plain read gave
   stale data (e.g. a live-updating page) — it costs a real, limited paid credit, so don't set it
   by default.
+  Reddit doesn't work reliably: it blocks bots and often answers a read with an empty or
+  challenge page, and archived copies and force_tavily are refused too. Don't count on it or
+  retry it — treat a Reddit link as a bonus source, and lean on search snippets and other sites
+  when a read comes back empty.
