@@ -72,6 +72,7 @@ func (t *turnRun) runOracleStage() {
 				FieldOptions:         fieldOptions,
 				FieldIDs:             fieldIDs,
 				Ghost:                t.ghost,
+				ThreadSource:         t.threadSource,
 				Rules:                t.cfg.Oracle,
 			})
 			// Recorded on the shared Jev ledger the monthly cap sums (issue

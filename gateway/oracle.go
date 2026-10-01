@@ -100,6 +100,12 @@ type OracleInput struct {
 	// meant to vanish. Callers should also leave FieldOptions nil for a
 	// ghost turn (the field chip needs a store read ghost mode avoids).
 	Ghost bool
+	// ThreadSource is the thread's source ("web", "pulsar", "pulsar-daily",
+	// ...). A "pulsar" or "pulsar-daily" thread is already a scheduled
+	// output, so every offer chip is withheld (issue #146). Withheld here,
+	// server-side, so the persisted oracle_result never carries a chip to
+	// replay.
+	ThreadSource string
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -332,6 +338,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			// Ghost turns offer only the chips in oracleGhostChips — see
 			// OracleInput.Ghost and that var's doc comment.
 			if in.Ghost && !oracleGhostChips[chipKey] {
+				continue
+			}
+			// Nothing to offer from inside a routine's or Daily edition's
+			// own output — issue #146.
+			if in.ThreadSource == "pulsar" || in.ThreadSource == "pulsar-daily" {
 				continue
 			}
 			// effectiveFocus (not ActiveFocusMode) so a Safari pick Oracle

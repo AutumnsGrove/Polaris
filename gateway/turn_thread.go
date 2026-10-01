@@ -96,6 +96,10 @@ func (t *turnRun) resolveThreadFlags() {
 	// sufficient on its own to restore normal tool access on the very
 	// next turn, with no other client-side signaling.
 	t.isWeaverThread = t.msg.Source == "weaver"
+	// threadSource is the same read, kept whole so Oracle can withhold
+	// offer chips that are circular for a Pulsar pulse or Daily thread
+	// (issue #146) — a continuation never resends the source either.
+	t.threadSource = t.msg.Source
 	t.ghost = t.isNewThread && t.msg.Anonymous
 	// fieldID is read the same way, off the same root-thread row — never
 	// a fork's own row, since ForkThread's hidden variants don't carry
@@ -108,6 +112,7 @@ func (t *turnRun) resolveThreadFlags() {
 	if !t.isNewThread {
 		if rawThread, err := t.s.db.GetThreadRaw(t.threadID); err == nil {
 			t.isWeaverThread = rawThread.Source == "weaver"
+			t.threadSource = rawThread.Source
 			t.ghost = rawThread.Ghost
 			if rawThread.FieldID != nil {
 				t.fieldID = *rawThread.FieldID

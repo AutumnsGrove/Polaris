@@ -43,6 +43,7 @@ type turnRun struct {
 	isNewThread        bool
 	isFirstMessageEdit bool
 	isWeaverThread     bool
+	threadSource       string // the thread's persisted source ("web", "pulsar", ...); see resolveThreadFlags
 	ghost              bool
 	fieldID            string
 	field              *store.Field

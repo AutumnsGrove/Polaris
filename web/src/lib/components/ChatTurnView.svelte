@@ -274,10 +274,16 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// this very chip just moved it, the composer picker did, or a later turn
 	// on an older reply re-renders it — so it's filtered against the live
 	// thread instead of only being dropped once, on click.
+	//
+	// Pulse ('pulsar') and Daily ('pulsar-daily') threads get no chips
+	// (issue #146). The server now withholds these before persisting,
+	// so this only hides chips already stored on older turns.
 	let offers = $derived(
 		(turn.oracleResult?.chips ?? []).flatMap((c) => {
 			const meta = OFFER_META[c.key];
 			if (!meta) return [];
+			const source = appState.currentThread?.source;
+			if (source === 'pulsar' || source === 'pulsar-daily') return [];
 			if (c.key === 'field' && (!c.field_id || appState.activeFieldId)) return [];
 			return [{ key: c.key, label: c.label, fieldId: c.field_id, meta }];
 		})

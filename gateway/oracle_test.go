@@ -324,6 +324,33 @@ func TestRunOracle_GhostKeepsSafariChipButWithholdsPermanentOnes(t *testing.T) {
 	}
 }
 
+// Pulse and expanded Daily threads are already scheduled output, so they
+// get no offer chips at all (issue #146).
+func TestRunOracle_ThreadSourceWithholdsCircularChips(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":       answer("off", 0.9),
+		"chip_pulsar": answer("yes", 0.95),
+		"chip_daily":  answer("yes", 0.95),
+		"chip_safari": answer("yes", 0.90),
+	}}}
+	keys := func(source string) map[string]bool {
+		got := map[string]bool{}
+		for _, c := range RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "test", ThreadSource: source}).Chips {
+			got[c.Key] = true
+		}
+		return got
+	}
+	if got := keys("pulsar"); len(got) != 0 {
+		t.Errorf("want no chips on a pulsar thread, got %v", got)
+	}
+	if got := keys("pulsar-daily"); len(got) != 0 {
+		t.Errorf("want no chips on a pulsar-daily thread, got %v", got)
+	}
+	if got := keys("web"); !got["pulsar"] || !got["daily"] || !got["safari"] {
+		t.Errorf("web thread chips regressed, got %v", got)
+	}
+}
+
 func containsSubstring(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {
