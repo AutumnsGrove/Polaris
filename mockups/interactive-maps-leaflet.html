@@ -1,0 +1,182 @@
+<!doctype html>
+<!-- Real Leaflet prototype for issue #143 (docs/plans/interactive-maps.md, phase 1 spike).
+     Unlike interactive-maps.html (static mockups), this runs real Leaflet against live OSM tiles:
+     open it in a browser (or on a phone over Tailscale) to feel pan/zoom, pin selection, layer
+     toggles, and the dark tile treatment. Hardcoded data stands in for a show_map tool result.
+     MUST be served over http(s), not opened as file://: OSM requires a Referer header and a file://
+     page sends none, so every tile comes back as an "Access blocked" error image. Try:
+       cd mockups && python3 -m http.server 8765   ->  http://localhost:8765/interactive-maps-leaflet.html -->
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- OSM policy: browsers must send a Referer, so don't set a restrictive referrer policy. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>show_map — Leaflet spike</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #1d1a16; --surface: #26221d; --surface-2: #302b25; --text: #ece6dc; --dim: #a39b8e;
+    --accent: #e8b84a; --accent-2: #a9c4e8; --radius: 14px; --space: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; padding: var(--space); }
+  .card { max-width: 560px; margin: 0 auto; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+  .card.expanded { position: fixed; inset: 0; max-width: none; border-radius: 0; z-index: 1000; display: flex; flex-direction: column; }
+  .head { display: flex; align-items: center; justify-content: space-between; padding: var(--space); gap: var(--space); }
+  .head h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  button { font: inherit; color: var(--text); background: var(--surface-2); border: 0; border-radius: 999px; min-height: 44px; padding: 0 16px; cursor: pointer; }
+  button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 26%, transparent); color: var(--accent); }
+  #map { height: 320px; background: #111; }
+  .expanded #map { flex: 1; height: auto; }
+  /* Dark tiles: invert + hue-rotate the light OSM raster instead of needing a dark provider. */
+  .dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+  .chips { display: flex; gap: 8px; padding: var(--space); flex-wrap: wrap; }
+  .foot { padding: var(--space); border-top: 1px solid var(--surface-2); min-height: 76px; }
+  .foot b { display: block; } .foot span { color: var(--dim); font-size: 13px; }
+  .list { padding: 0 var(--space) var(--space); display: grid; gap: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 10px; background: var(--surface-2); cursor: pointer; min-height: 44px; }
+  .row b, .row span { display: block; } .row span { color: var(--dim); font-size: 13px; }
+  .row.sel { outline: 2px solid var(--accent); }
+  .pin { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #1d1a16; font-weight: 700; font-size: 13px; border: 2px solid #1d1a16; }
+  .pin.sel { transform: scale(1.25); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .pin.landmark { background: var(--accent-2); }
+  .pin.muted { background: #6b645a; color: #ccc; }
+  .leaflet-container { font: inherit; }
+  /* Leaflet's default tooltip is a white box; restyle to the app's dark surface. */
+  .leaflet-tooltip { background: var(--surface); color: var(--text); border: 1px solid var(--surface-3, #3a352e); border-radius: 8px; box-shadow: none; font-size: 12px; padding: 2px 8px; }
+  .leaflet-tooltip-top:before { border-top-color: var(--surface); }
+  .leaflet-tooltip.lbl { background: transparent; border: 0; color: var(--accent-2); font-weight: 600; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="head">
+    <h1>Coffee within a 10-minute walk of the Space Needle</h1>
+    <button id="expand" aria-label="Expand map">Expand</button>
+  </div>
+  <div id="map"></div>
+  <div class="chips" id="chips"></div>
+  <div class="foot" id="foot"><span>Tap a pin or a row.</span></div>
+  <div class="list" id="list"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Stand-in for a show_map tool result: coordinates as data, the frontend draws.
+const data = {
+  center: [47.6205, -122.3493],
+  zoom: 15,
+  markers: [
+    { id: "needle", lat: 47.6205, lon: -122.3493, label: "Space Needle", kind: "landmark", detail: "Landmark" },
+    { id: "c1", lat: 47.6226, lon: -122.3517, label: "Storyville Coffee", detail: "4 min walk" },
+    { id: "c2", lat: 47.6188, lon: -122.3481, label: "Caffe Ladro", detail: "5 min walk" },
+    { id: "c3", lat: 47.6240, lon: -122.3452, label: "Victrola Coffee", detail: "8 min walk" },
+    { id: "c4", lat: 47.6120, lon: -122.3420, label: "Seattle Coffee Works", detail: "18 min walk, out of range", kind: "muted" },
+  ],
+  shapes: [
+    { id: "ring", type: "circle", lat: 47.6205, lon: -122.3493, radius_m: 800, label: "10 min walk", layer: "radius" },
+    { id: "route", type: "polyline", points: [[47.6205, -122.3493], [47.6215, -122.3500], [47.6226, -122.3517]], label: "4 min", layer: "route" },
+  ],
+  layers: [
+    { id: "radius", label: "Radius", default_on: true },
+    { id: "route", label: "Route", default_on: true },
+    { id: "labels", label: "Labels", default_on: true },
+  ],
+};
+
+const card = document.getElementById("card");
+const map = L.map("map", { zoomControl: true, attributionControl: true }).setView(data.center, data.zoom);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+card.classList.add("dark");
+
+// Each layer is a real L.layerGroup, so toggling is instant and needs no re-render.
+const shapeBounds = [];
+const groups = Object.fromEntries(data.layers.map(l => [l.id, L.layerGroup()]));
+for (const s of data.shapes) {
+  const style = { color: "#a9c4e8", weight: 3, fillOpacity: 0.08 };
+  const g = s.type === "circle"
+    ? L.circle([s.lat, s.lon], { ...style, radius: s.radius_m })
+    : L.polyline(s.points, { ...style, dashArray: "8 8" });
+  // Offset so a shape label doesn't sit on top of the pin at its center.
+  g.bindTooltip(s.label, { permanent: true, direction: s.type === "circle" ? "bottom" : "center", className: "lbl" });
+  groups[s.layer].addLayer(g);
+  shapeBounds.push(g.getBounds());
+}
+data.layers.filter(l => l.default_on).forEach(l => groups[l.id].addTo(map));
+
+// Labels aren't a shape layer: they toggle marker tooltips.
+const markerObjs = {};
+let selected = null;
+const foot = document.getElementById("foot");
+const list = document.getElementById("list");
+const rowEls = {};
+
+data.markers.forEach((m, i) => {
+  const cls = m.kind || "place";
+  const icon = () => L.divIcon({
+    className: "",
+    html: `<div class="pin ${cls} ${selected === m.id ? "sel" : ""}">${m.kind === "landmark" ? "★" : i}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14],
+  });
+  const mk = L.marker([m.lat, m.lon], { icon: icon() }).addTo(map);
+  mk.bindTooltip(m.label, { direction: "top", offset: [0, -14], permanent: true });
+  mk.on("click", () => select(m.id));
+  mk._icon_fn = icon;
+  markerObjs[m.id] = mk;
+
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="pin ${cls}">${m.kind === "landmark" ? "★" : i}</div><div><b>${m.label}</b><span>${m.detail || ""}</span></div>`;
+  row.onclick = () => select(m.id);
+  list.appendChild(row);
+  rowEls[m.id] = row;
+});
+
+function select(id) {
+  selected = id;
+  for (const m of data.markers) {
+    markerObjs[m.id].setIcon(markerObjs[m.id]._icon_fn());
+    rowEls[m.id].classList.toggle("sel", m.id === id);
+  }
+  const m = data.markers.find(x => x.id === id);
+  foot.innerHTML = `<b>${m.label}</b><span>${m.detail || ""} · <a style="color:var(--accent-2)" target="_blank" rel="noopener" href="https://www.openstreetmap.org/directions?to=${m.lat},${m.lon}">Directions</a></span>`;
+  map.panTo([m.lat, m.lon]);
+}
+
+// Frame everything the model drew, not a fixed center/zoom: a 10-min-walk ring or a far pin would
+// otherwise fall outside the card. Out-of-range ("muted") pins are excluded so they don't blow out the frame.
+const frame = L.latLngBounds(data.markers.filter(m => m.kind !== "muted").map(m => [m.lat, m.lon]));
+shapeBounds.forEach(b => frame.extend(b));
+map.fitBounds(frame, { padding: [16, 16] });
+
+const chips = document.getElementById("chips");
+for (const l of data.layers) {
+  const b = document.createElement("button");
+  b.textContent = l.label;
+  b.setAttribute("aria-pressed", String(l.default_on));
+  b.onclick = () => {
+    const on = b.getAttribute("aria-pressed") !== "true";
+    b.setAttribute("aria-pressed", String(on));
+    if (l.id === "labels") {
+      Object.values(markerObjs).forEach(mk => on ? mk.openTooltip() : mk.closeTooltip());
+    } else {
+      on ? groups[l.id].addTo(map) : map.removeLayer(groups[l.id]);
+    }
+  };
+  chips.appendChild(b);
+}
+
+document.getElementById("expand").onclick = e => {
+  const ex = card.classList.toggle("expanded");
+  e.target.textContent = ex ? "Collapse" : "Expand";
+  // Leaflet caches its container size; without this the tiles stay clipped to the old box.
+  setTimeout(() => map.invalidateSize(), 50);
+};
+</script>
+</body>
+</html>

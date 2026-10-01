@@ -219,7 +219,17 @@ Settled 2026-10-01 (spike):
 
 ## Still open
 
-- Which snapshot tile provider to recommend/default (free-tier terms, key handling, attribution text).
+- **Snapshot tile provider: Geoapify is the leading candidate (2026-10-01 research), not yet final.** It
+  is the only hosted provider found that explicitly permits caching/storing tiles (its FAQ, not its formal
+  Terms, so get that in writing from support before shipping). Free tier 3,000 credits/day at 0.25 credit
+  per tile (~4 credits per 16-tile snapshot); `dark-matter` style; 256px XYZ
+  `https://maps.geoapify.com/v1/tile/{style}/{z}/{x}/{y}.png?apiKey=KEY`; attribution "Powered by
+  Geoapify | © OpenStreetMap contributors". The key rides in the URL query, so the renderer/cache key
+  (source hash) and logs must exclude it. Rejected for banning server-side caching/proxying: Stadia,
+  MapTiler, CARTO, Thunderforest, HERE (Mapbox unclear). Fallback: self-hosted OSM tile server (heavy on
+  the potato).
+- Live-card finding: OSM returns "Access blocked" tiles to any page without a Referer, e.g. a `file://`
+  mockup, so the real card must be served over http(s) and never set a restrictive `Referrer-Policy`.
 
 ## Non-goals
 
