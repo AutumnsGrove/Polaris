@@ -17,6 +17,7 @@ import (
 	"polaris/config"
 	"polaris/gateway"
 	"polaris/logger"
+	"polaris/mapsnap"
 	"polaris/models"
 	"polaris/store"
 	"polaris/web"
@@ -116,6 +117,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 	backupDone := make(chan struct{})
 	defer close(backupDone)
 	go backup.RunScheduler(backupDone, cfg.Database.Path, cfg.Backup.Dir, time.Duration(cfg.Backup.RetentionDays)*24*time.Hour, cfg.R2Client())
+
+	// show_map's shared tile cache: pruned at startup and then daily (idle tiles,
+	// then least-recently-used past the size ceiling). Only started when snapshots
+	// are configured — an install without them never creates the directory.
+	if cfg.Maps.SnapshotTileURL != "" && cfg.Maps.SnapshotAPIKey != "" {
+		go mapsnap.RunSweeper(backupDone, &mapsnap.TileCache{Dir: cfg.Maps.TileCacheDir},
+			time.Duration(cfg.Maps.TileCacheIdleDays)*24*time.Hour, int64(cfg.Maps.TileCacheMaxMB)<<20)
+	}
 
 	var staticFS fs.FS
 	if !devMode {

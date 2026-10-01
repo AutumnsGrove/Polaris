@@ -246,6 +246,25 @@ Settled 2026-10-01 (spike):
 - **Snapshots never fetch from public OSM** (policy bans headless rendering); they use a separate
   configurable tile source. Live card keeps public OSM as the default.
 
+Built 2026-10-01 (snapshot + tool, backend only; frontend not started):
+
+- **Update-by-id is same-turn only.** Card state lives on the turn's `tools.Context`, which doesn't
+  survive to the next turn, so "add a fourth pin" in a *later* message means a fresh `show_map` call
+  (the transcript still shows the model the earlier result). Persisting cards across turns would need
+  them reloaded from stored events; deliberately not done for v1.
+- **Snapshots need a workspace.** The file is written to `CodeExecWorkspaceDir/<thread>/`, which
+  `gateway/turn_context.go` only sets when the code sandbox is configured; `view_image` resolves paths
+  through the same directory, so the two features rise and fall together. Without one the card still
+  works and the result tells the model it can't `view_image` it.
+- **Public OSM is refused in code**, not just by convention: `tools.NewMapSnapshot` returns nil (snapshots
+  off, warning logged) for any `*.openstreetmap.org` URL.
+- **Known limits:** snapshot labels don't avoid each other (a route label can sit under a pin label);
+  `kind: "image"` cards get no snapshot until phase 4; `source_index` (pin -> citation link) was dropped
+  from v1.
+- Renderer: `mapsnap/` (fixed 768x512 canvas, so at most 12 tiles by construction; a failed tile is grey +
+  counted, only zero tiles is an error; every draw loop clips to the canvas because shape sizes are
+  model-controlled and an unclipped 500 km ring hung the first test run).
+
 ## Still open
 
 - **Snapshot tile provider: Geoapify is the leading candidate (2026-10-01 research), not yet final.** It

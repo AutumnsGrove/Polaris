@@ -9,7 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"polaris/logger"
 )
+
+var log = logger.WithPrefix("mapsnap")
 
 // TileCache is the shared on-disk tile cache: one file per tile, keyed by tile
 // source + z/x/y, so a place looked up once is free next time and switching the
@@ -151,4 +155,30 @@ func (c *TileCache) Sweep(maxIdle time.Duration, maxBytes int64) (int, error) {
 		}
 	}
 	return removed, nil
+}
+
+// RunSweeper prunes the cache once at startup and then daily until done is
+// closed — meant to run as a goroutine for the life of the server (see
+// cmd/run.go), same no-external-cron shape as backup.RunScheduler. A sweep
+// failure only logs; the cache is an optimisation, never load-bearing.
+func RunSweeper(done <-chan struct{}, c *TileCache, maxIdle time.Duration, maxBytes int64) {
+	sweep := func() {
+		n, err := c.Sweep(maxIdle, maxBytes)
+		if err != nil {
+			log.Warn("tile cache sweep failed", "dir", c.Dir, "err", err)
+		} else if n > 0 {
+			log.Info("tile cache swept", "removed", n)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }

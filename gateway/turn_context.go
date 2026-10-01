@@ -187,6 +187,11 @@ func (t *turnRun) wireCodeExec() {
 	// host_workspace_dir/signal_dir yet gets CodeExecEnabled=false, which
 	// catalog.go's "docker_only" Requires case turns into code_exec
 	// simply not being offered.
+	// show_map's snapshot renderer: nil (snapshots off) unless a tile URL and
+	// key are configured and the URL isn't public OSM — see tools.NewMapSnapshot.
+	// The snapshot file itself needs CodeExecWorkspaceDir, set just below.
+	t.agentCtx.MapSnapshot = tools.NewMapSnapshot(t.cfg.Maps.SnapshotTileURL, t.cfg.Maps.SnapshotAPIKey,
+		t.cfg.Maps.TileCacheDir, t.cfg.Maps.SnapshotAttribution)
 	if t.cfg.CodeExec.HostWorkspaceDir != "" && t.cfg.CodeExec.SignalDir != "" {
 		t.agentCtx.CodeExecEnabled = true
 		t.agentCtx.CodeExecWorkspaceDir = t.cfg.CodeExec.WorkspaceDir

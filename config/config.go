@@ -221,6 +221,12 @@ type Config struct {
 		// tile cache's key.
 		SnapshotTileURL string `yaml:"snapshot_tile_url"`
 		SnapshotAPIKey  string `yaml:"snapshot_api_key"`
+		// SnapshotAttribution is the credit stamped onto every snapshot — the
+		// provider's own required wording (Geoapify wants "Powered by Geoapify
+		// | © OpenStreetMap contributors"), which is why it's config rather
+		// than a constant: swapping SnapshotTileURL to another provider has to
+		// be able to change it. Defaults to OSM's credit alone.
+		SnapshotAttribution string `yaml:"snapshot_attribution"`
 		// TileCacheDir defaults to a "tile-cache" folder next to the database
 		// (the way Backup.Dir does) — deliberately not under the per-thread
 		// workspaces directory, which is the sandbox-visible bind mount.
@@ -505,6 +511,9 @@ func Load(path string, registry []ModelConfig) (*Config, error) {
 	if cfg.Maps.TileCacheDir == "" {
 		// Depends on Database.Path already being defaulted above.
 		cfg.Maps.TileCacheDir = filepath.Join(filepath.Dir(cfg.Database.Path), "tile-cache")
+	}
+	if cfg.Maps.SnapshotAttribution == "" {
+		cfg.Maps.SnapshotAttribution = "© OpenStreetMap contributors"
 	}
 	if cfg.Maps.TileCacheIdleDays <= 0 {
 		cfg.Maps.TileCacheIdleDays = 30

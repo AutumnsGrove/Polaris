@@ -46,6 +46,8 @@ parallel:
 maps:
   snapshot_tile_url: "https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={api_key}"
   snapshot_api_key: "${GEOAPIFY_API_KEY}"
+  # The credit stamped on every snapshot — use your provider's required wording.
+  snapshot_attribution: "Powered by Geoapify | © OpenStreetMap contributors"
 
 ollama:
   # docker-compose.yml's extra_hosts entry routes host.docker.internal to

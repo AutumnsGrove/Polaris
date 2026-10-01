@@ -605,6 +605,12 @@ type Context struct {
 	// update-by-id state) — see show_map.go's showMapState.
 	showMap showMapState
 
+	// MapSnapshot is show_map's server-side snapshot renderer (tile source +
+	// attribution), nil when snapshots aren't configured — then show_map still
+	// shows its interactive card and just reports that no snapshot was made.
+	// Built from config.Maps by tools.NewMapSnapshot; see show_map_snapshot.go.
+	MapSnapshot *MapSnapshot
+
 	// PendingQuestion, once set, tells agent.Run to end the turn right
 	// after this batch of tool calls instead of looping back to the
 	// model — see ask_user_question.go. Unlike Citations/Cards this is

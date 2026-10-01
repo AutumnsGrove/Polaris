@@ -114,6 +114,10 @@ type MapPayload struct {
 	Shapes      []MapShape  `json:"shapes"`
 	Layers      []MapLayer  `json:"layers"`
 	Attribution string      `json:"attribution,omitempty"`
+	// Snapshot is the workspace-relative filename of the server-rendered static
+	// image for this version of the card, when one was made (see
+	// show_map_snapshot.go). Empty when snapshots are off or failed.
+	Snapshot string `json:"snapshot,omitempty"`
 }
 
 // showMapState is a turn's show_map bookkeeping. Tool calls in one model
@@ -275,10 +279,15 @@ func handleShowMap(argsJSON string, ctx *Context, callID string) string {
 	if err != nil {
 		return showMapError(ctx, err.Error(), callID)
 	}
+	// Rendered synchronously, before the card is stored/emitted, so the file
+	// exists by the model's next step and payload.Snapshot is final when it's
+	// shared. Never fails the call: the interactive card works without it.
+	snapshot, snapshotNote := snapshotMap(ctx, payload)
+	payload.Snapshot = snapshot
 	ctx.showMap.store(payload)
 	ok = true
 
-	result := describeMap(payload, args.Update != "")
+	result := describeMap(payload, args.Update != "", snapshotNote)
 	log.Info("show_map", "id", payload.ID, "kind", payload.Kind, "version", payload.Version,
 		"markers", len(payload.Markers), "shapes", len(payload.Shapes), "thread_id", ctx.ThreadID)
 	ctx.Emit("tool_result", map[string]interface{}{
@@ -650,7 +659,7 @@ func wrapErr(what string, err error) error {
 // describeMap is the model-facing result: what the user now sees. The model
 // can't look at a live map, so it needs the ids (to update) and the numbering
 // (to refer to pins correctly in its prose).
-func describeMap(p *MapPayload, updated bool) string {
+func describeMap(p *MapPayload, updated bool, snapshotNote string) string {
 	var b strings.Builder
 	verb := "now showing"
 	if updated {
@@ -681,6 +690,9 @@ func describeMap(p *MapPayload, updated bool) string {
 		for _, s := range p.Shapes {
 			fmt.Fprintf(&b, "\n- %s [%s] on layer %q", s.Type, s.ID, s.Layer)
 		}
+	}
+	if snapshotNote != "" {
+		b.WriteString("\n" + snapshotNote)
 	}
 	b.WriteString("\nThe user can pan, zoom, tap pins and toggle layers. Don't re-list the pins in prose beyond what adds something; to change it this turn call show_map with update: \"" + p.ID + "\".")
 	return b.String()
