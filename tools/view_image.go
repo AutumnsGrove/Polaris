@@ -264,6 +264,27 @@ func fetchImageBytes(ctx context.Context, rawURL string) (data []byte, mimeType 
 	return data, mimeType, nil
 }
 
+// DescribeImageURL fetches rawURL and returns a vision-model description of
+// it, for callers that aren't running a model tool loop and so can't go
+// through view_image's card-index handler — Pulsar Daily's Picture of the
+// Day vets its candidates this way. Same two guards view_image applies to a
+// search-result image (the operator's blocklist, then fetchImageBytes's
+// SSRF-safe dialer); the description cost is returned rather than added to
+// ctx, since such callers keep their own running total.
+func DescribeImageURL(ctx *Context, rawURL, instructions string) (description string, costUSD float64, err error) {
+	if ctx.DescribeImage == nil {
+		return "", 0, fmt.Errorf("no multimodal model is configured to describe images")
+	}
+	if ctx.Blocklist.Blocked(rawURL) {
+		return "", 0, fmt.Errorf("image source is blocked")
+	}
+	data, mimeType, err := fetchImageBytes(ctx.Ctx, rawURL)
+	if err != nil {
+		return "", 0, fmt.Errorf("fetching image: %w", err)
+	}
+	return ctx.DescribeImage(ctx.Ctx, base64.StdEncoding.EncodeToString(data), mimeType, instructions)
+}
+
 // resolveWorkspaceFilePath validates relPath against ctx's per-thread
 // code_exec workspace (<CodeExecWorkspaceDir>/<ThreadID>/<relPath>) and
 // returns its real absolute path on disk — shared by view_image's "path"

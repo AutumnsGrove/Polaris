@@ -380,6 +380,15 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 		// even reachable here at all.
 		ThreadID: uuid.NewString(),
 	}
+	// A zero-value ModelConfig is deliberately not Multimodal, so
+	// visionClient always lands on cfg.MultimodalModel() — a Daily writer is
+	// typically text-only (DeepSeek), same as chat's wireVision fallback.
+	// Picture of the Day describes its candidates through this to vet them
+	// before picking one. Left nil when no vision model is configured, and
+	// that path degrades to a title-only pick rather than failing.
+	if visionCl, ok := visionClient(cfg, config.ModelConfig{}); ok {
+		ctx.DescribeImage = visionCl.DescribeImage
+	}
 	// Same gate gateway/turn.go's main chat path uses — code_exec (and by
 	// extension show/fetch_url/view_image, all gated on the same
 	// "docker_only" Requires case) let a Daily research/elaboration block
@@ -402,49 +411,260 @@ func (s *Server) newDailyToolContext(reqCtx context.Context, client llm.ChatClie
 	return ctx
 }
 
+const (
+	// dailyPictureMaxQueries bounds how many times Picture of the Day will
+	// re-ask the model for a different search when every candidate of the
+	// previous one was rejected — each retry costs a query call, up to
+	// dailyPictureCandidates description calls, and a pick call, so this
+	// stays small. Exhausting it drops the block rather than showing junk.
+	dailyPictureMaxQueries = 2
+	// dailyPictureCandidates is how many of a search's top hits get
+	// described and judged. Search engines' junk (product shots, ads) tends
+	// to cluster at the top for generic queries, so a handful gives the
+	// judge a real choice without paying to describe the whole result page.
+	dailyPictureCandidates = 5
+)
+
+// dailyPicturePickToolDef forces the vetting pass to answer via a
+// structured tool call — same pattern as dailyVerdictToolDef.
+var dailyPicturePickToolDef = llm.ToolDef{
+	Type: "function",
+	Function: llm.ToolFunctionDef{
+		Name: "pick_picture",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"choice": map[string]interface{}{
+					"type": "integer",
+					"description": "The number of the best candidate, or 0 if none of them qualify. " +
+						"Choosing 0 is correct and expected when the candidates are all junk.",
+				},
+				"caption": map[string]interface{}{
+					"type": "string",
+					"description": "Only when choice is not 0: one plain line (under 12 words) saying what " +
+						"the photo shows, shown under the image. Write it from the description, not the " +
+						"search title, which is often junk.",
+				},
+				"reasoning": map[string]interface{}{
+					"type": "string",
+					"description": "One short sentence: why this one, or (for 0) what was wrong with the " +
+						"candidates — fed back to the next search so it doesn't repeat the mistake.",
+				},
+			},
+			"required": []string{"choice", "reasoning"},
+		},
+	},
+}
+
+// dailyPictureDescribeInstructions is what each candidate's vision pass is
+// asked. The photo-vs-product-shot call is the one that matters: the bug
+// this vetting exists for was a leggings catalog photo, which a literal
+// "describe this image" would call "a person from behind wearing gray
+// leggings" with no hint that it's an ad.
+const dailyPictureDescribeInstructions = "In 2-3 sentences: what is literally shown, and what KIND of image " +
+	"is it — an original photograph, a product/catalog/advertising shot, a screenshot, an illustration or " +
+	"render, a meme, or a stock-site preview? Note composition and colors, and transcribe any visible " +
+	"text or watermark."
+
 // generateDailyPictureBlock picks a short image-search query via the
-// writer model, then dispatches image_search directly (tools.Dispatch,
-// same direct-call path Weather uses) and reads back the first image
-// candidate for its URL — image_search's own return string is a summary
-// sentence, not the image data itself (see tools/image_search.go's
-// finishImageSearch), so the actual URL only exists on the candidate card
-// it records in ctx.ImageCandidates.
+// writer model, dispatches image_search directly (tools.Dispatch, same
+// direct-call path Weather uses), then vets the top candidates by actually
+// looking at them: each is described by a vision model (the writer is
+// usually text-only, so the description is what lets it "see") and the
+// writer picks the best qualifying one, or none. A "none" re-searches with
+// the rejected queries fed back, up to dailyPictureMaxQueries; if nothing
+// ever qualifies the block errors, which Stage D drops from the edition —
+// a missing picture beats a wrong one. This replaced a take-the-top-hit
+// version that put a leggings ad in the Picture of the Day for a
+// "SPACE PHOTOS / drone nature shots" instruction.
+//
+// image_search's own return string is a summary sentence, not the image
+// data (see tools/image_search.go's finishImageSearch), so URLs come from
+// the candidate cards it records in ctx.ImageCandidates.
 func generateDailyPictureBlock(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string) (content, imageURL string, cost float64, err error) {
+	var rejected []string
+	for attempt := 0; attempt < dailyPictureMaxQueries; attempt++ {
+		query, queryCost, err := dailyPictureQuery(reqCtx, writerClient, customInstruction, rejected)
+		cost += queryCost
+		if err != nil {
+			return "", "", cost, err
+		}
+
+		// attach_gallery false: nothing is shown until the pick below, and
+		// the candidates are read straight off the pool.
+		before := len(ctx.ImageCandidatesSnapshot())
+		argsJSON, _ := json.Marshal(map[string]interface{}{"query": query, "attach_gallery": false})
+		result := tools.Dispatch("image_search", string(argsJSON), ctx, "pulsar-daily-image-search")
+		if strings.HasPrefix(result, "error:") || strings.HasPrefix(result, "image search is degraded") {
+			// An outage isn't something a different query fixes.
+			return "", "", cost, fmt.Errorf("picture_of_day: %s", result)
+		}
+
+		// The pool accumulates across attempts (numbering stays stable), so
+		// only this attempt's additions are candidates.
+		var candidates []tools.Card
+		for _, c := range ctx.ImageCandidatesSnapshot()[before:] {
+			if c.Kind == "image" && c.ImageURL != "" {
+				candidates = append(candidates, c)
+			}
+			if len(candidates) == dailyPictureCandidates {
+				break
+			}
+		}
+		if len(candidates) == 0 {
+			rejected = append(rejected, fmt.Sprintf("%q (returned no images)", query))
+			continue
+		}
+
+		pick, pickCost, err := dailyPictureVet(reqCtx, writerClient, ctx, customInstruction, candidates)
+		cost += pickCost
+		if err != nil {
+			return "", "", cost, err
+		}
+		if pick.index < 0 {
+			log.Info("pulsar daily: picture_of_day rejected every candidate", "query", query, "reason", pick.reasoning)
+			rejected = append(rejected, fmt.Sprintf("%q (%s)", query, pick.reasoning))
+			continue
+		}
+		chosen := candidates[pick.index]
+		caption := pick.caption
+		if caption == "" {
+			caption = chosen.Title
+		}
+		if caption == "" {
+			caption = query
+		}
+		log.Info("pulsar daily: picture_of_day chosen", "query", query, "caption", caption, "reason", pick.reasoning)
+		return caption, chosen.ImageURL, cost, nil
+	}
+	return "", "", cost, fmt.Errorf("picture_of_day: no candidate passed vetting after %d queries: %s",
+		dailyPictureMaxQueries, strings.Join(rejected, "; "))
+}
+
+// dailyPictureQuery asks the writer for an image-search query. rejected
+// lists earlier queries from this same generation that produced nothing
+// usable (with why), so a retry tries a different angle instead of the
+// same search again.
+func dailyPictureQuery(reqCtx context.Context, writerClient llm.ChatClient, customInstruction string, rejected []string) (string, float64, error) {
 	task := "Give me a search query for an interesting, visually striking photo to feature as today's " +
 		"\"Picture of the Day\" — nature, space, art, architecture, wildlife, or similar. Vary it day to " +
 		"day rather than defaulting to the same subject."
 	task = appendCustomInstruction(task, customInstruction)
+	if len(rejected) > 0 {
+		task += " These searches already failed — every result was rejected (reason in parentheses), so " +
+			"take a clearly different angle, and phrase it so it can only match real photographs, not " +
+			"products or ads: " + strings.Join(rejected, "; ") + "."
+	}
 	resp, err := writerClient.ChatCompletionStreaming(reqCtx, []llm.ChatMessage{
 		{Role: "system", Content: "Reply with ONLY a short (3-6 word) image search query, nothing else."},
 		{Role: "user", Content: task},
 	}, func(string) {}, nil)
 	if err != nil {
-		return "", "", 0, err
+		return "", 0, err
 	}
 	query := strings.Trim(strings.TrimSpace(resp.Content), "\"")
 	if query == "" {
-		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: model returned an empty search query")
+		return "", resp.CostUSD, fmt.Errorf("picture_of_day: model returned an empty search query")
+	}
+	return query, resp.CostUSD, nil
+}
+
+type dailyPicturePick struct {
+	index     int // into the candidates slice; -1 = none qualified
+	caption   string
+	reasoning string
+}
+
+// dailyPictureVet describes each candidate (in parallel — each is an
+// independent fetch + vision call) and has the writer pick the best or
+// reject all. A candidate whose image can't be fetched or described is
+// left out of the judge's list rather than offered blind, and the vision
+// model being unconfigured entirely degrades to judging on title + domain
+// alone (weaker, but still a judge — a wrong pick is the failure to avoid,
+// not a missing description). Anything unparseable from the judge counts
+// as a rejection, never as "take the first one".
+func dailyPictureVet(reqCtx context.Context, writerClient llm.ChatClient, ctx *tools.Context, customInstruction string, candidates []tools.Card) (dailyPicturePick, float64, error) {
+	reject := func(why string) dailyPicturePick { return dailyPicturePick{index: -1, reasoning: why} }
+
+	type described struct {
+		text string
+		cost float64
+		ok   bool
+	}
+	results := make([]described, len(candidates))
+	canSee := ctx.DescribeImage != nil
+	if !canSee {
+		log.Warn("pulsar daily: picture_of_day has no vision model configured, vetting on titles alone")
+	} else {
+		var wg sync.WaitGroup
+		for i, c := range candidates {
+			wg.Add(1)
+			go func(i int, c tools.Card) {
+				defer wg.Done()
+				text, cost, err := tools.DescribeImageURL(ctx, c.ImageURL, dailyPictureDescribeInstructions)
+				if err != nil {
+					log.Warn("pulsar daily: picture_of_day couldn't describe a candidate", "url", c.ImageURL, "err", err)
+				}
+				results[i] = described{text: strings.TrimSpace(text), cost: cost, ok: err == nil && strings.TrimSpace(text) != ""}
+			}(i, c)
+		}
+		wg.Wait()
 	}
 
-	// attach_gallery false: the first candidate is read straight off the
-	// pool below, so there's no gallery to attach (and no model in this
-	// path to judge-then-show — Picture of the Day just takes the top hit).
-	argsJSON, _ := json.Marshal(map[string]interface{}{"query": query, "attach_gallery": false})
-	result := tools.Dispatch("image_search", string(argsJSON), ctx, "pulsar-daily-image-search")
-	if strings.HasPrefix(result, "error:") || strings.HasPrefix(result, "image search is degraded") {
-		return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: %s", result)
-	}
-
-	for _, c := range ctx.ImageCandidatesSnapshot() {
-		if c.Kind == "image" {
-			title := c.Title
-			if title == "" {
-				title = query
-			}
-			return title, c.ImageURL, resp.CostUSD, nil
+	var cost float64
+	var b strings.Builder
+	var offered []int // candidate index behind each 1-based number the judge sees
+	for i, c := range candidates {
+		cost += results[i].cost
+		if canSee && !results[i].ok {
+			continue
+		}
+		offered = append(offered, i)
+		fmt.Fprintf(&b, "%d. title: %q (from %s)\n", len(offered), c.Title, c.Subtitle)
+		if canSee {
+			fmt.Fprintf(&b, "   what it actually looks like: %s\n", results[i].text)
 		}
 	}
-	return "", "", resp.CostUSD, fmt.Errorf("picture_of_day: image_search returned no image card")
+	if len(offered) == 0 {
+		return reject("none of the candidates could be fetched and described"), cost, nil
+	}
+
+	wish := "interesting, visually striking photography"
+	if w := strings.TrimSpace(customInstruction); w != "" {
+		wish = w
+	}
+	resp, err := writerClient.ChatCompletionWithTools(reqCtx, []llm.ChatMessage{
+		{Role: "system", Content: "You choose today's \"Picture of the Day\" for a daily newspaper. Call " +
+			"pick_picture. A candidate qualifies only if it is a real, striking photograph or artwork that " +
+			"fits what the reader asked for. Reject product or catalog shots, advertisements, screenshots, " +
+			"logos, memes, stock-site watermarked previews, and anything off-brief — search results are " +
+			"full of these, and choosing none is a good answer. Trust the description of what an image " +
+			"actually looks like over its search title."},
+		{Role: "user", Content: "The reader wants: " + wish + "\n\nCandidates:\n" + b.String()},
+	}, []llm.ToolDef{dailyPicturePickToolDef}, func(string) {}, nil)
+	if err != nil {
+		return dailyPicturePick{}, cost, err
+	}
+	cost += resp.CostUSD
+	if len(resp.ToolCalls) == 0 {
+		return reject("the judge didn't call pick_picture"), cost, nil
+	}
+	var args struct {
+		Choice    int    `json:"choice"`
+		Caption   string `json:"caption"`
+		Reasoning string `json:"reasoning"`
+	}
+	if err := json.Unmarshal([]byte(resp.ToolCalls[0].Function.Arguments), &args); err != nil {
+		return reject("the judge's pick_picture arguments were unparseable"), cost, nil
+	}
+	if args.Choice < 1 || args.Choice > len(offered) {
+		return reject(strings.TrimSpace(args.Reasoning)), cost, nil
+	}
+	return dailyPicturePick{
+		index:     offered[args.Choice-1],
+		caption:   strings.TrimSpace(args.Caption),
+		reasoning: strings.TrimSpace(args.Reasoning),
+	}, cost, nil
 }
 
 // dailyVerdictToolDef forces Stage A's diff-judge to answer via a
