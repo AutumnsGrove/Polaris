@@ -231,6 +231,35 @@ func TestGetStats_JevCallCounts(t *testing.T) {
 	}
 }
 
+// A hallucinated tool name must land in MadeUpToolCounts only — never as a
+// real tool row with a 100% error rate in ToolCallCounts/ToolErrorCounts —
+// while a real tool's own errors keep counting normally.
+func TestGetStats_MadeUpToolsSplitFromRealTools(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateThread("t1", "Thread", "test-model", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	s.LogEvent("t1", "info", "tool.web_search", "tool call finished", map[string]interface{}{"result": "ok"}, "turn-1")
+	s.LogEvent("t1", "warn", "tool.web_read", "tool call finished", map[string]interface{}{"result": "error: fetch failed"}, "turn-2")
+	s.LogEvent("t1", "warn", "tool.web_command", "tool call finished", map[string]interface{}{"result": "error: unknown tool web_command"}, "turn-3")
+	s.LogEvent("t1", "warn", "tool.web_command", "tool call finished", map[string]interface{}{"result": "error: unknown tool web_command"}, "turn-4")
+
+	stats, err := s.GetStats(30)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if got := stats.MadeUpToolCounts["web_command"]; got != 2 {
+		t.Errorf("MadeUpToolCounts[web_command] = %d, want 2", got)
+	}
+	if _, ok := stats.ToolCallCounts["web_command"]; ok {
+		t.Errorf("web_command leaked into ToolCallCounts: %v", stats.ToolCallCounts)
+	}
+	if stats.ToolCallCounts["web_search"] != 1 || stats.ToolErrorCounts["web_read"] != 1 {
+		t.Errorf("real tools miscounted: calls=%v errors=%v", stats.ToolCallCounts, stats.ToolErrorCounts)
+	}
+}
+
 // TestGetStats_SearchProviderCounts guards against conflating this with
 // api_usage's billing-cap counters (see Stats.SearchProviderCounts' doc
 // comment) — only "tool call finished" events on tool.web_search with a

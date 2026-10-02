@@ -344,7 +344,11 @@
 				</div>
 
 				<div class="usage-section-label">Tools <span class="usage-section-sublabel">(30d)</span></div>
-				<ToolUsageBars calls={usage.tool_call_counts} errors={usage.tool_error_counts} />
+				<ToolUsageBars
+					calls={usage.tool_call_counts}
+					errors={usage.tool_error_counts}
+					madeUp={usage.made_up_tool_counts}
+				/>
 
 				<div class="usage-section-label">Health</div>
 				<div class="usage-stat-group">

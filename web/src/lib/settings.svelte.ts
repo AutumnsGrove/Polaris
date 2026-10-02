@@ -63,6 +63,10 @@ export interface UsageStats {
 	avg_turn_duration_ms: number;
 	tool_call_counts: Record<string, number>;
 	tool_error_counts: Record<string, number>;
+	// Calls to tools that don't exist (the model hallucinating a name),
+	// kept out of the two maps above — see store.Stats.MadeUpToolCounts.
+	// Optional so an older backend without it just hides the row.
+	made_up_tool_counts?: Record<string, number>;
 	// How many web_search calls each provider key actually answered —
 	// see store.Stats.SearchProviderCounts' doc comment for why this
 	// isn't the same thing as a billing/usage-cap count.

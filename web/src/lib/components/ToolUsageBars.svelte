@@ -7,10 +7,12 @@
 	interface Props {
 		calls: Record<string, number>;
 		errors: Record<string, number>;
+		/** Calls to tools that don't exist, by the name the model invented. */
+		madeUp?: Record<string, number>;
 		/** Rows shown before the "Show all" toggle; the rest are one tap away. */
 		limit?: number;
 	}
-	let { calls, errors, limit = 8 }: Props = $props();
+	let { calls, errors, madeUp = {}, limit = 8 }: Props = $props();
 
 	// An error rate at or above this reads as "worth a look" (danger colour);
 	// below it the percentage stays dim so a single flaky call among
@@ -26,6 +28,11 @@
 	);
 	const maxCount = $derived(rows[0]?.count ?? 1);
 	const visible = $derived(expanded ? rows : rows.slice(0, limit));
+
+	const madeUpRows = $derived(
+		Object.entries(madeUp).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+	);
+	const madeUpTotal = $derived(madeUpRows.reduce((sum, [, n]) => sum + n, 0));
 </script>
 
 {#if rows.length > 0}
@@ -59,6 +66,17 @@
 	{/if}
 {:else}
 	<p class="empty">No tool calls in this period.</p>
+{/if}
+{#if madeUpTotal > 0}
+	<!-- Its own line, not a bar: these tools don't exist, so there's nothing to
+	     rank against. A spike is still worth noticing (a prompt or tool
+	     description change confusing the model). -->
+	<p class="made-up">
+		<span class="made-up-label">Made-up tools</span>
+		{madeUpTotal}
+		{madeUpTotal === 1 ? 'call' : 'calls'} to
+		<span class="made-up-names">{madeUpRows.map(([name, n]) => `${name} (${n})`).join(', ')}</span>
+	</p>
 {/if}
 
 <style>
@@ -134,6 +152,23 @@
 
 	.more:hover {
 		color: var(--color-text);
+	}
+
+	.made-up {
+		margin: var(--space-sm) 0 0;
+		padding: 0 var(--space-xs);
+		font-size: 12px;
+		color: var(--color-text-dim);
+		line-height: 1.5;
+	}
+
+	.made-up-label {
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.made-up-names {
+		font-family: var(--font-mono);
 	}
 
 	.empty {

@@ -93,6 +93,18 @@ func printStats(s *store.Stats) {
 		}
 	}
 
+	if len(s.MadeUpToolCounts) > 0 {
+		fmt.Printf("\nmade-up tools (%s) — the model called tools that don't exist:\n", period)
+		names := make([]string, 0, len(s.MadeUpToolCounts))
+		for t := range s.MadeUpToolCounts {
+			names = append(names, t)
+		}
+		sort.Strings(names)
+		for _, t := range names {
+			fmt.Printf("  %-20s %5d calls\n", t, s.MadeUpToolCounts[t])
+		}
+	}
+
 	fmt.Printf("\nweb_search providers (%s):\n", period)
 	if len(s.SearchProviderCounts) == 0 {
 		fmt.Println("  none")

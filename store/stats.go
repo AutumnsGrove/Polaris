@@ -86,6 +86,13 @@ type Stats struct {
 	// in the period, not "unknown".
 	ToolCallCounts  map[string]int `json:"tool_call_counts"`
 	ToolErrorCounts map[string]int `json:"tool_error_counts"`
+	// MadeUpToolCounts is the same shape for calls to tools that don't
+	// exist — the model hallucinating a name (tools.Dispatch answers
+	// "error: unknown tool X"). Kept out of ToolCallCounts/ToolErrorCounts
+	// so a bogus name never shows up as a real tool with a 100% error
+	// rate, but counted here because a spike is a real signal (a tool
+	// description or prompt change that confuses the model).
+	MadeUpToolCounts map[string]int `json:"made_up_tool_counts"`
 
 	// CheckInCount/StaleStreakCount/MaxTurnsWrapupCount are how often
 	// each research-steering signal fired (see agent/driver.go's
@@ -177,6 +184,7 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		PeriodDays:           periodDays,
 		ToolCallCounts:       map[string]int{},
 		ToolErrorCounts:      map[string]int{},
+		MadeUpToolCounts:     map[string]int{},
 		SearchProviderCounts: map[string]int{},
 	}
 
@@ -466,14 +474,20 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	// message = 'tool call finished' excludes the paired 'tool call
 	// started' row logTurnEvent also writes per call (see gateway/turn.go)
 	// — counting both would double every tool call.
-	toolQuery := `SELECT source, level, COUNT(*) FROM events
+	// made_up splits out calls to nonexistent tools by the exact result
+	// string tools.Dispatch writes for them. json_valid guards the
+	// json_extract (a malformed blob would otherwise fail the whole query);
+	// CASE evaluates lazily, so it never reaches json_extract on one.
+	toolQuery := `SELECT source, level,
+			CASE WHEN json_valid(data) AND json_extract(data, '$.result') LIKE 'error: unknown tool %' THEN 1 ELSE 0 END AS made_up,
+			COUNT(*) FROM events
 		WHERE source LIKE 'tool.%' AND message = 'tool call finished'`
 	toolArgs := []interface{}{}
 	if since != "" {
 		toolQuery += ` AND created_at >= ?`
 		toolArgs = append(toolArgs, since)
 	}
-	toolQuery += ` GROUP BY source, level`
+	toolQuery += ` GROUP BY source, level, made_up`
 	toolRows, err := s.db.Query(toolQuery, toolArgs...)
 	if err != nil {
 		return nil, err
@@ -481,11 +495,15 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 	defer toolRows.Close()
 	for toolRows.Next() {
 		var source, level string
-		var count int
-		if err := toolRows.Scan(&source, &level, &count); err != nil {
+		var madeUp, count int
+		if err := toolRows.Scan(&source, &level, &madeUp, &count); err != nil {
 			return nil, err
 		}
 		tool := strings.TrimPrefix(source, "tool.")
+		if madeUp == 1 {
+			stats.MadeUpToolCounts[tool] += count
+			continue
+		}
 		stats.ToolCallCounts[tool] += count
 		if level == "warn" {
 			stats.ToolErrorCounts[tool] += count
