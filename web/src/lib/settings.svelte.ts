@@ -46,6 +46,15 @@ export interface UsageStats {
 	// Same kind of breakout for Oracle mode's own Jev pre-read spend — see
 	// store.Stats.OracleCostUSD. Never add into the totals above either.
 	oracle_cost_usd: { period_cost_usd: number; total_cost_usd: number };
+	// Jev API call counts (not questions asked) — see store.Stats.JevCalls.
+	// Optional so an older backend without it just hides the rows.
+	// `verification` also holds every compare_sources call from before the
+	// ledger split, which can't be told apart retroactively.
+	jev_calls?: {
+		oracle: { period: number; total: number };
+		verification: { period: number; total: number };
+		compare: { period: number; total: number };
+	};
 	thread_count: number;
 	turn_count: number;
 	// Distinct threads that have ever had a voice_mode (Transponder call)

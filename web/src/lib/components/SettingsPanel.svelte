@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/state.svelte';
+	import ToolUsageBars from './ToolUsageBars.svelte';
 	import {
 		X,
 		Moon,
@@ -268,6 +269,20 @@
 							>
 						</div>
 					{/if}
+					<!-- Call counts sit with the Jev cost lines they explain: a few
+					     hundredths of a cent each, so the dollar figure alone can't say
+					     whether it was 30 calls or 3,000. These count API calls, not
+					     questions asked. -->
+					{#if usage.jev_calls}
+						{#each [{ label: 'Badge calls', c: usage.jev_calls.verification }, { label: 'compare_sources calls', c: usage.jev_calls.compare }, { label: 'Oracle calls', c: usage.jev_calls.oracle }] as row (row.label)}
+							{#if row.c.total > 0}
+								<div class="usage-stat-row sub">
+									<span class="label">{row.label}</span>
+									<span class="value">{row.c.period} / {row.c.total}</span>
+								</div>
+							{/if}
+						{/each}
+					{/if}
 					<div class="usage-stat-row">
 						<span class="label">Pulsar</span>
 						<span class="value"
@@ -327,6 +342,9 @@
 						</div>
 					{/if}
 				</div>
+
+				<div class="usage-section-label">Tools <span class="usage-section-sublabel">(30d)</span></div>
+				<ToolUsageBars calls={usage.tool_call_counts} errors={usage.tool_error_counts} />
 
 				<div class="usage-section-label">Health</div>
 				<div class="usage-stat-group">
