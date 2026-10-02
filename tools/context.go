@@ -93,6 +93,10 @@ type Context struct {
 	Jev              *jev.Client
 	JevCostThisMonth func() (float64, error)
 	LogJevCost       func(usd float64) error
+	// LogCompareJevCost is LogJevCost for compare_sources specifically, so
+	// the ledger can tell its calls from verification badges (issue #151).
+	// compare_sources falls back to LogJevCost when this is nil.
+	LogCompareJevCost func(usd float64) error
 
 	// PinnedProvider, when non-empty, forces web_search to a single
 	// provider on every call instead of the normal SearXNG-first,

@@ -185,6 +185,52 @@ func TestGetStats_OracleJevCostCountsTowardCapButBreaksOutSeparately(t *testing.
 	}
 }
 
+// Issue #151: each Jev source counts independently (badges must not absorb
+// compare_sources' new 'compare' rows), the period filter applies to counts
+// like it does to cost, and the new source value must still count toward
+// the monthly cap.
+func TestGetStats_JevCallCounts(t *testing.T) {
+	s := openTestStore(t)
+	for i := 0; i < 3; i++ {
+		if err := s.LogJevCost(0.001); err != nil {
+			t.Fatalf("LogJevCost: %v", err)
+		}
+	}
+	if err := s.LogOracleJevCost(0.001); err != nil {
+		t.Fatalf("LogOracleJevCost: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.LogCompareJevCost(0.001); err != nil {
+			t.Fatalf("LogCompareJevCost: %v", err)
+		}
+	}
+	// An old row, outside the 30-day window: counts all-time only.
+	if _, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, created_at) VALUES (0.001, datetime('now', '-90 days'))`); err != nil {
+		t.Fatalf("insert old row: %v", err)
+	}
+
+	stats, err := s.GetStats(30)
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	want := JevCallCounts{
+		Oracle:       CallCount{Period: 1, Total: 1},
+		Verification: CallCount{Period: 3, Total: 4},
+		Compare:      CallCount{Period: 2, Total: 2},
+	}
+	if stats.JevCalls != want {
+		t.Errorf("JevCalls = %+v, want %+v", stats.JevCalls, want)
+	}
+
+	month, err := s.JevCostThisMonth()
+	if err != nil {
+		t.Fatalf("JevCostThisMonth: %v", err)
+	}
+	if math.Abs(month-0.006) > 1e-9 {
+		t.Errorf("JevCostThisMonth = %v, want 0.006 (compare rows must count toward the cap)", month)
+	}
+}
+
 // TestGetStats_SearchProviderCounts guards against conflating this with
 // api_usage's billing-cap counters (see Stats.SearchProviderCounts' doc
 // comment) — only "tool call finished" events on tool.web_search with a

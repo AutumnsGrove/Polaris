@@ -123,6 +123,16 @@ func (s *Store) LogOracleJevCost(costUSD float64) error {
 	return err
 }
 
+// LogCompareJevCost is LogJevCost for the compare_sources tool — same
+// ledger (the monthly cap sums every row regardless of source), tagged so
+// Stats can count it apart from per-claim verification badges, which keep
+// source = ''. Rows written before this value existed stay lumped under ''
+// and read as badges (issue #151).
+func (s *Store) LogCompareJevCost(costUSD float64) error {
+	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'compare')`, costUSD)
+	return err
+}
+
 // RecordAuxCost appends one row for real assistant-side LLM spend that no
 // turn owns — see aux_usage's schema comment. Called only after a call
 // actually completed and reported its cost, same convention as

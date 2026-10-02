@@ -156,8 +156,12 @@ func handleCompareSources(argsJSON string, ctx *Context, callID string) string {
 	cost := resp.Usage.CostUSD
 	ctx.AddCost(cost)
 	ctx.AddJevCost(cost)
-	if ctx.LogJevCost != nil {
-		if err := ctx.LogJevCost(cost); err != nil {
+	logCost := ctx.LogCompareJevCost
+	if logCost == nil {
+		logCost = ctx.LogJevCost
+	}
+	if logCost != nil {
+		if err := logCost(cost); err != nil {
 			log.Warn("compare_sources: logging jev cost failed", "err", err)
 		}
 	}

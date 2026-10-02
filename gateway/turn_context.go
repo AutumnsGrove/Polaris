@@ -65,6 +65,7 @@ func (t *turnRun) buildAgentContext() {
 		Jev:                    t.s.jev,
 		JevCostThisMonth:       t.s.db.JevCostThisMonth,
 		LogJevCost:             t.s.db.LogJevCost,
+		LogCompareJevCost:      t.s.db.LogCompareJevCost,
 		Embed:                  t.s.embed,
 		GitHubToken:            t.cfg.GitHub.Token,
 		LastFMAPIKey:           t.cfg.LastFM.APIKey,

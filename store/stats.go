@@ -62,6 +62,14 @@ type Stats struct {
 	// second time. Split from VerificationCostUSD so neither reads as the
 	// other's spend (issue #125).
 	OracleCostUSD SourceCost `json:"oracle_cost_usd"`
+	// JevCalls counts real Jev API calls (rows in jev_usage), not questions
+	// asked or turns — one Oracle turn is one call. Verification is
+	// source = '' (per-claim badges, plus every pre-split compare_sources
+	// row, which can't be told apart retroactively); Compare is source =
+	// 'compare', only rows written since LogCompareJevCost existed (issue
+	// #151). A call that errored before billing writes no row, so these
+	// undercount failures.
+	JevCalls JevCallCounts `json:"jev_calls"`
 
 	ThreadCount int `json:"thread_count"`
 	TurnCount   int `json:"turn_count"`
@@ -125,6 +133,19 @@ type CacheUsage struct {
 	PeriodCacheReadTokens int `json:"period_cache_read_tokens"`
 	TotalPromptTokens     int `json:"total_prompt_tokens"`
 	TotalCacheReadTokens  int `json:"total_cache_read_tokens"`
+}
+
+// CallCount is one bucket's period/all-time number of calls.
+type CallCount struct {
+	Period int `json:"period"`
+	Total  int `json:"total"`
+}
+
+// JevCallCounts is Stats.JevCalls — see its doc comment.
+type JevCallCounts struct {
+	Oracle       CallCount `json:"oracle"`
+	Verification CallCount `json:"verification"`
+	Compare      CallCount `json:"compare"`
 }
 
 // SourceCost is one bucket's period/all-time cost — see
@@ -369,6 +390,31 @@ func (s *Store) GetStats(periodDays int) (*Stats, error) {
 		} else if err := s.db.QueryRow(
 			`SELECT COALESCE(SUM(cost_usd), 0) FROM jev_usage WHERE created_at >= ? AND `+b.where, since,
 		).Scan(&b.dst.PeriodCostUSD); err != nil {
+			return nil, err
+		}
+	}
+
+	// Call counts use the same period filter as the cost breakouts above.
+	// Verification is an exact match on '' rather than "not oracle" so the
+	// new 'compare' rows don't leak into the badge count.
+	for _, b := range []struct {
+		dst    *CallCount
+		source string
+	}{
+		{&stats.JevCalls.Oracle, "oracle"},
+		{&stats.JevCalls.Verification, ""},
+		{&stats.JevCalls.Compare, "compare"},
+	} {
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM jev_usage WHERE source = ?`, b.source,
+		).Scan(&b.dst.Total); err != nil {
+			return nil, err
+		}
+		if since == "" {
+			b.dst.Period = b.dst.Total
+		} else if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM jev_usage WHERE source = ? AND created_at >= ?`, b.source, since,
+		).Scan(&b.dst.Period); err != nil {
 			return nil, err
 		}
 	}

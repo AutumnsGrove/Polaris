@@ -427,10 +427,12 @@ CREATE TABLE IF NOT EXISTS ghost_usage (
 CREATE TABLE IF NOT EXISTS jev_usage (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	cost_usd REAL NOT NULL,
-	-- source: "" for verification/compare_sources spend (every row from
-	-- before this column existed), "oracle" for Oracle mode's pre-read
-	-- (issue #125) — lets Stats break the two out separately while the
-	-- monthly cap (JevCostThisMonth) still sums every row.
+	-- source: "" for verification-badge spend (and every row from before
+	-- this column existed, which includes compare_sources calls that can't
+	-- be split out retroactively), "oracle" for Oracle mode's pre-read
+	-- (issue #125), "compare" for compare_sources calls made since issue
+	-- #151 — lets Stats break them out separately while the monthly cap
+	-- (JevCostThisMonth) still sums every row.
 	source TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
