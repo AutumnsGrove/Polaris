@@ -113,7 +113,7 @@ request does show up.
 ```bash
 polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
-polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals
+polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals, paid-API monthly cap usage (also `api_caps` in GET /api/stats)
 polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
 ```
