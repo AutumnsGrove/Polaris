@@ -25,11 +25,14 @@ describe('applyStreamingEvent', () => {
 		const turn = assistantTurn();
 		applyStreamingEvent(turn, ev({ type: 'reasoning', content: 'think ' }));
 		applyStreamingEvent(turn, ev({ type: 'reasoning', content: 'more' }));
-		expect(turn.timeline).toEqual([{ kind: 'reasoning', content: 'think more', done: false }]);
+		expect(turn.timeline).toEqual([
+			{ kind: 'reasoning', content: 'think more', done: false, startedAt: expect.any(Number) }
+		]);
 
-		// A tool call interrupts reasoning, which marks it done.
+		// A tool call interrupts reasoning, which marks it done and stamps
+		// how long the burst ran.
 		applyStreamingEvent(turn, ev({ type: 'tool_call', tool: 'web_search', call_id: 'a' }));
-		expect(turn.timeline?.[0]).toMatchObject({ kind: 'reasoning', done: true });
+		expect(turn.timeline?.[0]).toMatchObject({ kind: 'reasoning', done: true, durationMs: expect.any(Number) });
 
 		applyStreamingEvent(turn, ev({ type: 'reasoning', content: 'again' }));
 		expect(turn.timeline?.at(-1)).toMatchObject({ kind: 'reasoning', content: 'again', done: false });

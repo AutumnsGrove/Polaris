@@ -73,7 +73,12 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 			// live-streaming case where a burst starts as done: false and
 			// gets closed out by closeOpenReasoning once something else
 			// interrupts it.
-			timeline.push({ kind: 'reasoning', content: data.content ?? '', done: true });
+			timeline.push({
+				kind: 'reasoning',
+				content: data.content ?? '',
+				done: true,
+				durationMs: typeof data.duration_ms === 'number' ? data.duration_ms : undefined
+			});
 		} else if (evt.source === 'compaction' && evt.message === 'compaction notice shown') {
 			// 'compaction notice shown', not 'thread auto-compacted' — the
 			// latter is the backend's untagged audit row (it feeds the

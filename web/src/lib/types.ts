@@ -755,7 +755,11 @@ export interface StoredEvent {
 
 export type TimelineItem =
 	| { kind: 'thinking'; content: string }
-	| { kind: 'reasoning'; content: string; done: boolean }
+	// startedAt (epoch ms) is only set on a live-streamed burst, to drive the
+	// header's ticking "Thinking for Ns"; durationMs is set once it closes
+	// (live) or read back from the persisted row (reopened thread). Rows
+	// persisted before this existed have neither, and just show no stats.
+	| { kind: 'reasoning'; content: string; done: boolean; startedAt?: number; durationMs?: number }
 	| { kind: 'compacted'; summary: string }
 	// What the model said before calling a tool — rendered as real
 	// markdown prose (it's genuine assistant reply text, not private

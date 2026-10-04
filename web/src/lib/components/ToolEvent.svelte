@@ -3,6 +3,7 @@
 	import { marked } from '$lib/markdown';
 	import DOMPurify from 'dompurify';
 	import hljs from '$lib/highlightjs';
+	import { reasoningStatsLabel } from '$lib/reasoningStats';
 	import type { TimelineItem, Card } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
 	import ImageGallery from './ImageGallery.svelte';
@@ -95,6 +96,18 @@
 	// object for the lifetime of this component instance (keyed by index
 	// in the {#each} above), so there's no later prop change to react to.
 	let open = $state(untrack(() => item.kind === 'reasoning'));
+
+	// Drives the live "Thinking for Ns" counter. Only ticks while a live
+	// burst is still open — a finished or reloaded one reads its frozen
+	// durationMs instead, so there's no idle timer per old reasoning block.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (item.kind !== 'reasoning' || item.done || item.startedAt === undefined) return;
+		now = Date.now();
+		const timer = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const reasoningStats = $derived(item.kind === 'reasoning' ? reasoningStatsLabel(item, now) : '');
 
 	// web_search's provider key ("searxng"/"brave"/"parallel"/"tavily") is
 	// a stable machine value (see types.ts's doc comment) — this maps it
@@ -203,7 +216,9 @@
 	<div class="tool-event">
 		<button class="tool-header" onclick={() => (open = !open)}>
 			<Brain size={13} color="var(--color-accent-2)" />
-			<span class="tool-label">{item.done ? 'Reasoned' : 'Reasoning…'}</span>
+			<span class="tool-label"
+				>{item.done ? 'Reasoned' : 'Reasoning…'}{#if reasoningStats}<span class="reasoning-stats">{reasoningStats}</span>{/if}</span
+			>
 			{#if !item.done}
 				<Loader2 size={13} color="var(--color-text-dim)" class="spin" />
 			{:else}
@@ -499,6 +514,16 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Inside .tool-label (not a sibling) so the stats ellipsize with the
+	   title on a narrow phone header instead of pushing the chevron off. */
+	.reasoning-stats {
+		margin-left: var(--space-sm);
+		font-size: 11.5px;
+		font-weight: 400;
+		color: var(--color-text-dim);
+		font-variant-numeric: tabular-nums;
 	}
 
 	/* Sits directly above .tool-result, inside the same expanded panel —

@@ -10,6 +10,7 @@ export function closeOpenReasoning(turn: ChatTurn) {
 	const last = items[items.length - 1];
 	if (last.kind === 'reasoning' && !last.done) {
 		last.done = true;
+		if (last.startedAt !== undefined) last.durationMs = Date.now() - last.startedAt;
 		turn.timeline = [...items];
 	}
 }
@@ -35,7 +36,7 @@ export function applyStreamingEvent(turn: ChatTurn, e: ServerEvent): void {
 				last.content += e.content;
 				turn.timeline = [...items];
 			} else {
-				turn.timeline = [...items, { kind: 'reasoning', content: e.content, done: false }];
+				turn.timeline = [...items, { kind: 'reasoning', content: e.content, done: false, startedAt: Date.now() }];
 			}
 			break;
 		}

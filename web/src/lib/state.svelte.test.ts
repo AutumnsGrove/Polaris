@@ -563,7 +563,7 @@ describe('AppState.openThread', () => {
 					return Promise.resolve({
 						ok: true,
 						json: async () => [
-							{ id: 1, level: 'info', source: 'turn', message: 'reasoning', data: '{"content":"Let me think about this first."}', turn_id: 'turn-1', created_at: '' }
+							{ id: 1, level: 'info', source: 'turn', message: 'reasoning', data: '{"content":"Let me think about this first.","duration_ms":12000}', turn_id: 'turn-1', created_at: '' }
 						]
 					});
 				}
@@ -588,7 +588,8 @@ describe('AppState.openThread', () => {
 		expect(assistantTurn.timeline?.[0]).toMatchObject({
 			kind: 'reasoning',
 			content: 'Let me think about this first.',
-			done: true
+			done: true,
+			durationMs: 12000
 		});
 	});
 
