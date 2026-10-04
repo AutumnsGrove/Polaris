@@ -69,12 +69,19 @@
 // caches successes briefly so N threads asking about the same video cost one
 // fetch. Cookies were deliberately not added: they don't address a rate
 // limit, and a logged-in session scraped this way risks the account itself.
+//
+// The remaining gap — a block that outlasts the retries, or an embed-
+// disabled video — is covered by an opt-in provider="tavily" argument (see
+// fetchYouTubeTranscriptViaTavily), deliberately *not* an automatic
+// fallback: the model has to ask for it, so a paid credit is only ever
+// spent on purpose, and never to re-confirm that a video has no captions.
 package tools
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -102,6 +109,12 @@ var youtubeTranscriptDef = llm.ToolDef{
 					"type":        "string",
 					"description": "A YouTube video URL or bare 11-character video ID.",
 				},
+				"provider": map[string]interface{}{
+					"type": "string",
+					"enum": []string{"tavily"},
+					"description": "Leave unset by default. Set to \"tavily\" ONLY after a default call failed because YouTube blocked or rate-limited the fetch (the error will say so) and the transcript is genuinely needed — it spends a paid, capped Tavily credit " +
+						"and also works for videos the default method can't reach at all. Never set it for a video that has no captions.",
+				},
 			},
 			"required": []string{"url"},
 		},
@@ -112,13 +125,17 @@ func init() { Register("youtube_transcript", handleYouTubeTranscript) }
 
 func handleYouTubeTranscript(argsJSON string, ctx *Context, callID string) string {
 	var args struct {
-		URL string `json:"url"`
+		URL      string `json:"url"`
+		Provider string `json:"provider"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return emitToolError(ctx, "youtube_transcript", nil, "error: "+err.Error(), callID)
 	}
 	if args.URL == "" {
 		return emitToolError(ctx, "youtube_transcript", map[string]interface{}{"url": args.URL}, "error: url is required", callID)
+	}
+	if args.Provider != "" && args.Provider != "tavily" {
+		return emitToolError(ctx, "youtube_transcript", map[string]interface{}{"url": args.URL, "provider": args.Provider}, `error: unknown provider (only "tavily" is supported; omit provider for the default method)`, callID)
 	}
 
 	videoID, err := extractYouTubeID(args.URL)
@@ -136,10 +153,22 @@ func handleYouTubeTranscript(argsJSON string, ctx *Context, callID string) strin
 		"call_id": callID,
 	})
 
-	title, transcript, err := fetchYouTubeTranscript(ctx.Ctx, videoID)
+	var title, transcript string
+	if args.Provider == "tavily" {
+		title, transcript, err = fetchYouTubeTranscriptViaTavily(ctx, videoID)
+	} else {
+		title, transcript, err = fetchYouTubeTranscript(ctx.Ctx, videoID)
+	}
 	if err != nil {
-		log.Warn("youtube_transcript failed", "video_id", videoID, "err", err)
+		log.Warn("youtube_transcript failed", "video_id", videoID, "provider", args.Provider, "err", err)
 		result := "error: " + err.Error()
+		// Only offer Tavily when the failure could be YouTube blocking us
+		// rather than the video genuinely having no transcript — spending a
+		// paid credit to confirm "no captions" would be pure waste, and the
+		// model reads this text literally, so it must not be nudged there.
+		if args.Provider == "" && ctx.Tavily != nil && !errors.Is(err, errNoCaptions) {
+			result += ` — this may be YouTube blocking this server, not a missing transcript. If you still need it, call youtube_transcript again with provider="tavily" (spends one paid, capped Tavily credit).`
+		}
 		ctx.Emit("tool_result", map[string]interface{}{"tool": "youtube_transcript", "result": result, "call_id": callID})
 		return result
 	}
@@ -277,6 +306,103 @@ func fetchYouTubeTranscript(ctx context.Context, videoID string) (title, transcr
 	}
 }
 
+// errNoCaptions marks "this video genuinely has no transcript", as opposed
+// to "we couldn't get it". handleYouTubeTranscript only offers the Tavily
+// provider for the latter.
+var errNoCaptions = errors.New("no captions available for this video")
+
+// tavilyTimestampPattern matches the "[m:ss]" / "[h:mm:ss]" prefix Tavily
+// puts on every transcript line.
+var tavilyTimestampPattern = regexp.MustCompile(`^\[\d+:\d{2}(?::\d{2})?\]\s*`)
+
+// fetchYouTubeTranscriptViaTavily is the explicit, model-requested
+// alternative to yt-dlp (provider="tavily") — never reached automatically.
+// Live spike (2026-10-04) showed Tavily Extract returns a full timestamped
+// transcript for ordinary videos, for embed-disabled label videos yt-dlp
+// can't reach at all, and for videos uploaded hours earlier (the view count
+// changed between calls, so it's a live fetch, not a stale index) — all at
+// `basic` depth, 1 credit, despite its docs never mentioning YouTube. It
+// spends from the same tavilyMonthlyCap as web_search/web_read; see that
+// constant's doc comment. It skips ytDlpGate on purpose: the gate protects
+// against YouTube's per-IP limit, and Tavily's request doesn't come from
+// this server's IP.
+func fetchYouTubeTranscriptViaTavily(ctx *Context, videoID string) (title, transcript string, err error) {
+	if t, tr, ok := ytTranscriptCache.get(videoID); ok {
+		return t, tr, nil
+	}
+	if ctx.Tavily == nil {
+		return "", "", fmt.Errorf(`provider "tavily" requires Tavily to be configured on this deployment, which it isn't`)
+	}
+	if ctx.TavilyUsageThisMonth != nil {
+		if used, uErr := ctx.TavilyUsageThisMonth(); uErr != nil {
+			log.Warn("youtube_transcript: checking tavily usage failed", "video_id", videoID, "err", uErr)
+		} else if used >= tavilyMonthlyCap {
+			return "", "", fmt.Errorf("provider \"tavily\" is unavailable right now — Tavily's monthly cap (%d calls) has been reached", tavilyMonthlyCap)
+		}
+	}
+
+	raw, err := ctx.Tavily.Extract(ctx.Ctx, youtubeWatchBaseURL+videoID, false)
+	if err != nil {
+		return "", "", fmt.Errorf("fetching transcript via tavily: %w", err)
+	}
+	// Counted before parsing: the credit is spent whether or not the video
+	// turns out to have a transcript.
+	if ctx.IncrementTavilyUsage != nil {
+		if incErr := ctx.IncrementTavilyUsage(); incErr != nil {
+			log.Warn("youtube_transcript: recording tavily usage failed", "video_id", videoID, "err", incErr)
+		}
+	}
+
+	title, transcript, ok := parseTavilyYouTubeTranscript(raw, videoID)
+	if !ok {
+		return title, "", errNoCaptions
+	}
+	ytTranscriptCache.put(videoID, title, transcript)
+	return title, transcript, nil
+}
+
+// parseTavilyYouTubeTranscript pulls the title and transcript out of
+// Tavily's rendering of a watch page: the title is the first line, then
+// channel/description metadata, then — only if the video has captions — a
+// line that is exactly "Transcript" followed by "[m:ss] text" lines.
+// Tavily returns the page *without* that section and *without* any error
+// when a video has no captions, so absence is the only signal; ok=false
+// means exactly that. The last "Transcript" line wins because a description
+// can contain the word on its own line, while a cue line never can (it
+// always carries a timestamp). Deliberately not stripBoilerplateLines:
+// that drops short lines, which would eat short caption cues.
+func parseTavilyYouTubeTranscript(raw, fallbackTitle string) (title, transcript string, ok bool) {
+	lines := strings.Split(raw, "\n")
+	title = fallbackTitle
+	for _, l := range lines {
+		if l = strings.TrimSpace(l); l != "" {
+			title = l
+			break
+		}
+	}
+
+	start := -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "Transcript" {
+			start = i
+		}
+	}
+	if start < 0 {
+		return title, "", false
+	}
+
+	var parts []string
+	for _, l := range lines[start+1:] {
+		if l = strings.TrimSpace(tavilyTimestampPattern.ReplaceAllString(strings.TrimSpace(l), "")); l != "" {
+			parts = append(parts, l)
+		}
+	}
+	if len(parts) == 0 {
+		return title, "", false
+	}
+	return title, collapseWhitespace(strings.Join(parts, " ")), true
+}
+
 // ytDlpGate serializes yt-dlp use process-wide — see the package doc
 // comment's 2026-10 note. ytDlpLastDone is only touched while holding it.
 var (
@@ -359,7 +485,7 @@ func fetchYouTubeTranscriptOnce(ctx context.Context, videoID string) (title, tra
 
 	lang, isAuto, ok := pickYtDlpLanguage(info)
 	if !ok {
-		return info.Title, "", fmt.Errorf("no captions available for this video")
+		return info.Title, "", errNoCaptions
 	}
 
 	transcriptBody, err := fetchYtDlpSubtitle(ctx, videoID, lang, isAuto)
@@ -555,7 +681,7 @@ func parseJSON3Transcript(body string) (string, error) {
 		}
 	}
 	if sb.Len() == 0 {
-		return "", fmt.Errorf("transcript track was empty")
+		return "", fmt.Errorf("transcript track was empty: %w", errNoCaptions)
 	}
 	return sb.String(), nil
 }

@@ -19,7 +19,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   deliberate last resort when a plain read looks stale (e.g. a live-updating page), within Tavily's
   own monthly cap.
 - **YouTube transcripts** — reads a video's captions straight from its watch page via `yt-dlp`, so
-  a shared link is as researchable as any article.
+  a shared link is as researchable as any article. If YouTube blocks the free fetch, the assistant
+  can retry through Tavily (when configured), within the same monthly cap.
 - **Weather** — current conditions and a short forecast via Open-Meteo, no API key.
 - **Wikipedia / arXiv lookup** — an encyclopedia summary or paper abstract pulled directly from
   source, for a cleaner citation than a general web search.

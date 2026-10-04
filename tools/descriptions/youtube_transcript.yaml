@@ -6,4 +6,7 @@ description: >-
 api_description: >-
   Fetch the transcript of a YouTube video, given its URL (youtube.com/watch, youtu.be, shorts,
   etc.) or bare video ID. Use when the user shares a YouTube link or a web_search result is a
-  YouTube video worth reading. Fails if the video has no captions available.
+  YouTube video worth reading. Fails if the video has no captions available. YouTube sometimes
+  blocks or rate-limits the default fetch; if the error says so and you still need the transcript,
+  retry once with provider="tavily" (paid and capped — never use it by default or for a video
+  that simply has no captions).

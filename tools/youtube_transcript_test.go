@@ -2,7 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"polaris/tavily"
 )
 
 func TestExtractYouTubeID(t *testing.T) {
@@ -319,5 +324,187 @@ func TestHandleYouTubeTranscript_Success(t *testing.T) {
 	}
 	if len(ctx.Citations) != 1 || ctx.Citations[0].Title != "Test Video" {
 		t.Errorf("citations = %+v, want one citation titled %q", ctx.Citations, "Test Video")
+	}
+}
+
+// tavilyWatchPage is shaped like the real Tavily Extract output captured in
+// the 2026-10-04 spike: title first line, metadata, a description that
+// itself contains a "Transcript of ..." line, then the real "Transcript"
+// section with a one-word cue that stripBoilerplateLines-style filtering
+// would have eaten.
+const tavilyWatchPage = "Test Video Title\nChannel: Someone (verified)\nDescription\n" +
+	"Transcript of the address:\nTranscript\n" +
+	"[0:07] Hello there.\n[0:10] Ah\n[1:02:03] Last line."
+
+func tavilyExtractJSON(t *testing.T, rawContent string) string {
+	t.Helper()
+	b, err := json.Marshal(map[string]interface{}{
+		"results": []map[string]string{{"url": "x", "raw_content": rawContent}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestParseTavilyYouTubeTranscript(t *testing.T) {
+	title, transcript, ok := parseTavilyYouTubeTranscript(tavilyWatchPage, "fallback")
+	if !ok {
+		t.Fatal("expected a transcript")
+	}
+	if title != "Test Video Title" {
+		t.Errorf("title = %q", title)
+	}
+	if transcript != "Hello there. Ah Last line." {
+		t.Errorf("transcript = %q, want timestamps stripped and short cue kept", transcript)
+	}
+}
+
+func TestParseTavilyYouTubeTranscript_NoTranscriptSection(t *testing.T) {
+	// Tavily returns the page with no error and no Transcript section for a
+	// video without captions — absence is the only signal.
+	_, _, ok := parseTavilyYouTubeTranscript("Some Video\nChannel: x\nDescription\nTranscript of nothing here", "fb")
+	if ok {
+		t.Error("ok = true for a page with no Transcript section")
+	}
+}
+
+// tavilyCtx builds a Context wired to a fake Tavily server, with ytDlpPath
+// pointed at a nonexistent binary so any accidental yt-dlp use fails loudly.
+func tavilyCtx(t *testing.T, serverURL string, used int, incremented *int) *Context {
+	t.Helper()
+	ytTranscriptCache.reset()
+	t.Cleanup(ytTranscriptCache.reset)
+	original := ytDlpPath
+	ytDlpPath = filepath.Join(t.TempDir(), "no-such-binary")
+	t.Cleanup(func() { ytDlpPath = original })
+	return &Context{
+		Ctx:                  context.Background(),
+		Emit:                 func(string, map[string]interface{}) {},
+		Tavily:               tavily.NewClientForTest("test-key", serverURL),
+		TavilyUsageThisMonth: func() (int, error) { return used, nil },
+		IncrementTavilyUsage: func() error { *incremented++; return nil },
+	}
+}
+
+func TestHandleYouTubeTranscript_TavilyProvider(t *testing.T) {
+	server := fakeJSONServer(t, http.StatusOK, tavilyExtractJSON(t, tavilyWatchPage))
+	incremented := 0
+	ctx := tavilyCtx(t, server.URL, 0, &incremented)
+
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"tavily"}`, ctx, "c")
+	if result != "Hello there. Ah Last line." {
+		t.Errorf("result = %q", result)
+	}
+	if incremented != 1 {
+		t.Errorf("tavily usage incremented %d times, want 1", incremented)
+	}
+	if len(ctx.Citations) != 1 || ctx.Citations[0].Title != "Test Video Title" {
+		t.Errorf("citations = %+v", ctx.Citations)
+	}
+
+	// A second ask for the same video is served from cache: no new credit.
+	handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"tavily"}`, ctx, "c2")
+	if incremented != 1 {
+		t.Errorf("cached repeat spent another credit (incremented = %d)", incremented)
+	}
+}
+
+func TestHandleYouTubeTranscript_TavilyNoCaptionsCountsCreditNoHint(t *testing.T) {
+	server := fakeJSONServer(t, http.StatusOK, tavilyExtractJSON(t, "Captionless\nChannel: x\nDescription\nnothing"))
+	incremented := 0
+	ctx := tavilyCtx(t, server.URL, 0, &incremented)
+
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"tavily"}`, ctx, "c")
+	if !strings.HasPrefix(result, "error:") || !strings.Contains(result, "no captions") {
+		t.Errorf("result = %q, want a no-captions error", result)
+	}
+	if strings.Contains(result, `provider="tavily"`) {
+		t.Errorf("result = %q, must not re-suggest tavily", result)
+	}
+	if incremented != 1 {
+		t.Errorf("incremented = %d, want 1 (the credit was spent)", incremented)
+	}
+}
+
+func TestHandleYouTubeTranscript_TavilyCapReached(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	t.Cleanup(server.Close)
+	incremented := 0
+	ctx := tavilyCtx(t, server.URL, tavilyMonthlyCap, &incremented)
+
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"tavily"}`, ctx, "c")
+	if !strings.Contains(result, "monthly cap") {
+		t.Errorf("result = %q, want a cap error", result)
+	}
+	if called {
+		t.Error("Tavily was called despite the cap being reached")
+	}
+}
+
+func TestHandleYouTubeTranscript_TavilyNotConfigured(t *testing.T) {
+	ytTranscriptCache.reset()
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"tavily"}`, ctx, "c")
+	if !strings.Contains(result, "requires Tavily to be configured") {
+		t.Errorf("result = %q", result)
+	}
+}
+
+func TestHandleYouTubeTranscript_UnknownProvider(t *testing.T) {
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ","provider":"bing"}`, ctx, "c")
+	if !strings.Contains(result, "unknown provider") {
+		t.Errorf("result = %q", result)
+	}
+}
+
+// The hint is what lets the model reach the opt-in provider at all, so
+// when it appears matters as much as the provider itself: only for "we
+// couldn't get it" failures, only with Tavily configured, never for a
+// genuinely caption-less video.
+func TestHandleYouTubeTranscript_TavilyHint(t *testing.T) {
+	tavilyConfigured := func() *Context {
+		return &Context{
+			Ctx:    context.Background(),
+			Emit:   func(string, map[string]interface{}) {},
+			Tavily: tavily.NewClientForTest("k", "http://unused.invalid"),
+		}
+	}
+	const blocked = `
+echo "ERROR: Video unavailable" >&2
+exit 1
+`
+	const noCaptions = `
+for arg in "$@"; do
+	if [ "$arg" = "-j" ]; then
+		echo '{"title":"T","subtitles":{},"automatic_captions":{}}'
+		exit 0
+	fi
+done
+exit 1
+`
+	cases := []struct {
+		name     string
+		script   string
+		ctx      *Context
+		wantHint bool
+	}{
+		{"blocked, tavily configured", blocked, tavilyConfigured(), true},
+		{"blocked, tavily not configured", blocked, &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}, false},
+		{"no captions, tavily configured", noCaptions, tavilyConfigured(), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			writeFakeYtDlp(t, c.script)
+			result := handleYouTubeTranscript(`{"url":"dQw4w9WgXcQ"}`, c.ctx, "c")
+			if !strings.HasPrefix(result, "error:") {
+				t.Fatalf("result = %q, want an error", result)
+			}
+			if got := strings.Contains(result, `provider="tavily"`); got != c.wantHint {
+				t.Errorf("hint present = %v, want %v (result %q)", got, c.wantHint, result)
+			}
+		})
 	}
 }
