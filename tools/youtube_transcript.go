@@ -55,6 +55,20 @@
 // them at all is the thing YouTube is actually blocking, independent of
 // the bot check — that's a real, accepted limitation of the
 // no-cookies approach this tool uses, not a bug in this fix.
+//
+// 2026-10: the next real-world failure wasn't a bot check at all — it was
+// HTTP 429 on the *subtitle download* (the info call kept working) whenever
+// several threads asked for transcripts at once. Reproduced live on the
+// potato: four concurrent fetches → two 429s, and the 429 then outlived the
+// burst, so even a spaced-out retry seconds later failed on its first
+// request, while the same video fetched alone after a pause succeeded. So
+// this is a per-IP rate limit with a cooldown tail, not a missing-cookie
+// problem, and every failed attempt prolongs it. fetchYouTubeTranscript now
+// (1) runs one fetch at a time process-wide, with a minimum gap between
+// them, (2) retries a 429 with backoff instead of surfacing it, and (3)
+// caches successes briefly so N threads asking about the same video cost one
+// fetch. Cookies were deliberately not added: they don't address a rate
+// limit, and a logged-in session scraped this way risks the account itself.
 package tools
 
 import (
@@ -69,6 +83,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"polaris/llm"
@@ -217,7 +232,126 @@ func fetchYouTubeTranscript(ctx context.Context, videoID string) (title, transcr
 	if err := checkYtDlpAvailable(ctx); err != nil {
 		return "", "", err
 	}
+	if t, tr, ok := ytTranscriptCache.get(videoID); ok {
+		return t, tr, nil
+	}
 
+	// A one-slot channel rather than a sync.Mutex so a thread whose own
+	// turn is cancelled stops waiting instead of queueing behind others.
+	select {
+	case ytDlpGate <- struct{}{}:
+	case <-ctx.Done():
+		return "", "", ctx.Err()
+	}
+	defer func() { <-ytDlpGate }()
+
+	// Re-check now that we hold the gate: another thread asking for this
+	// same video while we waited has probably just filled the cache.
+	if t, tr, ok := ytTranscriptCache.get(videoID); ok {
+		return t, tr, nil
+	}
+
+	if wait := ytDlpMinGap - time.Since(ytDlpLastDone); wait > 0 {
+		if err := sleepCtx(ctx, wait); err != nil {
+			return "", "", err
+		}
+	}
+	defer func() { ytDlpLastDone = time.Now() }()
+
+	for attempt := 0; ; attempt++ {
+		title, transcript, err = fetchYouTubeTranscriptOnce(ctx, videoID)
+		if err == nil {
+			ytTranscriptCache.put(videoID, title, transcript)
+			return title, transcript, nil
+		}
+		if !isYouTubeRateLimited(err) || attempt >= len(ytRateLimitBackoffs) {
+			if isYouTubeRateLimited(err) {
+				err = fmt.Errorf("YouTube is rate-limiting transcript requests from this server right now (HTTP 429) — retrying later usually works: %w", err)
+			}
+			return title, "", err
+		}
+		log.Warn("youtube_transcript rate-limited, backing off", "video_id", videoID, "attempt", attempt+1, "backoff", ytRateLimitBackoffs[attempt])
+		if err := sleepCtx(ctx, ytRateLimitBackoffs[attempt]); err != nil {
+			return "", "", err
+		}
+	}
+}
+
+// ytDlpGate serializes yt-dlp use process-wide — see the package doc
+// comment's 2026-10 note. ytDlpLastDone is only touched while holding it.
+var (
+	ytDlpGate     = make(chan struct{}, 1)
+	ytDlpLastDone time.Time
+)
+
+// ytDlpMinGap and ytRateLimitBackoffs are vars so tests can zero them out.
+// 429s here have a cooldown tail (a spaced retry seconds after a burst still
+// failed live), so the backoffs are long relative to a normal HTTP retry.
+var (
+	ytDlpMinGap         = 2 * time.Second
+	ytRateLimitBackoffs = []time.Duration{8 * time.Second, 20 * time.Second}
+)
+
+// isYouTubeRateLimited recognizes yt-dlp's surfaced 429, which only arrives
+// as free text on stderr ("HTTP Error 429: Too Many Requests").
+func isYouTubeRateLimited(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "429")
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ytTranscriptCacheTTL is short on purpose: long enough that concurrent
+// threads (or a retry/regenerate) on the same video share one fetch, short
+// enough that a video whose captions were just added or fixed isn't stale.
+const ytTranscriptCacheTTL = time.Hour
+
+type ytCacheEntry struct {
+	title, transcript string
+	expires           time.Time
+}
+
+type ytCache struct {
+	mu sync.Mutex
+	m  map[string]ytCacheEntry
+}
+
+var ytTranscriptCache = &ytCache{m: map[string]ytCacheEntry{}}
+
+func (c *ytCache) get(id string) (title, transcript string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, found := c.m[id]
+	if !found || time.Now().After(e.expires) {
+		delete(c.m, id)
+		return "", "", false
+	}
+	return e.title, e.transcript, true
+}
+
+func (c *ytCache) put(id, title, transcript string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m[id] = ytCacheEntry{title, transcript, time.Now().Add(ytTranscriptCacheTTL)}
+}
+
+func (c *ytCache) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m = map[string]ytCacheEntry{}
+}
+
+// fetchYouTubeTranscriptOnce is one full info + subtitle attempt, with no
+// gating, caching, or retry — those wrap it in fetchYouTubeTranscript.
+func fetchYouTubeTranscriptOnce(ctx context.Context, videoID string) (title, transcript string, err error) {
 	info, err := fetchYtDlpInfo(ctx, videoID)
 	if err != nil {
 		return "", "", err

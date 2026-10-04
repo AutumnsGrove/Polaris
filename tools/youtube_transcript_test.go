@@ -2,11 +2,14 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestExtractYouTubeID(t *testing.T) {
@@ -115,7 +118,18 @@ func writeFakeYtDlp(t *testing.T, script string) {
 	}
 	original := ytDlpPath
 	ytDlpPath = path
-	t.Cleanup(func() { ytDlpPath = original })
+	// The cache, gap, and backoffs are process-wide state: without this
+	// reset, one test's cached success would satisfy the next test's fetch
+	// of the same video ID, and the real 2s gap/8s backoff would make the
+	// suite crawl.
+	originalGap, originalBackoffs := ytDlpMinGap, ytRateLimitBackoffs
+	ytDlpMinGap, ytRateLimitBackoffs = 0, []time.Duration{time.Millisecond, time.Millisecond}
+	ytTranscriptCache.reset()
+	t.Cleanup(func() {
+		ytDlpPath = original
+		ytDlpMinGap, ytRateLimitBackoffs = originalGap, originalBackoffs
+		ytTranscriptCache.reset()
+	})
 }
 
 // fakeYtDlpScript recognizes the two invocation shapes fetchYouTubeTranscript
@@ -173,6 +187,98 @@ exit 1
 	_, _, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
 	if err == nil {
 		t.Error("expected an error for a video with no caption tracks")
+	}
+}
+
+// rateLimitedThenOKScript fails the subtitle download with yt-dlp's real
+// 429 stderr text for its first failN calls, then behaves like
+// fakeYtDlpScript. The counter lives next to the stub ($0's directory)
+// since each invocation is a fresh process. Every subtitle call, success or
+// not, also appends a line to calls so tests can count real attempts.
+func rateLimitedThenOKScript(failN int) string {
+	return `
+for arg in "$@"; do
+	if [ "$arg" = "-j" ]; then
+		echo '{"title":"Test Video","subtitles":{},"automatic_captions":{"en":[{"ext":"json3"}]}}'
+		exit 0
+	fi
+done
+d=$(dirname "$0")
+echo x >> "$d/calls"
+n=$(wc -l < "$d/calls")
+if [ "$n" -le ` + fmt.Sprint(failN) + ` ]; then
+	echo "ERROR: Unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests" >&2
+	exit 1
+fi
+prev=""
+for arg in "$@"; do
+	if [ "$prev" = "-o" ]; then
+		echo '{"events":[{"segs":[{"utf8":"This is the transcript."}]}]}' > "$(dirname "$arg")/dQw4w9WgXcQ.en.json3"
+		exit 0
+	fi
+	prev="$arg"
+done
+exit 1
+`
+}
+
+func TestFetchYouTubeTranscript_RetriesRateLimit(t *testing.T) {
+	writeFakeYtDlp(t, rateLimitedThenOKScript(2))
+
+	_, transcript, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("expected recovery after two 429s, got error: %v", err)
+	}
+	if !strings.Contains(transcript, "This is the transcript.") {
+		t.Errorf("transcript = %q", transcript)
+	}
+}
+
+func TestFetchYouTubeTranscript_RateLimitExhaustedGivesClearError(t *testing.T) {
+	writeFakeYtDlp(t, rateLimitedThenOKScript(100))
+
+	_, _, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ")
+	if err == nil || !strings.Contains(err.Error(), "rate-limiting") {
+		t.Errorf("err = %v, want a clear rate-limit error", err)
+	}
+}
+
+// Concurrent threads asking for the same video must cost one real fetch:
+// the first through the gate fills the cache, the rest hit it.
+func TestFetchYouTubeTranscript_ConcurrentSameVideoFetchesOnce(t *testing.T) {
+	writeFakeYtDlp(t, rateLimitedThenOKScript(0))
+	dir := filepath.Dir(ytDlpPath)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, err := fetchYouTubeTranscript(context.Background(), "dQw4w9WgXcQ"); err != nil {
+				t.Errorf("fetch failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if n := strings.Count(string(calls), "x"); n != 1 {
+		t.Errorf("subtitle downloads = %d, want 1 (rest should come from cache)", n)
+	}
+}
+
+// A cancelled context must stop a thread waiting behind the gate rather
+// than leaving it queued.
+func TestFetchYouTubeTranscript_CancelledWhileWaitingForGate(t *testing.T) {
+	writeFakeYtDlp(t, fakeYtDlpScript)
+	ytDlpGate <- struct{}{}
+	defer func() { <-ytDlpGate }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, _, err := fetchYouTubeTranscript(ctx, "dQw4w9WgXcQ")
+	if err == nil {
+		t.Error("expected a context error while the gate was held")
 	}
 }
 
