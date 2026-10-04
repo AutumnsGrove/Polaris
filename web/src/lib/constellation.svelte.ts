@@ -326,7 +326,10 @@ export class ConstellationState {
 	async getStarVersions(id: number): Promise<StarVersion[]> {
 		try {
 			const res = await fetch(`/api/constellation/stars/${id}/versions`);
-			return res.ok ? ((await res.json()) as StarVersion[]) : [];
+			// `?? []` because the cast is compile-time only: a `null` body
+			// (the server's old shape for a never-updated star) would
+			// otherwise reach callers' `.length` and throw.
+			return res.ok ? (((await res.json()) as StarVersion[] | null) ?? []) : [];
 		} catch {
 			return [];
 		}

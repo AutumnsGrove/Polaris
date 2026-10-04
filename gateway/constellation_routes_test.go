@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"polaris/llm"
@@ -273,6 +274,30 @@ func TestHandleGetConstellationStar_IncludesSourcesAndEdges(t *testing.T) {
 	}
 	if len(got.Edges) != 1 || got.Edges[0].OtherStarID != b {
 		t.Errorf("Edges = %+v, want the link to star B", got.Edges)
+	}
+}
+
+// A star with no content-merge history must serialize its versions as `[]`,
+// not `null` — the star detail page calls .length on the result before it
+// fetches neighbor stars, so a null here silently hid the mini-map.
+func TestHandleGetConstellationStarVersions_EmptyIsArrayNotNull(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	id, _ := h.db.CreateStar(store.Star{Title: "Never updated", Category: "technology", Status: "auto"})
+
+	resp, err := http.Get(h.url("/api/constellation/stars/" + itoa(id) + "/versions"))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var raw bytes.Buffer
+	if _, err := raw.ReadFrom(resp.Body); err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if got := strings.TrimSpace(raw.String()); got != "[]" {
+		t.Errorf("body = %q, want []", got)
 	}
 }
 

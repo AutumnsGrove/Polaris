@@ -552,6 +552,14 @@ func (s *Server) handleGetConstellationStarVersions(w http.ResponseWriter, r *ht
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// A star that has never been content-merged has zero versions, and a nil
+	// slice marshals to JSON `null`, not `[]`. The star detail page does
+	// `(await getStarVersions(id)).length`, which threw on that null and
+	// aborted load() before it fetched neighbor stars — so any never-updated
+	// star silently lost its "Nearby in the constellation" mini-map.
+	if versions == nil {
+		versions = []store.StarVersion{}
+	}
 	writeJSON(w, versions)
 }
 
