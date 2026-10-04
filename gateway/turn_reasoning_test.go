@@ -88,9 +88,15 @@ func TestHandleTurn_ReasoningBurstsPersistInOrderAroundToolCalls(t *testing.T) {
 		if e.Message == "reasoning" {
 			var data struct {
 				Content string `json:"content"`
+				// Pointer so a missing field is distinguishable from a real 0ms
+				// burst — the header's "Thought for Ns" depends on it persisting.
+				DurationMs *int64 `json:"duration_ms"`
 			}
 			if err := json.Unmarshal([]byte(e.Data), &data); err != nil {
 				t.Fatalf("unmarshaling reasoning event data: %v", err)
+			}
+			if data.DurationMs == nil || *data.DurationMs < 0 {
+				t.Errorf("reasoning event %q has duration_ms = %v, want a non-negative value", data.Content, data.DurationMs)
 			}
 			reasoningContents = append(reasoningContents, data.Content)
 		}

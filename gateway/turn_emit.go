@@ -40,6 +40,13 @@ type turnEmitter struct {
 	// the end regardless of when it really happened.
 	reasoningBuf strings.Builder
 
+	// reasoningStartedAt is when the current burst's first chunk arrived —
+	// flushReasoning persists the elapsed time as duration_ms so a reopened
+	// thread's "Thought for 12s" header matches what streamed live (the
+	// frontend can't recompute it: a reloaded burst has no timestamps of
+	// its own, just the one row).
+	reasoningStartedAt time.Time
+
 	// firstTokenAt/tokenEventCount/toolCallEventCount back the Oracle mode
 	// turn-info sheet's TTFT/tokens-per-second/tool-call-count stats
 	// (docs/plans/oracle-mode.md) — read under emitMu below, after
@@ -61,8 +68,13 @@ func (e *turnEmitter) flushReasoning() {
 	if e.reasoningBuf.Len() == 0 {
 		return
 	}
-	e.s.db.LogEvent(e.storageThreadID, "info", "turn", "reasoning", map[string]interface{}{"content": e.reasoningBuf.String()}, e.turnID)
+	data := map[string]interface{}{"content": e.reasoningBuf.String()}
+	if !e.reasoningStartedAt.IsZero() {
+		data["duration_ms"] = time.Since(e.reasoningStartedAt).Milliseconds()
+	}
+	e.s.db.LogEvent(e.storageThreadID, "info", "turn", "reasoning", data, e.turnID)
 	e.reasoningBuf.Reset()
+	e.reasoningStartedAt = time.Time{}
 }
 
 // emit both streams the event to the browser (send) and, for the
@@ -128,6 +140,9 @@ func (e *turnEmitter) emit(eventType string, payload map[string]interface{}) {
 		evt.CostUSD = v
 	}
 	if eventType == "reasoning" {
+		if e.reasoningBuf.Len() == 0 {
+			e.reasoningStartedAt = time.Now()
+		}
 		e.reasoningBuf.WriteString(evt.Content)
 	} else {
 		e.flushReasoning()
