@@ -92,7 +92,16 @@ FROM alpine:3.20
 # a Python script) plus a few MB for the package itself, not python3 +
 # ffmpeg + friends. Worth keeping an eye on if this ever needs to grow
 # (a future tool wanting actual video/audio would need ffmpeg back).
-RUN apk add --no-cache ca-certificates python3 py3-pip && \
+#
+# YTDLP_REFRESH: yt-dlp ships fixes for YouTube's anti-bot changes
+# constantly, but this RUN line's text never changes, so CI's GHA layer
+# cache (cache-from: type=gha) kept reusing the August install forever —
+# the live container was six weeks stale. CI passes the ISO week here so
+# the layer rebuilds weekly. A changed ARG value invalidates every RUN
+# after it, hence the explicit reference below.
+ARG YTDLP_REFRESH=unset
+RUN : "yt-dlp refresh: ${YTDLP_REFRESH}" && \
+    apk add --no-cache ca-certificates python3 py3-pip && \
     pip install --break-system-packages --no-cache-dir yt-dlp && \
     find /usr/lib/python3* -name '__pycache__' -exec rm -rf {} + && \
     rm -rf /root/.cache /usr/lib/python3*/site-packages/pip* && \
