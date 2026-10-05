@@ -167,31 +167,30 @@ var Registry = []config.ModelConfig{
 		Pricing: &config.PricingConfig{PromptPerM: 0.04, CompletionPerM: 0.15},
 	},
 	{
-		// Replaces nemotron-ultra (2026-09-14): that model's single free
-		// provider (Nvidia direct) was failing 2 of 3 concurrent requests
-		// with 502 "Service temporarily overloaded" in live testing, and
-		// even successful calls took 45-90s for a one-line reply (matches
-		// OpenRouter's own endpoint metadata: p50 latency ~47s).
-		// thinkingmachines/inkling:free was fast and multimodal too, but
-		// its free tier 403s on every request regardless of caller
-		// (`"failed_routing_step": "Gate Free Endpoints by Agentic
-		// Harness"`) unless the app is on OpenRouter's own allowlist of
-		// recognized coding-agent tools — no header combination gets past
-		// it, since the gate checks app identity at OpenRouter's routing
-		// layer, not request contents. google/gemma-4-26b-a4b-it:free
-		// worked but is served via Google AI Studio's BYOK quota
-		// (`is_byok: true` on every response) rather than a pooled
-		// OpenRouter allowance. This model live-tested clean on a pooled
-		// allowance (`is_byok: false`): 5/5 concurrent requests under
-		// 1.25s, plain text, tool calls, and reasoning all confirmed
-		// working via direct OpenRouter API calls. Genuinely multimodal
-		// per live endpoint metadata (input_modalities includes
-		// image+video) — the free-tier model a non-paying user can
-		// actually attach images to.
-		ID:          "ling-flash-vl",
-		Name:        "Ling 3.0 Flash VL (Free)",
-		Model:       "inclusionai/ling-3.0-flash-vl:free",
-		Provider:    []string{"novita/bf16"},
+		// Replaces ling-flash-vl (2026-10-05): inclusionai/ling-3.0-flash-
+		// vl:free stopped being free — OpenRouter now lists it at a paid
+		// rate — and every other :free model we tried (nemotron-ultra,
+		// inkling:free, gemma-4-26b-a4b-it:free) had unusable rate limits,
+		// gated routing, or poor quality. So the "cheapest model we offer"
+		// slot is now pinned to the cheapest *good* paid model instead of
+		// chasing a free one: $0.10/$0.20 per M in/out, $0.002/M cache
+		// reads, per GET /api/v1/models/meta/muse-spark-1.3-contributor/
+		// endpoints (single Meta provider, ~99.95% 1-day uptime).
+		// Multimodal (text+image+video+file in), 1M-token context,
+		// tool_choice none/auto/required/function all supported.
+		//
+		// Privacy tradeoff, accepted deliberately: the Contributor tier is
+		// NOT zero-data-retention. Meta retains prompts/completions and
+		// trains on them. That is the price of the lowest rate on the
+		// list; don't route anything sensitive here, and don't assume it
+		// shares the privacy posture of the other entries. New ID rather
+		// than reusing "ling-flash-vl" since this is a different model;
+		// threads still pointing at the old ID fall back to the default
+		// via config.ModelByID.
+		ID:          "muse-spark",
+		Name:        "Muse Spark 1.3 Contributor",
+		Model:       "meta/muse-spark-1.3-contributor",
+		Provider:    []string{"meta"},
 		Temperature: 0.4,
 		MaxTokens:   32000,
 		Reasoning: &config.ReasoningConfig{
@@ -199,6 +198,6 @@ var Registry = []config.ModelConfig{
 			Effort:  "medium",
 		},
 		Multimodal: true,
-		Pricing:    &config.PricingConfig{PromptPerM: 0, CompletionPerM: 0},
+		Pricing:    &config.PricingConfig{PromptPerM: 0.10, CompletionPerM: 0.20},
 	},
 }

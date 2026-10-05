@@ -18,7 +18,7 @@ harness — not just the existing `benchmark/` package, which is accurate but co
 run (BrowseComp-scale runs would run something like $200/run at the size discussed) and is too
 slow to be an inner loop. There's also a live side-interest: comparing Polaris's own configured
 models (`models/models.go`: MiMo v2.6 Flash, MiMo v2.6 Pro, DeepSeek V4.1 Flash, ChatGPT Luna,
-Mercury 2.5, Ling 3.0 Flash VL) against each other for everyday use, which the harness should
+Mercury 2.5, Muse Spark 1.3 Contributor) against each other for everyday use, which the harness should
 support as close to for-free as the objectives eval does.
 
 ## Part 1 — What other projects optimize for
