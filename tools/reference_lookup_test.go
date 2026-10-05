@@ -4,7 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestHandleReferenceLookup_QueryRequired(t *testing.T) {
@@ -96,5 +99,46 @@ func TestHandleReferenceLookup_Arxiv(t *testing.T) {
 	}
 	if ctx.Citations[0].ImageURL != arxivLogoURL {
 		t.Errorf("Citations[0].ImageURL = %q, want the shared arXiv source badge", ctx.Citations[0].ImageURL)
+	}
+}
+
+// arXiv throttles with 429 "Rate exceeded" (seen live, 2026-10); one spaced
+// retry should ride that out, but a persistent 429 must still surface.
+func TestHandleReferenceLookup_ArxivRetriesOn429(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			http.Error(w, "Rate exceeded.", http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/1</id><title>T</title><summary>S</summary></entry></feed>`))
+	}))
+	t.Cleanup(srv.Close)
+	origURL, origDelay := arxivAPIBaseURL, arxivRetryDelay
+	arxivAPIBaseURL, arxivRetryDelay = srv.URL, time.Millisecond
+	t.Cleanup(func() { arxivAPIBaseURL, arxivRetryDelay = origURL, origDelay })
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleReferenceLookup(`{"source":"arxiv","query":"x"}`, ctx, "c")
+	if strings.HasPrefix(result, "error:") || atomic.LoadInt32(&calls) != 2 {
+		t.Fatalf("result=%q calls=%d, want success after exactly one retry", result, calls)
+	}
+}
+
+func TestHandleReferenceLookup_ArxivPersistent429Surfaces(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		http.Error(w, "Rate exceeded.", http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srv.Close)
+	origURL, origDelay := arxivAPIBaseURL, arxivRetryDelay
+	arxivAPIBaseURL, arxivRetryDelay = srv.URL, time.Millisecond
+	t.Cleanup(func() { arxivAPIBaseURL, arxivRetryDelay = origURL, origDelay })
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	result := handleReferenceLookup(`{"source":"arxiv","query":"x"}`, ctx, "c")
+	if !strings.Contains(result, "status 429") || atomic.LoadInt32(&calls) != 2 {
+		t.Fatalf("result=%q calls=%d, want 429 error after 2 attempts", result, calls)
 	}
 }
