@@ -1,12 +1,12 @@
 name: show
 description: >-
   display an image or workspace file large and inline, right where you called it — a hand-picked
-  subset of image_search results, a remote image URL, or a file you wrote with code_exec (an image
+  subset of image_search, books, movies or music results (covers/posters), a remote image URL, or a file you wrote with code_exec (an image
   renders large; anything else, like a report or CSV, renders as a tappable artifact card with its
   own viewer and download link).
 api_description: >-
   Display something right at this point in your reply, with an optional caption. Pass exactly one
-  source. image_indices: the numbers of the image_search results worth showing — ONLY the good
+  source. image_indices: the numbers of the image_search (or books/movies/music) results worth showing — ONLY the good
   ones; one renders large, several render as a masonry gallery (no reliable left/right order, so
   write captions that name what's in the images, not where they sit), and nothing is shown to the user from an
   image_search until you call this (or highlight, which also displays picked images, as link-out

@@ -126,7 +126,7 @@ func (s *Store) LogOracleJevCost(costUSD float64) error {
 // LogCompareJevCost is LogJevCost for the compare_sources tool — same
 // ledger (the monthly cap sums every row regardless of source), tagged so
 // Stats can count it apart from per-claim verification badges, which keep
-// source = ''. Rows written before this value existed stay lumped under ''
+// source = ”. Rows written before this value existed stay lumped under ”
 // and read as badges (issue #151).
 func (s *Store) LogCompareJevCost(costUSD float64) error {
 	_, err := s.db.Exec(`INSERT INTO jev_usage (cost_usd, source) VALUES (?, 'compare')`, costUSD)

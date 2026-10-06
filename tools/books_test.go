@@ -146,8 +146,12 @@ func TestHandleBooks_NoHardcoverKey_UsesOpenLibrary(t *testing.T) {
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://openlibrary.org/works/OL1W" {
 		t.Errorf("Citations = %+v, want the open library source citation", ctx.Citations)
 	}
-	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Discovery Book" || ctx.Cards[0].ImageURL == "" {
-		t.Errorf("Cards = %+v, want one card with cover art for the discovery", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
+	}
+	if len(cands) != 1 || cands[0].Title != "Discovery Book" || cands[0].ImageURL == "" {
+		t.Errorf("pool = %+v, want one card with cover art for the discovery", cands)
 	}
 }
 
@@ -205,8 +209,12 @@ func TestHandleBooks_HardcoverSuccess_AggregatesAcrossLists(t *testing.T) {
 	if len(ctx.Citations) != 1 || ctx.Citations[0].URL != "https://hardcover.app/books/source-book" {
 		t.Errorf("Citations = %+v, want the hardcover source citation", ctx.Citations)
 	}
-	if len(ctx.Cards) != 5 {
-		t.Errorf("Cards = %+v, want one card per unique candidate", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
+	}
+	if len(cands) != 5 {
+		t.Errorf("pool = %+v, want one card per unique candidate", cands)
 	}
 }
 
