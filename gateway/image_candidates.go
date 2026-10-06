@@ -43,7 +43,7 @@ func saveImageCandidates(db *store.Store, threadID string, ctx *tools.Context) {
 	}
 	blobs := make([]string, len(cards))
 	for i, card := range cards {
-		if card.ImageURL == "" && card.FullImageURL == "" {
+		if card.ImageURL == "" && card.FullImageURL == "" && card.URL == "" {
 			continue
 		}
 		b, err := json.Marshal(card)

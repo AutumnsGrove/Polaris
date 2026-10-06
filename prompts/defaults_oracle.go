@@ -109,11 +109,14 @@ func oracleDefaults(d *Set) {
 					"ratings — use it rather than relying on web_search alone, and include those specifics.",
 				"book": "This is about books. Use the books tool for real bibliographic data. If more than one " +
 					"title fits, briefly say how they differ (focus, tone, audience, depth) so the choice is " +
-					"easy, rather than just listing them.",
+					"easy, rather than just listing them. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"film_tv": "This is about film or TV. Use the movies tool for real details (year, cast, runtime, " +
-					"where it's streaming if available). If recommending several, say what distinguishes each.",
+					"where it's streaming if available). If recommending several, say what distinguishes each. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"music": "This is about music. Use the music tool for real release and artist data. If recommending " +
-					"several, say what distinguishes each.",
+					"several, say what distinguishes each. " +
+					"Its results aren't shown automatically — put your picks on screen with highlight (image_index + a short why).",
 				"product": "This is about a product. Compare real, currently available options with actual prices " +
 					"and the tradeoffs that matter for this use — not a generic feature list.",
 				"weather": "This is about weather. Use the weather tool rather than a web search.",

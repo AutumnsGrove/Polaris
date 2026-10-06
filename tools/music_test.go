@@ -171,11 +171,15 @@ func TestHandleMusic_TrackMode_ResolvesToHighestListenerVariant(t *testing.T) {
 	if ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
 		t.Errorf("Citations[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Citations[0].ImageURL)
 	}
-	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Cool Track" || ctx.Cards[0].Subtitle != "Other Artist" {
-		t.Errorf("Cards = %+v, want one card for the similar track", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
 	}
-	if ctx.Cards[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
-		t.Errorf("Cards[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Cards[0].ImageURL)
+	if len(cands) != 1 || cands[0].Title != "Cool Track" || cands[0].Subtitle != "Other Artist" {
+		t.Errorf("pool = %+v, want one card for the similar track", cands)
+	}
+	if cands[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
+		t.Errorf("Cards[0].ImageURL = %q, want the Deezer cover art enrichment", cands[0].ImageURL)
 	}
 }
 
@@ -246,8 +250,12 @@ func TestHandleMusic_AlbumTracksMode_AggregatesAcrossTracklist(t *testing.T) {
 	if ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
 		t.Errorf("Citations[0].ImageURL = %q, want the Deezer cover art enrichment", ctx.Citations[0].ImageURL)
 	}
-	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Shared Hit" || ctx.Cards[0].Subtitle != "Discovery Artist" {
-		t.Errorf("Cards = %+v, want one card for the shared-hit recommendation, none for the excluded same-artist track", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
+	}
+	if len(cands) != 1 || cands[0].Title != "Shared Hit" || cands[0].Subtitle != "Discovery Artist" {
+		t.Errorf("pool = %+v, want one card for the shared-hit recommendation, none for the excluded same-artist track", cands)
 	}
 }
 
@@ -307,11 +315,15 @@ func TestHandleMusic_SimilarAlbumsMode_ResolvesCandidatesToAlbums(t *testing.T) 
 	if len(ctx.Citations) != 1 || ctx.Citations[0].ImageURL != "https://cdn.deezer.example/cover.jpg" {
 		t.Errorf("Citations = %+v, want the Deezer cover art enrichment on the source album citation", ctx.Citations)
 	}
-	if len(ctx.Cards) != 1 || ctx.Cards[0].Title != "Discovery Album" || ctx.Cards[0].Subtitle != "Discovery Artist" {
-		t.Errorf("Cards = %+v, want one card for the resolved similar album", ctx.Cards)
+	cands := ctx.ImageCandidatesSnapshot()
+	if len(ctx.Cards) != 0 {
+		t.Errorf("Cards = %+v, want none: recommendations display only once the model picks them", ctx.Cards)
 	}
-	if ctx.Cards[0].URL != "https://last.fm/discovery-album" {
-		t.Errorf("Cards[0].URL = %q, want the resolved album's own URL", ctx.Cards[0].URL)
+	if len(cands) != 1 || cands[0].Title != "Discovery Album" || cands[0].Subtitle != "Discovery Artist" {
+		t.Errorf("pool = %+v, want one card for the resolved similar album", cands)
+	}
+	if cands[0].URL != "https://last.fm/discovery-album" {
+		t.Errorf("Cards[0].URL = %q, want the resolved album's own URL", cands[0].URL)
 	}
 }
 

@@ -31,11 +31,12 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Dictionary** — definitions, part of speech, and an example sentence from Wiktionary, with a
   second source as fallback.
 - **Music recommendations** — "find me songs/albums like this" grounded in Last.fm's similarity
-  data, shown as a cover-art carousel. Requires a free Last.fm API key.
+  data. Requires a free Last.fm API key.
 - **Book recommendations** — grounded in Hardcover.app's curated reader lists, falling back to
-  Open Library's shared-subject data when Hardcover isn't configured. Same carousel as music.
+  Open Library's shared-subject data when Hardcover isn't configured.
 - **Movie & TV recommendations** — grounded in TMDB's audience-recommendation data. Requires a
-  free TMDB API key.
+  free TMDB API key. Music, book and movie results come with cover art/posters but only appear on
+  screen when the assistant picks the good ones (as cover cards or a gallery).
 - **Nearby places** — restaurant/pharmacy/etc. search via Foursquare, with distance/category/map
   links, falling back to a plain web search if Foursquare isn't configured. Uses browser
   geolocation for "near me" questions when available (see [SETUP.md](../SETUP.md#configuration)).

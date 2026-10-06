@@ -3,8 +3,10 @@ category: research
 description: >-
   find real book recommendations grounded in readers' curated lists (Hardcover.app) and shared
   subject/genre data (Open Library), not guesswork. Use when the user names a book and wants more
-  like it.
+  like it. Results aren't shown automatically — display your picks with highlight (image_index) or
+  show (image_indices).
 api_description: >-
   Find real book recommendations grounded in readers' curated lists (Hardcover.app) and shared
   subject/genre data (Open Library), not guesswork or hoping a web search turns up a "books like
-  X" listicle. Use when the user names a book and wants more like it.
+  X" listicle. Use when the user names a book and wants more like it. Results are numbered but not displayed: put the ones you'd actually recommend on screen with
+  highlight (image_index + a one-sentence why) or show (image_indices, a cover gallery).

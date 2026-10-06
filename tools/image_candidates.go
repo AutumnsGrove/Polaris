@@ -50,10 +50,18 @@ func (c *Context) ImageCandidate(n int) (card Card, ok bool) {
 		return Card{}, false
 	}
 	card = c.ImageCandidates[n-1]
-	if card.ImageURL == "" && card.FullImageURL == "" {
+	if isCandidateGap(card) {
 		return Card{}, false // a gap, see SeedImageCandidates
 	}
 	return card, true
+}
+
+// isCandidateGap reports a zero-value placeholder left by SeedImageCandidates.
+// A recommendation with no cover (a book Open Library has no art for) is NOT
+// a gap — it still has a URL and can be highlighted — so "no image" alone
+// no longer marks one.
+func isCandidateGap(card Card) bool {
+	return card.ImageURL == "" && card.FullImageURL == "" && card.URL == ""
 }
 
 // ImageCandidatesSnapshot returns a copy of the candidate pool — same
