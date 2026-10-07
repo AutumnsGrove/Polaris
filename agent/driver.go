@@ -703,8 +703,17 @@ func Run(reqCtx context.Context, ctx *tools.Context, history []llm.ChatMessage, 
 		// first, in one pass, and only THEN any nudges from the whole
 		// batch — never interleaved per-call the way a single-call turn
 		// could safely do it.
+		//
+		// Content is carried along too, not just the tool calls: this text was
+		// already streamed to the user (then demoted to commentary above), so
+		// the model has to be able to see it said so. Without it, a model that
+		// writes its whole answer and THEN calls show (image_search -> show is
+		// the usual shape) wakes up on the next iteration with tool results
+		// but no memory of answering, concludes it still owes the user an
+		// answer, and writes it a second time — seen on essentially every
+		// thread that ends in a show call.
 		calls := resp.ToolCalls
-		messages = append(messages, llm.ChatMessage{Role: "assistant", ToolCalls: calls})
+		messages = append(messages, llm.ChatMessage{Role: "assistant", Content: resp.Content, ToolCalls: calls})
 
 		results := dispatchToolCallsConcurrently(calls, ctx)
 		for _, r := range results {

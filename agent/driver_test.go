@@ -393,6 +393,44 @@ func TestRun_ToolCallThenAnswer(t *testing.T) {
 	}
 }
 
+// A turn that says something AND calls a tool (the model writes its answer,
+// then calls show) streams that text to the user, so the next model call must
+// see it in history — otherwise the model has no memory of having answered
+// and writes the whole answer a second time after the tool result.
+func TestRun_ToolTurnTextStaysInHistory(t *testing.T) {
+	mock := &llmtest.MockClient{
+		Responses: []llmtest.Response{
+			{
+				Resp: &llm.ChatResponse{
+					Content: "Here is the full answer.",
+					ToolCalls: []llm.ToolCall{{
+						ID: "call-1", Type: "function",
+						Function: llm.FunctionCall{Name: "think", Arguments: `{"thought":"hmm"}`},
+					}},
+				},
+			},
+			{Resp: &llm.ChatResponse{Content: "Done"}, Chunks: []string{"Done"}},
+		},
+	}
+	ctx := newTestContext(mock, &recordingEmit{}, 5)
+
+	if _, err := Run(context.Background(), ctx, nil, "question"); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if mock.CallCount() != 2 {
+		t.Fatalf("CallCount = %d, want 2", mock.CallCount())
+	}
+	found := false
+	for _, m := range mock.Calls[1].Messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 && m.Content == "Here is the full answer." {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("second call's history is missing the tool turn's own text, got %+v", mock.Calls[1].Messages)
+	}
+}
+
 // TestRun_AskUserQuestionEndsTurn covers the whole "pause the turn instead
 // of blocking in memory" design: ask_user_question must make Run return
 // immediately after dispatching it — never looping back to the model for
