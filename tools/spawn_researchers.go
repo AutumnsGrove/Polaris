@@ -64,7 +64,7 @@ func handleSpawnResearchers(argsJSON string, ctx *Context, callID string) string
 
 	tasks := make([]SubAgentTask, len(args.Tasks))
 	for i, t := range args.Tasks {
-		tasks[i] = SubAgentTask{Objective: t.Objective, Guidance: t.Guidance}
+		tasks[i] = SubAgentTask{Objective: t.Objective, Guidance: t.Guidance, ParentCallID: callID, Index: i}
 	}
 
 	ctx.Emit("tool_call", map[string]interface{}{
@@ -80,18 +80,7 @@ func handleSpawnResearchers(argsJSON string, ctx *Context, callID string) string
 		for _, cit := range report.Citations {
 			ctx.AddCitation(cit)
 		}
-		fmt.Fprintf(&sb, "## Sub-agent %d: %s\n\n", i+1, report.Objective)
-		if len(report.Findings) == 0 {
-			sb.WriteString("(no findings)\n\n")
-			continue
-		}
-		for _, f := range report.Findings {
-			fmt.Fprintf(&sb, "- %s\n", f.Claim)
-			if len(f.Sources) > 0 {
-				fmt.Fprintf(&sb, "  Sources: %s\n", strings.Join(f.Sources, ", "))
-			}
-		}
-		sb.WriteString("\n")
+		fmt.Fprintf(&sb, "## Sub-agent %d: %s\n\n%s\n\n", i+1, report.Objective, report.Summary())
 	}
 	formatted := sb.String()
 

@@ -292,6 +292,17 @@ type ServerEvent struct {
 	// of call order, which caused two concurrent memory writes' results to
 	// get cross-wired onto the wrong timeline card in the frontend.
 	CallID string `json:"call_id,omitempty"`
+	// AgentID is set on every event a Deep Research sub-agent (see
+	// agent.SpawnResearchers) emits, and on its subagent_start/subagent_end
+	// lifecycle events: "<spawn_researchers call_id>.<task index>". The
+	// frontend files tagged events under that agent's own card instead of
+	// the main timeline. Empty for the orchestrator's own events. On
+	// subagent_start/_end, CallID is the parent spawn_researchers call and
+	// Objective/AgentStatus ("done" | "failed", end only) describe the agent;
+	// Result carries its findings summary and Citations its sources.
+	AgentID     string `json:"agent_id,omitempty"`
+	Objective   string `json:"objective,omitempty"`
+	AgentStatus string `json:"agent_status,omitempty"`
 	// Provider is web_search's normalized fallback-source key ("searxng",
 	// "brave", "parallel", "tavily") — set only on web_search's tool_result
 	// events, so store.Store.GetStats can tally how often each fallback

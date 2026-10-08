@@ -196,3 +196,115 @@ func TestSpawnResearchers_BoundsConcurrency(t *testing.T) {
 		t.Errorf("len(reports) = %d, want %d", len(reports), numTasks)
 	}
 }
+
+// recordedEvent is one event captured from a test Emit sink.
+type recordedEvent struct {
+	typ     string
+	payload map[string]interface{}
+}
+
+func captureEmit() (func(string, map[string]interface{}), func() []recordedEvent) {
+	var mu sync.Mutex
+	var events []recordedEvent
+	emit := func(typ string, payload map[string]interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, recordedEvent{typ, payload})
+	}
+	snapshot := func() []recordedEvent {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]recordedEvent(nil), events...)
+	}
+	return emit, snapshot
+}
+
+// TestSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle guards the
+// contract the Deep Research UI is built on: every researcher gets a
+// subagent_start/subagent_end pair keyed by its AgentID, and nothing a
+// researcher streams reaches the turn untagged — in particular its final
+// answer ("token") must not be appended to the orchestrator's visible answer.
+func TestSpawnResearchers_TagsSubAgentEventsAndAnnouncesLifecycle(t *testing.T) {
+	emit, snapshot := captureEmit()
+	baseCtx := &tools.Context{Ctx: context.Background(), Emit: emit}
+	tasks := []tools.SubAgentTask{
+		{Objective: "task A", ParentCallID: "call_x", Index: 0},
+		{Objective: "task B", ParentCallID: "call_x", Index: 1},
+	}
+
+	SpawnResearchers(context.Background(), baseCtx, &taskAwareClient{}, tasks)
+
+	starts, ends := map[string]bool{}, map[string]recordedEvent{}
+	for _, ev := range snapshot() {
+		switch ev.typ {
+		case "subagent_start":
+			starts[ev.payload["agent_id"].(string)] = true
+		case "subagent_end":
+			ends[ev.payload["agent_id"].(string)] = ev
+		case "token", "cost_update":
+			t.Errorf("%q leaked from a sub-agent into the turn's event stream: %v", ev.typ, ev.payload)
+		default:
+			if id, _ := ev.payload["agent_id"].(string); id == "" {
+				t.Errorf("sub-agent event %q has no agent_id: %v", ev.typ, ev.payload)
+			}
+		}
+	}
+	for _, id := range []string{"call_x.0", "call_x.1"} {
+		if !starts[id] {
+			t.Errorf("no subagent_start for %s", id)
+		}
+		end, ok := ends[id]
+		if !ok {
+			t.Errorf("no subagent_end for %s", id)
+			continue
+		}
+		if end.payload["status"] != "done" || !strings.Contains(end.payload["result"].(string), "ok") || end.payload["call_id"] != "call_x" {
+			t.Errorf("subagent_end for %s = %v, want status done, the findings summary, and the parent call_id", id, end.payload)
+		}
+	}
+}
+
+func TestSpawnResearchers_FailedSubAgentEndsWithFailedStatus(t *testing.T) {
+	emit, snapshot := captureEmit()
+	baseCtx := &tools.Context{Ctx: context.Background(), Emit: emit}
+
+	SpawnResearchers(context.Background(), baseCtx, &taskAwareClient{}, []tools.SubAgentTask{{Objective: "SHOULD_FAIL", ParentCallID: "c", Index: 0}})
+
+	for _, ev := range snapshot() {
+		if ev.typ == "subagent_end" {
+			if ev.payload["status"] != "failed" {
+				t.Errorf("status = %v, want failed", ev.payload["status"])
+			}
+			return
+		}
+	}
+	t.Error("no subagent_end emitted for a failed sub-agent — its card would spin forever")
+}
+
+// costClient reports a fixed per-call cost, to prove sub-agent spend reaches
+// the turn total rather than being discarded with the sub-agent's context.
+type costClient struct{ taskAwareClient }
+
+func (c *costClient) ChatCompletionWithTools(ctx context.Context, m []llm.ChatMessage, tl []llm.ToolDef, onChunk, onR func(string)) (*llm.ChatResponse, error) {
+	resp, err := c.taskAwareClient.ChatCompletionWithTools(ctx, m, tl, onChunk, onR)
+	if resp != nil {
+		resp.CostUSD = 0.01
+	}
+	return resp, err
+}
+
+func TestSpawnResearchers_FoldsSubAgentCostIntoTurnTotal(t *testing.T) {
+	baseCtx := &tools.Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	tasks := []tools.SubAgentTask{{Objective: "a", ParentCallID: "c", Index: 0}, {Objective: "b", ParentCallID: "c", Index: 1}, {Objective: "c", ParentCallID: "c", Index: 2}}
+
+	reports := SpawnResearchers(context.Background(), baseCtx, &costClient{}, tasks)
+
+	if got, want := baseCtx.ExtraCostUSD, 0.03; got < want-1e-9 || got > want+1e-9 {
+		t.Errorf("baseCtx.ExtraCostUSD = %v, want %v (3 sub-agents at $0.01)", got, want)
+	}
+	for i, r := range reports {
+		if r.CostUSD < 0.01-1e-9 {
+			t.Errorf("reports[%d].CostUSD = %v, want 0.01", i, r.CostUSD)
+		}
+	}
+}

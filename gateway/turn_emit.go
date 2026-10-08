@@ -38,14 +38,12 @@ type turnEmitter struct {
 	// item "done" — so a reopened thread's reasoning lands in the same
 	// position in the timeline it actually streamed in, not tacked onto
 	// the end regardless of when it really happened.
-	reasoningBuf strings.Builder
-
-	// reasoningStartedAt is when the current burst's first chunk arrived —
-	// flushReasoning persists the elapsed time as duration_ms so a reopened
-	// thread's "Thought for 12s" header matches what streamed live (the
-	// frontend can't recompute it: a reloaded burst has no timestamps of
-	// its own, just the one row).
-	reasoningStartedAt time.Time
+	//
+	// One burst per agent, keyed by agent ID ("" is the orchestrator): Deep
+	// Research runs several sub-agents concurrently, and a single shared
+	// buffer would splice their thinking together into one garbled row that
+	// every non-reasoning event from any agent then cut short.
+	reasoning map[string]*reasoningBurst
 
 	// firstTokenAt/tokenEventCount/toolCallEventCount back the Oracle mode
 	// turn-info sheet's TTFT/tokens-per-second/tool-call-count stats
@@ -59,22 +57,48 @@ type turnEmitter struct {
 	toolCallEventCount int
 }
 
-func newTurnEmitter(s *Server, send func(ServerEvent), threadID, storageThreadID, turnID string) *turnEmitter {
-	return &turnEmitter{s: s, send: send, threadID: threadID, storageThreadID: storageThreadID, turnID: turnID}
+// reasoningBurst is one agent's in-progress reasoning stream. startedAt is
+// when its first chunk arrived — flushing persists the elapsed time as
+// duration_ms so a reopened thread's "Thought for 12s" header matches what
+// streamed live (the frontend can't recompute it: a reloaded burst has no
+// timestamps of its own, just the one row).
+type reasoningBurst struct {
+	buf       strings.Builder
+	startedAt time.Time
 }
 
-// flushReasoning persists the buffered reasoning burst as a single event row.
+func newTurnEmitter(s *Server, send func(ServerEvent), threadID, storageThreadID, turnID string) *turnEmitter {
+	return &turnEmitter{s: s, send: send, threadID: threadID, storageThreadID: storageThreadID, turnID: turnID, reasoning: map[string]*reasoningBurst{}}
+}
+
+// flushReasoning persists every agent's buffered reasoning burst — called
+// once the turn's agent loop has returned, when nothing can still be
+// streaming.
 func (e *turnEmitter) flushReasoning() {
-	if e.reasoningBuf.Len() == 0 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for agentID := range e.reasoning {
+		e.flushReasoningLocked(agentID)
+	}
+}
+
+// flushReasoningLocked persists one agent's buffered reasoning burst as a
+// single event row. Caller holds e.mu.
+func (e *turnEmitter) flushReasoningLocked(agentID string) {
+	burst := e.reasoning[agentID]
+	if burst == nil || burst.buf.Len() == 0 {
 		return
 	}
-	data := map[string]interface{}{"content": e.reasoningBuf.String()}
-	if !e.reasoningStartedAt.IsZero() {
-		data["duration_ms"] = time.Since(e.reasoningStartedAt).Milliseconds()
+	data := map[string]interface{}{"content": burst.buf.String()}
+	if !burst.startedAt.IsZero() {
+		data["duration_ms"] = time.Since(burst.startedAt).Milliseconds()
+	}
+	if agentID != "" {
+		data["agent_id"] = agentID
 	}
 	e.s.db.LogEvent(e.storageThreadID, "info", "turn", "reasoning", data, e.turnID)
-	e.reasoningBuf.Reset()
-	e.reasoningStartedAt = time.Time{}
+	burst.buf.Reset()
+	burst.startedAt = time.Time{}
 }
 
 // emit both streams the event to the browser (send) and, for the
@@ -139,13 +163,29 @@ func (e *turnEmitter) emit(eventType string, payload map[string]interface{}) {
 	if v, ok := payload["cost_usd"].(float64); ok {
 		evt.CostUSD = v
 	}
+	if v, ok := payload["agent_id"].(string); ok {
+		evt.AgentID = v
+	}
+	if v, ok := payload["objective"].(string); ok {
+		evt.Objective = v
+	}
+	if v, ok := payload["status"].(string); ok {
+		evt.AgentStatus = v
+	}
 	if eventType == "reasoning" {
-		if e.reasoningBuf.Len() == 0 {
-			e.reasoningStartedAt = time.Now()
+		burst := e.reasoning[evt.AgentID]
+		if burst == nil {
+			burst = &reasoningBurst{}
+			e.reasoning[evt.AgentID] = burst
 		}
-		e.reasoningBuf.WriteString(evt.Content)
+		if burst.buf.Len() == 0 {
+			burst.startedAt = time.Now()
+		}
+		burst.buf.WriteString(evt.Content)
 	} else {
-		e.flushReasoning()
+		// Only the emitting agent's own burst: a researcher's tool call
+		// doesn't interrupt the orchestrator's (or a sibling's) thinking.
+		e.flushReasoningLocked(evt.AgentID)
 	}
 	e.send(evt)
 	e.s.logTurnEvent(e.storageThreadID, e.turnID, eventType, evt)
@@ -178,22 +218,44 @@ func (e *turnEmitter) turnStats(turnStart time.Time) (ttftMs int64, tokensPerSec
 // string starts with "error:") are logged at warn instead of info so they
 // stand out when scanning a thread's event history.
 func (s *Server) logTurnEvent(threadID, turnID, eventType string, evt ServerEvent) {
+	// withAgent stamps a sub-agent's events with its ID so a reopened thread
+	// can file them back under that agent's card (see subagent_start below);
+	// the orchestrator's rows stay untagged, exactly as before.
+	withAgent := func(data map[string]interface{}) map[string]interface{} {
+		if evt.AgentID != "" {
+			data["agent_id"] = evt.AgentID
+		}
+		return data
+	}
 	switch eventType {
 	case "thinking":
-		s.db.LogEvent(threadID, "info", "turn", "thinking", map[string]interface{}{"content": evt.Content}, turnID)
+		s.db.LogEvent(threadID, "info", "turn", "thinking", withAgent(map[string]interface{}{"content": evt.Content}), turnID)
 	case "commentary":
-		s.db.LogEvent(threadID, "info", "turn", "commentary", map[string]interface{}{"content": evt.Content}, turnID)
+		s.db.LogEvent(threadID, "info", "turn", "commentary", withAgent(map[string]interface{}{"content": evt.Content}), turnID)
+	case "subagent_start":
+		s.db.LogEvent(threadID, "info", "subagent", "subagent started", map[string]interface{}{
+			"agent_id": evt.AgentID, "call_id": evt.CallID, "objective": evt.Objective,
+		}, turnID)
+	case "subagent_end":
+		level := "info"
+		if evt.AgentStatus == "failed" {
+			level = "warn"
+		}
+		s.db.LogEvent(threadID, level, "subagent", "subagent finished", map[string]interface{}{
+			"agent_id": evt.AgentID, "call_id": evt.CallID, "objective": evt.Objective,
+			"status": evt.AgentStatus, "result": evt.Result, "citations": evt.Citations, "cost_usd": evt.CostUSD,
+		}, turnID)
 	case "tool_call":
-		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", map[string]interface{}{"args": evt.Args, "call_id": evt.CallID}, turnID)
+		s.db.LogEvent(threadID, "info", "tool."+evt.Tool, "tool call started", withAgent(map[string]interface{}{"args": evt.Args, "call_id": evt.CallID}), turnID)
 	case "tool_result":
 		level := "info"
 		if strings.HasPrefix(evt.Result, "error:") {
 			level = "warn"
 		}
-		data := map[string]interface{}{
+		data := withAgent(map[string]interface{}{
 			"result": evt.Result, "citations": evt.Citations, "provider": evt.Provider, "call_id": evt.CallID,
 			"url": evt.URL, "caption": evt.Caption, "images": evt.Images,
-		}
+		})
 		s.db.LogEvent(threadID, level, "tool."+evt.Tool, "tool call finished", data, turnID)
 	case "agent_nudge":
 		// Durable record of a research-steering signal firing (see

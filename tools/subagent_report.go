@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -16,6 +17,22 @@ import (
 type SubAgentTask struct {
 	Objective string
 	Guidance  string
+
+	// ParentCallID/Index identify which spawn_researchers call this task came
+	// from and its position in that call's task list; together they form
+	// AgentID, the tag every event a sub-agent emits carries so the UI can
+	// keep one researcher's tool calls and reasoning together instead of
+	// pouring them all into the main timeline. Set by handleSpawnResearchers,
+	// not by the model.
+	ParentCallID string
+	Index        int
+}
+
+// AgentID is this task's stable identifier within a turn: unique across
+// concurrent spawn_researchers calls (the parent call ID is) and across the
+// tasks of one call (the index is).
+func (t SubAgentTask) AgentID() string {
+	return fmt.Sprintf("%s.%d", t.ParentCallID, t.Index)
 }
 
 // SubAgentFinding is one claim with its supporting sources — the unit
@@ -51,6 +68,30 @@ type SubAgentReport struct {
 	// own output; ParseSubAgentReport fills it in from the caller-
 	// supplied citations regardless of which branch produced Findings.
 	Citations []Citation `json:"-"`
+
+	// CostUSD is this sub-agent's own LLM spend (its agent loop plus any
+	// web_read extraction passes). json:"-" like Citations: runtime
+	// bookkeeping, never part of the model's output. Without carrying it
+	// back, a Deep Research turn's reported cost covered only the
+	// orchestrator — every researcher's spend was real but invisible.
+	CostUSD float64 `json:"-"`
+}
+
+// Summary renders the report's findings as a bullet list with sources — the
+// text the orchestrator receives for this sub-agent, and the result body of
+// its card in the UI.
+func (r SubAgentReport) Summary() string {
+	if len(r.Findings) == 0 {
+		return "(no findings)"
+	}
+	var sb strings.Builder
+	for _, f := range r.Findings {
+		fmt.Fprintf(&sb, "- %s\n", f.Claim)
+		if len(f.Sources) > 0 {
+			fmt.Fprintf(&sb, "  Sources: %s\n", strings.Join(f.Sources, ", "))
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // ParseSubAgentReport turns a sub-agent's raw final-answer text into a

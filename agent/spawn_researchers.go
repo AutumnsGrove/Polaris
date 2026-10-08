@@ -57,13 +57,24 @@ func SpawnResearchers(reqCtx context.Context, baseCtx *tools.Context, llmClient 
 	var wg sync.WaitGroup
 	for i, task := range tasks {
 		wg.Add(1)
+		// Announced here, before the semaphore, so a wave wider than
+		// maxConcurrentSubAgents shows every card at once (the queued ones
+		// simply have no activity yet) instead of cards popping in as slots
+		// free up.
+		emitSubAgent(baseCtx, "subagent_start", map[string]interface{}{
+			"agent_id":  task.AgentID(),
+			"call_id":   task.ParentCallID,
+			"objective": task.Objective,
+		})
 		go func(i int, task tools.SubAgentTask) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			status := "done"
 			report, err := RunSubAgent(reqCtx, baseCtx, llmClient, task)
 			if err != nil {
+				status = "failed"
 				report = tools.SubAgentReport{
 					Objective: task.Objective,
 					Findings: []tools.SubAgentFinding{
@@ -72,9 +83,28 @@ func SpawnResearchers(reqCtx context.Context, baseCtx *tools.Context, llmClient 
 				}
 			}
 			reports[i] = report
+			emitSubAgent(baseCtx, "subagent_end", map[string]interface{}{
+				"agent_id":  task.AgentID(),
+				"call_id":   task.ParentCallID,
+				"objective": task.Objective,
+				"status":    status,
+				"result":    report.Summary(),
+				"citations": report.Citations,
+				"cost_usd":  report.CostUSD,
+			})
 		}(i, task)
 	}
 	wg.Wait()
 
 	return reports
+}
+
+// emitSubAgent sends a sub-agent lifecycle event on the turn's own Emit (not
+// a sub-agent's tagged one — these describe the agent, they don't come from
+// inside it). A nil Emit is tolerated for callers, mostly tests, that run
+// SpawnResearchers without an event sink.
+func emitSubAgent(baseCtx *tools.Context, eventType string, payload map[string]interface{}) {
+	if baseCtx.Emit != nil {
+		baseCtx.Emit(eventType, payload)
+	}
 }

@@ -27,7 +27,7 @@ import (
 // function's caller) can reference it too — package tools can't import
 // agent, since agent already imports tools.
 func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.ChatClient, task tools.SubAgentTask) (tools.SubAgentReport, error) {
-	subCtx := newSubAgentContext(baseCtx, llmClient)
+	subCtx := newSubAgentContext(baseCtx, llmClient, task)
 	userMessage := fmt.Sprintf(prompts.Get().Agent.SubAgentTask, task.Objective, task.Guidance)
 
 	result, err := Run(reqCtx, subCtx, nil, userMessage)
@@ -45,7 +45,48 @@ func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.C
 	for url, text := range subCtx.EvidenceSnapshot() {
 		baseCtx.AddEvidence(url, text)
 	}
-	return tools.ParseSubAgentReport(task.Objective, result.Answer, subCtx.Citations), nil
+	report := tools.ParseSubAgentReport(task.Objective, result.Answer, subCtx.Citations)
+	// result.CostUSD already includes subCtx.ExtraCostUSD (web_read
+	// extraction passes) — see Run's Result construction. Report it and fold
+	// it into the turn's total here, since baseCtx outlives this call.
+	report.CostUSD = result.CostUSD
+	baseCtx.AddCost(result.CostUSD)
+	return report, nil
+}
+
+// subAgentEmit wraps the turn's Emit for one sub-agent: every event it
+// forwards is tagged with agentID so the UI can keep that researcher's
+// reasoning and tool calls together instead of pouring them into the main
+// timeline, and two event types are dropped outright because they address
+// the *turn*, not the agent:
+//
+//   - "token": a sub-agent's streamed final answer (its JSON report) would
+//     be appended to the main turn's visible answer. The report reaches the
+//     UI through subagent_end instead.
+//   - "cost_update": carries one agent.Run's running total, which the
+//     frontend assigns (not adds) to the turn's cost, so a sub-agent's
+//     small total would overwrite the orchestrator's. Sub-agent spend is
+//     folded into the turn total via SubAgentReport.CostUSD instead.
+//
+// "commentary" is forwarded but tagged: untagged, the frontend treats it as
+// "what just streamed in was commentary, not the answer" and clears the
+// turn's visible text.
+func subAgentEmit(base func(string, map[string]interface{}), agentID string) func(string, map[string]interface{}) {
+	if base == nil {
+		return nil
+	}
+	return func(eventType string, payload map[string]interface{}) {
+		switch eventType {
+		case "token", "cost_update":
+			return
+		}
+		tagged := make(map[string]interface{}, len(payload)+1)
+		for k, v := range payload {
+			tagged[k] = v
+		}
+		tagged["agent_id"] = agentID
+		base(eventType, tagged)
+	}
 }
 
 // newSubAgentContext builds a fresh *tools.Context for one sub-agent,
@@ -60,7 +101,7 @@ func RunSubAgent(reqCtx context.Context, baseCtx *tools.Context, llmClient llm.C
 // tools.Context that a sub-agent should also see needs to be added here
 // by hand — nothing enforces that automatically, same as this codebase's
 // other "keep in sync by hand" mirrors (e.g. FocusMode's Go/TS pair).
-func newSubAgentContext(baseCtx *tools.Context, llmClient llm.ChatClient) *tools.Context {
+func newSubAgentContext(baseCtx *tools.Context, llmClient llm.ChatClient, task tools.SubAgentTask) *tools.Context {
 	return &tools.Context{
 		Ctx:                    baseCtx.Ctx,
 		SearXNG:                baseCtx.SearXNG,
@@ -77,7 +118,7 @@ func newSubAgentContext(baseCtx *tools.Context, llmClient llm.ChatClient) *tools
 		TavilyUsageThisMonth:   baseCtx.TavilyUsageThisMonth,
 		IncrementTavilyUsage:   baseCtx.IncrementTavilyUsage,
 		PinnedProvider:         baseCtx.PinnedProvider,
-		Emit:                   baseCtx.Emit,
+		Emit:                   subAgentEmit(baseCtx.Emit, task.AgentID()),
 		MaxTurns:               baseCtx.MaxTurns,
 		DeepResearch:           true,
 		DisabledTools:          baseCtx.DisabledTools,
