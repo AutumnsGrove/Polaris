@@ -483,3 +483,35 @@ func TestChatCompletion_ContextCancelBeforeResponseReturnsEmptyNotError(t *testi
 		t.Errorf("Content = %q, want empty — Do() must have failed before any bytes streamed", resp.Content)
 	}
 }
+
+// TestPromptCaching_OnlyForAnthropicModels guards the per-model decision in
+// NewClient: Anthropic models don't cache implicitly, so they need the
+// top-level cache_control marker or every agent-loop call re-bills its full
+// history; every other provider caches on its own and must not get the field.
+func TestPromptCaching_OnlyForAnthropicModels(t *testing.T) {
+	for _, tc := range []struct {
+		model string
+		want  bool
+	}{
+		{"anthropic/claude-haiku-5.5", true},
+		{"anthropic/claude-some-future-model", true},
+		{"deepseek/deepseek-v4.1-flash", false},
+		{"openai/gpt-6-luna", false},
+	} {
+		var rawBody string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			rawBody = string(body)
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: [DONE]\n")
+		}))
+		client := NewClient(srv.URL, "test-key", tc.model, 0.4, 1000)
+		if _, err := client.ChatCompletionStreaming(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}}, func(string) {}, nil); err != nil {
+			t.Fatalf("%s: %v", tc.model, err)
+		}
+		srv.Close()
+		if got := strings.Contains(rawBody, `"cache_control":{"type":"ephemeral"}`); got != tc.want {
+			t.Errorf("%s: cache_control sent = %v, want %v (body: %s)", tc.model, got, tc.want, rawBody)
+		}
+	}
+}
