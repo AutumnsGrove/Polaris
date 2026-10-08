@@ -17,6 +17,12 @@ import (
 // that's genuinely part of the title (e.g. a title ending in "quotes").
 var titleQuotePrefix = regexp.MustCompile(`^["'“‘]+|["'”’]+$`)
 
+// titleLabelPrefix strips a leading "Title:" / "Thread title:" label. Found
+// live 2026-10-08 on claude-haiku-5.5, which answers the title prompt as a
+// chat reply — "Thread title: Go Release, Security...\n\nI" — where the
+// DeepSeek models the prompt was tuned on return the bare title.
+var titleLabelPrefix = regexp.MustCompile(`(?i)^(?:\*\*)?(?:thread\s+)?title(?:\*\*)?\s*:\s*(?:\*\*)?`)
+
 // answerLikeTitle catches a title that's actually an answer to the
 // user's question instead of a description of it — a real example:
 // asked "Who did Vincent Pastore play in the Sopranos? Was it Paulie?"
@@ -119,6 +125,11 @@ func (s *Server) generateTitle(cfg *config.Config, modelCfg config.ModelConfig, 
 // model sends back.
 func sanitizeGeneratedTitle(raw string) string {
 	title := strings.TrimSpace(raw)
+	// A title is one line; anything after the first newline is the model
+	// continuing to chat (an explanation, a second candidate) — and left in,
+	// it would be truncated mid-word into the stored title.
+	title, _, _ = strings.Cut(title, "\n")
+	title = strings.TrimSpace(titleLabelPrefix.ReplaceAllString(strings.TrimSpace(title), ""))
 	title = strings.TrimSpace(titleQuotePrefix.ReplaceAllString(title, ""))
 	title = strings.TrimRight(title, ".!。")
 	if len(title) > maxTitleLen {
