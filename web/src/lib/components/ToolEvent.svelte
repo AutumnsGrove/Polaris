@@ -49,7 +49,10 @@
 	} from '@lucide/svelte';
 	import ShootingStar from './icons/ShootingStar.svelte';
 
-	let { item }: { item: TimelineItem } = $props();
+	// A 'subagent' item never reaches here: ChatTurnView renders those as
+	// SubAgentCard, which in turn renders each of its own nested items through
+	// this component.
+	let { item }: { item: Exclude<TimelineItem, { kind: 'subagent' }> } = $props();
 
 	// show renders as a large inline embed rather than the generic
 	// collapsible chip every other tool gets — see docs/plans/show.md:

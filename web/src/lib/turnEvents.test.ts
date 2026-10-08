@@ -82,3 +82,63 @@ describe('closeOpenReasoning', () => {
 		expect(turn.timeline).toBe(before);
 	});
 });
+
+describe('Deep Research sub-agents', () => {
+	const sub = (turn: ChatTurn, id: string) =>
+		turn.timeline?.find((i) => i.kind === 'subagent' && i.agentId === id) as Extract<
+			NonNullable<ChatTurn['timeline']>[number],
+			{ kind: 'subagent' }
+		>;
+
+	it('files tagged events under the agent and keeps the main timeline clean', () => {
+		const turn = assistantTurn();
+		applyStreamingEvent(turn, ev({ type: 'tool_call', tool: 'spawn_researchers', call_id: 'c' }));
+		applyStreamingEvent(turn, ev({ type: 'subagent_start', agent_id: 'c.0', call_id: 'c', objective: 'look into X' }));
+		applyStreamingEvent(turn, ev({ type: 'subagent_start', agent_id: 'c.1', call_id: 'c', objective: 'look into Y' }));
+		applyStreamingEvent(turn, ev({ type: 'reasoning', agent_id: 'c.0', content: 'hmm ' }));
+		applyStreamingEvent(turn, ev({ type: 'reasoning', agent_id: 'c.0', content: 'ok' }));
+		applyStreamingEvent(turn, ev({ type: 'tool_call', agent_id: 'c.0', tool: 'web_search', call_id: 'call_1' }));
+		// Same call_id in the other agent: must not cross-wire.
+		applyStreamingEvent(turn, ev({ type: 'tool_call', agent_id: 'c.1', tool: 'web_read', call_id: 'call_1' }));
+		applyStreamingEvent(turn, ev({ type: 'tool_result', agent_id: 'c.1', tool: 'web_read', call_id: 'call_1', result: 'page' }));
+
+		// Main timeline: just the spawn call and the two cards — none of the
+		// researchers' own items leaked into it.
+		expect(turn.timeline?.map((i) => i.kind)).toEqual(['tool', 'subagent', 'subagent']);
+		expect(sub(turn, 'c.0').items).toMatchObject([
+			{ kind: 'reasoning', content: 'hmm ok', done: true },
+			{ kind: 'tool', tool: 'web_search', done: false }
+		]);
+		expect(sub(turn, 'c.1').items).toMatchObject([{ kind: 'tool', tool: 'web_read', done: true, result: 'page' }]);
+		expect(sub(turn, 'c.0').status).toBe('running');
+	});
+
+	it("a sub-agent's commentary does not clear the turn's visible answer", () => {
+		const turn = assistantTurn({ content: 'orchestrator text' });
+		applyStreamingEvent(turn, ev({ type: 'subagent_start', agent_id: 'c.0', call_id: 'c', objective: 'x' }));
+		applyStreamingEvent(turn, ev({ type: 'commentary', agent_id: 'c.0', content: 'checking' }));
+		expect(turn.content).toBe('orchestrator text');
+		expect(sub(turn, 'c.0').items).toEqual([{ kind: 'commentary', content: 'checking' }]);
+	});
+
+	it('subagent_end records the report and closes any still-open reasoning', () => {
+		const turn = assistantTurn();
+		applyStreamingEvent(turn, ev({ type: 'subagent_start', agent_id: 'c.0', call_id: 'c', objective: 'x' }));
+		applyStreamingEvent(turn, ev({ type: 'reasoning', agent_id: 'c.0', content: 'thinking' }));
+		applyStreamingEvent(
+			turn,
+			ev({ type: 'subagent_end', agent_id: 'c.0', agent_status: 'done', result: '- finding', cost_usd: 0.002 })
+		);
+		const s = sub(turn, 'c.0');
+		expect(s).toMatchObject({ status: 'done', result: '- finding', costUsd: 0.002, objective: 'x' });
+		expect(s.items[0]).toMatchObject({ kind: 'reasoning', done: true });
+	});
+
+	it('marks a failed sub-agent failed, and tolerates events for an agent whose start was missed', () => {
+		const turn = assistantTurn();
+		applyStreamingEvent(turn, ev({ type: 'tool_call', agent_id: 'late.0', tool: 'web_search', call_id: 'a' }));
+		expect(sub(turn, 'late.0').items).toHaveLength(1);
+		applyStreamingEvent(turn, ev({ type: 'subagent_end', agent_id: 'late.0', agent_status: 'failed', result: 'boom' }));
+		expect(sub(turn, 'late.0').status).toBe('failed');
+	});
+});

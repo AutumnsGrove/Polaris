@@ -2,6 +2,7 @@
 	import type { ChatTurn, FocusMode } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import ToolEvent from './ToolEvent.svelte';
+	import SubAgentCard from './SubAgentCard.svelte';
 	import RecommendationsCarousel from './RecommendationsCarousel.svelte';
 	import ImageGallery from './ImageGallery.svelte';
 	import HighlightCarousel from './HighlightCarousel.svelte';
@@ -447,6 +448,8 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 							{#if i === lastHighlightTimelineIndex && highlightCards.length}
 								<HighlightCarousel cards={highlightCards} />
 							{/if}
+						{:else if item.kind === 'subagent'}
+							<SubAgentCard agent={item} />
 						{:else}
 							<ToolEvent {item} />
 						{/if}

@@ -1,4 +1,4 @@
-import type { Citation, StoredEvent, TimelineItem, VerificationMark } from './types';
+import type { Citation, StoredEvent, SubAgentItem, TimelineItem, VerificationMark } from './types';
 
 export function safeParseJSON<T>(json: string): T[] {
 	try {
@@ -61,19 +61,56 @@ export function debugBeacon(message: string, data: Record<string, unknown> = {})
 // slice only, oldest-first (see ListEvents' ORDER BY id ASC).
 export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 	const timeline: TimelineItem[] = [];
+	const findSubAgent = (agentId: string) =>
+		timeline.find((i): i is SubAgentItem => i.kind === 'subagent' && i.agentId === agentId);
 	for (const evt of events) {
 		const data = safeParseObject(evt.data);
+
+		// Deep Research sub-agents (see turnEvents.ts's applyStreamingEvent for
+		// the live equivalent): lifecycle rows create/finish the agent's card,
+		// and any other row tagged with an agent_id lands in that card's own
+		// item list instead of the main timeline.
+		if (evt.source === 'subagent') {
+			const agentId = String(data.agent_id ?? '');
+			if (evt.message === 'subagent started') {
+				if (!findSubAgent(agentId)) {
+					timeline.push({
+						kind: 'subagent',
+						agentId,
+						callId: data.call_id,
+						objective: data.objective ?? '',
+						status: 'running',
+						items: []
+					});
+				}
+			} else if (evt.message === 'subagent finished') {
+				const sub = findSubAgent(agentId);
+				if (sub) {
+					sub.status = data.status === 'failed' ? 'failed' : 'done';
+					sub.result = data.result;
+					sub.citations = data.citations;
+					sub.costUsd = data.cost_usd;
+				}
+			}
+			continue;
+		}
+		let list = timeline;
+		if (typeof data.agent_id === 'string' && data.agent_id) {
+			const sub = findSubAgent(data.agent_id);
+			if (sub) list = sub.items;
+		}
+
 		if (evt.source === 'turn' && evt.message === 'thinking') {
-			timeline.push({ kind: 'thinking', content: data.content ?? '' });
+			list.push({ kind: 'thinking', content: data.content ?? '' });
 		} else if (evt.source === 'turn' && evt.message === 'commentary') {
-			timeline.push({ kind: 'commentary', content: data.content ?? '' });
+			list.push({ kind: 'commentary', content: data.content ?? '' });
 		} else if (evt.source === 'turn' && evt.message === 'reasoning') {
 			// Persisted as one row per burst (see gateway/turn.go's
 			// flushReasoning), already complete — done: true, unlike the
 			// live-streaming case where a burst starts as done: false and
 			// gets closed out by closeOpenReasoning once something else
 			// interrupts it.
-			timeline.push({
+			list.push({
 				kind: 'reasoning',
 				content: data.content ?? '',
 				done: true,
@@ -92,11 +129,11 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 			// stored cost_usd, which openThread assigns to totalCost
 			// wholesale — adding this row's cost_usd too would double-count
 			// it on every reload.
-			timeline.push({ kind: 'compacted', summary: data.summary ?? '' });
+			list.push({ kind: 'compacted', summary: data.summary ?? '' });
 		} else if (evt.source.startsWith('tool.')) {
 			const tool = evt.source.slice('tool.'.length);
 			if (evt.message === 'tool call started') {
-				timeline.push({ kind: 'tool', tool, args: data.args, callId: data.call_id, done: false });
+				list.push({ kind: 'tool', tool, args: data.args, callId: data.call_id, done: false });
 			} else if (evt.message === 'tool call finished') {
 				// Same call_id-first matching as handleEvent's live
 				// 'tool_result' case (see its doc comment) — persisted
@@ -107,10 +144,10 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 				// just reappears on reload.
 				let matched = false;
 				if (data.call_id) {
-					for (let i = timeline.length - 1; i >= 0; i--) {
-						const item = timeline[i];
+					for (let i = list.length - 1; i >= 0; i--) {
+						const item = list[i];
 						if (item.kind === 'tool' && item.callId === data.call_id && !item.done) {
-							timeline[i] = {
+							list[i] = {
 								...item,
 								result: data.result,
 								citations: data.citations,
@@ -125,10 +162,10 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 					}
 				}
 				if (!matched) {
-					for (let i = timeline.length - 1; i >= 0; i--) {
-						const item = timeline[i];
+					for (let i = list.length - 1; i >= 0; i--) {
+						const item = list[i];
 						if (item.kind === 'tool' && item.tool === tool && !item.done) {
-							timeline[i] = {
+							list[i] = {
 								...item,
 								result: data.result,
 								citations: data.citations,
@@ -143,6 +180,12 @@ export function buildTimelineFromEvents(events: StoredEvent[]): TimelineItem[] {
 				}
 			}
 		}
+	}
+	// A persisted turn is a finished one, so a sub-agent with no 'finished'
+	// row never completed (the process died mid-wave) — show it as failed
+	// rather than as a card that spins forever.
+	for (const item of timeline) {
+		if (item.kind === 'subagent' && item.status === 'running') item.status = 'failed';
 	}
 	return timeline;
 }

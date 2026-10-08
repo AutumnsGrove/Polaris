@@ -1,4 +1,4 @@
-import type { ChatTurn, ServerEvent } from './types';
+import type { ChatTurn, ServerEvent, SubAgentItem } from './types';
 
 // Reasoning always finishes before the visible answer (or a tool call)
 // starts, per OpenRouter's ordering guarantee — so whenever something
@@ -15,12 +15,81 @@ export function closeOpenReasoning(turn: ChatTurn) {
 	}
 }
 
+function newSubAgent(agentId: string, callId: string | undefined, objective: string): SubAgentItem {
+	return { kind: 'subagent', agentId, callId, objective, status: 'running', items: [] };
+}
+
+// Replaces one sub-agent's timeline item with fn's result (immutably, like
+// every other timeline update here, so Svelte sees the change), creating the
+// item first if its subagent_start somehow hasn't been seen — a reconnect
+// mid-wave, say. A sub-agent never silently loses events to a missing card.
+function updateSubAgent(turn: ChatTurn, agentId: string, fn: (sub: SubAgentItem) => SubAgentItem): void {
+	const items = [...(turn.timeline ?? [])];
+	const idx = items.findIndex((i) => i.kind === 'subagent' && i.agentId === agentId);
+	if (idx < 0) {
+		turn.timeline = [...items, fn(newSubAgent(agentId, undefined, ''))];
+		return;
+	}
+	items[idx] = fn({ ...(items[idx] as SubAgentItem) });
+	turn.timeline = items;
+}
+
 // Applies the streaming events that only ever touch the in-flight turn itself
 // (timeline items, streamed text, per-turn cost/Oracle fields) — no thread, socket
 // or pending-turn bookkeeping, which is why AppState.handleEvent keeps the
 // 'compacted'/'done'/'error' cases that do. Pure over its arguments so it can be
 // tested without constructing an AppState.
 export function applyStreamingEvent(turn: ChatTurn, e: ServerEvent): void {
+	// Deep Research sub-agents: lifecycle events create/finish the agent's
+	// card, and any event tagged with an agent_id is applied to that card's
+	// own item list rather than the main timeline — by running this same
+	// reducer over a throwaway turn that wraps the list, so nested items
+	// behave exactly like top-level ones (reasoning bursts merge, tool_result
+	// matches its call_id, ...). Matching call_ids within one agent's list is
+	// also what keeps two researchers whose model happens to reuse an id
+	// like "call_1" from cross-wiring each other's results.
+	if (e.type === 'subagent_start') {
+		const exists = (turn.timeline ?? []).some((i) => i.kind === 'subagent' && i.agentId === e.agent_id);
+		if (!exists) {
+			turn.timeline = [...(turn.timeline ?? []), newSubAgent(e.agent_id, e.call_id, e.objective)];
+		}
+		return;
+	}
+	if (e.type === 'subagent_end') {
+		updateSubAgent(turn, e.agent_id, (sub) => {
+			const inner = { role: 'assistant', content: '', timeline: sub.items } as ChatTurn;
+			closeOpenReasoning(inner);
+			return {
+				...sub,
+				objective: sub.objective || e.objective || '',
+				callId: sub.callId ?? e.call_id,
+				status: e.agent_status === 'failed' ? 'failed' : 'done',
+				items: inner.timeline ?? sub.items,
+				result: e.result,
+				citations: e.citations,
+				costUsd: e.cost_usd
+			};
+		});
+		return;
+	}
+	if (
+		'agent_id' in e &&
+		e.agent_id &&
+		(e.type === 'thinking' ||
+			e.type === 'reasoning' ||
+			e.type === 'tool_call' ||
+			e.type === 'tool_result' ||
+			e.type === 'commentary')
+	) {
+		const { agent_id, ...untagged } = e;
+		updateSubAgent(turn, agent_id, (sub) => {
+			const inner = { role: 'assistant', content: '', timeline: sub.items } as ChatTurn;
+			applyStreamingEvent(inner, untagged as ServerEvent);
+			return { ...sub, items: inner.timeline ?? sub.items };
+		});
+		return;
+	}
+
 	switch (e.type) {
 		case 'thinking':
 			closeOpenReasoning(turn);

@@ -202,11 +202,31 @@ export interface ResearchPlan {
 }
 
 export type ServerEvent =
-	| { type: 'thinking'; thread_id?: string; content: string }
-	| { type: 'reasoning'; thread_id?: string; content: string }
+	// agent_id (on this and the tool_call/tool_result/commentary variants below)
+	// is set only on a Deep Research sub-agent's events: the timeline files
+	// them under that agent's own 'subagent' item instead of the main list.
+	// See gateway/protocol.go's ServerEvent.AgentID.
+	| { type: 'thinking'; thread_id?: string; content: string; agent_id?: string }
+	| { type: 'reasoning'; thread_id?: string; content: string; agent_id?: string }
+	// Sub-agent lifecycle, keyed by agent_id; call_id is the parent
+	// spawn_researchers call. _start fires for every researcher up front (even
+	// ones still queued behind the concurrency cap); _end carries the report.
+	| { type: 'subagent_start'; thread_id?: string; agent_id: string; call_id?: string; objective: string }
+	| {
+			type: 'subagent_end';
+			thread_id?: string;
+			agent_id: string;
+			call_id?: string;
+			objective?: string;
+			agent_status: 'done' | 'failed';
+			result?: string;
+			citations?: Citation[];
+			cost_usd?: number;
+	  }
 	| {
 			type: 'tool_call';
 			thread_id?: string;
+			agent_id?: string;
 			tool: string;
 			args?: Record<string, unknown>;
 			// Correlates this call to its own tool_result — see
@@ -219,6 +239,7 @@ export type ServerEvent =
 	| {
 			type: 'tool_result';
 			thread_id?: string;
+			agent_id?: string;
 			tool: string;
 			result: string;
 			// web_search's normalized fallback-source key ("searxng" /
@@ -265,7 +286,7 @@ export type ServerEvent =
 	// What the model said before deciding to call a tool (or before an
 	// aborted attempt got discarded) — see gateway/protocol.go's doc
 	// comment on this event type for the full rationale.
-	| { type: 'commentary'; thread_id?: string; content: string }
+	| { type: 'commentary'; thread_id?: string; content: string; agent_id?: string }
 	| { type: 'user_message'; thread_id: string; user_message_id: number }
 	| {
 			type: 'done';
@@ -773,6 +794,23 @@ export type TimelineItem =
 	// reasoning), positioned in the timeline between the tool calls that
 	// came before and after it. See ServerEvent's 'commentary' case.
 	| { kind: 'commentary'; content: string }
+	// One Deep Research researcher (a spawn_researchers task): everything it
+	// did — reasoning, tool calls, commentary — lives in its own items list
+	// rather than the main timeline, and result is its final findings report.
+	// Rendered as a collapsible card by SubAgentCard.svelte. Items nest the
+	// same TimelineItem shapes, so the main-timeline reducers apply to them
+	// unchanged (see turnEvents.ts).
+	| {
+			kind: 'subagent';
+			agentId: string;
+			callId?: string;
+			objective: string;
+			status: 'running' | 'done' | 'failed';
+			items: TimelineItem[];
+			result?: string;
+			citations?: Citation[];
+			costUsd?: number;
+	  }
 	| {
 			kind: 'tool';
 			tool: string;
@@ -792,6 +830,8 @@ export type TimelineItem =
 			// concurrent calls to the same tool can finish out of order.
 			callId?: string;
 	  };
+
+export type SubAgentItem = Extract<TimelineItem, { kind: 'subagent' }>;
 
 export interface ChatTurn {
 	role: 'user' | 'assistant';
