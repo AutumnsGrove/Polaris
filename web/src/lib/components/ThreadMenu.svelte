@@ -57,11 +57,14 @@
 	}
 
 	// Same threshold the backend auto-compacts at, so this doubles as a
-	// warning before that happens.
+	// warning before that happens. Per-model: a model whose price steps up
+	// at a long prompt size compacts earlier than the global window.
+	let compactionTokens = $derived(
+		appState.models.find((m) => m.id === appState.selectedModel)?.compaction_tokens ||
+			appState.settings.contextWindowTokens
+	);
 	let contextPercent = $derived(
-		appState.settings.contextWindowTokens > 0
-			? Math.min(100, Math.round((appState.contextTokens / appState.settings.contextWindowTokens) * 100))
-			: 0
+		compactionTokens > 0 ? Math.min(100, Math.round((appState.contextTokens / compactionTokens) * 100)) : 0
 	);
 
 	// Share of this thread's input tokens the provider served from its

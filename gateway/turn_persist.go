@@ -178,7 +178,7 @@ func (t *turnRun) finishTurn() {
 	// Decided here, fired in the detached goroutine after "done" below —
 	// see that goroutine for why the call itself no longer runs inline.
 	contextTokens := t.result.ContextTokens
-	t.needsCompaction = t.result.ContextTokens >= t.cfg.ContextWindowTokens
+	t.needsCompaction = t.result.ContextTokens >= t.cfg.CompactionThreshold(t.modelCfg)
 
 	// Total cost added to the thread this turn: the agent's LLM/tool spend
 	// plus any STT cost from a voice memo. Note what is NOT here any more —

@@ -121,6 +121,50 @@ var Registry = []config.ModelConfig{
 		Pricing: &config.PricingConfig{PromptPerM: 0.14, CompletionPerM: 0.42},
 	},
 	{
+		// Claude Haiku 5.5 (2026-10-08). Per GET /api/v1/models/anthropic/
+		// claude-haiku-5.5/endpoints: 1M-token context, text+image+file in,
+		// tools + reasoning_effort supported, tool_choice auto/none only
+		// (required/function are false), 100% 1-day uptime on every route.
+		//
+		// The pricing shape is the reason this entry carries
+		// CompactionTokens. Base is $0.10/$0.50 per M ($0.01 cache reads),
+		// but every endpoint has a pricing.overrides tier at
+		// min_prompt_tokens=100000 that reprices the *whole request* (not
+		// just the excess) to $0.50/$2.50 ($0.05 cache reads) — 5x. The
+		// global 200K compaction threshold would leave a thread paying that
+		// on every turn from 100K to 200K, and the compaction call (full
+		// history in) would be billed at it too. Compacting at 80K keeps
+		// requests under the cliff with ~20K of headroom for the next
+		// turn's user message and agent-loop tool results; a single very
+		// tool-heavy turn can still cross it mid-loop, which is accepted —
+		// the ledger uses usage.cost, so it's billed correctly, just dearer.
+		//
+		// Anthropic models don't cache implicitly; llm.NewClient sends a
+		// top-level cache_control for any anthropic/* slug (verified live
+		// 2026-10-08: 10x cheaper cache reads), so nothing to set here.
+		//
+		// Provider order: the three 1.0x "global" routes. The regional
+		// routes (google-vertex/us|europe, azure/us, amazon-bedrock/us-east-1
+		// |eu-west-1) list a flat 1.1x on every rate, so don't add them.
+		// Re-run the survey if the override tier or those rates change.
+		ID:          "haiku",
+		Name:        "Claude Haiku 5.5",
+		Model:       "anthropic/claude-haiku-5.5",
+		Provider:    []string{"anthropic", "google-vertex/global", "amazon-bedrock"},
+		Temperature: 0.4,
+		MaxTokens:   32000,
+		Reasoning: &config.ReasoningConfig{
+			Enabled: true,
+			Effort:  "medium",
+		},
+		Multimodal:       true,
+		CompactionTokens: 80_000,
+		Pricing: &config.PricingConfig{
+			PromptPerM: 0.10, CompletionPerM: 0.50,
+			LongPromptTokens: 100_000, LongPromptPerM: 0.50, LongCompletionPerM: 2.50,
+		},
+	},
+	{
 		// GPT-6 Luna, released 2026-09-22 alongside GPT-6 Sol — the
 		// low-cost, high-volume member of that same-day family.
 		// Supersedes GPT-5.6 Luna at a lower official API rate

@@ -371,6 +371,28 @@ type ModelConfig struct {
 	// pay" and "some other provider/hour's price" with no way for the UI
 	// to tell the difference. Nil means unset/unknown, not free.
 	Pricing *PricingConfig `yaml:"pricing"`
+
+	// CompactionTokens overrides Config.ContextWindowTokens as the
+	// auto-compaction threshold for threads on this model. Zero means
+	// "use the global value". Set it for models whose price jumps at a
+	// prompt size below the global threshold (see PricingConfig.LongPrompt*):
+	// OpenRouter reprices the *whole* request once its prompt crosses the
+	// tier, so letting a thread idle between the tier and the global
+	// threshold pays the surcharge on every turn, and the compaction call
+	// itself (which sends the full history) too. Must leave headroom under
+	// the tier — ContextTokens is measured after a turn, and the next turn
+	// adds the user message plus every tool result in its agent loop.
+	CompactionTokens int `yaml:"compaction_tokens"`
+}
+
+// CompactionThreshold is the context size (tokens) at which a thread on m
+// auto-compacts: the model's own CompactionTokens if set, else the global
+// ContextWindowTokens.
+func (c *Config) CompactionThreshold(m ModelConfig) int {
+	if m.CompactionTokens > 0 {
+		return m.CompactionTokens
+	}
+	return c.ContextWindowTokens
 }
 
 // PricingConfig is a static, hand-maintained snapshot of a model's cost —
@@ -379,6 +401,15 @@ type ModelConfig struct {
 type PricingConfig struct {
 	PromptPerM     float64 `yaml:"prompt_per_m"`     // USD per 1M input tokens
 	CompletionPerM float64 `yaml:"completion_per_m"` // USD per 1M output tokens
+
+	// LongPromptTokens, when nonzero, is the prompt size at or above which
+	// the provider reprices the whole request at LongPromptPerM /
+	// LongCompletionPerM (OpenRouter's pricing.overrides[].min_prompt_tokens
+	// — a cliff, not a marginal rate). Display-only like the rest of this
+	// struct; actual spend comes from the response's usage.cost.
+	LongPromptTokens   int     `yaml:"long_prompt_tokens"`
+	LongPromptPerM     float64 `yaml:"long_prompt_per_m"`
+	LongCompletionPerM float64 `yaml:"long_completion_per_m"`
 }
 
 // ReasoningConfig mirrors OpenRouter's `reasoning` request field

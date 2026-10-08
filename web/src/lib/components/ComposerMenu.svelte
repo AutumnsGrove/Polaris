@@ -15,7 +15,9 @@
 	function formatPricing(pricing: ModelPricing | undefined): string {
 		if (!pricing) return '';
 		if (pricing.prompt_per_m === 0 && pricing.completion_per_m === 0) return 'Free';
-		return `$${pricing.prompt_per_m} / $${pricing.completion_per_m} per M`;
+		const base = `$${pricing.prompt_per_m} / $${pricing.completion_per_m} per M`;
+		if (!pricing.long_prompt_tokens) return base;
+		return `${base} · $${pricing.long_prompt_per_m} / $${pricing.long_completion_per_m} past ${pricing.long_prompt_tokens / 1000}k`;
 	}
 
 	// Everything that used to be separate controls (model picker, focus

@@ -504,6 +504,11 @@ export interface TTSVoice {
 export interface ModelPricing {
 	prompt_per_m: number;
 	completion_per_m: number;
+	// Present only on models whose price steps up once a request's prompt
+	// reaches long_prompt_tokens (the whole request reprices, not the excess).
+	long_prompt_tokens?: number;
+	long_prompt_per_m?: number;
+	long_completion_per_m?: number;
 }
 
 export interface ModelOption {
@@ -511,6 +516,8 @@ export interface ModelOption {
 	name: string;
 	default: boolean;
 	pricing?: ModelPricing;
+	// Context size at which a thread on this model auto-compacts.
+	compaction_tokens?: number;
 }
 
 export interface Thread {

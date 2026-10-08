@@ -394,3 +394,13 @@ func TestLoad_NoOracleBlockUsesDefaults(t *testing.T) {
 		t.Errorf("want a config with no oracle: block to equal the defaults, got %+v", cfg.Oracle)
 	}
 }
+
+func TestCompactionThreshold(t *testing.T) {
+	cfg := &Config{ContextWindowTokens: 200_000}
+	if got := cfg.CompactionThreshold(ModelConfig{}); got != 200_000 {
+		t.Errorf("unset CompactionTokens = %d, want global 200000", got)
+	}
+	if got := cfg.CompactionThreshold(ModelConfig{CompactionTokens: 80_000}); got != 80_000 {
+		t.Errorf("per-model CompactionTokens = %d, want 80000", got)
+	}
+}
