@@ -73,6 +73,10 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   anything, including via a plain-English instruction ("forget the one about my old job").
 - **Clarifying questions** — asks a single focused question with tappable options when a
   genuinely necessary detail is missing, instead of guessing or interrogating you at once.
+- **Deep Research** — for a broad question, the assistant can split the work across parallel
+  researchers, each investigating one angle. Every researcher appears as its own collapsible card
+  holding its reasoning, searches, and page reads, with its findings report at the bottom — the
+  main thread stays readable. Their spend is included in the thread's cost.
 - **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
   (extra care with sources on a health question, a table for a comparison, fresher sources for
   breaking news), with every change shown and undoable right on the reply. It can also offer to
