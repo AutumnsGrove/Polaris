@@ -72,8 +72,9 @@ Sketch only (not a final grammar):
 
 ## Component vocabulary (starter, grow only when earned)
 
-callout · stat · comparison table · tabs · stepper/checklist · timeline · simple line/bar chart
-from inline numbers · map (reusing the interactive-maps work) · action chips.
+callout · stat · comparison · tabs · stepper/checklist · timeline · flow · claim · quote ·
+disclose · choose · facts · map (reusing the interactive-maps work). See "Block catalog" for the
+current list; **charts and action chips were cut on 2026-10-09** (Decisions).
 
 Any component may carry citation refs that bind to the existing numbered sources
 (`web/src/lib/citations.ts`). This is the differentiator against a chatbot: components are
@@ -85,31 +86,51 @@ Concrete form of the "starter vocabulary" above. Syntax is JSONL, one line per c
 **container line** (`"c":...`) opens a block; the **child lines** that follow (`"row"`, `"i"`,
 `"when"`, `"tab"`, `"n"`/`"e"`, `"+"`/`"-"`) append to it until the next container line or the
 closing fence. That is what lets a table fill row by row as it streams. Flat blocks (`callout`,
-`stat`, `chart`) are a single line. Free-text fields accept `**bold**` and `` `code` `` only. Any
+`stat`, `quote`) are a single line. Free-text fields accept `**bold**` and `` `code` `` only. Any
 block may carry `"cite":[n]`, bound to the existing numbered sources.
 
 | Block | Shape | Phone layout (mockup pick) | Oracle option? | Phase |
 |---|---|---|---|---|
-| `callout` | 1 line | **A**: left rule, tone-tinted (`note`/`warn`/`ok`) | no — model's own accent | 1 |
-| `stat` / `stats` | 1 line | **A** one big number; **B** strip of 3 | no | 1 |
+| `callout` | 1 line | **B** icon chip on a card (decided); tones `note`/`warn`/`ok` and `answer` (bottom line up front, always with an `asof` date) | no — model's own accent | 1 |
+| `stat` | 1 line | one big number. The 3-up strip is superseded by `facts` | no | 1 |
 | `compare` | container + `row` lines | **B** stacked option cards, pick ribbon; table (A) when ≥4 attributes and ≤3 options | yes | 1 |
 | `steps` | container + `i` lines (`d` detail, `t` duration) | **A** numbered rail; `t` upgrades to **B** chips only when durations exist | yes | 1 |
 | `checklist` | container + `i` lines | ticks are local state, progress bar | yes | 2 |
-| `timeline` | container + `when`/`i` lines | **A** vertical rail; **B** ledger for long date strings | yes | 2 |
-| `chart` | 1 line (`x`/`y` arrays, inline numbers only) | line with direct end label, or bars with one highlighted value; no legend | yes | 2 |
+| `timeline` | container + `when`/`i` lines | vertical rail, date above the text (decided; the ledger is dropped, and the rail is the one that copes with long dates like "14 Mar – 2 Apr 2005") | yes | 2 |
 | `tabs` | container + `tab` lines | segmented bar, local selection | yes | 2 |
 | `procon` | container + `+`/`-` lines | two columns, +/– symbols so it isn't colour-only | yes | 2 |
 | `flow` | container + `n` (node) / `e` (edge) lines | vertical-first cards, tap to expand, decision branches side by side | yes | 3 |
-| `chips` | 1 line | pills sending text as next message | **drop?** | — |
+| `claim` | container + `+`/`-` lines (`verdict`: true/mixed/misleading/false/unverified) | verdict pill, quoted claim, Supports / Disputes sections with sources | no — rides `claim_check` | 2 |
+| `quote` | 1 line | serif pull-quote; "found in source" badge supplied by verification, never by the model | no | 2 |
+| `disclose` | container + `p` lines | native `<details>` rows, title + read-time hint | no — rides `depth`=thorough | 2 |
+| `choose` | container + `if`/`then` lines | "If …" rows with a → pick pill: decision rules instead of a facts table | no — rides `task`=decide | 2 |
+| `facts` | container + `k`/`v` lines | titled at-a-glance card, label/value rows with sources | no — rides `intent` | 2 |
 | `map` | — | reuse interactive-maps; not mocked | later | 3 |
 
 Layout is the client's decision, never the model's: the model supplies data and (for `compare`) a
 `pick`; the renderer chooses cards vs table by viewport and shape. This keeps the model's job small
 and lets phone layouts improve without changing any prompt.
 
-**`chips` should probably go.** Polaris already shows LLM-generated follow-up suggestions under every
-reply, and chips inside the answer mostly duplicate them. Keep the vocabulary to blocks that present
-*structure*; revisit only if a real gap appears.
+**Cut: `chips`.** Polaris already shows LLM-generated follow-up suggestions under every reply, so
+chips inside the answer would duplicate them. **Cut: `chart`.** `code_exec` produces better charts
+than any renderer we'd hand-build and tune (an earlier custom visualization tool became a waste of
+time once it landed), so numbers-as-a-picture stays a code-execution job. Keep the vocabulary to
+blocks that present *structure*.
+
+**New blocks and Oracle.** `claim`, `choose`, `facts` and `disclose` deliberately add **no new Jev
+question**: each rides an existing check (`claim_check`, `task`, `intent`, `depth`), whose nudge
+simply gains the block's syntax line. Only the "this answer is really a ___" shapes need the new
+`ui` check. `quote` is the model's own accent. **Trust marks are never model-written:** the "found in
+source" badge on `quote` and the verdict's evidence come from the verification Polaris already runs,
+so a block can't claim a check it didn't get.
+
+### Streaming is the point
+
+The mockup's replayable demo (`mockups/intelligent-ui.html`, section 5) is the most important
+result: components build up as the model writes them, one completed line at a time, with the partial
+line held back. That is the whole compiler. In the flow scenario nodes appear as their lines arrive
+and edges attach once both ends exist; a node whose edge hasn't arrived yet is shown as a dotted
+"waiting for its edge" card rather than hidden.
 
 ### "Mermaid Plus": `flow`, not a mermaid replacement
 
@@ -120,12 +141,35 @@ attach to a node. `flow` fixes exactly that: vertical-first, each node a tappabl
 to detail and can carry a citation, branches rendered side by side. Scope guard: ≤ ~8 nodes; anything
 bigger or any other graph type stays mermaid. Not an attempt to re-implement mermaid's layout engine.
 
+### Streaming mermaid too (spiked 2026-10-09)
+
+Today a diagram renders only once the turn ends: `ChatTurnView.svelte` gates `renderMermaidIn` on
+`!turn.streaming`. Its own comment says why: an *unclosed* fence is briefly a half-diagram, and parsing
+that would flash a failure note. That is a reason to avoid rendering an unclosed fence, not to wait
+for the whole turn, and it doesn't need anything from mermaid itself.
+
+Spike (real mermaid 11.12 in headless Chromium, `mermaid.parse` + `mermaid.render` at each
+complete-line prefix): flowchart 9/9 prefixes valid, sequence 8/8, gantt 8/8, ER 5/8 (invalid only
+inside an open `{ … }` attribute block). Render time median ~29 ms, max ~52 ms for the flowchart on a
+desktop-class machine; **phone speed is unmeasured.** So the approach that needs no library change:
+
+1. While streaming, on each *new complete line* of a mermaid fence, `mermaid.parse` the prefix.
+2. If it parses, render it (latest-wins, one render in flight) and swap it in with a short fade.
+3. If it doesn't, keep the last good render and wait for the next line.
+4. On the closing fence, do the final render exactly as today (including `autoQuoteLabels` /
+   `ensureStyleContrast`, which must also run on every prefix).
+
+Two caveats the demo makes visible: nodes **move** as dagre re-lays the graph out (a fade softens it,
+nothing more), and a plain mermaid graph is tall on a phone, which is a further reason `flow` exists.
+Worth building independently of the `ui` work; it's a change to `markdown.ts` / `mermaid.ts` /
+`ChatTurnView.svelte`. Needs a way to tell a closed fence from an open one while streaming (the
+rendered DOM can't: marked emits both as a code block).
+
 ## Interaction model (no code execution, no `eval`)
 
 - **Local, declarative state only:** tab selection, checklist ticks, hotspot selection. Never
   persisted server-side, never model-driven.
-- **Action chips** send text as the user's next ordinary message — the same pattern as
-  `ask_user_question` (`tools/ask_user_question.go`), no live round trip.
+- ~~Action chips~~ — cut 2026-10-09; the follow-up suggestions under every reply already do this.
 - Computed/rescaling widgets (slider drives a derived value) are **out of scope** — see
   Decisions; they're the nearest neighbour to the excluded "build a tool" feature.
 
@@ -171,7 +215,7 @@ fallback rate with Oracle off has been measured — a smaller floor means a wors
 ui:
   instructions: >-
     Would a structured visual block serve this message clearly better than ordinary prose?
-    Pick "none" unless the answer is really a comparison, procedure, timeline, chart, or
+    Pick "none" unless the answer is really a comparison, procedure, timeline, or
     similar and prose would be harder to scan.
   options:
     none: Prose, a short list, or code serves this best.
@@ -179,7 +223,6 @@ ui:
     steps: A procedure where order matters.
     checklist: Things to prepare or tick off.
     timeline: Events over time, a history, or a schedule.
-    chart: A trend or comparison of numbers that are already in the answer.
     flow: A process or decision chain with branches.
     procon: One thing weighed for and against.
     tabs: Parallel versions of one answer (per OS, per option).
@@ -207,8 +250,9 @@ Design calls, each deliberate:
   `ui` check isn't asked at all and `format` behaves exactly as today.
 - **Oracle picks the block, never a layout.** Options name *what the answer is* (`compare`,
   `steps`...), not how it looks; the client chooses cards vs table by viewport.
-- **Callout / stat aren't options.** They're small accents the model may add under the base prompt.
-  Oracle only decides the "this answer is really a ___" cases, where a wrong default hurts most.
+- **Callout / stat / quote aren't options**, and neither are `claim`, `choose`, `facts`, `disclose`
+  (they ride existing checks, see the catalog). Callout, stat and quote are small accents the model
+  may add under the base prompt. The `ui` check only decides the "this answer is really a ___" cases, where a wrong default hurts most.
 - **One block per answer by default.** Jev returns a single winner, and the nudge says "one fence".
   The model may still add small accents on its own; multi-block answers are not forbidden, just not
   encouraged.
@@ -260,16 +304,15 @@ backend. Unit-test the line parser against truncated, malformed, and unknown-com
 1. Parser + renderer + 4 components (callout, compare, steps, stat), base prompt fragment, Settings
    dial. Ship this **without** Oracle first so the floor can be measured on its own.
 2. The Oracle `ui` check (limited to the options phase 1 can render), margin-note/ⓘ-sheet wording,
-   "rerun as plain text". Then checklist, timeline, chart, tabs, procon.
-3. `flow`; citations bound into every block; map; commentary-style early answers.
+   "rerun as plain text". Then checklist, timeline, tabs, procon, and the check-riding blocks (`claim`, `choose`, `facts`, `disclose`, `quote`).
+3. `flow`; streaming mermaid (independent, could ship any time); citations bound into every block; map; commentary-style early answers.
 
 Shipping also requires: a `HelpModal.svelte` `TERMS` entry and a `docs/FEATURES.md` line
 (CLAUDE.md).
 
 ## Decisions (2026-10-08, operator Q&A)
 
-1. **Interactivity: static + local toggles only.** Tabs, checklist ticks, hotspot selection, action
-   chips. No computed/rescaling values and no expression language — that keeps this clear of the
+1. **Interactivity: static + local toggles only.** Tabs, checklist ticks, hotspot selection. No computed/rescaling values and no expression language — that keeps this clear of the
    excluded "build a tool" territory. Revisit only if real usage shows a concrete need.
 2. **Visuals dial defaults to Low** at launch: a component only when it clearly beats prose.
 3. **Surfaces: chat only.** Pulsar, Pulsar Daily and Atlas have separate layouts and LLM paths;
@@ -287,8 +330,20 @@ Shipping also requires: a `HelpModal.svelte` `TERMS` entry and a `docs/FEATURES.
 2. Field names above are a first draft from the mockups; settle them with the phase-1 four blocks.
 3. Whether a cancelled/errored turn leaves a half-rendered block or collapses it to a code block.
    The mockup assumes the already-complete lines stay rendered and only the partial line is dropped.
-4. Should `chips` be dropped (duplicates follow-up suggestions)? Leaning yes.
-5. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
+4. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
    fallback measured first.
-6. Does `ui` need its own margin-note clause, or is the existing "Read as ..." note enough? The
+5. Does `ui` need its own margin-note clause, or is the existing "Read as ..." note enough? The
    mockup shows the clause version; judge in real use like the rest of Oracle's wording.
+
+## Decisions (2026-10-09, operator review of the mockups)
+
+1. **Chips: cut.** The automatic follow-up suggestions under every thread already cover it.
+2. **Charts: cut.** `code_exec` was added to make charts, and they come out far better than a
+   hand-built visualization suite; the earlier custom visualization tool was a waste once code
+   execution existed. No `chart` block, no Oracle `chart` option.
+3. **Timeline: the vertical rail.** The ledger overlapped it and is dropped. (The rail also handles
+   long dates better than the ledger did, contrary to what the first mockup note claimed.)
+4. **Callout: option B** (icon chip on a card). Option A read like a generic markdown renderer.
+5. **`flow`: in.** More interactive than mermaid and sits naturally in prose.
+6. **Streaming render is the headline feature.** It also motivates streaming mermaid (spiked above);
+   mermaid's own library can't render mid-line, so the plan is render-per-complete-line, not a fork.

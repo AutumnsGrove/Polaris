@@ -37,6 +37,8 @@
 	--color-accent-2-soft: color-mix(in srgb, var(--color-accent-2) 14%, transparent);
 	--color-ok: oklch(78% 0.1 155);
 	--color-ok-soft: color-mix(in srgb, var(--color-ok) 14%, transparent);
+	--color-bad: oklch(74% 0.12 28);
+	--color-bad-soft: color-mix(in srgb, var(--color-bad) 14%, transparent);
 	--radius-sm: 6px;
 	--radius-md: 10px;
 	--radius-lg: 16px;
@@ -103,9 +105,12 @@ pre.src { margin: var(--space-sm) 0 0; max-width: 390px; background: var(--color
 .u-callout { --tone: var(--color-accent-2); --tone-soft: var(--color-accent-2-soft); display: block; font-size: 14px; }
 .u-callout.warn { --tone: var(--color-accent); --tone-soft: var(--color-accent-soft); }
 .u-callout.ok { --tone: var(--color-ok); --tone-soft: var(--color-ok-soft); }
-.u-callout.a { border-left: 3px solid var(--tone); background: var(--tone-soft); padding: var(--space-sm) var(--space-md); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 .u-callout.b { display: flex; gap: var(--space-md); align-items: flex-start; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md); }
 .u-callout.b .ic { flex: none; width: 26px; height: 26px; border-radius: var(--radius-full); background: var(--tone-soft); color: var(--tone); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+
+
+.u-callout.b.answer { --tone: var(--color-accent); --tone-soft: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
+.asof { display: inline-block; margin-left: var(--space-sm); font-family: var(--font-mono); font-size: 11px; color: var(--color-text-dim); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 0 8px; white-space: nowrap; }
 
 /* stat */
 .u-stat.a { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); }
@@ -173,18 +178,6 @@ table.u-cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; min
 .u-tl.a li::before { content: ''; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--color-bg); border: 2px solid var(--color-accent); }
 .u-tl.a li:last-child { padding-bottom: 0; }
 .u-tl .when { display: block; color: var(--color-accent); font-size: 12px; font-weight: 600; letter-spacing: 0.03em; }
-.u-tl.b { margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); overflow: hidden; }
-.u-tl.b li { display: grid; grid-template-columns: 74px 1fr; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); font-size: 13.5px; }
-.u-tl.b li:first-child { border-top: 0; }
-.u-tl.b .when { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-dim); padding-top: 2px; }
-
-/* chart */
-.u-chart { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg) var(--space-sm); }
-.u-chart .ct { font-size: 13.5px; font-weight: 600; }
-.u-chart .cs { font-size: 12px; color: var(--color-text-dim); margin-bottom: var(--space-xs); }
-.u-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-.u-chart .foot { font-size: 11.5px; color: var(--color-text-dim); margin-top: var(--space-xs); }
-
 /* tabs */
 .u-tabs { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
 .u-tabs .bar { display: flex; gap: 2px; padding: var(--space-xs); background: var(--color-surface-2); overflow-x: auto; }
@@ -204,12 +197,6 @@ table.u-cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; min
 .u-procon li { padding: 3px 0 3px 14px; position: relative; }
 .u-procon .pro li::before { content: '+'; position: absolute; left: 0; color: var(--color-ok); font-weight: 700; }
 .u-procon .con li::before { content: '–'; position: absolute; left: 0; color: var(--color-accent); font-weight: 700; }
-
-/* chips */
-.u-chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.u-chips button { appearance: none; font: inherit; font-size: 13px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 14px; cursor: pointer; }
-.u-chips button:hover { border-color: var(--color-accent); }
-.u-chips-out { font-size: 12px; color: var(--color-text-dim); margin-top: var(--space-sm); min-height: 18px; }
 
 /* flow — Mermaid Plus */
 .mm { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md); }
@@ -234,6 +221,68 @@ table.u-cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; min
 .fbranch > div { display: grid; justify-items: center; }
 .fbranch .lab { font-size: 11px; color: var(--color-accent); font-weight: 600; margin-bottom: 2px; }
 
+
+/* claim */
+.u-claim { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
+.u-claim .cl-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-sm); padding: var(--space-md) var(--space-lg) 0; }
+.vpill { --tone: var(--color-text-dim); --tone-soft: var(--color-surface-3); display: inline-flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; padding: 2px 10px; border-radius: var(--radius-full); color: var(--tone); background: var(--tone-soft); }
+.vpill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
+.vpill.true { --tone: var(--color-ok); --tone-soft: var(--color-ok-soft); }
+.vpill.misleading { --tone: var(--color-accent); --tone-soft: var(--color-accent-soft); }
+.vpill.false { --tone: var(--color-bad); --tone-soft: var(--color-bad-soft); }
+.u-claim .cl-meta { font-size: 11.5px; color: var(--color-text-dim); }
+.u-claim .cl-text { margin: var(--space-sm) 0 var(--space-md); padding: 0 var(--space-lg); font-family: var(--font-serif); font-size: 17px; line-height: 1.4; }
+.u-claim .cl-sec { border-top: 1px solid var(--color-border); padding: var(--space-sm) var(--space-lg); font-size: 13px; }
+.u-claim .cl-sec h4 { margin: 0 0 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); }
+.u-claim .cl-sec p { margin: 0; }
+
+/* quote */
+.u-quote { margin: var(--space-md) 0; padding: var(--space-md) var(--space-lg); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); }
+.u-quote blockquote { margin: 0; font-family: var(--font-serif); font-size: 16.5px; line-height: 1.45; }
+.u-quote blockquote::before { content: '“'; display: block; font-size: 38px; line-height: 0.6; color: var(--color-accent); height: 18px; }
+.u-quote figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin-top: var(--space-md); font-size: 12.5px; color: var(--color-text-dim); }
+.found { font-size: 11px; color: var(--color-ok); background: var(--color-ok-soft); border-radius: var(--radius-full); padding: 1px 9px; font-weight: 600; }
+
+/* disclose */
+.u-disc { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); margin: var(--space-sm) 0; }
+.u-disc summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg); font-size: 14px; font-weight: 600; }
+.u-disc summary::-webkit-details-marker { display: none; }
+.u-disc summary::after { content: '▸'; color: var(--color-text-dim); transition: transform 0.2s; margin-left: auto; }
+.u-disc[open] summary::after { transform: rotate(90deg); }
+.u-disc .hint { font-weight: 400; font-size: 11.5px; color: var(--color-text-dim); font-family: var(--font-mono); }
+.u-disc .body { padding: 0 var(--space-lg) var(--space-md); font-size: 14px; color: var(--color-text); }
+.u-disc .body p { margin: 0 0 var(--space-sm); }
+
+/* choose */
+.u-choose { border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); overflow: hidden; }
+.u-choose .ch-h { padding: var(--space-sm) var(--space-lg); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); background: var(--color-surface-2); font-weight: 600; }
+.u-choose .row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-md); align-items: center; padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--color-border); font-size: 13.5px; }
+.u-choose .row:first-of-type { border-top: 0; }
+.u-choose .if::before { content: 'If '; color: var(--color-text-dim); }
+.u-choose .to { font-weight: 600; font-size: 12.5px; color: var(--color-accent); background: var(--color-accent-soft); border-radius: var(--radius-full); padding: 3px 12px; white-space: nowrap; }
+.u-choose .to::before { content: '→ '; }
+
+/* facts */
+.u-facts { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
+.u-facts .fh { padding: var(--space-md) var(--space-lg); background: var(--color-surface-2); display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); }
+.u-facts .fh b { font-family: var(--font-serif); font-weight: 500; font-size: 17px; }
+.u-facts .fh span { font-size: 12px; color: var(--color-text-dim); }
+.u-facts dl { margin: 0; padding: var(--space-xs) var(--space-lg) var(--space-sm); display: grid; grid-template-columns: 96px 1fr; font-size: 13.5px; }
+.u-facts dt, .u-facts dd { padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); margin: 0; }
+.u-facts dt { color: var(--color-text-dim); font-size: 12.5px; }
+.u-facts dt:nth-last-of-type(1), .u-facts dd:last-of-type { border-bottom: 0; }
+
+/* progressive mermaid */
+.mm-out { min-height: 120px; }
+.mm-out svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.mm-out pre { margin: 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--color-text-dim); white-space: pre-wrap; }
+.mm-out.fresh svg { animation: mmfade 0.35s ease-out; }
+@keyframes mmfade { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mm-out.fresh svg { animation: none; } }
+.fnode.pending { border-style: dotted; opacity: 0.6; cursor: default; }
+.fnode .wait { font-size: 11px; color: var(--color-text-dim); font-weight: 400; }
+.mm-col { display: grid; gap: var(--space-xs); }
+
 /* streaming demo */
 .demo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); align-items: start; }
 @media (max-width: 800px) { .demo { grid-template-columns: 1fr; } }
@@ -244,6 +293,7 @@ table.u-cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; min
 .demo .out { min-height: 340px; }
 .demo-bar { display: flex; gap: var(--space-sm); align-items: center; margin: var(--space-md) 0; flex-wrap: wrap; }
 .btn { appearance: none; font: inherit; font-size: 13px; color: var(--color-bg); background: var(--color-accent); border: 0; border-radius: var(--radius-full); padding: 6px 18px; font-weight: 600; cursor: pointer; }
+.btn.ghost[aria-pressed='true'] { border-color: var(--color-accent); color: var(--color-accent); }
 .btn.ghost { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-strong); }
 .skel { height: 34px; border-radius: var(--radius-md); background: linear-gradient(90deg, var(--color-surface) 0%, var(--color-surface-3) 50%, var(--color-surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; margin: var(--space-md) 0; }
 @keyframes shimmer { to { background-position: -200% 0; } }
@@ -285,7 +335,9 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 	<a href="#hero">In context</a>
 	<a href="#blocks">Block gallery</a>
 	<a href="#flow">Mermaid Plus (flow)</a>
+	<a href="#more">More blocks</a>
 	<a href="#stream">Streaming</a>
+	<a href="#mermaid">Mermaid, streamed</a>
 	<a href="#oracle">Oracle</a>
 </nav>
 
@@ -326,27 +378,21 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 <h2 id="blocks">2 · Block gallery</h2>
 <p class="lede">The starter vocabulary, two takes where the phone layout is a real decision. Option <span class="opt">A</span> / <span class="opt">B</span> are visual alternatives for the <em>same</em> fence lines.</p>
 
-<div class="verdict"><b>Recommendation up front:</b> compare → <b>B (cards)</b> on phones (a 3-column table forces sideways scrolling), steps → <b>A (rail)</b>, timeline → <b>A (rail)</b>, callout → <b>A</b>. The same block can switch layout by viewport, so the model never picks a layout — only the data.</div>
+<div class="verdict"><b>Decided so far:</b> callout → <b>B</b>, timeline → <b>rail</b>, flow → in. <b>Cut:</b> chips (follow-up suggestions already cover it), charts (code execution makes better ones than a hand-built suite ever will), the ledger timeline. Still open: compare cards vs table, steps rail vs chips. The same block can switch layout by viewport, so the model never picks a layout, only the data.</div>
 
 <!-- callout -->
 <h3 style="margin-top:32px">callout</h3>
 <div class="grid">
-	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Left rule, tone-tinted</p></div>
+	<div class="spec"><div class="spec-head"><span class="opt">PICK</span><p>Icon chip on a card — four tones</p></div>
 		<div class="frame">
-			<div class="u u-callout a"><b>Heads up.</b> Peak season runs September–October; prices drop about 30% after.<span class="cite">2</span></div>
-			<div class="u u-callout a warn"><b>Check first.</b> Some airlines count the AeroPress as a liquid-brewing device in carry-on.</div>
-			<div class="u u-callout a ok"><b>Good news.</b> Filters are paper and weigh almost nothing.</div>
-		</div>
-		<pre class="src">{"c":"callout","tone":"note","text":"**Heads up.** Peak season runs…","cite":[2]}
-{"c":"callout","tone":"warn","text":"…"}
-{"c":"callout","tone":"ok","text":"…"}</pre></div>
-	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Icon chip on a card</p></div>
-		<div class="frame">
+			<div class="u u-callout b answer"><span class="ic">✦</span><div><b>Short answer.</b> AeroPress. It packs flat, needs only hot water, and is hard to get wrong.<span class="cite">1</span><span class="asof">as of Oct 2026</span></div></div>
 			<div class="u u-callout b"><span class="ic">i</span><div><b>Heads up.</b> Peak season runs September–October; prices drop about 30% after.<span class="cite">2</span></div></div>
 			<div class="u u-callout b warn"><span class="ic">!</span><div><b>Check first.</b> Some airlines count the AeroPress as a liquid-brewing device in carry-on.</div></div>
 			<div class="u u-callout b ok"><span class="ic">✓</span><div><b>Good news.</b> Filters are paper and weigh almost nothing.</div></div>
 		</div>
-		<p class="note">B reads more like an app, A more like a margin note. A is quieter and matches PRODUCT.md's "calm over clever"; B stacks poorly when there are three in a row.</p></div>
+		<pre class="src">{"c":"callout","tone":"answer","text":"**Short answer.** AeroPress. It packs…","asof":"2026-10","cite":[1]}
+{"c":"callout","tone":"note|warn|ok","text":"…","cite":[2]}</pre>
+		<p class="note">New <code>answer</code> tone: a bottom-line-up-front card that always carries an <em>as-of</em> date, so freshness is shown, not implied. Oracle's <code>recency</code> check already knows when this matters.</p></div>
 </div>
 
 <!-- stat -->
@@ -430,38 +476,16 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 <!-- timeline -->
 <h3 style="margin-top:40px">timeline</h3>
 <div class="grid">
-	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Vertical rail, date above text</p></div>
+	<div class="spec"><div class="spec-head"><span class="opt">PICK</span><p>Vertical rail, date above text — the ledger is dropped</p></div>
 		<div class="frame"><ul class="u u-tl a">
 			<li><span class="when">1933</span>Alfonso Bialetti patents the moka pot design.<span class="cite">1</span></li>
 			<li><span class="when">1938</span>Mass production begins in Italy.</li>
-			<li><span class="when">2005</span>AeroPress is released.<span class="cite">2</span></li>
+			<li><span class="when">14 Mar – 2 Apr 2005</span>AeroPress field trials, then a public release.<span class="cite">2</span></li>
 		</ul></div>
 		<pre class="src">{"c":"timeline"}
 {"when":"1933","i":"Alfonso Bialetti patents…","cite":[1]}
-{"when":"2005","i":"AeroPress is released.","cite":[2]}</pre></div>
-	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Ledger — dates in a column</p></div>
-		<div class="frame"><ul class="u u-tl b">
-			<li><span class="when">1933</span><span>Bialetti patents the moka pot design.<span class="cite">1</span></span></li>
-			<li><span class="when">1938</span><span>Mass production begins in Italy.</span></li>
-			<li><span class="when">2005</span><span>AeroPress is released.<span class="cite">2</span></span></li>
-		</ul></div>
-		<p class="note">B packs denser and handles long date strings ("14 Mar – 2 Apr 2026") better; A looks more like a timeline. Same lines either way.</p></div>
-</div>
-
-<!-- chart -->
-<h3 style="margin-top:40px">chart <span style="font-weight:400;color:var(--color-text-dim)">(from inline numbers only — nothing fetched)</span></h3>
-<div class="grid">
-	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Line, direct end label, no legend</p></div>
-		<div class="frame"><div class="u u-chart"><div class="ct">Average nightly rate</div><div class="cs">USD, sample data</div>
-			<svg data-chart='{"kind":"line","x":["2021","2022","2023","2024","2025","2026"],"y":[92,104,118,121,133,141],"unit":"$"}'></svg>
-			<div class="foot">Source <span class="cite">3</span></div></div></div>
-		<pre class="src">{"c":"chart","kind":"line","title":"Average nightly rate",
- "unit":"$","x":["2021",…],"y":[92,104,118,121,133,141],"cite":[3]}</pre></div>
-	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Bars, highlighted value</p></div>
-		<div class="frame"><div class="u u-chart"><div class="ct">Brew time by method</div><div class="cs">minutes, sample data</div>
-			<svg data-chart='{"kind":"bar","x":["AeroPress","Moka","Espresso","Pour-over"],"y":[2,5,1,4],"hi":0,"unit":""}'></svg>
-			<div class="foot">Source <span class="cite">1</span></div></div></div>
-		<p class="note">One accent for the point the prose is about, the rest muted. A chart earns a block when the <em>shape</em> (trend, outlier) is the answer; otherwise a stat is enough.</p></div>
+{"when":"14 Mar – 2 Apr 2005","i":"AeroPress field trials…","cite":[2]}</pre>
+		<p class="note">Correction to my earlier note: the rail is the one that copes with long dates, because the date sits above the text instead of in a fixed 74px column. The ledger overlapped it and is gone.</p></div>
 </div>
 
 <!-- tabs -->
@@ -492,14 +516,6 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 		<pre class="src">{"c":"procon","pro_h":"Good","con_h":"Watch for"}
 {"+":"Packs flat"}
 {"-":"Not true espresso"}</pre></div>
-</div>
-
-<!-- chips -->
-<h3 style="margin-top:40px">chips <span style="font-weight:400;color:var(--color-text-dim)">(interactive — sends text as the next message)</span></h3>
-<div class="grid">
-	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Same pattern as <code>ask_user_question</code></p></div>
-		<div class="frame"><div class="u"><div class="u-chips" data-chips><button>Best grinder for travel?</button><button>Compare AeroPress Go</button></div><div class="u-chips-out">Tap one.</div></div></div>
-		<p class="note"><b>Flag:</b> Polaris already shows LLM-generated follow-up suggestions under every reply. Chips inside the answer mostly duplicate them. Suggest dropping chips from the vocabulary unless a real gap shows up.</p></div>
 </div>
 
 <!-- ============================================================ -->
@@ -542,16 +558,98 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 <div class="verdict"><b>Scope guard:</b> <code>flow</code> is for processes and decision chains up to ~8 nodes. Anything bigger, or any other graph type, stays mermaid. Node/edge lines are a stream-friendly shape: each node card can appear the moment its line completes (edges attach when both ends exist).</div>
 
 <!-- ============================================================ -->
-<h2 id="stream">4 · Streaming — the whole "compiler"</h2>
-<p class="lede">The claim in the plan: a stream of whole lines needs no incremental JSON parser. Each completed line becomes a component; the trailing partial line is held back (shown as a shimmer) until its newline. Hit replay. The stream deliberately includes an unknown component and a malformed line — both degrade quietly instead of breaking the answer.</p>
-<div class="demo-bar"><button class="btn" id="replay">▶ Replay stream</button><button class="btn ghost" id="instant">Show final</button><span class="mono" id="demo-status" style="color:var(--color-text-dim)"></span></div>
+<h2 id="more">4 · More in the tank</h2>
+<p class="lede">Five more blocks, picked for what Polaris is specifically about: <em>sourcing</em> and phone-sized reading. Several reuse an Oracle check that already exists, so they add a nudge, not a new Jev question (see the table at the end).</p>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>claim</code> — a verdict with the evidence on both sides</p></div>
+		<div class="frame"><div class="u u-claim">
+			<div class="cl-head"><span class="vpill misleading">Misleading</span><span class="cl-meta">3 sources checked</span></div>
+			<p class="cl-text">“A moka pot makes real espresso.”</p>
+			<div class="cl-sec"><h4>Supports</h4><p>The manufacturer calls the result espresso-style coffee.<span class="cite">1</span></p></div>
+			<div class="cl-sec"><h4>Disputes</h4><p>It brews at roughly 1.5 bar; espresso is defined near 9 bar.<span class="cite">2</span><span class="cite">3</span></p></div>
+		</div></div>
+		<pre class="src">{"c":"claim","text":"A moka pot makes real espresso.",
+ "verdict":"misleading"}
+{"+":"Manufacturer calls it espresso-style","cite":[1]}
+{"-":"Brews at ~1.5 bar; espresso is ~9 bar","cite":[2,3]}</pre>
+		<p class="note">The sourcing-is-the-product block. Verdicts mirror the existing <code>claim_check</code> nudge (true / false / misleading / unverified) plus mixed. Reuses <code>+</code>/<code>-</code> child lines from <code>procon</code>.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>quote</code> — a sourced pull-quote</p></div>
+		<div class="frame"><figure class="u u-quote" style="margin:0">
+			<blockquote>Use water just off the boil, around 90 to 96 degrees, and stir for about ten seconds before pressing.</blockquote>
+			<figcaption><span>Brewing guide</span><span class="found">✓ found in source</span><span class="cite">3</span></figcaption>
+		</figure></div>
+		<pre class="src">{"c":"quote","text":"Use water just off the boil…",
+ "by":"Brewing guide","cite":[3]}</pre>
+		<p class="note"><b>Trust marks are never model-written.</b> The “found in source” badge comes from the per-claim verification Polaris already runs, checked against the cited source's text. A quote that fails it renders without the badge, so the model can't claim a verification it didn't get.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>disclose</code> — detail on tap (try it)</p></div>
+		<div class="frame">
+			<details class="u u-disc"><summary><span>Why 80–85°C and not boiling?</span><span class="hint">20 s</span></summary><div class="body"><p>Boiling water over-extracts the fines in a short steep, which is where the bitterness comes from.<span class="cite">1</span></p><p>A 30-second cool-down after the kettle clicks gets you into range.</p></div></details>
+			<details class="u u-disc"><summary><span>What if I don't have paper filters?</span><span class="hint">15 s</span></summary><div class="body"><p>A fine metal disc works but lets more sediment through.</p></div></details>
+		</div>
+		<pre class="src">{"c":"disclose","title":"Why 80–85°C and not boiling?"}
+{"p":"Boiling water over-extracts…","cite":[1]}
+{"p":"A 30-second cool-down…"}</pre>
+		<p class="note">Keeps a phone answer short without dropping the depth. Native <code>&lt;details&gt;</code>, so no JS and keyboard access for free.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>choose</code> — pick by situation</p></div>
+		<div class="frame"><div class="u u-choose">
+			<div class="ch-h">Which one should you take?</div>
+			<div class="row"><span class="if">you'll have one kitchen all month</span><span class="to">Small machine</span></div>
+			<div class="row"><span class="if">you're moving every few days<span class="cite">2</span></span><span class="to">AeroPress</span></div>
+			<div class="row"><span class="if">you camp with a stove</span><span class="to">Moka pot</span></div>
+		</div></div>
+		<pre class="src">{"c":"choose","title":"Which one should you take?"}
+{"if":"you'll have one kitchen all month","then":"Small machine"}
+{"if":"you're moving every few days","then":"AeroPress","cite":[2]}</pre>
+		<p class="note">When the honest answer is “it depends”, this is the compare block's follow-up: the decision rules instead of a table of facts. Still no computed values; it is a static list.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>facts</code> — an at-a-glance card for one thing</p></div>
+		<div class="frame"><div class="u u-facts">
+			<div class="fh"><b>AeroPress Original</b><span>Brewer · 2005</span></div>
+			<dl><dt>Price</dt><dd>~$40<span class="cite">2</span></dd><dt>Weight</dt><dd>0.3 kg</dd><dt>Brew time</dt><dd>About 2 minutes</dd><dt>Made in</dt><dd>United States<span class="cite">1</span></dd></dl>
+		</div></div>
+		<pre class="src">{"c":"facts","title":"AeroPress Original","sub":"Brewer · 2005"}
+{"k":"Price","v":"~$40","cite":[2]}
+{"k":"Weight","v":"0.3 kg"}</pre>
+		<p class="note">The infobox. Suggest it <em>replaces</em> the three-up stat strip, which says less per square inch. Single big <code>stat</code> stays for one headline number.</p></div>
+</div>
+
+<div class="tablewrap"><table class="matrix">
+	<thead><tr><th>Block</th><th>Oracle hook</th><th>New Jev question?</th></tr></thead>
+	<tbody>
+		<tr><td>claim</td><td>the existing <code>claim_check</code> check; its nudge gains the block's syntax</td><td>no</td></tr>
+		<tr><td>choose</td><td>existing <code>task</code>=decide, alongside <code>ui</code>=compare</td><td>no</td></tr>
+		<tr><td>facts</td><td>existing <code>intent</code> options (person_org, place, product)</td><td>no</td></tr>
+		<tr><td>disclose</td><td>existing <code>depth</code>=thorough: keep it scannable</td><td>no</td></tr>
+		<tr><td>quote</td><td>none; model's own accent, verified after the fact</td><td>no</td></tr>
+	</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="stream">5 · Streaming — the whole "compiler"</h2>
+<p class="lede">A stream of whole lines needs no incremental JSON parser. Each completed line becomes a component and the trailing partial line is held back (the shimmer) until its newline. Pick a scenario and hit replay. The mixed one includes an unknown component and a malformed line, which degrade quietly. In the flow one, nodes appear as their lines arrive and edges attach once both ends exist.</p>
+<div class="demo-bar"><button class="btn" id="replay">▶ Replay</button><button class="btn ghost" id="instant">Show final</button><span class="mono" style="color:var(--color-text-dim)">|</span><button class="btn ghost" data-s="mixed" aria-pressed="true">Mixed answer</button><button class="btn ghost" data-s="flow" aria-pressed="false">Flow</button><span class="mono" id="demo-status" style="color:var(--color-text-dim)"></span></div>
 <div class="demo">
 	<div><div class="u-label">What the model emits</div><pre id="raw"></pre></div>
 	<div><div class="u-label">What the phone shows</div><div class="frame out" id="out"></div></div>
 </div>
 
 <!-- ============================================================ -->
-<h2 id="oracle">5 · Oracle integration</h2>
+<h2 id="mermaid">6 · Mermaid, streamed</h2>
+<p class="lede">Mermaid is an external library, so it can't render <em>inside</em> a half-written line. But it doesn't need to. Today a diagram waits for the whole turn (<code>ChatTurnView.svelte</code> gates on <code>!turn.streaming</code>). That gate exists to avoid a failure flash on an <em>unclosed</em> fence, not because mermaid can't cope with partial input. Re-rendering at each complete line, and keeping the last good result when a prefix doesn't parse, gets a diagram that builds up as it's written.</p>
+<div class="verdict"><b>Measured (mermaid 11.12, real library, headless Chromium):</b> every line-boundary prefix of a flowchart (9/9), sequence diagram (8/8) and gantt (8/8) parsed and rendered; an ER diagram failed only inside an open <code>{ … }</code> attribute block (5/8), which "keep the last good render" absorbs. Render time per attempt: median ~29 ms, max ~52 ms for the flowchart on a desktop-class machine; phone speed isn't measured. The demo below runs the same real library. Judge the layout shift yourself: nodes move as the graph grows, and a soft crossfade is all that's softening it.</div>
+<div class="demo-bar"><button class="btn" id="mm-replay">▶ Replay</button><span class="mono" id="mm-status" style="color:var(--color-text-dim)"></span></div>
+<div class="demo">
+	<div><div class="u-label">What the model emits</div><pre id="mm-raw"></pre></div>
+	<div class="mm-col">
+		<div class="u-label">Today · renders once the turn ends</div><div class="frame mm-out" id="mm-today"></div>
+		<div class="u-label" style="margin-top:16px">Progressive · re-render at each complete line</div><div class="frame mm-out" id="mm-prog"></div>
+	</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="oracle">7 · Oracle integration</h2>
 <p class="lede">Oracle already reads each message with one Jev call carrying ~20 questions. Adding a <code>ui</code> question costs almost nothing. Its job: say <em>whether</em> a visual block beats prose and <em>which</em> one, then nudge the model with the exact syntax for that block — a just-in-time few-shot.</p>
 
 <div class="grid">
@@ -590,15 +688,16 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-t
 		<tr><td>steps</td><td>A procedure where order matters.</td><td>steps syntax</td><td><code>format</code>: steps</td></tr>
 		<tr><td>checklist</td><td>Things to prepare or tick off.</td><td>checklist syntax</td><td><code>format</code>: list</td></tr>
 		<tr><td>timeline</td><td>Events over time, a history or schedule.</td><td>timeline syntax</td><td><code>format</code>: timeline</td></tr>
-		<tr><td>chart</td><td>A trend or comparison of numbers already in the answer.</td><td>chart syntax, "numbers must come from sources"</td><td>—</td></tr>
 		<tr><td>flow</td><td>A process or decision chain with branches.</td><td>flow syntax</td><td>mermaid (simple cases)</td></tr>
+		<tr><td colspan="4" style="color:var(--color-text-dim);font-size:12px">claim, choose, facts and disclose ride on existing checks (see section 4); they are not options of <code>ui</code>.</td></tr>
 		<tr><td>procon</td><td>One thing weighed for and against.</td><td>procon syntax</td><td>—</td></tr>
 		<tr><td>tabs</td><td>Parallel versions of one answer (per OS, per option).</td><td>tabs syntax</td><td>—</td></tr>
 	</tbody></table></div>
-<p class="note" style="max-width:78ch">Callouts, stats and chips are deliberately <em>not</em> Oracle options: they are small accents the model can add on its own judgement under the base prompt. Oracle only decides the "this answer is really a __" cases, which is where a wrong default hurts most.</p>
+<p class="note" style="max-width:78ch">Callouts and stats are deliberately <em>not</em> Oracle options: they are small accents the model can add on its own judgement under the base prompt. Oracle only decides the "this answer is really a __" cases, which is where a wrong default hurts most.</p>
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js"></script>
 <script>
 /* ---- shared helpers ---- */
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -627,49 +726,10 @@ document.querySelectorAll('[data-tabs]').forEach((t) => {
 	}));
 });
 
-/* ---- chips ---- */
-document.querySelectorAll('[data-chips]').forEach((c) => {
-	const out = c.parentElement.querySelector('.u-chips-out');
-	c.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-		out.textContent = `→ sends “${b.textContent}” as your next message`;
-	}));
-});
-
 /* ---- flow nodes ---- */
 document.querySelectorAll('.fnode').forEach((n) => n.addEventListener('click', () => {
 	n.setAttribute('aria-expanded', String(n.getAttribute('aria-expanded') !== 'true'));
 }));
-
-/* ---- charts (drawn from the inline numbers, as the real renderer would) ---- */
-document.querySelectorAll('svg[data-chart]').forEach((svg) => {
-	const d = JSON.parse(svg.dataset.chart);
-	const W = 330, H = 140, padL = 4, padR = 44, padT = 14, padB = 22;
-	svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-	const max = Math.max(...d.y), min = d.kind === 'bar' ? 0 : Math.min(...d.y) * 0.9;
-	const xs = (i) => padL + (i * (W - padL - padR)) / Math.max(1, d.x.length - 1);
-	const ys = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
-	let out = '';
-	const accent = 'var(--color-accent)', dim = 'var(--color-border-strong)', txt = 'var(--color-text-dim)';
-	if (d.kind === 'line') {
-		const pts = d.y.map((v, i) => `${xs(i)},${ys(v)}`);
-		out += `<path d="M${pts.join(' L')} L${xs(d.y.length - 1)},${H - padB} L${xs(0)},${H - padB}Z" fill="${accent}" opacity=".10"/>`;
-		out += `<path d="M${pts.join(' L')}" fill="none" stroke="${accent}" stroke-width="2" stroke-linejoin="round"/>`;
-		const last = d.y.length - 1;
-		out += `<circle cx="${xs(last)}" cy="${ys(d.y[last])}" r="4" fill="${accent}"/>`;
-		out += `<text x="${xs(last) + 8}" y="${ys(d.y[last]) + 4}" fill="var(--color-text)" font-size="12" font-weight="600">${d.unit}${d.y[last]}</text>`;
-		out += `<text x="${xs(0)}" y="${ys(d.y[0]) - 8}" fill="${txt}" font-size="11">${d.unit}${d.y[0]}</text>`;
-		d.x.forEach((l, i) => { if (i % 2 === 0 || i === last) out += `<text x="${xs(i)}" y="${H - 6}" fill="${txt}" font-size="10.5" text-anchor="middle">${l}</text>`; });
-	} else {
-		const bw = (W - padL - padR + 30) / d.x.length;
-		d.y.forEach((v, i) => {
-			const x = padL + i * bw + bw * 0.18, w = bw * 0.64, y = ys(v);
-			out += `<rect x="${x}" y="${y}" width="${w}" height="${H - padB - y}" rx="4" fill="${i === d.hi ? accent : dim}"/>`;
-			out += `<text x="${x + w / 2}" y="${y - 5}" fill="${i === d.hi ? 'var(--color-text)' : txt}" font-size="11" font-weight="${i === d.hi ? 600 : 400}" text-anchor="middle">${v}</text>`;
-			out += `<text x="${x + w / 2}" y="${H - 6}" fill="${txt}" font-size="10" text-anchor="middle">${d.x[i]}</text>`;
-		});
-	}
-	svg.innerHTML = out;
-});
 
 /* ---- settings dial ---- */
 const dialCopy = {
@@ -685,40 +745,88 @@ document.querySelectorAll('[data-dial]').forEach((el) => {
 });
 
 /* ---- streaming demo: a miniature of the real line "compiler" ---- */
-const STREAM = [
-	'{"c":"callout","tone":"note","text":"Peak season runs September–October","cite":[2]}',
-	'{"c":"stat","label":"Typical ripe window","value":"6 weeks","note":"varies with elevation","cite":[2]}',
-	'{"c":"compare","cols":["Gala","Honeycrisp"],"pick":1}',
-	'{"row":"Crunch","v":["Medium","High"]}',
-	'{"row":"Keeps for","v":["2 months","4 months"],"cite":[3]}',
-	'{"c":"sparkle","text":"a component the client has never heard of"}',
-	'{"c":"callout","tone":"warn","text":"this line gets cut off mid-',
-	'{"c":"chips","items":["Best for baking?","Where to buy near me"]}'
-].join('\n') + '\n';
+const STREAMS = {
+	mixed: [
+		'{"c":"callout","tone":"answer","text":"**Short answer.** Honeycrisp, if you want crunch that lasts.","asof":"2026-10","cite":[2]}',
+		'{"c":"compare","cols":["Gala","Honeycrisp"],"pick":1}',
+		'{"row":"Crunch","v":["Medium","High"]}',
+		'{"row":"Keeps for","v":["2 months","4 months"],"cite":[3]}',
+		'{"c":"sparkle","text":"a component the client has never heard of"}',
+		'{"c":"callout","tone":"warn","text":"this line gets cut off mid-',
+		'{"c":"stat","label":"Typical ripe window","value":"6 weeks","note":"varies with elevation","cite":[2]}'
+	].join('\n') + '\n',
+	flow: [
+		'{"c":"flow"}',
+		'{"n":"feed","t":"Feed the starter","d":"1:1:1 by weight, then wait 4–8 hours.","cite":[1]}',
+		'{"n":"ok","t":"Doubled and bubbly?","kind":"decision","d":"Trust volume and bubbles, not the float test."}',
+		'{"e":["feed","ok"]}',
+		'{"n":"mix","t":"Mix the dough"}',
+		'{"n":"wait","t":"Wait 1–2 h"}',
+		'{"e":["ok","mix"],"l":"Yes"}',
+		'{"e":["ok","wait"],"l":"Not yet"}',
+		'{"n":"bake","t":"Bake at 230°C","d":"Steam for the first 15 minutes.","cite":[2]}',
+		'{"e":["mix","bake"]}'
+	].join('\n') + '\n'
+};
+let scenario = 'mixed';
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const asof = (v) => { const m = /^(\d{4})-(\d{2})/.exec(v || ''); return m ? `<span class="asof">as of ${MONTHS[+m[2] - 1]} ${m[1]}</span>` : ''; };
+const ICON = { answer: '✦', note: 'i', warn: '!', ok: '✓' };
+
+function nodeHtml(n, pending) {
+	const d = n.d ? `<span class="fd">${md(n.d)}${cites(n.cite)}</span>` : '';
+	return `<button class="fnode ${n.kind === 'decision' ? 'decision' : ''} ${pending ? 'pending' : ''}" aria-expanded="false"><span class="ft"><span>${esc(n.t)}${pending ? ' <span class="wait">· waiting for its edge</span>' : ''}</span>${n.d ? '<span class="chev">▶</span>' : ''}</span>${d}</button>`;
+}
+function flowHtml(nodes, edges) {
+	if (!nodes.length) return '';
+	const byId = new Map(nodes.map((n) => [n.n, n]));
+	const seen = new Set(), label = {};
+	let layer = [nodes[0].n], out = '';
+	while (layer.length) {
+		layer.forEach((id) => seen.add(id));
+		out += layer.length === 1
+			? nodeHtml(byId.get(layer[0]))
+			: `<div class="fbranch">${layer.map((id) => `<div>${label[id] ? `<span class="lab">${esc(label[id])}</span>` : ''}${nodeHtml(byId.get(id))}</div>`).join('')}</div>`;
+		const next = [];
+		for (const e of edges) {
+			const [a, b] = e.e || [];
+			if (layer.includes(a) && byId.has(b) && !seen.has(b) && !next.includes(b)) { next.push(b); if (e.l) label[b] = e.l; }
+		}
+		if (next.length) out += '<div class="fedge"></div>';
+		layer = next;
+	}
+	const orphans = nodes.filter((n) => !seen.has(n.n));
+	if (orphans.length) out += `<div style="width:100%;display:grid;gap:8px;margin-top:12px">${orphans.map((n) => nodeHtml(n, true)).join('')}</div>`;
+	return `<div class="u flow">${out}</div>`;
+}
 
 function renderLines(lines) {
-	let html = '', mode = null, rows = '', head = null;
+	let html = '', mode = null, rows = '', head = null, nodes = [], edges = [], extra = '';
 	const flush = () => {
 		if (mode === 'compare' && head) {
 			const th = head.cols.map((c, i) => `<th class="${i === head.pick ? 'pick' : ''}">${i === head.pick ? '<span class="tag">Pick</span>' : ''}${esc(c)}</th>`).join('');
 			html += `<div class="u u-cmp-scroll"><table class="u-cmp"><thead><tr><th></th>${th}</tr></thead><tbody>${rows}</tbody></table></div>`;
-		}
-		mode = null; rows = ''; head = null;
+		} else if (mode === 'flow') html += flowHtml(nodes, edges);
+		html += extra;
+		mode = null; rows = ''; head = null; nodes = []; edges = []; extra = '';
 	};
+	const bad = (msg, line) => `<div class="u-bad"><i>${msg}</i>${esc(line.slice(0, 64))}${line.length > 64 ? '…' : ''}</div>`;
 	for (const line of lines) {
 		if (!line.trim()) continue;
 		let o;
-		try { o = JSON.parse(line); } catch { flush(); html += `<div class="u-bad"><i>unrenderable line</i>${esc(line.slice(0, 70))}${line.length > 70 ? '…' : ''}</div>`; continue; }
-		if (o.row !== undefined && mode === 'compare') {
+		try { o = JSON.parse(line); } catch { const b = bad('unrenderable line', line); if (mode) extra += b; else html += b; continue; }
+		if (mode === 'compare' && o.row !== undefined) {
 			rows += `<tr><td>${esc(o.row)}</td>${o.v.map((v, i) => `<td class="${i === head.pick ? 'pick' : ''}">${esc(v)}${i === head.pick ? cites(o.cite) : ''}</td>`).join('')}</tr>`;
 			continue;
 		}
+		if (mode === 'flow' && o.n !== undefined) { nodes.push(o); continue; }
+		if (mode === 'flow' && o.e !== undefined) { edges.push(o); continue; }
 		flush();
-		if (o.c === 'callout') html += `<div class="u u-callout a ${o.tone === 'warn' ? 'warn' : o.tone === 'ok' ? 'ok' : ''}">${md(o.text)}${cites(o.cite)}</div>`;
+		if (o.c === 'callout') { const t = ['answer', 'warn', 'ok'].includes(o.tone) ? o.tone : 'note'; html += `<div class="u u-callout b ${t === 'note' ? '' : t}"><span class="ic">${ICON[t]}</span><div>${md(o.text)}${cites(o.cite)}${asof(o.asof)}</div></div>`; }
 		else if (o.c === 'stat') html += `<div class="u u-stat a"><div class="lbl">${esc(o.label)}</div><div class="big">${esc(o.value)}</div><div class="delta" style="color:var(--color-text-dim)">${esc(o.note || '')} ${cites(o.cite)}</div></div>`;
 		else if (o.c === 'compare') { mode = 'compare'; head = { cols: o.cols, pick: o.pick }; }
-		else if (o.c === 'chips') html += `<div class="u u-chips">${o.items.map((t) => `<button>${esc(t)}</button>`).join('')}</div>`;
-		else html += `<div class="u-bad"><i>unknown component “${esc(o.c)}” — shown as code</i>${esc(line.slice(0, 60))}…</div>`;
+		else if (o.c === 'flow') mode = 'flow';
+		else html += bad(`unknown component “${esc(o.c)}”, shown as code`, line);
 	}
 	flush();
 	return html;
@@ -735,17 +843,86 @@ function paint(text, streaming) {
 }
 function replay() {
 	clearInterval(timer);
+	const text = STREAMS[scenario];
 	let i = 0;
-	if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paint(STREAM, false); return; }
+	if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paint(text, false); return; }
 	timer = setInterval(() => {
-		i = Math.min(STREAM.length, i + 4);
-		paint(STREAM.slice(0, i), i < STREAM.length);
-		if (i >= STREAM.length) clearInterval(timer);
+		i = Math.min(text.length, i + 4);
+		paint(text.slice(0, i), i < text.length);
+		if (i >= text.length) clearInterval(timer);
 	}, 30);
 }
 document.getElementById('replay').addEventListener('click', replay);
-document.getElementById('instant').addEventListener('click', () => { clearInterval(timer); paint(STREAM, false); });
-paint(STREAM, false);
+document.getElementById('instant').addEventListener('click', () => { clearInterval(timer); paint(STREAMS[scenario], false); });
+document.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => {
+	scenario = b.dataset.s;
+	document.querySelectorAll('[data-s]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+	clearInterval(timer); paint(STREAMS[scenario], false);
+}));
+outEl.addEventListener('click', (ev) => {
+	const n = ev.target.closest('.fnode:not(.pending)');
+	if (n) n.setAttribute('aria-expanded', String(n.getAttribute('aria-expanded') !== 'true'));
+});
+paint(STREAMS[scenario], false);
+
+/* ---- mermaid, streamed: parse each complete-line prefix, keep the last good render ---- */
+const MM_SRC = `flowchart TD
+  A["Feed the starter"] --> B{"Doubled and bubbly?"}
+  B -->|Yes| C["Mix the dough"]
+  B -->|Not yet| D["Wait 1-2 h"]
+  D --> B
+  C --> E["Bulk ferment 4-6 h"]
+  E --> F["Shape and proof"]
+  F --> G["Bake at 230C"]
+  G --> H["Cool for 1 h"]
+`;
+const mmRaw = document.getElementById('mm-raw'), mmToday = document.getElementById('mm-today'), mmProg = document.getElementById('mm-prog'), mmStatus = document.getElementById('mm-status');
+let mmTimer = null, mmBusy = false, mmPending = null, mmSeq = 0, mmKept = 0, mmGood = 0, mmLast = '';
+const mmOk = typeof mermaid !== 'undefined';
+if (mmOk) mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict', flowchart: { useMaxWidth: true } });
+
+async function mmDraw(src, into) {
+	const id = 'mmd' + mmSeq++;
+	let svg;
+	try { ({ svg } = await mermaid.render(id, src)); }
+	finally { document.getElementById(id)?.remove(); document.getElementById('d' + id)?.remove(); }
+	// Insert only after the scratch-node cleanup: the svg carries the same id mermaid.render() was given.
+	into.innerHTML = svg;
+	into.classList.remove('fresh'); void into.offsetWidth; into.classList.add('fresh');
+}
+async function mmProgress(text) {
+	const done = text.slice(0, text.lastIndexOf('\n') + 1).trimEnd();
+	// Only a new complete line is worth a render; the ticks between lines carry the same source.
+	if (!done || !done.includes('\n') || done === mmLast) return;
+	mmLast = done;
+	mmPending = done;
+	if (mmBusy) return;
+	mmBusy = true;
+	while (mmPending) {
+		const src = mmPending; mmPending = null;
+		try { await mermaid.parse(src); await mmDraw(src, mmProg); mmGood++; }
+		catch { mmKept++; }
+		mmStatus.textContent = `${mmGood} renders · ${mmKept} prefixes skipped (kept last good)`;
+	}
+	mmBusy = false;
+}
+function mmReplay() {
+	if (!mmOk) { mmStatus.textContent = 'mermaid failed to load; this demo needs the library'; return; }
+	clearInterval(mmTimer);
+	mmGood = 0; mmKept = 0; mmPending = null; mmLast = '';
+	mmProg.innerHTML = ''; mmToday.innerHTML = '';
+	let i = 0;
+	mmTimer = setInterval(async () => {
+		i = Math.min(MM_SRC.length, i + 3);
+		const text = MM_SRC.slice(0, i), streaming = i < MM_SRC.length;
+		mmRaw.innerHTML = esc(text) + (streaming ? '<span class="caret"></span>' : '');
+		if (streaming) { mmToday.innerHTML = '<pre>' + esc(text) + '</pre>'; mmProgress(text); }
+		else { clearInterval(mmTimer); mmProgress(text); try { await mmDraw(MM_SRC, mmToday); } catch {} }
+	}, 40);
+}
+document.getElementById('mm-replay').addEventListener('click', mmReplay);
+mmRaw.textContent = MM_SRC;
+if (mmOk) { mmDraw(MM_SRC, mmToday).catch(() => {}); mmDraw(MM_SRC, mmProg).catch(() => {}); }
 </script>
 </body>
 </html>
