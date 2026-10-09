@@ -32,7 +32,12 @@ func uiDefaults(d *Set) {
 		"  answer where the reader needs only one. A tab's text may hold a fenced code block (write the\n" +
 		"  newlines as \\n inside the JSON string) and can run to about 1500 characters.\n" +
 		"- `{\"c\":\"disclose\",\"title\":\"...\",\"hint\":\"...\"}` then `{\"p\":\"paragraph\"}` lines — a section of\n" +
-		"  deeper detail, shown open, that the reader can fold away.\n\n" +
+		"  deeper detail, shown open, that the reader can fold away.\n" +
+		"- `{\"c\":\"quote\",\"text\":\"...\",\"by\":\"Name\",\"src\":[\"https://...\"]}` — a short passage quoted word for\n" +
+		"  word from a source you read. Never paraphrase inside a quote block.\n" +
+		"- `{\"c\":\"claim\",\"text\":\"...\",\"verdict\":\"misleading\"}` then `{\"+\":\"supporting point\",\"src\":[\"https://...\"]}`\n" +
+		"  and `{\"-\":\"disputing point\",\"src\":[\"https://...\"]}` lines, at most 6 of each — checking one specific\n" +
+		"  claim. verdict is true, mixed, misleading, false or unverified: your own read of the evidence.\n\n" +
 		"A line with a \"c\" key opens a new block; a line without one belongs to the block above it. Text\n" +
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +

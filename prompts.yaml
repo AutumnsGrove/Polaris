@@ -1288,6 +1288,7 @@ oracle:
         facts: An at-a-glance summary of one named thing (a product, place, person or organization).
         flow: A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps.
         tabs: Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them.
+        claim: Checking whether one specific claim holds up, with evidence on both sides.
       inject:
         compare: >-
           The user is choosing between options. A compare block fits: write one ui fence with
@@ -1325,6 +1326,11 @@ oracle:
           This has parallel versions and the reader needs only one. A tabs block fits: write one ui
           fence with {"c":"tabs"} then one {"tab":"macOS","text":"..."} line per version, at most 6,
           and keep anything true for every version in the prose.
+        claim: >-
+          The user is testing a claim. A claim block fits: write one ui fence with
+          {"c":"claim","text":"the claim","verdict":"mixed"} then {"+":"what supports it","src":["https://..."]}
+          and {"-":"what disputes it","src":["https://..."]} lines. verdict is true, mixed, misleading, false
+          or unverified. Cite only sources you read, and say in the prose what the evidence adds up to.
 
     depth:
       instructions: >-
@@ -1581,6 +1587,11 @@ ui:
       newlines as \n inside the JSON string) and can run to about 1500 characters.
     - `{"c":"disclose","title":"...","hint":"..."}` then `{"p":"paragraph"}` lines — a section of
       deeper detail, shown open, that the reader can fold away.
+    - `{"c":"quote","text":"...","by":"Name","src":["https://..."]}` — a short passage quoted word for
+      word from a source you read. Never paraphrase inside a quote block.
+    - `{"c":"claim","text":"...","verdict":"misleading"}` then `{"+":"supporting point","src":["https://..."]}`
+      and `{"-":"disputing point","src":["https://..."]}` lines, at most 6 of each — checking one specific
+      claim. verdict is true, mixed, misleading, false or unverified: your own read of the evidence.
 
     A line with a "c" key opens a new block; a line without one belongs to the block above it. Text
     fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300

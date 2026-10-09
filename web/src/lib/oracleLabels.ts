@@ -60,7 +60,8 @@ const UI_BLOCK_LABELS: Record<string, string> = {
 	procon: 'pros and cons',
 	facts: 'facts',
 	flow: 'flow',
-	tabs: 'tabs'
+	tabs: 'tabs',
+	claim: 'claim check'
 };
 
 // A column-0 ```ui fence, the same one split.ts recognizes. Used to claim
@@ -297,7 +298,8 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		procon: 'Pros and cons',
 		facts: 'Facts',
 		flow: 'Flow',
-		tabs: 'Tabs'
+		tabs: 'Tabs',
+		claim: 'Claim check'
 	},
 	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
 	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },

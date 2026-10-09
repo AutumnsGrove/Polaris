@@ -211,6 +211,7 @@ func oracleDefaults(d *Set) {
 				"facts":     "An at-a-glance summary of one named thing (a product, place, person or organization).",
 				"flow":      "A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps.",
 				"tabs":      "Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them.",
+				"claim":     "Checking whether one specific claim holds up, with evidence on both sides.",
 			},
 			Inject: map[string]string{
 				"compare": "The user is choosing between options. A compare block fits: write one ui fence with " +
@@ -240,6 +241,10 @@ func oracleDefaults(d *Set) {
 				"tabs": "This has parallel versions and the reader needs only one. A tabs block fits: write one ui " +
 					"fence with {\"c\":\"tabs\"} then one {\"tab\":\"macOS\",\"text\":\"...\"} line per version, at most 6, " +
 					"and keep anything true for every version in the prose.",
+				"claim": "The user is testing a claim. A claim block fits: write one ui fence with " +
+					"{\"c\":\"claim\",\"text\":\"the claim\",\"verdict\":\"mixed\"} then {\"+\":\"what supports it\",\"src\":[\"https://...\"]} " +
+					"and {\"-\":\"what disputes it\",\"src\":[\"https://...\"]} lines. verdict is true, mixed, misleading, false " +
+					"or unverified. Cite only sources you read, and say in the prose what the evidence adds up to.",
 			},
 		},
 		"depth": {

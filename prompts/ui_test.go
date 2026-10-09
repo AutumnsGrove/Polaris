@@ -50,7 +50,7 @@ func TestUIBase_ExamplesAreValidJSONAndCoverEveryBlock(t *testing.T) {
 			seen[c] = true
 		}
 	}
-	for _, c := range []string{"callout", "stat", "compare", "steps", "timeline", "checklist", "procon", "choose", "facts", "flow", "tabs", "disclose"} {
+	for _, c := range []string{"callout", "stat", "compare", "steps", "timeline", "checklist", "procon", "choose", "facts", "flow", "tabs", "disclose", "quote", "claim"} {
 		if !seen[c] {
 			t.Errorf("base grammar has no example opening a %q block", c)
 		}
