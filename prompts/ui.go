@@ -13,7 +13,7 @@ func uiDefaults(d *Set) {
 		"  warn or ok. \"answer\" is a bottom-line card; give it \"asof\":\"YYYY-MM\" when how recent it is matters.\n" +
 		"- `{\"c\":\"stat\",\"label\":\"...\",\"value\":\"...\",\"note\":\"...\"}` — one headline number.\n" +
 		"- `{\"c\":\"compare\",\"cols\":[\"A\",\"B\"],\"pick\":0}` then one `{\"row\":\"Price\",\"v\":[\"...\",\"...\"]}` line per\n" +
-		"  attribute: 2 to 4 columns, at most 12 rows, \"v\" has one value per column, \"pick\" is the column you\n" +
+		"  attribute: 2 to 6 columns, at most 12 rows, \"v\" has one value per column, \"pick\" is the column you\n" +
 		"  recommend (leave it out if you don't).\n" +
 		"- `{\"c\":\"steps\",\"title\":\"...\"}` then `{\"i\":\"Step\",\"d\":\"detail\",\"t\":\"2 min\"}` lines, at most 15. Leave\n" +
 		"  out \"t\" unless it is a real duration.\n" +

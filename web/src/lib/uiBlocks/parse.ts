@@ -4,6 +4,10 @@ import { CLAIM_VERDICTS, type CalloutTone, type ClaimVerdict, type CompareRow, t
 // else, so a component can trust what it is handed.
 export const MAX_LINES_PER_FENCE = 40;
 export const MAX_TEXT_CHARS = 400;
+// Up to six options fit: the wide table side-scrolls its data columns with the
+// row-label column pinned, and the phone layout stacks one card per column, so
+// width is no longer a reason to reject a comparison outright.
+export const MAX_COMPARE_COLS = 6;
 const MAX_COMPARE_ROWS = 12;
 const MAX_STEPS = 15;
 const MAX_TIMELINE_EVENTS = 15;
@@ -70,8 +74,8 @@ function openContainer(obj: Json): UiBlock | null {
 		case 'compare': {
 			if (!Array.isArray(obj.cols)) return null;
 			const cols = obj.cols.map((c) => text(c)).filter((c): c is string => c !== undefined);
-			// 2-4 columns: one is not a comparison, five+ cannot fit a phone.
-			if (cols.length < 2 || cols.length > 4 || cols.length !== obj.cols.length) return null;
+			// One column is not a comparison; the renderer handles the rest.
+			if (cols.length < 2 || cols.length > MAX_COMPARE_COLS || cols.length !== obj.cols.length) return null;
 			const pick = Number.isInteger(obj.pick) && (obj.pick as number) >= 0 && (obj.pick as number) < cols.length ? (obj.pick as number) : undefined;
 			return { kind: 'compare', cols, pick, rows: [] };
 		}
@@ -224,6 +228,86 @@ function addChild(block: UiBlock, obj: Json): boolean {
 }
 
 /**
+ * Parses one line, repairing a dropped closing bracket or brace; `undefined`
+ * when the line is unusable. Mirrors parseLine in gateway/uiblocks/uiblocks.go.
+ */
+function parseLine(line: string): unknown {
+	try {
+		return JSON.parse(line);
+	} catch {
+		const fixed = closeBrackets(line);
+		if (fixed === null) return undefined;
+		try {
+			return JSON.parse(fixed);
+		} catch {
+			return undefined;
+		}
+	}
+}
+
+/**
+ * Returns `s` with any missing `]`/`}` inserted, or null when the structure is
+ * too broken to guess at. Mirrors closeBrackets in gateway/uiblocks/uiblocks.go.
+ *
+ * A model occasionally drops a closing bracket (`"v":["a","b"}`), which used
+ * to dump the whole row as visible JSON. Only brackets outside strings are
+ * counted, a mismatched closer inserts the one it displaced (`]` before a `}`
+ * that would close the enclosing object), an unterminated string or an
+ * unmatched `]`/`}` gives up, and the caller re-parses whatever comes back — so
+ * a wrong guess still falls through to a raw row.
+ */
+function closeBrackets(s: string): string | null {
+	const out: string[] = [];
+	const stack: string[] = [];
+	let inString = false;
+	let escaped = false;
+	for (const ch of s) {
+		if (inString) {
+			out.push(ch);
+			if (escaped) escaped = false;
+			else if (ch === '\\') escaped = true;
+			else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			out.push(ch);
+			continue;
+		}
+		if (ch === '[' || ch === '{') {
+			stack.push(ch);
+			out.push(ch);
+			continue;
+		}
+		if (ch === ']') {
+			if (stack[stack.length - 1] !== '[') return null;
+			stack.pop();
+			out.push(ch);
+			continue;
+		}
+		if (ch === '}') {
+			if (stack[stack.length - 1] === '{') {
+				stack.pop();
+				out.push(ch);
+				continue;
+			}
+			// A `}` where a `]` was expected: the dropped `]` goes first.
+			if (stack[stack.length - 1] !== '[') return null;
+			stack.pop();
+			out.push(']');
+			if (stack[stack.length - 1] !== '{') return null;
+			stack.pop();
+			out.push('}');
+			continue;
+		}
+		out.push(ch);
+	}
+	if (inString) return null;
+	while (stack.length) out.push(stack.pop() === '[' ? ']' : '}');
+	return out.join('');
+}
+
+/**
  * Parses a ```ui fence body into blocks. Total: never throws, for any input.
  *
  * Only lines already ended by a newline are parsed; a trailing partial line is
@@ -251,10 +335,8 @@ export function parseUi(src: string): UiBlock[] {
 			break;
 		}
 
-		let obj: unknown;
-		try {
-			obj = JSON.parse(line);
-		} catch {
+		const obj = parseLine(line);
+		if (obj === undefined) {
 			blocks.push(raw(line));
 			continue;
 		}

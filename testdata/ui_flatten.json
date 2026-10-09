@@ -37,6 +37,16 @@
       "want": "A: x 1\nB: x 2\n"
     },
     {
+      "name": "compare: a row missing its ] before } is repaired, not dropped",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\"]}\n{\"row\":\"Exam tell\",\"v\":[\"already-approved\",\"needs review\"}\n```\n",
+      "want": "A: Exam tell already-approved\nB: Exam tell needs review\n"
+    },
+    {
+      "name": "compare: six columns all render (the cap is six)",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\",\"C\",\"D\",\"E\",\"F\"]}\n{\"row\":\"x\",\"v\":[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\"]}\n```\n",
+      "want": "A: x 1\nB: x 2\nC: x 3\nD: x 4\nE: x 5\nF: x 6\n"
+    },
+    {
       "name": "steps with title, detail and duration",
       "input": "```ui\n{\"c\":\"steps\",\"title\":\"Descale\"}\n{\"i\":\"Mix vinegar and water\",\"d\":\"Half and half\",\"t\":\"2 min\"}\n{\"i\":\"Run a cycle\"}\n```\n",
       "want": "Descale:\n1. Mix vinegar and water — Half and half (2 min)\n2. Run a cycle\n"

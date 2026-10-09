@@ -26,6 +26,7 @@ import (
 const (
 	maxLinesPerFence = 40
 	maxTextChars     = 400
+	maxCompareCols   = 6
 	maxCompareRows   = 12
 	maxSteps         = 15
 	maxRawChars      = 200
@@ -219,8 +220,9 @@ func openContainer(o map[string]any) (*block, bool) {
 				cols = append(cols, s)
 			}
 		}
-		// 2-4 columns, and no column silently dropped for being invalid.
-		if len(cols) < 2 || len(cols) > 4 || len(cols) != len(raw) {
+		// One column is not a comparison; the renderer handles the rest, and no
+		// column is silently dropped for being invalid.
+		if len(cols) < 2 || len(cols) > maxCompareCols || len(cols) != len(raw) {
 			return nil, false
 		}
 		pick := -1
@@ -396,6 +398,97 @@ func addChild(b *block, o map[string]any) bool {
 	return false
 }
 
+// parseLine mirrors parse.ts's parseLine: the JSON for one line, repairing a
+// dropped closing bracket or brace when the structure is otherwise sound.
+func parseLine(line string) (any, bool) {
+	var obj any
+	if err := json.Unmarshal([]byte(line), &obj); err == nil {
+		return obj, true
+	}
+	fixed, ok := closeBrackets(line)
+	if !ok {
+		return nil, false
+	}
+	if err := json.Unmarshal([]byte(fixed), &obj); err == nil {
+		return obj, true
+	}
+	return nil, false
+}
+
+// closeBrackets mirrors parse.ts's closeBrackets: it returns s with any missing
+// ]/} inserted, or ok=false when the structure is too broken to guess at.
+//
+// A model occasionally drops a closing bracket (`"v":["a","b"}`), which used
+// to dump the whole row as visible JSON. Only brackets outside strings count, a
+// mismatched closer inserts the one it displaced (`]` before a `}` that would
+// close the enclosing object), an unterminated string or an unmatched `]`/`}`
+// gives up, and the caller re-parses whatever comes back — so a wrong guess
+// still falls through to a raw row.
+func closeBrackets(s string) (string, bool) {
+	out := make([]byte, 0, len(s)+4)
+	stack := make([]byte, 0, 8)
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inString {
+			out = append(out, ch)
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+			out = append(out, ch)
+		case '[', '{':
+			stack = append(stack, ch)
+			out = append(out, ch)
+		case ']':
+			if len(stack) == 0 || stack[len(stack)-1] != '[' {
+				return "", false
+			}
+			stack = stack[:len(stack)-1]
+			out = append(out, ch)
+		case '}':
+			if len(stack) > 0 && stack[len(stack)-1] == '{' {
+				stack = stack[:len(stack)-1]
+				out = append(out, ch)
+				continue
+			}
+			// A `}` where a `]` was expected: the dropped `]` goes first.
+			if len(stack) == 0 || stack[len(stack)-1] != '[' {
+				return "", false
+			}
+			stack = stack[:len(stack)-1]
+			out = append(out, ']')
+			if len(stack) == 0 || stack[len(stack)-1] != '{' {
+				return "", false
+			}
+			stack = stack[:len(stack)-1]
+			out = append(out, '}')
+		default:
+			out = append(out, ch)
+		}
+	}
+	if inString {
+		return "", false
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i] == '[' {
+			out = append(out, ']')
+		} else {
+			out = append(out, '}')
+		}
+	}
+	return string(out), true
+}
+
 // parse mirrors parse.ts's parseUi. Only newline-terminated lines are read; a
 // trailing partial line is dropped, like a cut-off turn's in the UI.
 func parse(src string) []*block {
@@ -414,8 +507,8 @@ func parse(src string) []*block {
 			blocks = append(blocks, &block{kind: "raw", text: "… more lines than a block can hold"})
 			break
 		}
-		var obj any
-		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		obj, ok := parseLine(line)
+		if !ok {
 			r := rawBlock(line)
 			blocks = append(blocks, &r)
 			continue

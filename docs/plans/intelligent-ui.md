@@ -126,7 +126,11 @@ JSON object per line**; blank lines ignored.
   container's schema. A child line that fits no schema, or arrives before any container, becomes a
   muted raw row; it never closes the container and never affects its neighbours.
 - A line that isn't valid JSON, or whose `"c"` is unknown, becomes a muted raw row (the mockup's
-  "unrenderable line" / "unknown component" rows). Never throws, never blanks the answer.
+  "unrenderable line" / "unknown component" rows). Never throws, never blanks the answer. **As
+  built:** a line whose only fault is a missing or misplaced bracket (a dropped `]` before a row's
+  closing `}`, seen live) is repaired by counting brackets outside strings and inserting the one the
+  closer displaced (both `parse.ts` and `uiblocks.go`'s `closeBrackets`), then re-parsed — so a row
+  the model almost finished renders instead of dumping its JSON. Anything worse stays a raw row.
 - The compiler: split the fence body on `\n`; every line before the last `\n` is complete and
   parseable; the trailing partial line is held back (shown as a shimmer at most) until its newline.
   Re-parsing the whole body on every content update is fine (blocks are small; the cost is bounded by
@@ -162,7 +166,7 @@ option of the `ui` check (primary shapes only; accents are the model's own call 
 |---|---|---|---|---|
 | `callout` | `tone` note/warn/ok/answer, `text`, `asof` (`YYYY-MM`, answer only), `src` | none | **B** icon chip on a card; `answer` is a bottom-line card that always shows its as-of date | accent |
 | `stat` | `label`, `value`, `note`, `src` | none | one big number (the 3-up strip is superseded by `facts`) | accent |
-| `compare` | `cols` (2–4), `pick` (index, optional) | `{"row","v":[...per col],"src"}` ≤ 12 | cards on phones with a Pick ribbon; table (sticky first column, side scroll) wider. Wrong-length `v` is padded/truncated; out-of-range `pick` ignored | option |
+| `compare` | `cols` (2–6), `pick` (index, optional) | `{"row","v":[...per col],"src"}` ≤ 12 | cards on phones with a Pick ribbon; table (sticky first column, side scroll) wider. Wrong-length `v` is padded/truncated; out-of-range `pick` ignored | option |
 | `choose` | `title` | `{"if","then","src"}` | "If …" rows with a → pick pill; the follow-up to `compare` when the honest answer is "it depends" | option |
 | `steps` | `title` | `{"i","d","t"}` ≤ 15 (`d` detail, `t` duration) | numbered rail; duration chips only when `t` is present | option |
 | `checklist` | `title` | `{"i"}` ≤ 20 | ticks are local state, progress bar | option |

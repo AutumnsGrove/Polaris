@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseUi, MAX_LINES_PER_FENCE, MAX_TEXT_CHARS, MAX_TAB_TEXT_CHARS } from './parse';
+import { parseUi, MAX_LINES_PER_FENCE, MAX_TEXT_CHARS, MAX_TAB_TEXT_CHARS, MAX_COMPARE_COLS } from './parse';
 
 // Golden fences: the property test below feeds every prefix of each to the
 // parser, which is the guarantee streaming rendering leans on.
@@ -8,6 +8,11 @@ export const GOLDEN: Record<string, string> = {
 		'{"c":"compare","cols":["Moka pot","AeroPress"],"pick":1}\n' +
 		'{"row":"Price","v":["$25","$40"],"src":["https://example.com/a"]}\n' +
 		'{"row":"Cleanup","v":["Slow","Fast"]}\n',
+	repaired:
+		// A real model dropped the `]` before this row's final `}` (thread
+		// "Normal vs Standard Change in ITIL"); the parser supplies it.
+		'{"c":"compare","cols":["A","B"]}\n' +
+		'{"row":"Exam tell","v":["already-approved","needs review"}\n',
 	steps:
 		'{"c":"steps","title":"Descale"}\n' +
 		'{"i":"Mix vinegar and water","d":"Half and half","t":"2 min"}\n' +
@@ -71,9 +76,13 @@ describe('parseUi', () => {
 		expect((b as { rows: { v: string[] }[] }).rows.map((r) => r.v)).toEqual([['1', '—'], ['1', '2']]);
 	});
 
-	it('rejects a compare with fewer than 2 or more than 4 columns', () => {
-		expect(parseUi('{"c":"compare","cols":["A"]}\n')[0].kind).toBe('raw');
-		expect(parseUi('{"c":"compare","cols":["A","B","C","D","E"]}\n')[0].kind).toBe('raw');
+	it('accepts 2 to MAX_COMPARE_COLS compare columns and rejects 1 or one too many', () => {
+		const cols = (n: number) => JSON.stringify({ c: 'compare', cols: Array.from({ length: n }, (_, i) => `C${i}`) });
+		expect(parseUi(`${cols(1)}\n`)[0].kind).toBe('raw');
+		const max = parseUi(`${cols(MAX_COMPARE_COLS)}\n`)[0];
+		expect(max.kind).toBe('compare');
+		expect((max as { cols: string[] }).cols).toHaveLength(MAX_COMPARE_COLS);
+		expect(parseUi(`${cols(MAX_COMPARE_COLS + 1)}\n`)[0].kind).toBe('raw');
 	});
 
 	it('parses steps with optional detail and duration', () => {
@@ -231,6 +240,33 @@ describe('parseUi', () => {
 		const out = parseUi(GOLDEN.mixed);
 		expect(out.map((b) => b.kind)).toEqual(['callout', 'raw', 'raw', 'stat', 'raw']);
 		expect(out[1]).toEqual({ kind: 'raw', text: 'not json at all' });
+	});
+
+	it('repairs a dropped closing bracket or brace; other breakage stays raw', () => {
+		// The ITIL row: an `]` was owed where the line ends `}`.
+		const [compare] = parseUi(GOLDEN.repaired);
+		expect(compare).toMatchObject({
+			kind: 'compare',
+			rows: [{ row: 'Exam tell', v: ['already-approved', 'needs review'] }]
+		});
+
+		// A line missing its last brace, and one missing both a `]` and a `}`.
+		expect(parseUi('{"c":"stat","value":"3"\n')[0]).toMatchObject({ kind: 'stat', value: '3' });
+		expect(parseUi('{"c":"callout","text":"x","src":["https://a.example"\n')[0]).toMatchObject({
+			kind: 'callout',
+			src: ['https://a.example']
+		});
+
+		// Brackets inside a string are data, not structure.
+		expect(parseUi('{"c":"callout","text":"use [brackets} here"\n')[0]).toMatchObject({
+			kind: 'callout',
+			text: 'use [brackets} here'
+		});
+
+		// Unrepairable: a stray closer, an unterminated string, a closer with no opener.
+		expect(parseUi('{"c":"stat","value":"3"}}\n')[0].kind).toBe('raw');
+		expect(parseUi('{"row":"x","v":["a\n')[0].kind).toBe('raw');
+		expect(parseUi(']}\n')[0].kind).toBe('raw');
 	});
 
 	it('makes child lines before any container, or after an invalid one, raw rows', () => {

@@ -1567,7 +1567,7 @@ ui:
       warn or ok. "answer" is a bottom-line card; give it "asof":"YYYY-MM" when how recent it is matters.
     - `{"c":"stat","label":"...","value":"...","note":"..."}` — one headline number.
     - `{"c":"compare","cols":["A","B"],"pick":0}` then one `{"row":"Price","v":["...","..."]}` line per
-      attribute: 2 to 4 columns, at most 12 rows, "v" has one value per column, "pick" is the column you
+      attribute: 2 to 6 columns, at most 12 rows, "v" has one value per column, "pick" is the column you
       recommend (leave it out if you don't).
     - `{"c":"steps","title":"..."}` then `{"i":"Step","d":"detail","t":"2 min"}` lines, at most 15. Leave
       out "t" unless it is a real duration.
