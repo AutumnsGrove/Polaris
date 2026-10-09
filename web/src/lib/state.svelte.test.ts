@@ -698,6 +698,80 @@ describe('AppState.openThread', () => {
 		await state.openThread('t1');
 		expect(state.turns).toHaveLength(1);
 	});
+
+	// threadLoading is what lets ChatView distinguish "no thread selected"
+	// from "a thread is being fetched" — the fix for a slow open rendering
+	// as the WelcomeScreen (which read as a bounce back to the homescreen).
+	// It must be set for the whole fetch and cleared exactly once.
+	it('marks threadLoading for the whole fetch and clears it once the thread lands', async () => {
+		let releaseThread!: () => void;
+		const gate = new Promise<void>((resolve) => (releaseThread = resolve));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return gate.then(() => ({
+					ok: true,
+					json: async () => ({ cost_usd: 0, context_tokens: 0, messages: [] })
+				}));
+			})
+		);
+
+		const pending = state.openThread('t1');
+		expect(state.threadLoading).toBe(true);
+		releaseThread();
+		await pending;
+		expect(state.threadLoading).toBe(false);
+	});
+
+	it('clears threadLoading when the thread cannot be loaded', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+			})
+		);
+
+		await state.openThread('gone');
+		expect(state.threadLoading).toBe(false);
+		expect(state.currentThreadId).toBeNull();
+	});
+
+	it('newThread supersedes an in-flight open so a slow load cannot clobber it', async () => {
+		let releaseThread!: () => void;
+		const gate = new Promise<void>((resolve) => (releaseThread = resolve));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((url: string) => {
+				if (typeof url === 'string' && url.endsWith('/events')) {
+					return Promise.resolve({ ok: true, json: async () => [] });
+				}
+				return gate.then(() => ({
+					ok: true,
+					json: async () => ({
+						cost_usd: 0,
+						context_tokens: 0,
+						messages: [{ id: 1, role: 'user', content: 'q', citations: '[]', suggestions: '[]' }]
+					})
+				}));
+			})
+		);
+
+		const pending = state.openThread('slow');
+		expect(state.threadLoading).toBe(true);
+		state.newThread();
+		expect(state.threadLoading).toBe(false);
+		releaseThread();
+		await pending;
+		// The superseded load must not resurrect itself after the fact.
+		expect(state.currentThreadId).toBeNull();
+		expect(state.turns).toEqual([]);
+	});
 });
 
 describe('AppState.regenerateTitle', () => {

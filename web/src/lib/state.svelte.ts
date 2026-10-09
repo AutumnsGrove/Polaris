@@ -119,6 +119,24 @@ export class AppState {
 	// ThreadMenu's "Move to field" all read.
 	activeFieldId = $derived(this.currentThread ? (this.currentThread.field_id ?? null) : this.pendingFieldId);
 	currentThreadId = $state<string | null>(null);
+	// True while openThread() is fetching a thread to show — the one signal
+	// that distinguishes "no thread selected" (newThread(), the homepage)
+	// from "a thread is on its way". Without it both rendered as the same
+	// WelcomeScreen, so opening a slow thread (a Pulsar pulse's events fetch
+	// runs to a couple of MB) looked like the tap had bounced back to the
+	// homescreen: the URL changed to /t/<id> but the view sat on the landing
+	// screen for the whole load. ChatView shows a dedicated loading state
+	// instead whenever this is true and turns is still empty — turns is only
+	// replaced at the end of a successful load, so once there's content on
+	// screen this flag can never hide it (which is also why a poll-triggered
+	// openThread() for the already-open thread is safe to mark loading:
+	// turns is non-empty there, so nothing visibly changes).
+	//
+	// Cleared only by the openThread() call that still owns openThreadSeq — a
+	// superseded call leaves it set for its successor, and a stale response
+	// can't flip it (or currentThreadId) off after the user has navigated
+	// away. newThread() clears it too, since it supersedes any in-flight load.
+	threadLoading = $state(false);
 	connected = $state(false);
 	busy = $state(false);
 	totalCost = $state(0);
@@ -429,6 +447,7 @@ export class AppState {
 
 	async openThread(id: string) {
 		const seq = ++this.openThreadSeq;
+		this.threadLoading = true;
 
 		// A turn is in flight for a thread other than the one we're about
 		// to show — mark it abandoned so its eventual 'done' can't silently
@@ -449,11 +468,18 @@ export class AppState {
 			// old process goes away and the new one isn't answering yet) —
 			// same "don't leave this silent" reasoning as the !res.ok
 			// branch below.
-			if (seq === this.openThreadSeq) this.showToast("Couldn't load that thread — please try again");
+			if (seq === this.openThreadSeq) {
+				this.threadLoading = false;
+				this.showToast("Couldn't load that thread — please try again");
+			}
 			return;
 		}
 		if (seq !== this.openThreadSeq) return; // superseded by a newer openThread() call
 		if (!res.ok) {
+			// Reached only by the call that still owns openThreadSeq (the
+			// superseded one returned just above), so this is the loading
+			// state's owner clearing it — a 404/503 has nothing left to load.
+			this.threadLoading = false;
 			// 404 means the id genuinely doesn't exist (deleted, a stale
 			// bookmark, a hidden variant id) — nothing to show, staying
 			// silent here is correct. Anything else (503 above all — see
@@ -564,6 +590,11 @@ export class AppState {
 			}
 		}
 		this.turns = turns;
+		// Same synchronous block as the turns swap above, so Svelte renders
+		// the populated timeline and the loading state drops in one pass —
+		// never a frame of empty-turns-with-nothing-loading that would flash
+		// the WelcomeScreen between the two.
+		this.threadLoading = false;
 
 		// Suggestions are a "what's next" prompt for the last answer, so
 		// only the most recent assistant message's set is relevant here.
@@ -699,6 +730,15 @@ export class AppState {
 		// null — restarting the new-thread flow explicitly abandons that
 		// one too, not just an existing thread's turn).
 		if (this.busy) this.pendingAbandoned = true;
+
+		// Supersede any in-flight openThread() so a slow load can't finish
+		// and yank the view back to the thread the user just navigated away
+		// from — the same "the newest action wins" guarantee the seq guard
+		// gives two competing openThread() calls. This is also what cancels
+		// the loading state if the user gives up on a slow open and starts a
+		// new thread instead of waiting it out.
+		++this.openThreadSeq;
+		this.threadLoading = false;
 
 		debugBeacon('currentThreadId set (newThread)', { from: this.currentThreadId, busy: this.busy });
 		this.pendingFieldId = null;
