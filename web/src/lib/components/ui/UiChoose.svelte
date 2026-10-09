@@ -10,18 +10,19 @@
      and the pick that follows from it. -->
 <div class="ui-choose">
 	{#if block.title}<div class="title">{block.title}</div>{/if}
-	<ul>
+	<!-- div + role, not ul/li: `.prose ul { padding-left }` would indent it. -->
+	<div class="list" role="list">
 		{#each block.rules as rule, i (i)}
-			<li>
+			<div class="rule" role="listitem">
 				<div class="if"><span class="lead">If</span> <UiText text={rule.if} /></div>
 				<div class="then">
 					<span class="arrow" aria-hidden="true">→</span>
 					<span class="pill"><UiText text={rule.then} /></span>
 					<UiSources src={rule.src} />
 				</div>
-			</li>
+			</div>
 		{/each}
-	</ul>
+	</div>
 </div>
 
 <style>
@@ -38,15 +39,12 @@
 		color: var(--color-text-dim);
 	}
 
-	ul {
+	.list {
 		display: grid;
 		gap: var(--space-sm);
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
-	li {
+	.rule {
 		padding: var(--space-md) var(--space-lg);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);

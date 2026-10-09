@@ -15,16 +15,17 @@
 
 <div class="ui-checklist">
 	{#if block.title}<div class="title">{block.title}</div>{/if}
-	<ul>
+	<!-- div + role, not ul/li: `.prose ul { padding-left }` would indent it. -->
+	<div role="list">
 		{#each block.items as item, i (i)}
-			<li>
+			<div role="listitem">
 				<label>
 					<input type="checkbox" bind:checked={done[i]} />
 					<span class:done={done[i]}><UiText text={item} /></span>
 				</label>
-			</li>
+			</div>
 		{/each}
-	</ul>
+	</div>
 	{#if block.items.length > 1}
 		<div class="progress" aria-label="{count} of {block.items.length} done">
 			<div class="bar"><i style="width: {(count / block.items.length) * 100}%"></i></div>
@@ -49,12 +50,6 @@
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		color: var(--color-text-dim);
-	}
-
-	ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
 	/* Whole row is the tap target: this is read on a phone. */

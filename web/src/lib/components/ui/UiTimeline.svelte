@@ -9,14 +9,16 @@
 <!-- The vertical rail, date above the text (decision 7): it copes with long
      spans such as "14 Mar – 2 Apr 2005" where a side-by-side ledger would not. -->
 <div class="ui-timeline">
-	<ol>
+	<!-- div + role, not ol/li: ChatTurnView's `.prose ul/ol { padding-left }`
+	     would indent the rail, and element selectors here can't outrank it. -->
+	<div class="list" role="list">
 		{#each block.events as ev, i (i)}
-			<li>
+			<div class="item" role="listitem">
 				<div class="when">{ev.when}</div>
 				<div class="what"><UiText text={ev.i} /><UiSources src={ev.src} /></div>
-			</li>
+			</div>
 		{/each}
-	</ol>
+	</div>
 </div>
 
 <style>
@@ -24,19 +26,13 @@
 		margin: var(--space-md) 0;
 	}
 
-	ol {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	li {
+	.item {
 		position: relative;
 		padding: 0 0 var(--space-lg) var(--space-xl);
 		font-size: 14px;
 	}
 
-	li::before {
+	.item::before {
 		content: '';
 		position: absolute;
 		left: 0;
@@ -47,7 +43,7 @@
 		background: var(--color-accent);
 	}
 
-	li::after {
+	.item::after {
 		content: '';
 		position: absolute;
 		left: 4px;
@@ -57,11 +53,11 @@
 		background: var(--color-border-strong);
 	}
 
-	li:last-child {
+	.item:last-child {
 		padding-bottom: 0;
 	}
 
-	li:last-child::after {
+	.item:last-child::after {
 		display: none;
 	}
 

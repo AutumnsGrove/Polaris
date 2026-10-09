@@ -9,19 +9,20 @@
 <div class="ui-procon">
 	<section class="pro">
 		<h4>{block.proHead ?? 'Pros'}</h4>
-		<ul>
+		<!-- div + role, not ul/li: `.prose ul { padding-left }` would indent it. -->
+		<div role="list">
 			{#each block.pros as p, i (i)}
-				<li><b aria-hidden="true">+</b><span><UiText text={p} /></span></li>
+				<div class="row" role="listitem"><b aria-hidden="true">+</b><span><UiText text={p} /></span></div>
 			{/each}
-		</ul>
+		</div>
 	</section>
 	<section class="con">
 		<h4>{block.conHead ?? 'Cons'}</h4>
-		<ul>
+		<div role="list">
 			{#each block.cons as c, i (i)}
-				<li><b aria-hidden="true">–</b><span><UiText text={c} /></span></li>
+				<div class="row" role="listitem"><b aria-hidden="true">–</b><span><UiText text={c} /></span></div>
 			{/each}
-		</ul>
+		</div>
 	</section>
 </div>
 
@@ -52,13 +53,7 @@
 		color: var(--color-text-dim);
 	}
 
-	ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	li {
+	.row {
 		display: flex;
 		gap: var(--space-sm);
 		padding: 2px 0;
