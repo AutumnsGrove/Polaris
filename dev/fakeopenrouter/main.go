@@ -33,6 +33,11 @@
 // dev/stack.sh's --fake-llm[-delay] flags, which wire this whole server
 // into the one-command dev stack.
 //
+// -chunk-delay (e.g. -chunk-delay=40ms) is the other axis: it sleeps between
+// the ~24-byte chunks of a plain-text answer, stretching the stream itself so
+// progressive rendering (streaming mermaid, `ui` blocks) can be watched or
+// sampled. stack.sh doesn't plumb it; run this server directly with it.
+//
 // With nothing queued, every call gets a generic canned plain-text reply
 // — enough to exercise a normal turn end-to-end with zero setup. Queue a
 // specific scripted response (a tool call, a particular answer) before
@@ -209,6 +214,10 @@ type server struct {
 	// human (or a screenshot/mid-turn state check) to ever see it "still
 	// running." Set via -delay to slow every call down uniformly instead.
 	delay time.Duration
+	// chunkDelay sleeps between the ~24-byte content chunks of a plain-text
+	// answer (not tool calls), via -chunk-delay. Unlike delay, which only
+	// shifts when a response starts, this stretches the stream itself.
+	chunkDelay time.Duration
 
 	// jevQueue/jevCalls: Jev's own queue/call-log, entirely separate from
 	// the chat-completion ones above — see the package doc comment's
@@ -298,6 +307,12 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 			sseLine(string(chunk))
 			content = content[n:]
+			// Pacing between chunks, so progressive rendering (a diagram or
+			// `ui` block filling in as it streams) is observable rather than
+			// finishing inside one frame.
+			if s.chunkDelay > 0 && len(content) > 0 {
+				time.Sleep(s.chunkDelay)
+			}
 		}
 		finishChunk, _ := json.Marshal(map[string]interface{}{
 			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "stop"}},
@@ -487,9 +502,10 @@ func (s *server) handleJevCalls(w http.ResponseWriter, r *http.Request) {
 func main() {
 	addr := flag.String("addr", "127.0.0.1:18901", "listen address")
 	delay := flag.Duration("delay", 0, "sleep this long before each call starts streaming its response — 0 (default) answers instantly; set e.g. 1500ms to slow a scripted multi-tool-call turn down enough to actually watch it stream or catch it mid-turn")
+	chunkDelay := flag.Duration("chunk-delay", 0, "sleep this long between the ~24-byte chunks of a plain-text answer — 0 (default) streams instantly; set e.g. 40ms to watch a diagram or ui block fill in as it streams")
 	flag.Parse()
 
-	s := &server{delay: *delay}
+	s := &server{delay: *delay, chunkDelay: *chunkDelay}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/_control/queue", s.handleQueue)

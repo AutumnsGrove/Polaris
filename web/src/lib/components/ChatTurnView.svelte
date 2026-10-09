@@ -9,9 +9,9 @@
 	import ChartCard from './ChartCard.svelte';
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import WaveformAudioPlayer from './WaveformAudioPlayer.svelte';
-	import { marked } from '$lib/markdown';
+	import MermaidBlock from './MermaidBlock.svelte';
 	import { renderMermaidIn } from '$lib/mermaid';
-	import DOMPurify from 'dompurify';
+	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
 	import {
 		Pencil,
 		RotateCcw,
@@ -28,7 +28,7 @@
 	} from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/clipboard';
 	import { autoResize } from '$lib/actions/autoResize';
-	import { renderInlineCitations, sourceHostname as hostname } from '$lib/citations';
+	import { sourceHostname as hostname } from '$lib/citations';
 import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/oracleLabels';
 	import Asterism from './Asterism.svelte';
 	import OracleConstellation from './OracleConstellation.svelte';
@@ -101,22 +101,28 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// chip keeps its real href and opens the source directly, so there's
 	// no detour through the source list below to find out what a bare
 	// number pointed at.
-	let renderedHtml = $derived(
-		renderInlineCitations(
-			DOMPurify.sanitize(marked.parse(turn.content || '') as string),
-			turn.citations ?? [],
-			turn.verification
-		)
+	//
+	// The answer is split around its column-0 ```mermaid fences (see
+	// uiBlocks/renderAnswer.ts): Markdown pieces go through the pipeline above,
+	// each fence gets a MermaidBlock that owns its own DOM and renders as the
+	// fence streams. Pieces are keyed by index, so a finished piece's {@html}
+	// string doesn't change and isn't repainted while a later one grows.
+	let segments = $derived(
+		renderAnswer(turn.content || '', !!turn.streaming, turn.citations ?? [], turn.verification)
 	);
 
-	// Runs after renderedHtml (re)paints proseEl's DOM. Gated on
-	// !turn.streaming: while a reply is still streaming, a ```mermaid fence
-	// is briefly unclosed, and marked renders an unclosed fence as a full
-	// code block the instant it opens — parsing that half-diagram live
-	// would flash a render-failure note that vanishes once the fence
-	// actually closes. Retry/regenerate and variant switching all replace
-	// turn.content wholesale, so this just re-runs on the fresh DOM with no
-	// manual cleanup of the old pass's output needed.
+	// Runs after segments (re)paint proseEl's DOM. This DOM pass only covers
+	// what the segment split leaves inside Markdown: a mermaid fence nested
+	// in a list item (indented, so not a column-0 fence) still reaches here
+	// as a data-mermaid <pre>, plus the theme re-render for every diagram on
+	// screen, MermaidBlock's included. Gated on !turn.streaming: marked
+	// renders an unclosed nested fence as a full code block the instant it
+	// opens, and parsing that half-diagram live would flash a render-failure
+	// note that vanishes once the fence closes. (Column-0 fences stream
+	// through MermaidBlock instead, which knows open from closed.)
+	// Retry/regenerate and variant switching all replace turn.content
+	// wholesale, so this just re-runs on the fresh DOM with no manual cleanup
+	// of the old pass's output needed.
 	//
 	// Also re-tracks appState.settings.theme, not just renderedHtml — a
 	// real bug found live: SettingsState.load() sets data-theme
@@ -131,7 +137,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// preference lands, and again on any later in-session theme toggle.
 	let proseEl = $state<HTMLElement>();
 	$effect(() => {
-		void renderedHtml;
+		void segments;
 		void appState.settings.theme;
 		if (proseEl && !turn.streaming) void renderMermaidIn(proseEl);
 	});
@@ -460,7 +466,15 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 			{#if turn.errorKind === 'network'}
 				<NetworkErrorBanner disabled={appState.busy} onRetry={() => appState.retry(index)} />
 			{:else if turn.content}
-				<div class="prose" bind:this={proseEl}>{@html renderedHtml}</div>
+				<div class="prose" bind:this={proseEl}>
+					{#each segments as seg, i (i)}
+						{#if seg.kind === 'md'}
+							{@html seg.html}
+						{:else}
+							<MermaidBlock src={seg.src} closed={seg.closed} />
+						{/if}
+					{/each}
+				</div>
 			{:else if turn.streaming}
 				<div class="pending">…</div>
 			{/if}
@@ -1005,6 +1019,31 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	.prose :global(.mermaid-render svg) {
 		max-width: 100%;
 		height: auto;
+	}
+
+	/* Each streamed re-render of a growing diagram (mermaid.ts's
+	   mountMermaidStream) fades in from a dimmer state so the swap reads as
+	   the diagram growing, not flashing. Reduced motion is handled globally
+	   in app.css. */
+	.prose :global(.mermaid-fade) {
+		animation: mermaid-fade-in 0.25s var(--ease-out-expo);
+	}
+
+	@keyframes mermaid-fade-in {
+		from {
+			opacity: 0.45;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	/* Shown only until a streaming diagram's first valid prefix renders. */
+	.prose :global(.mermaid-pending) {
+		margin: 0 0 var(--space-md) 0;
+		font-size: 11.5px;
+		font-style: italic;
+		color: var(--color-text-dim);
 	}
 
 	/* The whole render pane (not just the SVG) is the tap target

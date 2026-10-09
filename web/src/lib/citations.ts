@@ -46,8 +46,20 @@ const checkCheckIconSVG =
  * threshold, not every chip citing that URL (the source-list chip's own
  * aggregate mark, Citation.verified, covers "any claim for this URL" —
  * see ChatTurnView.svelte's .source-chip).
+ *
+ * occurrenceByUrl is the running per-URL counter for that nth-occurrence
+ * match. A caller rendering the answer in several pieces (renderAnswer.ts
+ * splits it around mermaid/ui fences) passes ONE map through every piece in
+ * document order, so the nth occurrence is still counted across the whole
+ * answer — the server's extractClaims (gateway/verification.go) numbers them
+ * that way, and a per-piece restart would put a tick on the wrong chip.
  */
-export function renderInlineCitations(html: string, citations: Citation[], verification?: VerificationMark[]): string {
+export function renderInlineCitations(
+	html: string,
+	citations: Citation[],
+	verification?: VerificationMark[],
+	occurrenceByUrl: Map<string, number> = new Map()
+): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
 
 	const urlToCitation = new Map(citations.map((c) => [c.url, c]));
@@ -61,7 +73,6 @@ export function renderInlineCitations(html: string, citations: Citation[], verif
 	const container = document.createElement('div');
 	container.innerHTML = html;
 
-	const occurrenceByUrl = new Map<string, number>();
 	for (const anchor of container.querySelectorAll('a[href]')) {
 		if (anchor.closest('td, th')) continue;
 

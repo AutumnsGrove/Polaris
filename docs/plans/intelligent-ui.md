@@ -2,7 +2,15 @@
 
 **Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
-**Status: design settled, nothing built.** Prompted by OpenAI's "GPT-6 and Intelligent UI for
+**Status: P0 built (2026-10-09), P1 onward not started.** Tracking issue #159. P0 = `uiBlocks/split.ts`,
+`renderAnswer.ts`, `MermaidBlock.svelte`, `mountMermaidStream` in `mermaid.ts`. Live-verified in
+Chromium against real mermaid via `dev/fakeopenrouter` (new `-chunk-delay` flag): a warm diagram grows
+0 -> 3 -> 4 -> 5 nodes as its fence streams, a broken fence falls back to source + note, a list-nested
+fence still renders through the old DOM pass. Findings worth keeping: (a) a *cold* `import('mermaid')`
+takes about as long as a short fence takes to stream, so the first diagram of a session jumps straight
+to its final form (latest-wins) and only later ones visibly grow; (b) `fakeopenrouter` plain-FIFO is
+consumed by title/follow-up calls too, so pin the scripted answer with `"match":"Today's date"`;
+(c) phone render cost is still unmeasured. Prompted by OpenAI's "GPT-6 and Intelligent UI for
 everyone" launch (2026-10-07). Mockups: `mockups/intelligent-ui.html` (every block rendered at phone
 width next to the fence lines that produce it, replayable streaming demos for the line compiler and
 for mermaid). Operator review of those mockups is recorded in "Decisions". No code lands until an
