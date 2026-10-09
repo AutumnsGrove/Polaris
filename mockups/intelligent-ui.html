@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Intelligent UI Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" />
+<style>
+/* ---------------------------------------------------------------
+   Companion to docs/plans/intelligent-ui.md. Tokens copied from the
+   real app (web/src/app.css) so every specimen sits on the same
+   warm-dark reading surface as a real Polaris answer. All content
+   below is SAMPLE data written for layout purposes — none of it is
+   a real search result.
+
+   Specimens are phone-width (the primary target per CLAUDE.md). Each
+   one shows the rendered block AND the exact `ui` fence lines that
+   would produce it, so the format and the look are judged together.
+   --------------------------------------------------------------- */
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-sheet: oklch(27% 0.018 60);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-soft-strong: color-mix(in srgb, var(--color-accent) 26%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-accent-2-soft: color-mix(in srgb, var(--color-accent-2) 14%, transparent);
+	--color-ok: oklch(78% 0.1 155);
+	--color-ok-soft: color-mix(in srgb, var(--color-ok) 14%, transparent);
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-xl: 22px;
+	--radius-full: 999px;
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+	--space-3xl: 40px;
+	--font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+	margin: 0;
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family: var(--font-sans);
+	font-size: 15px;
+	line-height: 1.55;
+}
+.page { max-width: 1180px; margin: 0 auto; padding: var(--space-xl) var(--space-lg) 96px; }
+h1 { font-family: var(--font-serif); font-weight: 500; font-size: 30px; margin: var(--space-lg) 0 var(--space-sm); letter-spacing: -0.01em; }
+h2 { font-family: var(--font-serif); font-weight: 500; font-size: 23px; margin: 64px 0 var(--space-xs); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+.lede { color: var(--color-text-dim); max-width: 70ch; margin: 0 0 var(--space-md); }
+.sample { font-size: 12px; color: var(--color-text-dim); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); display: inline-block; margin-top: var(--space-sm); }
+nav.toc { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-lg) 0 0; }
+nav.toc a { color: var(--color-text); text-decoration: none; font-size: 13px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-full); background: var(--color-surface); }
+nav.toc a:hover { border-color: var(--color-accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+/* ---------- specimen layout ---------- */
+.grid { display: grid; gap: var(--space-xl); grid-template-columns: repeat(auto-fill, minmax(min(100%, 390px), 1fr)); margin-top: var(--space-lg); align-items: start; }
+.spec { min-width: 0; }
+.spec-head { display: flex; align-items: baseline; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.opt { font-size: 11px; font-weight: 700; color: var(--color-bg); background: var(--color-accent); border-radius: var(--radius-sm); padding: 1px 7px; letter-spacing: 0.04em; }
+.spec-head p { margin: 0; font-size: 12.5px; color: var(--color-text-dim); }
+.frame { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: var(--space-lg); max-width: 390px; }
+.frame.wide { max-width: none; }
+pre.src { margin: var(--space-sm) 0 0; max-width: 390px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--color-text-dim); overflow-x: auto; white-space: pre; }
+.note { font-size: 13px; color: var(--color-text-dim); max-width: 390px; margin: var(--space-sm) 0 0; }
+.verdict { font-size: 13px; border-left: 3px solid var(--color-accent); background: var(--color-accent-soft); padding: var(--space-sm) var(--space-md); border-radius: 0 var(--radius-md) var(--radius-md) 0; margin: var(--space-md) 0; max-width: 78ch; }
+
+/* ---------- answer chrome (matches ChatTurnView's feel) ---------- */
+.bubble-user { background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); padding: var(--space-sm) var(--space-md); margin-left: 44px; font-size: 14px; margin-bottom: var(--space-md); }
+.prose p { margin: 0 0 var(--space-md); font-size: 14.5px; }
+.prose p:last-child { margin-bottom: 0; }
+.cite { display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1; padding: 2px 5px; margin: 0 1px; border-radius: var(--radius-sm); background: var(--color-accent-2-soft); color: var(--color-accent-2); vertical-align: 1px; cursor: default; }
+.margin-note { display: flex; align-items: center; gap: var(--space-sm); font-size: 12px; color: var(--color-text-dim); margin-bottom: var(--space-sm); }
+.margin-note b { color: var(--color-text); font-weight: 600; }
+.margin-note svg { flex: none; }
+
+/* ---------- ui blocks ---------- */
+.u { margin: var(--space-md) 0; }
+.u-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); margin-bottom: var(--space-xs); font-weight: 600; }
+
+/* callout */
+.u-callout { --tone: var(--color-accent-2); --tone-soft: var(--color-accent-2-soft); display: block; font-size: 14px; }
+.u-callout.warn { --tone: var(--color-accent); --tone-soft: var(--color-accent-soft); }
+.u-callout.ok { --tone: var(--color-ok); --tone-soft: var(--color-ok-soft); }
+.u-callout.a { border-left: 3px solid var(--tone); background: var(--tone-soft); padding: var(--space-sm) var(--space-md); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.u-callout.b { display: flex; gap: var(--space-md); align-items: flex-start; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md); }
+.u-callout.b .ic { flex: none; width: 26px; height: 26px; border-radius: var(--radius-full); background: var(--tone-soft); color: var(--tone); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+
+/* stat */
+.u-stat.a { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); }
+.u-stat .big { font-size: 38px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; color: var(--color-accent); }
+.u-stat .lbl { font-size: 12.5px; color: var(--color-text-dim); }
+.u-stat .delta { font-size: 12.5px; margin-top: var(--space-xs); }
+.u-statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); }
+.u-statrow > div { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); }
+.u-statrow .v { font-size: 20px; font-weight: 600; }
+.u-statrow .l { font-size: 11px; color: var(--color-text-dim); line-height: 1.3; }
+
+/* compare — A: table */
+.u-cmp-scroll { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); }
+table.u-cmp { border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 100%; }
+.u-cmp th, .u-cmp td { padding: var(--space-sm) var(--space-md); text-align: left; border-bottom: 1px solid var(--color-border); min-width: 104px; vertical-align: top; }
+.u-cmp tr:last-child td { border-bottom: 0; }
+.u-cmp th { font-weight: 600; font-size: 12.5px; background: var(--color-surface-2); }
+.u-cmp th:first-child, .u-cmp td:first-child { position: sticky; left: 0; min-width: 78px; background: var(--color-surface-2); color: var(--color-text-dim); font-size: 12px; z-index: 1; }
+.u-cmp .pick { background: var(--color-accent-soft); }
+.u-cmp th.pick { background: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-2)); }
+.u-cmp .tag { display: block; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--color-accent); font-weight: 700; }
+/* compare — B: cards */
+.u-cards { display: grid; gap: var(--space-sm); }
+.u-card { position: relative; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); }
+.u-card.pick { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface)); }
+.u-card .ttl { font-weight: 600; font-size: 14.5px; display: flex; justify-content: space-between; gap: var(--space-sm); align-items: baseline; }
+.u-card .price { color: var(--color-accent); font-weight: 600; font-size: 14px; }
+.u-card .ribbon { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; color: var(--color-bg); background: var(--color-accent); border-radius: var(--radius-full); padding: 1px 8px; position: absolute; top: -9px; left: 14px; }
+.u-card dl { margin: var(--space-sm) 0 0; display: grid; grid-template-columns: 78px 1fr; gap: 2px var(--space-md); font-size: 13px; }
+.u-card dt { color: var(--color-text-dim); font-size: 12px; }
+.u-card dd { margin: 0; }
+
+/* steps — A: rail */
+.u-steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.u-steps.a li { position: relative; padding: 0 0 var(--space-lg) 40px; font-size: 14px; counter-increment: s; }
+.u-steps.a li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: var(--radius-full); border: 1.5px solid var(--color-accent); color: var(--color-accent); display: grid; place-items: center; font-size: 12.5px; font-weight: 600; background: var(--color-bg); }
+.u-steps.a li::after { content: ''; position: absolute; left: 13.5px; top: 30px; bottom: 2px; width: 1.5px; background: var(--color-border-strong); }
+.u-steps.a li:last-child { padding-bottom: 0; }
+.u-steps.a li:last-child::after { display: none; }
+.u-steps b { display: block; font-weight: 600; }
+.u-steps .d { color: var(--color-text-dim); font-size: 13px; }
+/* steps — B: cards w/ time */
+.u-steps.b li { display: grid; grid-template-columns: 1fr auto; gap: var(--space-xs) var(--space-md); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-sm); counter-increment: s; font-size: 14px; }
+.u-steps.b li b::before { content: counter(s) '. '; color: var(--color-accent); }
+.u-steps.b .t { font-size: 11.5px; font-family: var(--font-mono); color: var(--color-text-dim); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 0 8px; align-self: start; white-space: nowrap; }
+.u-steps.b .d { grid-column: 1 / -1; }
+
+/* checklist */
+.u-check { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); }
+.u-check .hd { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--space-sm); }
+.u-check .hd b { font-size: 14px; }
+.u-check .hd span { font-size: 12px; color: var(--color-text-dim); }
+.u-check .bar { height: 3px; border-radius: 2px; background: var(--color-border); margin-bottom: var(--space-sm); overflow: hidden; }
+.u-check .bar i { display: block; height: 100%; background: var(--color-accent); width: 0; transition: width 0.25s ease; }
+.u-check label { display: flex; gap: var(--space-md); align-items: flex-start; padding: var(--space-sm) 0; font-size: 14px; cursor: pointer; border-top: 1px solid var(--color-border); }
+.u-check input { appearance: none; flex: none; width: 20px; height: 20px; margin: 1px 0 0; border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-sm); display: grid; place-items: center; cursor: pointer; }
+.u-check input:checked { background: var(--color-accent); border-color: var(--color-accent); }
+.u-check input:checked::after { content: '✓'; color: var(--color-bg); font-size: 13px; font-weight: 700; }
+.u-check input:checked + span { color: var(--color-text-dim); text-decoration: line-through; text-decoration-color: var(--color-border-strong); }
+
+/* timeline — A: rail, B: ledger */
+.u-tl.a { position: relative; margin: 0; padding: 0 0 0 20px; list-style: none; }
+.u-tl.a::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1.5px; background: var(--color-border-strong); }
+.u-tl.a li { position: relative; padding-bottom: var(--space-md); font-size: 14px; }
+.u-tl.a li::before { content: ''; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--color-bg); border: 2px solid var(--color-accent); }
+.u-tl.a li:last-child { padding-bottom: 0; }
+.u-tl .when { display: block; color: var(--color-accent); font-size: 12px; font-weight: 600; letter-spacing: 0.03em; }
+.u-tl.b { margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); overflow: hidden; }
+.u-tl.b li { display: grid; grid-template-columns: 74px 1fr; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); font-size: 13.5px; }
+.u-tl.b li:first-child { border-top: 0; }
+.u-tl.b .when { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-dim); padding-top: 2px; }
+
+/* chart */
+.u-chart { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg) var(--space-sm); }
+.u-chart .ct { font-size: 13.5px; font-weight: 600; }
+.u-chart .cs { font-size: 12px; color: var(--color-text-dim); margin-bottom: var(--space-xs); }
+.u-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.u-chart .foot { font-size: 11.5px; color: var(--color-text-dim); margin-top: var(--space-xs); }
+
+/* tabs */
+.u-tabs { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); overflow: hidden; }
+.u-tabs .bar { display: flex; gap: 2px; padding: var(--space-xs); background: var(--color-surface-2); overflow-x: auto; }
+.u-tabs button { appearance: none; border: 0; background: transparent; color: var(--color-text-dim); font: inherit; font-size: 13px; padding: 6px 14px; border-radius: var(--radius-md); cursor: pointer; white-space: nowrap; }
+.u-tabs button[aria-selected='true'] { background: var(--color-surface-3); color: var(--color-text); font-weight: 600; }
+.u-tabs .panel { padding: var(--space-md) var(--space-lg); font-size: 14px; }
+.u-tabs .panel[hidden] { display: none; }
+.u-tabs code { background: var(--color-surface-3); padding: 1px 6px; border-radius: var(--radius-sm); }
+
+/* pro/con */
+.u-procon { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); font-size: 13px; }
+.u-procon > div { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-md); background: var(--color-surface); }
+.u-procon h4 { margin: 0 0 var(--space-xs); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.u-procon .pro h4 { color: var(--color-ok); }
+.u-procon .con h4 { color: var(--color-accent); }
+.u-procon ul { margin: 0; padding: 0; list-style: none; }
+.u-procon li { padding: 3px 0 3px 14px; position: relative; }
+.u-procon .pro li::before { content: '+'; position: absolute; left: 0; color: var(--color-ok); font-weight: 700; }
+.u-procon .con li::before { content: '–'; position: absolute; left: 0; color: var(--color-accent); font-weight: 700; }
+
+/* chips */
+.u-chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.u-chips button { appearance: none; font: inherit; font-size: 13px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 14px; cursor: pointer; }
+.u-chips button:hover { border-color: var(--color-accent); }
+.u-chips-out { font-size: 12px; color: var(--color-text-dim); margin-top: var(--space-sm); min-height: 18px; }
+
+/* flow — Mermaid Plus */
+.mm { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md); }
+.mm svg { display: block; width: 100%; height: auto; }
+.mm text { font-family: var(--font-sans); font-size: 10px; fill: var(--color-text); }
+.mm rect, .mm polygon { fill: var(--color-surface-3); stroke: var(--color-border-strong); }
+.mm path { stroke: var(--color-text-dim); fill: none; }
+.flow { display: grid; justify-items: center; gap: 0; }
+.fnode { width: 100%; text-align: left; font: inherit; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); padding: var(--space-sm) var(--space-md); cursor: pointer; position: relative; }
+.fnode:hover { border-color: var(--color-accent); }
+.fnode .ft { display: flex; justify-content: space-between; gap: var(--space-sm); align-items: center; font-weight: 600; font-size: 14px; }
+.fnode .fd { display: none; font-size: 13px; color: var(--color-text-dim); margin-top: var(--space-xs); }
+.fnode[aria-expanded='true'] { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.fnode[aria-expanded='true'] .fd { display: block; }
+.fnode .chev { color: var(--color-text-dim); font-size: 12px; transition: transform 0.2s; }
+.fnode[aria-expanded='true'] .chev { transform: rotate(90deg); }
+.fnode.decision { border-style: dashed; }
+.fedge { width: 1.5px; height: 20px; background: var(--color-border-strong); position: relative; }
+.fedge span { position: absolute; left: 8px; top: 2px; font-size: 11px; color: var(--color-text-dim); white-space: nowrap; }
+.fedge::after { content: ''; position: absolute; bottom: -1px; left: -3.5px; border: 4px solid transparent; border-top: 6px solid var(--color-border-strong); border-bottom: 0; }
+.fbranch { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); width: 100%; }
+.fbranch > div { display: grid; justify-items: center; }
+.fbranch .lab { font-size: 11px; color: var(--color-accent); font-weight: 600; margin-bottom: 2px; }
+
+/* streaming demo */
+.demo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); align-items: start; }
+@media (max-width: 800px) { .demo { grid-template-columns: 1fr; } }
+.demo pre { margin: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-md); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--color-text-dim); white-space: pre-wrap; word-break: break-all; min-height: 340px; }
+.demo pre .partial { color: var(--color-accent); }
+.demo pre .caret { display: inline-block; width: 7px; height: 13px; background: var(--color-accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.demo .out { min-height: 340px; }
+.demo-bar { display: flex; gap: var(--space-sm); align-items: center; margin: var(--space-md) 0; flex-wrap: wrap; }
+.btn { appearance: none; font: inherit; font-size: 13px; color: var(--color-bg); background: var(--color-accent); border: 0; border-radius: var(--radius-full); padding: 6px 18px; font-weight: 600; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-strong); }
+.skel { height: 34px; border-radius: var(--radius-md); background: linear-gradient(90deg, var(--color-surface) 0%, var(--color-surface-3) 50%, var(--color-surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; margin: var(--space-md) 0; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.u-bad { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-text-dim); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-xs) var(--space-md); margin: var(--space-sm) 0; word-break: break-all; }
+.u-bad i { font-style: normal; color: var(--color-accent); margin-right: 6px; }
+@media (prefers-reduced-motion: reduce) { .skel, .caret { animation: none; } }
+
+/* oracle surfaces */
+.sheet { background: var(--color-sheet); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xl); padding: var(--space-lg); max-width: 390px; }
+.sheet h4 { margin: 0 0 var(--space-sm); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-dim); }
+.ocard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-md); font-size: 13px; }
+.ocard .row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); }
+.ocard .k { font-weight: 600; }
+.ocard .odds { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); }
+.ocard .alt { color: var(--color-text-dim); font-size: 12px; margin: 2px 0 var(--space-sm); }
+.ocard blockquote { margin: 0 0 var(--space-sm); padding: var(--space-sm) var(--space-md); background: var(--color-bg); border-radius: var(--radius-md); color: var(--color-text-dim); font-size: 12.5px; border-left: 2px solid var(--color-accent); }
+.ocard button { font: inherit; font-size: 12.5px; color: var(--color-text); background: transparent; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 4px 14px; cursor: pointer; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--color-surface-2); border-radius: var(--radius-md); padding: 3px; gap: 3px; }
+.seg button { font: inherit; font-size: 13px; padding: 6px 0; color: var(--color-text-dim); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer; }
+.seg button[aria-pressed='true'] { background: var(--color-surface-3); color: var(--color-text); font-weight: 600; }
+.setrow { margin-bottom: var(--space-sm); }
+.setrow p { margin: var(--space-sm) 0 0; font-size: 12.5px; color: var(--color-text-dim); min-height: 3em; }
+
+table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: var(--space-md); }
+.matrix th, .matrix td { text-align: left; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.matrix th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600; }
+.matrix td:first-child { font-family: var(--font-mono); color: var(--color-accent); white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Intelligent UI — mockups</h1>
+<p class="lede">What a streamed <code>```ui</code> fence could actually look like in a Polaris answer, and how Oracle would decide when to use one. Every specimen shows the rendered block <em>and</em> the exact fence lines that produce it. Phone width first.</p>
+<span class="sample">All content here is sample data for layout — not real search results.</span>
+
+<nav class="toc">
+	<a href="#hero">In context</a>
+	<a href="#blocks">Block gallery</a>
+	<a href="#flow">Mermaid Plus (flow)</a>
+	<a href="#stream">Streaming</a>
+	<a href="#oracle">Oracle</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="hero">1 · In context</h2>
+<p class="lede">A <code>ui</code> block sits <em>between</em> prose, like a mermaid fence does today. The prose carries the reasoning; the block carries the part that is really a table, a procedure, or a number. Citations bind to the same numbered sources as the text.</p>
+
+<div class="grid">
+	<div class="spec">
+		<div class="spec-head"><span class="opt">HERO</span><p>Oracle read it as a comparison → one block, framed by prose.</p></div>
+		<div class="frame">
+			<div class="bubble-user">Moka pot vs AeroPress vs a real espresso machine — what should I take on a month of travel?</div>
+			<div class="margin-note">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="5" cy="7" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="18" cy="9" r="1.6"/><circle cx="15" cy="19" r="1.6"/><path d="M5 7l7-3 6 5-3 10"/></svg>
+				<span>Read as <b>comparison</b> · shown as a <b>compare</b> block</span>
+			</div>
+			<div class="prose">
+				<p>For a month on the move, the AeroPress wins on packability and forgiveness<span class="cite">1</span>. The other two each lose on something you'll actually feel — fuel and burners for the moka pot, weight and power for a machine<span class="cite">2</span>.</p>
+			</div>
+			<div class="u"><div class="u-cards">
+				<div class="u-card"><div class="ttl"><span>Moka pot</span><span class="price">~$25</span></div><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Needs</dt><dd>A stove or burner</dd><dt>Cup</dt><dd>Strong, espresso-ish</dd></dl></div>
+				<div class="u-card pick"><span class="ribbon">Pick</span><div class="ttl"><span>AeroPress</span><span class="price">~$40</span></div><dl><dt>Weight</dt><dd>0.3 kg</dd><dt>Needs</dt><dd>Hot water only</dd><dt>Cup</dt><dd>Clean, flexible<span class="cite">1</span></dd></dl></div>
+				<div class="u-card"><div class="ttl"><span>Espresso machine</span><span class="price">$500+</span></div><dl><dt>Weight</dt><dd>5–10 kg</dd><dt>Needs</dt><dd>Mains power</dd><dt>Cup</dt><dd>The real thing<span class="cite">2</span></dd></dl></div>
+			</div></div>
+			<div class="prose"><p>What would change the pick: if you'll have the same kitchen for the whole month, a small machine stops being absurd.</p></div>
+		</div>
+		<pre class="src">```ui
+{"c":"compare","cols":["Moka pot","AeroPress","Espresso machine"],"pick":1,"style":"cards"}
+{"row":"Price","v":["~$25","~$40","$500+"]}
+{"row":"Weight","v":["0.4 kg","0.3 kg","5–10 kg"]}
+{"row":"Needs","v":["A stove","Hot water","Mains power"]}
+{"row":"Cup","v":["Strong","Clean","The real thing"],"cite":[1,2]}
+```</pre>
+	</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="blocks">2 · Block gallery</h2>
+<p class="lede">The starter vocabulary, two takes where the phone layout is a real decision. Option <span class="opt">A</span> / <span class="opt">B</span> are visual alternatives for the <em>same</em> fence lines.</p>
+
+<div class="verdict"><b>Recommendation up front:</b> compare → <b>B (cards)</b> on phones (a 3-column table forces sideways scrolling), steps → <b>A (rail)</b>, timeline → <b>A (rail)</b>, callout → <b>A</b>. The same block can switch layout by viewport, so the model never picks a layout — only the data.</div>
+
+<!-- callout -->
+<h3 style="margin-top:32px">callout</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Left rule, tone-tinted</p></div>
+		<div class="frame">
+			<div class="u u-callout a"><b>Heads up.</b> Peak season runs September–October; prices drop about 30% after.<span class="cite">2</span></div>
+			<div class="u u-callout a warn"><b>Check first.</b> Some airlines count the AeroPress as a liquid-brewing device in carry-on.</div>
+			<div class="u u-callout a ok"><b>Good news.</b> Filters are paper and weigh almost nothing.</div>
+		</div>
+		<pre class="src">{"c":"callout","tone":"note","text":"**Heads up.** Peak season runs…","cite":[2]}
+{"c":"callout","tone":"warn","text":"…"}
+{"c":"callout","tone":"ok","text":"…"}</pre></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Icon chip on a card</p></div>
+		<div class="frame">
+			<div class="u u-callout b"><span class="ic">i</span><div><b>Heads up.</b> Peak season runs September–October; prices drop about 30% after.<span class="cite">2</span></div></div>
+			<div class="u u-callout b warn"><span class="ic">!</span><div><b>Check first.</b> Some airlines count the AeroPress as a liquid-brewing device in carry-on.</div></div>
+			<div class="u u-callout b ok"><span class="ic">✓</span><div><b>Good news.</b> Filters are paper and weigh almost nothing.</div></div>
+		</div>
+		<p class="note">B reads more like an app, A more like a margin note. A is quieter and matches PRODUCT.md's "calm over clever"; B stacks poorly when there are three in a row.</p></div>
+</div>
+
+<!-- stat -->
+<h3 style="margin-top:40px">stat</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>One headline number</p></div>
+		<div class="frame">
+			<div class="u u-stat a"><div class="lbl">Typical ripe window</div><div class="big">6 weeks</div><div class="delta" style="color:var(--color-text-dim)">varies with elevation <span class="cite">2</span></div></div>
+		</div>
+		<pre class="src">{"c":"stat","label":"Typical ripe window","value":"6 weeks","note":"varies with elevation","cite":[2]}</pre></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Strip of three</p></div>
+		<div class="frame">
+			<div class="u u-statrow"><div><div class="v">$40</div><div class="l">AeroPress, new</div></div><div><div class="v">0.3 kg</div><div class="l">packed weight</div></div><div><div class="v">~2 min</div><div class="l">brew time</div></div></div>
+		</div>
+		<pre class="src">{"c":"stats","items":[
+  {"label":"AeroPress, new","value":"$40"},
+  {"label":"packed weight","value":"0.3 kg"},
+  {"label":"brew time","value":"~2 min"}]}</pre></div>
+</div>
+
+<!-- compare -->
+<h3 style="margin-top:40px">compare</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Table, sticky first column, side-scroll</p></div>
+		<div class="frame"><div class="u u-cmp-scroll"><table class="u-cmp">
+			<thead><tr><th></th><th>Moka pot</th><th class="pick"><span class="tag">Pick</span>AeroPress</th><th>Espresso machine</th></tr></thead>
+			<tbody>
+			<tr><td>Price</td><td>~$25</td><td class="pick">~$40</td><td>$500+</td></tr>
+			<tr><td>Weight</td><td>0.4 kg</td><td class="pick">0.3 kg</td><td>5–10 kg</td></tr>
+			<tr><td>Needs</td><td>A stove</td><td class="pick">Hot water</td><td>Mains power</td></tr>
+			<tr><td>Cup</td><td>Strong</td><td class="pick">Clean<span class="cite">1</span></td><td>The real thing</td></tr>
+			</tbody></table></div></div>
+		<p class="note">Scannable on desktop; on a 358px phone the third column is already off-screen. Good for 4+ attributes × 2–3 options where lining rows up is the point.</p></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Stacked option cards, winner called out</p></div>
+		<div class="frame"><div class="u u-cards">
+			<div class="u-card"><div class="ttl"><span>Moka pot</span><span class="price">~$25</span></div><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Needs</dt><dd>A stove</dd></dl></div>
+			<div class="u-card pick"><span class="ribbon">Pick</span><div class="ttl"><span>AeroPress</span><span class="price">~$40</span></div><dl><dt>Weight</dt><dd>0.3 kg</dd><dt>Needs</dt><dd>Hot water</dd></dl></div>
+		</div></div>
+		<p class="note">No sideways scroll, the pick is unmissable. Costs vertical space past ~4 options — the renderer can fall back to A when there are 5+ rows and 2 columns.</p></div>
+</div>
+
+<!-- steps -->
+<h3 style="margin-top:40px">steps</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Numbered rail</p></div>
+		<div class="frame"><ol class="u u-steps a">
+			<li><b>Rinse the paper filter</b><span class="d">Removes the papery taste; 10 seconds of hot water.</span></li>
+			<li><b>Add coffee, then water</b><span class="d">Medium-fine grind, 80–85°C water to the 2.</span></li>
+			<li><b>Stir, steep, press</b><span class="d">Stir 10 s, wait ~1 min, press slowly over 30 s.</span></li>
+		</ol></div>
+		<pre class="src">{"c":"steps"}
+{"i":"Rinse the paper filter","d":"Removes the papery taste; 10 seconds…"}
+{"i":"Add coffee, then water","d":"Medium-fine grind, 80–85°C water…"}
+{"i":"Stir, steep, press","d":"Stir 10 s, wait ~1 min…","t":"~2 min"}</pre></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Cards with duration chips</p></div>
+		<div class="frame"><ol class="u u-steps b">
+			<li><b>Rinse the paper filter</b><span class="t">10 s</span><span class="d">Removes the papery taste.</span></li>
+			<li><b>Add coffee, then water</b><span class="t">30 s</span><span class="d">Medium-fine grind, 80–85°C.</span></li>
+			<li><b>Stir, steep, press</b><span class="t">~2 min</span><span class="d">Press slowly over 30 s.</span></li>
+		</ol></div>
+		<p class="note">B earns its keep only when steps have real durations (cooking, installs). Otherwise it is a boxier A.</p></div>
+</div>
+
+<!-- checklist -->
+<h3 style="margin-top:40px">checklist <span style="font-weight:400;color:var(--color-text-dim)">(interactive — local ticks only)</span></h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Tick state lives in the browser, never sent anywhere</p></div>
+		<div class="frame"><div class="u u-check" data-check>
+			<div class="hd"><b>Before you fly</b><span class="count">0 of 4</span></div>
+			<div class="bar"><i></i></div>
+			<label><input type="checkbox" /><span>Passport valid for 6+ months</span></label>
+			<label><input type="checkbox" /><span>Print the return ticket</span></label>
+			<label><input type="checkbox" /><span>Download offline maps</span></label>
+			<label><input type="checkbox" /><span>Tell your bank you're travelling</span></label>
+		</div></div>
+		<pre class="src">{"c":"checklist","title":"Before you fly"}
+{"i":"Passport valid for 6+ months"}
+{"i":"Print the return ticket"}</pre></div>
+</div>
+
+<!-- timeline -->
+<h3 style="margin-top:40px">timeline</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Vertical rail, date above text</p></div>
+		<div class="frame"><ul class="u u-tl a">
+			<li><span class="when">1933</span>Alfonso Bialetti patents the moka pot design.<span class="cite">1</span></li>
+			<li><span class="when">1938</span>Mass production begins in Italy.</li>
+			<li><span class="when">2005</span>AeroPress is released.<span class="cite">2</span></li>
+		</ul></div>
+		<pre class="src">{"c":"timeline"}
+{"when":"1933","i":"Alfonso Bialetti patents…","cite":[1]}
+{"when":"2005","i":"AeroPress is released.","cite":[2]}</pre></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Ledger — dates in a column</p></div>
+		<div class="frame"><ul class="u u-tl b">
+			<li><span class="when">1933</span><span>Bialetti patents the moka pot design.<span class="cite">1</span></span></li>
+			<li><span class="when">1938</span><span>Mass production begins in Italy.</span></li>
+			<li><span class="when">2005</span><span>AeroPress is released.<span class="cite">2</span></span></li>
+		</ul></div>
+		<p class="note">B packs denser and handles long date strings ("14 Mar – 2 Apr 2026") better; A looks more like a timeline. Same lines either way.</p></div>
+</div>
+
+<!-- chart -->
+<h3 style="margin-top:40px">chart <span style="font-weight:400;color:var(--color-text-dim)">(from inline numbers only — nothing fetched)</span></h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Line, direct end label, no legend</p></div>
+		<div class="frame"><div class="u u-chart"><div class="ct">Average nightly rate</div><div class="cs">USD, sample data</div>
+			<svg data-chart='{"kind":"line","x":["2021","2022","2023","2024","2025","2026"],"y":[92,104,118,121,133,141],"unit":"$"}'></svg>
+			<div class="foot">Source <span class="cite">3</span></div></div></div>
+		<pre class="src">{"c":"chart","kind":"line","title":"Average nightly rate",
+ "unit":"$","x":["2021",…],"y":[92,104,118,121,133,141],"cite":[3]}</pre></div>
+	<div class="spec"><div class="spec-head"><span class="opt">B</span><p>Bars, highlighted value</p></div>
+		<div class="frame"><div class="u u-chart"><div class="ct">Brew time by method</div><div class="cs">minutes, sample data</div>
+			<svg data-chart='{"kind":"bar","x":["AeroPress","Moka","Espresso","Pour-over"],"y":[2,5,1,4],"hi":0,"unit":""}'></svg>
+			<div class="foot">Source <span class="cite">1</span></div></div></div>
+		<p class="note">One accent for the point the prose is about, the rest muted. A chart earns a block when the <em>shape</em> (trend, outlier) is the answer; otherwise a stat is enough.</p></div>
+</div>
+
+<!-- tabs -->
+<h3 style="margin-top:40px">tabs <span style="font-weight:400;color:var(--color-text-dim)">(interactive)</span></h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Same task, per-platform / per-option content</p></div>
+		<div class="frame"><div class="u u-tabs" data-tabs>
+			<div class="bar" role="tablist">
+				<button role="tab" aria-selected="true">macOS</button><button role="tab" aria-selected="false">Windows</button><button role="tab" aria-selected="false">Linux</button>
+			</div>
+			<div class="panel">Run <code>brew install ffmpeg</code>, then confirm with <code>ffmpeg -version</code>.</div>
+			<div class="panel" hidden>Run <code>winget install ffmpeg</code> in PowerShell.</div>
+			<div class="panel" hidden>Use your package manager: <code>sudo apt install ffmpeg</code>.</div>
+		</div></div>
+		<pre class="src">{"c":"tabs"}
+{"tab":"macOS","text":"Run `brew install ffmpeg`, then…"}
+{"tab":"Windows","text":"Run `winget install ffmpeg`…"}</pre></div>
+</div>
+
+<!-- procon -->
+<h3 style="margin-top:40px">procon</h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Two columns, symbols not just colour</p></div>
+		<div class="frame"><div class="u u-procon">
+			<div class="pro"><h4>Good</h4><ul><li>Packs flat</li><li>Forgiving</li><li>Cheap filters</li></ul></div>
+			<div class="con"><h4>Watch for</h4><ul><li>Not true espresso</li><li>Small batches</li></ul></div>
+		</div></div>
+		<pre class="src">{"c":"procon","pro_h":"Good","con_h":"Watch for"}
+{"+":"Packs flat"}
+{"-":"Not true espresso"}</pre></div>
+</div>
+
+<!-- chips -->
+<h3 style="margin-top:40px">chips <span style="font-weight:400;color:var(--color-text-dim)">(interactive — sends text as the next message)</span></h3>
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">A</span><p>Same pattern as <code>ask_user_question</code></p></div>
+		<div class="frame"><div class="u"><div class="u-chips" data-chips><button>Best grinder for travel?</button><button>Compare AeroPress Go</button></div><div class="u-chips-out">Tap one.</div></div></div>
+		<p class="note"><b>Flag:</b> Polaris already shows LLM-generated follow-up suggestions under every reply. Chips inside the answer mostly duplicate them. Suggest dropping chips from the vocabulary unless a real gap shows up.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="flow">3 · "Mermaid Plus" — a flow block</h2>
+<p class="lede">Mermaid stays (sequence, ER, gantt, anything graph-shaped it already does). The gap is the most common case — <em>a process or decision chain</em> — where mermaid's output is a desktop-shaped graph squeezed onto a phone. A <code>flow</code> block is vertical-first, each node is a tappable card that expands to detail, and nodes can carry sources.</p>
+
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">TODAY</span><p>Mermaid <code>flowchart LR</code> at phone width</p></div>
+		<div class="frame"><div class="mm">
+			<svg viewBox="0 0 520 90" aria-label="a mermaid-style left to right flowchart">
+				<rect x="2" y="30" width="80" height="30" rx="4"/><text x="12" y="49">Starter</text>
+				<rect x="112" y="30" width="80" height="30" rx="4"/><text x="124" y="49">Feed</text>
+				<polygon points="222,45 262,22 302,45 262,68"/><text x="246" y="49">Bubbly?</text>
+				<rect x="332" y="30" width="80" height="30" rx="4"/><text x="344" y="49">Mix dough</text>
+				<rect x="432" y="30" width="80" height="30" rx="4"/><text x="446" y="49">Bake</text>
+				<path d="M82 45h30M192 45h30M302 45h30M412 45h20"/>
+			</svg>
+		</div></div>
+		<p class="note">The honest problem: a wide graph is shrunk until its text is ~5px. Nodes can't hold a sentence of detail, and a source can't attach to a node.</p></div>
+	<div class="spec"><div class="spec-head"><span class="opt">PROPOSED</span><p><code>flow</code> — vertical cards, tap to expand (try it)</p></div>
+		<div class="frame"><div class="u flow" data-flow>
+			<button class="fnode" aria-expanded="false"><span class="ft"><span>Feed the starter</span><span class="chev">▶</span></span><span class="fd">1:1:1 by weight (starter : flour : water), then wait 4–8 hours at room temperature.<span class="cite">1</span></span></button>
+			<div class="fedge"></div>
+			<button class="fnode decision" aria-expanded="false"><span class="ft"><span>Doubled and bubbly?</span><span class="chev">▶</span></span><span class="fd">Float test is unreliable; trust volume and bubbles.<span class="cite">1</span></span></button>
+			<div class="fedge"></div>
+			<div class="fbranch">
+				<div><span class="lab">Yes</span><button class="fnode" aria-expanded="false"><span class="ft"><span>Mix the dough</span><span class="chev">▶</span></span><span class="fd">Use at peak, not after it falls.</span></button></div>
+				<div><span class="lab">Not yet</span><button class="fnode" aria-expanded="false"><span class="ft"><span>Wait 1–2 h</span><span class="chev">▶</span></span><span class="fd">Cooler kitchens take longer.</span></button></div>
+			</div>
+		</div></div>
+		<pre class="src">{"c":"flow"}
+{"n":"feed","t":"Feed the starter","d":"1:1:1 by weight…","cite":[1]}
+{"n":"ok","t":"Doubled and bubbly?","kind":"decision"}
+{"n":"mix","t":"Mix the dough"}
+{"n":"wait","t":"Wait 1–2 h"}
+{"e":["feed","ok"]}
+{"e":["ok","mix"],"l":"Yes"}
+{"e":["ok","wait"],"l":"Not yet"}</pre></div>
+</div>
+<div class="verdict"><b>Scope guard:</b> <code>flow</code> is for processes and decision chains up to ~8 nodes. Anything bigger, or any other graph type, stays mermaid. Node/edge lines are a stream-friendly shape: each node card can appear the moment its line completes (edges attach when both ends exist).</div>
+
+<!-- ============================================================ -->
+<h2 id="stream">4 · Streaming — the whole "compiler"</h2>
+<p class="lede">The claim in the plan: a stream of whole lines needs no incremental JSON parser. Each completed line becomes a component; the trailing partial line is held back (shown as a shimmer) until its newline. Hit replay. The stream deliberately includes an unknown component and a malformed line — both degrade quietly instead of breaking the answer.</p>
+<div class="demo-bar"><button class="btn" id="replay">▶ Replay stream</button><button class="btn ghost" id="instant">Show final</button><span class="mono" id="demo-status" style="color:var(--color-text-dim)"></span></div>
+<div class="demo">
+	<div><div class="u-label">What the model emits</div><pre id="raw"></pre></div>
+	<div><div class="u-label">What the phone shows</div><div class="frame out" id="out"></div></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="oracle">5 · Oracle integration</h2>
+<p class="lede">Oracle already reads each message with one Jev call carrying ~20 questions. Adding a <code>ui</code> question costs almost nothing. Its job: say <em>whether</em> a visual block beats prose and <em>which</em> one, then nudge the model with the exact syntax for that block — a just-in-time few-shot.</p>
+
+<div class="grid">
+	<div class="spec"><div class="spec-head"><span class="opt">NOTE</span><p>The margin note gains a clause. Wording variants:</p></div>
+		<div class="frame">
+			<div class="margin-note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="5" cy="7" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="18" cy="9" r="1.6"/><circle cx="15" cy="19" r="1.6"/><path d="M5 7l7-3 6 5-3 10"/></svg><span>Read as <b>comparison</b> · shown as a <b>compare</b> block</span></div>
+			<div class="margin-note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="5" cy="7" r="1.6"/><circle cx="12" cy="4" r="1.6"/><circle cx="18" cy="9" r="1.6"/><circle cx="15" cy="19" r="1.6"/><path d="M5 7l7-3 6 5-3 10"/></svg><span>Read as <b>medical</b> · answered as <b>Researcher</b> · <b>timeline</b></span></div>
+		</div>
+		<p class="note">No new UI surface — it reuses the existing note and ⓘ sheet. Nothing is shown when <code>ui</code> didn't fire.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">SHEET</span><p>ⓘ turn-info card for the <code>ui</code> check</p></div>
+		<div class="sheet"><h4>Oracle · changed something</h4>
+			<div class="ocard">
+				<div class="row"><span class="k">ui</span><span class="odds">compare · 0.91</span></div>
+				<div class="alt">Runner-up: none (plain prose) 0.06</div>
+				<blockquote>The user is choosing between options. A <code>compare</code> block fits… write one <code>ui</code> fence, then say which to pick and why.</blockquote>
+				<button>Rerun as plain text</button>
+			</div></div>
+		<p class="note">"Rerun as plain text" is the escape hatch for an over-eager block — the visuals analogue of the existing rerun button.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">DIAL</span><p>Settings → Visuals (also sets Oracle's bar)</p></div>
+		<div class="sheet"><h4>Visuals</h4>
+			<div class="setrow" data-dial>
+				<div class="seg"><button aria-pressed="false" data-v="off">Off</button><button aria-pressed="true" data-v="low">Low</button><button aria-pressed="false" data-v="normal">Normal</button></div>
+				<p></p>
+			</div></div>
+		<p class="note">Off removes the prompt fragment <em>and</em> skips the <code>ui</code> check, so nothing changes. Low (default) and Normal differ in the prompt wording and in Oracle's firing bar.</p></div>
+</div>
+
+<h3 style="margin-top:40px">What the <code>ui</code> check would choose between</h3>
+<div class="tablewrap"><table class="matrix">
+	<thead><tr><th>Option</th><th>Jev sees (criteria)</th><th>Nudge adds</th><th>Replaces text shape</th></tr></thead>
+	<tbody>
+		<tr><td>none</td><td>Prose, a short list, or code serves this best.</td><td>nothing</td><td>—</td></tr>
+		<tr><td>compare</td><td>Choosing between specific options across shared attributes.</td><td>compare syntax + "end with a pick"</td><td><code>format</code>: table, comparison</td></tr>
+		<tr><td>steps</td><td>A procedure where order matters.</td><td>steps syntax</td><td><code>format</code>: steps</td></tr>
+		<tr><td>checklist</td><td>Things to prepare or tick off.</td><td>checklist syntax</td><td><code>format</code>: list</td></tr>
+		<tr><td>timeline</td><td>Events over time, a history or schedule.</td><td>timeline syntax</td><td><code>format</code>: timeline</td></tr>
+		<tr><td>chart</td><td>A trend or comparison of numbers already in the answer.</td><td>chart syntax, "numbers must come from sources"</td><td>—</td></tr>
+		<tr><td>flow</td><td>A process or decision chain with branches.</td><td>flow syntax</td><td>mermaid (simple cases)</td></tr>
+		<tr><td>procon</td><td>One thing weighed for and against.</td><td>procon syntax</td><td>—</td></tr>
+		<tr><td>tabs</td><td>Parallel versions of one answer (per OS, per option).</td><td>tabs syntax</td><td>—</td></tr>
+	</tbody></table></div>
+<p class="note" style="max-width:78ch">Callouts, stats and chips are deliberately <em>not</em> Oracle options: they are small accents the model can add on its own judgement under the base prompt. Oracle only decides the "this answer is really a __" cases, which is where a wrong default hurts most.</p>
+
+</div>
+
+<script>
+/* ---- shared helpers ---- */
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cites = (a) => (a || []).map((n) => `<span class="cite">${esc(n)}</span>`).join('');
+const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+
+/* ---- checklist ---- */
+document.querySelectorAll('[data-check]').forEach((box) => {
+	const inputs = box.querySelectorAll('input');
+	const update = () => {
+		const n = [...inputs].filter((i) => i.checked).length;
+		box.querySelector('.count').textContent = `${n} of ${inputs.length}`;
+		box.querySelector('.bar i').style.width = (n / inputs.length) * 100 + '%';
+	};
+	inputs.forEach((i) => i.addEventListener('change', update));
+	update();
+});
+
+/* ---- tabs ---- */
+document.querySelectorAll('[data-tabs]').forEach((t) => {
+	const btns = t.querySelectorAll('button');
+	const panels = t.querySelectorAll('.panel');
+	btns.forEach((b, i) => b.addEventListener('click', () => {
+		btns.forEach((x, j) => x.setAttribute('aria-selected', String(i === j)));
+		panels.forEach((p, j) => (p.hidden = i !== j));
+	}));
+});
+
+/* ---- chips ---- */
+document.querySelectorAll('[data-chips]').forEach((c) => {
+	const out = c.parentElement.querySelector('.u-chips-out');
+	c.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+		out.textContent = `→ sends “${b.textContent}” as your next message`;
+	}));
+});
+
+/* ---- flow nodes ---- */
+document.querySelectorAll('.fnode').forEach((n) => n.addEventListener('click', () => {
+	n.setAttribute('aria-expanded', String(n.getAttribute('aria-expanded') !== 'true'));
+}));
+
+/* ---- charts (drawn from the inline numbers, as the real renderer would) ---- */
+document.querySelectorAll('svg[data-chart]').forEach((svg) => {
+	const d = JSON.parse(svg.dataset.chart);
+	const W = 330, H = 140, padL = 4, padR = 44, padT = 14, padB = 22;
+	svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+	const max = Math.max(...d.y), min = d.kind === 'bar' ? 0 : Math.min(...d.y) * 0.9;
+	const xs = (i) => padL + (i * (W - padL - padR)) / Math.max(1, d.x.length - 1);
+	const ys = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+	let out = '';
+	const accent = 'var(--color-accent)', dim = 'var(--color-border-strong)', txt = 'var(--color-text-dim)';
+	if (d.kind === 'line') {
+		const pts = d.y.map((v, i) => `${xs(i)},${ys(v)}`);
+		out += `<path d="M${pts.join(' L')} L${xs(d.y.length - 1)},${H - padB} L${xs(0)},${H - padB}Z" fill="${accent}" opacity=".10"/>`;
+		out += `<path d="M${pts.join(' L')}" fill="none" stroke="${accent}" stroke-width="2" stroke-linejoin="round"/>`;
+		const last = d.y.length - 1;
+		out += `<circle cx="${xs(last)}" cy="${ys(d.y[last])}" r="4" fill="${accent}"/>`;
+		out += `<text x="${xs(last) + 8}" y="${ys(d.y[last]) + 4}" fill="var(--color-text)" font-size="12" font-weight="600">${d.unit}${d.y[last]}</text>`;
+		out += `<text x="${xs(0)}" y="${ys(d.y[0]) - 8}" fill="${txt}" font-size="11">${d.unit}${d.y[0]}</text>`;
+		d.x.forEach((l, i) => { if (i % 2 === 0 || i === last) out += `<text x="${xs(i)}" y="${H - 6}" fill="${txt}" font-size="10.5" text-anchor="middle">${l}</text>`; });
+	} else {
+		const bw = (W - padL - padR + 30) / d.x.length;
+		d.y.forEach((v, i) => {
+			const x = padL + i * bw + bw * 0.18, w = bw * 0.64, y = ys(v);
+			out += `<rect x="${x}" y="${y}" width="${w}" height="${H - padB - y}" rx="4" fill="${i === d.hi ? accent : dim}"/>`;
+			out += `<text x="${x + w / 2}" y="${y - 5}" fill="${i === d.hi ? 'var(--color-text)' : txt}" font-size="11" font-weight="${i === d.hi ? 600 : 400}" text-anchor="middle">${v}</text>`;
+			out += `<text x="${x + w / 2}" y="${H - 6}" fill="${txt}" font-size="10" text-anchor="middle">${d.x[i]}</text>`;
+		});
+	}
+	svg.innerHTML = out;
+});
+
+/* ---- settings dial ---- */
+const dialCopy = {
+	off: 'No visual blocks. Prompt fragment removed; Oracle skips the ui question.',
+	low: 'A block only when it clearly beats prose. Oracle fires at a high bar (≈0.85).',
+	normal: 'Blocks whenever the answer is really a comparison, procedure, timeline or chart. Oracle bar ≈0.70.'
+};
+document.querySelectorAll('[data-dial]').forEach((el) => {
+	const btns = el.querySelectorAll('button'), p = el.querySelector('p');
+	const set = (v) => { btns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v))); p.textContent = dialCopy[v]; };
+	btns.forEach((b) => b.addEventListener('click', () => set(b.dataset.v)));
+	set('low');
+});
+
+/* ---- streaming demo: a miniature of the real line "compiler" ---- */
+const STREAM = [
+	'{"c":"callout","tone":"note","text":"Peak season runs September–October","cite":[2]}',
+	'{"c":"stat","label":"Typical ripe window","value":"6 weeks","note":"varies with elevation","cite":[2]}',
+	'{"c":"compare","cols":["Gala","Honeycrisp"],"pick":1}',
+	'{"row":"Crunch","v":["Medium","High"]}',
+	'{"row":"Keeps for","v":["2 months","4 months"],"cite":[3]}',
+	'{"c":"sparkle","text":"a component the client has never heard of"}',
+	'{"c":"callout","tone":"warn","text":"this line gets cut off mid-',
+	'{"c":"chips","items":["Best for baking?","Where to buy near me"]}'
+].join('\n') + '\n';
+
+function renderLines(lines) {
+	let html = '', mode = null, rows = '', head = null;
+	const flush = () => {
+		if (mode === 'compare' && head) {
+			const th = head.cols.map((c, i) => `<th class="${i === head.pick ? 'pick' : ''}">${i === head.pick ? '<span class="tag">Pick</span>' : ''}${esc(c)}</th>`).join('');
+			html += `<div class="u u-cmp-scroll"><table class="u-cmp"><thead><tr><th></th>${th}</tr></thead><tbody>${rows}</tbody></table></div>`;
+		}
+		mode = null; rows = ''; head = null;
+	};
+	for (const line of lines) {
+		if (!line.trim()) continue;
+		let o;
+		try { o = JSON.parse(line); } catch { flush(); html += `<div class="u-bad"><i>unrenderable line</i>${esc(line.slice(0, 70))}${line.length > 70 ? '…' : ''}</div>`; continue; }
+		if (o.row !== undefined && mode === 'compare') {
+			rows += `<tr><td>${esc(o.row)}</td>${o.v.map((v, i) => `<td class="${i === head.pick ? 'pick' : ''}">${esc(v)}${i === head.pick ? cites(o.cite) : ''}</td>`).join('')}</tr>`;
+			continue;
+		}
+		flush();
+		if (o.c === 'callout') html += `<div class="u u-callout a ${o.tone === 'warn' ? 'warn' : o.tone === 'ok' ? 'ok' : ''}">${md(o.text)}${cites(o.cite)}</div>`;
+		else if (o.c === 'stat') html += `<div class="u u-stat a"><div class="lbl">${esc(o.label)}</div><div class="big">${esc(o.value)}</div><div class="delta" style="color:var(--color-text-dim)">${esc(o.note || '')} ${cites(o.cite)}</div></div>`;
+		else if (o.c === 'compare') { mode = 'compare'; head = { cols: o.cols, pick: o.pick }; }
+		else if (o.c === 'chips') html += `<div class="u u-chips">${o.items.map((t) => `<button>${esc(t)}</button>`).join('')}</div>`;
+		else html += `<div class="u-bad"><i>unknown component “${esc(o.c)}” — shown as code</i>${esc(line.slice(0, 60))}…</div>`;
+	}
+	flush();
+	return html;
+}
+
+const rawEl = document.getElementById('raw'), outEl = document.getElementById('out'), statusEl = document.getElementById('demo-status');
+let timer = null;
+function paint(text, streaming) {
+	const nl = text.lastIndexOf('\n');
+	const done = text.slice(0, nl + 1), partial = text.slice(nl + 1);
+	rawEl.innerHTML = esc(done) + (partial ? `<span class="partial">${esc(partial)}</span>` : '') + (streaming ? '<span class="caret"></span>' : '');
+	outEl.innerHTML = renderLines(done.split('\n')) + (streaming && partial ? '<div class="skel" aria-hidden="true"></div>' : '');
+	statusEl.textContent = streaming ? `${done.split('\n').filter(Boolean).length} lines complete · partial line held back` : 'done';
+}
+function replay() {
+	clearInterval(timer);
+	let i = 0;
+	if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paint(STREAM, false); return; }
+	timer = setInterval(() => {
+		i = Math.min(STREAM.length, i + 4);
+		paint(STREAM.slice(0, i), i < STREAM.length);
+		if (i >= STREAM.length) clearInterval(timer);
+	}, 30);
+}
+document.getElementById('replay').addEventListener('click', replay);
+document.getElementById('instant').addEventListener('click', () => { clearInterval(timer); paint(STREAM, false); });
+paint(STREAM, false);
+</script>
+</body>
+</html>

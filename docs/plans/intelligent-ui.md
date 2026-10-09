@@ -7,6 +7,11 @@ for everyone" launch (2026-10-07). Open questions are listed at the bottom; reso
 treating any section as final. No code lands from this doc until the plan is refined and an issue
 exists.
 
+**Update 2026-10-09:** mockups done (`mockups/intelligent-ui.html` — every block rendered at phone
+width next to the fence lines that produce it, plus a replayable streaming demo). Two new sections
+below came out of that round: "Block catalog" (the concrete vocabulary) and "Oracle integration"
+(how Oracle decides *whether* and *which block*, rather than relying on the prompt alone).
+
 ## The idea, in one paragraph
 
 Polaris answers are Markdown prose plus a few tool-driven rich surfaces (`show`, `highlight`,
@@ -74,6 +79,47 @@ Any component may carry citation refs that bind to the existing numbered sources
 (`web/src/lib/citations.ts`). This is the differentiator against a chatbot: components are
 *sourced*, not decorative — consistent with PRODUCT.md's "sourcing is the product."
 
+## Block catalog (proposed, from the mockups)
+
+Concrete form of the "starter vocabulary" above. Syntax is JSONL, one line per completed piece. A
+**container line** (`"c":...`) opens a block; the **child lines** that follow (`"row"`, `"i"`,
+`"when"`, `"tab"`, `"n"`/`"e"`, `"+"`/`"-"`) append to it until the next container line or the
+closing fence. That is what lets a table fill row by row as it streams. Flat blocks (`callout`,
+`stat`, `chart`) are a single line. Free-text fields accept `**bold**` and `` `code` `` only. Any
+block may carry `"cite":[n]`, bound to the existing numbered sources.
+
+| Block | Shape | Phone layout (mockup pick) | Oracle option? | Phase |
+|---|---|---|---|---|
+| `callout` | 1 line | **A**: left rule, tone-tinted (`note`/`warn`/`ok`) | no — model's own accent | 1 |
+| `stat` / `stats` | 1 line | **A** one big number; **B** strip of 3 | no | 1 |
+| `compare` | container + `row` lines | **B** stacked option cards, pick ribbon; table (A) when ≥4 attributes and ≤3 options | yes | 1 |
+| `steps` | container + `i` lines (`d` detail, `t` duration) | **A** numbered rail; `t` upgrades to **B** chips only when durations exist | yes | 1 |
+| `checklist` | container + `i` lines | ticks are local state, progress bar | yes | 2 |
+| `timeline` | container + `when`/`i` lines | **A** vertical rail; **B** ledger for long date strings | yes | 2 |
+| `chart` | 1 line (`x`/`y` arrays, inline numbers only) | line with direct end label, or bars with one highlighted value; no legend | yes | 2 |
+| `tabs` | container + `tab` lines | segmented bar, local selection | yes | 2 |
+| `procon` | container + `+`/`-` lines | two columns, +/– symbols so it isn't colour-only | yes | 2 |
+| `flow` | container + `n` (node) / `e` (edge) lines | vertical-first cards, tap to expand, decision branches side by side | yes | 3 |
+| `chips` | 1 line | pills sending text as next message | **drop?** | — |
+| `map` | — | reuse interactive-maps; not mocked | later | 3 |
+
+Layout is the client's decision, never the model's: the model supplies data and (for `compare`) a
+`pick`; the renderer chooses cards vs table by viewport and shape. This keeps the model's job small
+and lets phone layouts improve without changing any prompt.
+
+**`chips` should probably go.** Polaris already shows LLM-generated follow-up suggestions under every
+reply, and chips inside the answer mostly duplicate them. Keep the vocabulary to blocks that present
+*structure*; revisit only if a real gap appears.
+
+### "Mermaid Plus": `flow`, not a mermaid replacement
+
+Mermaid stays — sequence, ER, gantt and anything graph-shaped it already does. The real gap is the
+commonest case, a **process or decision chain**, where mermaid's output is a desktop-shaped graph
+shrunk until its text is ~5px on a phone, nodes can't hold a sentence of detail, and a source can't
+attach to a node. `flow` fixes exactly that: vertical-first, each node a tappable card that expands
+to detail and can carry a citation, branches rendered side by side. Scope guard: ≤ ~8 nodes; anything
+bigger or any other graph type stays mermaid. Not an attempt to re-implement mermaid's layout engine.
+
 ## Interaction model (no code execution, no `eval`)
 
 - **Local, declarative state only:** tab selection, checklist ticks, hotspot selection. Never
@@ -91,10 +137,109 @@ Any component may carry citation refs that bind to the existing numbered sources
   blocklist check `show` already does applies and the model never supplies a URL.
 - Plain text must remain a first-class answer; the prompt says so explicitly.
 
+## Oracle integration (proposed 2026-10-09)
+
+A prompt-only approach leaves "when is a block worth it" entirely to the main model, which is the
+exact weakness the Risks section names (over-eager *or* never-used UI). Oracle already solves the
+same shape of problem for answer format, sources and tool choice, in the same single Jev call. So:
+**add one more question, `ui`, to `oracle.checks`.** It answers "would a structured block beat prose
+here, and which one?" and, when it fires, injects a short nudge into `## Oracle` naming the block
+and giving that block's exact syntax as a one-line example.
+
+### Two layers, so Oracle failing never breaks the feature
+
+1. **Base prompt fragment** (`prompts.yaml`, present whenever the visuals dial isn't Off): the
+   compact grammar for every block, plus "plain text is a valid answer; use a block only when it
+   clearly beats prose." This is the floor. It's what runs when Oracle is off, when Jev times out
+   (the 2.5s `oracleTimeout` — 14% hard-failure rate in the original spike), or when `ui` doesn't
+   fire.
+2. **Oracle nudge** (only when `ui` fires): "This looks like a comparison. A `compare` block fits —
+   write one `ui` fence, then say which to pick and why." plus the exemplar line(s). This is the
+   "extra nudge" — just-in-time few-shot for the specific block, instead of hoping the model
+   remembers the grammar from the top of a long system prompt (the same recency argument that put
+   `## Oracle` into `modeReinforcement`).
+
+Open measurement: once the nudge carries the exemplar, the base fragment could shrink to names +
+one-liners and save tokens on the ~90% of turns where `ui` won't fire. Don't do that until the
+fallback rate with Oracle off has been measured — a smaller floor means a worse Oracle-off case.
+
+### The check
+
+```yaml
+# prompts.yaml, oracle.checks (+ the same text in buildDefaults()/defaults_oracle.go —
+# the drift test enforces it; wording only here, bars live in config.yaml)
+ui:
+  instructions: >-
+    Would a structured visual block serve this message clearly better than ordinary prose?
+    Pick "none" unless the answer is really a comparison, procedure, timeline, chart, or
+    similar and prose would be harder to scan.
+  options:
+    none: Prose, a short list, or code serves this best.
+    compare: Choosing between specific options across shared attributes.
+    steps: A procedure where order matters.
+    checklist: Things to prepare or tick off.
+    timeline: Events over time, a history, or a schedule.
+    chart: A trend or comparison of numbers that are already in the answer.
+    flow: A process or decision chain with branches.
+    procon: One thing weighed for and against.
+    tabs: Parallel versions of one answer (per OS, per option).
+  inject:
+    compare: >-
+      The user is choosing between options. A `compare` block fits: write one ui fence, e.g.
+      {"c":"compare","cols":["A","B"],"pick":0} then {"row":"Price","v":["$9","$12"]} lines, and
+      follow it with which to pick and what would change that. Keep the prose short.
+    # ...one entry per option, each with a one-line exemplar
+```
+
+```go
+// config/oracle.go DefaultOracle() — policy
+"ui": {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}},
+// and add "ui" to emotional's Suppresses list
+```
+
+Design calls, each deliberate:
+
+- **Separate from `format`, but it holds `format` back.** `format` already nudges toward
+  table/comparison/steps/timeline as *Markdown* shapes and works with visuals Off, so it stays. When
+  `ui` fires, `Suppresses: ["format"]` stops both nudges stacking ("use a table" + "write a compare
+  block") — the nudge-stacking failure `oracle-checks-expansion.md` already hit and fixed for
+  `emotional`. A held-back `format` shows as "held back" in the ⓘ sheet for free. With the dial Off the
+  `ui` check isn't asked at all and `format` behaves exactly as today.
+- **Oracle picks the block, never a layout.** Options name *what the answer is* (`compare`,
+  `steps`...), not how it looks; the client chooses cards vs table by viewport.
+- **Callout / stat aren't options.** They're small accents the model may add under the base prompt.
+  Oracle only decides the "this answer is really a ___" cases, where a wrong default hurts most.
+- **One block per answer by default.** Jev returns a single winner, and the nudge says "one fence".
+  The model may still add small accents on its own; multi-block answers are not forbidden, just not
+  encouraged.
+- **Skips.** Brief (a few sentences — a block defeats it) and Safari (own pacing). `emotional`
+  suppresses it: someone distressed gets acknowledgment, not a comparison widget.
+  `high_stakes` does **not** suppress it, but the high-stakes nudge ("name the caveat that changes
+  what the user should do") must survive: a compare block is not a licence to drop caveats into
+  cells. Check this in the live spike.
+- **The dial sets Oracle's bar.** Off: fragment removed, `ui` not asked. Low (default): the check
+  fires at a high bar (tentatively 0.85). Normal: the config bar (0.70). Config holds the Normal
+  bar; Low adds a fixed offset in code. The spike sets the real numbers.
+- **Escape hatch.** The ⓘ card for `ui` gets a "Rerun as plain text" button (mocked), the visuals
+  analogue of the existing rerun. A wrong firing costs one tap, not a bad answer.
+- **No schema change.** `OracleResult.Checks` is generic, so persistence and the WS event carry
+  `ui` for free. Frontend work is: a label/wording entry for the margin note, a star in the
+  constellation (the animation already scales by check count), and the rerun button.
+
+### Verification (extends the plan below)
+
+Before wiring the nudge text, run `dev/oracle_spike`-style classification of ~50 real thread-openers
+plus a hand-written set of true positives (comparisons, how-tos, timelines, number-heavy answers) and
+true negatives (chatty, opinion, one-fact lookups). The number that matters is **false-positive
+rate**, not accuracy: an unneeded block is worse than a missed one. Then run the live loop through
+`dev/fakeopenrouter` with Oracle on to confirm the nudge actually appears in the request body
+(`/_control/calls`), and compare real-model output with and without the nudge on the same prompts.
+
 ## Settings and prompts
 
 A "visuals" dial (off / low / normal) in Settings, injected via `prompts.yaml` (hot-reloaded, with
-`buildDefaults()` kept in sync — a drift test enforces it). Default: Low.
+`buildDefaults()` kept in sync — a drift test enforces it). Default: Low. The dial also sets the `ui`
+check's bar when Oracle is on (see "Oracle integration").
 
 ## Risks
 
@@ -112,10 +257,11 @@ backend. Unit-test the line parser against truncated, malformed, and unknown-com
 
 ## Phasing (tentative)
 
-1. Parser + renderer + 3–4 components (callout, comparison, stepper, stat), prompt fragment,
-   Settings dial.
-2. Tabs, timeline, chart, action chips.
-3. Citations bound into components; map component; commentary-style early answers.
+1. Parser + renderer + 4 components (callout, compare, steps, stat), base prompt fragment, Settings
+   dial. Ship this **without** Oracle first so the floor can be measured on its own.
+2. The Oracle `ui` check (limited to the options phase 1 can render), margin-note/ⓘ-sheet wording,
+   "rerun as plain text". Then checklist, timeline, chart, tabs, procon.
+3. `flow`; citations bound into every block; map; commentary-style early answers.
 
 Shipping also requires: a `HelpModal.svelte` `TERMS` entry and a `docs/FEATURES.md` line
 (CLAUDE.md).
@@ -134,5 +280,15 @@ Shipping also requires: a `HelpModal.svelte` `TERMS` entry and a `docs/FEATURES.
 ## Open questions
 
 1. JSONL vs. an indented DSL for the line format (token cost vs. robustness to model typos).
-2. Exact component vocabulary and field names for phase 1.
+   **Leaning JSONL**, now with container + child lines (see "Block catalog"): every line parses on
+   its own, models rarely mangle JSON, and the mockup's streaming demo shows malformed/unknown lines
+   degrade to a muted code row without touching their neighbours. Measure token cost on the real
+   exemplars before committing; a DSL only wins if the saving is large.
+2. Field names above are a first draft from the mockups; settle them with the phase-1 four blocks.
 3. Whether a cancelled/errored turn leaves a half-rendered block or collapses it to a code block.
+   The mockup assumes the already-complete lines stay rendered and only the partial line is dropped.
+4. Should `chips` be dropped (duplicates follow-up suggestions)? Leaning yes.
+5. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
+   fallback measured first.
+6. Does `ui` need its own margin-note clause, or is the existing "Read as ..." note enough? The
+   mockup shows the clause version; judge in real use like the rest of Oracle's wording.
