@@ -1,5 +1,9 @@
 # Prism (Intelligent UI): handoff for P3
 
+**UPDATE: group (b) (`flow`, `tabs`, `disclose`) is built too (commits `d91088c`..; see the plan's "Group
+(b)"). Only group (c), `claim`/`quote` + verification wiring, remains; read "Group (c) caveat" below
+first.** Group (a) and (b) are the templates; skip the "Group (b) notes" section, it is done.
+
 Written 2026-10-09 to start a fresh session. P0, P1 and P2 are built. **P3 group (a) is built too (same day:
 `timeline`, `checklist`, `procon`, `choose`, `facts`; commits `b8f9064`..`f056e13`, spike and live phone-width
 run in the plan's "Spike results: group (a)"). Groups (b) `flow`/`tabs`/`disclose` and (c) `claim`/`quote` +

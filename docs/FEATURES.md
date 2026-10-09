@@ -85,7 +85,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   the chat into a Field). See [oracle.md](oracle.md) for every check and what it does.
 - **Prism** — answers can include a comparison (cards on a phone, a table when wide), a numbered
   step rail, a timeline, a tick-off checklist, pros and cons, "if you…, pick…" decision rules, an
-  at-a-glance facts card, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
+  at-a-glance facts card, a branching flow chart (tap a step for detail), per-OS tabs, a folded
+  "more detail" section, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
   in line by line as the answer streams. A Low / Normal / Off dial in Settings sets how readily
   they appear (Low by default). Works in chat and in Pulsar pulses. Diagrams now build up as they
   stream too, and Oracle can nudge a block when one clearly fits.

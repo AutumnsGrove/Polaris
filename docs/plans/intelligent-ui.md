@@ -3,7 +3,8 @@
 **Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
 **Status: P0, P1 and P2 built (2026-10-09). P3 group (a) built (`timeline`, `checklist`, `procon`,
-`choose`, `facts`; see "Spike results: group (a)" below); groups (b) and (c) not started.** Tracking issue #159.
+`choose`, `facts`; see "Spike results: group (a)" below) and group (b) (`flow`, `tabs`, `disclose`; see
+"Group (b)" below); group (c) (`claim`, `quote`, verification wiring) not started.** Tracking issue #159.
 P2 = the Oracle `ui` check (compare/steps/none; Low bar 0.85, Normal 0.70; holds back `format`; held back by
 `emotional`; skipped under Brief/Safari including a mode Oracle picks itself), the margin-note clause, the
 sheet's "Visual block" row, "Rerun as plain text" (`no_visuals`), and `dev/ui_spike` (results below).
@@ -535,6 +536,33 @@ rules. Jev answered every message.
   time"; the re-run no longer fires on it. (Normal also showed `facts` 0.78 on "what is kimi k2.8?", which
   is a fair use, and Low stays quiet.) Affect/effect `compare` at 0.74 is the same Normal-only borderline
   as before.
+
+## Group (b): `flow`, `tabs`, `disclose` (2026-10-09)
+
+Built the same way as group (a). What is worth knowing that the catalog did not say:
+
+- **`flow` layout is a pure function** (`uiBlocks/flowLayout.ts`, unit-tested): BFS from the first node, so
+  nodes and edges stay flat lists in arrival order and an edge may name a node that has not streamed in.
+  Caps: 10 nodes, 20 edges; a duplicate id, a self-loop or a malformed edge is a raw row. Expand state is
+  keyed by node id: a live run moved "Replace the fuse" from layer 2 to layer 1 when a later edge landed
+  and it stayed open. The Go flattener does not repeat the layout: it lists nodes, then edges
+  (`A -> B (label)`), in arrival order.
+- **An edge to a sibling in the same layer is neither a loop nor a new layer**, so it gets its own note
+  ("also leads to X"). The first version said "back to X" about a node drawn beside it, which read as wrong.
+- **Real model finding: tabs hold code.** Asked how to install Node on three OSes, the model put a fenced
+  command block in every tab (newlines as `\n` inside the JSON string). Inline-only rendering collapsed the
+  commands onto one line and the 400-char clip cut the Ubuntu tab off mid-command. Now a tab's text has a
+  2000-char cap (`MAX_TAB_TEXT_CHARS`) and renders as block Markdown (`UiText block`, same DOMPurify and
+  chip pass); a disclosed paragraph gets 1200. Both flatteners carry the same caps, pinned by tests.
+- **A refactoring trap, worth a comment in `parse.ts`:** giving `text()` a second `max` argument made
+  `cols.map(text)` pass the array index as `max` and clip every compare column. Tests caught it.
+- **Spike** (179 messages incl. 5 `flow` + 5 `tabs` positives, 3 `steps` and 3 `none` look-alikes; $0.034):
+  Normal 2 / 47 false positives, 57 / 67 hits, 1 wrong block; Low 2 / 47, 52 / 67, 0 wrong. Both new shapes
+  win with the right label (`flow` 4 of 5 and `tabs` 5 of 5 on Normal), several sit below the Low bar. The
+  two false positives are arguable labels ("what is the process by which a bill becomes law?" -> `steps`
+  0.95, the aqueducts `timeline` again). The one wrong block is a `choose` message that read as `compare`.
+  As the option count grew, `choose` slipped further under the bar (0.41-0.67): the probability mass splits,
+  as predicted. The gate + kind split is still not needed on these numbers; revisit if real use shows noise.
 
 ## Open questions
 
