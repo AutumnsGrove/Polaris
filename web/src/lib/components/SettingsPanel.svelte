@@ -714,9 +714,9 @@
 					{#snippet details()}
 						Lets Polaris answer with a comparison, a step-by-step rail, a callout, or a big number when
 						that is clearly easier to scan than prose. Low is the quiet default: a block only when it
-						clearly beats text. Normal reaches for one more readily. Off keeps every answer plain. Chat
-						only; Pulsar, Daily and Atlas stay as they are. Blocks already in a conversation keep showing
-						whatever this is set to.
+						clearly beats text. Normal reaches for one more readily. Off keeps every answer plain. Applies
+						to chat and Pulsar; Daily and Atlas stay as they are. Blocks already in a conversation keep
+						showing whatever this is set to.
 					{/snippet}
 				</SettingsRow>
 				<SettingsRow icon={Galaxy} title="Constellation" desc="Weaver builds your library of stars">

@@ -225,8 +225,10 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		Anonymous:        req.Anonymous,
 		WaitVerification: req.WaitVerification,
 		// So the API exercises the same Prism behaviour the chat UI gets;
-		// see ClientMessage.OffersVisuals.
-		OffersVisuals: true,
+		// see ClientMessage.OffersVisuals. Not for Atlas's Quick Answer: that
+		// card shows the answer as plain text, so a block would appear as raw
+		// JSON lines.
+		OffersVisuals: !req.QuickMode,
 	}
 
 	var answer strings.Builder
@@ -343,8 +345,9 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		QuickMode:    req.QuickMode,
 		Attachments:  req.Attachments,
 		Anonymous:    req.Anonymous,
-		// See the non-streaming handler above.
-		OffersVisuals: true,
+		// See the non-streaming handler above — this is the stream Atlas's
+		// Quick Answer uses, so the QuickMode exclusion matters most here.
+		OffersVisuals: !req.QuickMode,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")

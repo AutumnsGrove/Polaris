@@ -63,9 +63,10 @@ and keeps the last good render when a prefix doesn't parse.
 
 Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
 `gateway/uiblocks` (Go) turn a block into readable text, and both are tested against
-`testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns and to `/api/ask`
-(`ClientMessage.OffersVisuals`, so the API exercises the real behaviour; its raw `Answer` keeps the
-fence and `polaris search` flattens it on print), never to Pulsar pulses or voice calls. Design and phases:
+`testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns, Pulsar pulses (real threads
+in the chat view) and `/api/ask` (`ClientMessage.OffersVisuals`, so the API exercises the real
+behaviour; its raw `Answer` keeps the fence and `polaris search` flattens it on print), never to voice
+calls or Atlas's plain-text Quick Answer. Oracle's `ui` check follows the same gate. Design and phases:
 `docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`.
 
 ### Start-screen night sky

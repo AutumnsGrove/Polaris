@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"polaris/gateway/uiblocks"
 	"polaris/store"
 )
 
@@ -266,6 +267,12 @@ func pulseClientMessage(r store.PulsarRoutine) ClientMessage {
 		NoOracle:          !r.UseOracle,
 		PulsarRoutineID:   r.ID,
 		PulsarRoutineName: r.Name,
+		// A pulse is a real thread opened in the normal chat view, which
+		// renders Prism blocks; the Pulsar pages themselves only link to it.
+		// Oracle already runs here, so its ui check can nudge toward a block
+		// the same way it does in chat. (An earlier version of this left it
+		// off on the assumption Pulsar had its own layout; it doesn't.)
+		OffersVisuals: true,
 	}
 }
 
@@ -302,7 +309,10 @@ func (s *Server) firePulse(r store.PulsarRoutine) {
 	if report, at, ok, err := s.db.LatestPulseReport(r.ID); err != nil {
 		log.Warn("loading previous pulse report failed, continuing without it", "routine", r.ID, "err", err)
 	} else if ok {
-		msg.PulsarPreviousReport = report
+		// Flattened: the routine is told what it said last time so it states
+		// only what's new. That report may hold a Prism block's JSON lines;
+		// the readable text of it is what the comparison is actually about.
+		msg.PulsarPreviousReport = uiblocks.Flatten(report)
 		msg.PulsarPreviousReportAt = at
 	}
 

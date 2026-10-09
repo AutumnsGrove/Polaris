@@ -192,10 +192,12 @@ type ClientMessage struct {
 	// OffersVisuals marks a turn whose answer may be taught Intelligent UI
 	// `ui` blocks (the Prism dial). Set server-side only — ws.go for the live
 	// chat UI, and ask.go so the API can exercise the same behaviour end to
-	// end (its raw Answer keeps the fence; the CLI flattens it on print).
-	// json:"-", so a client can't claim it. Pulsar's scheduler leaves it false:
-	// a pulse renders in Pulsar's own layout, not the chat one. Voice calls
-	// are excluded separately (VoiceMode), since they are read aloud.
+	// end (its raw Answer keeps the fence; the CLI flattens it on print), and
+	// Pulsar's scheduler, since a pulse is a real thread shown in the normal
+	// chat view. json:"-", so a client can't claim it. Left false by Atlas's
+	// Quick Answer (ask.go: a plain-text card, so a block would show as raw
+	// JSON) and by anything that doesn't opt in. Voice calls are excluded
+	// separately (VoiceMode), since they are read aloud.
 	OffersVisuals bool `json:"-"`
 }
 

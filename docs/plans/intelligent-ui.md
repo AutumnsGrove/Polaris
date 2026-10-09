@@ -51,7 +51,12 @@ artifacts.
    No computed/rescaling values, no expression language: that keeps it clear of "build a tool".
 2. **Visuals dial defaults to Low:** a block only when it clearly beats prose.
 3. **Surfaces: chat only.** Pulsar, Pulsar Daily and Atlas have separate layouts and LLM paths; each
-   would be its own follow-up.
+   would be its own follow-up. **Amended 2026-10-09 (operator): Pulsar pulses are in.** The premise was
+   wrong for Pulsar: a pulse is a real thread opened in the normal chat view, and the Pulsar pages only
+   link to it, so blocks render with no new code. A pulse also already runs Oracle, so the `ui` check
+   applies. Still out: Pulsar Daily (its blocks are separate mini-generations), Atlas's Quick Answer (a
+   plain-text card; also `/api/ask` with `quick_mode`), voice calls (read aloud). `/api/ask` is in, so
+   the API exercises the real behaviour.
 4. **Images: tool-sourced only**, referenced by index like `show` does; never a model-supplied URL.
 
 2026-10-09 (review of the mockups):

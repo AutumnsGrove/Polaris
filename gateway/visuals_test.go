@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"polaris/store"
 )
 
 // capturingLLM answers every /chat/completions call with a canned reply and
@@ -58,11 +61,12 @@ func anyContains(prompts []string, needle string) bool {
 }
 
 // TestVisuals_GateByEntryPoint is the end-to-end guarantee behind who is
-// taught the `ui` grammar. The live chat (/ws) and /api/ask are, so the API
-// exercises exactly what the UI gets; a voice call (read aloud) and a turn
-// that never opts in (Pulsar's scheduler, which renders in its own layout) are
-// not. All of them reach handleTurn, so ClientMessage.OffersVisuals and
-// VoiceMode are the only things that tell them apart.
+// taught the `ui` grammar. The live chat (/ws), /api/ask (so the API exercises
+// exactly what the UI gets) and Pulsar's pulses (real chat-view threads) are;
+// a voice call (read aloud), Atlas's Quick Answer (a plain-text card) and any
+// turn that never opts in are not. All of them reach handleTurn, so
+// ClientMessage.OffersVisuals, QuickMode and VoiceMode are the only things
+// that tell them apart.
 func TestVisuals_GateByEntryPoint(t *testing.T) {
 	const marker = "## Visual blocks"
 
@@ -154,18 +158,59 @@ func TestVisuals_GateByEntryPoint(t *testing.T) {
 		}
 	})
 
-	t.Run("a turn that never opts in (Pulsar's scheduler) gets nothing", func(t *testing.T) {
+	t.Run("a real Pulsar pulse is taught blocks (it renders in the chat view)", func(t *testing.T) {
 		llm, prompts := capturingLLM(t)
 		h := newTestHarness(t, llm.URL)
-		// handleTurn directly with a message that leaves OffersVisuals false,
-		// which is exactly what pulsar_scheduler.go does.
-		h.srvObj.handleTurn(context.Background(), ClientMessage{Type: "message", Content: "capital of france", Model: "test-model", Source: "pulsar"},
+		// The message the scheduler really builds, not a hand-made stand-in.
+		msg := pulseClientMessage(store.PulsarRoutine{ID: 1, Name: "r", Prompt: "capital of france", Model: "test-model"})
+		h.srvObj.handleTurn(context.Background(), msg, func(ServerEvent) {}, nil, nil, nil)
+		if !anyContains(prompts(), marker) {
+			t.Error("a pulse should be taught the ui grammar at the default dial")
+		}
+	})
+
+	t.Run("Atlas's Quick Answer shows plain text, so it gets nothing", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		postAsk(t, h, AskRequest{Content: "capital of france", Model: "test-model", Source: "atlas", QuickMode: true})
+		if len(prompts()) == 0 {
+			t.Fatal("the model was never called")
+		}
+		if anyContains(prompts(), marker) {
+			t.Error("a quick_mode ask renders as plain text in Atlas and must not be taught `ui` blocks")
+		}
+	})
+
+	// The path Atlas really uses (search.svelte.ts POSTs /api/ask/stream), so
+	// the sync-handler case above would not catch a regression here.
+	t.Run("Atlas's Quick Answer over /api/ask/stream gets nothing", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		resp, err := http.Post(h.url("/api/ask/stream"), "application/json",
+			strings.NewReader(`{"content":"capital of france","model":"test-model","source":"atlas","quick_mode":true}`))
+		if err != nil {
+			t.Fatalf("POST /api/ask/stream: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body) // drain: the turn finishes when the stream does
+		resp.Body.Close()
+		if len(prompts()) == 0 {
+			t.Fatal("the model was never called")
+		}
+		if anyContains(prompts(), marker) {
+			t.Error("a streamed quick_mode ask must not be taught `ui` blocks")
+		}
+	})
+
+	t.Run("a message that never opts in gets nothing by default", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		h.srvObj.handleTurn(context.Background(), ClientMessage{Type: "message", Content: "capital of france", Model: "test-model"},
 			func(ServerEvent) {}, nil, nil, nil)
 		if len(prompts()) == 0 {
 			t.Fatal("the model was never called")
 		}
 		if anyContains(prompts(), marker) {
-			t.Error("a turn that does not set OffersVisuals must not be taught `ui` blocks")
+			t.Error("OffersVisuals defaults to false; an entry point must opt in explicitly")
 		}
 	})
 }
