@@ -224,6 +224,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		Attachments:      req.Attachments,
 		Anonymous:        req.Anonymous,
 		WaitVerification: req.WaitVerification,
+		// So the API exercises the same Prism behaviour the chat UI gets;
+		// see ClientMessage.OffersVisuals.
+		OffersVisuals: true,
 	}
 
 	var answer strings.Builder
@@ -340,6 +343,8 @@ func (s *Server) handleAskStream(w http.ResponseWriter, r *http.Request) {
 		QuickMode:    req.QuickMode,
 		Attachments:  req.Attachments,
 		Anonymous:    req.Anonymous,
+		// See the non-streaming handler above.
+		OffersVisuals: true,
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")

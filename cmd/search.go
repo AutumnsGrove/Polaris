@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"polaris/gateway"
+	"polaris/gateway/uiblocks"
 )
 
 var searchModel string
@@ -69,7 +70,10 @@ func runDockerSearch(query, model string) error {
 		return fmt.Errorf("decoding response from %s: %w", url, err)
 	}
 
-	fmt.Println(ask.Answer)
+	// The answer may carry a Prism `ui` block (/api/ask offers them so the API
+	// exercises the real behaviour); a terminal can't render one, so print its
+	// readable text rather than JSON lines. The API's own Answer stays raw.
+	fmt.Println(uiblocks.Flatten(ask.Answer))
 	if len(ask.Citations) > 0 {
 		fmt.Println("\nSources:")
 		for _, c := range ask.Citations {

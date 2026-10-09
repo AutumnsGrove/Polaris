@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,12 +57,13 @@ func anyContains(prompts []string, needle string) bool {
 	return false
 }
 
-// TestVisuals_OnlyTheLiveChatTurnIsTaughtBlocks is the end-to-end guarantee
-// behind "chat only": the same question gets the `ui` grammar over /ws (the
-// surface that renders blocks) and does NOT over /api/ask (whose answer lands
-// in a terminal or another program as plain text). Both reach handleTurn, so
-// only ClientMessage.Interactive tells them apart.
-func TestVisuals_OnlyTheLiveChatTurnIsTaughtBlocks(t *testing.T) {
+// TestVisuals_GateByEntryPoint is the end-to-end guarantee behind who is
+// taught the `ui` grammar. The live chat (/ws) and /api/ask are, so the API
+// exercises exactly what the UI gets; a voice call (read aloud) and a turn
+// that never opts in (Pulsar's scheduler, which renders in its own layout) are
+// not. All of them reach handleTurn, so ClientMessage.OffersVisuals and
+// VoiceMode are the only things that tell them apart.
+func TestVisuals_GateByEntryPoint(t *testing.T) {
 	const marker = "## Visual blocks"
 
 	t.Run("websocket turn gets the grammar at the default (low) dial", func(t *testing.T) {
@@ -112,15 +114,42 @@ func TestVisuals_OnlyTheLiveChatTurnIsTaughtBlocks(t *testing.T) {
 		}
 	})
 
-	t.Run("/api/ask turn never gets the grammar", func(t *testing.T) {
+	t.Run("/api/ask turn gets the grammar too, so the API exercises the real behaviour", func(t *testing.T) {
 		llm, prompts := capturingLLM(t)
 		h := newTestHarness(t, llm.URL)
+		postAsk(t, h, AskRequest{Content: "capital of france", Model: "test-model"})
+		if !anyContains(prompts(), marker) {
+			t.Error("an /api/ask turn should be taught the ui grammar at the default dial")
+		}
+	})
+
+	t.Run("/api/ask honours the Off dial like chat does", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		if err := h.db.SetSetting(settingVisuals, "off"); err != nil {
+			t.Fatalf("SetSetting: %v", err)
+		}
 		postAsk(t, h, AskRequest{Content: "capital of france", Model: "test-model"})
 		if len(prompts()) == 0 {
 			t.Fatal("the model was never called")
 		}
 		if anyContains(prompts(), marker) {
-			t.Error("an /api/ask turn renders as plain text and must not be taught `ui` blocks, even at the default dial")
+			t.Error("Visuals=off must remove the grammar from an /api/ask turn too")
+		}
+	})
+
+	t.Run("a turn that never opts in (Pulsar's scheduler) gets nothing", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		// handleTurn directly with a message that leaves OffersVisuals false,
+		// which is exactly what pulsar_scheduler.go does.
+		h.srvObj.handleTurn(context.Background(), ClientMessage{Type: "message", Content: "capital of france", Model: "test-model", Source: "pulsar"},
+			func(ServerEvent) {}, nil, nil, nil)
+		if len(prompts()) == 0 {
+			t.Fatal("the model was never called")
+		}
+		if anyContains(prompts(), marker) {
+			t.Error("a turn that does not set OffersVisuals must not be taught `ui` blocks")
 		}
 	})
 }

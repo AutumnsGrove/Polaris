@@ -399,10 +399,10 @@ type Context struct {
 	// gateway.VisualsFromStore) for this turn. agent.loadSystemPrompt appends
 	// the `ui` block grammar for "low"/"normal"; the zero value "" means
 	// "this entry point never offers blocks" and, like "off", adds nothing.
-	// Only the interactive chat turn (gateway/turn_context.go) sets it, which
-	// is what keeps blocks chat-only: Pulsar, Pulsar Daily, Atlas, the CLI and
-	// the benchmark harness build their own Contexts and leave it empty, so
-	// none of them is ever told to write a fence their surface can't render.
+	// Only gateway/turn_context.go sets it (for the live chat turn and
+	// /api/ask, never a voice call or a Pulsar pulse). Pulsar Daily, Atlas,
+	// Weaver, the wizard and the benchmark harness build their own Contexts
+	// and leave it empty, so none is told to write a fence it can't render.
 	Visuals string
 
 	// Wizard, when non-nil, marks this turn as the ephemeral "help me

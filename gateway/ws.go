@@ -337,7 +337,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 					send(ServerEvent{Type: "error", ThreadID: msg.ThreadID, Message: "internal error — please retry"})
 				}
 			}()
-			msg.Interactive = true
+			msg.OffersVisuals = true
 			s.handleTurn(ctx, msg, send, requestLocation, trackBackground, noteGhostThread)
 		}(turnCtx, cancel, msg)
 	}

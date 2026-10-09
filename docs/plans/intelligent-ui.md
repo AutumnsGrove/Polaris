@@ -8,8 +8,9 @@ and the flatteners (`flatten.ts`, `gateway/uiblocks`) wired into copy, read-alou
 and claim extraction. **Deliberately not done in P1:** `search_chats` indexing still indexes the raw JSON
 (`messages_fts` is an external-content index whose delete triggers must replay the exact indexed text, so
 changing it needs new triggers plus a reindex migration; a block's JSON keys can match a search and show
-in a snippet). **Found while building:** blocks are taught only to live WebSocket turns, not `/api/ask`,
-Pulsar or voice calls (`ClientMessage.Interactive`, `!VoiceMode`); Oracle's existing `format` nudge
+in a snippet). **Found while building:** blocks are taught to live WebSocket turns and to `/api/ask`
+(so the API can exercise the real behaviour; `polaris search` flattens the fence on print), but not to
+Pulsar pulses or voice calls (`ClientMessage.OffersVisuals`, `!VoiceMode`); Oracle's existing `format` nudge
 ("give numbered steps") competes with a `steps` block until P2's `Suppresses: ["format"]` lands. P0 = `uiBlocks/split.ts`,
 `renderAnswer.ts`, `MermaidBlock.svelte`, `mountMermaidStream` in `mermaid.ts`. Live-verified in
 Chromium against real mermaid via `dev/fakeopenrouter` (new `-chunk-delay` flag): a warm diagram grows

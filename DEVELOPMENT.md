@@ -63,8 +63,9 @@ and keeps the last good render when a prefix doesn't parse.
 
 Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
 `gateway/uiblocks` (Go) turn a block into readable text, and both are tested against
-`testdata/ui_flatten.json`. Blocks are taught only to live WebSocket chat turns
-(`ClientMessage.Interactive`), never `/api/ask`, Pulsar or voice calls. Design and phases:
+`testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns and to `/api/ask`
+(`ClientMessage.OffersVisuals`, so the API exercises the real behaviour; its raw `Answer` keeps the
+fence and `polaris search` flattens it on print), never to Pulsar pulses or voice calls. Design and phases:
 `docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`.
 
 ### Start-screen night sky
