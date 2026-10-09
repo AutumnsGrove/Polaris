@@ -34,8 +34,15 @@
 		margin: var(--space-md) 0;
 	}
 
-	/* Two columns even on a phone: the items are short, and stacking would
-	   put the cons a full screen away from the pros they answer. */
+	/* Stacked on phones: the prompt asks for short points, but real answers
+	   write full sentences (seen live through /api/ask), and half a 390px
+	   screen wraps those mid-word. Side by side once there is room. */
+	@media (max-width: 559px) {
+		.ui-procon {
+			grid-template-columns: 1fr;
+		}
+	}
+
 	section {
 		min-width: 0;
 		padding: var(--space-md);
