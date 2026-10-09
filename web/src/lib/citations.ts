@@ -36,6 +36,9 @@ const checkCheckIconSVG =
  * content of that cell (an item name, a project title) — replacing it with
  * a generic source name like "Github" destroys the one piece of data the
  * row exists to show, with no surrounding sentence to recover it from.
+ * allowTableCells opts out for the one caller whose links are source markers
+ * by construction — UiSources' `[hostname](url)` — so a compare block's
+ * desktop table can show the same ticks its phone cards do.
  *
  * verification, when present, marks the specific chip a "found in source"
  * check passed for — see docs/plans/source-verification-badge.md and
@@ -59,7 +62,9 @@ export function renderInlineCitations(
 	citations: Citation[],
 	verification?: VerificationMark[],
 	occurrenceByUrl: Map<string, number> = new Map(),
-	locator?: { prefix: string; marks: VerificationMark[] }
+	locator?: { prefix: string; marks: VerificationMark[] },
+	/** Set only by UiText when its caller is UiSources (see the doc comment above). */
+	allowTableCells = false
 ): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
 
@@ -77,7 +82,7 @@ export function renderInlineCitations(
 	// Block links (UiText): ticks come from locator marks, matched by "this
 	// field's nth tracked link" instead of a document-wide occurrence number.
 	// `locator.prefix` is the field's address; the server builds the same string
-	// (gateway/uiblocks/sites.go). A disagreement loses a tick, never moves one.
+	// (uiblocks/sites.go). A disagreement loses a tick, never moves one.
 	const verifiedLocators = new Set<string>();
 	if (locator) {
 		for (const mark of locator.marks) {
@@ -90,7 +95,7 @@ export function renderInlineCitations(
 	container.innerHTML = html;
 
 	for (const anchor of container.querySelectorAll('a[href]')) {
-		if (anchor.closest('td, th')) continue;
+		if (!allowTableCells && anchor.closest('td, th')) continue;
 
 		const href = anchor.getAttribute('href') ?? '';
 		const citation = urlToCitation.get(href);

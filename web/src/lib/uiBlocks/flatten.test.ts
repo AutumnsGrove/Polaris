@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { flattenAnswer } from './flatten';
 
-// The same cases gateway/uiblocks runs (uiblocks_test.go). They are the
+// The same cases uiblocks runs (uiblocks_test.go). They are the
 // contract between the two implementations: a drift in either one fails here
 // or there, instead of the UI and the server quietly disagreeing.
 // Resolved from the working directory (vitest runs from web/): import.meta.url

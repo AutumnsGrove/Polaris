@@ -2,6 +2,7 @@ package uiblocks
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ type fixture struct {
 // (web/src/lib/uiBlocks/flatten.test.ts). They are the contract between the
 // two implementations.
 func TestFlatten_SharedFixture(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/ui_flatten.json")
+	raw, err := os.ReadFile("../testdata/ui_flatten.json")
 	if err != nil {
 		t.Fatalf("reading shared fixture: %v", err)
 	}
@@ -36,6 +37,33 @@ func TestFlatten_SharedFixture(t *testing.T) {
 				t.Errorf("Flatten mismatch\n--- input ---\n%q\n--- got ---\n%q\n--- want ---\n%q", c.Input, got, c.Want)
 			}
 		})
+	}
+}
+
+// TestJSNumbersString pins the number formatter text() uses to what
+// JavaScript's String() produces — the TS twin does `String(v)`, so these are
+// the exact boundaries where the two can drift (the exponential-notation
+// cutover at 1e-6 and 1e21, Go's zero-padded exponent, and negative zero).
+func TestJSNumbersString(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want string
+	}{
+		{3, "3"},
+		{0, "0"},
+		{math.Copysign(0, -1), "0"},
+		{1000000, "1000000"},
+		{1e20, "100000000000000000000"},
+		{1e21, "1e+21"},
+		{0.000001, "0.000001"},
+		{1e-7, "1e-7"},
+		{1.5e-7, "1.5e-7"},
+		{1.2345678901234567, "1.2345678901234567"},
+	}
+	for _, c := range cases {
+		if got := jsNumberString(c.in); got != c.want {
+			t.Errorf("jsNumberString(%v) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 

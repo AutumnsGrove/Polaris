@@ -116,10 +116,12 @@ func (t *turnRun) buildAgentContext() {
 		ThreadID: t.threadID,
 		FieldID:  t.fieldID,
 	}
-	// The one place Visuals is set. Opt-in per entry point (ws and /api/ask
-	// say yes; Pulsar's scheduler doesn't — see ClientMessage.OffersVisuals).
-	// Not in a voice call either (Transponder): that answer is read aloud, and
-	// a comparison table has no spoken form worth the tokens.
+	// The one place Visuals is set. Opt-in per entry point: ws, /api/ask and
+	// Pulsar's scheduler set ClientMessage.OffersVisuals (a pulse opens a real
+	// thread in the normal chat view), while Atlas's Quick Answer and anything
+	// that never opts in leave it false. Not in a voice call either
+	// (Transponder): that answer is read aloud, and a comparison table has no
+	// spoken form worth the tokens.
 	if t.msg.OffersVisuals && !t.msg.VoiceMode && !t.msg.NoVisuals {
 		t.agentCtx.Visuals = VisualsFromStore(t.s.db)
 	}

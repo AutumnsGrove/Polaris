@@ -18,11 +18,11 @@ import (
 	"github.com/google/uuid"
 
 	"polaris/agent"
-	"polaris/gateway/uiblocks"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/uiblocks"
 )
 
 // weaverMaxTurns is Weaver's own turn cap — a real conversation thread is

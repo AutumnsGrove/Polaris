@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared by gateway/uiblocks (Go) and web/src/lib/uiBlocks/flatten.test.ts (TS): both flatteners must turn `input` into exactly `want`. Expected values are hand-written, not generated, so a bug common to both implementations cannot hide. See docs/plans/intelligent-ui.md.",
+  "_comment": "Shared by uiblocks (Go) and web/src/lib/uiBlocks/flatten.test.ts (TS): both flatteners must turn `input` into exactly `want`. Expected values are hand-written, not generated, so a bug common to both implementations cannot hide. See docs/plans/intelligent-ui.md.",
   "cases": [
     {
       "name": "no ui fence is returned unchanged",
@@ -25,6 +25,11 @@
       "name": "stat with a numeric value and no label",
       "input": "```ui\n{\"c\":\"stat\",\"value\":3}\n```\n",
       "want": "3\n"
+    },
+    {
+      "name": "numeric coercion matches JavaScript String() across the notation boundary",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":1000000}\n```\n```ui\n{\"c\":\"stat\",\"value\":1e21}\n```\n```ui\n{\"c\":\"stat\",\"value\":1e-7}\n```\n```ui\n{\"c\":\"stat\",\"value\":0.000001}\n```\n```ui\n{\"c\":\"stat\",\"value\":-0}\n```\n```ui\n{\"c\":\"stat\",\"value\":1.2345678901234567}\n```\n",
+      "want": "1000000\n1e+21\n1e-7\n0.000001\n0\n1.2345678901234567\n"
     },
     {
       "name": "compare: pick, padded cell, source host lowercased",

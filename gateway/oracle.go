@@ -208,9 +208,9 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	// copy: in.Rules.Checks is the live config's map, shared across turns,
 	// and must never be mutated here.
 	if in.Visuals == "low" {
-		if r, ok := rules.Checks[uiCheckKey]; ok && r.VisualsLowOffset > 0 {
+		if r, ok := rules.Checks[uiCheckKey]; ok && r.LowOffset() > 0 {
 			raised := maps.Clone(rules.Checks)
-			r.Threshold = min(1, r.Threshold+r.VisualsLowOffset)
+			r.Threshold = min(1, r.Threshold+r.LowOffset())
 			raised[uiCheckKey] = r
 			rules.Checks = raised
 		}

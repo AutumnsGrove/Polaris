@@ -4,7 +4,7 @@
 	import UiSources from './UiSources.svelte';
 
 	// `loc` is the block's verification address prefix ("<fence>.<block>"); each
-	// field below adds ".<item>.<field>", the names gateway/uiblocks/sites.go uses.
+	// field below adds ".<item>.<field>", the names uiblocks/sites.go uses.
 	let { block, loc }: { block: Extract<UiBlock, { kind: 'callout' }>; loc?: string } = $props();
 
 	const ICON = { note: 'i', warn: '!', ok: '✓', answer: '✦' } as const;

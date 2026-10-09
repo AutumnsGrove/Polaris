@@ -22,7 +22,10 @@ const MAX_TABS = 6;
 const MAX_DISCLOSE_PARAS = 8;
 // Prose-body fields get a bigger clip than the 400-char default: a real model
 // answering "how do I install X on each OS" puts a fenced command block in each
-// tab (seen live), and a 400-char clip cut it off mid-command.
+// tab (seen live), and a 400-char clip cut it off mid-command. These are hard
+// safety clips, not the budget the prompt names — the base grammar asks for
+// ~1500 (tab) and ~1200 (disclose) the same way it asks for ~300 against the
+// 400 default, so the model stays under the clip rather than testing it.
 export const MAX_TAB_TEXT_CHARS = 2000;
 export const MAX_DISCLOSE_PARA_CHARS = 1200;
 const MAX_RAW_CHARS = 200;
@@ -229,7 +232,7 @@ function addChild(block: UiBlock, obj: Json): boolean {
 
 /**
  * Parses one line, repairing a dropped closing bracket or brace; `undefined`
- * when the line is unusable. Mirrors parseLine in gateway/uiblocks/uiblocks.go.
+ * when the line is unusable. Mirrors parseLine in uiblocks/uiblocks.go.
  */
 function parseLine(line: string): unknown {
 	try {
@@ -247,7 +250,7 @@ function parseLine(line: string): unknown {
 
 /**
  * Returns `s` with any missing `]`/`}` inserted, or null when the structure is
- * too broken to guess at. Mirrors closeBrackets in gateway/uiblocks/uiblocks.go.
+ * too broken to guess at. Mirrors closeBrackets in uiblocks/uiblocks.go.
  *
  * A model occasionally drops a closing bracket (`"v":["a","b"}`), which used
  * to dump the whole row as visible JSON. Only brackets outside strings are

@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"polaris/gateway"
-	"polaris/gateway/uiblocks"
+	"polaris/uiblocks"
 )
 
 var searchModel string

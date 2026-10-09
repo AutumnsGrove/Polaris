@@ -73,6 +73,15 @@ describe('buildOracleNote', () => {
 			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '  ```ui\n{}\n```')).toBeNull();
 			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '```ui title\n{}\n```')).toBeNull();
 		});
+
+		it('matches exactly what the renderer splits: a longer fence counts, a quoted ```ui does not', () => {
+			// Any 3+ backticks is a real `ui` fence to split.ts, so the note must still claim it.
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '````ui\n{"c":"steps"}\n````')).toBe(
+				'Shown as a <b>steps</b> block'
+			);
+			// A ```ui line inside a longer fence is inert example code, not a block.
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '````md\n```ui\n{}\n```\n````')).toBeNull();
+		});
 	});
 
 	it('says nothing when a check fired only on its no-op option', () => {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"polaris/gateway/uiblocks"
 	"polaris/store"
+	"polaris/uiblocks"
 )
 
 // pulsarSchedulerInterval is how often the scheduler re-checks every

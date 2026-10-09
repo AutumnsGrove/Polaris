@@ -51,7 +51,7 @@
 			<tbody>
 				{#each block.rows as row, ri (ri)}
 					<tr>
-						<td>{row.row}<UiSources src={row.src} loc="{loc}.{ri}.src" /></td>
+						<td>{row.row}<UiSources src={row.src} loc="{loc}.{ri}.src" chipsInTable /></td>
 						{#each row.v as cell, ci (ci)}
 							<td class:pick={block.pick === ci}><UiText text={cell} loc="{loc}.{ri}.v{ci}" /></td>
 						{/each}

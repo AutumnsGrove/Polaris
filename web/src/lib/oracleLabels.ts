@@ -1,4 +1,5 @@
 import { FOCUS_MODES } from './focusModes';
+import { splitContent } from './uiBlocks/split';
 import type { OracleResult } from './types';
 
 // Human labels for the fixed, small option vocabularies prompts.yaml's
@@ -64,13 +65,17 @@ const UI_BLOCK_LABELS: Record<string, string> = {
 	claim: 'claim check'
 };
 
-// A column-0 ```ui fence, the same one split.ts recognizes. Used to claim
-// "shown as a block" only when the answer really contains one.
-const UI_FENCE = /^```ui[ \t]*$/m;
-
-/** True when `answer` contains a Prism `ui` block (cheap; safe to call per token). */
+/**
+ * True when `answer` actually contains a Prism `ui` block — meaning one
+ * `splitContent` hands to `UiBlocks`, not a ```ui line quoted inside a longer
+ * fence. Shares the renderer's own splitter so the ⓘ note can never claim
+ * "shown as a … block" for a fence that renders as inert code (or miss one the
+ * renderer does show). Cheap enough to call per token: the `includes` guard
+ * skips an answer with no `ui` at all.
+ */
 export function hasUiBlock(answer: string | undefined): boolean {
-	return !!answer && UI_FENCE.test(answer);
+	if (!answer || !answer.includes('ui')) return false;
+	return splitContent(answer, false, ['ui']).some((seg) => seg.kind === 'ui');
 }
 
 // The note and offer labels are rendered with {@html} so they can carry

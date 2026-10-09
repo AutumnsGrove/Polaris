@@ -26,7 +26,7 @@
 	// `verification` the turn's "found in source" marks. Together with a block's
 	// index they form the address ("<fence>.<block>.<item>.<field>#<n>") a
 	// block link is ticked by; the server builds the same strings
-	// (gateway/uiblocks/sites.go). Each block gets its `loc` prefix below, the
+	// (uiblocks/sites.go). Each block gets its `loc` prefix below, the
 	// block index being the index in parseUi's output, raw rows included.
 	let {
 		src,

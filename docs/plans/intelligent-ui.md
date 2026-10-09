@@ -11,7 +11,7 @@ P2 = the Oracle `ui` check (compare/steps/none; Low bar 0.85, Normal 0.70; holds
 sheet's "Visual block" row, "Rerun as plain text" (`no_visuals`), and `dev/ui_spike` (results below).
 Pulsar pulses are in too (decision 3, amended). P1 = `parse.ts`,
 `components/ui/` (callout, stat, compare, steps), the `visuals` setting + `prompts.yaml` `ui:` section,
-and the flatteners (`flatten.ts`, `gateway/uiblocks`) wired into copy, read-aloud, `read_thread`, Weaver
+and the flatteners (`flatten.ts`, `uiblocks`) wired into copy, read-aloud, `read_thread`, Weaver
 and claim extraction. **Deliberately not done in P1:** `search_chats` indexing still indexes the raw JSON
 (`messages_fts` is an external-content index whose delete triggers must replay the exact indexed text, so
 changing it needs new triggers plus a reindex migration; a block's JSON keys can match a search and show
@@ -230,7 +230,7 @@ state (ticked boxes, expanded nodes). So:
    neither counts (the server strips `ui` fences before extraction, the client counter skips `ui`
    links). The "Sourcing and verification" section turns both on together.
 6. **Consumers of message text** must not show raw JSON lines. Add a flattener, TS
-   (`uiBlocks/flatten.ts`) and Go (`gateway/uiblocks`), turning each block into readable text
+   (`uiBlocks/flatten.ts`) and Go (`uiblocks`), turning each block into readable text
    (compare → "Moka pot: …" lines, steps → numbered lines, ...). Use it for: copy buttons
    (`ChatTurnView` copies `turn.content` at two sites), read-aloud (`/api/speak`), `search_chats`
    indexing (`store/message_search.go`), Weaver, and thread titles. One shared fixture file
@@ -275,7 +275,7 @@ mermaid graph is also tall on a phone, which is a further reason `flow` exists.
 > chip, which is the one failure verification must not have. What shipped instead:
 >
 > - A link inside a block is named by where it sits, `<fence>.<block>.<item>.<field>#<n>` (e.g.
->   `0.2.1.src#0`): `gateway/uiblocks/sites.go` enumerates them with the sentence Jev should check, and
+>   `0.2.1.src#0`): `uiblocks/sites.go` enumerates them with the sentence Jev should check, and
 >   `VerificationMark` carries an optional `locator`. The client builds the same string per field (a `loc`
 >   prop through `components/ui/`, `UiText`, `UiSources`) and `renderInlineCitations` ticks a link when its
 >   `<loc>#<n>` has a supported mark. `n` counts tracked links only, as the client chips only those.
@@ -321,7 +321,7 @@ claims against their sources, with Jev (the same backend model as Oracle), in
 
 So blocks get "found in source" by feeding this same system, not by inventing another:
 
-1. **Make the server see block text as claims.** A Go flattener (`gateway/uiblocks.Flatten`, the same
+1. **Make the server see block text as claims.** A Go flattener (`uiblocks.Flatten`, the same
    one the other consumers use) turns a `ui` fence into plain sentences **with its `[Title](URL)`
    links preserved**, and `runVerification` runs `extractClaims` over the flattened answer instead of
    the raw one. Every sourced line then becomes a claim with no change to extraction itself: a
@@ -551,7 +551,7 @@ rules. Jev answered every message.
 | Normal (0.70) | 2 / 44 (4.5%) | 44 / 48 (91.7%) | 0 |
 | Low (0.85) | **1 / 44 (2.3%)** | 44 / 48 (91.7%) | 0 |
 
-- **Single 10-way pick holds up; the gate split is not needed.** No wrong block anywhere, and the false
+- **Single 8-way pick holds up; the gate split is not needed.** No wrong block anywhere, and the false
   positives stay at 1-2 of 44.
 - **`choose` first lost to `compare` every time** (0.53-0.69 for `compare`), because Jev reads any named
   options as a comparison. **Fixed in part, same day:** the option now says the person asks which to pick or
@@ -561,7 +561,7 @@ rules. Jev answered every message.
   Low most of the rest are the right label below the 0.85 bar (0.64-0.82), which is Low doing its job.
   What did not work: also rewording `compare` ("named options weighed side by side on attributes") pulled
   `compare` confidence under the bar for Roth-vs-traditional-IRA, so `compare` keeps its original text.
-  Takeaway: with 11 options the probability mass splits, so a softer shape like `choose` will always sit
+  Takeaway: with 8 options the probability mass splits, so a softer shape like `choose` will always sit
   nearer the bar than a crisp one; do not tune it further on a handful of messages.
 - After the `choose` change: Normal 1 / 44 false positives, 49 / 54 hits, 0 wrong block; Low 1 / 44 false
   positives, 44 / 54 hits (the rest sub-bar, not wrong). Two real "what is X?" openers fire `facts` on Normal
@@ -613,7 +613,7 @@ specific claim holds up, with evidence on both sides"); `quote` stays an accent 
 - **Spike** (188 messages, 6 new `claim` positives, 3 new negatives; $0.036): all six `claim` messages win
   as `claim` on Normal; four sit under Low's 0.85 bar (0.70-0.84). False positives are 3 / 50 on Normal
   (affect/effect `compare` 0.73, the bill-becomes-law `steps`, the aqueducts `timeline`) and 2 / 50 on Low,
-  0 wrong blocks on Low and 1 on Normal. With 13 options the probability mass is split further, which is why
+  0 wrong blocks on Low and 1 on Normal. With 11 options the probability mass is split further, which is why
   `choose` keeps drifting under the bar; still no case for the gate + kind split.
 - **Prompt:** the base grammar now also says where sources go ("where a row, step or line rests on a source
   you read, give that line `src`"). A `facts` card for a single product page still came back with no

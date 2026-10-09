@@ -59,6 +59,21 @@ describe('renderInlineCitations', () => {
 		expect(out).toContain('>Voyager 1<');
 	});
 
+	it('chips a table-cell link when the caller says its links are source markers (UiSources)', () => {
+		// A compare block's desktop row-source cell: these links exist only to be
+		// chips, so the table-cell skip must not apply — and the locator tick must
+		// still land on it.
+		const html =
+			'<table><tr><td>Cleanup<a href="https://nasa.gov/voyager">nasa.gov</a></td><td>Fast</td></tr></table>';
+		const marks = [
+			{ url: 'https://nasa.gov/voyager', claim_index: 0, choice: 'supported', confidence: 1, locator: '0.0.0.src#0' }
+		];
+		const out = renderInlineCitations(html, citations, undefined, undefined, { prefix: '0.0.0.src', marks }, true);
+		expect(out).toContain('class="citation-chip"');
+		expect(out).toContain('>NASA<');
+		expect(out).toContain('citation-verified-icon');
+	});
+
 	it('returns html unchanged when there are no citations', () => {
 		const html = '<p>No sources here.</p>';
 		expect(renderInlineCitations(html, [])).toBe(html);

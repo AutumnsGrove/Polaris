@@ -109,32 +109,43 @@ func TestSites_FenceOrdinal(t *testing.T) {
 
 // TestSites_FieldNamesMatchTheComponents is the contract test between the two
 // halves of the locator scheme: for every block kind it feeds a link into every
-// field, checks Sites emits exactly the field names listed here, and checks the
-// matching Svelte component really builds a `loc` ending in each one. A typo on
-// either side would otherwise silently lose that field's ticks.
+// field and checks Sites emits exactly the expected field names, then checks the
+// matching Svelte component builds the "<item>.<field>" suffix with the same
+// item variable the server numbers by (so `{loc}.{i}.plus`, not a hardcoded
+// `.0.plus`). A typo on either side would otherwise silently lose that field's
+// ticks.
+//
+// What it does NOT prove: it is a substring check on the component source, not a
+// structural one. The server's item indices are pinned by the locator tests
+// above (row-major compare, per-line claim evidence, flow arrival order); the
+// client's item variable is only checked to exist in the right place. Both are
+// deliberate: reading Svelte for a stronger check would need each component to
+// export its field table.
 func TestSites_FieldNamesMatchTheComponents(t *testing.T) {
 	const l = "[x](https://t.example/x)"
 	const u = `"https://t.example/u"`
 	cases := []struct {
 		kind, component, body string
 		fields                []string // as they appear in a locator: <field>
-		needles               []string // as they appear in the Svelte source
+		locAttrs              []string // the exact loc="..." attribute each field needs in the component
 	}{
-		{"callout", "UiCallout", `{"c":"callout","text":"a ` + l + `","src":[` + u + `]}`, []string{"text", "src"}, []string{`.0.text"`, `.0.src"`}},
-		{"stat", "UiStat", `{"c":"stat","value":"1","note":"n ` + l + `","src":[` + u + `]}`, []string{"note", "src"}, []string{`.0.note"`, `.0.src"`}},
-		{"compare", "UiCompare", `{"c":"compare","cols":["A","B"]}` + "\n" + `{"row":"r","v":["a ` + l + `","b"],"src":[` + u + `]}`, []string{"v0", "src"}, []string{`.v{ci}"`, `.src"`}},
-		{"steps", "UiSteps", `{"c":"steps"}` + "\n" + `{"i":"a ` + l + `","d":"b ` + l + `"}`, []string{"i", "d"}, []string{`.i"`, `.d"`}},
-		{"timeline", "UiTimeline", `{"c":"timeline"}` + "\n" + `{"when":"w","i":"a ` + l + `","src":[` + u + `]}`, []string{"i", "src"}, []string{`.i"`, `.src"`}},
-		{"checklist", "UiChecklist", `{"c":"checklist"}` + "\n" + `{"i":"a ` + l + `"}`, []string{"i"}, []string{`.i"`}},
-		{"procon", "UiProCon", `{"c":"procon"}` + "\n" + `{"+":"a ` + l + `"}` + "\n" + `{"-":"b ` + l + `"}`, []string{"pro", "con"}, []string{`.pro"`, `.con"`}},
-		{"choose", "UiChoose", `{"c":"choose"}` + "\n" + `{"if":"a ` + l + `","then":"b ` + l + `","src":[` + u + `]}`, []string{"if", "then", "src"}, []string{`.if"`, `.then"`, `.src"`}},
-		{"facts", "UiFacts", `{"c":"facts"}` + "\n" + `{"k":"k","v":"a ` + l + `","src":[` + u + `]}`, []string{"v", "src"}, []string{`.v"`, `.src"`}},
-		{"flow", "UiFlow", `{"c":"flow"}` + "\n" + `{"n":"a","t":"a ` + l + `","d":"b ` + l + `","src":[` + u + `]}`, []string{"t", "d", "src"}, []string{`.t"`, `.d"`, `.src"`}},
-		{"tabs", "UiTabs", `{"c":"tabs"}` + "\n" + `{"tab":"t","text":"a ` + l + `"}`, []string{"text"}, []string{`.text"`}},
-		{"disclose", "UiDisclose", `{"c":"disclose"}` + "\n" + `{"p":"a ` + l + `"}`, []string{"p"}, []string{`.p"`}},
-		{"quote", "UiQuote", `{"c":"quote","text":"q ` + l + `","by":"b ` + l + `","src":[` + u + `]}`, []string{"src"}, []string{`.0.src"`}},
+		{"callout", "UiCallout", `{"c":"callout","text":"a ` + l + `","src":[` + u + `]}`, []string{"text", "src"}, []string{`loc="{loc}.0.text"`, `loc="{loc}.0.src"`}},
+		{"stat", "UiStat", `{"c":"stat","value":"1","note":"n ` + l + `","src":[` + u + `]}`, []string{"note", "src"}, []string{`loc="{loc}.0.note"`, `loc="{loc}.0.src"`}},
+		{"compare", "UiCompare", `{"c":"compare","cols":["A","B"]}` + "\n" + `{"row":"r","v":["a ` + l + `","b"],"src":[` + u + `]}`, []string{"v0", "src"}, []string{`loc="{loc}.{ri}.v{ci}"`, `loc="{loc}.{ri}.src"`}},
+		{"steps", "UiSteps", `{"c":"steps"}` + "\n" + `{"i":"a ` + l + `","d":"b ` + l + `"}`, []string{"i", "d"}, []string{`loc="{loc}.{i}.i"`, `loc="{loc}.{i}.d"`}},
+		{"timeline", "UiTimeline", `{"c":"timeline"}` + "\n" + `{"when":"w","i":"a ` + l + `","src":[` + u + `]}`, []string{"i", "src"}, []string{`loc="{loc}.{i}.i"`, `loc="{loc}.{i}.src"`}},
+		{"checklist", "UiChecklist", `{"c":"checklist"}` + "\n" + `{"i":"a ` + l + `"}`, []string{"i"}, []string{`loc="{loc}.{i}.i"`}},
+		{"procon", "UiProCon", `{"c":"procon"}` + "\n" + `{"+":"a ` + l + `"}` + "\n" + `{"-":"b ` + l + `"}`, []string{"pro", "con"}, []string{`loc="{loc}.{i}.pro"`, `loc="{loc}.{i}.con"`}},
+		{"choose", "UiChoose", `{"c":"choose"}` + "\n" + `{"if":"a ` + l + `","then":"b ` + l + `","src":[` + u + `]}`, []string{"if", "then", "src"}, []string{`loc="{loc}.{i}.if"`, `loc="{loc}.{i}.then"`, `loc="{loc}.{i}.src"`}},
+		{"facts", "UiFacts", `{"c":"facts"}` + "\n" + `{"k":"k","v":"a ` + l + `","src":[` + u + `]}`, []string{"v", "src"}, []string{`loc="{loc}.{i}.v"`, `loc="{loc}.{i}.src"`}},
+		// A flow node renders in the layer or the waiting list; both build the
+		// same `at(...)` address, so either occurrence satisfies the needle.
+		{"flow", "UiFlow", `{"c":"flow"}` + "\n" + `{"n":"a","t":"a ` + l + `","d":"b ` + l + `","src":[` + u + `]}`, []string{"t", "d", "src"}, []string{`loc="{at(cell.node.n)}.t"`, `loc="{at(cell.node.n)}.d"`, `loc="{at(cell.node.n)}.src"`}},
+		{"tabs", "UiTabs", `{"c":"tabs"}` + "\n" + `{"tab":"t","text":"a ` + l + `"}`, []string{"text"}, []string{`loc="{loc}.{active}.text"`}},
+		{"disclose", "UiDisclose", `{"c":"disclose"}` + "\n" + `{"p":"a ` + l + `"}`, []string{"p"}, []string{`loc="{loc}.{i}.p"`}},
+		{"quote", "UiQuote", `{"c":"quote","text":"q ` + l + `","by":"b ` + l + `","src":[` + u + `]}`, []string{"src"}, []string{`loc="{loc}.0.src"`}},
 		{"claim", "UiClaim", `{"c":"claim","text":"a ` + l + `"}` + "\n" + `{"+":"p ` + l + `","src":[` + u + `]}` + "\n" + `{"-":"m ` + l + `","src":[` + u + `]}`,
-			[]string{"text", "plus", "plus.src", "minus", "minus.src"}, []string{`.0.text"`, `.plus"`, `.plus.src"`, `.minus"`, `.minus.src"`}},
+			[]string{"text", "plus", "plus.src", "minus", "minus.src"}, []string{`loc="{loc}.0.text"`, `loc="{loc}.{i}.plus"`, `loc="{loc}.{i}.plus.src"`, `loc="{loc}.{i}.minus"`, `loc="{loc}.{i}.minus.src"`}},
 	}
 	for _, tc := range cases {
 		sites := Sites("```ui\n"+tc.body+"\n```\n", all)
@@ -153,13 +164,13 @@ func TestSites_FieldNamesMatchTheComponents(t *testing.T) {
 			t.Errorf("%s: Sites emitted fields %v, the contract lists %v", tc.kind, got, tc.fields)
 		}
 
-		src, err := os.ReadFile("../../web/src/lib/components/ui/" + tc.component + ".svelte")
+		src, err := os.ReadFile("../web/src/lib/components/ui/" + tc.component + ".svelte")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.kind, err)
 		}
-		for _, n := range tc.needles {
-			if !strings.Contains(string(src), n) {
-				t.Errorf("%s: %s.svelte has no loc ending in %s, so its ticks would silently never show", tc.kind, tc.component, n)
+		for _, want := range tc.locAttrs {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("%s: %s.svelte has no %s, so its ticks would silently never show", tc.kind, tc.component, want)
 			}
 		}
 	}

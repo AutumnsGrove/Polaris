@@ -140,6 +140,36 @@ func clip(s string, max int) string {
 // non-empty, clipped. ok is false for anything else.
 func text(v any) (string, bool) { return textMax(v, maxTextChars) }
 
+// jsNumberString formats a JSON number the way JavaScript's String(v) does, so
+// parse.ts's text() (which does `String(v)`) and this file's textMax() can never
+// disagree on a numeric text field. Go's 'f' already matches JS for the ordinary
+// range; JS switches to exponential notation below 1e-6 and at/above 1e21, where
+// 'g' matches except that Go pads the exponent to two digits ("1e-07") and JS
+// trims it ("1e-7"), and Go prints negative zero as "-0" where JS prints "0".
+func jsNumberString(f float64) string {
+	if f == 0 {
+		return "0"
+	}
+	abs := math.Abs(f)
+	if abs < 1e-6 || abs >= 1e21 {
+		s := strconv.FormatFloat(f, 'g', -1, 64)
+		i := strings.IndexByte(s, 'e')
+		if i < 0 {
+			return s
+		}
+		mant, exp := s[:i], s[i+1:]
+		sign := ""
+		if len(exp) > 0 && (exp[0] == '+' || exp[0] == '-') {
+			sign, exp = exp[:1], exp[1:]
+		}
+		if exp = strings.TrimLeft(exp, "0"); exp == "" {
+			exp = "0"
+		}
+		return mant + "e" + sign + exp
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
 // textMax is text with a per-field clip, for the prose-body fields that need
 // more than 400 characters (a tab's fenced command block, a disclosed paragraph).
 func textMax(v any, max int) (string, bool) {
@@ -148,7 +178,7 @@ func textMax(v any, max int) (string, bool) {
 		if math.IsNaN(x) || math.IsInf(x, 0) {
 			return "", false
 		}
-		v = strconv.FormatFloat(x, 'f', -1, 64)
+		v = jsNumberString(x)
 	}
 	s, isStr := v.(string)
 	if !isStr {

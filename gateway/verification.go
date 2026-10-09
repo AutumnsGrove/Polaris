@@ -9,9 +9,9 @@ import (
 	"sync"
 	"unicode"
 
-	"polaris/gateway/uiblocks"
 	"polaris/jev"
 	"polaris/tools"
+	"polaris/uiblocks"
 )
 
 // jevPerTurnCapUSD/jevMonthlyCapUSD mirror tools/compare_sources.go's own

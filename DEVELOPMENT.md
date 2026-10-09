@@ -62,7 +62,7 @@ index so a growing block updates in place. A `ui` fence is one JSON object per l
 and keeps the last good render when a prefix doesn't parse.
 
 Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
-`gateway/uiblocks` (Go) turn a block into readable text, and both are tested against
+`uiblocks` (Go) turn a block into readable text, and both are tested against
 `testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns, Pulsar pulses (real threads
 in the chat view) and `/api/ask` (`ClientMessage.OffersVisuals`, so the API exercises the real
 behaviour; its raw `Answer` keeps the fence and `polaris search` flattens it on print), never to voice
@@ -71,7 +71,7 @@ calls or Atlas's plain-text Quick Answer. Oracle's `ui` check follows the same g
 
 "Found in source" ticks inside a block use a different rule from prose: a block link is named by where it
 sits (`<fence>.<block>.<item>.<field>#<n>`), not by "the nth time this URL is cited". The server lists them
-(`gateway/uiblocks/sites.go`, `Sites`), verifies each against its own sentence (`gateway/verification.go`; a
+(`uiblocks/sites.go`, `Sites`), verifies each against its own sentence (`gateway/verification.go`; a
 `quote` is exact-match first, Jev only on a miss) and sends marks carrying a `locator`; the components
 pass the same address down as a `loc` prop and `renderInlineCitations` ticks the matching link. Adding a
 sourced field means touching both `collect()` and the component, and

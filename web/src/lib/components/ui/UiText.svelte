@@ -21,10 +21,10 @@
 	// Same sanitizer and chip pass, so it adds paragraphs and code, not trust.
 	//
 	// `loc` is this field's verification address (e.g. "0.2.1.src", see
-	// gateway/uiblocks/sites.go for the field names): when given, a link whose
+	// uiblocks/sites.go for the field names): when given, a link whose
 	// "<loc>#<n>" has a supported mark gets the "found in source" tick. Omitted
 	// means no tick for this field, which is always safe.
-	let { text, block = false, loc }: { text: string; block?: boolean; loc?: string } = $props();
+	let { text, block = false, loc, chipsInTable = false }: { text: string; block?: boolean; loc?: string; chipsInTable?: boolean } = $props();
 
 	// A getter, not the array, so a citations update mid-stream (sources land
 	// while the block is still filling in) re-renders the chips.
@@ -39,7 +39,8 @@
 			getCitations?.() ?? [],
 			undefined,
 			undefined,
-			loc && marks?.length ? { prefix: loc, marks } : undefined
+			loc && marks?.length ? { prefix: loc, marks } : undefined,
+			chipsInTable
 		);
 	});
 </script>

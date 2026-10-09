@@ -7,7 +7,7 @@ import { splitContent, type FenceKind } from './split';
 export type RenderedSegment =
 	| { kind: 'md'; html: string }
 	// `fence` is a ui fence's ordinal among the answer's ui fences (the first
-	// segment of a block's verification locator, see gateway/uiblocks/sites.go).
+	// segment of a block's verification locator, see uiblocks/sites.go).
 	| { kind: FenceKind; src: string; closed: boolean; fence?: number };
 
 // Fence kinds that get their own component; anything else stays Markdown.

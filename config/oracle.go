@@ -60,15 +60,29 @@ type OracleCheckRules struct {
 	Suppresses []string `yaml:"suppresses,omitempty"`
 	// VisualsLowOffset is added to Threshold while the Prism dial is Low, so
 	// the same check asks for more confidence before nudging toward a visual
-	// block (docs/plans/intelligent-ui.md). Zero for every other check; only
-	// the ui check reads it. Normal uses Threshold as-is, Off never asks.
-	VisualsLowOffset float64 `yaml:"visuals_low_offset,omitempty"`
+	// block (docs/plans/intelligent-ui.md). nil for every other check; only
+	// the ui check reads it. Normal uses Threshold as-is, Off never asks. A
+	// pointer so an explicit `visuals_low_offset: 0` (Low behaves like Normal)
+	// is distinguishable from an absent field, which keeps the default.
+	VisualsLowOffset *float64 `yaml:"visuals_low_offset,omitempty"`
 }
 
 // OnlyFirstMessage reports FirstMessageOnly with nil meaning false.
 func (r OracleCheckRules) OnlyFirstMessage() bool {
 	return r.FirstMessageOnly != nil && *r.FirstMessageOnly
 }
+
+// LowOffset reports VisualsLowOffset with nil meaning zero, so callers don't
+// have to nil-check before adding it to a threshold.
+func (r OracleCheckRules) LowOffset() float64 {
+	if r.VisualsLowOffset == nil {
+		return 0
+	}
+	return *r.VisualsLowOffset
+}
+
+// floatPtr is used to give a *float64 rule field its shipped default.
+func floatPtr(f float64) *float64 { return &f }
 
 // OracleChipRules is one offer chip's policy — just its firing bar.
 type OracleChipRules struct {
@@ -107,8 +121,8 @@ func DefaultOracle() OracleConfig {
 			// "give numbered steps" stacked on "write a steps block" contradicts
 			// itself. A wrong firing costs a block nobody needed, so on Low the
 			// bar rises by VisualsLowOffset.
-			"ui": {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}, VisualsLowOffset: 0.15},
-			"depth":  {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
+			"ui":    {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}, VisualsLowOffset: floatPtr(0.15)},
+			"depth": {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
 			// Source and evidence guidance. Academic mode already carries its
 			// own source guidance.
 			"recency":     {Threshold: 0.75},
@@ -178,7 +192,10 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		if rules.Suppresses != nil {
 			base.Suppresses = rules.Suppresses
 		}
-		base.VisualsLowOffset = pickThreshold(fmt.Sprintf("oracle.checks.%s.visuals_low_offset", key), rules.VisualsLowOffset, base.VisualsLowOffset)
+		base.VisualsLowOffset = nil
+		if rules.VisualsLowOffset != nil {
+			base.VisualsLowOffset = floatPtr(pickOffset(fmt.Sprintf("oracle.checks.%s.visuals_low_offset", key), *rules.VisualsLowOffset, base.LowOffset()))
+		}
 		out.Checks[key] = base
 	}
 
@@ -192,6 +209,18 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		out.Chips[key] = base
 	}
 	return out
+}
+
+// pickOffset validates a configured VisualsLowOffset. Unlike a threshold, 0 is
+// meaningful here (the Low dial behaves like Normal), so only a value outside
+// [0,1] is rejected — the default applies exactly when the field is absent,
+// which the *float64 makes distinguishable from an explicit 0.
+func pickOffset(path string, configured, def float64) float64 {
+	if configured < 0 || configured > 1 {
+		log.Warn("visuals_low_offset must be between 0 and 1, using the default", "path", path, "configured", configured, "default", def)
+		return def
+	}
+	return configured
 }
 
 // pickThreshold returns configured when it's a usable probability, def when

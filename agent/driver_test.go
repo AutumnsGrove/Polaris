@@ -1017,8 +1017,9 @@ func TestLoadSystemPrompt_AppliesDeepResearchInstruction(t *testing.T) {
 
 // TestLoadSystemPrompt_VisualsFragment pins the Intelligent UI dial's reach:
 // only "low"/"normal" teach the `ui` grammar. "off" and the "" an unwired
-// entry point (Pulsar, /api/ask, the benchmark) leaves must add nothing, so
-// those surfaces are never told to write a fence they can't render.
+// entry point (voice calls, Atlas's Quick Answer, the benchmark harness)
+// leaves must add nothing, so those surfaces are never told to write a fence
+// they can't render.
 func TestLoadSystemPrompt_VisualsFragment(t *testing.T) {
 	const marker = "## Visual blocks"
 	for _, v := range []string{"", "off", "bogus"} {

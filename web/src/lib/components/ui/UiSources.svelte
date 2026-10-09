@@ -9,14 +9,17 @@
 	//
 	// `loc` is the src field's verification address ("0.2.1.src"); the nth
 	// tracked URL in the array is link #n, which is how the server numbers it.
-	let { src, loc }: { src: string[]; loc?: string } = $props();
+	// `chipsInTable` is for a src field rendered inside a compare table's <td>:
+	// these links are source markers, not the cell's data, so they may chip
+	// there (see renderInlineCitations).
+	let { src, loc, chipsInTable = false }: { src: string[]; loc?: string; chipsInTable?: boolean } = $props();
 
 	// <...> form so a URL containing parentheses or spaces can't end the link early.
 	let text = $derived(src.map((u) => `[${sourceHostname(u)}](<${u}>)`).join(' '));
 </script>
 
 {#if src.length}
-	<span class="ui-sources"><UiText {text} {loc} /></span>
+	<span class="ui-sources"><UiText {text} {loc} {chipsInTable} /></span>
 {/if}
 
 <style>

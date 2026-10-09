@@ -96,7 +96,7 @@ func main() {
 	// defaults a fresh install runs, regardless of local config.yaml tuning.
 	rules := config.DefaultOracle()
 	uiRule := rules.Checks["ui"]
-	normalBar, lowBar := uiRule.Threshold, uiRule.Threshold+uiRule.VisualsLowOffset
+	normalBar, lowBar := uiRule.Threshold, uiRule.Threshold+uiRule.LowOffset()
 
 	results := make([]scored, len(items))
 	var wg sync.WaitGroup

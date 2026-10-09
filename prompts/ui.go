@@ -30,7 +30,7 @@ func uiDefaults(d *Set) {
 		"  a process or decision chain with branches.\n" +
 		"- `{\"c\":\"tabs\"}` then `{\"tab\":\"macOS\",\"text\":\"...\"}` lines, at most 6 — parallel versions of one\n" +
 		"  answer where the reader needs only one. A tab's text may hold a fenced code block (write the\n" +
-		"  newlines as \\n inside the JSON string) and can run to about 1500 characters.\n" +
+		"  newlines as \\n inside the JSON string); keep it under about 1500 characters.\n" +
 		"- `{\"c\":\"disclose\",\"title\":\"...\",\"hint\":\"...\"}` then `{\"p\":\"paragraph\"}` lines — a section of\n" +
 		"  deeper detail, shown open, that the reader can fold away.\n" +
 		"- `{\"c\":\"quote\",\"text\":\"...\",\"by\":\"Name\",\"src\":[\"https://...\"]}` — a short passage quoted word for\n" +

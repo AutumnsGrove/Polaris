@@ -4,7 +4,7 @@ import type { UiBlock } from './types';
 
 // The plain-text form of an answer's `ui` blocks, for every consumer that is
 // NOT the chat renderer: copy, read-aloud, and anything else that would
-// otherwise show or speak raw JSON lines. Go twin: gateway/uiblocks
+// otherwise show or speak raw JSON lines. Go twin: uiblocks
 // (Flatten). Both are tested against testdata/ui_flatten.json, so they cannot
 // drift apart unnoticed.
 

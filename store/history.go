@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"polaris/gateway/uiblocks"
+	"polaris/uiblocks"
 )
 
 // HistoryEntry is one reconstructed turn from EffectiveHistory — a plain

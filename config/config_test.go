@@ -384,6 +384,23 @@ func TestLoad_OracleBlockOverridesAndInherits(t *testing.T) {
 	}
 }
 
+// An explicit visuals_low_offset: 0 must be honored, not mistaken for an absent
+// field and replaced with the 0.15 default — Low then behaves like Normal.
+func TestLoad_OracleVisualsLowOffsetZeroIsHonored(t *testing.T) {
+	path := writeTestConfig(t, "openrouter:\n  api_key: k\noracle:\n  checks:\n    ui:\n      visuals_low_offset: 0\n")
+	cfg, err := Load(path, []ModelConfig{{ID: "m", Name: "M", Model: "x/y"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Oracle.Checks["ui"].LowOffset(); got != 0 {
+		t.Errorf("explicit visuals_low_offset: 0 must be honored, got %v", got)
+	}
+	// A field the file didn't mention still inherits its shipped default.
+	if got := cfg.Oracle.Checks["ui"].Threshold; got != 0.70 {
+		t.Errorf("want the default ui threshold, got %v", got)
+	}
+}
+
 func TestLoad_NoOracleBlockUsesDefaults(t *testing.T) {
 	path := writeTestConfig(t, "openrouter:\n  api_key: k\n")
 	cfg, err := Load(path, []ModelConfig{{ID: "m", Name: "M", Model: "x/y"}})

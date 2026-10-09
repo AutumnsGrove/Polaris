@@ -10,7 +10,7 @@
 
 	// A node's verification address uses its index in `block.nodes` (arrival
 	// order), NOT where the layout drew it: a node moves between layers as edges
-	// stream in, and the server (gateway/uiblocks/sites.go) knows only arrival order.
+	// stream in, and the server (uiblocks/sites.go) knows only arrival order.
 	const at = (n: string) => `${loc}.${block.nodes.findIndex((x) => x.n === n)}`;
 
 	// Expanded nodes, keyed by node id and NOT by position: a node moves from the

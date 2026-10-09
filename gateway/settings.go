@@ -53,9 +53,10 @@ const (
 	// settingVisuals is the "Visuals" dial for Intelligent UI (docs/plans/
 	// intelligent-ui.md): how readily the assistant answers with a structured
 	// `ui` block instead of plain prose. One of visualsModes; unset or
-	// unrecognized means visualsDefault. Chat only — Pulsar, Pulsar Daily and
-	// Atlas never offer blocks, because only gateway/turn_context.go copies
-	// this onto tools.Context.Visuals.
+	// unrecognized means visualsDefault. Read by gateway/turn_context.go for
+	// every turn ClientMessage.OffersVisuals opted in — live chat, /api/ask and
+	// Pulsar pulses — while Pulsar Daily, Atlas's Quick Answer and voice calls
+	// leave tools.Context.Visuals empty, so they never offer blocks.
 	settingVisuals = "visuals"
 	// settingDisabledTools stores a JSON-encoded []string of tool names the
 	// user has individually turned off from the settings panel — see
