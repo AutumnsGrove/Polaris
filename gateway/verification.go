@@ -282,11 +282,6 @@ type ClaimVerification struct {
 	Locator string `json:"locator,omitempty"`
 }
 
-// maxUIFences mirrors web/src/lib/uiBlocks/renderAnswer.ts's MAX_UI_FENCES:
-// fences past it render as ordinary code on the client, so they have no chips
-// to tick.
-const maxUIFences = 8
-
 // maxUIClaimsPerTurn caps how many block links one answer may spend Jev calls
 // on, so a block-heavy answer (a facts card with ten sourced rows, several
 // blocks) cannot use the whole $0.01 per-turn budget before the prose gets its
@@ -310,7 +305,7 @@ func claimsForVerification(answer string, citations []tools.Citation) []claim {
 	for _, c := range citations {
 		tracked[c.URL] = true
 	}
-	sites := uiblocks.Sites(answer, func(u string) bool { return tracked[u] }, maxUIFences)
+	sites := uiblocks.Sites(answer, func(u string) bool { return tracked[u] })
 	if len(sites) > maxUIClaimsPerTurn {
 		sites = sites[:maxUIClaimsPerTurn]
 	}

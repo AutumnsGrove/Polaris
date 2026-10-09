@@ -13,10 +13,6 @@ export type RenderedSegment =
 // Fence kinds that get their own component; anything else stays Markdown.
 const SEGMENT_KINDS: readonly FenceKind[] = ['ui', 'mermaid'];
 
-// docs/plans/intelligent-ui.md "Caps": fences past this render as an ordinary
-// code block instead, so a runaway answer can't mount unbounded components.
-export const MAX_UI_FENCES = 8;
-
 // marked.parse + DOMPurify is the expensive, citation-independent part of
 // rendering a Markdown segment. While a reply streams only the LAST segment's
 // text changes, so caching by text means every finished segment is a lookup,
@@ -55,10 +51,12 @@ export function renderAnswer(
 	const occurrences = new Map<string, number>();
 	let uiFences = 0;
 	return splitContent(content, streaming, SEGMENT_KINDS).map((seg): RenderedSegment => {
-		if (seg.kind === 'ui' && ++uiFences > MAX_UI_FENCES) {
-			return { kind: 'md', html: sanitizedHtml('```ui\n' + seg.src + (seg.closed ? '```\n' : '')) };
-		}
-		if (seg.kind === 'ui') return { ...seg, fence: uiFences - 1 };
+		// Every ui fence renders, however many an answer carries: a stress-test
+		// answer showing off the whole block catalog is legitimate, and silently
+		// dumping the overflow as JSON read as a rendering failure. The parser's
+		// per-fence line cap and per-field character cap bound each fence, and the
+		// model's own output length bounds the count.
+		if (seg.kind === 'ui') return { ...seg, fence: uiFences++ };
 		if (seg.kind !== 'md') return seg;
 		return {
 			kind: 'md',

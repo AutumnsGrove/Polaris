@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { marked } from '$lib/markdown';
 import { renderInlineCitations } from '$lib/citations';
 import type { Citation, VerificationMark } from '$lib/types';
-import { renderAnswer, MAX_UI_FENCES } from './renderAnswer';
+import { renderAnswer } from './renderAnswer';
 
 const citations: Citation[] = [
 	{ title: 'NASA', url: 'https://nasa.gov/voyager', site_name: 'NASA' },
@@ -58,13 +58,16 @@ describe('renderAnswer', () => {
 		expect(segs.map((s) => s.kind)).toEqual(['md', 'ui', 'md']);
 	});
 
-	it('renders fences past the cap as an ordinary code block', () => {
+	it('renders every ui fence, however many the answer carries', () => {
+		// Regression: a 14-block stress-test answer used to render its first 8
+		// blocks and dump the rest as raw JSON (the old MAX_UI_FENCES = 8).
 		const fence = '```ui\n{"c":"stat","value":"1"}\n```\n';
-		const segs = renderAnswer(fence.repeat(MAX_UI_FENCES + 1), false, citations);
-		expect(segs.filter((s) => s.kind === 'ui')).toHaveLength(MAX_UI_FENCES);
-		const last = segs.at(-1) as { kind: string; html: string };
-		expect(last.kind).toBe('md');
-		expect(last.html).toContain('class="hljs"');
+		const segs = renderAnswer(fence.repeat(14), false, citations);
+		expect(segs).toHaveLength(14);
+		expect(segs.every((s) => s.kind === 'ui')).toBe(true);
+		// Fence ordinals stay contiguous, so block-link locators keep matching
+		// the server's uiblocks.Sites.
+		expect(segs.map((s) => (s as { fence?: number }).fence)).toEqual([...Array(14).keys()]);
 	});
 
 	it('does not count ui links toward verification occurrences (P1: neither side counts them)', () => {

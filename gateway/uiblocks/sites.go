@@ -45,17 +45,14 @@ func stripLinks(s string) string { return linkRe.ReplaceAllString(s, "$1") }
 // Sites returns every verifiable link in content's ui fences, in document
 // order. tracked says which URLs are real citations of this turn: only those
 // are numbered (the client chips only tracked links, so counting an untracked
-// one would shift every later n). Only the first maxFences fences count,
-// matching the client (renderAnswer.ts renders later ones as code).
-func Sites(content string, tracked func(url string) bool, maxFences int) []Site {
+// one would shift every later n). Every ui fence counts, matching the client
+// (renderAnswer.ts renders all of them).
+func Sites(content string, tracked func(url string) bool) []Site {
 	var sites []Site
 	fence := 0
 	rewrite(content, func(body string) string {
 		f := fence
 		fence++
-		if f >= maxFences {
-			return ""
-		}
 		for bi, b := range parse(body) {
 			collect(b, fmt.Sprintf("%d.%d", f, bi), tracked, &sites)
 		}

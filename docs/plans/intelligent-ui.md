@@ -133,8 +133,11 @@ JSON object per line**; blank lines ignored.
   the caps below), as long as rendering is keyed so existing components update in place.
 - **Cancelled or errored turn:** complete lines stay rendered, the partial line is dropped. (Proposed
   default; the mockup assumes it.)
-- **Caps** (tentative, enforced by the parser, beyond them a line degrades to a raw row): 8 `ui`
-  fences per answer, 40 lines per fence, 400 characters per text field.
+- **Caps** (enforced by the parser, beyond them a line degrades to a raw row): 40 lines per fence,
+  400 characters per text field. There is deliberately **no cap on the number of `ui` fences per
+  answer**: an answer that walks the whole block catalog is legitimate, and the old 8-fence cap
+  printed the overflow as raw JSON, which read as a rendering failure. Each fence is still bounded
+  by the line and field caps, and the count by the model's own output length.
 - **Text fields** (`text`, `d`, `i`, `v`, ...) accept the same inline Markdown subset as prose:
   `**bold**`, `` `code` ``, and `[Title](URL)` links. Never HTML; DOMPurify still runs.
 
