@@ -24,7 +24,14 @@ func uiDefaults(d *Set) {
 		"- `{\"c\":\"choose\",\"title\":\"...\"}` then `{\"if\":\"their situation\",\"then\":\"the pick\"}` lines, at most 8 —\n" +
 		"  for when the right choice depends on the person.\n" +
 		"- `{\"c\":\"facts\",\"title\":\"...\",\"sub\":\"...\"}` then `{\"k\":\"Label\",\"v\":\"value\"}` lines, at most 12 —\n" +
-		"  an at-a-glance card about one named thing.\n\n" +
+		"  an at-a-glance card about one named thing.\n" +
+		"- `{\"c\":\"flow\"}` then `{\"n\":\"a\",\"t\":\"Step\",\"d\":\"detail\"}` node lines (add `\"kind\":\"decision\"` for a\n" +
+		"  question) and `{\"e\":[\"a\",\"b\"],\"l\":\"Yes\"}` edge lines, at most 8 nodes, the first node is the start —\n" +
+		"  a process or decision chain with branches.\n" +
+		"- `{\"c\":\"tabs\"}` then `{\"tab\":\"macOS\",\"text\":\"...\"}` lines, at most 6 — parallel versions of one\n" +
+		"  answer where the reader needs only one.\n" +
+		"- `{\"c\":\"disclose\",\"title\":\"...\",\"hint\":\"...\"}` then `{\"p\":\"paragraph\"}` lines — optional detail\n" +
+		"  that stays folded away until tapped.\n\n" +
 		"A line with a \"c\" key opens a new block; a line without one belongs to the block above it. Text\n" +
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +

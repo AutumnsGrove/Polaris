@@ -58,7 +58,9 @@ const UI_BLOCK_LABELS: Record<string, string> = {
 	checklist: 'checklist',
 	timeline: 'timeline',
 	procon: 'pros and cons',
-	facts: 'facts'
+	facts: 'facts',
+	flow: 'flow',
+	tabs: 'tabs'
 };
 
 // A column-0 ```ui fence, the same one split.ts recognizes. Used to claim
@@ -293,7 +295,9 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		checklist: 'Checklist',
 		timeline: 'Timeline',
 		procon: 'Pros and cons',
-		facts: 'Facts'
+		facts: 'Facts',
+		flow: 'Flow',
+		tabs: 'Tabs'
 	},
 	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
 	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },

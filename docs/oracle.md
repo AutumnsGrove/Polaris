@@ -236,6 +236,8 @@ How careful to be, and where to look.
 | `timeline` | A sequence of dated events, a history, or a schedule. Not a price, number or trend over time. | Yes |
 | `procon` | One thing weighed for and against. | Yes |
 | `facts` | An at-a-glance summary of one named thing (a product, place, person or organization). | Yes |
+| `flow` | A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps. | Yes |
+| `tabs` | Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them. | Yes |
 
 *fires at **70%+**, or **85%+** when the Prism setting is Low; never asked when Prism is Off or in a voice call; skipped under Brief and Safari focus; when it fires, holds back: `format`.*
 

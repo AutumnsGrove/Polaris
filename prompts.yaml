@@ -1286,6 +1286,8 @@ oracle:
         timeline: A sequence of dated events, a history, or a schedule. Not a price, number or trend over time.
         procon: One thing weighed for and against.
         facts: An at-a-glance summary of one named thing (a product, place, person or organization).
+        flow: A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps.
+        tabs: Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them.
       inject:
         compare: >-
           The user is choosing between options. A compare block fits: write one ui fence with
@@ -1314,6 +1316,15 @@ oracle:
           The user wants the essentials on one named thing. A facts block fits: write one ui fence
           with {"c":"facts","title":"Name","sub":"what it is"} then one {"k":"Label","v":"value"}
           line per fact, cited where you can.
+        flow: >-
+          This is a process with a decision in it. A flow block fits: write one ui fence with
+          {"c":"flow"}, then {"n":"a","t":"Step","d":"detail"} node lines (add "kind":"decision" on a
+          question) and {"e":["a","b"],"l":"Yes"} edge lines. At most 8 nodes; the first is the start.
+          Say in the prose what the chain is for.
+        tabs: >-
+          This has parallel versions and the reader needs only one. A tabs block fits: write one ui
+          fence with {"c":"tabs"} then one {"tab":"macOS","text":"..."} line per version, at most 6,
+          and keep anything true for every version in the prose.
 
     depth:
       instructions: >-
@@ -1562,6 +1573,13 @@ ui:
       for when the right choice depends on the person.
     - `{"c":"facts","title":"...","sub":"..."}` then `{"k":"Label","v":"value"}` lines, at most 12 —
       an at-a-glance card about one named thing.
+    - `{"c":"flow"}` then `{"n":"a","t":"Step","d":"detail"}` node lines (add `"kind":"decision"` for a
+      question) and `{"e":["a","b"],"l":"Yes"}` edge lines, at most 8 nodes, the first node is the start —
+      a process or decision chain with branches.
+    - `{"c":"tabs"}` then `{"tab":"macOS","text":"..."}` lines, at most 6 — parallel versions of one
+      answer where the reader needs only one.
+    - `{"c":"disclose","title":"...","hint":"..."}` then `{"p":"paragraph"}` lines — optional detail
+      that stays folded away until tapped.
 
     A line with a "c" key opens a new block; a line without one belongs to the block above it. Text
     fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300
