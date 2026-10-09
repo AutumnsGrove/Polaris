@@ -42,7 +42,8 @@ func uiDefaults(d *Set) {
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +
 		"what the person should do in the prose or a warn callout, not buried in a table cell. Cite only\n" +
-		"sources you actually read."
+		"sources you actually read, and where a row, step or line rests on one, give that line\n" +
+		"`\"src\":[\"https://...\"]` (or a [Title](URL) in its text) so the reader can see where it came from."
 	d.UI.LowBar = "Use a block rarely: only when the answer is clearly one of these shapes and prose would be\n" +
 		"harder to scan. When in doubt, write prose."
 	d.UI.NormalBar = "Use a block whenever one of these shapes clearly fits the answer, at most one or two per\n" +
