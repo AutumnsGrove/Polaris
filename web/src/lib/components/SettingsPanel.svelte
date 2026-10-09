@@ -26,7 +26,7 @@
 		Mic,
 		MapPin,
 		Galaxy,
-		LayoutPanelTop,
+		Gem,
 		Venus,
 		Mars,
 		Play,
@@ -101,7 +101,9 @@
 	// through setCustomInstructions rather than only filling the textarea.
 	let showInstructionsWizard = $state(false);
 
-	// One-line summary shown under the Visuals control for each setting.
+	// One-line summary shown under the Prism control for each setting. (Prism
+	// is the user-facing name; the setting key, state field and Go identifiers
+	// keep the older plain "visuals" so a stored value isn't orphaned.)
 	const VISUALS_DESC: Record<VisualsMode, string> = {
 		off: 'Plain text answers only',
 		low: 'A block only when it clearly beats prose',
@@ -695,9 +697,9 @@
 						/>
 					{/snippet}
 				</SettingsRow>
-				<SettingsRow icon={LayoutPanelTop} title="Visuals" desc={VISUALS_DESC[appState.settings.visuals]}>
+				<SettingsRow icon={Gem} title="Prism" desc={VISUALS_DESC[appState.settings.visuals]}>
 					{#snippet control()}
-						<div class="theme-toggle" role="group" aria-label="Visuals">
+						<div class="theme-toggle" role="group" aria-label="Prism">
 							{#each VISUALS_MODES as mode (mode)}
 								<button
 									class:active={appState.settings.visuals === mode}

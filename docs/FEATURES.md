@@ -83,7 +83,7 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   turn a broad topic into an interactive Safari. Off by default in ghost conversations, with a
   switch to opt those in too (still without the offer to set up a Pulsar, add to Daily, or file
   the chat into a Field). See [oracle.md](oracle.md) for every check and what it does.
-- **Visuals** — answers can include a comparison (cards on a phone, a table when wide), a numbered
+- **Prism** — answers can include a comparison (cards on a phone, a table when wide), a numbered
   step rail, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
   in line by line as the answer streams. A Low / Normal / Off dial in Settings sets how readily
   they appear (Low by default). Chat only. Diagrams now build up as they stream too.

@@ -61,6 +61,12 @@
 			detail: 'Reads each message first and quietly adjusts how it’s answered. You can undo it.'
 		},
 		{
+			name: 'Prism',
+			means: 'Comparisons and step lists',
+			detail:
+				'Lets an answer use a comparison, a step-by-step rail, or a callout when that beats plain text. Set how often in Settings.'
+		},
+		{
 			name: 'Ghost thread',
 			means: 'Incognito chat',
 			detail: 'Leaves no trace: no memory, hidden from the sidebar, deleted when it ends.'

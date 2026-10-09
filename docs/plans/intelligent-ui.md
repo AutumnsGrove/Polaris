@@ -397,9 +397,11 @@ that until the Oracle-off fallback rate is measured, since a smaller floor means
   `web/src/lib/settings.svelte.ts`, `SettingsPanel.svelte` (segmented control, copy as in the mockup).
 - `prompts.yaml` + `prompts/` defaults for the `ui:` fragment and the Oracle `ui` check; hot-reloaded.
 - `config/oracle.go` + `config.yaml.example` for the `ui` rule.
-- `HelpModal.svelte` `TERMS`: **no entry, decided 2026-10-09.** The glossary translates themed names
-  into plain English; "Visuals" already is plain English and the feature is a formatting setting, not a
-  named surface. Revisit only if it is ever given a themed name. `docs/FEATURES.md`: one or two lines. `DEVELOPMENT.md`: a short note on the
+- **Named "Prism" (2026-10-09):** a plain beam of text split into something with structure. User-facing
+  only (Settings row, glossary, FEATURES.md); the `visuals` setting key, `Visuals` state field and Go
+  identifiers keep the plain name so no stored value is orphaned. `HelpModal.svelte` `TERMS` has
+  "Prism = Comparisons and step lists". (It briefly had no entry on the grounds that "Visuals" needed no
+  translating; the themed name is what makes the entry earn its place.) `docs/FEATURES.md`: one or two lines. `DEVELOPMENT.md`: a short note on the
   segment/parse/component architecture.
 - `dev/fakeopenrouter` scripted responses with `ui` fences (progressive, plus malformed/unknown
   lines) for the Playwright runs.
