@@ -1015,6 +1015,40 @@ func TestLoadSystemPrompt_AppliesDeepResearchInstruction(t *testing.T) {
 	}
 }
 
+// TestLoadSystemPrompt_VisualsFragment pins the Intelligent UI dial's reach:
+// only "low"/"normal" teach the `ui` grammar. "off" and the "" an unwired
+// entry point (Pulsar, /api/ask, the benchmark) leaves must add nothing, so
+// those surfaces are never told to write a fence they can't render.
+func TestLoadSystemPrompt_VisualsFragment(t *testing.T) {
+	const marker = "## Visual blocks"
+	for _, v := range []string{"", "off", "bogus"} {
+		if got := loadSystemPrompt(&tools.Context{Visuals: v}, false, "", false, false); strings.Contains(got, marker) {
+			t.Errorf("Visuals=%q should not add the ui grammar", v)
+		}
+	}
+
+	low := loadSystemPrompt(&tools.Context{Visuals: "low"}, false, "", false, false)
+	normal := loadSystemPrompt(&tools.Context{Visuals: "normal"}, false, "", false, false)
+	for name, got := range map[string]string{"low": low, "normal": normal} {
+		if !strings.Contains(got, marker) || !strings.Contains(got, `{"c":"compare"`) {
+			t.Errorf("Visuals=%s: want the ui grammar in the prompt", name)
+		}
+	}
+	if low == normal {
+		t.Error("low and normal should differ in how readily to reach for a block")
+	}
+}
+
+// The fragment goes before the Oracle block, so Oracle's per-turn nudge is the
+// last (most recent) thing in the prompt, as it is today.
+func TestLoadSystemPrompt_VisualsBeforeOracleSection(t *testing.T) {
+	got := loadSystemPrompt(&tools.Context{Visuals: "low", OracleSection: "## Oracle\n\nnudge"}, false, "", false, false)
+	ui, oracle := strings.Index(got, "## Visual blocks"), strings.Index(got, "## Oracle")
+	if ui < 0 || oracle < 0 || ui > oracle {
+		t.Errorf("want the ui fragment (%d) before the Oracle section (%d)", ui, oracle)
+	}
+}
+
 func TestLoadSystemPrompt_AppliesNoResearchInstruction(t *testing.T) {
 	base := loadSystemPrompt(&tools.Context{}, false, "", false, false)
 	chat := loadSystemPrompt(&tools.Context{}, false, "", false, true)

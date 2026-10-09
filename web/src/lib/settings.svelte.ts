@@ -3,6 +3,11 @@ import type { FocusMode, ToggleableTool, TTSVoice } from './types';
 
 export type UpdateState = 'idle' | 'updating' | 'restarting' | 'error';
 
+// The Visuals dial's values, in display order — must match the server's
+// visualsModes (gateway/settings.go), which rejects anything else.
+export const VISUALS_MODES = ['off', 'low', 'normal'] as const;
+export type VisualsMode = (typeof VISUALS_MODES)[number];
+
 // Which operation updateState/updateLog currently describe — 'update' is
 // the full git-pull-and-rebuild flow (pushUpdate), 'restart' is just the
 // service restart with no pull or rebuild (pushRestart), for when there's
@@ -167,6 +172,13 @@ export class SettingsState {
 	// (Pulsar, Daily, Field) are withheld server-side (see gateway/oracle.go).
 	oracleGhostEnabled = $state(false);
 
+	// How readily the assistant answers with a structured `ui` block (a
+	// comparison, a step rail, a callout) instead of plain prose — the
+	// "Visuals" dial (docs/plans/intelligent-ui.md, gateway/settings.go's
+	// settingVisuals). Defaults to Low, matching the server's own default, so
+	// the control shows the truth before /api/settings has answered.
+	visuals = $state<VisualsMode>('low');
+
 	// Free-text operator steering substituted into prompt.md's
 	// {custom_instructions} placeholder on every turn (see
 	// gateway/settings.go's settingCustomInstructions and
@@ -282,6 +294,7 @@ export class SettingsState {
 		this.memoryEnabled = data.memory_enabled ?? true;
 		this.oracleEnabled = data.oracle_enabled ?? false;
 		this.oracleGhostEnabled = data.oracle_ghost_enabled ?? false;
+		this.visuals = VISUALS_MODES.includes(data.visuals) ? data.visuals : 'low';
 		this.customInstructions = data.custom_instructions ?? '';
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
@@ -350,6 +363,11 @@ export class SettingsState {
 	async setOracleGhostEnabled(enabled: boolean) {
 		this.oracleGhostEnabled = enabled;
 		await this.put({ oracle_ghost_enabled: enabled });
+	}
+
+	async setVisuals(mode: VisualsMode) {
+		this.visuals = mode;
+		await this.put({ visuals: mode });
 	}
 
 	// Saved on blur (see SettingsPanel.svelte), not on every keystroke —

@@ -42,5 +42,6 @@ func buildDefaults() Set {
 	wizardDefaults(&d)
 	pulsarDefaults(&d)
 	oracleDefaults(&d)
+	uiDefaults(&d)
 	return d
 }

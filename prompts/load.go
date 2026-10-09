@@ -221,6 +221,15 @@ func fillDefaults(s Set) *Set {
 	if s.PulsarDaily.TopStoryElectorSystem == "" {
 		s.PulsarDaily.TopStoryElectorSystem = defaults.PulsarDaily.TopStoryElectorSystem
 	}
+	if s.UI.Base == "" {
+		s.UI.Base = defaults.UI.Base
+	}
+	if s.UI.LowBar == "" {
+		s.UI.LowBar = defaults.UI.LowBar
+	}
+	if s.UI.NormalBar == "" {
+		s.UI.NormalBar = defaults.UI.NormalBar
+	}
 	if s.Oracle.Section == "" {
 		s.Oracle.Section = defaults.Oracle.Section
 	}

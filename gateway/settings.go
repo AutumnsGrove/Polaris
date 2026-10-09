@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 
 	"polaris/agent"
 	"polaris/store"
@@ -48,6 +50,13 @@ const (
 	// that create something permanent (pulsar, daily, field) are withheld —
 	// see gateway/oracle.go's oracleGhostChips.
 	settingOracleGhostEnabled = "oracle_ghost_enabled"
+	// settingVisuals is the "Visuals" dial for Intelligent UI (docs/plans/
+	// intelligent-ui.md): how readily the assistant answers with a structured
+	// `ui` block instead of plain prose. One of visualsModes; unset or
+	// unrecognized means visualsDefault. Chat only — Pulsar, Pulsar Daily and
+	// Atlas never offer blocks, because only gateway/turn_context.go copies
+	// this onto tools.Context.Visuals.
+	settingVisuals = "visuals"
 	// settingDisabledTools stores a JSON-encoded []string of tool names the
 	// user has individually turned off from the settings panel — see
 	// DisabledToolsFromStore and tools.ToggleableTools. Empty/unset means
@@ -180,6 +189,34 @@ func OracleGhostEnabledFromStore(db *store.Store) bool {
 		return false
 	}
 	return val == "true"
+}
+
+// visualsModes are the Visuals dial's values, in display order. The PUT
+// validation set is built from this, and TestVisualsModes pins it, so adding a
+// mode can't be accepted by the API yet unknown to the prompt (or vice versa).
+var visualsModes = []string{"off", "low", "normal"}
+
+// visualsDefault is Low (decision 2): a block only when it clearly beats prose.
+const visualsDefault = "low"
+
+// VisualsFromStore reads the visuals setting. A nil db, a read error, an unset
+// value, or a value outside visualsModes (a hand-edited DB) all fall back to
+// visualsDefault rather than disabling the feature or sending the model a
+// mode the prompt has no wording for.
+func VisualsFromStore(db *store.Store) string {
+	if db == nil {
+		return visualsDefault
+	}
+	val, err := db.GetSetting(settingVisuals)
+	if err != nil {
+		return visualsDefault
+	}
+	for _, m := range visualsModes {
+		if val == m {
+			return val
+		}
+	}
+	return visualsDefault
 }
 
 // CustomInstructionsFromStore reads the custom_instructions setting —
@@ -333,6 +370,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"memory_enabled":       MemoryEnabledFromStore(s.db),
 		"oracle_enabled":       OracleEnabledFromStore(s.db),
 		"oracle_ghost_enabled": OracleGhostEnabledFromStore(s.db),
+		"visuals":              VisualsFromStore(s.db),
 		"custom_instructions":  all[settingCustomInstructions],
 		"person_name":          all[settingPersonName],
 		"person_pronouns":      all[settingPersonPronouns],
@@ -350,6 +388,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		MemoryEnabled      *bool     `json:"memory_enabled"`
 		OracleEnabled      *bool     `json:"oracle_enabled"`
 		OracleGhostEnabled *bool     `json:"oracle_ghost_enabled"`
+		Visuals            *string   `json:"visuals"`
 		CustomInstructions *string   `json:"custom_instructions"`
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
@@ -491,6 +530,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "oracle ghost enabled changed", map[string]interface{}{"oracle_ghost_enabled": *req.OracleGhostEnabled}, "")
+	}
+	if req.Visuals != nil {
+		if !slices.Contains(visualsModes, *req.Visuals) {
+			http.Error(w, "visuals must be one of: "+strings.Join(visualsModes, ", "), http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingVisuals, *req.Visuals); err != nil {
+			log.Warn("saving visuals setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving visuals setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.db.LogEvent("", "info", "settings", "visuals changed", map[string]interface{}{"visuals": *req.Visuals}, "")
 	}
 	if req.CustomInstructions != nil {
 		if len(*req.CustomInstructions) > maxCustomInstructionsChars {

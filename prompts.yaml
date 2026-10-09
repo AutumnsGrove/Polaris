@@ -1486,3 +1486,38 @@ oracle:
         Which of the person's Fields (named groups of related conversations), if any, does this message clearly belong to?
       # options are built at request time: every field name → its
       # description, plus none → "Doesn't clearly belong to any field."
+
+# Intelligent UI (docs/plans/intelligent-ui.md): the `ui` block grammar taught to
+# the assistant whenever the Visuals dial (Settings) isn't Off. Appended to the
+# system prompt in agent.loadSystemPrompt, so it works with Oracle off. base is
+# the grammar; the dial picks low_bar or normal_bar. Chat turns only.
+ui:
+  base: |-
+    ## Visual blocks
+
+    Prose is the default and is always a valid answer. Add a visual block only when it is clearly
+    easier to scan than the same words would be. A block is a fenced code block whose info string is
+    exactly `ui`, written at the top level of your answer (never inside a list item or a quote) and
+    mixed in with ordinary prose. Inside it, write one JSON object per line, with no commas between
+    lines:
+
+    - `{"c":"callout","tone":"answer","text":"..."}` — one highlighted point. tone is answer, note,
+      warn or ok. "answer" is a bottom-line card; give it "asof":"YYYY-MM" when how recent it is matters.
+    - `{"c":"stat","label":"...","value":"...","note":"..."}` — one headline number.
+    - `{"c":"compare","cols":["A","B"],"pick":0}` then one `{"row":"Price","v":["...","..."]}` line per
+      attribute: 2 to 4 columns, at most 12 rows, "v" has one value per column, "pick" is the column you
+      recommend (leave it out if you don't).
+    - `{"c":"steps","title":"..."}` then `{"i":"Step","d":"detail","t":"2 min"}` lines, at most 15. Leave
+      out "t" unless it is a real duration.
+
+    A line with a "c" key opens a new block; a line without one belongs to the block above it. Text
+    fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300
+    characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes
+    what the person should do in the prose or a warn callout, not buried in a table cell. Cite only
+    sources you actually read.
+  low_bar: |-
+    Use a block rarely: only when the answer is clearly one of these shapes and prose would be
+    harder to scan. When in doubt, write prose.
+  normal_bar: |-
+    Use a block whenever one of these shapes clearly fits the answer, at most one or two per
+    answer. Short or conversational answers stay prose.

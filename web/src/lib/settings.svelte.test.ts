@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SettingsState } from './settings.svelte';
+import { SettingsState, VISUALS_MODES } from './settings.svelte';
 
 function fakeFetch(data: unknown, ok = true) {
 	return vi.fn().mockResolvedValue({ ok, json: async () => data });
@@ -52,6 +52,32 @@ describe('SettingsState.load', () => {
 		const settings2 = new SettingsState();
 		await settings2.load();
 		expect(settings2.voiceInputMode).toBe('toggle');
+	});
+
+	it('applies visuals from the server, defaulting to low for a missing or unknown value', async () => {
+		for (const mode of VISUALS_MODES) {
+			vi.stubGlobal('fetch', fakeFetch({ visuals: mode }));
+			const s = new SettingsState();
+			await s.load();
+			expect(s.visuals).toBe(mode);
+		}
+		for (const bad of [undefined, '', 'loud']) {
+			vi.stubGlobal('fetch', fakeFetch({ visuals: bad }));
+			const s = new SettingsState();
+			await s.load();
+			expect(s.visuals).toBe('low');
+		}
+	});
+
+	it('persists a visuals pick to the server', async () => {
+		const fetchMock = fakeFetch({});
+		vi.stubGlobal('fetch', fetchMock);
+		const settings = new SettingsState();
+		await settings.setVisuals('off');
+		expect(settings.visuals).toBe('off');
+		const [url, init] = fetchMock.mock.calls.at(-1)!;
+		expect(url).toBe('/api/settings');
+		expect(JSON.parse(init.body)).toEqual({ visuals: 'off' });
 	});
 });
 

@@ -26,11 +26,13 @@
 		Mic,
 		MapPin,
 		Galaxy,
+		LayoutPanelTop,
 		Venus,
 		Mars,
 		Play,
 		Square
 	} from '@lucide/svelte';
+	import { VISUALS_MODES, type VisualsMode } from '$lib/settings.svelte';
 	import { constellationState } from '$lib/constellation.svelte';
 	import { FOCUS_MODES } from '$lib/focusModes';
 	import type { FocusMode } from '$lib/types';
@@ -98,6 +100,13 @@
 	// box already saves itself (on blur), so accepting a draft goes straight
 	// through setCustomInstructions rather than only filling the textarea.
 	let showInstructionsWizard = $state(false);
+
+	// One-line summary shown under the Visuals control for each setting.
+	const VISUALS_DESC: Record<VisualsMode, string> = {
+		off: 'Plain text answers only',
+		low: 'A block only when it clearly beats prose',
+		normal: 'Comparisons and steps when they fit'
+	};
 
 	// "About you" pronoun presets — same segmented-control-plus-custom
 	// pattern Constellation's own settings modal used before this moved
@@ -684,6 +693,28 @@
 							checked={appState.settings.oracleGhostEnabled}
 							onchange={(v) => appState.settings.setOracleGhostEnabled(v)}
 						/>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={LayoutPanelTop} title="Visuals" desc={VISUALS_DESC[appState.settings.visuals]}>
+					{#snippet control()}
+						<div class="theme-toggle" role="group" aria-label="Visuals">
+							{#each VISUALS_MODES as mode (mode)}
+								<button
+									class:active={appState.settings.visuals === mode}
+									aria-pressed={appState.settings.visuals === mode}
+									onclick={() => appState.settings.setVisuals(mode)}
+								>
+									{mode === 'off' ? 'Off' : mode === 'low' ? 'Low' : 'Normal'}
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+					{#snippet details()}
+						Lets Polaris answer with a comparison, a step-by-step rail, a callout, or a big number when
+						that is clearly easier to scan than prose. Low is the quiet default: a block only when it
+						clearly beats text. Normal reaches for one more readily. Off keeps every answer plain. Chat
+						only; Pulsar, Daily and Atlas stay as they are. Blocks already in a conversation keep showing
+						whatever this is set to.
 					{/snippet}
 				</SettingsRow>
 				<SettingsRow icon={Galaxy} title="Constellation" desc="Weaver builds your library of stars">

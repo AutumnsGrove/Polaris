@@ -395,6 +395,16 @@ type Context struct {
 	// or fired no checks this turn.
 	OracleSection string
 
+	// Visuals is the Intelligent UI dial ("off" | "low" | "normal", see
+	// gateway.VisualsFromStore) for this turn. agent.loadSystemPrompt appends
+	// the `ui` block grammar for "low"/"normal"; the zero value "" means
+	// "this entry point never offers blocks" and, like "off", adds nothing.
+	// Only the interactive chat turn (gateway/turn_context.go) sets it, which
+	// is what keeps blocks chat-only: Pulsar, Pulsar Daily, Atlas, the CLI and
+	// the benchmark harness build their own Contexts and leave it empty, so
+	// none of them is ever told to write a fence their surface can't render.
+	Visuals string
+
 	// Wizard, when non-nil, marks this turn as the ephemeral "help me
 	// write this" interview (see gateway/wizard.go) rather than a normal
 	// chat/pulse turn, and says what the interview is writing (see

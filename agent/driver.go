@@ -254,6 +254,14 @@ func loadSystemPrompt(ctx *tools.Context, voiceMode bool, focusMode string, deep
 		// no reason to make that combination an error either).
 		prompt += "\n\n" + p.Agent.NoResearchInstruction
 	}
+	// Appended rather than a {placeholder} in prompt.md: prompt.md is
+	// operator-editable and bind-mounted over the image's copy, so a
+	// placeholder would silently vanish from any install whose prompt.md
+	// predates it. "" for Off and for every entry point that never sets
+	// ctx.Visuals (see tools.Context.Visuals), so those get nothing.
+	if fragment := p.UIFragment(ctx.Visuals); fragment != "" {
+		prompt += "\n\n" + fragment
+	}
 	if ctx.OracleSection != "" {
 		prompt += "\n\n" + ctx.OracleSection
 	}

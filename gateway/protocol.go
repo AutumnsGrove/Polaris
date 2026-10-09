@@ -182,6 +182,12 @@ type ClientMessage struct {
 	// WebSocket client never sets this — a real chat turn always wants the
 	// non-blocking async path so the answer never stalls behind it.
 	WaitVerification bool `json:"-"`
+	// Interactive marks a turn that came from the live WebSocket chat UI —
+	// the one surface that renders Intelligent UI `ui` blocks. Set only by
+	// ws.go (json:"-", so a client can't claim it); /api/ask (whose answers
+	// land in a terminal or another program as plain text) and Pulsar's
+	// scheduler leave it false and so are never taught to write blocks.
+	Interactive bool `json:"-"`
 }
 
 // ServerEvent is one streamed update. Type drives how the frontend

@@ -214,6 +214,17 @@ type Set struct {
 		// request time from the store's field list instead.
 		Chips map[string]OracleChip `yaml:"chips"`
 	} `yaml:"oracle"`
+
+	// UI is Intelligent UI's base prompt fragment (docs/plans/intelligent-
+	// ui.md): the `ui` fence grammar the assistant is taught whenever the
+	// Visuals dial isn't Off. Base is the grammar; LowBar/NormalBar are the one
+	// sentence that sets how readily to reach for a block, picked by the dial.
+	// This is the floor that has to work with Oracle off or timed out.
+	UI struct {
+		Base      string `yaml:"base"`
+		LowBar    string `yaml:"low_bar"`
+		NormalBar string `yaml:"normal_bar"`
+	} `yaml:"ui"`
 }
 
 // OracleCheck is one entry under oracle.checks — see docs/plans/

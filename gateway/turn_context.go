@@ -116,6 +116,12 @@ func (t *turnRun) buildAgentContext() {
 		ThreadID: t.threadID,
 		FieldID:  t.fieldID,
 	}
+	// The one place Visuals is set, and only for a live chat turn: /api/ask
+	// and Pulsar's scheduler also reach handleTurn but their output isn't
+	// rendered by the chat UI (see ClientMessage.Interactive).
+	if t.msg.Interactive {
+		t.agentCtx.Visuals = VisualsFromStore(t.s.db)
+	}
 	t.wirePersonalization()
 	t.wireVision()
 	t.wireCodeExec()
