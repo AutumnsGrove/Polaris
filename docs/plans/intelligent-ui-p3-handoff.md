@@ -1,6 +1,10 @@
 # Prism (Intelligent UI): handoff for P3
 
-Written 2026-10-09 to start a fresh session. P0, P1 and P2 are built; **P3 (the remaining blocks) is next.**
+Written 2026-10-09 to start a fresh session. P0, P1 and P2 are built. **P3 group (a) is built too (same day:
+`timeline`, `checklist`, `procon`, `choose`, `facts`; commits `b8f9064`..`f056e13`, spike and live phone-width
+run in the plan's "Spike results: group (a)"). Groups (b) `flow`/`tabs`/`disclose` and (c) `claim`/`quote` +
+verification wiring are next.** The checklist below is still how to add a block; the group (a) commits are
+the freshest template (`flow` will need more than that: see "Group (b)" at the end).
 
 ## Read first, in this order
 1. `CLAUDE.md` (repo root): Go + SvelteKit, live-verify before calling anything done, Edit/Write not sed/python.
@@ -10,7 +14,7 @@ Written 2026-10-09 to start a fresh session. P0, P1 and P2 are built; **P3 (the 
 4. Memory `project_intelligent_ui_prism.md` (state, open items).
 
 ## State
-- 13 local commits on `main` from `43561ca`, **not pushed**. The operator wants a big code review first, so
+- 18 local commits on `main` from `43561ca`, **not pushed**. The operator wants a big code review first, so
   do not push or open a PR. Commit at each stage.
 - Issue #159. The user-facing name is **Prism** (setting key / Go identifiers stay `visuals`).
 - Built: `ui` fence parser + callout/stat/compare/steps, Prism dial (Off/Low/Normal), streaming mermaid,
@@ -51,6 +55,15 @@ verification is exact-match first, Jev on a miss (plan decision 18).
 - **Svelte scoped CSS adds no specificity** for element selectors (`table:where(.svelte-x)`), so
   `.prose :global(table)` beats a bare `table`. Prefix with two real classes (see `UiCompare.svelte`).
 - Compare picks cards vs table by a CSS media query, not JS.
+- **Don't use `ul`/`ol`/`li` in a block component**: ChatTurnView's `.prose ul, .prose ol { padding-left }`
+  indents them and a component's element selector can't beat it (found live in group (a), screenshot at
+  390px). Use `div`s with `role="list"`/`"listitem"`. (`UiSteps` still uses `ol`; it looks right today only
+  because its own `li` padding was tuned around that indent. Worth a look when touching it.)
+- The container line of `timeline` (and later `flow`, `tabs`) has no required field, so `openContainer`
+  must open it unconditionally; an empty block simply renders nothing until its first child arrives.
+- `dev/ui_spike` now scores every block label in the corpus (not only compare/steps): add a positive with
+  `"expect":"<block>"` and a negative with `"none"`, nothing in `main.go` to change. `choose` never won
+  against `compare` in group (a): expect the same ambiguity with `tabs` vs `compare`.
 - Oracle's `emotional` check holds back the nudge but not the base grammar; the operator hasn't decided.
 - `search_chats` indexing still sees raw block JSON (needs an FTS migration; deferred, undecided).
 
@@ -62,6 +75,15 @@ verification is exact-match first, Jev on a miss (plan decision 18).
   it), and sample the DOM with Playwright (`web/node_modules/.pnpm/playwright-core@*/`).
 - Real-model behaviour is the only test of prompt quality. Use the UI so Oracle runs; `/api/ask` works too.
 - Delete only the test threads you create. Never copy the real `config.yaml` into a test instance.
+
+## Group (b) notes (read before starting `flow`)
+- `flow` is the one block whose child lines can arrive out of order (an edge can name a node that has not
+  arrived yet): the parser keeps nodes and edges as flat lists and the *component* lays them out (BFS from
+  the first node, waiting nodes dotted, back-edges as a "back to X" note, cycles never recursed).
+- Its expand state must be keyed by node id (`n`), not render position: a node moves between the chain and
+  the "waiting" area as its edge lands, so an index key would transfer the expanded state to the wrong node.
+- `tabs` and `disclose` are simple; `disclose` is a native `<details>`, `tabs` keeps the selected tab local.
+- Re-run `dev/ui_spike` after the group (b) options land; `flow` vs `steps` is the pair to watch.
 
 ## Don't
 - Push, or `git checkout` a file with uncommitted work (an uncommitted edit was lost that way once).
