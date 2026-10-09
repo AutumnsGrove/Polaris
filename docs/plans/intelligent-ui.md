@@ -1,43 +1,60 @@
 # Intelligent UI: streamed, declarative `ui` blocks inside the answer
 
-**Added: 2026-10-08.**
+**Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
-**Status: draft, mid-design — nothing built.** Prompted by OpenAI's "GPT-6 and Intelligent UI
-for everyone" launch (2026-10-07). Open questions are listed at the bottom; resolve them before
-treating any section as final. No code lands from this doc until the plan is refined and an issue
-exists.
+**Status: design settled, nothing built.** Prompted by OpenAI's "GPT-6 and Intelligent UI for
+everyone" launch (2026-10-07). Mockups: `mockups/intelligent-ui.html` (every block rendered at phone
+width next to the fence lines that produce it, replayable streaming demos for the line compiler and
+for mermaid). Operator review of those mockups is recorded in "Decisions". No code lands until an
+issue exists; "Phases" below is the slicing for it.
 
-**Update 2026-10-09:** mockups done (`mockups/intelligent-ui.html` — every block rendered at phone
-width next to the fence lines that produce it, plus a replayable streaming demo). Two new sections
-below came out of that round: "Block catalog" (the concrete vocabulary) and "Oracle integration"
-(how Oracle decides *whether* and *which block*, rather than relying on the prompt alone).
+## The idea
 
-## The idea, in one paragraph
+Polaris answers are Markdown prose plus a few tool-driven rich surfaces (`show`, `highlight`, cards,
+weather's chart). The model has no way to say "this answer is really a comparison / a procedure / a
+decision chain" and have the client lay it out as one. Add a fenced ```` ```ui ```` block the model
+writes **inside its answer text**, interleaved with prose, in a line-oriented format the frontend
+renders **as it streams**. Same trick `mermaid` already uses, generalized from one diagram language
+to a small component vocabulary. No new tool, no new protocol, no new storage.
 
-Polaris answers are Markdown prose plus a few tool-driven rich surfaces (`show`, `highlight`,
-cards, weather's chart). The model has no way to say "this answer is really a comparison / a
-stepper / a timeline" and have the client lay it out as one. Add a fenced ```` ```ui ```` block the
-model writes **inside its answer text**, interleaved with prose, in a line-oriented format the
-frontend renders as it streams. Same trick `mermaid` already uses (`web/src/lib/markdown.ts`),
-generalized from "one diagram language" to "a small component vocabulary." No new tool, no new
-protocol, no new storage.
+The headline property is progressive rendering: each completed line becomes a component the moment
+its newline arrives, so a comparison fills row by row and a flow chart grows node by node. That is
+what makes it feel native rather than bolted on, and it is why the format is line-oriented (below).
 
-## What the reference product does (and what we take from it)
+What we take from the reference product: a component library, progressive compile, "plain text is a
+valid answer", and a user dial. **Not taken:** "build me a tool" (calculators, games, bill
+splitters). Out of scope, and consistent with `docs/plans/artifacts.md`'s rejection of runnable app
+artifacts.
 
-OpenAI describes: a library of native, streamable components; a compiler that processes the
-interface *as the model generates it* so it appears progressively; and a model trained to decide
-when a visual helps and when plain text is enough. They also let users dial visuals down. They
-ship interactive diagrams, side-by-side comparisons, checklists, maps, charts, and a separate
-"build me a tool" feature.
+## Decisions
 
-Taken: the component library + progressive compile + "plain text is a valid answer" + a user dial.
-**Explicitly not taken: "build me a tool"** (calculators, bill splitters, games). Out of scope, per
-the operator, and independently consistent with `docs/plans/artifacts.md`'s rejection of runnable
-app artifacts.
+2026-10-08 (operator Q&A):
 
-Also separable and cheap: their "interleaved thinking and answering" (first answer, keep working,
-refine). Polaris already has a `commentary` timeline event (`web/src/lib/turnEvents.ts`) that
-positions early prose among tool calls — a prompt-level nudge, independent of the UI work.
+1. **Interactivity: static + local toggles only.** Tabs, checklist ticks, flow node expand, disclose.
+   No computed/rescaling values, no expression language: that keeps it clear of "build a tool".
+2. **Visuals dial defaults to Low:** a block only when it clearly beats prose.
+3. **Surfaces: chat only.** Pulsar, Pulsar Daily and Atlas have separate layouts and LLM paths; each
+   would be its own follow-up.
+4. **Images: tool-sourced only**, referenced by index like `show` does; never a model-supplied URL.
+
+2026-10-09 (review of the mockups):
+
+5. **Chips: cut.** The automatic follow-up suggestions under every reply already cover it.
+6. **Charts: cut.** `code_exec` exists to make charts and they come out far better than a hand-built
+   renderer; an earlier custom visualization tool became a waste once it landed. Numbers-as-a-picture
+   stays a code-execution job. No `chart` block, no Oracle option for it.
+7. **Timeline: the vertical rail**, date above the text. The ledger overlapped it and is dropped. (The
+   rail is also the one that copes with long dates such as "14 Mar – 2 Apr 2005"; the first mockup note
+   had this backwards.)
+8. **Callout: option B** (icon chip on a card). Option A read like a generic markdown renderer.
+9. **`flow`: in.** More interactive than mermaid, and it sits naturally in prose.
+10. **Streaming render is the headline feature**, and it extends to mermaid (below): keep the last
+    good render visible while newer ones are computed, so a bad prefix never blanks the diagram.
+11. **Oracle gets one new check, `ui`, with every shape block as an option.** Not one check per block,
+    and not blocks riding other checks (see "Oracle").
+
+Still open (not decided): compare as cards vs table on phones (leaning cards under ~600px, table
+above), steps as rail vs duration chips (leaning rail).
 
 ## Why fenced blocks, not tools
 
@@ -45,305 +62,320 @@ Verified against the code:
 
 - `llm/client.go` buffers a tool call's `arguments` completely before dispatch. A "UI tool" can
   therefore never fill in progressively without first building argument streaming end to end.
-- Answer text already streams token-by-token (`turn.content += e.content`), is saved as the
-  message, and survives reload/history for free. A fence inherits all of that.
-- The renderer already has the pattern: `markdown.ts` emits a `data-mermaid` marker for a
-  `mermaid` fence and `mermaid.ts` does a DOM pass. `ui` is the same shape with a richer renderer.
+- Answer text already streams token by token (`turn.content += e.content`), is saved as the message,
+  and survives reload and history for free. A fence inherits all of that.
+- The renderer already has the pattern: `markdown.ts` emits a `data-mermaid` marker for a `mermaid`
+  fence and `mermaid.ts` does a DOM pass. `ui` is the same idea with a richer renderer.
 - Works with every model on OpenRouter; no tool-calling capability required.
 
-Tools stay what they are: data-fetching and artifact-producing (`show`, `highlight`,
-`nearby_search`, weather, `code_exec`). A `ui` block *presents*; it does not fetch.
+Tools stay what they are: data-fetching and artifact-producing. A `ui` block *presents*; it never
+fetches.
 
-## Format: line-oriented, so every prefix is valid
+## Grammar
 
-One complete component per line (JSONL, or a tiny indented DSL — decide in refinement). Half-
-streamed JSON is hard to render; a stream of whole lines is trivial: each completed line becomes a
-component, and the trailing partial line is held back until its newline arrives. That is the whole
-"compiler." Unknown component or invalid line → that line (or the whole block) degrades to a plain
-code block. Never throws, never blanks the answer.
+A fence whose info string is exactly `ui`, starting at column 0 (an indented fence inside a list item
+stays an ordinary code block; the model is told to put `ui` fences at top level). Inside it, **one
+JSON object per line**; blank lines ignored.
 
-Sketch only (not a final grammar):
+- A line with a `"c"` key is a **container line**: it opens a block and closes the previous one.
+  Flat blocks (`callout`, `stat`, `quote`) are a container line with no children.
+- A line with no `"c"` key is a **child line** of the current container, interpreted by that
+  container's schema. A child line that fits no schema, or arrives before any container, becomes a
+  muted raw row; it never closes the container and never affects its neighbours.
+- A line that isn't valid JSON, or whose `"c"` is unknown, becomes a muted raw row (the mockup's
+  "unrenderable line" / "unknown component" rows). Never throws, never blanks the answer.
+- The compiler: split the fence body on `\n`; every line before the last `\n` is complete and
+  parseable; the trailing partial line is held back (shown as a shimmer at most) until its newline.
+  Re-parsing the whole body on every content update is fine (blocks are small; the cost is bounded by
+  the caps below), as long as rendering is keyed so existing components update in place.
+- **Cancelled or errored turn:** complete lines stay rendered, the partial line is dropped. (Proposed
+  default; the mockup assumes it.)
+- **Caps** (tentative, enforced by the parser, beyond them a line degrades to a raw row): 8 `ui`
+  fences per answer, 40 lines per fence, 400 characters per text field.
+- **Text fields** (`text`, `d`, `i`, `v`, ...) accept the same inline Markdown subset as prose:
+  `**bold**`, `` `code` ``, and `[Title](URL)` links. Never HTML; DOMPurify still runs.
 
-```ui
-{"c":"callout","tone":"note","text":"Ripe in Sept–Oct","cite":[2]}
-{"c":"compare","cols":["A","B"],"rows":[["Price","$9","$12","cite:3"]]}
-{"c":"steps","items":["Rest the lamb","Crisp the potatoes"]}
-```
+### Citations
 
-## Component vocabulary (starter, grow only when earned)
+Polaris citations are not numbered refs: the model writes inline `[Title](URL)` and
+`renderInlineCitations` (`web/src/lib/citations.ts`) turns a link whose URL is one of the turn's
+tracked citations into a named source chip. Blocks reuse exactly that:
 
-callout · stat · comparison · tabs · stepper/checklist · timeline · flow · claim · quote ·
-disclose · choose · facts · map (reusing the interactive-maps work). See "Block catalog" for the
-current list; **charts and action chips were cut on 2026-10-09** (Decisions).
+- A link inside any text field renders as the same chip (same lookup, same unknown-URL fallback to an
+  ordinary link).
+- Any container or child line may also carry `"src":["https://..."]` for a source with no natural
+  place in the text; it renders as chips on that row or block. Unknown URL: plain domain link.
+- **The mockup's numbered pills are stand-ins** for those chips. Do not build `"cite":[n]`.
 
-Any component may carry citation refs that bind to the existing numbered sources
-(`web/src/lib/citations.ts`). This is the differentiator against a chatbot: components are
-*sourced*, not decorative — consistent with PRODUCT.md's "sourcing is the product."
+## Block catalog
 
-## Block catalog (proposed, from the mockups)
+Container line fields, child line fields, phone layout, limits. "Oracle" says whether the block is an
+option of the `ui` check (primary shapes only; accents are the model's own call under the base prompt).
 
-Concrete form of the "starter vocabulary" above. Syntax is JSONL, one line per completed piece. A
-**container line** (`"c":...`) opens a block; the **child lines** that follow (`"row"`, `"i"`,
-`"when"`, `"tab"`, `"n"`/`"e"`, `"+"`/`"-"`) append to it until the next container line or the
-closing fence. That is what lets a table fill row by row as it streams. Flat blocks (`callout`,
-`stat`, `quote`) are a single line. Free-text fields accept `**bold**` and `` `code` `` only. Any
-block may carry `"cite":[n]`, bound to the existing numbered sources.
-
-| Block | Shape | Phone layout (mockup pick) | Oracle option? | Phase |
+| Block | Container line | Child lines | Layout (mockup) | Oracle |
 |---|---|---|---|---|
-| `callout` | 1 line | **B** icon chip on a card (decided); tones `note`/`warn`/`ok` and `answer` (bottom line up front, always with an `asof` date) | no — model's own accent | 1 |
-| `stat` | 1 line | one big number. The 3-up strip is superseded by `facts` | no | 1 |
-| `compare` | container + `row` lines | **B** stacked option cards, pick ribbon; table (A) when ≥4 attributes and ≤3 options | yes | 1 |
-| `steps` | container + `i` lines (`d` detail, `t` duration) | **A** numbered rail; `t` upgrades to **B** chips only when durations exist | yes | 1 |
-| `checklist` | container + `i` lines | ticks are local state, progress bar | yes | 2 |
-| `timeline` | container + `when`/`i` lines | vertical rail, date above the text (decided; the ledger is dropped, and the rail is the one that copes with long dates like "14 Mar – 2 Apr 2005") | yes | 2 |
-| `tabs` | container + `tab` lines | segmented bar, local selection | yes | 2 |
-| `procon` | container + `+`/`-` lines | two columns, +/– symbols so it isn't colour-only | yes | 2 |
-| `flow` | container + `n` (node) / `e` (edge) lines | vertical-first cards, tap to expand, decision branches side by side | yes | 3 |
-| `claim` | container + `+`/`-` lines (`verdict`: true/mixed/misleading/false/unverified) | verdict pill, quoted claim, Supports / Disputes sections with sources | no — rides `claim_check` | 2 |
-| `quote` | 1 line | serif pull-quote; "found in source" badge supplied by verification, never by the model | no | 2 |
-| `disclose` | container + `p` lines | native `<details>` rows, title + read-time hint | no — rides `depth`=thorough | 2 |
-| `choose` | container + `if`/`then` lines | "If …" rows with a → pick pill: decision rules instead of a facts table | no — rides `task`=decide | 2 |
-| `facts` | container + `k`/`v` lines | titled at-a-glance card, label/value rows with sources | no — rides `intent` | 2 |
-| `map` | — | reuse interactive-maps; not mocked | later | 3 |
+| `callout` | `tone` note/warn/ok/answer, `text`, `asof` (`YYYY-MM`, answer only), `src` | none | **B** icon chip on a card; `answer` is a bottom-line card that always shows its as-of date | accent |
+| `stat` | `label`, `value`, `note`, `src` | none | one big number (the 3-up strip is superseded by `facts`) | accent |
+| `compare` | `cols` (2–4), `pick` (index, optional) | `{"row","v":[...per col],"src"}` ≤ 12 | cards on phones with a Pick ribbon; table (sticky first column, side scroll) wider. Wrong-length `v` is padded/truncated; out-of-range `pick` ignored | option |
+| `choose` | `title` | `{"if","then","src"}` | "If …" rows with a → pick pill; the follow-up to `compare` when the honest answer is "it depends" | option |
+| `steps` | `title` | `{"i","d","t"}` ≤ 15 (`d` detail, `t` duration) | numbered rail; duration chips only when `t` is present | option |
+| `checklist` | `title` | `{"i"}` ≤ 20 | ticks are local state, progress bar | option |
+| `timeline` | none | `{"when","i","src"}` ≤ 15 | vertical rail, date above text | option |
+| `flow` | none | `{"n":id,"t","d","kind":"decision","src"}` and `{"e":[from,to],"l"}` ≤ 10 nodes | vertical-first cards, tap to expand, branches side by side; see below | option |
+| `procon` | `pro_h`, `con_h` | `{"+"}` / `{"-"}` | two columns with +/– symbols (never colour alone) | option |
+| `tabs` | none | `{"tab","text"}` ≤ 6 | segmented bar, local selection | option |
+| `claim` | `text`, `verdict` true/mixed/misleading/false/unverified | `{"+","src"}` / `{"-","src"}` | verdict pill, serif quoted claim, Supports / Disputes sections | option |
+| `facts` | `title`, `sub` | `{"k","v","src"}` ≤ 12 | titled at-a-glance card; replaces the stat strip | option |
+| `disclose` | `title`, `hint` | `{"p"}` | native `<details>` row, no JS | accent |
+| `quote` | `text`, `by`, `src` | none | serif pull-quote | accent |
 
-Layout is the client's decision, never the model's: the model supplies data and (for `compare`) a
-`pick`; the renderer chooses cards vs table by viewport and shape. This keeps the model's job small
-and lets phone layouts improve without changing any prompt.
+`map` stays a later idea (reuse the interactive-maps work); not mocked.
 
-**Cut: `chips`.** Polaris already shows LLM-generated follow-up suggestions under every reply, so
-chips inside the answer would duplicate them. **Cut: `chart`.** `code_exec` produces better charts
-than any renderer we'd hand-build and tune (an earlier custom visualization tool became a waste of
-time once it landed), so numbers-as-a-picture stays a code-execution job. Keep the vocabulary to
-blocks that present *structure*.
+**Layout is the client's decision, never the model's.** The model supplies data and (for `compare`) a
+`pick`; the renderer chooses cards vs table by viewport. That keeps the model's job small and lets
+phone layouts improve without touching a prompt.
 
-**New blocks and Oracle.** `claim`, `choose`, `facts` and `disclose` deliberately add **no new Jev
-question**: each rides an existing check (`claim_check`, `task`, `intent`, `depth`), whose nudge
-simply gains the block's syntax line. Only the "this answer is really a ___" shapes need the new
-`ui` check. `quote` is the model's own accent. **Trust marks are never model-written:** the "found in
-source" badge on `quote` and the verdict's evidence come from the verification Polaris already runs,
-so a block can't claim a check it didn't get.
+### `flow` (the "Mermaid Plus" block)
 
-### Streaming is the point
+Mermaid stays (sequence, ER, gantt, anything graph-shaped it already does). The gap is the commonest
+case, a process or decision chain, where mermaid's output is a desktop-shaped graph shrunk to ~5px
+text on a phone, nodes can't hold a sentence of detail, and a source can't attach to a node. `flow`
+fixes that. Concrete rules from the mockup's renderer:
 
-The mockup's replayable demo (`mockups/intelligent-ui.html`, section 5) is the most important
-result: components build up as the model writes them, one completed line at a time, with the partial
-line held back. That is the whole compiler. In the flow scenario nodes appear as their lines arrive
-and edges attach once both ends exist; a node whose edge hasn't arrived yet is shown as a dotted
-"waiting for its edge" card rather than hidden.
+- Layout is BFS from the first node: each layer of one node is a card, a layer of several is a side-by-
+  side branch row, edge labels sit above the branch they lead to.
+- Nodes render the moment their line arrives. A node with no incoming edge yet is shown dotted as
+  "waiting for its edge" below the chain, then slots in when its edge arrives.
+- A **back-edge** (an edge to an already-placed node, like "Not yet → back to the check") is not drawn
+  as a line; the source node shows a small "↩ back to <title>" note. Cycles are legal, never recursed.
+- Scope guard: ≤ ~8 nodes in practice (hard cap 10); bigger or any other graph type stays mermaid.
 
-### "Mermaid Plus": `flow`, not a mermaid replacement
+## Architecture (frontend)
 
-Mermaid stays — sequence, ER, gantt and anything graph-shaped it already does. The real gap is the
-commonest case, a **process or decision chain**, where mermaid's output is a desktop-shaped graph
-shrunk until its text is ~5px on a phone, nodes can't hold a sentence of detail, and a source can't
-attach to a node. `flow` fixes exactly that: vertical-first, each node a tappable card that expands
-to detail and can carry a citation, branches rendered side by side. Scope guard: ≤ ~8 nodes; anything
-bigger or any other graph type stays mermaid. Not an attempt to re-implement mermaid's layout engine.
+Today the answer is one string: `marked` → DOMPurify → `renderInlineCitations`, injected as a single
+`{@html renderedHtml}` into `div.prose` (`ChatTurnView.svelte`), re-set on every token, with mermaid
+as a post-render DOM pass gated on `!turn.streaming`. Svelte components can't live inside `{@html}`
+(`mermaid.ts` says so itself), and re-setting the prose HTML each token would wipe a block's local
+state (ticked boxes, expanded nodes). So:
 
-### Streaming mermaid too (spiked 2026-10-09)
+**Split the answer into segments; render each kind with the right tool.**
 
-Today a diagram renders only once the turn ends: `ChatTurnView.svelte` gates `renderMermaidIn` on
-`!turn.streaming`. Its own comment says why: an *unclosed* fence is briefly a half-diagram, and parsing
-that would flash a failure note. That is a reason to avoid rendering an unclosed fence, not to wait
-for the whole turn, and it doesn't need anything from mermaid itself.
+1. `web/src/lib/uiBlocks/split.ts`: `splitContent(content, streaming) → Segment[]` where a segment is
+   `{kind:'md', text}`, `{kind:'ui', src, closed}` or `{kind:'mermaid', src, closed}`. Pure, no DOM.
+   Recognizes column-0 fences only; `closed` is true once a closing fence line exists. Also gives the
+   mermaid work the closed-vs-open signal the DOM can't (marked emits both as a code block).
+2. `web/src/lib/uiBlocks/parse.ts`: `parseUi(src) → UiBlock[]`, a pure function returning a
+   discriminated union (types in `types.ts`). All grammar and caps live here, none in components.
+3. `web/src/lib/components/ui/`: one small Svelte component per block, plus `UiBlocks.svelte` which
+   `{#each}`es the parsed blocks **keyed by index** so streaming updates in place, and `UiText.svelte`
+   (inline markdown subset → DOMPurify → chips via the existing citation lookup).
+4. `ChatTurnView.svelte`: replace the single `{@html}` with `{#each segments}`: `md` → today's pipeline
+   unchanged (sanitize, citations), `ui` → `<UiBlocks>`, `mermaid` → `<MermaidBlock>`. Side benefit:
+   finished segments stop re-parsing every token; only the last one changes.
+5. **Gotcha: verification marks.** `renderInlineCitations` matches a "found in source" mark by
+   *(url, nth occurrence in document order)* across the whole answer. Per-segment rendering must
+   thread a running per-URL counter through the `md` segments (and decide whether `ui` chips count).
+   v1: ui chips never show per-claim verification ticks; `md` segments still must count correctly.
+6. **Consumers of message text** must not show raw JSON lines. Add a flattener, TS
+   (`uiBlocks/flatten.ts`) and Go (`gateway/uiblocks`), turning each block into readable text
+   (compare → "Moka pot: …" lines, steps → numbered lines, ...). Use it for: copy buttons
+   (`ChatTurnView` copies `turn.content` at two sites), read-aloud (`/api/speak`), `search_chats`
+   indexing (`store/message_search.go`), Weaver, and thread titles. One shared fixture file
+   (`testdata/ui_flatten.json`) is read by both the TS and Go tests so the two can't drift. Whether
+   *history sent back to the model* should flatten older turns' blocks to save tokens is open.
 
-Spike (real mermaid 11.12 in headless Chromium, `mermaid.parse` + `mermaid.render` at each
-complete-line prefix): flowchart 9/9 prefixes valid, sequence 8/8, gantt 8/8, ER 5/8 (invalid only
-inside an open `{ … }` attribute block). Render time median ~29 ms, max ~52 ms for the flowchart on a
-desktop-class machine; **phone speed is unmeasured.** So the approach that needs no library change:
+### Streaming mermaid (spiked 2026-10-09)
 
-1. While streaming, on each *new complete line* of a mermaid fence, `mermaid.parse` the prefix.
-2. If it parses, render it (latest-wins, one render in flight) and swap it in with a short fade.
-3. If it doesn't, keep the last good render and wait for the next line.
-4. On the closing fence, do the final render exactly as today (including `autoQuoteLabels` /
-   `ensureStyleContrast`, which must also run on every prefix).
+Today a diagram renders only once the turn ends. The gate's own comment gives the real reason: an
+*unclosed* fence is briefly a half-diagram, and parsing it flashes a failure note. That is a reason
+not to render an **open** fence, not to wait for the whole turn.
 
-Two caveats the demo makes visible: nodes **move** as dagre re-lays the graph out (a fade softens it,
-nothing more), and a plain mermaid graph is tall on a phone, which is a further reason `flow` exists.
-Worth building independently of the `ui` work; it's a change to `markdown.ts` / `mermaid.ts` /
-`ChatTurnView.svelte`. Needs a way to tell a closed fence from an open one while streaming (the
-rendered DOM can't: marked emits both as a code block).
+Spike (real mermaid 11.12 in headless Chromium, `parse` + `render` at each complete-line prefix):
+flowchart 9/9 prefixes valid, sequence 8/8, gantt 8/8, ER 5/8 (invalid only inside an open `{ … }`
+attribute block). Render median ~29 ms, max ~52 ms (flowchart, desktop-class). **Phone speed is
+unmeasured**; measure on the potato's client device before shipping.
 
-## Interaction model (no code execution, no `eval`)
+Design (the demo in section 6 of the mockups runs exactly this):
 
-- **Local, declarative state only:** tab selection, checklist ticks, hotspot selection. Never
-  persisted server-side, never model-driven.
-- ~~Action chips~~ — cut 2026-10-09; the follow-up suggestions under every reply already do this.
-- Computed/rescaling widgets (slider drives a derived value) are **out of scope** — see
-  Decisions; they're the nearest neighbour to the excluded "build a tool" feature.
+1. A `mermaid` segment from `splitContent`, rendered by a new `MermaidBlock.svelte` that owns a
+   stable DOM node (so a render isn't wiped by the next token). `mermaid.ts`'s per-diagram mount
+   (toolbar, source toggle, lightbox, error note) is extracted from `renderMermaidIn` so the component
+   can call it; the standalone DOM pass stays for any non-streamed path.
+2. While streaming, on each **new complete line**: `mermaid.parse(prefix)`. Valid → render, latest-wins
+   with at most one render in flight, swap in with a short fade (none under reduced motion).
+   Invalid → **keep the last good render**, wait for the next line. A bad prefix never blanks the diagram.
+3. `autoQuoteLabels` and `ensureStyleContrast` (existing repairs) run on every prefix, not just the final.
+4. Throttle by cost: wait at least ~3× the last render's duration between renders, so a slow phone
+   renders fewer intermediate frames instead of falling behind.
+5. On the closing fence: final render exactly as today.
 
-## Safety and failure
+Known cost: nodes move as dagre re-lays the graph out; the fade softens it, nothing more. A plain
+mermaid graph is also tall on a phone, which is a further reason `flow` exists.
 
-- DOMPurify still runs over everything (`ChatTurnView.svelte`); component props are plain data,
-  rendered by Svelte components — model output never becomes markup or script.
-- Images come only from this turn's tool results, referenced by index (see Decisions), so the
-  blocklist check `show` already does applies and the model never supplies a URL.
-- Plain text must remain a first-class answer; the prompt says so explicitly.
+## Oracle
 
-## Oracle integration (proposed 2026-10-09)
+**One new check, `ui`, in the same single Jev call, with every primary shape as an option.** Jev
+answers a whole question map in parallel against the same state, so adding a question costs
+tokens, not latency.
 
-A prompt-only approach leaves "when is a block worth it" entirely to the main model, which is the
-exact weakness the Risks section names (over-eager *or* never-used UI). Oracle already solves the
-same shape of problem for answer format, sources and tool choice, in the same single Jev call. So:
-**add one more question, `ui`, to `oracle.checks`.** It answers "would a structured block beat prose
-here, and which one?" and, when it fires, injects a short nudge into `## Oracle` naming the block
-and giving that block's exact syntax as a one-line example.
-
-### Two layers, so Oracle failing never breaks the feature
-
-1. **Base prompt fragment** (`prompts.yaml`, present whenever the visuals dial isn't Off): the
-   compact grammar for every block, plus "plain text is a valid answer; use a block only when it
-   clearly beats prose." This is the floor. It's what runs when Oracle is off, when Jev times out
-   (the 2.5s `oracleTimeout` — 14% hard-failure rate in the original spike), or when `ui` doesn't
-   fire.
-2. **Oracle nudge** (only when `ui` fires): "This looks like a comparison. A `compare` block fits —
-   write one `ui` fence, then say which to pick and why." plus the exemplar line(s). This is the
-   "extra nudge" — just-in-time few-shot for the specific block, instead of hoping the model
-   remembers the grammar from the top of a long system prompt (the same recency argument that put
-   `## Oracle` into `modeReinforcement`).
-
-Open measurement: once the nudge carries the exemplar, the base fragment could shrink to names +
-one-liners and save tokens on the ~90% of turns where `ui` won't fire. Don't do that until the
-fallback rate with Oracle off has been measured — a smaller floor means a worse Oracle-off case.
-
-### The check
+This reverses a version of this section from earlier today that had `claim`/`choose`/`facts`/`disclose`
+"ride" `claim_check`, `task`, `intent` and `depth` so they'd add no question. Rejected on reflection:
+it spreads dial gating over four checks, makes nudges stack (`task`=decide plus `ui`=compare would
+both fire), and still needs engine changes to append a syntax line conditionally. One check has one
+winner, one dial gate, one suppression rule, one place to tune.
 
 ```yaml
-# prompts.yaml, oracle.checks (+ the same text in buildDefaults()/defaults_oracle.go —
-# the drift test enforces it; wording only here, bars live in config.yaml)
+# prompts.yaml, oracle.checks (wording only; thresholds live in config.yaml).
+# The same text goes in prompts/defaults_oracle.go; the drift test enforces it.
 ui:
   instructions: >-
     Would a structured visual block serve this message clearly better than ordinary prose?
-    Pick "none" unless the answer is really a comparison, procedure, timeline, or
-    similar and prose would be harder to scan.
+    Pick "none" unless the answer is really one of these shapes and prose would be harder to scan.
   options:
     none: Prose, a short list, or code serves this best.
     compare: Choosing between specific options across shared attributes.
+    choose: The right pick depends on the person's situation; decision rules help more than a table.
     steps: A procedure where order matters.
     checklist: Things to prepare or tick off.
     timeline: Events over time, a history, or a schedule.
     flow: A process or decision chain with branches.
     procon: One thing weighed for and against.
     tabs: Parallel versions of one answer (per OS, per option).
+    claim: Checking whether a specific claim holds up, with evidence on both sides.
+    facts: An at-a-glance summary of one named thing (a product, place, person, organization).
   inject:
     compare: >-
       The user is choosing between options. A `compare` block fits: write one ui fence, e.g.
-      {"c":"compare","cols":["A","B"],"pick":0} then {"row":"Price","v":["$9","$12"]} lines, and
-      follow it with which to pick and what would change that. Keep the prose short.
-    # ...one entry per option, each with a one-line exemplar
+      {"c":"compare","cols":["A","B"],"pick":0} then {"row":"Price","v":["$9","$12"]} lines, then
+      say which to pick and what would change that. Keep the prose short.
+    flow: >-
+      This is a process with a decision in it. A `flow` block fits: {"c":"flow"}, then
+      {"n":"a","t":"Step"} node lines and {"e":["a","b"],"l":"Yes"} edge lines (at most 8 nodes).
+    claim: >-
+      The user is testing a claim. A `claim` block fits: {"c":"claim","text":"…","verdict":"misleading"}
+      then {"+":"what supports it"} and {"-":"what disputes it"} lines, each ending in a [Title](URL).
+    # ...one entry per option, each a one-line description plus one exemplar line.
 ```
 
 ```go
-// config/oracle.go DefaultOracle() — policy
-"ui": {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}},
+// config/oracle.go DefaultOracle() — policy (mirror in config.yaml.example; TestExampleOracleMatchesDefaults)
+"ui": {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}, VisualsLowOffset: 0.15},
 // and add "ui" to emotional's Suppresses list
 ```
 
-Design calls, each deliberate:
+Concrete engine changes (small, in `gateway/oracle.go` and friends):
 
-- **Separate from `format`, but it holds `format` back.** `format` already nudges toward
-  table/comparison/steps/timeline as *Markdown* shapes and works with visuals Off, so it stays. When
-  `ui` fires, `Suppresses: ["format"]` stops both nudges stacking ("use a table" + "write a compare
-  block") — the nudge-stacking failure `oracle-checks-expansion.md` already hit and fixed for
-  `emotional`. A held-back `format` shows as "held back" in the ⓘ sheet for free. With the dial Off the
-  `ui` check isn't asked at all and `format` behaves exactly as today.
-- **Oracle picks the block, never a layout.** Options name *what the answer is* (`compare`,
-  `steps`...), not how it looks; the client chooses cards vs table by viewport.
-- **Callout / stat / quote aren't options**, and neither are `claim`, `choose`, `facts`, `disclose`
-  (they ride existing checks, see the catalog). Callout, stat and quote are small accents the model
-  may add under the base prompt. The `ui` check only decides the "this answer is really a ___" cases, where a wrong default hurts most.
-- **One block per answer by default.** Jev returns a single winner, and the nudge says "one fence".
-  The model may still add small accents on its own; multi-block answers are not forbidden, just not
-  encouraged.
-- **Skips.** Brief (a few sentences — a block defeats it) and Safari (own pacing). `emotional`
-  suppresses it: someone distressed gets acknowledgment, not a comparison widget.
-  `high_stakes` does **not** suppress it, but the high-stakes nudge ("name the caveat that changes
-  what the user should do") must survive: a compare block is not a licence to drop caveats into
-  cells. Check this in the live spike.
-- **The dial sets Oracle's bar.** Off: fragment removed, `ui` not asked. Low (default): the check
-  fires at a high bar (tentatively 0.85). Normal: the config bar (0.70). Config holds the Normal
-  bar; Low adds a fixed offset in code. The spike sets the real numbers.
-- **Escape hatch.** The ⓘ card for `ui` gets a "Rerun as plain text" button (mocked), the visuals
-  analogue of the existing rerun. A wrong firing costs one tap, not a bad answer.
-- **No schema change.** `OracleResult.Checks` is generic, so persistence and the WS event carry
-  `ui` for free. Frontend work is: a label/wording entry for the margin note, a star in the
-  constellation (the animation already scales by check count), and the rerun button.
+- `OracleInput.Visuals` ("off" | "low" | "normal"), read from the new setting at the call site in
+  `gateway/turn_oracle.go`. In `RunOracle`, skip the `ui` question when `off` (special-cased by key,
+  like the `field` chip already is) and raise its bar by `VisualsLowOffset` when `low`
+  (new `OracleCheckRules` field, zero for every other check). Normal uses `Threshold` as-is.
+- `Suppresses: ["format"]` so `format`'s Markdown-shape nudge doesn't stack with the block nudge. A
+  held-back `format` already shows as "held back" in the ⓘ sheet. With the dial Off `ui` isn't asked
+  and `format` behaves exactly as today.
+- Skips: Brief (a few sentences; a block defeats it), Safari (own pacing). `emotional` suppresses `ui`:
+  someone distressed gets acknowledgment, not a comparison widget. `high_stakes` does **not** suppress
+  it, but its caveat must survive: a compare block is not a licence to drop the caveat that changes
+  what the user should do. Check this in the live run.
+- One block per answer is the default (Jev returns one winner; the nudge says "one fence"). The model
+  may still add accents (`callout`, `stat`, `quote`, `disclose`) under the base prompt.
+- **If the 11-way pick proves poorly calibrated**, split into two questions in the same call: `ui`
+  (yes/no gate, the dial sets its bar) and `ui_block` (which one, no `none`), firing only when both
+  clear. That needs one new `requires` rule in `OracleCheckRules`. Not built until the spike says so.
+- No schema change: `OracleResult.Checks` is generic. Frontend: a label entry in `oracleLabels.ts` for
+  the margin note ("Read as **comparison** · shown as a **compare** block"), a star in the
+  constellation (it already scales with check count), and a "Rerun as plain text" button on the ⓘ card
+  (visuals analogue of the existing rerun; a wrong firing costs one tap).
 
-### Verification (extends the plan below)
+Two prompt layers, so Oracle failing never breaks the feature:
 
-Before wiring the nudge text, run `dev/oracle_spike`-style classification of ~50 real thread-openers
-plus a hand-written set of true positives (comparisons, how-tos, timelines, number-heavy answers) and
-true negatives (chatty, opinion, one-fact lookups). The number that matters is **false-positive
-rate**, not accuracy: an unneeded block is worse than a missed one. Then run the live loop through
-`dev/fakeopenrouter` with Oracle on to confirm the nudge actually appears in the request body
-(`/_control/calls`), and compare real-model output with and without the nudge on the same prompts.
+1. **Base fragment** (new `ui:` section in `prompts.yaml` + `prompts/ui.go` defaults + drift test;
+   present whenever the dial isn't Off): compact grammar for every block, "plain text is a valid
+   answer; use a block only when it clearly beats prose", "`ui` fences at top level only". This is the
+   floor: Oracle off, Jev timed out (`oracleTimeout` 2.5s; the original spike saw a 14% failure rate),
+   or `ui` didn't fire.
+2. **Oracle nudge** (only when `ui` fires): names the block and gives its exemplar line. Just-in-time
+   few-shot, in `## Oracle` and re-injected by `modeReinforcement` for the same recency reason.
 
-## Settings and prompts
+Once the nudge carries the exemplar the base fragment could shrink to names plus one-liners; don't do
+that until the Oracle-off fallback rate is measured, since a smaller floor means a worse fallback.
 
-A "visuals" dial (off / low / normal) in Settings, injected via `prompts.yaml` (hot-reloaded, with
-`buildDefaults()` kept in sync — a drift test enforces it). Default: Low. The dial also sets the `ui`
-check's bar when Oracle is on (see "Oracle integration").
+## Settings, prompts, docs
+
+- **Setting `visuals`** (off/low/normal, default low). Mirror `oracle_ghost_enabled`'s plumbing:
+  `gateway/settings.go` (store key const, validation set, GET/POST field, `...FromStore` helper),
+  `gateway/settings_test.go` (including a test that the validation set matches the dial's values),
+  `web/src/lib/settings.svelte.ts`, `SettingsPanel.svelte` (segmented control, copy as in the mockup).
+- `prompts.yaml` + `prompts/` defaults for the `ui:` fragment and the Oracle `ui` check; hot-reloaded.
+- `config/oracle.go` + `config.yaml.example` for the `ui` rule.
+- `HelpModal.svelte` `TERMS`: entries for "Visuals" and "UI blocks" (CLAUDE.md requires it for any new
+  named feature). `docs/FEATURES.md`: one or two lines. `DEVELOPMENT.md`: a short note on the
+  segment/parse/component architecture.
+- `dev/fakeopenrouter` scripted responses with `ui` fences (progressive, plus malformed/unknown
+  lines) for the Playwright runs.
+
+## Phases
+
+Each phase is one or more PRs; each ships usable on its own.
+
+**P0: segmentation + streaming mermaid** (no `ui` blocks yet; worth shipping alone).
+`splitContent`, `ChatTurnView` rendering by segment, `MermaidBlock`, `mermaid.ts` extraction, the
+verification-occurrence counter threaded across segments. Acceptance: a thread with prose + two
+mermaid fences renders identically to today when finished; mid-stream the diagram builds up and a
+deliberately broken prefix keeps the last good render; no regression in verification ticks (compare
+chip marks before/after on a fixture turn); phone render cost measured.
+
+**P1: infrastructure + the four simplest blocks.**
+`parseUi`, `UiBlocks`, `UiText`, `callout`, `stat`, `compare`, `steps`; base prompt fragment; `visuals`
+setting + control; flatteners (TS + Go) wired into copy, read-aloud, search_chats, Weaver, titles;
+HelpModal/FEATURES entries. **No Oracle yet**, so the floor can be measured on its own. Acceptance:
+fakeopenrouter run fills a compare table row by row in the real app; truncated, malformed and unknown
+streams degrade per the grammar; copy and read-aloud give clean text; Off removes the fragment.
+
+**P2: Oracle `ui` check**, limited to the options P1 can render (`compare`, `steps`, `none`), plus
+margin-note wording, ⓘ card, "Rerun as plain text". Run the classification spike first (below).
+
+**P3: remaining blocks, in groups**, each group also extending the Oracle option list and exemplars:
+(a) `timeline`, `checklist`, `procon`, `choose`, `facts`; (b) `flow`, `tabs`, `disclose`;
+(c) `claim`, `quote`, which need the citation/verification decisions below.
+
+## Verification
+
+- Unit: `splitContent` (open/closed fences, nested lists, many fences), `parseUi` (truncated at every
+  byte offset of each block's golden fence, malformed, unknown, over-cap), flatteners against the
+  shared fixture, `resolveFocus`-style table tests for the `ui` rules (dial off/low/normal, Brief,
+  Safari, emotional, high_stakes).
+- **Property-style streaming test:** for every golden fence, feed every prefix to `parseUi` and assert
+  it never throws and the block count is monotonic. This is the guarantee the whole design leans on.
+- Playwright against `dev/stack.sh --fake-llm`: scripted chunked fences; assert the DOM after each
+  chunk (rows appear one at a time), mobile viewport (390px) no horizontal overflow, ticked
+  checkbox/expanded node state survives subsequent tokens.
+- Oracle spike, `dev/oracle_spike`-style: ~50 real thread-openers plus a hand-written set of true
+  positives (comparisons, how-tos, timelines, decision chains, claims) and true negatives (chatty,
+  opinion, one-fact lookups). The number that matters is **false-positive rate**, not accuracy: an
+  unneeded block is worse than a missed one. Also check the 11-way pick's calibration (see the
+  two-question fallback).
+- Real-model runs through `/api/ask`, with and without the nudge, same prompts; confirm via
+  `dev/fakeopenrouter`'s `/_control/calls` that the nudge text reaches the request body.
 
 ## Risks
 
-- **Design judgment.** OpenAI trained theirs; we prompt ours. Mitigation: tiny vocabulary,
-  few-shot examples, a clear "when text is better" rule. Over-eager UI is the likeliest failure.
-- **Token cost and latency** on a phone over Tailscale; keep component syntax terse.
-- **Stream edge cases:** a fence cut off by a cancelled/errored turn must still render sanely.
+- **Over-eager UI** is the likeliest failure: OpenAI trained theirs, we prompt ours. Mitigations: tiny
+  vocabulary, Low default, Oracle's bar, "plain text is valid", the one-tap rerun as plain text.
+- **Token cost and latency** on a phone over Tailscale: terse JSON keys; measure the base fragment and
+  each exemplar; blocks also ride along in history on later turns (see open questions).
+- **Mermaid jitter and phone render cost** (above). Mitigated by throttling, not eliminated.
+- **Verification and claims.** Server-side claim extraction runs over message text; JSON lines must not
+  reach it. P1 flattens or strips `ui` fences before extraction, and ui chips show no per-claim ticks.
+  The `quote` block's "found in source" badge would need a deterministic verbatim check against the
+  cited page's text (no LLM), which assumes that text is retained; **unknown, check before P3(c).**
+  Until then `quote` renders without the badge. Principle: trust marks are never model-written.
 - **Mobile layout** is the primary target (CLAUDE.md); desktop is secondary.
-
-## Verification plan (per this repo's culture)
-
-Script streamed `ui` blocks through `dev/fakeopenrouter` and watch progressive fill in the real
-SvelteKit app with Playwright; then run a handful of real prompts through `/api/ask` on a dev
-backend. Unit-test the line parser against truncated, malformed, and unknown-component streams.
-
-## Phasing (tentative)
-
-1. Parser + renderer + 4 components (callout, compare, steps, stat), base prompt fragment, Settings
-   dial. Ship this **without** Oracle first so the floor can be measured on its own.
-2. The Oracle `ui` check (limited to the options phase 1 can render), margin-note/ⓘ-sheet wording,
-   "rerun as plain text". Then checklist, timeline, tabs, procon, and the check-riding blocks (`claim`, `choose`, `facts`, `disclose`, `quote`).
-3. `flow`; streaming mermaid (independent, could ship any time); citations bound into every block; map; commentary-style early answers.
-
-Shipping also requires: a `HelpModal.svelte` `TERMS` entry and a `docs/FEATURES.md` line
-(CLAUDE.md).
-
-## Decisions (2026-10-08, operator Q&A)
-
-1. **Interactivity: static + local toggles only.** Tabs, checklist ticks, hotspot selection. No computed/rescaling values and no expression language — that keeps this clear of the
-   excluded "build a tool" territory. Revisit only if real usage shows a concrete need.
-2. **Visuals dial defaults to Low** at launch: a component only when it clearly beats prose.
-3. **Surfaces: chat only.** Pulsar, Pulsar Daily and Atlas have separate layouts and LLM paths;
-   each would be its own follow-up.
-4. **Images: tool-sourced only.** Components reference `image_search`/`highlight` results by index
-   (as `show` does); no arbitrary model-supplied URLs.
 
 ## Open questions
 
-1. JSONL vs. an indented DSL for the line format (token cost vs. robustness to model typos).
-   **Leaning JSONL**, now with container + child lines (see "Block catalog"): every line parses on
-   its own, models rarely mangle JSON, and the mockup's streaming demo shows malformed/unknown lines
-   degrade to a muted code row without touching their neighbours. Measure token cost on the real
-   exemplars before committing; a DSL only wins if the saving is large.
-2. Field names above are a first draft from the mockups; settle them with the phase-1 four blocks.
-3. Whether a cancelled/errored turn leaves a half-rendered block or collapses it to a code block.
-   The mockup assumes the already-complete lines stay rendered and only the partial line is dropped.
-4. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
-   fallback measured first.
-5. Does `ui` need its own margin-note clause, or is the existing "Read as ..." note enough? The
-   mockup shows the clause version; judge in real use like the rest of Oracle's wording.
-
-## Decisions (2026-10-09, operator review of the mockups)
-
-1. **Chips: cut.** The automatic follow-up suggestions under every thread already cover it.
-2. **Charts: cut.** `code_exec` was added to make charts, and they come out far better than a
-   hand-built visualization suite; the earlier custom visualization tool was a waste once code
-   execution existed. No `chart` block, no Oracle `chart` option.
-3. **Timeline: the vertical rail.** The ledger overlapped it and is dropped. (The rail also handles
-   long dates better than the ledger did, contrary to what the first mockup note claimed.)
-4. **Callout: option B** (icon chip on a card). Option A read like a generic markdown renderer.
-5. **`flow`: in.** More interactive than mermaid and sits naturally in prose.
-6. **Streaming render is the headline feature.** It also motivates streaming mermaid (spiked above);
-   mermaid's own library can't render mid-line, so the plan is render-per-complete-line, not a fork.
+1. Compare cards vs table, steps rail vs chips (above).
+2. Should history sent back to the model flatten older turns' blocks to save tokens?
+3. Cancelled-turn behavior: confirm "keep complete lines, drop the partial".
+4. Does the nudge-with-exemplar let the base fragment shrink, and by how much?
+5. Single `ui` question vs the gate + kind split: decided by the spike's calibration numbers.
+6. Does `ui` need its own margin-note clause, or is the existing "Read as …" note enough?
