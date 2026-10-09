@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'choose' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'choose' }>; loc?: string } = $props();
 </script>
 
 <!-- "It depends": decision rules instead of a table, each row a situation
@@ -14,10 +14,10 @@
 	<div class="list" role="list">
 		{#each block.rules as rule, i (i)}
 			<div class="rule" role="listitem">
-				<div class="if"><span class="lead">If</span> <UiText text={rule.if} /></div>
+				<div class="if"><span class="lead">If</span> <UiText text={rule.if} loc="{loc}.{i}.if" /></div>
 				<div class="then">
 					<span class="arrow" aria-hidden="true">→</span>
-					<span class="pill"><UiText text={rule.then} /><UiSources src={rule.src} /></span>
+					<span class="pill"><UiText text={rule.then} loc="{loc}.{i}.then" /><UiSources src={rule.src} loc="{loc}.{i}.src" /></span>
 				</div>
 			</div>
 		{/each}

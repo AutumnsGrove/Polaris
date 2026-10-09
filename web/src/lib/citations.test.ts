@@ -68,3 +68,46 @@ describe('renderInlineCitations', () => {
 		expect(renderInlineCitations('', citations)).toBe('');
 	});
 });
+
+describe('renderInlineCitations: block links ticked by locator', () => {
+	const nasa = 'https://nasa.gov/voyager';
+	const wiki = 'https://en.wikipedia.org/wiki/Voyager_1';
+	const two = `<p><a href="${nasa}">a</a> <a href="${wiki}">b</a> <a href="${nasa}">c</a></p>`;
+	const ticks = (out: string) => (out.match(/citation-verified-icon/g) ?? []).length;
+	const mark = (url: string, locator?: string, claim_index = 0) => ({
+		url,
+		claim_index,
+		choice: 'supported',
+		confidence: 1,
+		...(locator ? { locator } : {})
+	});
+
+	it("ticks only the field's nth tracked link whose locator matches", () => {
+		// the third link (the 2nd nasa one) is field link #2
+		const marks = [mark(nasa, '0.1.0.src#2')];
+		const out = renderInlineCitations(two, citations, undefined, new Map(), { prefix: '0.1.0.src', marks });
+		expect(ticks(out)).toBe(1);
+		expect(out.indexOf('citation-verified-icon')).toBeGreaterThan(out.lastIndexOf(wiki));
+	});
+
+	it('does not tick when the url at that address differs, or the address does', () => {
+		const marks = [mark(wiki, '0.1.0.src#0'), mark(nasa, '0.1.9.src#0')];
+		const out = renderInlineCitations(two, citations, undefined, new Map(), { prefix: '0.1.0.src', marks });
+		expect(ticks(out)).toBe(0);
+	});
+
+	it('a locator mark never ticks a prose chip, and a prose mark never ticks a block link', () => {
+		const locatorOnly = [mark(nasa, '0.0.0.text#0')];
+		expect(ticks(renderInlineCitations(two, citations, locatorOnly))).toBe(0);
+		const proseOnly = [mark(nasa, undefined, 0)];
+		const out = renderInlineCitations(two, citations, undefined, new Map(), { prefix: '0.0.0.text', marks: proseOnly });
+		expect(ticks(out)).toBe(0);
+	});
+
+	it('still ticks prose by occurrence index when a locator mark for the same URL is also present', () => {
+		const marks = [mark(nasa, '0.0.0.text#0'), mark(nasa, undefined, 1)];
+		const out = renderInlineCitations(two, citations, marks);
+		expect(ticks(out)).toBe(1);
+		expect(out.indexOf('citation-verified-icon')).toBeGreaterThan(out.lastIndexOf(wiki));
+	});
+});

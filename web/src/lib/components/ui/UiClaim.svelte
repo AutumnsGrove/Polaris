@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'claim' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'claim' }>; loc?: string } = $props();
 
 	// A word and a glyph, never colour alone. The pill is the model's own read
 	// of the evidence, NOT a verified result (decision 17), so it deliberately
@@ -23,14 +23,14 @@
 	<div class="head">
 		<span class="pill {block.verdict}"><span aria-hidden="true">{v.mark}</span> {v.label}</span>
 	</div>
-	<div class="text"><UiText text={block.text} /></div>
+	<div class="text"><UiText text={block.text} loc="{loc}.0.text" /></div>
 
 	{#if block.supports.length}
 		<div class="side supports">
 			<h4>Supports</h4>
 			<div role="list">
 				{#each block.supports as e, i (i)}
-					<div class="row" role="listitem"><b aria-hidden="true">+</b><span><UiText text={e.text} /><UiSources src={e.src} /></span></div>
+					<div class="row" role="listitem"><b aria-hidden="true">+</b><span><UiText text={e.text} loc="{loc}.{i}.plus" /><UiSources src={e.src} loc="{loc}.{i}.plus.src" /></span></div>
 				{/each}
 			</div>
 		</div>
@@ -40,7 +40,7 @@
 			<h4>Disputes</h4>
 			<div role="list">
 				{#each block.disputes as e, i (i)}
-					<div class="row" role="listitem"><b aria-hidden="true">–</b><span><UiText text={e.text} /><UiSources src={e.src} /></span></div>
+					<div class="row" role="listitem"><b aria-hidden="true">–</b><span><UiText text={e.text} loc="{loc}.{i}.minus" /><UiSources src={e.src} loc="{loc}.{i}.minus.src" /></span></div>
 				{/each}
 			</div>
 		</div>

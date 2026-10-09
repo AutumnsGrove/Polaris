@@ -4,9 +4,14 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'flow' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'flow' }>; loc?: string } = $props();
 
 	let layout = $derived(layoutFlow(block.nodes, block.edges));
+
+	// A node's verification address uses its index in `block.nodes` (arrival
+	// order), NOT where the layout drew it: a node moves between layers as edges
+	// stream in, and the server (gateway/uiblocks/sites.go) knows only arrival order.
+	const at = (n: string) => `${loc}.${block.nodes.findIndex((x) => x.n === n)}`;
 
 	// Expanded nodes, keyed by node id and NOT by position: a node moves from the
 	// "waiting" area into the chain when its edge streams in, so a positional
@@ -34,19 +39,19 @@
 								onclick={() => (open[cell.node.n] = !open[cell.node.n])}
 							>
 								{#if cell.node.decision}<span class="q" aria-hidden="true">?</span>{/if}
-								<span class="t"><UiText text={cell.node.t} /></span>
+								<span class="t"><UiText text={cell.node.t} loc="{at(cell.node.n)}.t" /></span>
 								<span class="chev" aria-hidden="true">{open[cell.node.n] ? '▾' : '▸'}</span>
 							</button>
 							{#if open[cell.node.n]}
 								<div class="detail">
-									{#if cell.node.d}<UiText text={cell.node.d} />{/if}
-									<UiSources src={cell.node.src} />
+									{#if cell.node.d}<UiText text={cell.node.d} loc="{at(cell.node.n)}.d" />{/if}
+									<UiSources src={cell.node.src} loc="{at(cell.node.n)}.src" />
 								</div>
 							{/if}
 						{:else}
 							<div class="head static">
 								{#if cell.node.decision}<span class="q" aria-hidden="true">?</span>{/if}
-								<span class="t"><UiText text={cell.node.t} /></span>
+								<span class="t"><UiText text={cell.node.t} loc="{at(cell.node.n)}.t" /></span>
 							</div>
 						{/if}
 						{#each cell.back as title (title)}
@@ -67,7 +72,7 @@
 		<div class="waiting">
 			<div class="waiting-label">Not connected yet</div>
 			{#each layout.waiting as n (n.n)}
-				<div class="node dotted"><div class="head static"><span class="t"><UiText text={n.t} /></span></div></div>
+				<div class="node dotted"><div class="head static"><span class="t"><UiText text={n.t} loc="{at(n.n)}.t" /></span></div></div>
 			{/each}
 		</div>
 	{/if}

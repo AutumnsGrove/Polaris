@@ -1,6 +1,7 @@
 package uiblocks
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -98,6 +99,64 @@ func TestSites_FenceOrdinalAndCap(t *testing.T) {
 	want := []string{"0.0.0.text#0 https://a.example/1", "1.0.0.text#0 https://a.example/1", "2.0.0.text#0 https://a.example/1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("fences past the cap (and non-ui fences) must not count\n got %v\nwant %v", got, want)
+	}
+}
+
+// TestSites_FieldNamesMatchTheComponents is the contract test between the two
+// halves of the locator scheme: for every block kind it feeds a link into every
+// field, checks Sites emits exactly the field names listed here, and checks the
+// matching Svelte component really builds a `loc` ending in each one. A typo on
+// either side would otherwise silently lose that field's ticks.
+func TestSites_FieldNamesMatchTheComponents(t *testing.T) {
+	const l = "[x](https://t.example/x)"
+	const u = `"https://t.example/u"`
+	cases := []struct {
+		kind, component, body string
+		fields                []string // as they appear in a locator: <field>
+		needles               []string // as they appear in the Svelte source
+	}{
+		{"callout", "UiCallout", `{"c":"callout","text":"a ` + l + `","src":[` + u + `]}`, []string{"text", "src"}, []string{`.0.text"`, `.0.src"`}},
+		{"stat", "UiStat", `{"c":"stat","value":"1","note":"n ` + l + `","src":[` + u + `]}`, []string{"note", "src"}, []string{`.0.note"`, `.0.src"`}},
+		{"compare", "UiCompare", `{"c":"compare","cols":["A","B"]}` + "\n" + `{"row":"r","v":["a ` + l + `","b"],"src":[` + u + `]}`, []string{"v0", "src"}, []string{`.v{ci}"`, `.src"`}},
+		{"steps", "UiSteps", `{"c":"steps"}` + "\n" + `{"i":"a ` + l + `","d":"b ` + l + `"}`, []string{"i", "d"}, []string{`.i"`, `.d"`}},
+		{"timeline", "UiTimeline", `{"c":"timeline"}` + "\n" + `{"when":"w","i":"a ` + l + `","src":[` + u + `]}`, []string{"i", "src"}, []string{`.i"`, `.src"`}},
+		{"checklist", "UiChecklist", `{"c":"checklist"}` + "\n" + `{"i":"a ` + l + `"}`, []string{"i"}, []string{`.i"`}},
+		{"procon", "UiProCon", `{"c":"procon"}` + "\n" + `{"+":"a ` + l + `"}` + "\n" + `{"-":"b ` + l + `"}`, []string{"pro", "con"}, []string{`.pro"`, `.con"`}},
+		{"choose", "UiChoose", `{"c":"choose"}` + "\n" + `{"if":"a ` + l + `","then":"b ` + l + `","src":[` + u + `]}`, []string{"if", "then", "src"}, []string{`.if"`, `.then"`, `.src"`}},
+		{"facts", "UiFacts", `{"c":"facts"}` + "\n" + `{"k":"k","v":"a ` + l + `","src":[` + u + `]}`, []string{"v", "src"}, []string{`.v"`, `.src"`}},
+		{"flow", "UiFlow", `{"c":"flow"}` + "\n" + `{"n":"a","t":"a ` + l + `","d":"b ` + l + `","src":[` + u + `]}`, []string{"t", "d", "src"}, []string{`.t"`, `.d"`, `.src"`}},
+		{"tabs", "UiTabs", `{"c":"tabs"}` + "\n" + `{"tab":"t","text":"a ` + l + `"}`, []string{"text"}, []string{`.text"`}},
+		{"disclose", "UiDisclose", `{"c":"disclose"}` + "\n" + `{"p":"a ` + l + `"}`, []string{"p"}, []string{`.p"`}},
+		{"quote", "UiQuote", `{"c":"quote","text":"q ` + l + `","by":"b ` + l + `","src":[` + u + `]}`, []string{"src"}, []string{`.0.src"`}},
+		{"claim", "UiClaim", `{"c":"claim","text":"a ` + l + `"}` + "\n" + `{"+":"p ` + l + `","src":[` + u + `]}` + "\n" + `{"-":"m ` + l + `","src":[` + u + `]}`,
+			[]string{"text", "plus", "plus.src", "minus", "minus.src"}, []string{`.0.text"`, `.plus"`, `.plus.src"`, `.minus"`, `.minus.src"`}},
+	}
+	for _, tc := range cases {
+		sites := Sites("```ui\n"+tc.body+"\n```\n", all, 8)
+		got := map[string]bool{}
+		for _, s := range sites {
+			// "<fence>.<block>.<item>.<field>#<n>" -> <field>
+			rest := strings.SplitN(s.Locator, ".", 4)[3]
+			got[strings.SplitN(rest, "#", 2)[0]] = true
+		}
+		for _, f := range tc.fields {
+			if !got[f] {
+				t.Errorf("%s: Sites emitted no %q site (got %v)", tc.kind, f, got)
+			}
+		}
+		if len(got) != len(tc.fields) {
+			t.Errorf("%s: Sites emitted fields %v, the contract lists %v", tc.kind, got, tc.fields)
+		}
+
+		src, err := os.ReadFile("../../web/src/lib/components/ui/" + tc.component + ".svelte")
+		if err != nil {
+			t.Fatalf("%s: %v", tc.kind, err)
+		}
+		for _, n := range tc.needles {
+			if !strings.Contains(string(src), n) {
+				t.Errorf("%s: %s.svelte has no loc ending in %s, so its ticks would silently never show", tc.kind, tc.component, n)
+			}
+		}
 	}
 }
 

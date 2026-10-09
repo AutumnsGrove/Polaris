@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'quote' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'quote' }>; loc?: string } = $props();
 </script>
 
 <figure class="ui-quote">
@@ -11,7 +11,7 @@
 	{#if block.by || block.src.length}
 		<figcaption>
 			{#if block.by}<span class="by">— <UiText text={block.by} /></span>{/if}
-			<UiSources src={block.src} />
+			<UiSources src={block.src} loc="{loc}.0.src" />
 		</figcaption>
 	{/if}
 </figure>

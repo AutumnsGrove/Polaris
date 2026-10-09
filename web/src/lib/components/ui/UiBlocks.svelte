@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { setContext } from 'svelte';
-	import type { Citation } from '$lib/types';
+	import type { Citation, VerificationMark } from '$lib/types';
 	import { parseUi } from '$lib/uiBlocks/parse';
 	import UiCallout from './UiCallout.svelte';
 	import UiStat from './UiStat.svelte';
@@ -21,44 +21,59 @@
 	// parse.ts caps it at 40 lines) and the blocks are keyed by index, so a
 	// block that already exists is updated in place rather than remounted —
 	// that is what lets a comparison fill in row by row mid-stream.
-	let { src, citations }: { src: string; citations: Citation[] } = $props();
+	//
+	// `fence` is this fence's ordinal among the answer's ui fences and
+	// `verification` the turn's "found in source" marks. Together with a block's
+	// index they form the address ("<fence>.<block>.<item>.<field>#<n>") a
+	// block link is ticked by; the server builds the same strings
+	// (gateway/uiblocks/sites.go). Each block gets its `loc` prefix below, the
+	// block index being the index in parseUi's output, raw rows included.
+	let {
+		src,
+		citations,
+		fence = 0,
+		verification
+	}: { src: string; citations: Citation[]; fence?: number; verification?: VerificationMark[] } = $props();
 
-	// Getter so UiText re-derives when citations arrive mid-stream.
+	// Getters so UiText re-derives when citations or marks arrive mid-stream
+	// (marks land after the turn, so they always do).
 	setContext('ui-citations', () => citations);
+	setContext('ui-verification', () => verification);
 
 	let blocks = $derived(parseUi(src));
 </script>
 
 <div class="ui-blocks">
 	{#each blocks as block, i (i)}
+		{@const loc = `${fence}.${i}`}
 		{#if block.kind === 'callout'}
-			<UiCallout {block} />
+			<UiCallout {block} {loc} />
 		{:else if block.kind === 'stat'}
-			<UiStat {block} />
+			<UiStat {block} {loc} />
 		{:else if block.kind === 'compare'}
-			<UiCompare {block} />
+			<UiCompare {block} {loc} />
 		{:else if block.kind === 'steps'}
-			<UiSteps {block} />
+			<UiSteps {block} {loc} />
 		{:else if block.kind === 'timeline'}
-			<UiTimeline {block} />
+			<UiTimeline {block} {loc} />
 		{:else if block.kind === 'checklist'}
-			<UiChecklist {block} />
+			<UiChecklist {block} {loc} />
 		{:else if block.kind === 'procon'}
-			<UiProCon {block} />
+			<UiProCon {block} {loc} />
 		{:else if block.kind === 'choose'}
-			<UiChoose {block} />
+			<UiChoose {block} {loc} />
 		{:else if block.kind === 'facts'}
-			<UiFacts {block} />
+			<UiFacts {block} {loc} />
 		{:else if block.kind === 'flow'}
-			<UiFlow {block} />
+			<UiFlow {block} {loc} />
 		{:else if block.kind === 'tabs'}
-			<UiTabs {block} />
+			<UiTabs {block} {loc} />
 		{:else if block.kind === 'disclose'}
-			<UiDisclose {block} />
+			<UiDisclose {block} {loc} />
 		{:else if block.kind === 'quote'}
-			<UiQuote {block} />
+			<UiQuote {block} {loc} />
 		{:else if block.kind === 'claim'}
-			<UiClaim {block} />
+			<UiClaim {block} {loc} />
 		{:else}
 			<!-- A line the grammar couldn't use: shown muted, never an error and never blanking the rest. -->
 			<div class="raw">{block.text}</div>

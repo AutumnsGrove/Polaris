@@ -2,7 +2,7 @@
 	import type { UiBlock } from '$lib/uiBlocks/types';
 	import UiText from './UiText.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'steps' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'steps' }>; loc?: string } = $props();
 </script>
 
 <div class="ui-steps">
@@ -11,11 +11,11 @@
 		{#each block.steps as step, i (i)}
 			<li>
 				<div class="head">
-					<b><UiText text={step.i} /></b>
+					<b><UiText text={step.i} loc="{loc}.{i}.i" /></b>
 					<!-- A duration chip only when the model supplied one (decision 13). -->
 					{#if step.t}<span class="t">{step.t}</span>{/if}
 				</div>
-				{#if step.d}<span class="d"><UiText text={step.d} /></span>{/if}
+				{#if step.d}<span class="d"><UiText text={step.d} loc="{loc}.{i}.d" /></span>{/if}
 			</li>
 		{/each}
 	</ol>

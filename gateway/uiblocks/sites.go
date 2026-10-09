@@ -119,7 +119,8 @@ func collect(b *block, loc string, tracked func(string) bool, out *[]Site) {
 			label = b.label + ":"
 		}
 		claim := stripLinks(join(label, b.value, bracket(b.note)))
-		c.text(0, "value", b.value, claim, false)
+		// value is not a UiText on the client (it is the big plain number), so it
+		// has no chip to tick and no site here.
 		c.text(0, "note", b.note, claim, false)
 		c.src(0, "src", b.src, claim, false)
 	case "compare":

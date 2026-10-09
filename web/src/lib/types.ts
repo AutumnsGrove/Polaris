@@ -29,6 +29,11 @@ export interface VerificationMark {
 	claim_index: number;
 	choice: string;
 	confidence: number;
+	// Set only for a link inside a Prism `ui` block, and then it (not
+	// claim_index) says which chip: "<fence>.<block>.<item>.<field>#<n>", built
+	// by components/ui/ and by gateway/uiblocks/sites.go. A mark with a locator
+	// never counts toward the prose chips' claim_index matching.
+	locator?: string;
 }
 
 // Mirrors gateway/pulsar_suggest.go's pulsarSuggestResponse — the derived

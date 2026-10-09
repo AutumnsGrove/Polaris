@@ -3,7 +3,9 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'callout' }> } = $props();
+	// `loc` is the block's verification address prefix ("<fence>.<block>"); each
+	// field below adds ".<item>.<field>", the names gateway/uiblocks/sites.go uses.
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'callout' }>; loc?: string } = $props();
 
 	const ICON = { note: 'i', warn: '!', ok: '✓', answer: '✦' } as const;
 
@@ -22,8 +24,8 @@
 <div class="ui-callout {block.tone}" role="note">
 	<span class="ic" aria-hidden="true">{ICON[block.tone]}</span>
 	<div class="body">
-		<UiText text={block.text} />
-		<UiSources src={block.src} />
+		<UiText text={block.text} loc="{loc}.0.text" />
+		<UiSources src={block.src} loc="{loc}.0.src" />
 		{#if asof}<span class="asof">as of {asof}</span>{/if}
 	</div>
 </div>

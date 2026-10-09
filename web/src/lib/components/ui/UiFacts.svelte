@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'facts' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'facts' }>; loc?: string } = $props();
 </script>
 
 <!-- The at-a-glance card for one named thing; replaces the old stat strip. -->
@@ -17,7 +17,7 @@
 	<dl>
 		{#each block.rows as row, i (i)}
 			<dt>{row.k}</dt>
-			<dd><UiText text={row.v} /><UiSources src={row.src} /></dd>
+			<dd><UiText text={row.v} loc="{loc}.{i}.v" /><UiSources src={row.src} loc="{loc}.{i}.src" /></dd>
 		{/each}
 	</dl>
 </div>

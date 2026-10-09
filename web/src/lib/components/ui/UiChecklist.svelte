@@ -2,7 +2,7 @@
 	import type { UiBlock } from '$lib/uiBlocks/types';
 	import UiText from './UiText.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'checklist' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'checklist' }>; loc?: string } = $props();
 
 	// Ticks are local state, keyed by item position. The block is re-parsed on
 	// every streamed token but this component instance is kept (UiBlocks keys
@@ -21,7 +21,7 @@
 			<div role="listitem">
 				<label>
 					<input type="checkbox" bind:checked={done[i]} />
-					<span class:done={done[i]}><UiText text={item} /></span>
+					<span class:done={done[i]}><UiText text={item} loc="{loc}.{i}.i" /></span>
 				</label>
 			</div>
 		{/each}

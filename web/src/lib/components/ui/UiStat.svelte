@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'stat' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'stat' }>; loc?: string } = $props();
 </script>
 
 <div class="ui-stat">
@@ -11,8 +11,8 @@
 	<div class="big">{block.value}</div>
 	{#if block.note || block.src.length}
 		<div class="note">
-			{#if block.note}<UiText text={block.note} />{/if}
-			<UiSources src={block.src} />
+			{#if block.note}<UiText text={block.note} loc="{loc}.0.note" />{/if}
+			<UiSources src={block.src} loc="{loc}.0.src" />
 		</div>
 	{/if}
 </div>

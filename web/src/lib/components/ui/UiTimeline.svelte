@@ -3,7 +3,7 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'timeline' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'timeline' }>; loc?: string } = $props();
 </script>
 
 <!-- The vertical rail, date above the text (decision 7): it copes with long
@@ -15,7 +15,7 @@
 		{#each block.events as ev, i (i)}
 			<div class="item" role="listitem">
 				<div class="when">{ev.when}</div>
-				<div class="what"><UiText text={ev.i} /><UiSources src={ev.src} /></div>
+				<div class="what"><UiText text={ev.i} loc="{loc}.{i}.i" /><UiSources src={ev.src} loc="{loc}.{i}.src" /></div>
 			</div>
 		{/each}
 	</div>

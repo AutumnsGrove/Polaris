@@ -482,7 +482,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 						{#if seg.kind === 'md'}
 							{@html seg.html}
 						{:else if seg.kind === 'ui'}
-							<UiBlocks src={seg.src} citations={turn.citations ?? []} />
+							<UiBlocks src={seg.src} citations={turn.citations ?? []} fence={seg.fence ?? 0} verification={turn.verification} />
 						{:else}
 							<MermaidBlock src={seg.src} closed={seg.closed} />
 						{/if}

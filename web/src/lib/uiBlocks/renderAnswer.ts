@@ -6,7 +6,9 @@ import { splitContent, type FenceKind } from './split';
 
 export type RenderedSegment =
 	| { kind: 'md'; html: string }
-	| { kind: FenceKind; src: string; closed: boolean };
+	// `fence` is a ui fence's ordinal among the answer's ui fences (the first
+	// segment of a block's verification locator, see gateway/uiblocks/sites.go).
+	| { kind: FenceKind; src: string; closed: boolean; fence?: number };
 
 // Fence kinds that get their own component; anything else stays Markdown.
 const SEGMENT_KINDS: readonly FenceKind[] = ['ui', 'mermaid'];
@@ -56,6 +58,7 @@ export function renderAnswer(
 		if (seg.kind === 'ui' && ++uiFences > MAX_UI_FENCES) {
 			return { kind: 'md', html: sanitizedHtml('```ui\n' + seg.src + (seg.closed ? '```\n' : '')) };
 		}
+		if (seg.kind === 'ui') return { ...seg, fence: uiFences - 1 };
 		if (seg.kind !== 'md') return seg;
 		return {
 			kind: 'md',

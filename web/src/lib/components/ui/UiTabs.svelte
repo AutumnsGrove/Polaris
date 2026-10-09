@@ -2,7 +2,7 @@
 	import type { UiBlock } from '$lib/uiBlocks/types';
 	import UiText from './UiText.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'tabs' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'tabs' }>; loc?: string } = $props();
 
 	// Selected tab is local state. The block is re-parsed on every streamed
 	// token but this instance is kept (UiBlocks keys by index), so a reader's
@@ -26,7 +26,7 @@
 		{/each}
 	</div>
 	{#if block.tabs[active]}
-		<div class="panel" role="tabpanel"><UiText text={block.tabs[active].text} block /></div>
+		<div class="panel" role="tabpanel"><UiText text={block.tabs[active].text} block loc="{loc}.{active}.text" /></div>
 	{/if}
 </div>
 

@@ -2,7 +2,7 @@
 	import type { UiBlock } from '$lib/uiBlocks/types';
 	import UiText from './UiText.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'procon' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'procon' }>; loc?: string } = $props();
 </script>
 
 <!-- +/– symbols, never colour alone (plan, catalog). -->
@@ -12,7 +12,7 @@
 		<!-- div + role, not ul/li: `.prose ul { padding-left }` would indent it. -->
 		<div role="list">
 			{#each block.pros as p, i (i)}
-				<div class="row" role="listitem"><b aria-hidden="true">+</b><span><UiText text={p} /></span></div>
+				<div class="row" role="listitem"><b aria-hidden="true">+</b><span><UiText text={p} loc="{loc}.{i}.pro" /></span></div>
 			{/each}
 		</div>
 	</section>
@@ -20,7 +20,7 @@
 		<h4>{block.conHead ?? 'Cons'}</h4>
 		<div role="list">
 			{#each block.cons as c, i (i)}
-				<div class="row" role="listitem"><b aria-hidden="true">–</b><span><UiText text={c} /></span></div>
+				<div class="row" role="listitem"><b aria-hidden="true">–</b><span><UiText text={c} loc="{loc}.{i}.con" /></span></div>
 			{/each}
 		</div>
 	</section>

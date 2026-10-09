@@ -2,7 +2,7 @@
 	import type { UiBlock } from '$lib/uiBlocks/types';
 	import UiText from './UiText.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'disclose' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'disclose' }>; loc?: string } = $props();
 </script>
 
 <!-- Native <details>: no JS, and the open state lives in the DOM node, which
@@ -17,7 +17,7 @@
 	</summary>
 	<div class="body">
 		{#each block.paras as p, i (i)}
-			<p><UiText text={p} /></p>
+			<p><UiText text={p} loc="{loc}.{i}.p" /></p>
 		{/each}
 	</div>
 </details>

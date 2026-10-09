@@ -3,10 +3,12 @@
 	import UiText from './UiText.svelte';
 	import UiSources from './UiSources.svelte';
 
-	let { block }: { block: Extract<UiBlock, { kind: 'compare' }> } = $props();
+	let { block, loc }: { block: Extract<UiBlock, { kind: 'compare' }>; loc?: string } = $props();
 
 	// The cards layout has no per-row place for a row's sources (a row spans
-	// every card), so they collect into one line under the cards instead.
+	// every card), so they collect into one line under the cards instead. That
+	// merged, de-duplicated line has no per-row address, so it carries no
+	// "found in source" ticks; the wide table layout does (`{loc}.<row>.src`).
 	let cardSources = $derived([...new Set(block.rows.flatMap((r) => r.src))]);
 </script>
 
@@ -25,7 +27,7 @@
 				<dl>
 					{#each block.rows as row, ri (ri)}
 						<dt>{row.row}</dt>
-						<dd><UiText text={row.v[ci]} /></dd>
+						<dd><UiText text={row.v[ci]} loc="{loc}.{ri}.v{ci}" /></dd>
 					{/each}
 				</dl>
 			</div>
@@ -49,9 +51,9 @@
 			<tbody>
 				{#each block.rows as row, ri (ri)}
 					<tr>
-						<td>{row.row}<UiSources src={row.src} /></td>
+						<td>{row.row}<UiSources src={row.src} loc="{loc}.{ri}.src" /></td>
 						{#each row.v as cell, ci (ci)}
-							<td class:pick={block.pick === ci}><UiText text={cell} /></td>
+							<td class:pick={block.pick === ci}><UiText text={cell} loc="{loc}.{ri}.v{ci}" /></td>
 						{/each}
 					</tr>
 				{/each}

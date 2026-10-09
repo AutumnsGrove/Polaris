@@ -58,17 +58,33 @@ export function renderInlineCitations(
 	html: string,
 	citations: Citation[],
 	verification?: VerificationMark[],
-	occurrenceByUrl: Map<string, number> = new Map()
+	occurrenceByUrl: Map<string, number> = new Map(),
+	locator?: { prefix: string; marks: VerificationMark[] }
 ): string {
 	if (typeof document === 'undefined' || citations.length === 0 || !html) return html;
 
 	const urlToCitation = new Map(citations.map((c) => [c.url, c]));
 	const verifiedClaimIndexes = new Map<string, Set<number>>();
 	for (const mark of verification ?? []) {
+		// A block link's mark is addressed by its locator, not an occurrence
+		// number; it must never tick the nth prose chip of the same URL.
+		if (mark.locator) continue;
 		if (mark.choice !== 'supported') continue;
 		if (!verifiedClaimIndexes.has(mark.url)) verifiedClaimIndexes.set(mark.url, new Set());
 		verifiedClaimIndexes.get(mark.url)!.add(mark.claim_index);
 	}
+
+	// Block links (UiText): ticks come from locator marks, matched by "this
+	// field's nth tracked link" instead of a document-wide occurrence number.
+	// `locator.prefix` is the field's address; the server builds the same string
+	// (gateway/uiblocks/sites.go). A disagreement loses a tick, never moves one.
+	const verifiedLocators = new Set<string>();
+	if (locator) {
+		for (const mark of locator.marks) {
+			if (mark.locator && mark.choice === 'supported') verifiedLocators.add(`${mark.locator}\u0000${mark.url}`);
+		}
+	}
+	let fieldLink = 0;
 
 	const container = document.createElement('div');
 	container.innerHTML = html;
@@ -88,7 +104,10 @@ export function renderInlineCitations(
 		anchor.setAttribute('target', '_blank');
 		anchor.setAttribute('rel', 'noreferrer');
 		anchor.textContent = '';
-		if (verifiedClaimIndexes.get(href)?.has(occurrence)) {
+		const verified = locator
+			? verifiedLocators.has(`${locator.prefix}#${fieldLink++}\u0000${href}`)
+			: !!verifiedClaimIndexes.get(href)?.has(occurrence);
+		if (verified) {
 			anchor.insertAdjacentHTML('afterbegin', checkCheckIconSVG);
 			anchor.setAttribute('title', `${citation.title || href} — found in source`);
 		} else {
