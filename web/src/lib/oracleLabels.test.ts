@@ -29,6 +29,46 @@ describe('buildOracleNote', () => {
 		);
 	});
 
+	describe('the ui (Prism) clause', () => {
+		const ui = (winner: string, fired = true): OracleResult => ({
+			checks: [{ key: 'ui', winner, probabilities: { [winner]: 0.9 }, fired }]
+		});
+		const answerWithBlock = 'Short answer.\n\n```ui\n{"c":"compare","cols":["A","B"]}\n```\n';
+
+		it('names the block when the answer really contains one', () => {
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, answerWithBlock)).toBe(
+				'Shown as a <b>compare</b> block'
+			);
+		});
+
+		it('claims nothing when the model was nudged but wrote no block', () => {
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, 'Just prose.')).toBeNull();
+			expect(buildOracleNote(ui('compare'), undefined, undefined, undefined, undefined)).toBeNull();
+		});
+
+		it('claims nothing for a check that did not fire, or an option this build cannot name', () => {
+			expect(buildOracleNote(ui('compare', false), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+			expect(buildOracleNote(ui('timeline'), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+		});
+
+		it('joins after the read-as and focus clauses, in that order', () => {
+			const result: OracleResult = {
+				checks: [
+					{ key: 'task', winner: 'decide', probabilities: { decide: 0.9 }, fired: true },
+					{ key: 'ui', winner: 'compare', probabilities: { compare: 0.9 }, fired: true }
+				]
+			};
+			expect(buildOracleNote(result, 'oracle', 'shopper', undefined, answerWithBlock)).toBe(
+				'Read as <b>a decision</b> · answered as <b>Shopper</b> · shown as a <b>compare</b> block'
+			);
+		});
+
+		it('does not recognize an indented or tagged fence as a block', () => {
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '  ```ui\n{}\n```')).toBeNull();
+			expect(buildOracleNote(ui('steps'), undefined, undefined, undefined, '```ui title\n{}\n```')).toBeNull();
+		});
+	});
+
 	it('says nothing when a check fired only on its no-op option', () => {
 		const result: OracleResult = {
 			checks: [{ key: 'high_stakes', winner: 'none', probabilities: { none: 0.95 }, fired: true }]

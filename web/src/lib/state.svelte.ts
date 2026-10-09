@@ -982,7 +982,9 @@ export class AppState {
 	// live ComposerMenu tap — see send()'s focusModeManual doc comment),
 	// not a "default", so Oracle's own focus check won't immediately
 	// re-override the very mode being tested.
-	retry(assistantTurnIndex: number, focusOverride?: FocusMode, noOracle?: boolean) {
+	// noVisuals: TurnInfoSheet's "Rerun as plain text" — Prism off for this one
+	// turn (see gateway/protocol.go's ClientMessage.NoVisuals).
+	retry(assistantTurnIndex: number, focusOverride?: FocusMode, noOracle?: boolean, noVisuals?: boolean) {
 		const userTurn = this.turns[assistantTurnIndex - 1];
 		if (!userTurn || userTurn.role !== 'user' || userTurn.id === undefined || this.busy) return;
 		this.dispatch(
@@ -1000,7 +1002,8 @@ export class AppState {
 			undefined,
 			undefined,
 			!!focusOverride,
-			noOracle
+			noOracle,
+			noVisuals
 		);
 		this.carryForwardAttachmentChips(userTurn.attachments);
 	}
@@ -1069,7 +1072,10 @@ export class AppState {
 		// Not exposed through send() itself since no composer control sets
 		// it; TurnInfoSheet.svelte's rerun buttons go through retry(),
 		// which calls this directly.
-		noOracle?: boolean
+		noOracle?: boolean,
+		// noVisuals: only ever set by retry()'s "Rerun as plain text" — see
+		// gateway/protocol.go's ClientMessage.NoVisuals doc comment.
+		noVisuals?: boolean
 	) {
 		if (truncateFromIndex !== undefined) {
 			this.turns = this.turns.slice(0, truncateFromIndex);
@@ -1144,6 +1150,7 @@ export class AppState {
 			deep_research: deepResearch || undefined,
 			no_research: noResearch || undefined,
 			no_oracle: noOracle || undefined,
+			no_visuals: noVisuals || undefined,
 			attachments: attachments?.map((a) => ({
 				id: a.id,
 				filename: a.filename,

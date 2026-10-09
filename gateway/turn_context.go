@@ -120,7 +120,7 @@ func (t *turnRun) buildAgentContext() {
 	// say yes; Pulsar's scheduler doesn't — see ClientMessage.OffersVisuals).
 	// Not in a voice call either (Transponder): that answer is read aloud, and
 	// a comparison table has no spoken form worth the tokens.
-	if t.msg.OffersVisuals && !t.msg.VoiceMode {
+	if t.msg.OffersVisuals && !t.msg.VoiceMode && !t.msg.NoVisuals {
 		t.agentCtx.Visuals = VisualsFromStore(t.s.db)
 	}
 	t.wirePersonalization()

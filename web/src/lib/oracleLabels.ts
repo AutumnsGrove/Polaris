@@ -48,6 +48,23 @@ const TASK_LABELS: Record<string, string> = {
 	calculate: 'a calculation'
 };
 
+// The ui check's winners, for the margin note's "shown as a <b>compare</b>
+// block". Fixed and developer-authored, so safe in {@html}; a winner not
+// listed (a future block kind this build doesn't know) is simply not named.
+const UI_BLOCK_LABELS: Record<string, string> = {
+	compare: 'compare',
+	steps: 'steps'
+};
+
+// A column-0 ```ui fence, the same one split.ts recognizes. Used to claim
+// "shown as a block" only when the answer really contains one.
+const UI_FENCE = /^```ui[ \t]*$/m;
+
+/** True when `answer` contains a Prism `ui` block (cheap; safe to call per token). */
+export function hasUiBlock(answer: string | undefined): boolean {
+	return !!answer && UI_FENCE.test(answer);
+}
+
 // The note and offer labels are rendered with {@html} so they can carry
 // <b> emphasis; anything not from a fixed developer-authored set (an
 // unrecognized focus mode id, a field name) goes through this first.
@@ -104,7 +121,11 @@ export function buildOracleNote(
 	oracleResult: OracleResult | undefined,
 	oracleFocusModeSource: string | undefined,
 	appliedFocusMode: string | undefined,
-	previousAppliedFocusMode: string | undefined
+	previousAppliedFocusMode: string | undefined,
+	// The turn's answer text, so the note can say "shown as a compare block"
+	// only when the model actually wrote one — the ui check nudges toward a
+	// block, it can't promise one.
+	answer?: string
 ): string | null {
 	if (!oracleResult) return null;
 
@@ -142,9 +163,20 @@ export function buildOracleNote(
 		}
 	}
 
-	if (readAs && focusClause) return `Read as <b>${readAs}</b> · ${focusClause}`;
-	if (readAs) return `Read as <b>${readAs}</b>`;
-	if (focusClause) return focusClause.charAt(0).toUpperCase() + focusClause.slice(1);
+	const ui = oracleResult.checks?.find((c) => c.key === 'ui');
+	const uiClause =
+		ui?.fired && UI_BLOCK_LABELS[ui.winner] && hasUiBlock(answer)
+			? `shown as a <b>${UI_BLOCK_LABELS[ui.winner]}</b> block`
+			: undefined;
+
+	// "Read as X · answered as Y · shown as a Z block", whichever apply, in
+	// that order; the first clause present is capitalized unless it already
+	// starts with "Read as".
+	const parts: string[] = [];
+	if (readAs) parts.push(`Read as <b>${readAs}</b>`);
+	if (focusClause) parts.push(focusClause);
+	if (uiClause) parts.push(uiClause);
+	if (parts.length) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + parts.slice(1).map((p) => ` · ${p}`).join('');
 
 	const recall = oracleResult.checks?.find((c) => c.key === 'recall');
 	if (recall?.fired && recall.winner === 'yes') return 'Refers to <b>a past chat</b>';
@@ -168,6 +200,7 @@ export const CHECK_DISPLAY: { key: string; name: string }[] = [
 	{ key: 'recall', name: 'Past chats' },
 	{ key: 'task', name: 'Task' },
 	{ key: 'format', name: 'Format' },
+	{ key: 'ui', name: 'Visual block' },
 	{ key: 'depth', name: 'Depth' },
 	{ key: 'recency', name: 'Freshness' },
 	{ key: 'source_type', name: 'Sources' },
@@ -247,6 +280,7 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		code: 'Code',
 		timeline: 'Timeline'
 	},
+	ui: { none: 'None', compare: 'Compare', steps: 'Steps' },
 	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
 	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },
 	source_type: {

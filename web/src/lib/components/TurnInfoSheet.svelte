@@ -4,7 +4,7 @@
 	import { swipeToDismiss } from '$lib/actions/swipeToDismiss';
 	import { X } from '@lucide/svelte';
 	import Asterism from './Asterism.svelte';
-	import { CHECK_DISPLAY, CHIP_NAMES, checkStateLabel, optionLabel } from '$lib/oracleLabels';
+	import { CHECK_DISPLAY, CHIP_NAMES, checkStateLabel, hasUiBlock, optionLabel } from '$lib/oracleLabels';
 
 	// The "why" sheet (docs/plans/oracle-mode.md's C1/4b) — answer stats
 	// first (shown regardless of whether Oracle ran this turn), then one
@@ -120,6 +120,16 @@
 
 	function rerunWithoutOracle() {
 		appState.retry(index, undefined, true);
+		onClose();
+	}
+
+	// Shown whenever the answer holds a Prism block, not only when Oracle's ui
+	// check nudged: with Oracle off the base prompt alone can produce one, and
+	// a wrong block should always be one tap from plain prose.
+	let showPlainTextRerun = $derived(hasUiBlock(turn.content));
+
+	function rerunAsPlainText() {
+		appState.retry(index, undefined, false, true);
 		onClose();
 	}
 
@@ -273,6 +283,10 @@
 			{/if}
 
 			<button class="rerun" type="button" onclick={rerunWithoutOracle}>Rerun without Oracle</button>
+		{/if}
+
+		{#if showPlainTextRerun}
+			<button class="rerun" type="button" onclick={rerunAsPlainText}>Rerun as plain text</button>
 		{/if}
 	</div>
 </div>

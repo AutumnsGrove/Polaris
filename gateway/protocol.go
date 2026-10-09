@@ -126,6 +126,13 @@ type ClientMessage struct {
 	// on for every other turn in the meantime. False (Oracle behaves
 	// exactly as its own setting/budget say) for every other caller.
 	NoOracle bool `json:"no_oracle,omitempty"`
+	// NoVisuals turns Prism off for this one turn: the `ui` grammar is left
+	// out of the system prompt and Oracle's ui check isn't asked. Set only by
+	// TurnInfoSheet.svelte's "Rerun as plain text", so one unwanted block can
+	// be re-asked as ordinary prose without flipping the Settings dial for
+	// every other turn. Client-settable on purpose (unlike OffersVisuals): it
+	// can only ever turn a feature off for the sender's own turn.
+	NoVisuals bool `json:"no_visuals,omitempty"`
 	// QuickMode mirrors tools.Context.QuickMode — set by Atlas's Quick
 	// Answer via POST /api/ask, never by the WebSocket chat client.
 	QuickMode bool `json:"quick_mode,omitempty"`

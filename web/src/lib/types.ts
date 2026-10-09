@@ -445,6 +445,9 @@ export type ClientMessage =
 			// TurnInfoSheet.svelte's "Rerun without Oracle" — see
 			// gateway/protocol.go's ClientMessage.NoOracle doc comment.
 			no_oracle?: boolean;
+			// TurnInfoSheet.svelte's "Rerun as plain text" — see
+			// gateway/protocol.go's ClientMessage.NoVisuals doc comment.
+			no_visuals?: boolean;
 			// Set when the composer's "+" sheet attached one or more files,
 			// each already uploaded via POST /api/upload before this message
 			// is sent — see gateway/attachments.go's resolveAttachments.

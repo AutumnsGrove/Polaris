@@ -98,6 +98,22 @@ func TestVisuals_GateByEntryPoint(t *testing.T) {
 		}
 	})
 
+	t.Run("a 'rerun as plain text' turn (no_visuals) gets nothing", func(t *testing.T) {
+		llm, prompts := capturingLLM(t)
+		h := newTestHarness(t, llm.URL)
+		conn := dialWS(t, h)
+		if err := conn.WriteJSON(map[string]interface{}{"type": "message", "content": "capital of france", "model": "test-model", "no_visuals": true}); err != nil {
+			t.Fatalf("WriteJSON: %v", err)
+		}
+		readEventsUntilDone(t, conn, 5*time.Second)
+		if len(prompts()) == 0 {
+			t.Fatal("the model was never called")
+		}
+		if anyContains(prompts(), marker) {
+			t.Error("no_visuals must remove the grammar for that one turn even at the default dial")
+		}
+	})
+
 	t.Run("a voice-call turn is read aloud, so it gets nothing", func(t *testing.T) {
 		llm, prompts := capturingLLM(t)
 		h := newTestHarness(t, llm.URL)

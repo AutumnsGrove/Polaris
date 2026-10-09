@@ -221,7 +221,13 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	});
 
 	let oracleNote = $derived(
-		buildOracleNote(turn.oracleResult, turn.oracleFocusModeSource, turn.appliedFocusMode, previousAppliedFocusMode)
+		buildOracleNote(
+			turn.oracleResult,
+			turn.oracleFocusModeSource,
+			turn.appliedFocusMode,
+			previousAppliedFocusMode,
+			turn.content
+		)
 	);
 
 	// F1 (mockups/oracle-mode.html): a mid-thread switch's note is a
