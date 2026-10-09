@@ -1,0 +1,95 @@
+{
+  "_comment": "Shared by gateway/uiblocks (Go) and web/src/lib/uiBlocks/flatten.test.ts (TS): both flatteners must turn `input` into exactly `want`. Expected values are hand-written, not generated, so a bug common to both implementations cannot hide. See docs/plans/intelligent-ui.md.",
+  "cases": [
+    {
+      "name": "no ui fence is returned unchanged",
+      "input": "Plain answer with a [link](https://example.com).\n",
+      "want": "Plain answer with a [link](https://example.com).\n"
+    },
+    {
+      "name": "answer callout carries its as-of date",
+      "input": "Intro\n\n```ui\n{\"c\":\"callout\",\"tone\":\"answer\",\"text\":\"Yes, with caveats.\",\"asof\":\"2026-10\"}\n```\n\nAfter\n",
+      "want": "Intro\n\nYes, with caveats. (as of Oct 2026)\n\nAfter\n"
+    },
+    {
+      "name": "as-of is ignored on a non-answer callout",
+      "input": "```ui\n{\"c\":\"callout\",\"tone\":\"warn\",\"text\":\"Careful.\",\"asof\":\"2026-10\"}\n```\n",
+      "want": "Careful.\n"
+    },
+    {
+      "name": "stat with label and note",
+      "input": "```ui\n{\"c\":\"stat\",\"label\":\"Boiling point\",\"value\":\"100 °C\",\"note\":\"at sea level\"}\n```\n",
+      "want": "Boiling point: 100 °C (at sea level)\n"
+    },
+    {
+      "name": "stat with a numeric value and no label",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":3}\n```\n",
+      "want": "3\n"
+    },
+    {
+      "name": "compare: pick, padded cell, source host lowercased",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"Moka pot\",\"AeroPress\"],\"pick\":1}\n{\"row\":\"Price\",\"v\":[\"$25\",\"$40\"],\"src\":[\"https://Example.com/a\"]}\n{\"row\":\"Weight\",\"v\":[\"0.4 kg\"]}\n```\n",
+      "want": "Moka pot: Price $25; Weight 0.4 kg\nAeroPress: Price $40; Weight — (recommended)\n[example.com](https://Example.com/a)\n"
+    },
+    {
+      "name": "compare: out-of-range pick is ignored",
+      "input": "```ui\n{\"c\":\"compare\",\"cols\":[\"A\",\"B\"],\"pick\":7}\n{\"row\":\"x\",\"v\":[\"1\",\"2\"]}\n```\n",
+      "want": "A: x 1\nB: x 2\n"
+    },
+    {
+      "name": "steps with title, detail and duration",
+      "input": "```ui\n{\"c\":\"steps\",\"title\":\"Descale\"}\n{\"i\":\"Mix vinegar and water\",\"d\":\"Half and half\",\"t\":\"2 min\"}\n{\"i\":\"Run a cycle\"}\n```\n",
+      "want": "Descale:\n1. Mix vinegar and water — Half and half (2 min)\n2. Run a cycle\n"
+    },
+    {
+      "name": "links keep schema order: text link first, then src in array order",
+      "input": "```ui\n{\"c\":\"callout\",\"text\":\"See [NASA](https://nasa.gov/x).\",\"src\":[\"https://b.org/p\",\"https://a.org\"]}\n```\n",
+      "want": "See [NASA](https://nasa.gov/x). [b.org](https://b.org/p) [a.org](https://a.org)\n"
+    },
+    {
+      "name": "key order in the JSON never changes the output",
+      "input": "```ui\n{\"src\":[\"https://a.org\"],\"text\":\"Hi\",\"c\":\"callout\"}\n```\n",
+      "want": "Hi [a.org](https://a.org)\n"
+    },
+    {
+      "name": "unusable lines are dropped, good ones kept",
+      "input": "```ui\n{\"c\":\"callout\",\"text\":\"Heads up\"}\nnot json at all\n{\"c\":\"nope\"}\n{\"orphan\":true}\n```\n",
+      "want": "Heads up\n"
+    },
+    {
+      "name": "a fence with nothing usable disappears",
+      "input": "Before\n```ui\ngarbage\n```\nAfter\n",
+      "want": "Before\nAfter\n"
+    },
+    {
+      "name": "a fence cut off before its closing fence drops its partial line",
+      "input": "Before\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n{\"c\":\"stat\",\"val",
+      "want": "Before\n1\n"
+    },
+    {
+      "name": "two fences in one answer",
+      "input": "```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\nmid\n```ui\n{\"c\":\"stat\",\"value\":\"2\"}\n```\n",
+      "want": "1\nmid\n2\n"
+    },
+    {
+      "name": "a ui example inside a longer fence stays literal",
+      "input": "````md\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n````\n",
+      "want": "````md\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n````\n"
+    },
+    {
+      "name": "mermaid and ordinary code fences pass through untouched",
+      "input": "```mermaid\ngraph TD\nA-->B\n```\n```go\nfmt.Println(\"ui\")\n```\n",
+      "want": "```mermaid\ngraph TD\nA-->B\n```\n```go\nfmt.Println(\"ui\")\n```\n"
+    },
+    {
+      "name": "an indented fence inside a list item is not a ui block",
+      "input": "- item\n\n  ```ui\n  {\"c\":\"stat\",\"value\":\"1\"}\n  ```\n",
+      "want": "- item\n\n  ```ui\n  {\"c\":\"stat\",\"value\":\"1\"}\n  ```\n"
+    },
+    {
+      "name": "a ui fence with extra info text is an ordinary code block",
+      "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
+      "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"
+    }
+  ]
+}
