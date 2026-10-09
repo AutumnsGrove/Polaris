@@ -17,8 +17,7 @@
 				<div class="if"><span class="lead">If</span> <UiText text={rule.if} /></div>
 				<div class="then">
 					<span class="arrow" aria-hidden="true">→</span>
-					<span class="pill"><UiText text={rule.then} /></span>
-					<UiSources src={rule.src} />
+					<span class="pill"><UiText text={rule.then} /><UiSources src={rule.src} /></span>
 				</div>
 			</div>
 		{/each}
@@ -60,21 +59,27 @@
 		color: var(--color-text-dim);
 	}
 
+	/* The pick is usually a sentence, not a word (seen live), so it is a
+	   block beside the arrow rather than a pill that wraps into a stadium:
+	   a pill's full radius turns into a blob once the text runs to a few lines. */
 	.then {
 		display: flex;
-		flex-wrap: wrap;
 		gap: var(--space-sm);
-		align-items: baseline;
-		margin-top: var(--space-xs);
+		align-items: flex-start;
+		margin-top: var(--space-sm);
 	}
 
 	.arrow {
+		flex: none;
+		padding-top: var(--space-xs);
 		color: var(--color-accent);
 	}
 
 	.pill {
-		padding: 0 var(--space-md);
-		border-radius: var(--radius-full);
+		flex: 1;
+		min-width: 0;
+		padding: var(--space-xs) var(--space-md);
+		border-radius: var(--radius-md);
 		background: var(--color-accent-soft);
 		font-weight: 600;
 		overflow-wrap: anywhere;
