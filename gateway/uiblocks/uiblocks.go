@@ -29,10 +29,16 @@ const (
 	maxCompareRows   = 12
 	maxSteps         = 15
 	maxRawChars      = 200
+
+	maxTimelineEvents = 15
+	maxChecklistItems = 20
+	maxProConPerSide  = 8
+	maxChooseRules    = 8
+	maxFactRows       = 12
 )
 
 type block struct {
-	kind string // callout | stat | compare | steps | raw
+	kind string // callout | stat | compare | steps | timeline | checklist | procon | choose | facts | raw
 
 	// callout / stat
 	tone, text, asof, label, value, note string
@@ -45,6 +51,33 @@ type block struct {
 	steps []step
 	// callout / stat sources
 	src []string
+	// timeline
+	events []event
+	// checklist
+	items []string
+	// procon
+	proHead, conHead string
+	pros, cons       []string
+	// choose
+	rules []rule
+	// facts (title is shared with steps)
+	sub      string
+	factRows []factRow
+}
+
+type event struct {
+	when, i string
+	src     []string
+}
+
+type rule struct {
+	cond, then string
+	src        []string
+}
+
+type factRow struct {
+	k, v string
+	src  []string
 }
 
 type compareRow struct {
@@ -156,6 +189,17 @@ func openContainer(o map[string]any) (*block, bool) {
 		return &block{kind: "compare", cols: cols, pick: pick}, true
 	case "steps":
 		return &block{kind: "steps", title: optText(o["title"])}, true
+	// These open with no required field: their data is all in child lines.
+	case "timeline":
+		return &block{kind: "timeline"}, true
+	case "checklist":
+		return &block{kind: "checklist", title: optText(o["title"])}, true
+	case "procon":
+		return &block{kind: "procon", proHead: optText(o["pro_h"]), conHead: optText(o["con_h"])}, true
+	case "choose":
+		return &block{kind: "choose", title: optText(o["title"])}, true
+	case "facts":
+		return &block{kind: "facts", title: optText(o["title"]), sub: optText(o["sub"])}, true
 	}
 	return nil, false
 }
@@ -185,6 +229,50 @@ func addChild(b *block, o map[string]any) bool {
 			return false
 		}
 		b.steps = append(b.steps, step{i: i, d: optText(o["d"]), t: optText(o["t"])})
+		return true
+	case "timeline":
+		when, ok1 := text(o["when"])
+		i, ok2 := text(o["i"])
+		if !ok1 || !ok2 || len(b.events) >= maxTimelineEvents {
+			return false
+		}
+		b.events = append(b.events, event{when: when, i: i, src: sources(o["src"])})
+		return true
+	case "checklist":
+		i, ok := text(o["i"])
+		if !ok || len(b.items) >= maxChecklistItems {
+			return false
+		}
+		b.items = append(b.items, i)
+		return true
+	case "procon":
+		// A line carrying both "+" and "-" is ambiguous: it fits neither.
+		pro, okPro := text(o["+"])
+		con, okCon := text(o["-"])
+		if okPro && !okCon && len(b.pros) < maxProConPerSide {
+			b.pros = append(b.pros, pro)
+			return true
+		}
+		if okCon && !okPro && len(b.cons) < maxProConPerSide {
+			b.cons = append(b.cons, con)
+			return true
+		}
+		return false
+	case "choose":
+		cond, ok1 := text(o["if"])
+		then, ok2 := text(o["then"])
+		if !ok1 || !ok2 || len(b.rules) >= maxChooseRules {
+			return false
+		}
+		b.rules = append(b.rules, rule{cond: cond, then: then, src: sources(o["src"])})
+		return true
+	case "facts":
+		k, ok1 := text(o["k"])
+		v, ok2 := text(o["v"])
+		if !ok1 || !ok2 || len(b.factRows) >= maxFactRows {
+			return false
+		}
+		b.factRows = append(b.factRows, factRow{k: k, v: v, src: sources(o["src"])})
 		return true
 	}
 	return false
@@ -271,6 +359,13 @@ func links(src []string) string {
 	return strings.Join(parts, " ")
 }
 
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
 func withSources(s string, src []string) string {
 	if len(src) == 0 {
 		return s
@@ -331,6 +426,44 @@ func flattenBlocks(blocks []*block) []string {
 					line += " (" + s.t + ")"
 				}
 				out = append(out, line)
+			}
+		case "timeline":
+			for _, ev := range b.events {
+				out = append(out, withSources(ev.when+": "+ev.i, ev.src))
+			}
+		case "checklist":
+			if b.title != "" {
+				out = append(out, b.title+":")
+			}
+			for _, item := range b.items {
+				out = append(out, "- "+item)
+			}
+		case "procon":
+			if len(b.pros) > 0 {
+				out = append(out, orDefault(b.proHead, "Pros")+": "+strings.Join(b.pros, "; "))
+			}
+			if len(b.cons) > 0 {
+				out = append(out, orDefault(b.conHead, "Cons")+": "+strings.Join(b.cons, "; "))
+			}
+		case "choose":
+			if b.title != "" {
+				out = append(out, b.title+":")
+			}
+			for _, r := range b.rules {
+				out = append(out, withSources("If "+r.cond+": "+r.then, r.src))
+			}
+		case "facts":
+			head := b.title
+			if b.title != "" && b.sub != "" {
+				head = b.title + " — " + b.sub
+			} else if b.title == "" {
+				head = b.sub
+			}
+			if head != "" {
+				out = append(out, head+":")
+			}
+			for _, r := range b.factRows {
+				out = append(out, withSources(r.k+": "+r.v, r.src))
 			}
 		}
 	}

@@ -6,6 +6,11 @@
 	import UiStat from './UiStat.svelte';
 	import UiCompare from './UiCompare.svelte';
 	import UiSteps from './UiSteps.svelte';
+	import UiTimeline from './UiTimeline.svelte';
+	import UiChecklist from './UiChecklist.svelte';
+	import UiProCon from './UiProCon.svelte';
+	import UiChoose from './UiChoose.svelte';
+	import UiFacts from './UiFacts.svelte';
 
 	// One ```ui fence. The whole body is re-parsed whenever it grows (cheap:
 	// parse.ts caps it at 40 lines) and the blocks are keyed by index, so a
@@ -29,6 +34,16 @@
 			<UiCompare {block} />
 		{:else if block.kind === 'steps'}
 			<UiSteps {block} />
+		{:else if block.kind === 'timeline'}
+			<UiTimeline {block} />
+		{:else if block.kind === 'checklist'}
+			<UiChecklist {block} />
+		{:else if block.kind === 'procon'}
+			<UiProCon {block} />
+		{:else if block.kind === 'choose'}
+			<UiChoose {block} />
+		{:else if block.kind === 'facts'}
+			<UiFacts {block} />
 		{:else}
 			<!-- A line the grammar couldn't use: shown muted, never an error and never blanking the rest. -->
 			<div class="raw">{block.text}</div>

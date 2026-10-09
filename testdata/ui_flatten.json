@@ -87,6 +87,36 @@
       "want": "- item\n\n  ```ui\n  {\"c\":\"stat\",\"value\":\"1\"}\n  ```\n"
     },
     {
+      "name": "timeline: date before text, link after its own event",
+      "input": "```ui\n{\"c\":\"timeline\"}\n{\"when\":\"1969\",\"i\":\"First message\",\"src\":[\"https://Example.com/a\"]}\n{\"when\":\"1983\",\"i\":\"TCP/IP switch\"}\n{\"i\":\"no date, raw row dropped\"}\n```\n",
+      "want": "1969: First message [example.com](https://Example.com/a)\n1983: TCP/IP switch\n"
+    },
+    {
+      "name": "checklist: title then dashed items",
+      "input": "```ui\n{\"c\":\"checklist\",\"title\":\"Before you fly\"}\n{\"i\":\"Passport\"}\n{\"i\":\"Charger\"}\n```\n",
+      "want": "Before you fly:\n- Passport\n- Charger\n"
+    },
+    {
+      "name": "procon: default headings, custom headings, pros and cons interleaved",
+      "input": "```ui\n{\"c\":\"procon\"}\n{\"+\":\"Fast\"}\n{\"-\":\"Costly\"}\n{\"+\":\"Quiet\"}\n{\"+\":\"both\",\"-\":\"ambiguous\"}\n```\n```ui\n{\"c\":\"procon\",\"pro_h\":\"Why\",\"con_h\":\"Why not\"}\n{\"-\":\"Loud\"}\n```\n",
+      "want": "Pros: Fast; Quiet\nCons: Costly\nWhy not: Loud\n"
+    },
+    {
+      "name": "choose: each rule carries its own sources",
+      "input": "```ui\n{\"c\":\"choose\",\"title\":\"Which plan\"}\n{\"if\":\"you travel a lot\",\"then\":\"Annual\",\"src\":[\"https://example.com/p\"]}\n{\"if\":\"you rarely do\",\"then\":\"Pay as you go\"}\n{\"if\":\"missing a then\"}\n```\n",
+      "want": "Which plan:\nIf you travel a lot: Annual [example.com](https://example.com/p)\nIf you rarely do: Pay as you go\n"
+    },
+    {
+      "name": "facts: title and subtitle on one heading line",
+      "input": "```ui\n{\"c\":\"facts\",\"title\":\"Lisbon\",\"sub\":\"Capital of Portugal\"}\n{\"k\":\"Population\",\"v\":\"545,000\",\"src\":[\"https://example.com/pop\"]}\n{\"k\":\"Founded\",\"v\":\"c. 1200 BC\"}\n```\n",
+      "want": "Lisbon — Capital of Portugal:\nPopulation: 545,000 [example.com](https://example.com/pop)\nFounded: c. 1200 BC\n"
+    },
+    {
+      "name": "facts: a subtitle alone still heads the card",
+      "input": "```ui\n{\"c\":\"facts\",\"sub\":\"At a glance\"}\n{\"k\":\"A\",\"v\":\"1\"}\n```\n",
+      "want": "At a glance:\nA: 1\n"
+    },
+    {
       "name": "a ui fence with extra info text is an ordinary code block",
       "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
       "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"

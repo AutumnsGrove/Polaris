@@ -6,6 +6,11 @@ export const MAX_LINES_PER_FENCE = 40;
 export const MAX_TEXT_CHARS = 400;
 const MAX_COMPARE_ROWS = 12;
 const MAX_STEPS = 15;
+const MAX_TIMELINE_EVENTS = 15;
+const MAX_CHECKLIST_ITEMS = 20;
+const MAX_PROCON_PER_SIDE = 8;
+const MAX_CHOOSE_RULES = 8;
+const MAX_FACT_ROWS = 12;
 const MAX_RAW_CHARS = 200;
 
 const TONES: readonly CalloutTone[] = ['note', 'warn', 'ok', 'answer'];
@@ -60,6 +65,18 @@ function openContainer(obj: Json): UiBlock | null {
 		}
 		case 'steps':
 			return { kind: 'steps', title: text(obj.title), steps: [] };
+		// These open with no required field: their data is all in child lines,
+		// so a bare `{"c":"timeline"}` is a valid (empty, for now) block.
+		case 'timeline':
+			return { kind: 'timeline', events: [] };
+		case 'checklist':
+			return { kind: 'checklist', title: text(obj.title), items: [] };
+		case 'procon':
+			return { kind: 'procon', proHead: text(obj.pro_h), conHead: text(obj.con_h), pros: [], cons: [] };
+		case 'choose':
+			return { kind: 'choose', title: text(obj.title), rules: [] };
+		case 'facts':
+			return { kind: 'facts', title: text(obj.title), sub: text(obj.sub), rows: [] };
 		default:
 			return null;
 	}
@@ -83,6 +100,48 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		if (!i || block.steps.length >= MAX_STEPS) return false;
 		const step: StepItem = { i, d: text(obj.d), t: text(obj.t) };
 		block.steps.push(step);
+		return true;
+	}
+	if (block.kind === 'timeline') {
+		const when = text(obj.when);
+		const i = text(obj.i);
+		if (!when || !i || block.events.length >= MAX_TIMELINE_EVENTS) return false;
+		block.events.push({ when, i, src: sources(obj.src) });
+		return true;
+	}
+	if (block.kind === 'checklist') {
+		const i = text(obj.i);
+		if (!i || block.items.length >= MAX_CHECKLIST_ITEMS) return false;
+		block.items.push(i);
+		return true;
+	}
+	if (block.kind === 'procon') {
+		// "+" / "-" are the whole schema; a line carrying both is ambiguous, so
+		// it fits neither and falls out as a raw row.
+		const pro = text(obj['+']);
+		const con = text(obj['-']);
+		if (pro && !con && block.pros.length < MAX_PROCON_PER_SIDE) {
+			block.pros.push(pro);
+			return true;
+		}
+		if (con && !pro && block.cons.length < MAX_PROCON_PER_SIDE) {
+			block.cons.push(con);
+			return true;
+		}
+		return false;
+	}
+	if (block.kind === 'choose') {
+		const cond = text(obj.if);
+		const then = text(obj.then);
+		if (!cond || !then || block.rules.length >= MAX_CHOOSE_RULES) return false;
+		block.rules.push({ if: cond, then, src: sources(obj.src) });
+		return true;
+	}
+	if (block.kind === 'facts') {
+		const k = text(obj.k);
+		const v = text(obj.v);
+		if (!k || !v || block.rows.length >= MAX_FACT_ROWS) return false;
+		block.rows.push({ k, v, src: sources(obj.src) });
 		return true;
 	}
 	// callout / stat / raw take no children.

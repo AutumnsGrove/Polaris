@@ -12,6 +12,22 @@ export const GOLDEN: Record<string, string> = {
 		'{"c":"steps","title":"Descale"}\n' +
 		'{"i":"Mix vinegar and water","d":"Half and half","t":"2 min"}\n' +
 		'{"i":"Run a cycle"}\n',
+	timeline:
+		'{"c":"timeline"}\n' +
+		'{"when":"1969","i":"First message sent","src":["https://example.com/arpanet"]}\n' +
+		'{"when":"14 Mar – 2 Apr 2005","i":"Long span"}\n',
+	checklist: '{"c":"checklist","title":"Before you fly"}\n{"i":"Passport"}\n{"i":"Charger"}\n',
+	procon:
+		'{"c":"procon","pro_h":"Why","con_h":"Why not"}\n' +
+		'{"+":"Fast"}\n{"-":"Costly"}\n{"+":"Quiet"}\n',
+	choose:
+		'{"c":"choose","title":"Which plan"}\n' +
+		'{"if":"You travel a lot","then":"Annual","src":["https://example.com/p"]}\n' +
+		'{"if":"You rarely do","then":"Pay as you go"}\n',
+	facts:
+		'{"c":"facts","title":"Lisbon","sub":"Capital of Portugal"}\n' +
+		'{"k":"Population","v":"545,000","src":["https://example.com/pop"]}\n' +
+		'{"k":"Founded","v":"c. 1200 BC"}\n',
 	callout: '{"c":"callout","tone":"answer","text":"Yes, with caveats.","asof":"2026-10"}\n',
 	stat: '{"c":"stat","label":"Boiling point","value":"100 °C","note":"at sea level"}\n',
 	mixed:
@@ -57,6 +73,49 @@ describe('parseUi', () => {
 				{ i: 'Run a cycle', d: undefined, t: undefined }
 			]
 		});
+	});
+
+	it('parses the group (a) blocks, including ones whose container line carries no data', () => {
+		expect(parseUi(GOLDEN.timeline)[0]).toEqual({
+			kind: 'timeline',
+			events: [
+				{ when: '1969', i: 'First message sent', src: ['https://example.com/arpanet'] },
+				{ when: '14 Mar – 2 Apr 2005', i: 'Long span', src: [] }
+			]
+		});
+		expect(parseUi(GOLDEN.checklist)[0]).toEqual({ kind: 'checklist', title: 'Before you fly', items: ['Passport', 'Charger'] });
+		expect(parseUi(GOLDEN.procon)[0]).toEqual({
+			kind: 'procon',
+			proHead: 'Why',
+			conHead: 'Why not',
+			pros: ['Fast', 'Quiet'],
+			cons: ['Costly']
+		});
+		expect(parseUi(GOLDEN.choose)[0]).toMatchObject({
+			kind: 'choose',
+			rules: [
+				{ if: 'You travel a lot', then: 'Annual', src: ['https://example.com/p'] },
+				{ if: 'You rarely do', then: 'Pay as you go', src: [] }
+			]
+		});
+		expect(parseUi(GOLDEN.facts)[0]).toMatchObject({
+			kind: 'facts',
+			title: 'Lisbon',
+			sub: 'Capital of Portugal',
+			rows: [
+				{ k: 'Population', v: '545,000', src: ['https://example.com/pop'] },
+				{ k: 'Founded', v: 'c. 1200 BC', src: [] }
+			]
+		});
+	});
+
+	it('sends a child line that fits its group (a) container to a raw row', () => {
+		const kinds = (s: string) => parseUi(s).map((b) => b.kind);
+		expect(kinds('{"c":"timeline"}\n{"i":"no date"}\n')).toEqual(['timeline', 'raw']);
+		expect(kinds('{"c":"procon"}\n{"+":"a","-":"b"}\n')).toEqual(['procon', 'raw']);
+		expect(kinds('{"c":"choose"}\n{"if":"x"}\n')).toEqual(['choose', 'raw']);
+		expect(kinds('{"c":"facts"}\n{"k":"only a key"}\n')).toEqual(['facts', 'raw']);
+		expect(kinds('{"c":"checklist"}\n{"row":"wrong schema"}\n')).toEqual(['checklist', 'raw']);
 	});
 
 	it('only keeps asof on an answer callout, in YYYY-MM form', () => {

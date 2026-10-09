@@ -70,6 +70,27 @@ function flattenBlocks(blocks: UiBlock[]): string[] {
 					out.push(line);
 				});
 				break;
+			case 'timeline':
+				for (const ev of b.events) out.push(withSources(`${ev.when}: ${ev.i}`, ev.src));
+				break;
+			case 'checklist':
+				if (b.title) out.push(`${b.title}:`);
+				for (const item of b.items) out.push(`- ${item}`);
+				break;
+			case 'procon':
+				if (b.pros.length) out.push(`${b.proHead ?? 'Pros'}: ${b.pros.join('; ')}`);
+				if (b.cons.length) out.push(`${b.conHead ?? 'Cons'}: ${b.cons.join('; ')}`);
+				break;
+			case 'choose':
+				if (b.title) out.push(`${b.title}:`);
+				for (const r of b.rules) out.push(withSources(`If ${r.if}: ${r.then}`, r.src));
+				break;
+			case 'facts': {
+				const head = b.title && b.sub ? `${b.title} — ${b.sub}` : (b.title ?? b.sub);
+				if (head) out.push(`${head}:`);
+				for (const r of b.rows) out.push(withSources(`${r.k}: ${r.v}`, r.src));
+				break;
+			}
 			// 'raw' rows are what the grammar could not use: noise to any reader.
 		}
 	}
