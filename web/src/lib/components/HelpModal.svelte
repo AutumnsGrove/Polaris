@@ -64,7 +64,7 @@
 			name: 'Prism',
 			means: 'Comparisons and step lists',
 			detail:
-				'Lets an answer use a comparison, a step-by-step rail, or a callout when that beats plain text. Set how often in Settings.'
+				'Lets an answer use a comparison, steps, a timeline, a checklist or a callout when that beats plain text. Set how often in Settings.'
 		},
 		{
 			name: 'Ghost thread',

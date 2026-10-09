@@ -84,10 +84,11 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   switch to opt those in too (still without the offer to set up a Pulsar, add to Daily, or file
   the chat into a Field). See [oracle.md](oracle.md) for every check and what it does.
 - **Prism** — answers can include a comparison (cards on a phone, a table when wide), a numbered
-  step rail, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
+  step rail, a timeline, a tick-off checklist, pros and cons, "if you…, pick…" decision rules, an
+  at-a-glance facts card, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
   in line by line as the answer streams. A Low / Normal / Off dial in Settings sets how readily
   they appear (Low by default). Works in chat and in Pulsar pulses. Diagrams now build up as they
-  stream too, and Oracle can nudge a comparison or a step list when one clearly fits.
+  stream too, and Oracle can nudge a block when one clearly fits.
 - **Night-sky start screen** — twinkling stars, a slow comet, and constellations that draw
   themselves in at random clear spots and fade back out behind "Ask Polaris anything."
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;

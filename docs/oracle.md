@@ -233,7 +233,7 @@ How careful to be, and where to look.
 | `steps` | A procedure where order matters. | Yes |
 | `choose` | The right pick depends on the person's situation, so decision rules help more than a table. | Yes |
 | `checklist` | Things to prepare, pack or tick off. | Yes |
-| `timeline` | Events over time, a history, or a schedule. | Yes |
+| `timeline` | A sequence of dated events, a history, or a schedule. Not a price, number or trend over time. | Yes |
 | `procon` | One thing weighed for and against. | Yes |
 | `facts` | An at-a-glance summary of one named thing (a product, place, person or organization). | Yes |
 

@@ -2,7 +2,8 @@
 
 **Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
-**Status: P0, P1 and P2 built (2026-10-09), P3 (the remaining blocks) not started.** Tracking issue #159.
+**Status: P0, P1 and P2 built (2026-10-09). P3 group (a) built (`timeline`, `checklist`, `procon`,
+`choose`, `facts`; see "Spike results: group (a)" below); groups (b) and (c) not started.** Tracking issue #159.
 P2 = the Oracle `ui` check (compare/steps/none; Low bar 0.85, Normal 0.70; holds back `format`; held back by
 `emotional`; skipped under Brief/Safari including a mode Oracle picks itself), the margin-note clause, the
 sheet's "Visual block" row, "Rerun as plain text" (`no_visuals`), and `dev/ui_spike` (results below).
@@ -500,6 +501,30 @@ separate matter and was not exercised).
 - **Thresholds kept as designed** (0.70, +0.15 on Low): no tuning was needed.
 - Not measured: the 11-way pick (only `none`/`compare`/`steps` exist so far), and latency. Re-run the
   spike after each P3 block group adds options; false-positive rate first.
+
+## Spike results: group (a) (2026-10-09)
+
+Corpus grew to 97 labeled messages (5 new shapes, 12 new negatives) plus the 60 real openers; $0.029 for a
+157-message run. Block caps chosen for the shapes the catalog left open: `procon` 8 per side, `choose` 8
+rules. Jev answered every message.
+
+| Dial (bar) | False positives | Block hit rate | Wrong block |
+|---|---|---|---|
+| Normal (0.70) | 2 / 44 (4.5%) | 44 / 48 (91.7%) | 0 |
+| Low (0.85) | **1 / 44 (2.3%)** | 44 / 48 (91.7%) | 0 |
+
+- **Single 10-way pick holds up; the gate split is not needed.** No wrong block anywhere, and the false
+  positives stay at 1-2 of 44.
+- **`choose` never wins.** All four `choose` messages lost to `compare` (0.53-0.69) or won below the bar, so
+  the model rarely gets the nudge for it. That is the safe direction (quiet, not wrong); `choose` still
+  works under the base grammar. Left as is rather than tuned on four messages.
+- **The remaining Low false positive is "history of the Roman aqueducts" -> `timeline` 0.97**, which is
+  defensible as a fair timeline; the label is arguable, not the pick.
+- **Found on real traffic and fixed:** a stock-price request got `timeline` at 0.87 (a trend over time,
+  not dated events), above the Low bar. The `timeline` option now says "Not a price, number or trend over
+  time"; the re-run no longer fires on it. (Normal also showed `facts` 0.78 on "what is kimi k2.8?", which
+  is a fair use, and Low stays quiet.) Affect/effect `compare` at 0.74 is the same Normal-only borderline
+  as before.
 
 ## Open questions
 

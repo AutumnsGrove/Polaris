@@ -39,7 +39,7 @@ import (
 
 type item struct {
 	Message string `json:"message"`
-	Expect  string `json:"expect,omitempty"` // compare | steps | none | borderline | "" (unlabeled real)
+	Expect  string `json:"expect,omitempty"` // a block name (compare, steps, ...) | none | borderline | "" (unlabeled real)
 }
 
 type scored struct {
@@ -175,7 +175,13 @@ func report(name string, bar float64, results []scored) {
 				falsePos++
 				fps = append(fps, line)
 			}
-		case "compare", "steps":
+		case "borderline":
+			borderline = append(borderline, fmt.Sprintf("  fires=%-8s %-9s %.2f  %s", got, s.Winner, s.Probs[s.Winner], truncate(s.Message, 60)))
+		case "":
+			if got != "none" {
+				real = append(real, line)
+			}
+		default: // any other label is the block this message should get
 			blockTotal++
 			switch {
 			case got == s.Expect:
@@ -185,12 +191,6 @@ func report(name string, bar float64, results []scored) {
 			default:
 				wrongBlock++
 				wrongs = append(wrongs, fmt.Sprintf("  want %-7s got %-9s %.2f  %s", s.Expect, got, s.Probs[got], truncate(s.Message, 60)))
-			}
-		case "borderline":
-			borderline = append(borderline, fmt.Sprintf("  fires=%-8s %-9s %.2f  %s", got, s.Winner, s.Probs[s.Winner], truncate(s.Message, 60)))
-		default:
-			if got != "none" {
-				real = append(real, line)
 			}
 		}
 	}
