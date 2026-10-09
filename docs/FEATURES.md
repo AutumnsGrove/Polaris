@@ -86,7 +86,10 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Prism** — answers can include a comparison (cards on a phone, a table when wide), a numbered
   step rail, a timeline, a tick-off checklist, pros and cons, "if you…, pick…" decision rules, an
   at-a-glance facts card, a branching flow chart (tap a step for detail), per-OS tabs, a
-  collapsible detail section, a callout, or a big number when that is clearly easier to scan than prose. Blocks fill
+  collapsible detail section, a fact-check card (verdict, evidence for and against), a pull-quote, a
+  callout, or a big number when that is clearly easier to scan than prose. A source cited inside a
+  block gets the same "found in source" tick as one in prose, and a quote is only ticked when the
+  passage really appears in the page. Blocks fill
   in line by line as the answer streams. A Low / Normal / Off dial in Settings sets how readily
   they appear (Low by default). Works in chat and in Pulsar pulses. Diagrams now build up as they
   stream too, and Oracle can nudge a block when one clearly fits.

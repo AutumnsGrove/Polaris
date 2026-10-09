@@ -1,8 +1,10 @@
 # Prism (Intelligent UI): handoff for P3
 
-**UPDATE: group (b) (`flow`, `tabs`, `disclose`) is built too (commits `d91088c`..; see the plan's "Group
-(b)"). Only group (c), `claim`/`quote` + verification wiring, remains; read "Group (c) caveat" below
-first.** Group (a) and (b) are the templates; skip the "Group (b) notes" section, it is done.
+**UPDATE: P3 is COMPLETE. Groups (a), (b) and (c) are all built (`b8f9064`..HEAD; see the plan's "Spike
+results: group (a)", "Group (b)", "Group (c)"). Nothing is pushed. What is left is the operator's big code
+review, then a push; plus the deferred items in the memory file (search_chats FTS indexing of raw block
+JSON, phone mermaid render cost).** The rest of this doc is the recipe for adding a block and stays accurate,
+except where a section says otherwise.
 
 Written 2026-10-09 to start a fresh session. P0, P1 and P2 are built. **P3 group (a) is built too (same day:
 `timeline`, `checklist`, `procon`, `choose`, `facts`; commits `b8f9064`..`f056e13`, spike and live phone-width
@@ -46,12 +48,13 @@ the freshest template (`flow` will need more than that: see "Group (b)" at the e
    poorly calibrated at ~11 options, the plan's fallback is a two-question split (`ui` gate + `ui_block`).
 7. Docs: `docs/FEATURES.md` if user-visible. The glossary entry is "Prism" and already exists.
 
-## Group (c) caveat: client and server must change together
-Today neither side counts `ui` links for verification ticks: `claimsForVerification` in
-`gateway/verification.go` uses `uiblocks.Strip`, and `UiText.svelte` passes no verification marks. Turning
-tick support on means switching Strip to Flatten, threading the occurrence counter through `UiText`, and
-emitting links in schema order on both sides. Doing only one side puts ticks on the wrong chips. `quote`
-verification is exact-match first, Jev on a miss (plan decision 18).
+## Group (c): DONE, and built differently from this section's original plan
+Block links are verified and ticked by **locator** (`<fence>.<block>.<item>.<field>#<n>`), not by the
+occurrence counter this section used to prescribe: see "As built" under "Sourcing and verification" in
+`docs/plans/intelligent-ui.md`. **When you add a block or a new text field that can hold a source, you
+must add it in both places**: `collect()` in `gateway/uiblocks/sites.go` (Go) and a `loc="{loc}.<item>.<field>"`
+on its `UiText`/`UiSources` in the component. `TestSites_FieldNamesMatchTheComponents` fails if the two
+disagree, so extend its table too. A disagreement only ever loses a tick.
 
 ## Gotchas learned
 - **Who is taught blocks** is `ClientMessage.OffersVisuals` (ws, `/api/ask`, Pulsar pulses yes; voice,

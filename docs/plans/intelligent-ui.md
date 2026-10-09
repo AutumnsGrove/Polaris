@@ -4,7 +4,8 @@
 
 **Status: P0, P1 and P2 built (2026-10-09). P3 group (a) built (`timeline`, `checklist`, `procon`,
 `choose`, `facts`; see "Spike results: group (a)" below) and group (b) (`flow`, `tabs`, `disclose`; see
-"Group (b)" below); group (c) (`claim`, `quote`, verification wiring) not started.** Tracking issue #159.
+"Group (b)" below) and group (c) (`claim`, `quote`, verification wiring; see "As built" under "Sourcing
+and verification" and "Group (c)" below). **P3 is complete.** Tracking issue #159.
 P2 = the Oracle `ui` check (compare/steps/none; Low bar 0.85, Normal 0.70; holds back `format`; held back by
 `emotional`; skipped under Brief/Safari including a mode Oracle picks itself), the margin-note clause, the
 sheet's "Visual block" row, "Rerun as plain text" (`no_visuals`), and `dev/ui_spike` (results below).
@@ -259,6 +260,35 @@ mermaid graph is also tall on a phone, which is a further reason `flow` exists.
 
 ## Sourcing and verification (how `quote`'s badge works)
 
+> **As built (2026-10-09), and it differs from the design below in one decision: block links are
+> addressed by locator, not by occurrence number.** Items 1-3 below (flatten feeds `extractClaims`, schema-
+> order link counting on both sides, a client counter threaded through `UiText`) were the original plan.
+> Building it showed why that is the fragile choice for blocks: `compare` draws every cell twice (cards and
+> table), flattens column by column but draws row by row, and any ordering drift puts a tick on the wrong
+> chip, which is the one failure verification must not have. What shipped instead:
+>
+> - A link inside a block is named by where it sits, `<fence>.<block>.<item>.<field>#<n>` (e.g.
+>   `0.2.1.src#0`): `gateway/uiblocks/sites.go` enumerates them with the sentence Jev should check, and
+>   `VerificationMark` carries an optional `locator`. The client builds the same string per field (a `loc`
+>   prop through `components/ui/`, `UiText`, `UiSources`) and `renderInlineCitations` ticks a link when its
+>   `<loc>#<n>` has a supported mark. `n` counts tracked links only, as the client chips only those.
+> - **Prose is untouched**: still `extractClaims` over the fence-stripped answer and the nth-occurrence
+>   rule; a locator mark never ticks a prose chip and a prose mark never ticks a block link.
+> - **A disagreement can only lose a tick, never misplace one.** A contract test
+>   (`TestSites_FieldNamesMatchTheComponents`) fails if a Go field name stops matching its Svelte `loc`.
+> - Each evidence line of a `claim` block is checked against its own line (not the headline claim); a
+>   `quote`'s sources are checked for the passage (exact match first, no Jev call, then Jev with a
+>   "contains this passage, a paraphrase does NOT count" question); block claims are capped at 20 a turn
+>   and run after the prose claims.
+> - Not wired: `compare`'s phone-card source line (merged and de-duplicated across rows, so no per-row
+>   address; the wide table's per-row sources do tick), `stat`'s big value (plain text on the client), and
+>   anything inside a `<td>` (existing `renderInlineCitations` rule: table-cell links stay plain links).
+> - **Live check** (real model, real pages, real Jev, `/api/ask` with `wait_verification`): a fact-check
+>   answer's three supporting lines each got their own locator mark and tick (two of them citing the same
+>   NIH page, ticked independently), the disputing line scored 0.71 and correctly got none, and a `quote`
+>   matched its NASA page verbatim at confidence 1.0 with no Jev call. A `facts` card got no ticks because
+>   the model wrote no per-row `src` (a one-sentence prompt nudge did not change that on re-run).
+
 Found in the code, and it removes the open item from the last draft: Polaris already verifies
 claims against their sources, with Jev (the same backend model as Oracle), in
 `gateway/verification.go`. How it works today:
@@ -472,9 +502,9 @@ margin-note wording, ⓘ card, "Rerun as plain text". Run the classification spi
   each exemplar; blocks also ride along verbatim in history on later turns (Decision 14), so the base fragment and exemplars should stay terse.
 - **Mermaid jitter and phone render cost** (above). Mitigated by throttling, not eliminated.
 - **Verification and claims.** Server-side claim extraction runs over the raw answer; JSON lines
-  must not reach it unflattened. P1 strips `ui` fences before extraction and the client counter
-  skips `ui` links (both or neither, never one); "Sourcing and verification" turns both on together.
-  Evidence only exists for pages `web_read` fetched this turn, so a block citing a snippet-only source
+  must not reach it unflattened. Prose claims still run over the fence-stripped answer; block links are
+  verified separately and ticked by locator (see "As built" under "Sourcing and verification"), so the two
+  can no longer disturb each other's numbering. Evidence only exists for pages `web_read` fetched this turn, so a block citing a snippet-only source
   never gets a badge. Principle: trust marks are never model-written.
 - **Mobile layout** is the primary target (CLAUDE.md); desktop is secondary.
 
@@ -563,6 +593,24 @@ Built the same way as group (a). What is worth knowing that the catalog did not 
   0.95, the aqueducts `timeline` again). The one wrong block is a `choose` message that read as `compare`.
   As the option count grew, `choose` slipped further under the bar (0.41-0.67): the probability mass splits,
   as predicted. The gate + kind split is still not needed on these numbers; revisit if real use shows noise.
+
+## Group (c): `claim`, `quote`, verification (2026-10-09)
+
+Blocks: `quote` (`text`, `by`, `src`; a flat serif pull-quote) and `claim` (`text`, `verdict`, then `+` / `-`
+lines with `src`, at most 6 per side; a verdict pill with a glyph and a word, never colour alone). The
+verdict is the model's own read and has no caption and no tick (decision 17); an unknown verdict is
+`unverified`. Verification wiring is described under "Sourcing and verification" (it deliberately differs
+from the original counter-based design). Oracle gets one new option, `claim` ("checking whether one
+specific claim holds up, with evidence on both sides"); `quote` stays an accent under the base prompt.
+
+- **Spike** (188 messages, 6 new `claim` positives, 3 new negatives; $0.036): all six `claim` messages win
+  as `claim` on Normal; four sit under Low's 0.85 bar (0.70-0.84). False positives are 3 / 50 on Normal
+  (affect/effect `compare` 0.73, the bill-becomes-law `steps`, the aqueducts `timeline`) and 2 / 50 on Low,
+  0 wrong blocks on Low and 1 on Normal. With 13 options the probability mass is split further, which is why
+  `choose` keeps drifting under the bar; still no case for the gate + kind split.
+- **Prompt:** the base grammar now also says where sources go ("where a row, step or line rests on a source
+  you read, give that line `src`"). A `facts` card for a single product page still came back with no
+  per-row `src` (the model credits the page once, in the subtitle), so such a card gets no ticks.
 
 ## Open questions
 
