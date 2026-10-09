@@ -68,6 +68,31 @@ This is built specifically to sit on top of a self-hosted SearXNG instance, run 
 low-power hardware (a single-board computer, not a server), and stay small enough that "the whole
 app" is one file you can scp around if you ever needed to.
 
+## Built with
+
+<table align="center">
+<tr>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ascii/go.dark.svg">
+  <img alt="Go" src="docs/ascii/go.svg" width="400">
+</picture>
+<br><sub>The backend: one Go binary</sub>
+</td>
+<td align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ascii/svelte.dark.svg">
+  <img alt="Svelte" src="docs/ascii/svelte.svg" width="260">
+</picture>
+<br><sub>The frontend: SvelteKit, embedded in that binary</sub>
+</td>
+</tr>
+</table>
+
+<sub>Animated ASCII logos from [ascii.rest](https://ascii.rest) by [@bas3line](https://github.com/bas3line)
+(MIT), stored locally in `docs/ascii/`. The Go and Svelte logos are trademarks of their owners, shown
+here to name the languages.</sub>
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
