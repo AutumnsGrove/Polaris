@@ -35,6 +35,10 @@ const (
 	maxProConPerSide  = 8
 	maxChooseRules    = 8
 	maxFactRows       = 12
+	maxFlowNodes      = 10
+	maxFlowEdges      = 20
+	maxTabs           = 6
+	maxDiscloseParas  = 8
 )
 
 type block struct {
@@ -63,7 +67,25 @@ type block struct {
 	// facts (title is shared with steps)
 	sub      string
 	factRows []factRow
+	// flow: nodes and edges in arrival order (an edge may name a node that
+	// arrives later, so ends are only resolved at flatten time)
+	nodes []flowNode
+	edges []flowEdge
+	// tabs
+	tabs []tab
+	// disclose (title is shared with steps)
+	hint  string
+	paras []string
 }
+
+type flowNode struct {
+	n, t, d string
+	src     []string
+}
+
+type flowEdge struct{ from, to, l string }
+
+type tab struct{ name, text string }
 
 type event struct {
 	when, i string
@@ -200,6 +222,12 @@ func openContainer(o map[string]any) (*block, bool) {
 		return &block{kind: "choose", title: optText(o["title"])}, true
 	case "facts":
 		return &block{kind: "facts", title: optText(o["title"]), sub: optText(o["sub"])}, true
+	case "flow":
+		return &block{kind: "flow"}, true
+	case "tabs":
+		return &block{kind: "tabs"}, true
+	case "disclose":
+		return &block{kind: "disclose", title: optText(o["title"]), hint: optText(o["hint"])}, true
 	}
 	return nil, false
 }
@@ -273,6 +301,47 @@ func addChild(b *block, o map[string]any) bool {
 			return false
 		}
 		b.factRows = append(b.factRows, factRow{k: k, v: v, src: sources(o["src"])})
+		return true
+	case "flow":
+		if e, isEdge := o["e"].([]any); isEdge {
+			// Ids are not checked against the nodes here: the target may arrive later.
+			if len(e) != 2 || len(b.edges) >= maxFlowEdges {
+				return false
+			}
+			from, ok1 := text(e[0])
+			to, ok2 := text(e[1])
+			if !ok1 || !ok2 || from == to {
+				return false
+			}
+			b.edges = append(b.edges, flowEdge{from: from, to: to, l: optText(o["l"])})
+			return true
+		}
+		n, ok1 := text(o["n"])
+		t, ok2 := text(o["t"])
+		if !ok1 || !ok2 || len(b.nodes) >= maxFlowNodes {
+			return false
+		}
+		for _, x := range b.nodes {
+			if x.n == n {
+				return false
+			}
+		}
+		b.nodes = append(b.nodes, flowNode{n: n, t: t, d: optText(o["d"]), src: sources(o["src"])})
+		return true
+	case "tabs":
+		name, ok1 := text(o["tab"])
+		body, ok2 := text(o["text"])
+		if !ok1 || !ok2 || len(b.tabs) >= maxTabs {
+			return false
+		}
+		b.tabs = append(b.tabs, tab{name: name, text: body})
+		return true
+	case "disclose":
+		p, ok := text(o["p"])
+		if !ok || len(b.paras) >= maxDiscloseParas {
+			return false
+		}
+		b.paras = append(b.paras, p)
 		return true
 	}
 	return false
@@ -465,6 +534,38 @@ func flattenBlocks(blocks []*block) []string {
 			for _, r := range b.factRows {
 				out = append(out, withSources(r.k+": "+r.v, r.src))
 			}
+		case "flow":
+			// Nodes then edges in arrival order; layout is a display concern. An
+			// edge whose ends never arrived is dropped.
+			title := map[string]string{}
+			for _, n := range b.nodes {
+				title[n.n] = n.t
+				s := n.t
+				if n.d != "" {
+					s += " — " + n.d
+				}
+				out = append(out, withSources(s, n.src))
+			}
+			for _, e := range b.edges {
+				from, okFrom := title[e.from]
+				to, okTo := title[e.to]
+				if okFrom && okTo {
+					line := from + " → " + to
+					if e.l != "" {
+						line += " (" + e.l + ")"
+					}
+					out = append(out, line)
+				}
+			}
+		case "tabs":
+			for _, t := range b.tabs {
+				out = append(out, t.name+": "+t.text)
+			}
+		case "disclose":
+			if b.title != "" {
+				out = append(out, b.title+":")
+			}
+			out = append(out, b.paras...)
 		}
 	}
 	return out

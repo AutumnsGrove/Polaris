@@ -117,6 +117,21 @@
       "want": "At a glance:\nA: 1\n"
     },
     {
+      "name": "flow: nodes then edges in arrival order, a late node resolves, dangling and duplicate lines are dropped",
+      "input": "```ui\n{\"c\":\"flow\"}\n{\"n\":\"a\",\"t\":\"Check the light\",\"d\":\"Is it blinking?\",\"src\":[\"https://example.com/led\"]}\n{\"e\":[\"a\",\"b\"],\"l\":\"Yes\"}\n{\"e\":[\"a\",\"ghost\"]}\n{\"n\":\"b\",\"t\":\"Replace the fuse\",\"kind\":\"decision\"}\n{\"n\":\"b\",\"t\":\"Duplicate id\"}\n{\"e\":[\"b\",\"a\"]}\n{\"e\":[\"a\",\"a\"]}\n```\n",
+      "want": "Check the light — Is it blinking? [example.com](https://example.com/led)\nReplace the fuse\nCheck the light → Replace the fuse (Yes)\nReplace the fuse → Check the light\n"
+    },
+    {
+      "name": "tabs: one line per tab",
+      "input": "```ui\n{\"c\":\"tabs\"}\n{\"tab\":\"macOS\",\"text\":\"Use `brew install`.\"}\n{\"tab\":\"Linux\",\"text\":\"Use apt.\"}\n{\"tab\":\"no body\"}\n```\n",
+      "want": "macOS: Use `brew install`.\nLinux: Use apt.\n"
+    },
+    {
+      "name": "disclose: title then every paragraph, the hidden ones included",
+      "input": "```ui\n{\"c\":\"disclose\",\"title\":\"Why this works\",\"hint\":\"3 min read\"}\n{\"p\":\"First reason.\"}\n{\"p\":\"Second reason.\"}\n```\n",
+      "want": "Why this works:\nFirst reason.\nSecond reason.\n"
+    },
+    {
       "name": "a ui fence with extra info text is an ordinary code block",
       "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
       "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"

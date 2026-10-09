@@ -11,6 +11,10 @@ const MAX_CHECKLIST_ITEMS = 20;
 const MAX_PROCON_PER_SIDE = 8;
 const MAX_CHOOSE_RULES = 8;
 const MAX_FACT_ROWS = 12;
+const MAX_FLOW_NODES = 10;
+const MAX_FLOW_EDGES = 20;
+const MAX_TABS = 6;
+const MAX_DISCLOSE_PARAS = 8;
 const MAX_RAW_CHARS = 200;
 
 const TONES: readonly CalloutTone[] = ['note', 'warn', 'ok', 'answer'];
@@ -77,6 +81,12 @@ function openContainer(obj: Json): UiBlock | null {
 			return { kind: 'choose', title: text(obj.title), rules: [] };
 		case 'facts':
 			return { kind: 'facts', title: text(obj.title), sub: text(obj.sub), rows: [] };
+		case 'flow':
+			return { kind: 'flow', nodes: [], edges: [] };
+		case 'tabs':
+			return { kind: 'tabs', tabs: [] };
+		case 'disclose':
+			return { kind: 'disclose', title: text(obj.title), hint: text(obj.hint), paras: [] };
 		default:
 			return null;
 	}
@@ -142,6 +152,36 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		const v = text(obj.v);
 		if (!k || !v || block.rows.length >= MAX_FACT_ROWS) return false;
 		block.rows.push({ k, v, src: sources(obj.src) });
+		return true;
+	}
+	if (block.kind === 'flow') {
+		if (Array.isArray(obj.e)) {
+			// An edge: ["from","to"], optionally labelled. Ids are not checked
+			// against the nodes here, because the target may stream in later.
+			if (obj.e.length !== 2) return false;
+			const from = text(obj.e[0]);
+			const to = text(obj.e[1]);
+			if (!from || !to || from === to || block.edges.length >= MAX_FLOW_EDGES) return false;
+			block.edges.push({ from, to, l: text(obj.l) });
+			return true;
+		}
+		const n = text(obj.n);
+		const t = text(obj.t);
+		if (!n || !t || block.nodes.length >= MAX_FLOW_NODES || block.nodes.some((x) => x.n === n)) return false;
+		block.nodes.push({ n, t, d: text(obj.d), decision: obj.kind === 'decision', src: sources(obj.src) });
+		return true;
+	}
+	if (block.kind === 'tabs') {
+		const tab = text(obj.tab);
+		const body = text(obj.text);
+		if (!tab || !body || block.tabs.length >= MAX_TABS) return false;
+		block.tabs.push({ tab, text: body });
+		return true;
+	}
+	if (block.kind === 'disclose') {
+		const p = text(obj.p);
+		if (!p || block.paras.length >= MAX_DISCLOSE_PARAS) return false;
+		block.paras.push(p);
 		return true;
 	}
 	// callout / stat / raw take no children.

@@ -40,6 +40,29 @@ export interface FactRow {
 	src: string[];
 }
 
+export interface FlowNode {
+	/** The id edges refer to ("n"). Unique within a block. */
+	n: string;
+	t: string;
+	/** Detail shown when the node is tapped open. */
+	d?: string;
+	/** `kind:"decision"`: a node that branches on a question. */
+	decision: boolean;
+	src: string[];
+}
+
+export interface FlowEdge {
+	from: string;
+	to: string;
+	/** The branch label ("Yes"), shown above the node it leads to. */
+	l?: string;
+}
+
+export interface TabItem {
+	tab: string;
+	text: string;
+}
+
 export type UiBlock =
 	| { kind: 'callout'; tone: CalloutTone; text: string; asof?: string; src: string[] }
 	| { kind: 'stat'; label?: string; value: string; note?: string; src: string[] }
@@ -50,6 +73,12 @@ export type UiBlock =
 	| { kind: 'procon'; proHead?: string; conHead?: string; pros: string[]; cons: string[] }
 	| { kind: 'choose'; title?: string; rules: ChooseRule[] }
 	| { kind: 'facts'; title?: string; sub?: string; rows: FactRow[] }
+	// Nodes and edges are flat lists in arrival order: an edge can name a node
+	// that has not streamed in yet, so layout (flowLayout.ts) is the component's
+	// job, not the parser's.
+	| { kind: 'flow'; nodes: FlowNode[]; edges: FlowEdge[] }
+	| { kind: 'tabs'; tabs: TabItem[] }
+	| { kind: 'disclose'; title?: string; hint?: string; paras: string[] }
 	// A line the grammar couldn't use: invalid JSON, unknown component, a child
 	// line fitting no schema. Shown muted; never closes a container.
 	| { kind: 'raw'; text: string };

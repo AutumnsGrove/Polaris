@@ -28,6 +28,14 @@ export const GOLDEN: Record<string, string> = {
 		'{"c":"facts","title":"Lisbon","sub":"Capital of Portugal"}\n' +
 		'{"k":"Population","v":"545,000","src":["https://example.com/pop"]}\n' +
 		'{"k":"Founded","v":"c. 1200 BC"}\n',
+	flow:
+		'{"c":"flow"}\n' +
+		'{"n":"a","t":"Check the light","d":"Is it blinking?","src":["https://example.com/led"]}\n' +
+		'{"n":"b","t":"Replace the fuse","kind":"decision"}\n' +
+		'{"e":["a","b"],"l":"Yes"}\n' +
+		'{"e":["b","a"]}\n',
+	tabs: '{"c":"tabs"}\n{"tab":"macOS","text":"Use `brew install`."}\n{"tab":"Linux","text":"Use apt."}\n',
+	disclose: '{"c":"disclose","title":"Why this works","hint":"3 min read"}\n{"p":"First reason."}\n{"p":"Second reason."}\n',
 	callout: '{"c":"callout","tone":"answer","text":"Yes, with caveats.","asof":"2026-10"}\n',
 	stat: '{"c":"stat","label":"Boiling point","value":"100 °C","note":"at sea level"}\n',
 	mixed:
@@ -107,6 +115,55 @@ describe('parseUi', () => {
 				{ k: 'Founded', v: 'c. 1200 BC', src: [] }
 			]
 		});
+	});
+
+	it('parses flow nodes and edges as flat lists, keeping an edge whose target has not arrived', () => {
+		expect(parseUi(GOLDEN.flow)[0]).toEqual({
+			kind: 'flow',
+			nodes: [
+				{ n: 'a', t: 'Check the light', d: 'Is it blinking?', decision: false, src: ['https://example.com/led'] },
+				{ n: 'b', t: 'Replace the fuse', d: undefined, decision: true, src: [] }
+			],
+			edges: [
+				{ from: 'a', to: 'b', l: 'Yes' },
+				{ from: 'b', to: 'a', l: undefined }
+			]
+		});
+		// An edge to a node that arrives later is legal: layout, not the parser, resolves it.
+		expect(parseUi('{"c":"flow"}\n{"n":"a","t":"A"}\n{"e":["a","later"]}\n')[0]).toMatchObject({
+			edges: [{ from: 'a', to: 'later' }]
+		});
+	});
+
+	it('rejects flow lines that cannot be used and enforces the node cap', () => {
+		const kinds = (s: string) => parseUi(s).map((b) => b.kind);
+		// duplicate id, self-loop, malformed edge, node with no title
+		expect(kinds('{"c":"flow"}\n{"n":"a","t":"A"}\n{"n":"a","t":"Again"}\n')).toEqual(['flow', 'raw']);
+		expect(kinds('{"c":"flow"}\n{"e":["a","a"]}\n')).toEqual(['flow', 'raw']);
+		expect(kinds('{"c":"flow"}\n{"e":["a"]}\n')).toEqual(['flow', 'raw']);
+		expect(kinds('{"c":"flow"}\n{"n":"a"}\n')).toEqual(['flow', 'raw']);
+		const many = '{"c":"flow"}\n' + Array.from({ length: 12 }, (_, i) => `{"n":"n${i}","t":"N${i}"}\n`).join('');
+		const [flow, ...rest] = parseUi(many);
+		expect((flow as { nodes: unknown[] }).nodes).toHaveLength(10);
+		expect(rest.map((b) => b.kind)).toEqual(['raw', 'raw']);
+	});
+
+	it('parses tabs and disclose', () => {
+		expect(parseUi(GOLDEN.tabs)[0]).toEqual({
+			kind: 'tabs',
+			tabs: [
+				{ tab: 'macOS', text: 'Use `brew install`.' },
+				{ tab: 'Linux', text: 'Use apt.' }
+			]
+		});
+		expect(parseUi(GOLDEN.disclose)[0]).toEqual({
+			kind: 'disclose',
+			title: 'Why this works',
+			hint: '3 min read',
+			paras: ['First reason.', 'Second reason.']
+		});
+		const seven = '{"c":"tabs"}\n' + Array.from({ length: 7 }, (_, i) => `{"tab":"T${i}","text":"x"}\n`).join('');
+		expect(parseUi(seven).map((b) => b.kind)).toEqual(['tabs', 'raw']);
 	});
 
 	it('sends a child line that fits its group (a) container to a raw row', () => {

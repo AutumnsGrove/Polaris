@@ -91,6 +91,26 @@ function flattenBlocks(blocks: UiBlock[]): string[] {
 				for (const r of b.rows) out.push(withSources(`${r.k}: ${r.v}`, r.src));
 				break;
 			}
+			case 'flow': {
+				// Nodes then edges, both in arrival order; the layout (BFS, back-edges) is
+				// a display concern and is not repeated on the Go side. An edge whose
+				// ends never arrived is dropped.
+				const title = new Map(b.nodes.map((n) => [n.n, n.t]));
+				for (const n of b.nodes) out.push(withSources(n.d ? `${n.t} — ${n.d}` : n.t, n.src));
+				for (const e of b.edges) {
+					const from = title.get(e.from);
+					const to = title.get(e.to);
+					if (from !== undefined && to !== undefined) out.push(`${from} → ${to}${e.l ? ` (${e.l})` : ''}`);
+				}
+				break;
+			}
+			case 'tabs':
+				for (const t of b.tabs) out.push(`${t.tab}: ${t.text}`);
+				break;
+			case 'disclose':
+				if (b.title) out.push(`${b.title}:`);
+				for (const p of b.paras) out.push(p);
+				break;
 			// 'raw' rows are what the grammar could not use: noise to any reader.
 		}
 	}
