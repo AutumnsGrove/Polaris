@@ -38,7 +38,7 @@
 		margin: var(--space-md) 0;
 		padding: var(--space-md);
 		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius-md);
 		background: var(--color-surface);
 		font-size: 14px;
 	}

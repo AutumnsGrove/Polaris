@@ -46,7 +46,7 @@
 	.rule {
 		padding: var(--space-md) var(--space-lg);
 		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius-md);
 		background: var(--color-surface);
 		font-size: 14px;
 	}
@@ -79,7 +79,7 @@
 		flex: 1;
 		min-width: 0;
 		padding: var(--space-xs) var(--space-md);
-		border-radius: var(--radius-md);
+		border-radius: var(--radius-sm);
 		background: var(--color-accent-soft);
 		font-weight: 600;
 		overflow-wrap: anywhere;

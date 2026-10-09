@@ -79,7 +79,7 @@
 		position: relative;
 		padding: var(--space-md) var(--space-lg);
 		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius-md);
 		background: var(--color-surface);
 	}
 
@@ -140,7 +140,7 @@
 			display: block;
 			overflow-x: auto;
 			border: 1px solid var(--color-border);
-			border-radius: var(--radius-lg);
+			border-radius: var(--radius-md);
 			background: var(--color-surface);
 		}
 
