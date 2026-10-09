@@ -48,7 +48,13 @@ describe('buildOracleNote', () => {
 
 		it('claims nothing for a check that did not fire, or an option this build cannot name', () => {
 			expect(buildOracleNote(ui('compare', false), undefined, undefined, undefined, answerWithBlock)).toBeNull();
-			expect(buildOracleNote(ui('timeline'), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+			expect(buildOracleNote(ui('map'), undefined, undefined, undefined, answerWithBlock)).toBeNull();
+		});
+
+		it('names the group (a) blocks it can draw', () => {
+			expect(buildOracleNote(ui('timeline'), undefined, undefined, undefined, answerWithBlock)).toBe(
+				'Shown as a <b>timeline</b> block'
+			);
 		});
 
 		it('joins after the read-as and focus clauses, in that order', () => {

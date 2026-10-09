@@ -16,7 +16,15 @@ func uiDefaults(d *Set) {
 		"  attribute: 2 to 4 columns, at most 12 rows, \"v\" has one value per column, \"pick\" is the column you\n" +
 		"  recommend (leave it out if you don't).\n" +
 		"- `{\"c\":\"steps\",\"title\":\"...\"}` then `{\"i\":\"Step\",\"d\":\"detail\",\"t\":\"2 min\"}` lines, at most 15. Leave\n" +
-		"  out \"t\" unless it is a real duration.\n\n" +
+		"  out \"t\" unless it is a real duration.\n" +
+		"- `{\"c\":\"timeline\"}` then `{\"when\":\"1969\",\"i\":\"What happened\"}` lines, at most 15, in time order.\n" +
+		"- `{\"c\":\"checklist\",\"title\":\"...\"}` then `{\"i\":\"Item\"}` lines, at most 20 — things to prepare or tick off.\n" +
+		"- `{\"c\":\"procon\",\"pro_h\":\"Pros\",\"con_h\":\"Cons\"}` (headings optional) then `{\"+\":\"point\"}` and\n" +
+		"  `{\"-\":\"point\"}` lines, at most 8 of each — one thing weighed for and against.\n" +
+		"- `{\"c\":\"choose\",\"title\":\"...\"}` then `{\"if\":\"their situation\",\"then\":\"the pick\"}` lines, at most 8 —\n" +
+		"  for when the right choice depends on the person.\n" +
+		"- `{\"c\":\"facts\",\"title\":\"...\",\"sub\":\"...\"}` then `{\"k\":\"Label\",\"v\":\"value\"}` lines, at most 12 —\n" +
+		"  an at-a-glance card about one named thing.\n\n" +
 		"A line with a \"c\" key opens a new block; a line without one belongs to the block above it. Text\n" +
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +

@@ -231,6 +231,11 @@ How careful to be, and where to look.
 | `none` | Prose, a short list, or code serves this best. | — |
 | `compare` | Choosing between specific options across shared attributes. | Yes |
 | `steps` | A procedure where order matters. | Yes |
+| `choose` | The right pick depends on the person's situation, so decision rules help more than a table. | Yes |
+| `checklist` | Things to prepare, pack or tick off. | Yes |
+| `timeline` | Events over time, a history, or a schedule. | Yes |
+| `procon` | One thing weighed for and against. | Yes |
+| `facts` | An at-a-glance summary of one named thing (a product, place, person or organization). | Yes |
 
 *fires at **70%+**, or **85%+** when the Prism setting is Low; never asked when Prism is Off or in a voice call; skipped under Brief and Safari focus; when it fires, holds back: `format`.*
 

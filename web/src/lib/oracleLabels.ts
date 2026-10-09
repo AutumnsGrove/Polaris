@@ -53,7 +53,12 @@ const TASK_LABELS: Record<string, string> = {
 // listed (a future block kind this build doesn't know) is simply not named.
 const UI_BLOCK_LABELS: Record<string, string> = {
 	compare: 'compare',
-	steps: 'steps'
+	steps: 'steps',
+	choose: 'decision',
+	checklist: 'checklist',
+	timeline: 'timeline',
+	procon: 'pros and cons',
+	facts: 'facts'
 };
 
 // A column-0 ```ui fence, the same one split.ts recognizes. Used to claim
@@ -280,7 +285,16 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		code: 'Code',
 		timeline: 'Timeline'
 	},
-	ui: { none: 'None', compare: 'Compare', steps: 'Steps' },
+	ui: {
+		none: 'None',
+		compare: 'Compare',
+		steps: 'Steps',
+		choose: 'Decision',
+		checklist: 'Checklist',
+		timeline: 'Timeline',
+		procon: 'Pros and cons',
+		facts: 'Facts'
+	},
 	depth: { standard: 'Standard', quick: 'Quick', thorough: 'Thorough' },
 	recency: { evergreen: 'Evergreen', recent: 'Recent', breaking: 'Breaking' },
 	source_type: {

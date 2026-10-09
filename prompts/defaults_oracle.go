@@ -201,9 +201,14 @@ func oracleDefaults(d *Set) {
 			Instructions: "Would a structured visual block serve this message clearly better than ordinary prose? " +
 				"Pick \"none\" unless the answer is really one of these shapes and prose would be harder to scan.",
 			Options: map[string]string{
-				"none":    "Prose, a short list, or code serves this best.",
-				"compare": "Choosing between specific options across shared attributes.",
-				"steps":   "A procedure where order matters.",
+				"none":      "Prose, a short list, or code serves this best.",
+				"compare":   "Choosing between specific options across shared attributes.",
+				"steps":     "A procedure where order matters.",
+				"choose":    "The right pick depends on the person's situation, so decision rules help more than a table.",
+				"checklist": "Things to prepare, pack or tick off.",
+				"timeline":  "Events over time, a history, or a schedule.",
+				"procon":    "One thing weighed for and against.",
+				"facts":     "An at-a-glance summary of one named thing (a product, place, person or organization).",
 			},
 			Inject: map[string]string{
 				"compare": "The user is choosing between options. A compare block fits: write one ui fence with " +
@@ -212,6 +217,20 @@ func oracleDefaults(d *Set) {
 				"steps": "This is a procedure where order matters. A steps block fits: write one ui fence with " +
 					"{\"c\":\"steps\",\"title\":\"...\"} then one {\"i\":\"Step\",\"d\":\"detail\",\"t\":\"2 min\"} line per step " +
 					"(leave out t unless it is a real duration), and say up front what is needed first.",
+				"choose": "The right answer depends on the person's situation. A choose block fits: write one ui fence " +
+					"with {\"c\":\"choose\",\"title\":\"...\"} then one {\"if\":\"their situation\",\"then\":\"the pick\"} line " +
+					"per case, then say what you would need to know to narrow it down. Keep the prose short.",
+				"checklist": "This is a list of things to prepare or tick off. A checklist block fits: write one ui fence " +
+					"with {\"c\":\"checklist\",\"title\":\"...\"} then one {\"i\":\"Item\"} line per item, and keep any " +
+					"caveat that matters in the prose.",
+				"timeline": "This is events over time. A timeline block fits: write one ui fence with {\"c\":\"timeline\"} " +
+					"then one {\"when\":\"1969\",\"i\":\"What happened\"} line per event, in time order, and put the " +
+					"context in the prose around it.",
+				"procon": "One thing is being weighed. A procon block fits: write one ui fence with {\"c\":\"procon\"} " +
+					"then {\"+\":\"point\"} and {\"-\":\"point\"} lines, then give your overall read in the prose.",
+				"facts": "The user wants the essentials on one named thing. A facts block fits: write one ui fence " +
+					"with {\"c\":\"facts\",\"title\":\"Name\",\"sub\":\"what it is\"} then one {\"k\":\"Label\",\"v\":\"value\"} " +
+					"line per fact, cited where you can.",
 			},
 		},
 		"depth": {
