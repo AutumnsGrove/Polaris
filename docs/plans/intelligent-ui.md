@@ -467,12 +467,37 @@ margin-note wording, ⓘ card, "Rerun as plain text". Run the classification spi
   never gets a badge. Principle: trust marks are never model-written.
 - **Mobile layout** is the primary target (CLAUDE.md); desktop is secondary.
 
+## Spike results: the Oracle `ui` check (2026-10-09)
+
+`dev/ui_spike` drives the real `gateway.RunOracle` with the shipped prompts and thresholds over
+`dev/ui_spike/corpus.json` (65 hand-written messages: 14 compare, 14 steps, 32 plain, 5 borderline) plus
+60 real thread openers from the dev DB (unlabeled; they stay in `/tmp`, not the repo). 125 calls, **$0.022
+total**. Jev answered every one (0 failures after at most 2 retries; the 2.5s live `oracleTimeout` is a
+separate matter and was not exercised).
+
+| Dial (bar) | False positives | Block hit rate | Wrong block |
+|---|---|---|---|
+| Normal (0.70) | 1 / 32 (3.1%) | 28 / 28 | 0 |
+| Low (0.85) | **0 / 32** | 27 / 28 (96%) | 0 |
+
+- The one Normal false positive was "difference between affect and effect" (`compare` 0.81), which is
+  arguably a fair comparison. Low's only miss was a git-rebase how-to (`steps` 0.77).
+- On the 60 real openers Normal would fire on 3 (a TV purchase at exactly 0.70, a literal "compare the
+  sources" request, and a Safari request) and Low on 1 (the literal compare request).
+- **Found and fixed:** the Safari request got a `steps` nudge at 0.84, because Safari was picked by the
+  same Oracle call, after the question-time `skip_for_focus` had already looked. `uiSkippedByOwnFocus` now
+  re-checks against the mode the turn will actually run under, and a skipped `ui` no longer holds back
+  `format`. The older checks (`depth`, `format`, `task`, `clarify`) have the same gap and were left alone.
+- **Thresholds kept as designed** (0.70, +0.15 on Low): no tuning was needed.
+- Not measured: the 11-way pick (only `none`/`compare`/`steps` exist so far), and latency. Re-run the
+  spike after each P3 block group adds options; false-positive rate first.
+
 ## Open questions
 
-All three are gated on measurement, not on a decision:
+Two of the three were gated on measurement; the second is now answered:
 
 1. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
    fallback rate measured first.
-2. Single `ui` question vs the gate + kind split: decided by the spike's calibration numbers
-   (false-positive rate first).
+2. ~~Single `ui` question vs the gate + kind split~~ **Single question, for now.** With 3 options it
+   was well calibrated (0 wrong blocks, 0-3% false positives). Revisit when P3 grows it toward 11.
 3. Mermaid render cost on a real phone, which sets the throttle (P0).

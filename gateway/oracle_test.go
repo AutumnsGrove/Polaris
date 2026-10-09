@@ -954,6 +954,39 @@ func TestRunOracle_UINoneLeavesFormatAlone(t *testing.T) {
 	}
 }
 
+// Found by the spike (dev/ui_spike): a message asking for a Safari got a steps
+// nudge because Safari was picked by this same Oracle call, after the
+// question-time skip_for_focus had already looked at the (empty) prior mode.
+func TestRunOracle_UISkippedWhenOracleItselfPicksSafariOrBrief(t *testing.T) {
+	for _, mode := range []string{"safari", "brief"} {
+		t.Run(mode, func(t *testing.T) {
+			stub := stubJevClient{resp: uiAnswers("steps", 0.95, map[string]jev.ChoiceAnswer{
+				"focus":  answer(mode, 0.95),
+				"format": answer("steps", 0.95),
+			})}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+			if result.FocusMode != mode {
+				t.Fatalf("setup: want Oracle to pick %s, got %q", mode, result.FocusMode)
+			}
+			u := outcomeFor(result, "ui")
+			if u == nil || u.Fired || u.Nudge != "" {
+				t.Errorf("want the ui check recorded but not fired under Oracle's own %s pick, got %+v", mode, u)
+			}
+			for _, inj := range result.Injections {
+				if strings.Contains(inj, `"c":"steps"`) {
+					t.Errorf("a ui block nudge reached a %s turn: %q", mode, inj)
+				}
+			}
+			// A ui that didn't act must not silence format either.
+			if mode == "brief" {
+				if f := outcomeFor(result, "format"); f == nil || f.Suppressed || !f.Fired {
+					t.Errorf("a skipped ui must not hold back format, got %+v", f)
+				}
+			}
+		})
+	}
+}
+
 // Someone distressed gets acknowledgment, not a comparison widget.
 func TestRunOracle_EmotionalHoldsBackUI(t *testing.T) {
 	stub := stubJevClient{resp: uiAnswers("compare", 0.95, map[string]jev.ChoiceAnswer{"emotional": answer("yes", 0.95)})}

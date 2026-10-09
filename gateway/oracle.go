@@ -339,7 +339,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	suppressed := map[string]bool{}
 	for key, rule := range rules.Checks {
 		ans, ok := resp.Answers[key]
-		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) {
+		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) || uiSkippedByOwnFocus(key, rule, effectiveFocus) {
 			continue
 		}
 		for _, held := range rule.Suppresses {
@@ -398,6 +398,12 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			continue
 		}
 		fired := ans.Probabilities[ans.Choice] >= rule.Threshold
+		// A nudge for a mode Oracle picked THIS turn: the question-time
+		// skip_for_focus above only saw the mode decided before Oracle ran.
+		if fired && uiSkippedByOwnFocus(key, rule, effectiveFocus) {
+			result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities})
+			continue
+		}
 		if fired && suppressed[key] {
 			result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities, Suppressed: true})
 			continue
@@ -437,6 +443,17 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
 	return result
+}
+
+// uiSkippedByOwnFocus is true when the ui check's skip_for_focus lists the mode
+// this turn will actually run under, including one Oracle picked itself. Found
+// by the Prism spike (dev/ui_spike): "take me on a safari of ..." got a steps
+// nudge at 0.84 because Safari was only chosen by this same Oracle call, after
+// the question-time skip had already looked. Scoped to the ui check on purpose;
+// the older checks have the same gap but changing their behaviour is not part
+// of adding this one.
+func uiSkippedByOwnFocus(key string, rule config.OracleCheckRules, effectiveFocus string) bool {
+	return key == uiCheckKey && sliceContains(rule.SkipForFocus, effectiveFocus)
 }
 
 // checkFired reports whether a yes/no-style check's winner is a real answer
