@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"polaris/gateway/uiblocks"
 )
 
 // HistoryEntry is one reconstructed turn from EffectiveHistory — a plain
@@ -207,10 +209,16 @@ func (s *Store) ReadThread(threadID string) (*ThreadReadResult, error) {
 			sb.WriteString("\n\n")
 		}
 		label := "User"
+		content := e.Content
 		if e.Role == "assistant" {
 			label = "Assistant"
+			// A stored answer is the model's verbatim output, which may carry
+			// Intelligent UI `ui` fences (JSON lines). This transcript is read
+			// by a model or a person, not rendered, so give them the readable
+			// text. Assistant only: a user may paste a ui fence as an example.
+			content = uiblocks.Flatten(content)
 		}
-		sb.WriteString(label + ": " + e.Content)
+		sb.WriteString(label + ": " + content)
 	}
 
 	return &ThreadReadResult{

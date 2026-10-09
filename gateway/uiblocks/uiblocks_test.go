@@ -58,6 +58,26 @@ func TestFlatten_Idempotent(t *testing.T) {
 	}
 }
 
+func TestStrip(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"no fence is unchanged", "Plain [a](https://a.org).\n", "Plain [a](https://a.org).\n"},
+		{
+			"removes the fence, keeps prose and prose links",
+			"[x](https://a.org)\n\n```ui\n{\"c\":\"callout\",\"text\":\"[y](https://a.org)\"}\n```\n\n[z](https://a.org)\n",
+			"[x](https://a.org)\n\n\n[z](https://a.org)\n",
+		},
+		{"cut-off fence is removed too", "a\n```ui\n{\"c\":\"stat\",\"value\":\"1\"}\n", "a\n"},
+		{"other fences untouched", "```go\nui := 1\n```\n", "```go\nui := 1\n```\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Strip(c.in); got != c.want {
+				t.Errorf("Strip(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
 func TestFlatten_ClipsLongTextLikeTheParser(t *testing.T) {
 	long := strings.Repeat("x", maxTextChars+50)
 	got := Flatten("```ui\n{\"c\":\"callout\",\"text\":\"" + long + "\"}\n```\n")

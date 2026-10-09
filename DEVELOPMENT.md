@@ -50,6 +50,23 @@ pnpm run dev          # hot-reload dev server, proxies /api and /ws to the Go ba
 pnpm run build        # produces web/build/ for `go build`/`go run .` to embed
 ```
 
+### Answer rendering: segments, `ui` blocks, streaming mermaid
+
+An answer is not one `{@html}` string. `web/src/lib/uiBlocks/split.ts` cuts it around column-0
+` ```ui ` and ` ```mermaid ` fences; `renderAnswer.ts` runs the Markdown pieces through the usual
+marked → DOMPurify → citation-chip pipeline (threading one per-URL occurrence counter across pieces
+so verification ticks land on the right chip) and `ChatTurnView` renders each piece by kind, keyed by
+index so a growing block updates in place. A `ui` fence is one JSON object per line, parsed by
+`parse.ts` (total: bad lines become muted raw rows, a trailing partial line is held back) and drawn by
+`components/ui/`. `mermaid.ts`'s `mountMermaidStream` re-renders a diagram on each new complete line
+and keeps the last good render when a prefix doesn't parse.
+
+Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
+`gateway/uiblocks` (Go) turn a block into readable text, and both are tested against
+`testdata/ui_flatten.json`. Blocks are taught only to live WebSocket chat turns
+(`ClientMessage.Interactive`), never `/api/ask`, Pulsar or voice calls. Design and phases:
+`docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`.
+
 ### Start-screen night sky
 
 `web/src/lib/components/NightSky.svelte` paints the canvas behind the empty-state heading; the logic

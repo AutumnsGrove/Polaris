@@ -125,6 +125,28 @@ func TestExtractClaims(t *testing.T) {
 	})
 }
 
+// TestClaimsForVerification_IgnoresUIBlocks pins the client/server agreement
+// the tick placement depends on: a URL cited inside a ui block and again in
+// prose must give the PROSE link claim_index 0, because the client's
+// occurrence counter never sees the block's link.
+func TestClaimsForVerification_IgnoresUIBlocks(t *testing.T) {
+	cites := []tools.Citation{{URL: "https://nasa.gov/voyager", Title: "NASA"}}
+	answer := "Voyager launched in 1977.\n\n" +
+		"```ui\n{\"c\":\"callout\",\"text\":\"Launched 1977 [NASA](https://nasa.gov/voyager).\"}\n```\n\n" +
+		"It is still operating [NASA](https://nasa.gov/voyager).\n"
+
+	got := claimsForVerification(answer, cites)
+	if len(got) != 1 {
+		t.Fatalf("got %d claims, want 1 (the prose link only): %+v", len(got), got)
+	}
+	if got[0].claimIndex != 0 {
+		t.Errorf("prose link claim_index = %d, want 0 (the block's link must not be counted)", got[0].claimIndex)
+	}
+	if strings.Contains(got[0].text, `"c"`) {
+		t.Errorf("claim text leaked block JSON: %q", got[0].text)
+	}
+}
+
 func TestSplitIntoChunksOverlap(t *testing.T) {
 	// Three paragraphs, each well over chunkTargetTokens on its own once
 	// repeated, forcing a split — the overlap tail of chunk 1 should

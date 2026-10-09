@@ -13,6 +13,7 @@
 	import UiBlocks from './ui/UiBlocks.svelte';
 	import { renderMermaidIn } from '$lib/mermaid';
 	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
+	import { flattenAnswer } from '$lib/uiBlocks/flatten';
 	import {
 		Pencil,
 		RotateCcw,
@@ -193,7 +194,9 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 
 	async function copyAnswer() {
 		try {
-			await copyToClipboard(turn.content);
+			// Flattened so a pasted answer has readable lines, not a ui
+			// block's raw JSON.
+			await copyToClipboard(flattenAnswer(turn.content));
 			flashCopied('answer');
 			appState.showToast('Copied answer');
 		} catch (err) {
@@ -375,7 +378,8 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		const sources = (turn.citations ?? [])
 			.map((c, i) => `${i + 1}. ${c.title || hostname(c.url)} — ${c.url}`)
 			.join('\n');
-		const text = sources ? `${turn.content}\n\nSources:\n${sources}` : turn.content;
+		const answer = flattenAnswer(turn.content);
+		const text = sources ? `${answer}\n\nSources:\n${sources}` : answer;
 		try {
 			await copyToClipboard(text);
 			flashCopied('withSources');

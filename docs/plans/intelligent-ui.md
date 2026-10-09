@@ -2,7 +2,15 @@
 
 **Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
-**Status: P0 built (2026-10-09), P1 onward not started.** Tracking issue #159. P0 = `uiBlocks/split.ts`,
+**Status: P0 and P1 built (2026-10-09), P2 onward not started.** Tracking issue #159. P1 = `parse.ts`,
+`components/ui/` (callout, stat, compare, steps), the `visuals` setting + `prompts.yaml` `ui:` section,
+and the flatteners (`flatten.ts`, `gateway/uiblocks`) wired into copy, read-aloud, `read_thread`, Weaver
+and claim extraction. **Deliberately not done in P1:** `search_chats` indexing still indexes the raw JSON
+(`messages_fts` is an external-content index whose delete triggers must replay the exact indexed text, so
+changing it needs new triggers plus a reindex migration; a block's JSON keys can match a search and show
+in a snippet). **Found while building:** blocks are taught only to live WebSocket turns, not `/api/ask`,
+Pulsar or voice calls (`ClientMessage.Interactive`, `!VoiceMode`); Oracle's existing `format` nudge
+("give numbered steps") competes with a `steps` block until P2's `Suppresses: ["format"]` lands. P0 = `uiBlocks/split.ts`,
 `renderAnswer.ts`, `MermaidBlock.svelte`, `mountMermaidStream` in `mermaid.ts`. Live-verified in
 Chromium against real mermaid via `dev/fakeopenrouter` (new `-chunk-delay` flag): a warm diagram grows
 0 -> 3 -> 4 -> 5 nodes as its fence streams, a broken fence falls back to source + note, a list-nested
@@ -389,8 +397,9 @@ that until the Oracle-off fallback rate is measured, since a smaller floor means
   `web/src/lib/settings.svelte.ts`, `SettingsPanel.svelte` (segmented control, copy as in the mockup).
 - `prompts.yaml` + `prompts/` defaults for the `ui:` fragment and the Oracle `ui` check; hot-reloaded.
 - `config/oracle.go` + `config.yaml.example` for the `ui` rule.
-- `HelpModal.svelte` `TERMS`: entries for "Visuals" and "UI blocks" (CLAUDE.md requires it for any new
-  named feature). `docs/FEATURES.md`: one or two lines. `DEVELOPMENT.md`: a short note on the
+- `HelpModal.svelte` `TERMS`: **no entry, decided 2026-10-09.** The glossary translates themed names
+  into plain English; "Visuals" already is plain English and the feature is a formatting setting, not a
+  named surface. Revisit only if it is ever given a themed name. `docs/FEATURES.md`: one or two lines. `DEVELOPMENT.md`: a short note on the
   segment/parse/component architecture.
 - `dev/fakeopenrouter` scripted responses with `ui` fences (progressive, plus malformed/unknown
   lines) for the Playwright runs.

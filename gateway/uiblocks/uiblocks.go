@@ -352,6 +352,29 @@ var (
 // ````md fence stays literal), and a fence still open at the end of the text
 // is final.
 func Flatten(content string) string {
+	return rewrite(content, func(body string) string {
+		if flat := flattenBlocks(parse(body)); len(flat) > 0 {
+			return strings.Join(flat, "\n") + "\n"
+		}
+		return ""
+	})
+}
+
+// Strip returns content with every column-0 ```ui fence removed outright.
+//
+// Claim extraction (gateway/verification.go) uses this rather than Flatten:
+// until verification is wired for blocks (docs/plans/intelligent-ui.md
+// "Sourcing and verification"), the client's per-URL occurrence counter skips
+// `ui` links, so the server must not count them either — a URL cited once in
+// a block and once in prose would otherwise put its tick on the wrong chip.
+// Both sides turn this on together or not at all.
+func Strip(content string) string {
+	return rewrite(content, func(string) string { return "" })
+}
+
+// rewrite walks content's fences exactly as split.ts does and substitutes
+// render(body) for each ui fence; everything else passes through byte for byte.
+func rewrite(content string, render func(body string) string) string {
 	if !strings.Contains(content, "ui") {
 		return content
 	}
@@ -366,12 +389,7 @@ func Flatten(content string) string {
 		body strings.Builder
 	}
 	var f *fenceState
-	emit := func(f *fenceState) {
-		if flat := flattenBlocks(parse(f.body.String())); len(flat) > 0 {
-			out.WriteString(strings.Join(flat, "\n"))
-			out.WriteString("\n")
-		}
-	}
+	emit := func(f *fenceState) { out.WriteString(render(f.body.String())) }
 
 	for i, line := range lines {
 		nl := ""

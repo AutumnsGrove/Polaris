@@ -9,6 +9,7 @@ import (
 	"sync"
 	"unicode"
 
+	"polaris/gateway/uiblocks"
 	"polaris/jev"
 	"polaris/tools"
 )
@@ -272,6 +273,23 @@ type ClaimVerification struct {
 	Supported bool `json:"supported"`
 }
 
+// claimsForVerification is extractClaims over the answer with its Intelligent
+// UI blocks removed. Two reasons, both about not misplacing a tick:
+//
+//   - A ui fence is JSON lines, not sentences; run through extractClaims it
+//     would yield nonsense "claims" built from JSON fragments.
+//   - claim_index is the nth occurrence of a URL across the answer, and the
+//     client numbers chips the same way (renderAnswer.ts threads one counter
+//     through the Markdown segments only; UiText passes no verification). So a
+//     link inside a block must not count here either, or a URL cited in a
+//     block and again in prose would put its tick on the wrong chip.
+//
+// Block sources get "found in source" ticks later, when both sides turn
+// counting on together (docs/plans/intelligent-ui.md P3c) — never one alone.
+func claimsForVerification(answer string, citations []tools.Citation) []claim {
+	return extractClaims(uiblocks.Strip(answer), citations)
+}
+
 // runVerification checks each of answer's own inline citations against the
 // text actually fetched for them this turn (agentCtx.EvidenceForURL), using
 // Jev — see docs/plans/source-verification-badge.md. Returns every claim's
@@ -285,7 +303,7 @@ func runVerification(agentCtx *tools.Context, answer string, citations []tools.C
 	if agentCtx == nil || agentCtx.Jev == nil || answer == "" || len(citations) == 0 {
 		return nil
 	}
-	claims := extractClaims(answer, citations)
+	claims := claimsForVerification(answer, citations)
 	if len(claims) == 0 {
 		return nil
 	}

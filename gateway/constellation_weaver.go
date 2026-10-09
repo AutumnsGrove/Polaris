@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"polaris/agent"
+	"polaris/gateway/uiblocks"
 	"polaris/llm"
 	"polaris/prompts"
 	"polaris/store"
@@ -247,13 +248,17 @@ func weaverTaskText(reqCtx context.Context, db *store.Store, client llm.ChatClie
 		}
 		deltaMsgs = append(deltaMsgs, m)
 		label := "User"
+		content := m.Content
 		if m.Role == "assistant" {
 			label = "Assistant"
+			// Same reasoning as store.ReadThread: Weaver reads text, not
+			// rendered blocks, so a `ui` fence becomes readable lines.
+			content = uiblocks.Flatten(content)
 		}
 		if delta.Len() > 0 {
 			delta.WriteString("\n\n")
 		}
-		delta.WriteString(label + ": " + m.Content)
+		delta.WriteString(label + ": " + content)
 	}
 	deltaText := delta.String()
 	if deltaText == "" {

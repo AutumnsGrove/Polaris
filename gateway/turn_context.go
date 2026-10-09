@@ -119,7 +119,9 @@ func (t *turnRun) buildAgentContext() {
 	// The one place Visuals is set, and only for a live chat turn: /api/ask
 	// and Pulsar's scheduler also reach handleTurn but their output isn't
 	// rendered by the chat UI (see ClientMessage.Interactive).
-	if t.msg.Interactive {
+	// Not in a voice call either (Transponder): that answer is read aloud, and
+	// a comparison table has no spoken form worth the tokens.
+	if t.msg.Interactive && !t.msg.VoiceMode {
 		t.agentCtx.Visuals = VisualsFromStore(t.s.db)
 	}
 	t.wirePersonalization()
