@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -106,6 +107,14 @@ type OracleInput struct {
 	// server-side, so the persisted oracle_result never carries a chip to
 	// replay.
 	ThreadSource string
+	// Visuals is this turn's Prism dial as agent.loadSystemPrompt will see it
+	// (tools.Context.Visuals): "low" or "normal" means visual blocks are being
+	// offered, anything else ("off", or "" for a voice call / an entry point
+	// that never offers them) means they are not. The ui check is only asked
+	// when they are — nudging toward a block the model was never taught, or one
+	// the surface can't show, would be a wasted question and a wrong nudge. On
+	// "low" its bar rises by VisualsLowOffset.
+	Visuals string
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -174,6 +183,10 @@ type OracleResult struct {
 	CostUSD    float64        `json:"cost_usd,omitempty"`
 }
 
+// uiCheckKey is the Prism check: would a visual block beat prose. Named once
+// because the engine special-cases it (see OracleInput.Visuals).
+const uiCheckKey = "ui"
+
 // RunOracle fires every enabled check (plus chips) as one Jev AskChoice
 // call and applies each answer's threshold/sticky/focus rules — see
 // docs/plans/oracle-mode.md. Jev unconfigured, erroring, or timing out
@@ -191,6 +204,17 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	if rules.Checks == nil && rules.Chips == nil {
 		rules = config.DefaultOracle()
 	}
+	// On the Low dial the ui check has to clear a higher bar. Applied to a
+	// copy: in.Rules.Checks is the live config's map, shared across turns,
+	// and must never be mutated here.
+	if in.Visuals == "low" {
+		if r, ok := rules.Checks[uiCheckKey]; ok && r.VisualsLowOffset > 0 {
+			raised := maps.Clone(rules.Checks)
+			r.Threshold = min(1, r.Threshold+r.VisualsLowOffset)
+			raised[uiCheckKey] = r
+			rules.Checks = raised
+		}
+	}
 	questions := make(map[string]jev.ChoiceQuestion, len(p.Oracle.Checks)+len(p.Oracle.Chips))
 	// offered is the option set actually sent per question, kept so Jev's
 	// answers can be validated against it below — a response is external
@@ -207,6 +231,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			continue
 		}
 		if rule.OnlyFirstMessage() && !in.IsFirstMessage {
+			continue
+		}
+		// Special-cased by key, like the field chip below: whether to ask at
+		// all depends on the Prism dial, which no generic rule field expresses.
+		if key == uiCheckKey && in.Visuals != "low" && in.Visuals != "normal" {
 			continue
 		}
 		if sliceContains(rule.SkipForFocus, in.ActiveFocusMode) {

@@ -193,6 +193,27 @@ func oracleDefaults(d *Set) {
 				"timeline":   "Present this in chronological order with dates, so the sequence and the gaps between events are easy to see.",
 			},
 		},
+		// Prism (docs/plans/intelligent-ui.md): would a structured visual block
+		// beat prose? Only the shapes the renderer can draw are offered; each
+		// option's nudge names the block and gives its exemplar line, which is
+		// the just-in-time few-shot that backs up the base prompt's grammar.
+		"ui": {
+			Instructions: "Would a structured visual block serve this message clearly better than ordinary prose? " +
+				"Pick \"none\" unless the answer is really one of these shapes and prose would be harder to scan.",
+			Options: map[string]string{
+				"none":    "Prose, a short list, or code serves this best.",
+				"compare": "Choosing between specific options across shared attributes.",
+				"steps":   "A procedure where order matters.",
+			},
+			Inject: map[string]string{
+				"compare": "The user is choosing between options. A compare block fits: write one ui fence with " +
+					"{\"c\":\"compare\",\"cols\":[\"A\",\"B\"],\"pick\":0} then one {\"row\":\"Price\",\"v\":[\"...\",\"...\"]} " +
+					"line per attribute, then say which to pick and what would change that. Keep the prose short.",
+				"steps": "This is a procedure where order matters. A steps block fits: write one ui fence with " +
+					"{\"c\":\"steps\",\"title\":\"...\"} then one {\"i\":\"Step\",\"d\":\"detail\",\"t\":\"2 min\"} line per step " +
+					"(leave out t unless it is a real duration), and say up front what is needed first.",
+			},
+		},
 		"depth": {
 			Instructions: "How much detail does this message call for? Pick \"standard\" unless it clearly wants something noticeably shorter or more thorough than a normal answer.",
 			Options: map[string]string{

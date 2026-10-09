@@ -222,6 +222,18 @@ How careful to be, and where to look.
 
 *fires at **75%+**; skipped under Safari focus.*
 
+### Visual blocks (Prism) — `ui`
+
+ Would a structured visual block serve this message clearly better than ordinary prose? Pick "none" unless the answer is really one of these shapes and prose would be harder to scan.
+
+| Option | When it applies | Nudge |
+|---|---|---|
+| `none` | Prose, a short list, or code serves this best. | — |
+| `compare` | Choosing between specific options across shared attributes. | Yes |
+| `steps` | A procedure where order matters. | Yes |
+
+*fires at **70%+**, or **85%+** when the Prism setting is Low; never asked when Prism is Off or in a voice call; skipped under Brief and Safari focus; when it fires, holds back: `format`.*
+
 ### Depth — `depth`
 
  How much detail does this message call for? Pick "standard" unless it clearly wants something noticeably shorter or more thorough than a normal answer.
@@ -271,7 +283,7 @@ These change tone more than research, so they have high bars.
 | `no` | A plain informational or practical message. | — |
 | `yes` | Clearly distressed or dealing with something hard, beyond a factual question. | Yes |
 
-*fires at **85%+**; when it fires, holds back: `format`, `depth`, `source_type`, `task`, `clarify`.*
+*fires at **85%+**; when it fires, holds back: `format`, `depth`, `source_type`, `task`, `clarify`, `ui`.*
 
 ### Private individuals — `private_person`
 

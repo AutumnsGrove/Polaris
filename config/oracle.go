@@ -58,6 +58,11 @@ type OracleCheckRules struct {
 	// as a form letter. Only a *fired* answer suppresses; a check that
 	// merely ran and lost the bar leaves the others alone.
 	Suppresses []string `yaml:"suppresses,omitempty"`
+	// VisualsLowOffset is added to Threshold while the Prism dial is Low, so
+	// the same check asks for more confidence before nudging toward a visual
+	// block (docs/plans/intelligent-ui.md). Zero for every other check; only
+	// the ui check reads it. Normal uses Threshold as-is, Off never asks.
+	VisualsLowOffset float64 `yaml:"visuals_low_offset,omitempty"`
 }
 
 // OnlyFirstMessage reports FirstMessageOnly with nil meaning false.
@@ -96,6 +101,13 @@ func DefaultOracle() OracleConfig {
 			"recall":  {Threshold: 0.80},
 			// Answer shape. Safari owns its own format; Brief is already short.
 			"format": {Threshold: 0.75, SkipForFocus: []string{"safari"}},
+			// Whether a visual block (Prism) would beat prose. Brief is a few
+			// sentences and Safari runs its own pacing, so both skip it. When it
+			// fires it holds back `format`: both are answer-shape nudges, and
+			// "give numbered steps" stacked on "write a steps block" contradicts
+			// itself. A wrong firing costs a block nobody needed, so on Low the
+			// bar rises by VisualsLowOffset.
+			"ui": {Threshold: 0.70, SkipForFocus: []string{"safari", "brief"}, Suppresses: []string{"format"}, VisualsLowOffset: 0.15},
 			"depth":  {Threshold: 0.80, SkipForFocus: []string{"safari", "brief"}},
 			// Source and evidence guidance. Academic mode already carries its
 			// own source guidance.
@@ -108,7 +120,7 @@ func DefaultOracle() OracleConfig {
 			// teach the same way an "explain" nudge would ask for.
 			"task": {Threshold: 0.75, SkipForFocus: []string{"safari"}, SkipOptionForFocus: map[string][]string{"explain": {"first_principles", "socratic"}}},
 			// Sensitivity: wrongly firing these changes tone, so the bar is high.
-			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify"}},
+			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify", "ui"}},
 			"private_person": {Threshold: 0.85},
 			"premise":        {Threshold: 0.85},
 		},
@@ -166,6 +178,7 @@ func mergeOracle(set OracleConfig) OracleConfig {
 		if rules.Suppresses != nil {
 			base.Suppresses = rules.Suppresses
 		}
+		base.VisualsLowOffset = pickThreshold(fmt.Sprintf("oracle.checks.%s.visuals_low_offset", key), rules.VisualsLowOffset, base.VisualsLowOffset)
 		out.Checks[key] = base
 	}
 

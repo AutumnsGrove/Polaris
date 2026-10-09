@@ -821,3 +821,150 @@ func TestRunOracle_FieldChipBelowThresholdOrNoneStaysQuiet(t *testing.T) {
 		}
 	}
 }
+
+// --- Prism: the ui check --------------------------------------------------
+
+// recordingJev answers like stubJevClient but also remembers which questions
+// RunOracle actually sent, since "the ui question was not asked" is itself
+// the behaviour under test for Off / Brief / Safari.
+type recordingJev struct {
+	resp *jev.Response
+	sent map[string]jev.ChoiceQuestion
+}
+
+func (r *recordingJev) AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error) {
+	r.sent = questions
+	return r.resp, nil
+}
+
+func uiAnswers(uiChoice string, uiProb float64, extra map[string]jev.ChoiceAnswer) *jev.Response {
+	answers := map[string]jev.ChoiceAnswer{"ui": answer(uiChoice, uiProb)}
+	for k, v := range extra {
+		answers[k] = v
+	}
+	return &jev.Response{Answers: answers}
+}
+
+func TestRunOracle_UIQuestionOnlyAskedWhenBlocksAreOffered(t *testing.T) {
+	cases := []struct {
+		name    string
+		visuals string
+		focus   string
+		wantAsk bool
+	}{
+		{"normal asks", "normal", "", true},
+		{"low asks", "low", "", true},
+		{"off never asks", "off", "", false},
+		{"unset (voice call / non-offering entry point) never asks", "", "", false},
+		{"brief skips it", "normal", "brief", false},
+		{"safari skips it", "normal", "safari", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &recordingJev{resp: uiAnswers("none", 0.9, nil)}
+			RunOracle(context.Background(), rec, OracleInput{CurrentMessage: "x", Visuals: c.visuals, ActiveFocusMode: c.focus})
+			if _, asked := rec.sent["ui"]; asked != c.wantAsk {
+				t.Errorf("ui question asked = %v, want %v", asked, c.wantAsk)
+			}
+		})
+	}
+}
+
+func TestRunOracle_UINudgeNamesTheBlockWithItsExemplar(t *testing.T) {
+	for opt, want := range map[string]string{"compare": `"c":"compare"`, "steps": `"c":"steps"`} {
+		t.Run(opt, func(t *testing.T) {
+			stub := stubJevClient{resp: uiAnswers(opt, 0.95, nil)}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+			if len(result.Injections) != 1 || !strings.Contains(result.Injections[0], want) {
+				t.Errorf("want one injection carrying the %s exemplar line, got %v", opt, result.Injections)
+			}
+			if o := outcomeFor(result, "ui"); o == nil || !o.Fired {
+				t.Errorf("want the ui check recorded as fired, got %+v", o)
+			}
+		})
+	}
+}
+
+func TestRunOracle_UINoneInjectsNothing(t *testing.T) {
+	stub := stubJevClient{resp: uiAnswers("none", 0.99, nil)}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	if len(result.Injections) != 0 {
+		t.Errorf("a none winner must add no nudge, got %v", result.Injections)
+	}
+}
+
+// The Low dial raises the bar by VisualsLowOffset: a 0.75 compare that clears
+// Normal's 0.70 must NOT clear Low's 0.85.
+func TestRunOracle_UILowDialRaisesTheBar(t *testing.T) {
+	at := func(visuals string, prob float64) bool {
+		stub := stubJevClient{resp: uiAnswers("compare", prob, nil)}
+		result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: visuals})
+		o := outcomeFor(result, "ui")
+		return o != nil && o.Fired
+	}
+	if !at("normal", 0.75) {
+		t.Error("0.75 should clear Normal's 0.70 bar")
+	}
+	if at("low", 0.75) {
+		t.Error("0.75 should NOT clear Low's raised 0.85 bar")
+	}
+	if !at("low", 0.90) {
+		t.Error("0.90 should clear Low's 0.85 bar")
+	}
+}
+
+// in.Rules.Checks is the live config's map, shared by every turn. Raising the
+// Low bar must be done on a copy or one Low turn would permanently tighten (and
+// the next would tighten again) the real threshold.
+func TestRunOracle_UILowOffsetNeverMutatesSharedRules(t *testing.T) {
+	rules := config.DefaultOracle()
+	before := rules.Checks["ui"].Threshold
+	stub := stubJevClient{resp: uiAnswers("compare", 0.9, nil)}
+	for i := 0; i < 3; i++ {
+		RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "low", Rules: rules})
+	}
+	if after := rules.Checks["ui"].Threshold; after != before {
+		t.Errorf("shared ui threshold changed from %v to %v after Low-dial turns", before, after)
+	}
+}
+
+// Both are answer-shape nudges; "give numbered steps" stacked on "write a steps
+// block" would contradict itself, so a fired ui holds format back.
+func TestRunOracle_UIFiringHoldsBackFormat(t *testing.T) {
+	stub := stubJevClient{resp: uiAnswers("steps", 0.95, map[string]jev.ChoiceAnswer{"format": answer("steps", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	f := outcomeFor(result, "format")
+	if f == nil || !f.Suppressed || f.Fired {
+		t.Errorf("want format held back by a fired ui, got %+v", f)
+	}
+	for _, inj := range result.Injections {
+		if strings.Contains(inj, "numbered steps in order") {
+			t.Errorf("format's own steps nudge leaked alongside the ui block nudge: %q", inj)
+		}
+	}
+}
+
+// ...but only when ui actually fired. A ui "none" must leave format alone, so
+// Prism being on doesn't silently disable format's table/list advice.
+func TestRunOracle_UINoneLeavesFormatAlone(t *testing.T) {
+	stub := stubJevClient{resp: uiAnswers("none", 0.99, map[string]jev.ChoiceAnswer{"format": answer("steps", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	if f := outcomeFor(result, "format"); f == nil || !f.Fired || f.Suppressed {
+		t.Errorf("want format to fire normally when ui picked none, got %+v", f)
+	}
+}
+
+// Someone distressed gets acknowledgment, not a comparison widget.
+func TestRunOracle_EmotionalHoldsBackUI(t *testing.T) {
+	stub := stubJevClient{resp: uiAnswers("compare", 0.95, map[string]jev.ChoiceAnswer{"emotional": answer("yes", 0.95)})}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", Visuals: "normal"})
+	u := outcomeFor(result, "ui")
+	if u == nil || !u.Suppressed || u.Fired {
+		t.Errorf("want ui held back by a fired emotional check, got %+v", u)
+	}
+	for _, inj := range result.Injections {
+		if strings.Contains(inj, `"c":"compare"`) {
+			t.Errorf("a block nudge reached an emotional turn: %q", inj)
+		}
+	}
+}

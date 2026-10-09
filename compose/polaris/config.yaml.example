@@ -164,6 +164,15 @@ oracle:
     format:
       threshold: 0.75
       skip_for_focus: [safari]
+    # Whether a visual block (the Prism setting) would beat prose. Brief is a few
+    # sentences and Safari runs its own pacing. When it fires it holds back
+    # `format`, since two answer-shape nudges would contradict each other. On the
+    # Low Prism setting the bar rises by visuals_low_offset; Off never asks.
+    ui:
+      threshold: 0.70
+      skip_for_focus: [safari, brief]
+      suppresses: [format]
+      visuals_low_offset: 0.15
     depth:
       threshold: 0.80
       skip_for_focus: [safari, brief]
@@ -194,7 +203,7 @@ oracle:
       # table format, an agency-citation nudge, a step-by-step plan, or a
       # "stop and ask a question first" stacked on top. High-stakes, locale,
       # and freshness stay — those carry facts, not tone.
-      suppresses: [format, depth, source_type, task, clarify]
+      suppresses: [format, depth, source_type, task, clarify, ui]
     private_person:
       threshold: 0.85
     premise:

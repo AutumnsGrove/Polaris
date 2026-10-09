@@ -73,7 +73,11 @@ func (t *turnRun) runOracleStage() {
 				FieldIDs:             fieldIDs,
 				Ghost:                t.ghost,
 				ThreadSource:         t.threadSource,
-				Rules:                t.cfg.Oracle,
+				// agentCtx.Visuals is already "" for a voice call or an entry
+				// point that never offers blocks, so the ui check follows the
+				// exact same gate as the base prompt fragment.
+				Visuals: t.agentCtx.Visuals,
+				Rules:   t.cfg.Oracle,
 			})
 			// Recorded on the shared Jev ledger the monthly cap sums (issue
 			// #125) — only when the call actually completed and billed, the
