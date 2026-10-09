@@ -231,7 +231,7 @@ How careful to be, and where to look.
 | `none` | Prose, a short list, or code serves this best. | — |
 | `compare` | Choosing between specific options across shared attributes. | Yes |
 | `steps` | A procedure where order matters. | Yes |
-| `choose` | The right pick depends on the person's situation, so decision rules help more than a table. | Yes |
+| `choose` | The person asks which to pick or what to do, and the best answer depends on their own situation (usage, budget, location, goals), so a few if-then rules serve them better than a table of attributes. | Yes |
 | `checklist` | Things to prepare, pack or tick off. | Yes |
 | `timeline` | A sequence of dated events, a history, or a schedule. Not a price, number or trend over time. | Yes |
 | `procon` | One thing weighed for and against. | Yes |

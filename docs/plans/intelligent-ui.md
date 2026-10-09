@@ -515,9 +515,19 @@ rules. Jev answered every message.
 
 - **Single 10-way pick holds up; the gate split is not needed.** No wrong block anywhere, and the false
   positives stay at 1-2 of 44.
-- **`choose` never wins.** All four `choose` messages lost to `compare` (0.53-0.69) or won below the bar, so
-  the model rarely gets the nudge for it. That is the safe direction (quiet, not wrong); `choose` still
-  works under the base grammar. Left as is rather than tuned on four messages.
+- **`choose` first lost to `compare` every time** (0.53-0.69 for `compare`), because Jev reads any named
+  options as a comparison. **Fixed in part, same day:** the option now says the person asks which to pick or
+  what to do *and the best answer depends on their own situation (usage, budget, location, goals), so
+  if-then rules beat a table of attributes*, and the corpus has 10 situational `choose` messages instead
+  of 4. On Normal, `choose` now lands 5 of 10 (up from 0 of 4) with `compare` 100% and no wrong block; on
+  Low most of the rest are the right label below the 0.85 bar (0.64-0.82), which is Low doing its job.
+  What did not work: also rewording `compare` ("named options weighed side by side on attributes") pulled
+  `compare` confidence under the bar for Roth-vs-traditional-IRA, so `compare` keeps its original text.
+  Takeaway: with 11 options the probability mass splits, so a softer shape like `choose` will always sit
+  nearer the bar than a crisp one; do not tune it further on a handful of messages.
+- After the `choose` change: Normal 1 / 44 false positives, 49 / 54 hits, 0 wrong block; Low 1 / 44 false
+  positives, 44 / 54 hits (the rest sub-bar, not wrong). Two real "what is X?" openers fire `facts` on Normal
+  only (0.71, 0.78), both fair uses.
 - **The remaining Low false positive is "history of the Roman aqueducts" -> `timeline` 0.97**, which is
   defensible as a fair timeline; the label is arguable, not the pick.
 - **Found on real traffic and fixed:** a stock-price request got `timeline` at 0.87 (a trend over time,
