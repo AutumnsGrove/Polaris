@@ -53,8 +53,22 @@ artifacts.
 11. **Oracle gets one new check, `ui`, with every shape block as an option.** Not one check per block,
     and not blocks riding other checks (see "Oracle").
 
-Still open (not decided): compare as cards vs table on phones (leaning cards under ~600px, table
-above), steps as rail vs duration chips (leaning rail).
+2026-10-09 (planning Q&A, second round):
+
+12. **`compare`: cards on phones (under ~600px), table when wide.**
+13. **`steps`: the numbered rail.** A duration chip appears only when the model supplies `t`.
+14. **History stays verbatim.** Older turns' `ui` blocks are *not* flattened when the thread is sent
+    back to the model: editing history would break prompt caching (`cache_control` is sent for
+    Anthropic models), which costs more than the tokens saved. The flattener is for display-side and
+    non-model consumers only (copy, read-aloud, search_chats, Weaver, titles, verification).
+15. **Cut-off turn: keep complete lines, drop the partial.** A comparison cut off after row 3 shows
+    rows 1-3 as a normal block.
+16. **Margin note gets a `ui` clause** ("Read as comparison · shown as a compare block"); wording to be
+    judged in real use like the rest of Oracle's notes.
+17. **`claim` verdict pill: pill only, no "Polaris's read" caption.** Accepted trade-off: the pill is
+    the model's read, not a verified result, and a reader could take it as one. The mitigation is that
+    only the evidence lines carry "found in source" ticks, so the pill never has one.
+18. **`quote` verification: exact-match first, Jev on a miss** (see "Sourcing and verification").
 
 ## Why fenced blocks, not tools
 
@@ -173,16 +187,19 @@ state (ticked boxes, expanded nodes). So:
    unchanged (sanitize, citations), `ui` → `<UiBlocks>`, `mermaid` → `<MermaidBlock>`. Side benefit:
    finished segments stop re-parsing every token; only the last one changes.
 5. **Gotcha: verification marks.** `renderInlineCitations` matches a "found in source" mark by
-   *(url, nth occurrence in document order)* across the whole answer. Per-segment rendering must
-   thread a running per-URL counter through the `md` segments (and decide whether `ui` chips count).
-   v1: ui chips never show per-claim verification ticks; `md` segments still must count correctly.
+   *(url, nth occurrence in document order)* across the whole answer, and the server computes the same
+   index in `extractClaims` (`gateway/verification.go`). Per-segment rendering must thread a running
+   per-URL counter through the `md` segments, and **the client and server must agree on whether `ui`
+   links count**, or a URL cited in a block and again in prose gets its ticks on the wrong chips. P1:
+   neither counts (the server strips `ui` fences before extraction, the client counter skips `ui`
+   links). The "Sourcing and verification" section turns both on together.
 6. **Consumers of message text** must not show raw JSON lines. Add a flattener, TS
    (`uiBlocks/flatten.ts`) and Go (`gateway/uiblocks`), turning each block into readable text
    (compare → "Moka pot: …" lines, steps → numbered lines, ...). Use it for: copy buttons
    (`ChatTurnView` copies `turn.content` at two sites), read-aloud (`/api/speak`), `search_chats`
    indexing (`store/message_search.go`), Weaver, and thread titles. One shared fixture file
    (`testdata/ui_flatten.json`) is read by both the TS and Go tests so the two can't drift. Whether
-   *history sent back to the model* should flatten older turns' blocks to save tokens is open.
+   *history sent back to the model* stays verbatim (Decision 14: prompt caching).
 
 ### Streaming mermaid (spiked 2026-10-09)
 
@@ -211,6 +228,63 @@ Design (the demo in section 6 of the mockups runs exactly this):
 
 Known cost: nodes move as dagre re-lays the graph out; the fade softens it, nothing more. A plain
 mermaid graph is also tall on a phone, which is a further reason `flow` exists.
+
+## Sourcing and verification (how `quote`'s badge works)
+
+Found in the code, and it removes the open item from the last draft: Polaris already verifies
+claims against their sources, with Jev (the same backend model as Oracle), in
+`gateway/verification.go`. How it works today:
+
+- **After the turn**, in a detached goroutine (`gateway/turn_followups.go`), `runVerification` takes
+  the raw answer markdown, finds every `[text](url)` link whose URL is a tracked citation, and takes
+  the enclosing sentence plus two lead-up sentences as that link's **claim** (links in table rows are
+  skipped: there the link text is the data).
+- Evidence is `tools.Context.EvidenceForURL(url)`: the **raw extracted text of every page `web_read`
+  fetched this turn**, deliberately not the LLM-filtered summary (checking a claim against a summary
+  would be circular). A source the model only saw as a search snippet has no stored evidence and gets
+  no badge.
+- One `AskChoice` per source (chunked and relevance-selected when over Jev's context budget): "Does
+  the source support the claim: ...", options `supported` / `partially_supported` / `contradicted` /
+  `not_addressed`, each with a confidence. Only **supported at confidence >= 0.85** (and not also
+  contradicted) becomes a mark; a missed badge costs nothing, a wrong one costs trust.
+- Marks `{url, claim_index, choice, confidence}` are persisted (`SetMessageVerification`) and sent as
+  a `verification` WS event; `claim_index` is the nth occurrence of that URL among the answer's
+  citation links, which the frontend matches onto the nth chip. Cost lands in the turn's
+  `verification` cost tier and counts against the shared $0.01/turn and $5/month Jev caps.
+- `compare_sources` is the mid-turn sibling (does the model's own set of sources agree on a fact),
+  using the same Jev + evidence machinery.
+
+So blocks get "found in source" by feeding this same system, not by inventing another:
+
+1. **Make the server see block text as claims.** A Go flattener (`gateway/uiblocks.Flatten`, the same
+   one the other consumers use) turns a `ui` fence into plain sentences **with its `[Title](URL)`
+   links preserved**, and `runVerification` runs `extractClaims` over the flattened answer instead of
+   the raw one. Every sourced line then becomes a claim with no change to extraction itself: a
+   `quote` becomes `"<text>" [by](url).`, each `claim` `+`/`-` line a sentence with its link, each
+   `facts` row `Key: value [Title](url).`
+2. **Canonical link order.** Flatten and the renderer must emit links in the same order or
+   `claim_index` points at the wrong chip. JSON key order is the model's whim, so both go by the
+   **schema order in the catalog table** (container fields, then child lines in arrival order, fields
+   within a line in schema order), never by key order. The shared fixture (`testdata/ui_flatten.json`)
+   asserts the expected link order too, read by both the Go and TS tests.
+3. **Client counter.** The running per-URL counter threads through `md` and `ui` segments in order;
+   `UiText` links participate in it exactly as prose links do, so a tick on a chip inside a block is
+   the same mark mechanism as one in prose.
+4. **`quote` gets a stricter question.** A quote is a stronger promise than "supports this claim", so
+   `claim` gains a `kind` and quote claims ask "Does the source contain this passage, verbatim or
+   near-verbatim?" instead of "support the claim". **Decided (18): exact match first.** A
+   normalized (case, whitespace, punctuation, ellipsis) substring match against the evidence marks the
+   quote supported at confidence 1.0 with no Jev call, and an exact match can't be hallucinated; only
+   a miss falls through to Jev for near-verbatim cases.
+5. **What the model writes vs what is verified.** `quote`'s badge and every tick on a `claim` block's
+   Supports/Disputes lines come from this pipeline; a `claim` block's own `verdict` pill is the
+   model's read of the evidence, **not** verified, and never carries a tick (Decision 17: no caption).
+   Trust marks are never model-written.
+6. **Cost.** Blocks add claims (a `facts` card with ten sourced rows is ten claims). Same budget caps
+   apply and already fail safe (no badge once a cap is hit), but cap claims per turn (tentatively 20)
+   so one block-heavy answer can't spend the whole turn budget before prose gets checked.
+7. **Timing.** Marks arrive after the turn, so badges appear a moment after the block does, exactly
+   as chip ticks do today. Nothing about streaming changes.
 
 ## Oracle
 
@@ -328,6 +402,7 @@ chip marks before/after on a fixture turn); phone render cost measured.
 `parseUi`, `UiBlocks`, `UiText`, `callout`, `stat`, `compare`, `steps`; base prompt fragment; `visuals`
 setting + control; flatteners (TS + Go) wired into copy, read-aloud, search_chats, Weaver, titles;
 HelpModal/FEATURES entries. **No Oracle yet**, so the floor can be measured on its own. Acceptance:
+`runVerification` is fed the stripped answer, so ticks on prose chips are unchanged on a fixture turn;
 fakeopenrouter run fills a compare table row by row in the real app; truncated, malformed and unknown
 streams degrade per the grammar; copy and read-aloud give clean text; Off removes the fragment.
 
@@ -336,7 +411,8 @@ margin-note wording, ⓘ card, "Rerun as plain text". Run the classification spi
 
 **P3: remaining blocks, in groups**, each group also extending the Oracle option list and exemplars:
 (a) `timeline`, `checklist`, `procon`, `choose`, `facts`; (b) `flow`, `tabs`, `disclose`;
-(c) `claim`, `quote`, which need the citation/verification decisions below.
+(c) `claim`, `quote`, plus the verification wiring from "Sourcing and verification": flatten feeds
+`extractClaims`, schema-order link counting on both sides, quote-specific Jev question, claim cap.
 
 ## Verification
 
@@ -362,20 +438,21 @@ margin-note wording, ⓘ card, "Rerun as plain text". Run the classification spi
 - **Over-eager UI** is the likeliest failure: OpenAI trained theirs, we prompt ours. Mitigations: tiny
   vocabulary, Low default, Oracle's bar, "plain text is valid", the one-tap rerun as plain text.
 - **Token cost and latency** on a phone over Tailscale: terse JSON keys; measure the base fragment and
-  each exemplar; blocks also ride along in history on later turns (see open questions).
+  each exemplar; blocks also ride along verbatim in history on later turns (Decision 14), so the base fragment and exemplars should stay terse.
 - **Mermaid jitter and phone render cost** (above). Mitigated by throttling, not eliminated.
-- **Verification and claims.** Server-side claim extraction runs over message text; JSON lines must not
-  reach it. P1 flattens or strips `ui` fences before extraction, and ui chips show no per-claim ticks.
-  The `quote` block's "found in source" badge would need a deterministic verbatim check against the
-  cited page's text (no LLM), which assumes that text is retained; **unknown, check before P3(c).**
-  Until then `quote` renders without the badge. Principle: trust marks are never model-written.
+- **Verification and claims.** Server-side claim extraction runs over the raw answer; JSON lines
+  must not reach it unflattened. P1 strips `ui` fences before extraction and the client counter
+  skips `ui` links (both or neither, never one); "Sourcing and verification" turns both on together.
+  Evidence only exists for pages `web_read` fetched this turn, so a block citing a snippet-only source
+  never gets a badge. Principle: trust marks are never model-written.
 - **Mobile layout** is the primary target (CLAUDE.md); desktop is secondary.
 
 ## Open questions
 
-1. Compare cards vs table, steps rail vs chips (above).
-2. Should history sent back to the model flatten older turns' blocks to save tokens?
-3. Cancelled-turn behavior: confirm "keep complete lines, drop the partial".
-4. Does the nudge-with-exemplar let the base fragment shrink, and by how much?
-5. Single `ui` question vs the gate + kind split: decided by the spike's calibration numbers.
-6. Does `ui` need its own margin-note clause, or is the existing "Read as …" note enough?
+All three are gated on measurement, not on a decision:
+
+1. Does the nudge-with-exemplar let the base fragment shrink, and by how much? Needs the Oracle-off
+   fallback rate measured first.
+2. Single `ui` question vs the gate + kind split: decided by the spike's calibration numbers
+   (false-positive rate first).
+3. Mermaid render cost on a real phone, which sets the throttle (P0).
