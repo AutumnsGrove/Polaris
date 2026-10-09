@@ -26,7 +26,7 @@
 		{/each}
 	</div>
 	{#if block.tabs[active]}
-		<div class="panel" role="tabpanel"><UiText text={block.tabs[active].text} /></div>
+		<div class="panel" role="tabpanel"><UiText text={block.tabs[active].text} block /></div>
 	{/if}
 </div>
 

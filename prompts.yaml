@@ -1577,7 +1577,8 @@ ui:
       question) and `{"e":["a","b"],"l":"Yes"}` edge lines, at most 8 nodes, the first node is the start —
       a process or decision chain with branches.
     - `{"c":"tabs"}` then `{"tab":"macOS","text":"..."}` lines, at most 6 — parallel versions of one
-      answer where the reader needs only one.
+      answer where the reader needs only one. A tab's text may hold a fenced code block (write the
+      newlines as \n inside the JSON string) and can run to about 1500 characters.
     - `{"c":"disclose","title":"...","hint":"..."}` then `{"p":"paragraph"}` lines — optional detail
       that stays folded away until tapped.
 

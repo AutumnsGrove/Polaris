@@ -11,14 +11,19 @@ import type { FlowEdge, FlowNode } from './types';
 //    chain and slots in when its edge arrives.
 //  - A back-edge (to a node in the same or an earlier layer) is never drawn as a
 //    line; the source gets a "back to <title>" note. Cycles are legal and are
-//    never recursed into, because each node is placed exactly once.
+//    never recursed into, because each node is placed exactly once. An edge to
+//    a sibling in the same layer is neither a loop nor a new layer, so it gets
+//    its own "also leads to" note (saying "back" about a node drawn beside it
+//    read as wrong in a live run).
 
 export interface FlowCell {
 	node: FlowNode;
 	/** Label of the edge that placed this node, shown above it. */
 	label?: string;
-	/** Titles this node loops back to. */
+	/** Titles this node loops back to (an earlier layer). */
 	back: string[];
+	/** Titles of siblings in its own layer it also leads to: not "back", and not a new layer. */
+	side: string[];
 }
 
 export interface FlowLayout {
@@ -31,7 +36,7 @@ export function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): FlowLayout {
 
 	const byId = new Map(nodes.map((n) => [n.n, n]));
 	const layerOf = new Map<string, number>();
-	const layers: FlowCell[][] = [[{ node: nodes[0], back: [] }]];
+	const layers: FlowCell[][] = [[{ node: nodes[0], back: [], side: [] }]];
 	layerOf.set(nodes[0].n, 0);
 
 	for (let i = 0; i < layers.length; i++) {
@@ -45,9 +50,11 @@ export function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): FlowLayout {
 				const placed = layerOf.get(target.n);
 				if (placed === undefined) {
 					layerOf.set(target.n, i + 1);
-					next.push({ node: target, label: e.l, back: [] });
-				} else if (placed <= i && !cell.back.includes(target.t)) {
+					next.push({ node: target, label: e.l, back: [], side: [] });
+				} else if (placed < i && !cell.back.includes(target.t)) {
 					cell.back.push(target.t);
+				} else if (placed === i && !cell.side.includes(target.t)) {
+					cell.side.push(target.t);
 				}
 				// placed > i: two branches merging into one node, nothing to draw.
 			}

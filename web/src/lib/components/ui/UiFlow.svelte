@@ -17,6 +17,9 @@
 
 <div class="ui-flow">
 	{#each layout.layers as layer, li (li)}
+		<!-- Its own element, not a ::before on the layer: a branch layer is a flex
+		     row, where a pseudo-element becomes a flex item pinned to the left. -->
+		{#if li > 0}<div class="link" aria-hidden="true"></div>{/if}
 		<div class="layer" class:branch={layer.length > 1}>
 			{#each layer as cell (cell.node.n)}
 				{@const expandable = !!cell.node.d || cell.node.src.length > 0}
@@ -49,6 +52,9 @@
 						{#each cell.back as title (title)}
 							<div class="back">↩ back to {title}</div>
 						{/each}
+						{#each cell.side as title (title)}
+							<div class="back">→ also leads to {title}</div>
+						{/each}
 					</div>
 				</div>
 			{/each}
@@ -73,9 +79,7 @@
 	}
 
 	/* A short connector between layers. */
-	.layer + .layer::before {
-		content: '';
-		display: block;
+	.link {
 		width: 1.5px;
 		height: var(--space-md);
 		margin: 0 auto;

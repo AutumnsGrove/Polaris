@@ -39,6 +39,10 @@ const (
 	maxFlowEdges      = 20
 	maxTabs           = 6
 	maxDiscloseParas  = 8
+
+	// Mirror parse.ts's MAX_TAB_TEXT_CHARS / MAX_DISCLOSE_PARA_CHARS.
+	maxTabTextChars      = 2000
+	maxDiscloseParaChars = 1200
 )
 
 type block struct {
@@ -122,7 +126,11 @@ func clip(s string, max int) string {
 
 // text mirrors parse.ts's text(): strings and finite numbers, trimmed,
 // non-empty, clipped. ok is false for anything else.
-func text(v any) (string, bool) {
+func text(v any) (string, bool) { return textMax(v, maxTextChars) }
+
+// textMax is text with a per-field clip, for the prose-body fields that need
+// more than 400 characters (a tab's fenced command block, a disclosed paragraph).
+func textMax(v any, max int) (string, bool) {
 	switch x := v.(type) {
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
@@ -138,7 +146,7 @@ func text(v any) (string, bool) {
 	if s == "" {
 		return "", false
 	}
-	return clip(s, maxTextChars), true
+	return clip(s, max), true
 }
 
 func optText(v any) string { s, _ := text(v); return s }
@@ -330,14 +338,14 @@ func addChild(b *block, o map[string]any) bool {
 		return true
 	case "tabs":
 		name, ok1 := text(o["tab"])
-		body, ok2 := text(o["text"])
+		body, ok2 := textMax(o["text"], maxTabTextChars)
 		if !ok1 || !ok2 || len(b.tabs) >= maxTabs {
 			return false
 		}
 		b.tabs = append(b.tabs, tab{name: name, text: body})
 		return true
 	case "disclose":
-		p, ok := text(o["p"])
+		p, ok := textMax(o["p"], maxDiscloseParaChars)
 		if !ok || len(b.paras) >= maxDiscloseParas {
 			return false
 		}

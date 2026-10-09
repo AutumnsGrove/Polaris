@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseUi, MAX_LINES_PER_FENCE, MAX_TEXT_CHARS } from './parse';
+import { parseUi, MAX_LINES_PER_FENCE, MAX_TEXT_CHARS, MAX_TAB_TEXT_CHARS } from './parse';
 
 // Golden fences: the property test below feeds every prefix of each to the
 // parser, which is the guarantee streaming rendering leans on.
@@ -164,6 +164,20 @@ describe('parseUi', () => {
 		});
 		const seven = '{"c":"tabs"}\n' + Array.from({ length: 7 }, (_, i) => `{"tab":"T${i}","text":"x"}\n`).join('');
 		expect(parseUi(seven).map((b) => b.kind)).toEqual(['tabs', 'raw']);
+	});
+
+	it('lets a tab or disclosed paragraph run past the 400-char default, up to its own cap', () => {
+		const long = 'x'.repeat(MAX_TEXT_CHARS + 50);
+		const tab = parseUi(`{"c":"tabs"}\n${JSON.stringify({ tab: 'A', text: long })}\n`)[0] as { tabs: { text: string }[] };
+		expect(tab.tabs[0].text).toBe(long);
+		const over = parseUi(`{"c":"tabs"}\n${JSON.stringify({ tab: 'A', text: 'x'.repeat(MAX_TAB_TEXT_CHARS + 10) })}\n`)[0] as { tabs: { text: string }[] };
+		expect(over.tabs[0].text).toHaveLength(MAX_TAB_TEXT_CHARS);
+		expect(over.tabs[0].text.endsWith('…')).toBe(true);
+		const para = parseUi(`{"c":"disclose"}\n${JSON.stringify({ p: long })}\n`)[0] as { paras: string[] };
+		expect(para.paras[0]).toBe(long);
+		// every other field keeps the 400-char clip
+		const step = parseUi(`{"c":"steps"}\n${JSON.stringify({ i: long })}\n`)[0] as { steps: { i: string }[] };
+		expect(step.steps[0].i).toHaveLength(MAX_TEXT_CHARS);
 	});
 
 	it('sends a child line that fits its group (a) container to a raw row', () => {

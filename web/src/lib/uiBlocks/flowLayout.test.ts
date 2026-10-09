@@ -40,13 +40,20 @@ describe('layoutFlow', () => {
 		expect(l.layers[1][0].back).toEqual(['Check']);
 	});
 
+	it('notes an edge between siblings as a side link, not a back-edge', () => {
+		const l = layoutFlow([node('a'), node('b', 'Cable'), node('c', 'Fuse')], [edge('a', 'b'), edge('a', 'c'), edge('b', 'c')]);
+		expect(ids(l)).toEqual([['a'], ['b', 'c']]);
+		expect(l.layers[1][0].side).toEqual(['Fuse']);
+		expect(l.layers[1][0].back).toEqual([]);
+	});
+
 	it('does not note a merge of two branches as a back-edge', () => {
 		const l = layoutFlow(
 			[node('a'), node('x'), node('y'), node('z')],
 			[edge('a', 'x'), edge('a', 'y'), edge('x', 'z'), edge('y', 'z')]
 		);
 		expect(ids(l)).toEqual([['a'], ['x', 'y'], ['z']]);
-		expect(l.layers.flat().every((c) => c.back.length === 0)).toBe(true);
+		expect(l.layers.flat().every((c) => c.back.length === 0 && c.side.length === 0)).toBe(true);
 	});
 
 	it('is total: a self-contained cycle that never reaches the first node leaves it waiting', () => {

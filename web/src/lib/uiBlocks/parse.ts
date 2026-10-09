@@ -15,6 +15,11 @@ const MAX_FLOW_NODES = 10;
 const MAX_FLOW_EDGES = 20;
 const MAX_TABS = 6;
 const MAX_DISCLOSE_PARAS = 8;
+// Prose-body fields get a bigger clip than the 400-char default: a real model
+// answering "how do I install X on each OS" puts a fenced command block in each
+// tab (seen live), and a 400-char clip cut it off mid-command.
+export const MAX_TAB_TEXT_CHARS = 2000;
+export const MAX_DISCLOSE_PARA_CHARS = 1200;
 const MAX_RAW_CHARS = 200;
 
 const TONES: readonly CalloutTone[] = ['note', 'warn', 'ok', 'answer'];
@@ -24,12 +29,14 @@ type Json = Record<string, unknown>;
 // A text field: a string or a number, trimmed and clipped. Clipping (rather
 // than the plan's "degrade the whole line to a raw row") keeps a long but
 // otherwise good sentence readable instead of dumping its JSON on screen.
-function text(v: unknown): string | undefined {
+// Never pass this point-free to map/filter: their second argument is the index,
+// which would silently become `max` (it did, once, and clipped every compare column).
+function text(v: unknown, max = MAX_TEXT_CHARS): string | undefined {
 	if (typeof v === 'number' && Number.isFinite(v)) v = String(v);
 	if (typeof v !== 'string') return undefined;
 	const t = v.trim();
 	if (!t) return undefined;
-	return t.length > MAX_TEXT_CHARS ? t.slice(0, MAX_TEXT_CHARS - 1) + '…' : t;
+	return t.length > max ? t.slice(0, max - 1) + '…' : t;
 }
 
 function sources(v: unknown): string[] {
@@ -61,7 +68,7 @@ function openContainer(obj: Json): UiBlock | null {
 		}
 		case 'compare': {
 			if (!Array.isArray(obj.cols)) return null;
-			const cols = obj.cols.map(text).filter((c): c is string => c !== undefined);
+			const cols = obj.cols.map((c) => text(c)).filter((c): c is string => c !== undefined);
 			// 2-4 columns: one is not a comparison, five+ cannot fit a phone.
 			if (cols.length < 2 || cols.length > 4 || cols.length !== obj.cols.length) return null;
 			const pick = Number.isInteger(obj.pick) && (obj.pick as number) >= 0 && (obj.pick as number) < cols.length ? (obj.pick as number) : undefined;
@@ -173,13 +180,13 @@ function addChild(block: UiBlock, obj: Json): boolean {
 	}
 	if (block.kind === 'tabs') {
 		const tab = text(obj.tab);
-		const body = text(obj.text);
+		const body = text(obj.text, MAX_TAB_TEXT_CHARS);
 		if (!tab || !body || block.tabs.length >= MAX_TABS) return false;
 		block.tabs.push({ tab, text: body });
 		return true;
 	}
 	if (block.kind === 'disclose') {
-		const p = text(obj.p);
+		const p = text(obj.p, MAX_DISCLOSE_PARA_CHARS);
 		if (!p || block.paras.length >= MAX_DISCLOSE_PARAS) return false;
 		block.paras.push(p);
 		return true;

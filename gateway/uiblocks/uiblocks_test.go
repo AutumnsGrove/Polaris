@@ -78,6 +78,24 @@ func TestStrip(t *testing.T) {
 	}
 }
 
+// A tab's body and a disclosed paragraph have their own, larger clips (a real
+// model puts a fenced command block in each tab); parse.test.ts pins the same
+// numbers, so the two sides cut at the same character.
+func TestFlatten_ProseBodyFieldsKeepTheirLargerCaps(t *testing.T) {
+	mid := strings.Repeat("x", maxTextChars+50)
+	if got, want := Flatten("```ui\n{\"c\":\"tabs\"}\n{\"tab\":\"A\",\"text\":\""+mid+"\"}\n```\n"), "A: "+mid+"\n"; got != want {
+		t.Errorf("tab text should pass %d chars untouched, got %d bytes", maxTextChars, len(got))
+	}
+	if got, want := Flatten("```ui\n{\"c\":\"disclose\"}\n{\"p\":\""+mid+"\"}\n```\n"), mid+"\n"; got != want {
+		t.Errorf("disclose paragraph should pass %d chars untouched, got %d bytes", maxTextChars, len(got))
+	}
+	over := strings.Repeat("x", maxTabTextChars+10)
+	got := Flatten("```ui\n{\"c\":\"tabs\"}\n{\"tab\":\"A\",\"text\":\"" + over + "\"}\n```\n")
+	if want := "A: " + strings.Repeat("x", maxTabTextChars-1) + "…\n"; got != want {
+		t.Errorf("tab text not clipped to %d chars", maxTabTextChars)
+	}
+}
+
 func TestFlatten_ClipsLongTextLikeTheParser(t *testing.T) {
 	long := strings.Repeat("x", maxTextChars+50)
 	got := Flatten("```ui\n{\"c\":\"callout\",\"text\":\"" + long + "\"}\n```\n")
