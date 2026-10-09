@@ -14,6 +14,8 @@
 	import UiFlow from './UiFlow.svelte';
 	import UiTabs from './UiTabs.svelte';
 	import UiDisclose from './UiDisclose.svelte';
+	import UiQuote from './UiQuote.svelte';
+	import UiClaim from './UiClaim.svelte';
 
 	// One ```ui fence. The whole body is re-parsed whenever it grows (cheap:
 	// parse.ts caps it at 40 lines) and the blocks are keyed by index, so a
@@ -53,6 +55,10 @@
 			<UiTabs {block} />
 		{:else if block.kind === 'disclose'}
 			<UiDisclose {block} />
+		{:else if block.kind === 'quote'}
+			<UiQuote {block} />
+		{:else if block.kind === 'claim'}
+			<UiClaim {block} />
 		{:else}
 			<!-- A line the grammar couldn't use: shown muted, never an error and never blanking the rest. -->
 			<div class="raw">{block.text}</div>

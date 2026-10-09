@@ -1,4 +1,4 @@
-import type { CalloutTone, CompareRow, StepItem, UiBlock } from './types';
+import { CLAIM_VERDICTS, type CalloutTone, type ClaimVerdict, type CompareRow, type StepItem, type UiBlock } from './types';
 
 // Caps from docs/plans/intelligent-ui.md "Grammar". Enforced here and nowhere
 // else, so a component can trust what it is handed.
@@ -11,6 +11,7 @@ const MAX_CHECKLIST_ITEMS = 20;
 const MAX_PROCON_PER_SIDE = 8;
 const MAX_CHOOSE_RULES = 8;
 const MAX_FACT_ROWS = 12;
+const MAX_CLAIM_EVIDENCE_PER_SIDE = 6;
 const MAX_FLOW_NODES = 10;
 const MAX_FLOW_EDGES = 20;
 const MAX_TABS = 6;
@@ -94,6 +95,19 @@ function openContainer(obj: Json): UiBlock | null {
 			return { kind: 'tabs', tabs: [] };
 		case 'disclose':
 			return { kind: 'disclose', title: text(obj.title), hint: text(obj.hint), paras: [] };
+		case 'quote': {
+			const body = text(obj.text);
+			if (!body) return null;
+			return { kind: 'quote', text: body, by: text(obj.by), src: sources(obj.src) };
+		}
+		case 'claim': {
+			const body = text(obj.text);
+			if (!body) return null;
+			// An unknown verdict is "unverified", the neutral reading: never a
+			// reason to drop a block that is otherwise fine.
+			const verdict = CLAIM_VERDICTS.includes(obj.verdict as ClaimVerdict) ? (obj.verdict as ClaimVerdict) : 'unverified';
+			return { kind: 'claim', text: body, verdict, supports: [], disputes: [] };
+		}
 		default:
 			return null;
 	}
@@ -191,7 +205,21 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		block.paras.push(p);
 		return true;
 	}
-	// callout / stat / raw take no children.
+	if (block.kind === 'claim') {
+		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
+		const pro = text(obj['+']);
+		const con = text(obj['-']);
+		if (pro && !con && block.supports.length < MAX_CLAIM_EVIDENCE_PER_SIDE) {
+			block.supports.push({ text: pro, src: sources(obj.src) });
+			return true;
+		}
+		if (con && !pro && block.disputes.length < MAX_CLAIM_EVIDENCE_PER_SIDE) {
+			block.disputes.push({ text: con, src: sources(obj.src) });
+			return true;
+		}
+		return false;
+	}
+	// callout / stat / quote / raw take no children.
 	return false;
 }
 

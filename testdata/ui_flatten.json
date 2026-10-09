@@ -132,6 +132,21 @@
       "want": "Why this works:\nFirst reason.\nSecond reason.\n"
     },
     {
+      "name": "quote: attribution and sources; a quote with no text is dropped",
+      "input": "```ui\n{\"c\":\"quote\",\"text\":\"The only way out is through.\",\"by\":\"Robert Frost\",\"src\":[\"https://example.com/frost\"]}\n{\"c\":\"quote\",\"by\":\"nobody\"}\n```\n",
+      "want": "\"The only way out is through.\" — Robert Frost [example.com](https://example.com/frost)\n"
+    },
+    {
+      "name": "claim: verdict worded as the model's read, supports then disputes, sources per line",
+      "input": "```ui\n{\"c\":\"claim\",\"text\":\"Cracking your knuckles causes arthritis\",\"verdict\":\"false\"}\n{\"-\":\"Studies found no link\",\"src\":[\"https://example.com/study\"]}\n{\"+\":\"Some people report swelling\"}\n{\"+\":\"both\",\"-\":\"ambiguous\"}\n```\n",
+      "want": "Claim: Cracking your knuckles causes arthritis (false)\nSupports: Some people report swelling\nDisputes: Studies found no link [example.com](https://example.com/study)\n"
+    },
+    {
+      "name": "claim: an unknown or missing verdict is unverified and not printed",
+      "input": "```ui\n{\"c\":\"claim\",\"text\":\"X\",\"verdict\":\"probably\"}\n{\"+\":\"Y\"}\n```\n```ui\n{\"c\":\"claim\",\"text\":\"Z\"}\n```\n",
+      "want": "Claim: X\nSupports: Y\nClaim: Z\n"
+    },
+    {
       "name": "a ui fence with extra info text is an ordinary code block",
       "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
       "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"

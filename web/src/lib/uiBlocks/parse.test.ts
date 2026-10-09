@@ -36,6 +36,11 @@ export const GOLDEN: Record<string, string> = {
 		'{"e":["b","a"]}\n',
 	tabs: '{"c":"tabs"}\n{"tab":"macOS","text":"Use `brew install`."}\n{"tab":"Linux","text":"Use apt."}\n',
 	disclose: '{"c":"disclose","title":"Why this works","hint":"3 min read"}\n{"p":"First reason."}\n{"p":"Second reason."}\n',
+	quote: '{"c":"quote","text":"The only way out is through.","by":"Robert Frost","src":["https://example.com/frost"]}\n',
+	claim:
+		'{"c":"claim","text":"Cracking knuckles causes arthritis","verdict":"false"}\n' +
+		'{"-":"Studies found no link","src":["https://example.com/study"]}\n' +
+		'{"+":"Some people report swelling"}\n',
 	callout: '{"c":"callout","tone":"answer","text":"Yes, with caveats.","asof":"2026-10"}\n',
 	stat: '{"c":"stat","label":"Boiling point","value":"100 °C","note":"at sea level"}\n',
 	mixed:
@@ -164,6 +169,25 @@ describe('parseUi', () => {
 		});
 		const seven = '{"c":"tabs"}\n' + Array.from({ length: 7 }, (_, i) => `{"tab":"T${i}","text":"x"}\n`).join('');
 		expect(parseUi(seven).map((b) => b.kind)).toEqual(['tabs', 'raw']);
+	});
+
+	it('parses quote and claim; an unknown verdict is unverified, and a both-sided line is raw', () => {
+		expect(parseUi(GOLDEN.quote)[0]).toEqual({
+			kind: 'quote',
+			text: 'The only way out is through.',
+			by: 'Robert Frost',
+			src: ['https://example.com/frost']
+		});
+		expect(parseUi(GOLDEN.claim)[0]).toEqual({
+			kind: 'claim',
+			text: 'Cracking knuckles causes arthritis',
+			verdict: 'false',
+			supports: [{ text: 'Some people report swelling', src: [] }],
+			disputes: [{ text: 'Studies found no link', src: ['https://example.com/study'] }]
+		});
+		expect(parseUi('{"c":"claim","text":"X","verdict":"probably"}\n')[0]).toMatchObject({ verdict: 'unverified' });
+		expect(parseUi('{"c":"claim","text":"X"}\n{"+":"a","-":"b"}\n').map((b) => b.kind)).toEqual(['claim', 'raw']);
+		expect(parseUi('{"c":"quote","by":"nobody"}\n')[0].kind).toBe('raw');
 	});
 
 	it('lets a tab or disclosed paragraph run past the 400-char default, up to its own cap', () => {

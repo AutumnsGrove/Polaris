@@ -63,6 +63,15 @@ export interface TabItem {
 	text: string;
 }
 
+export const CLAIM_VERDICTS = ['true', 'mixed', 'misleading', 'false', 'unverified'] as const;
+export type ClaimVerdict = (typeof CLAIM_VERDICTS)[number];
+
+/** One Supports/Disputes line of a `claim` block. */
+export interface ClaimEvidence {
+	text: string;
+	src: string[];
+}
+
 export type UiBlock =
 	| { kind: 'callout'; tone: CalloutTone; text: string; asof?: string; src: string[] }
 	| { kind: 'stat'; label?: string; value: string; note?: string; src: string[] }
@@ -79,6 +88,10 @@ export type UiBlock =
 	| { kind: 'flow'; nodes: FlowNode[]; edges: FlowEdge[] }
 	| { kind: 'tabs'; tabs: TabItem[] }
 	| { kind: 'disclose'; title?: string; hint?: string; paras: string[] }
+	| { kind: 'quote'; text: string; by?: string; src: string[] }
+	// `verdict` is the model's own read, never a verified result: only the
+	// evidence lines' sources get "found in source" ticks (decision 17).
+	| { kind: 'claim'; text: string; verdict: ClaimVerdict; supports: ClaimEvidence[]; disputes: ClaimEvidence[] }
 	// A line the grammar couldn't use: invalid JSON, unknown component, a child
 	// line fitting no schema. Shown muted; never closes a container.
 	| { kind: 'raw'; text: string };

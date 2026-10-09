@@ -39,6 +39,7 @@ const (
 	maxFlowEdges      = 20
 	maxTabs           = 6
 	maxDiscloseParas  = 8
+	maxClaimEvidence  = 6
 
 	// Mirror parse.ts's MAX_TAB_TEXT_CHARS / MAX_DISCLOSE_PARA_CHARS.
 	maxTabTextChars      = 2000
@@ -80,6 +81,16 @@ type block struct {
 	// disclose (title is shared with steps)
 	hint  string
 	paras []string
+	// quote (text/src are shared with callout)
+	by string
+	// claim (text is shared): the model's own verdict, never a verified result
+	verdict            string
+	supports, disputes []evidence
+}
+
+type evidence struct {
+	text string
+	src  []string
 }
 
 type flowNode struct {
@@ -236,6 +247,23 @@ func openContainer(o map[string]any) (*block, bool) {
 		return &block{kind: "tabs"}, true
 	case "disclose":
 		return &block{kind: "disclose", title: optText(o["title"]), hint: optText(o["hint"])}, true
+	case "quote":
+		body, ok := text(o["text"])
+		if !ok {
+			return nil, false
+		}
+		return &block{kind: "quote", text: body, by: optText(o["by"]), src: sources(o["src"])}, true
+	case "claim":
+		body, ok := text(o["text"])
+		if !ok {
+			return nil, false
+		}
+		// An unknown verdict is "unverified", the neutral reading.
+		verdict := "unverified"
+		if v, _ := o["verdict"].(string); v == "true" || v == "mixed" || v == "misleading" || v == "false" {
+			verdict = v
+		}
+		return &block{kind: "claim", text: body, verdict: verdict}, true
 	}
 	return nil, false
 }
@@ -351,6 +379,19 @@ func addChild(b *block, o map[string]any) bool {
 		}
 		b.paras = append(b.paras, p)
 		return true
+	case "claim":
+		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
+		pro, okPro := text(o["+"])
+		con, okCon := text(o["-"])
+		if okPro && !okCon && len(b.supports) < maxClaimEvidence {
+			b.supports = append(b.supports, evidence{text: pro, src: sources(o["src"])})
+			return true
+		}
+		if okCon && !okPro && len(b.disputes) < maxClaimEvidence {
+			b.disputes = append(b.disputes, evidence{text: con, src: sources(o["src"])})
+			return true
+		}
+		return false
 	}
 	return false
 }
@@ -574,6 +615,26 @@ func flattenBlocks(blocks []*block) []string {
 				out = append(out, b.title+":")
 			}
 			out = append(out, b.paras...)
+		case "quote":
+			s := `"` + b.text + `"`
+			if b.by != "" {
+				s += " — " + b.by
+			}
+			out = append(out, withSources(s, b.src))
+		case "claim":
+			// The verdict is the model's own read, worded as one; "unverified"
+			// is the neutral default and is omitted.
+			s := "Claim: " + b.text
+			if b.verdict != "unverified" {
+				s += " (" + b.verdict + ")"
+			}
+			out = append(out, s)
+			for _, e := range b.supports {
+				out = append(out, withSources("Supports: "+e.text, e.src))
+			}
+			for _, e := range b.disputes {
+				out = append(out, withSources("Disputes: "+e.text, e.src))
+			}
 		}
 	}
 	return out

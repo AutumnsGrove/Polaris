@@ -111,6 +111,16 @@ function flattenBlocks(blocks: UiBlock[]): string[] {
 				if (b.title) out.push(`${b.title}:`);
 				for (const p of b.paras) out.push(p);
 				break;
+			case 'quote':
+				out.push(withSources(b.by ? `"${b.text}" — ${b.by}` : `"${b.text}"`, b.src));
+				break;
+			case 'claim':
+				// The verdict is the model's own read, so it is worded as one
+				// ("(misleading)"), and "unverified" is the neutral default: omitted.
+				out.push(b.verdict === 'unverified' ? `Claim: ${b.text}` : `Claim: ${b.text} (${b.verdict})`);
+				for (const e of b.supports) out.push(withSources(`Supports: ${e.text}`, e.src));
+				for (const e of b.disputes) out.push(withSources(`Disputes: ${e.text}`, e.src));
+				break;
 			// 'raw' rows are what the grammar could not use: noise to any reader.
 		}
 	}
