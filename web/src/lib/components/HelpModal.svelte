@@ -62,9 +62,9 @@
 		},
 		{
 			name: 'Prism',
-			means: 'Comparisons and step lists',
+			means: 'Immersive UI',
 			detail:
-				'Lets an answer use a comparison, steps, a timeline, a checklist, a flow chart, tabs or a fact-check card when that beats plain text. Set how often in Settings.'
+				'Lets an answer lay itself out — a comparison, a step rail, a timeline, a checklist, tabs, a fact-check card, a callout and more — whenever structure scans better than plain text. Set how often in Settings.'
 		},
 		{
 			name: 'Ghost thread',
