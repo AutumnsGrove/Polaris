@@ -2,7 +2,11 @@
 
 **Added: 2026-10-08. Rewritten as a build plan: 2026-10-09.**
 
-**Status: P0 and P1 built (2026-10-09), P2 onward not started.** Tracking issue #159. P1 = `parse.ts`,
+**Status: P0, P1 and P2 built (2026-10-09), P3 (the remaining blocks) not started.** Tracking issue #159.
+P2 = the Oracle `ui` check (compare/steps/none; Low bar 0.85, Normal 0.70; holds back `format`; held back by
+`emotional`; skipped under Brief/Safari including a mode Oracle picks itself), the margin-note clause, the
+sheet's "Visual block" row, "Rerun as plain text" (`no_visuals`), and `dev/ui_spike` (results below).
+Pulsar pulses are in too (decision 3, amended). P1 = `parse.ts`,
 `components/ui/` (callout, stat, compare, steps), the `visuals` setting + `prompts.yaml` `ui:` section,
 and the flatteners (`flatten.ts`, `gateway/uiblocks`) wired into copy, read-aloud, `read_thread`, Weaver
 and claim extraction. **Deliberately not done in P1:** `search_chats` indexing still indexes the raw JSON
