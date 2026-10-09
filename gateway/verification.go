@@ -73,6 +73,12 @@ type claim struct {
 	url        string
 	claimIndex int // 0-based occurrence of url among this answer's own citation links, in document order
 	text       string
+	// locator is set for a link inside a Prism ui block (see uiblocks.Site);
+	// such a claim is matched to its chip by it, and claimIndex is unused.
+	locator string
+	// quote: the source is checked for the passage itself, not for "supports
+	// this claim" (a quote is a stronger promise).
+	quote bool
 }
 
 // citationLinkRe matches a markdown link `[text](url)`, optionally followed
@@ -271,23 +277,47 @@ type ClaimVerification struct {
 	// with Choice == "supported" — the exact gate the real badge/
 	// persistence path uses (see filterSupportedMarks).
 	Supported bool `json:"supported"`
+	// Locator is set when the claim is a link inside a Prism ui block — see
+	// VerificationMark.Locator. Empty for prose claims.
+	Locator string `json:"locator,omitempty"`
 }
 
-// claimsForVerification is extractClaims over the answer with its Intelligent
-// UI blocks removed. Two reasons, both about not misplacing a tick:
+// maxUIFences mirrors web/src/lib/uiBlocks/renderAnswer.ts's MAX_UI_FENCES:
+// fences past it render as ordinary code on the client, so they have no chips
+// to tick.
+const maxUIFences = 8
+
+// maxUIClaimsPerTurn caps how many block links one answer may spend Jev calls
+// on, so a block-heavy answer (a facts card with ten sourced rows, several
+// blocks) cannot use the whole $0.01 per-turn budget before the prose gets its
+// turn. Prose claims are not capped by this; blocks are checked after them.
+const maxUIClaimsPerTurn = 20
+
+// claimsForVerification is the answer's prose claims plus its Prism block
+// claims. They are extracted separately and numbered differently on purpose:
 //
-//   - A ui fence is JSON lines, not sentences; run through extractClaims it
-//     would yield nonsense "claims" built from JSON fragments.
-//   - claim_index is the nth occurrence of a URL across the answer, and the
-//     client numbers chips the same way (renderAnswer.ts threads one counter
-//     through the Markdown segments only; UiText passes no verification). So a
-//     link inside a block must not count here either, or a URL cited in a
-//     block and again in prose would put its tick on the wrong chip.
-//
-// Block sources get "found in source" ticks later, when both sides turn
-// counting on together (docs/plans/intelligent-ui.md P3c) — never one alone.
+//   - Prose: extractClaims over the answer with ui fences removed (Strip). A
+//     fence is JSON lines, not sentences, and prose chips are matched by "nth
+//     time this URL is cited", which a block link must not disturb, so the
+//     prose path is exactly what it was before blocks existed.
+//   - Blocks: uiblocks.Sites, each link addressed by where it sits (a
+//     locator), so the client needs no shared counter with the server and a
+//     disagreement can only lose a tick, never misplace one.
 func claimsForVerification(answer string, citations []tools.Citation) []claim {
-	return extractClaims(uiblocks.Strip(answer), citations)
+	claims := extractClaims(uiblocks.Strip(answer), citations)
+
+	tracked := make(map[string]bool, len(citations))
+	for _, c := range citations {
+		tracked[c.URL] = true
+	}
+	sites := uiblocks.Sites(answer, func(u string) bool { return tracked[u] }, maxUIFences)
+	if len(sites) > maxUIClaimsPerTurn {
+		sites = sites[:maxUIClaimsPerTurn]
+	}
+	for _, s := range sites {
+		claims = append(claims, claim{url: s.URL, text: s.Text, locator: s.Locator, quote: s.Quote})
+	}
+	return claims
 }
 
 // runVerification checks each of answer's own inline citations against the
@@ -327,7 +357,7 @@ func runVerification(agentCtx *tools.Context, answer string, citations []tools.C
 			// happened instead of the claim silently vanishing.
 			mu.Lock()
 			for _, c := range urlClaims {
-				results = append(results, ClaimVerification{URL: c.url, ClaimIndex: c.claimIndex, ClaimText: c.text, Reason: "no stored evidence for this URL"})
+				results = append(results, ClaimVerification{URL: c.url, ClaimIndex: c.claimIndex, ClaimText: c.text, Locator: c.locator, Reason: "no stored evidence for this URL"})
 			}
 			mu.Unlock()
 			continue
@@ -365,7 +395,7 @@ func filterSupportedMarks(results []ClaimVerification) []VerificationMark {
 	var marks []VerificationMark
 	for _, r := range results {
 		if r.Supported {
-			marks = append(marks, VerificationMark{URL: r.URL, ClaimIndex: r.ClaimIndex, Choice: r.Choice, Confidence: r.Confidence})
+			marks = append(marks, VerificationMark{URL: r.URL, ClaimIndex: r.ClaimIndex, Choice: r.Choice, Confidence: r.Confidence, Locator: r.Locator})
 		}
 	}
 	return marks
@@ -386,14 +416,47 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		"contradicted":        "The source contradicts this claim",
 		"not_addressed":       "The source does not address this at all",
 	}
+	// A quote is a stronger promise than a claim, so its source is checked for
+	// the passage itself. An exact match is settled right here with no Jev call
+	// (a verbatim match cannot be hallucinated); only a miss falls through to
+	// Jev, for the near-verbatim cases (decision 18).
+	results := make([]ClaimVerification, len(claims))
+	exact := make([]bool, len(claims))
+	normEvidence := ""
 	for i, c := range claims {
+		results[i] = ClaimVerification{URL: url, ClaimIndex: c.claimIndex, ClaimText: c.text, Locator: c.locator}
+		if !c.quote {
+			continue
+		}
+		if normEvidence == "" {
+			normEvidence = normalizeForQuote(evidence)
+		}
+		if quoteInEvidence(normEvidence, c.text) {
+			results[i].Choice, results[i].Confidence, results[i].Supported = "supported", 1.0, true
+			exact[i] = true
+		}
+	}
+	pending := 0
+	for i, c := range claims {
+		if exact[i] {
+			continue
+		}
+		pending++
 		key := fmt.Sprintf("c%d", i)
+		crit := criteria
 		instructions := fmt.Sprintf("Does the source support the claim: %s", c.text)
-		questions[key] = jev.ChoiceQuestion{Instructions: instructions, Criteria: criteria}
+		if c.quote {
+			crit = quoteCriteria
+			instructions = fmt.Sprintf("Does the source contain this passage, word for word or very nearly (only punctuation, whitespace or capitalization differ)? A paraphrase or a summary does NOT count: %s", c.text)
+		}
+		questions[key] = jev.ChoiceQuestion{Instructions: instructions, Criteria: crit}
 		overheadChars += len(instructions)
-		for _, v := range criteria {
+		for _, v := range crit {
 			overheadChars += len(v)
 		}
+	}
+	if pending == 0 {
+		return results
 	}
 
 	var chunks []string
@@ -443,11 +506,12 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		}
 	}
 
-	results := make([]ClaimVerification, len(claims))
-	for i, c := range claims {
+	for i := range claims {
+		if exact[i] {
+			continue
+		}
 		key := fmt.Sprintf("c%d", i)
 		answers := perClaim[key]
-		results[i] = ClaimVerification{URL: url, ClaimIndex: c.claimIndex, ClaimText: c.text}
 		if len(answers) == 0 {
 			results[i].Reason = "no successful jev call (budget cap hit or every call failed)"
 			continue
@@ -486,6 +550,69 @@ func verifySource(agentCtx *tools.Context, url, evidence string, claims []claim)
 		}
 	}
 	return results
+}
+
+// quoteCriteria is verifySource's criteria set for a `quote` block's source:
+// the same four choices, worded for "contains the passage" rather than
+// "supports the claim". Only "supported" can become a tick, as for any claim.
+var quoteCriteria = map[string]string{
+	"supported":           "The source contains this passage, word for word or very nearly",
+	"partially_supported": "The source contains only part of it, or a close paraphrase",
+	"contradicted":        "The source says something different",
+	"not_addressed":       "The source does not contain it",
+}
+
+// minQuoteChars is the least normalized text an exact quote match may rest on.
+// A three-word quote is a substring of half the internet, so "found" would
+// prove nothing; below this the exact path steps aside and Jev decides.
+const minQuoteChars = 12
+
+// normalizeForQuote folds text to what survives re-typesetting: lowercase,
+// every run of anything that is not a letter or digit becomes one space. That
+// makes curly vs straight quotes, dash flavours, line wraps, markdown
+// emphasis and stray punctuation irrelevant, which is the "case, whitespace,
+// punctuation" tolerance decision 18 asks for.
+func normalizeForQuote(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	space := true // leading separators vanish
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			space = false
+		} else if !space {
+			b.WriteByte(' ')
+			space = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// quoteInEvidence reports whether every fragment of quote appears in
+// normEvidence (already through normalizeForQuote). An ellipsis ("..." or "…")
+// splits the quote into fragments, since quoting with elisions is normal and
+// each side of the cut must still be verbatim. Fragments are matched on word
+// boundaries, so "cat" never matches inside "concatenate".
+func quoteInEvidence(normEvidence, quote string) bool {
+	quote = strings.ReplaceAll(quote, "…", "...")
+	total := 0
+	var frags []string
+	for _, f := range strings.Split(quote, "...") {
+		if n := normalizeForQuote(f); n != "" {
+			frags = append(frags, n)
+			total += len(n)
+		}
+	}
+	if len(frags) == 0 || total < minQuoteChars {
+		return false
+	}
+	padded := " " + normEvidence + " "
+	for _, f := range frags {
+		if !strings.Contains(padded, " "+f+" ") {
+			return false
+		}
+	}
+	return true
 }
 
 // selectRelevantChunks splits evidence on paragraph boundaries and returns

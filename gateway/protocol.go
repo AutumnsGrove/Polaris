@@ -460,9 +460,16 @@ type ServerEvent struct {
 // gateway/verification.go's doc comment on why only supported-at-threshold
 // entries are ever sent) but kept as a string, not a bool, so a future
 // "contradicted" warning mark doesn't need a wire-format change.
+//
+// Locator is set only for a link inside a Prism `ui` block, and then it, not
+// ClaimIndex, says which chip: a block link is addressed by where it sits
+// ("0.2.1.src#0", see uiblocks.Site) because the occurrence-number rule is
+// fragile for blocks. A mark with a Locator never counts toward the prose
+// chips' ClaimIndex matching; an old mark without one is a prose mark.
 type VerificationMark struct {
 	URL        string  `json:"url"`
 	ClaimIndex int     `json:"claim_index"`
 	Choice     string  `json:"choice"`
 	Confidence float64 `json:"confidence"`
+	Locator    string  `json:"locator,omitempty"`
 }

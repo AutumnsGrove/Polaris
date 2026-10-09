@@ -125,25 +125,96 @@ func TestExtractClaims(t *testing.T) {
 	})
 }
 
-// TestClaimsForVerification_IgnoresUIBlocks pins the client/server agreement
-// the tick placement depends on: a URL cited inside a ui block and again in
-// prose must give the PROSE link claim_index 0, because the client's
-// occurrence counter never sees the block's link.
-func TestClaimsForVerification_IgnoresUIBlocks(t *testing.T) {
+// TestClaimsForVerification_BlockLinksDoNotDisturbProse pins the property the
+// tick placement depends on: a URL cited inside a ui block and again in prose
+// gives the PROSE link claim_index 0 (the client's prose occurrence counter
+// never sees the block's link), while the block link is a separate claim
+// addressed by locator, so neither can tick the other's chip.
+func TestClaimsForVerification_BlockLinksDoNotDisturbProse(t *testing.T) {
 	cites := []tools.Citation{{URL: "https://nasa.gov/voyager", Title: "NASA"}}
 	answer := "Voyager launched in 1977.\n\n" +
 		"```ui\n{\"c\":\"callout\",\"text\":\"Launched 1977 [NASA](https://nasa.gov/voyager).\"}\n```\n\n" +
 		"It is still operating [NASA](https://nasa.gov/voyager).\n"
 
 	got := claimsForVerification(answer, cites)
-	if len(got) != 1 {
-		t.Fatalf("got %d claims, want 1 (the prose link only): %+v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("got %d claims, want 2 (one prose, one block): %+v", len(got), got)
 	}
-	if got[0].claimIndex != 0 {
-		t.Errorf("prose link claim_index = %d, want 0 (the block's link must not be counted)", got[0].claimIndex)
+	prose, block := got[0], got[1]
+	if prose.locator != "" || prose.claimIndex != 0 {
+		t.Errorf("prose claim = %+v, want claim_index 0 and no locator (the block's link must not be counted)", prose)
 	}
-	if strings.Contains(got[0].text, `"c"`) {
-		t.Errorf("claim text leaked block JSON: %q", got[0].text)
+	if block.locator != "0.0.0.text#0" || block.url != "https://nasa.gov/voyager" {
+		t.Errorf("block claim = %+v, want locator 0.0.0.text#0", block)
+	}
+	for _, c := range got {
+		if strings.Contains(c.text, `"c"`) {
+			t.Errorf("claim text leaked block JSON: %q", c.text)
+		}
+	}
+}
+
+func TestClaimsForVerification_CapsBlockClaims(t *testing.T) {
+	cites := []tools.Citation{{URL: "https://a.example/1"}}
+	var rows strings.Builder
+	rows.WriteString("```ui\n{\"c\":\"facts\"}\n")
+	for i := 0; i < maxUIClaimsPerTurn+5; i++ {
+		rows.WriteString("{\"k\":\"K\",\"v\":\"v\",\"src\":[\"https://a.example/1\"]}\n")
+	}
+	rows.WriteString("```\n")
+	// facts caps itself at 12 rows, so use several blocks to pass the claim cap.
+	answer := rows.String() + rows.String()
+	if got := claimsForVerification(answer, cites); len(got) != maxUIClaimsPerTurn {
+		t.Errorf("got %d block claims, want the cap %d", len(got), maxUIClaimsPerTurn)
+	}
+}
+
+func TestFilterSupportedMarks_CarriesTheLocator(t *testing.T) {
+	marks := filterSupportedMarks([]ClaimVerification{
+		{URL: "https://a.example/1", ClaimIndex: 0, Choice: "supported", Confidence: 0.9, Supported: true},
+		{URL: "https://a.example/1", Locator: "0.1.2.src#0", Choice: "supported", Confidence: 1, Supported: true},
+		{URL: "https://a.example/1", Locator: "0.1.3.src#0", Choice: "supported", Confidence: 0.5},
+	})
+	if len(marks) != 2 || marks[0].Locator != "" || marks[1].Locator != "0.1.2.src#0" {
+		t.Errorf("marks = %+v", marks)
+	}
+}
+
+func TestQuoteInEvidence(t *testing.T) {
+	ev := normalizeForQuote("It was the best of times, it was the worst of times — a “tale” of two cities.\nLine-wrapped TEXT here.")
+	cases := []struct {
+		name  string
+		quote string
+		want  bool
+	}{
+		{"verbatim", "It was the best of times, it was the worst of times", true},
+		{"case and punctuation differ", "IT WAS THE BEST OF TIMES; it was the worst of times!", true},
+		{"curly vs straight quotes", `a "tale" of two cities`, true},
+		{"a line wrap is whitespace", "line wrapped text here", true},
+		{"ellipsis: each side verbatim", "It was the best of times ... a tale of two cities", true},
+		{"ellipsis char", "the worst of times … two cities", true},
+		{"a paraphrase is not a quote", "The era was both wonderful and terrible", false},
+		{"one fragment missing fails the lot", "the best of times ... and the rain in spain", false},
+		{"word boundary: cat is not in concatenate", "of times a tale of two cit", false},
+		{"too short to prove anything", "of times", false},
+		{"empty", "...", false},
+	}
+	for _, tc := range cases {
+		if got := quoteInEvidence(ev, tc.quote); got != tc.want {
+			t.Errorf("%s: quoteInEvidence(%q) = %v, want %v", tc.name, tc.quote, got, tc.want)
+		}
+	}
+}
+
+// An exact quote match settles without any Jev call: verifySource must return
+// before it ever touches agentCtx (nil here), so a verbatim quote costs nothing.
+func TestVerifySource_ExactQuoteNeedsNoJev(t *testing.T) {
+	evidence := "Chapter one. The only way out is through, said the poet, and left."
+	got := verifySource(nil, "https://q.example/f", evidence, []claim{
+		{url: "https://q.example/f", text: "The only way out is through.", locator: "0.0.0.src#0", quote: true},
+	})
+	if len(got) != 1 || !got[0].Supported || got[0].Confidence != 1.0 || got[0].Locator != "0.0.0.src#0" {
+		t.Errorf("got %+v, want a supported, confidence-1.0 result carrying its locator", got)
 	}
 }
 
