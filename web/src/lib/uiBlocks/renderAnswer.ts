@@ -8,10 +8,12 @@ export type RenderedSegment =
 	| { kind: 'md'; html: string }
 	| { kind: FenceKind; src: string; closed: boolean };
 
-// Fence kinds that get their own component. `ui` joins this list when its
-// renderer lands (docs/plans/intelligent-ui.md P1); until then a ui fence
-// stays an ordinary code block rather than vanishing.
-const SEGMENT_KINDS: readonly FenceKind[] = ['mermaid'];
+// Fence kinds that get their own component; anything else stays Markdown.
+const SEGMENT_KINDS: readonly FenceKind[] = ['ui', 'mermaid'];
+
+// docs/plans/intelligent-ui.md "Caps": fences past this render as an ordinary
+// code block instead, so a runaway answer can't mount unbounded components.
+export const MAX_UI_FENCES = 8;
 
 // marked.parse + DOMPurify is the expensive, citation-independent part of
 // rendering a Markdown segment. While a reply streams only the LAST segment's
@@ -49,7 +51,11 @@ export function renderAnswer(
 	verification?: VerificationMark[]
 ): RenderedSegment[] {
 	const occurrences = new Map<string, number>();
+	let uiFences = 0;
 	return splitContent(content, streaming, SEGMENT_KINDS).map((seg): RenderedSegment => {
+		if (seg.kind === 'ui' && ++uiFences > MAX_UI_FENCES) {
+			return { kind: 'md', html: sanitizedHtml('```ui\n' + seg.src + (seg.closed ? '```\n' : '')) };
+		}
 		if (seg.kind !== 'md') return seg;
 		return {
 			kind: 'md',

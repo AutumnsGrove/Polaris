@@ -10,6 +10,7 @@
 	import AskUserQuestionCard from './AskUserQuestionCard.svelte';
 	import WaveformAudioPlayer from './WaveformAudioPlayer.svelte';
 	import MermaidBlock from './MermaidBlock.svelte';
+	import UiBlocks from './ui/UiBlocks.svelte';
 	import { renderMermaidIn } from '$lib/mermaid';
 	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
 	import {
@@ -470,6 +471,8 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 					{#each segments as seg, i (i)}
 						{#if seg.kind === 'md'}
 							{@html seg.html}
+						{:else if seg.kind === 'ui'}
+							<UiBlocks src={seg.src} citations={turn.citations ?? []} />
 						{:else}
 							<MermaidBlock src={seg.src} closed={seg.closed} />
 						{/if}

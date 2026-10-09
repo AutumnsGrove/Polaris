@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { marked } from '$lib/markdown';
 import { renderInlineCitations } from '$lib/citations';
 import type { Citation, VerificationMark } from '$lib/types';
-import { renderAnswer } from './renderAnswer';
+import { renderAnswer, MAX_UI_FENCES } from './renderAnswer';
 
 const citations: Citation[] = [
 	{ title: 'NASA', url: 'https://nasa.gov/voyager', site_name: 'NASA' },
@@ -53,10 +53,29 @@ describe('renderAnswer', () => {
 		expect(verifiedTitles(split)).toHaveLength(1);
 	});
 
-	it('leaves a ui fence as an ordinary code block until its renderer exists', () => {
-		const segs = renderAnswer('```ui\n{"c":"stat"}\n```\n', false, citations);
-		expect(segs).toHaveLength(1);
-		expect(segs[0].kind).toBe('md');
-		expect((segs[0] as { html: string }).html).toContain('class="hljs"');
+	it('gives a ui fence its own segment', () => {
+		const segs = renderAnswer('a\n\n```ui\n{"c":"stat","value":"1"}\n```\n\nb', false, citations);
+		expect(segs.map((s) => s.kind)).toEqual(['md', 'ui', 'md']);
+	});
+
+	it('renders fences past the cap as an ordinary code block', () => {
+		const fence = '```ui\n{"c":"stat","value":"1"}\n```\n';
+		const segs = renderAnswer(fence.repeat(MAX_UI_FENCES + 1), false, citations);
+		expect(segs.filter((s) => s.kind === 'ui')).toHaveLength(MAX_UI_FENCES);
+		const last = segs.at(-1) as { kind: string; html: string };
+		expect(last.kind).toBe('md');
+		expect(last.html).toContain('class="hljs"');
+	});
+
+	it('does not count ui links toward verification occurrences (P1: neither side counts them)', () => {
+		const c =
+			'[x](https://nasa.gov/voyager)\n\n```ui\n{"c":"callout","text":"[y](https://nasa.gov/voyager)"}\n```\n\n[z](https://nasa.gov/voyager)\n';
+		const segs = renderAnswer(c, false, citations, [
+			{ url: 'https://nasa.gov/voyager', claim_index: 1, choice: 'supported', confidence: 0.9 }
+		]);
+		// The prose links are occurrences 0 and 1; the ui link is invisible to the counter.
+		const md = segs.filter((s) => s.kind === 'md').map((s) => (s as { html: string }).html);
+		expect(md[0]).not.toContain('citation-verified-icon');
+		expect(md[1]).toContain('citation-verified-icon');
 	});
 });
