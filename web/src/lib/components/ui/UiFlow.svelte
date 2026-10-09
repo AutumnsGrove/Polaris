@@ -144,10 +144,12 @@
 		cursor: pointer;
 	}
 
+	/* break-word, not anywhere: `anywhere` lets a branch column shrink below a
+	   word's width, which split "yeasty/beery/pleasantly" mid-word in a live run. */
 	.t {
 		flex: 1;
 		min-width: 0;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
 	}
 
 	.q {

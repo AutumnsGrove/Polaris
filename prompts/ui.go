@@ -31,8 +31,8 @@ func uiDefaults(d *Set) {
 		"- `{\"c\":\"tabs\"}` then `{\"tab\":\"macOS\",\"text\":\"...\"}` lines, at most 6 — parallel versions of one\n" +
 		"  answer where the reader needs only one. A tab's text may hold a fenced code block (write the\n" +
 		"  newlines as \\n inside the JSON string) and can run to about 1500 characters.\n" +
-		"- `{\"c\":\"disclose\",\"title\":\"...\",\"hint\":\"...\"}` then `{\"p\":\"paragraph\"}` lines — optional detail\n" +
-		"  that stays folded away until tapped.\n\n" +
+		"- `{\"c\":\"disclose\",\"title\":\"...\",\"hint\":\"...\"}` then `{\"p\":\"paragraph\"}` lines — a section of\n" +
+		"  deeper detail, shown open, that the reader can fold away.\n\n" +
 		"A line with a \"c\" key opens a new block; a line without one belongs to the block above it. Text\n" +
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +

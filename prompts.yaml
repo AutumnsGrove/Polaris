@@ -1579,8 +1579,8 @@ ui:
     - `{"c":"tabs"}` then `{"tab":"macOS","text":"..."}` lines, at most 6 — parallel versions of one
       answer where the reader needs only one. A tab's text may hold a fenced code block (write the
       newlines as \n inside the JSON string) and can run to about 1500 characters.
-    - `{"c":"disclose","title":"...","hint":"..."}` then `{"p":"paragraph"}` lines — optional detail
-      that stays folded away until tapped.
+    - `{"c":"disclose","title":"...","hint":"..."}` then `{"p":"paragraph"}` lines — a section of
+      deeper detail, shown open, that the reader can fold away.
 
     A line with a "c" key opens a new block; a line without one belongs to the block above it. Text
     fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300

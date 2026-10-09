@@ -6,8 +6,11 @@
 </script>
 
 <!-- Native <details>: no JS, and the open state lives in the DOM node, which
-     UiBlocks keeps mounted while the answer streams. -->
-<details class="ui-disclose">
+     UiBlocks keeps mounted while the answer streams. Open by default: a folded
+     section read as an answer that stopped short ("why is it so short?") in
+     real use; the reader can still fold it away. `open` is a constant, so a
+     reader's own toggle is never reset by later tokens. -->
+<details class="ui-disclose" open>
 	<summary>
 		<span class="ttl">{block.title ?? 'More detail'}</span>
 		{#if block.hint}<span class="hint">{block.hint}</span>{/if}
