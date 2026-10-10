@@ -619,6 +619,26 @@ specific claim holds up, with evidence on both sides"); `quote` stays an accent 
   you read, give that line `src`"). A `facts` card for a single product page still came back with no
   per-row `src` (the model credits the page once, in the subtitle), so such a card gets no ticks.
 
+## Next blocks: `views` and `define` approved (2026-10-10)
+
+Brainstormed eight candidates (`mockups/prism-next-blocks.html`): `known`, `views`, `changes`, `rank`, `cmd`,
+`agenda`, `define`, `spread`. **Operator approved `views` and `define` only.** The other six are not approved
+and not planned; revisit only if real use shows the gap.
+
+- **`views`** (a contested question, by camp). Container `{"c":"views","title"}`; child lines
+  `{"who","stance","t","src"}`, cap 6 camps. No verdict and no strength meter (a model-invented weight of
+  evidence is unverifiable). Each camp's `t` and `src` are verified per line like `claim`'s evidence lines
+  (new `sites.go` case, `loc` props to match). Oracle option wording must separate it from `claim` (one
+  specific statement) and `procon` (one thing weighed): "a question where informed people disagree; present
+  the main positions". Expect it to compete with `claim`; re-run `dev/ui_spike`, false-positive rate first.
+- **`define`** (terms in plain English). Container `{"c":"define"}`; child lines
+  `{"term","means","also":[...],"ex"}`, cap 8 terms. An accent under the base prompt, like `quote`: no
+  Oracle option, no verification (the model's own definition, never presented as a quote of a source).
+- Both need the usual per-block pieces: `parse.ts` case and caps, a `components/ui/` component, a Go
+  flattener case in `uiblocks` plus the shared `testdata/ui_flatten.json` fixture, the base-prompt line in
+  `prompts.yaml` and `prompts/ui.go` (drift test), and a `docs/FEATURES.md` mention. Neither needs a
+  `HelpModal` `TERMS` entry (no new themed name). No code lands until an issue exists.
+
 ## Open questions
 
 Two of the three were gated on measurement; the second is now answered:
