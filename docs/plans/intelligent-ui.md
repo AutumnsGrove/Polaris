@@ -619,6 +619,53 @@ specific claim holds up, with evidence on both sides"); `quote` stays an accent 
   you read, give that line `src`"). A `facts` card for a single product page still came back with no
   per-row `src` (the model credits the page once, in the subtitle), so such a card gets no ticks.
 
+## Next blocks: `views`, `define`, `analogy`, `readings` approved (2026-10-10)
+
+Brainstormed eight candidates (`mockups/prism-next-blocks.html`): `known`, `views`, `changes`, `rank`, `cmd`,
+`agenda`, `define`, `spread`. **Operator approved `views` and `define`, and in a second round `analogy` and `readings`.** The other six
+(`known`, `changes`, `rank`, `cmd`, `agenda`, `spread`) are not approved and not planned; revisit only if real
+use shows the gap. The inline (tap-a-term) form of `define` was considered and skipped. Mockups for the second
+round are in the same file. Tracking issue #163.
+
+- **`views`** (a contested question, by camp). Container `{"c":"views","title"}`; child lines
+  `{"who","stance","t","src"}`, cap 6 camps. No verdict and no strength meter (a model-invented weight of
+  evidence is unverifiable). Each camp's `t` and `src` are verified per line like `claim`'s evidence lines
+  (new `sites.go` case, `loc` props to match). Oracle option wording must separate it from `claim` (one
+  specific statement) and `procon` (one thing weighed): "a question where informed people disagree; present
+  the main positions". Expect it to compete with `claim`; re-run `dev/ui_spike`, false-positive rate first.
+- **`define`** (terms in plain English). Container `{"c":"define"}`; child lines
+  `{"term","means","also":[...],"ex"}`, cap 8 terms. An accent under the base prompt, like `quote`: no
+  Oracle option, no verification (the model's own definition, never presented as a quote of a source).
+- **`analogy`** (X is like Y). Container `{"c":"analogy","x":"On the network","y":"In the post","like":"A postal system"}`;
+  child lines `{"x","y"}` (cap 6 pairs) and one optional `{"breaks"}` line, the point of the block (an analogy that
+  never says where it fails teaches something false). Accent under the base prompt: no Oracle option, no
+  verification (the model's own teaching device).
+- **`readings`** (pages to read, in order). Container `{"c":"readings","title"}`; child lines
+  `{"lvl":"start|next|deep","t","why","src":["https://..."]}`, cap 6, rendered in fixed level order. It exists so
+  the answer sends the reader to the sources, so: **a line's URL must be a page `web_read` fetched this turn**
+  (the same evidence set verification uses); any other line is dropped and counted in a muted "left out" note.
+  "Opened by Polaris", the reading time and the PDF page count are **measured from the page itself, never
+  model-written and never derived from what `web_read` handed the model**: the filter pass can return two lines
+  from a 15-minute article, so its output says nothing about length. Measure in `web_read` at the same point
+  `AddEvidence` runs (`tools/web_read.go`, raw extracted text, before `FilterExtractedText` and `windowText`):
+  words of the full text at ~230 wpm, rounded up. Record it in a new per-URL stats map on `tools.Context`
+  (words, PDF `totalPages`, a `reliable` flag) rather than re-deriving it from `EvidenceForURL`'s joined string.
+  **Cases that get no number:** a PDF shows "N pages" from `totalPages` (`ExtractPDFPage` returns one page,
+  capped at `maxExtractedChars`, so there is no full text to count), and a fetch where `looksLikePaywall` or
+  `looksEmpty` held shows nothing (a stub would read as "1 min" for a long article). Citations alone cannot mark
+  "opened": `web_search` also calls `AddCitation` for snippet-only hits, so "opened" means the URL has evidence
+  (and stats). Match `src` to the evidence key exactly as passed to `web_read`, so normalise trailing slashes
+  and redirects the same way on both sides. How the numbers reach the client (extra `Citation` fields riding the
+  existing `tool_result` payload vs a separate event) is open; check whether citations persist with the message
+  before relying on reload showing them. Ticks are local state only, like `checklist`. Oracle option
+  must stay clear of `highlight` ("best few things I found", pick one) and Shopper mode: "the person wants to
+  learn a topic; give pages to read, in order". Needs the new server-side measurement above (opened-URL filter
+  plus page stats) on top of the usual per-block pieces.
+- All four need the usual per-block pieces: `parse.ts` case and caps, a `components/ui/` component, a Go
+  flattener case in `uiblocks` plus the shared `testdata/ui_flatten.json` fixture, the base-prompt line in
+  `prompts.yaml` and `prompts/ui.go` (drift test), and a `docs/FEATURES.md` mention. Neither needs a
+  `HelpModal` `TERMS` entry (no new themed name). No code lands until an issue exists.
+
 ## Open questions
 
 Two of the three were gated on measurement; the second is now answered:
