@@ -644,11 +644,23 @@ round are in the same file.
   `{"lvl":"start|next|deep","t","why","src":["https://..."]}`, cap 6, rendered in fixed level order. It exists so
   the answer sends the reader to the sources, so: **a line's URL must be a page `web_read` fetched this turn**
   (the same evidence set verification uses); any other line is dropped and counted in a muted "left out" note.
-  "Opened by Polaris" and the reading time are **pipeline-derived** (time from the fetched text's length, omitted
-  if the fetch was cut off), never model-written. Ticks are local state only, like `checklist`. Oracle option
+  "Opened by Polaris", the reading time and the PDF page count are **measured from the page itself, never
+  model-written and never derived from what `web_read` handed the model**: the filter pass can return two lines
+  from a 15-minute article, so its output says nothing about length. Measure in `web_read` at the same point
+  `AddEvidence` runs (`tools/web_read.go`, raw extracted text, before `FilterExtractedText` and `windowText`):
+  words of the full text at ~230 wpm, rounded up. Record it in a new per-URL stats map on `tools.Context`
+  (words, PDF `totalPages`, a `reliable` flag) rather than re-deriving it from `EvidenceForURL`'s joined string.
+  **Cases that get no number:** a PDF shows "N pages" from `totalPages` (`ExtractPDFPage` returns one page,
+  capped at `maxExtractedChars`, so there is no full text to count), and a fetch where `looksLikePaywall` or
+  `looksEmpty` held shows nothing (a stub would read as "1 min" for a long article). Citations alone cannot mark
+  "opened": `web_search` also calls `AddCitation` for snippet-only hits, so "opened" means the URL has evidence
+  (and stats). Match `src` to the evidence key exactly as passed to `web_read`, so normalise trailing slashes
+  and redirects the same way on both sides. How the numbers reach the client (extra `Citation` fields riding the
+  existing `tool_result` payload vs a separate event) is open; check whether citations persist with the message
+  before relying on reload showing them. Ticks are local state only, like `checklist`. Oracle option
   must stay clear of `highlight` ("best few things I found", pick one) and Shopper mode: "the person wants to
-  learn a topic; give pages to read, in order". Needs a new server-side field (opened-URL filter plus minutes)
-  on top of the usual per-block pieces.
+  learn a topic; give pages to read, in order". Needs the new server-side measurement above (opened-URL filter
+  plus page stats) on top of the usual per-block pieces.
 - All four need the usual per-block pieces: `parse.ts` case and caps, a `components/ui/` component, a Go
   flattener case in `uiblocks` plus the shared `testdata/ui_flatten.json` fixture, the base-prompt line in
   `prompts.yaml` and `prompts/ui.go` (drift test), and a `docs/FEATURES.md` mention. Neither needs a
