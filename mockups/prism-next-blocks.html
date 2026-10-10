@@ -195,6 +195,58 @@ pre.src { margin: var(--space-sm) 0 0; max-width: 390px; background: var(--color
 .u-define .also i { font-style: normal; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 0 8px; }
 .u-define .ex { font-size: 12.5px; color: var(--color-text-dim); margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--color-border-strong); }
 
+
+/* status strip */
+.status { display: grid; gap: var(--space-sm); margin-top: var(--space-md); max-width: 78ch; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md) var(--space-lg); font-size: 13.5px; }
+.status .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.status .lab { flex: none; width: 96px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600; }
+.status code { background: var(--color-surface-3); border-radius: var(--radius-sm); padding: 1px 8px; }
+.pill.approved { color: var(--color-bg); background: var(--color-ok); }
+.pill.no { color: var(--color-text-dim); background: var(--color-surface-3); }
+tr.dim td { opacity: 0.55; }
+.opt.ok { background: var(--color-ok); }
+
+/* analogy */
+.u-analogy { overflow: hidden; }
+.u-analogy .ah { padding: var(--space-md) var(--space-lg); background: var(--color-surface-2); }
+.u-analogy .ah .t { font-family: var(--font-serif); font-size: 18px; line-height: 1.3; margin-top: 2px; }
+.u-analogy .cols { display: grid; grid-template-columns: 1fr 22px 1fr; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg) 0; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600; }
+.u-analogy .map { display: grid; grid-template-columns: 1fr 22px 1fr; gap: 0 var(--space-sm); padding: 0 var(--space-lg) var(--space-sm); font-size: 13.5px; align-items: baseline; }
+.u-analogy .map > * { padding: 7px 0; border-bottom: 1px solid var(--color-border); }
+.u-analogy .map .l { color: var(--color-text); }
+.u-analogy .map .ar { color: var(--color-text-dim); text-align: center; }
+.u-analogy .map .r { color: var(--color-accent-2); font-weight: 500; }
+.u-analogy .map > :nth-last-child(-n+3) { border-bottom: 0; }
+.u-analogy .brk { border-top: 1px solid var(--color-border); padding: var(--space-md) var(--space-lg); background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)); font-size: 13.5px; }
+.u-analogy .brk .tn { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--color-accent); margin-bottom: 2px; }
+.u-analogy .brk .tg { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; line-height: 1; border: 1.5px solid currentColor; }
+.u-analogy .brk p { margin: 0; padding-left: 26px; }
+
+/* readings */
+.u-readings { overflow: hidden; }
+.u-readings .rh { padding: var(--space-md) var(--space-lg) var(--space-sm); background: var(--color-surface-2); }
+.u-readings .rh .t { font-family: var(--font-serif); font-size: 18px; line-height: 1.3; margin-top: 2px; }
+.u-readings .rh .meta { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; }
+.u-readings .prog { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-sm); font-size: 11.5px; color: var(--color-text-dim); font-family: var(--font-mono); }
+.u-readings .bar { flex: 1; height: 3px; border-radius: 2px; background: var(--color-border); overflow: hidden; }
+.u-readings .bar i { display: block; height: 100%; width: 0; background: var(--color-accent); transition: width .25s ease; }
+.u-readings .it { display: grid; grid-template-columns: 24px 1fr; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--color-border); }
+.u-readings .it input { appearance: none; width: 22px; height: 22px; margin: 1px 0 0; border: 1.5px solid var(--color-border-strong); border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.u-readings .it input:checked { background: var(--color-accent); border-color: var(--color-accent); }
+.u-readings .it input:checked::after { content: '✓'; color: var(--color-bg); font-size: 13px; font-weight: 700; }
+.u-readings .it input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.u-readings .lvl { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--color-accent); }
+.u-readings .lvl.deep { color: var(--color-accent-2); }
+.u-readings .ti { display: block; font-weight: 600; font-size: 14.5px; line-height: 1.35; color: var(--color-text); text-decoration: underline; text-decoration-color: var(--color-border-strong); text-underline-offset: 3px; }
+.u-readings .ti:hover { text-decoration-color: var(--color-accent); }
+.u-readings .why { font-size: 13px; color: var(--color-text-dim); margin: 2px 0 var(--space-xs); }
+.u-readings .facts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11.5px; color: var(--color-text-dim); }
+.u-readings .opened { display: inline-flex; align-items: center; gap: 4px; color: var(--color-ok); background: var(--color-ok-soft); border-radius: var(--radius-full); padding: 1px 9px; font-weight: 600; }
+.u-readings .mins { font-family: var(--font-mono); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 0 8px; }
+.u-readings .it:has(input:checked) .ti, .u-readings .it:has(input:checked) .why { color: var(--color-text-dim); }
+.u-readings .left-out { border-top: 1px dashed var(--color-border-strong); padding: var(--space-sm) var(--space-lg); font-size: 12px; color: var(--color-text-dim); }
+.u-readings .left-out i { font-style: normal; color: var(--color-accent); margin-right: 6px; }
+
 /* summary tables */
 .tablewrap { overflow-x: auto; margin-top: var(--space-md); }
 table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
@@ -217,11 +269,18 @@ ul.cut b { color: var(--color-text); font-weight: 600; }
 <p class="lede">The shipped catalog covers the <em>shapes</em> of an answer (table, procedure, timeline, chain). The gaps left are mostly about <em>sourcing</em>, which is the thing Polaris is for, plus a few phone-specific shapes. Eight candidates, each shown rendered at phone width beside the fence lines that would produce it.</p>
 <span class="sample">All content is sample data for layout, not real search results. Source chips are drawn the way the real ones render (named, from a <code>[Title](URL)</code> link or a <code>"src"</code> array); a green ✓ on a chip is the verification tick, which the pipeline sets and the model never writes.</span>
 
+<div class="status">
+	<div class="row"><span class="lab">Approved</span><code>views</code><code>define</code><code>analogy</code><code>readings</code></div>
+	<div class="row"><span class="lab">Not approved</span><span style="color:var(--color-text-dim)">known, changes, rank, cmd, agenda, spread. Left on the page, dimmed, for reference only.</span></div>
+	<div class="row"><span class="lab">Skipped</span><span style="color:var(--color-text-dim)">Inline (tap-a-term) version of <code>define</code>.</span></div>
+</div>
+
 <nav class="toc">
+	<a href="#round2">Approved: analogy, readings</a>
 	<a href="#sourcing">Sourcing-native</a>
 	<a href="#shape">Shape gaps</a>
 	<a href="#phone">Phone-native</a>
-	<a href="#rank">Where I'd start</a>
+	<a href="#rank">Where it stands</a>
 	<a href="#cut">Considered and cut</a>
 </nav>
 
@@ -366,26 +425,77 @@ ul.cut b { color: var(--color-text); font-weight: 600; }
 </div>
 
 <!-- ============================================================ -->
-<h2 id="rank">4 · Where I'd start</h2>
-<p class="lede">Ranked by fit with "sourcing is the product" first, then by how much new machinery each needs. Everything reuses <code>UiText</code>, <code>UiSources</code> and the locator-based verification already built; the new work per block is a parser case, a Svelte component, a Go flattener and <code>sites.go</code> case, an Oracle option plus exemplar, and a <code>TERMS</code> entry only if it needs a themed name (none of these do).</p>
+<h2 id="round2">4 · Round two: analogy and readings</h2>
+<p class="lede">Both approved. <code>analogy</code> is a teaching device and has nothing to verify. <code>readings</code> goes the other way: it exists so the answer sends you to the pages themselves, and every rule below is about keeping the model from recommending reading it has not done.</p>
+
+<div class="grid">
+
+	<div class="spec"><div class="spec-head"><span class="opt ok">APPROVED</span><p><code>analogy</code> — "X is like Y", and where it stops being true</p></div>
+		<div class="frame"><div class="u u-analogy card" data-stream>
+			<div class="ah s-item"><span class="eyebrow">Think of it as</span><div class="t">A postal system</div></div>
+			<div class="cols s-item"><span>On the network</span><span></span><span>In the post</span></div>
+			<div class="map s-item">
+				<span class="l">Packet</span><span class="ar">↔</span><span class="r">Letter</span>
+				<span class="l">IP address</span><span class="ar">↔</span><span class="r">Street address</span>
+				<span class="l">Router</span><span class="ar">↔</span><span class="r">Sorting office</span>
+				<span class="l">Port</span><span class="ar">↔</span><span class="r">Flat number</span>
+			</div>
+			<div class="brk s-item"><div class="tn"><span class="tg">≠</span>Where it breaks</div><p>A letter arrives once and in one piece. Packets can be dropped, duplicated or arrive out of order, and TCP exists to repair that.</p></div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"analogy","x":"On the network","y":"In the post",
+ "like":"A postal system"}
+{"x":"Packet","y":"Letter"}
+{"x":"IP address","y":"Street address"}
+{"x":"Router","y":"Sorting office"}
+{"breaks":"A letter arrives once and in one piece…"}</pre>
+		<p class="note">Each <code>x</code>/<code>y</code> line is one finished row, so the mapping fills in as it streams. <b>The "breaks" line is the point of the block</b>: an analogy that never says where it fails teaches something false. The prompt asks for it every time, and a block without one still renders (a missing line is just absent, never an error). Up to 6 pairs. It is the model's own device, so no source and no tick; an accent block like <code>define</code>, with no Oracle option.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt ok">APPROVED</span><p><code>readings</code> — pages to read, in order (tick them off)</p></div>
+		<div class="frame"><div class="u u-readings card" data-readings data-stream>
+			<div class="rh s-item"><span class="eyebrow">Read these next</span><div class="t">How Tailscale connects your devices</div><div class="meta">4 pages Polaris opened for this answer · about 1 hr</div><div class="prog"><span class="bar"><i></i></span><span class="count">0 of 4 read</span></div></div>
+			<div class="it s-item"><input type="checkbox" id="rd1" aria-label="Mark as read" /><div><span class="lvl">Start here</span><a class="ti" href="#" onclick="return false">How Tailscale works</a><p class="why">The whole picture in plain language: coordination server, direct connections, relays.</p><div class="facts"><span class="opened">● Opened by Polaris</span><span class="mins">≈ 6 min</span><span class="cite">tailscale.com</span></div></div></div>
+			<div class="it s-item"><input type="checkbox" id="rd2" aria-label="Mark as read" /><div><span class="lvl">Next</span><a class="ti" href="#" onclick="return false">How NAT traversal works</a><p class="why">Why two devices behind home routers can still connect directly.</p><div class="facts"><span class="opened">● Opened by Polaris</span><span class="mins">≈ 11 min</span><span class="cite">tailscale.com</span></div></div></div>
+			<div class="it s-item"><input type="checkbox" id="rd3" aria-label="Mark as read" /><div><span class="lvl">Next</span><a class="ti" href="#" onclick="return false">Subnet routers</a><p class="why">The setup page for reaching a whole home network, such as the potato's LAN.</p><div class="facts"><span class="opened">● Opened by Polaris</span><span class="mins">≈ 4 min</span><span class="cite">tailscale.com</span></div></div></div>
+			<div class="it s-item"><input type="checkbox" id="rd4" aria-label="Mark as read" /><div><span class="lvl deep">Go deeper</span><a class="ti" href="#" onclick="return false">WireGuard whitepaper</a><p class="why">The cryptographic design underneath it all. Dense; skim it after the others.</p><div class="facts"><span class="opened">● Opened by Polaris</span><span class="mins">≈ 38 min</span><span class="cite">wireguard.com</span></div></div></div>
+			<div class="left-out s-item"><i>⊘</i>1 suggested link was left out: Polaris never opened it.</div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"readings","title":"How Tailscale connects your devices"}
+{"lvl":"start","t":"How Tailscale works",
+ "why":"The whole picture in plain language…",
+ "src":["https://…"]}
+{"lvl":"next","t":"How NAT traversal works",…}
+{"lvl":"deep","t":"WireGuard whitepaper",…}</pre>
+		<p class="note"><b>What makes it send you to the sources, not around them:</b></p>
+		<ul class="cut" style="max-width:390px;font-size:13px;margin:4px 0 0">
+			<li><b>Only pages Polaris opened.</b> A line's URL must be one <code>web_read</code> fetched this turn, the same evidence set verification uses. Any other line is dropped and counted in the muted note at the foot. The model cannot recommend reading it never did.</li>
+			<li><b>"Opened by Polaris" and the minutes are the pipeline's, not the model's.</b> Reading time comes from the length of the fetched text. The model only writes the title, the level and one line on why. If a fetch was cut off, the minutes are left out rather than shown wrong.</li>
+			<li><b>Order is the point.</b> Levels render in a fixed order (start, next, deep) however the model emits them, at most 6 lines.</li>
+			<li><b>Ticks are local.</b> Same rule as <code>checklist</code>: the page remembers nothing beyond the open tab.</li>
+		</ul>
+		<p class="note"><code>highlight</code> says "here are the best few things I found", cards you pick from. <code>readings</code> says "read these, in this order". The Oracle option text has to keep them apart, and a shopping answer should never fire it.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rank">5 · Where it stands</h2>
+<p class="lede">The first table is the original eight with your verdicts; the two new approvals follow it. The ranking criteria were fit with "sourcing is the product" first, then by how much new machinery each needs. Everything reuses <code>UiText</code>, <code>UiSources</code> and the locator-based verification already built; the new work per block is a parser case, a Svelte component, a Go flattener and <code>sites.go</code> case, an Oracle option plus exemplar, and a <code>TERMS</code> entry only if it needs a themed name (none of these do).</p>
 
 <div class="tablewrap"><table class="matrix">
 	<thead><tr><th>Block</th><th>Why it earns a place</th><th>Oracle option wording (draft)</th><th>Verification</th><th>Effort</th><th>Verdict</th></tr></thead>
 	<tbody>
-		<tr><td>known</td><td>Makes uncertainty visible; the most "Polaris" block. Breaking news and health are where it matters.</td><td>"A situation that is still developing or only partly settled; separate what is firm from what is not."</td><td>Per-line, like <code>claim</code>'s evidence. Tier is unverified; ticks are real.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
-		<tr><td>views</td><td>Fills the gap between <code>procon</code> and <code>claim</code> for contested questions without a model-written verdict.</td><td>"A question where informed people disagree; present the main positions."</td><td>Per-camp line, same as <code>claim</code>.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
-		<tr><td>changes</td><td>Gives Pulsar its missing block; the "states only what's new" contract becomes visible.</td><td>Pulse-only nudge, not a chat option. A normal turn rarely has a "was".</td><td><code>now</code> side only.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
-		<tr><td>rank</td><td>"Best X" is the most common shape <code>compare</code> handles badly.</td><td>"A short ordered list of best picks, each with one reason; order is the point, not attributes."</td><td>Per-item <code>src</code>.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
-		<tr><td>cmd</td><td>Daily use from the phone; fixes copy-from-code-block pain. No Oracle needed.</td><td>None: accent under the base prompt, like <code>quote</code>.</td><td>Not verified (commands are not claims about a source).</td><td>S</td><td><span class="pill build">Build</span></td></tr>
-		<tr><td>agenda</td><td>Plans are a common ask and fit nothing else. Cheap, reuses <code>disclose</code>.</td><td>"A plan over upcoming days or times; <em>not</em> a history (that is <code>timeline</code>)."</td><td>Per-item <code>src</code>.</td><td>M</td><td><span class="pill maybe">Likely</span></td></tr>
-		<tr><td>define</td><td>Nice, low risk, but prose with bold terms already does most of it.</td><td>None: accent.</td><td>None.</td><td>S</td><td><span class="pill maybe">Maybe</span></td></tr>
-		<tr><td>spread</td><td>Valuable for prices and stats, but nearest to a chart and the only one with client-derived numbers.</td><td>"Several sources give different values for the same figure."</td><td>Per-source <code>src</code>.</td><td>M</td><td><span class="pill maybe">Last</span></td></tr>
+		<tr class="dim"><td>known</td><td>Makes uncertainty visible; the most "Polaris" block. Breaking news and health are where it matters.</td><td>"A situation that is still developing or only partly settled; separate what is firm from what is not."</td><td>Per-line, like <code>claim</code>'s evidence. Tier is unverified; ticks are real.</td><td>S</td><td><span class="pill no">Not approved</span></td></tr>
+		<tr><td>views</td><td>Fills the gap between <code>procon</code> and <code>claim</code> for contested questions without a model-written verdict.</td><td>"A question where informed people disagree; present the main positions."</td><td>Per-camp line, same as <code>claim</code>.</td><td>S</td><td><span class="pill approved">Approved</span></td></tr>
+		<tr class="dim"><td>changes</td><td>Gives Pulsar its missing block; the "states only what's new" contract becomes visible.</td><td>Pulse-only nudge, not a chat option. A normal turn rarely has a "was".</td><td><code>now</code> side only.</td><td>S</td><td><span class="pill no">Not approved</span></td></tr>
+		<tr class="dim"><td>rank</td><td>"Best X" is the most common shape <code>compare</code> handles badly.</td><td>"A short ordered list of best picks, each with one reason; order is the point, not attributes."</td><td>Per-item <code>src</code>.</td><td>S</td><td><span class="pill no">Not approved</span></td></tr>
+		<tr class="dim"><td>cmd</td><td>Daily use from the phone; fixes copy-from-code-block pain. No Oracle needed.</td><td>None: accent under the base prompt, like <code>quote</code>.</td><td>Not verified (commands are not claims about a source).</td><td>S</td><td><span class="pill no">Not approved</span></td></tr>
+		<tr class="dim"><td>agenda</td><td>Plans are a common ask and fit nothing else. Cheap, reuses <code>disclose</code>.</td><td>"A plan over upcoming days or times; <em>not</em> a history (that is <code>timeline</code>)."</td><td>Per-item <code>src</code>.</td><td>M</td><td><span class="pill no">Not approved</span></td></tr>
+		<tr><td>define</td><td>Nice, low risk, but prose with bold terms already does most of it.</td><td>None: accent.</td><td>None.</td><td>S</td><td><span class="pill approved">Approved</span></td></tr>
+		<tr class="dim"><td>spread</td><td>Valuable for prices and stats, but nearest to a chart and the only one with client-derived numbers.</td><td>"Several sources give different values for the same figure."</td><td>Per-source <code>src</code>.</td><td>M</td><td><span class="pill no">Not approved</span></td></tr>
 	</tbody></table></div>
 
 <div class="verdict"><b>Suggested slicing:</b> one group of four (<code>known</code>, <code>views</code>, <code>rank</code>, <code>cmd</code>) as "P4a", then <code>changes</code> with a Pulsar-only nudge, then <code>agenda</code>. Re-run <code>dev/ui_spike</code> after each group, as before; the risk to watch is that more options split Oracle's probability mass further (<code>choose</code> already slipped under the bar at 11 options). <code>known</code> and <code>views</code> are close cousins of <code>claim</code>, so expect them to compete with it; the option text needs "one specific statement" vs "a topic with several parts" vs "a topic with several camps".</div>
 
 <!-- ============================================================ -->
-<h2 id="cut">5 · Considered and cut</h2>
+<h2 id="cut">6 · Considered and cut</h2>
 <ul class="cut">
 	<li><b>Scorecard / star ratings.</b> Model-invented numbers with nothing to check them against. If a source publishes a score it belongs in <code>facts</code> or <code>rank</code>'s <code>v</code> with that source attached.</li>
 	<li><b>Calculator, converter, countdown.</b> Computed values; decision 1.</li>
@@ -406,6 +516,16 @@ document.querySelectorAll('[data-copy]').forEach((b) => {
 		b.dataset.done = 'true'; const t = b.textContent; b.textContent = 'Copied';
 		setTimeout(() => { b.dataset.done = 'false'; b.textContent = t; }, 1400);
 	});
+});
+/* readings: local progress only, like the checklist block. */
+document.querySelectorAll('[data-readings]').forEach((box) => {
+	const boxes = box.querySelectorAll('input[type=checkbox]');
+	const update = () => {
+		const n = [...boxes].filter((b) => b.checked).length;
+		box.querySelector('.count').textContent = n + ' of ' + boxes.length + ' read';
+		box.querySelector('.bar i').style.width = (100 * n / boxes.length) + '%';
+	};
+	boxes.forEach((b) => b.addEventListener('change', update));
 });
 /* Replay: hide the specimen's pieces, then bring them back one per 450ms, the
    way a streamed fence fills line by line. */

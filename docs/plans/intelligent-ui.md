@@ -619,11 +619,13 @@ specific claim holds up, with evidence on both sides"); `quote` stays an accent 
   you read, give that line `src`"). A `facts` card for a single product page still came back with no
   per-row `src` (the model credits the page once, in the subtitle), so such a card gets no ticks.
 
-## Next blocks: `views` and `define` approved (2026-10-10)
+## Next blocks: `views`, `define`, `analogy`, `readings` approved (2026-10-10)
 
 Brainstormed eight candidates (`mockups/prism-next-blocks.html`): `known`, `views`, `changes`, `rank`, `cmd`,
-`agenda`, `define`, `spread`. **Operator approved `views` and `define` only.** The other six are not approved
-and not planned; revisit only if real use shows the gap.
+`agenda`, `define`, `spread`. **Operator approved `views` and `define`, and in a second round `analogy` and `readings`.** The other six
+(`known`, `changes`, `rank`, `cmd`, `agenda`, `spread`) are not approved and not planned; revisit only if real
+use shows the gap. The inline (tap-a-term) form of `define` was considered and skipped. Mockups for the second
+round are in the same file.
 
 - **`views`** (a contested question, by camp). Container `{"c":"views","title"}`; child lines
   `{"who","stance","t","src"}`, cap 6 camps. No verdict and no strength meter (a model-invented weight of
@@ -634,7 +636,20 @@ and not planned; revisit only if real use shows the gap.
 - **`define`** (terms in plain English). Container `{"c":"define"}`; child lines
   `{"term","means","also":[...],"ex"}`, cap 8 terms. An accent under the base prompt, like `quote`: no
   Oracle option, no verification (the model's own definition, never presented as a quote of a source).
-- Both need the usual per-block pieces: `parse.ts` case and caps, a `components/ui/` component, a Go
+- **`analogy`** (X is like Y). Container `{"c":"analogy","x":"On the network","y":"In the post","like":"A postal system"}`;
+  child lines `{"x","y"}` (cap 6 pairs) and one optional `{"breaks"}` line, the point of the block (an analogy that
+  never says where it fails teaches something false). Accent under the base prompt: no Oracle option, no
+  verification (the model's own teaching device).
+- **`readings`** (pages to read, in order). Container `{"c":"readings","title"}`; child lines
+  `{"lvl":"start|next|deep","t","why","src":["https://..."]}`, cap 6, rendered in fixed level order. It exists so
+  the answer sends the reader to the sources, so: **a line's URL must be a page `web_read` fetched this turn**
+  (the same evidence set verification uses); any other line is dropped and counted in a muted "left out" note.
+  "Opened by Polaris" and the reading time are **pipeline-derived** (time from the fetched text's length, omitted
+  if the fetch was cut off), never model-written. Ticks are local state only, like `checklist`. Oracle option
+  must stay clear of `highlight` ("best few things I found", pick one) and Shopper mode: "the person wants to
+  learn a topic; give pages to read, in order". Needs a new server-side field (opened-URL filter plus minutes)
+  on top of the usual per-block pieces.
+- All four need the usual per-block pieces: `parse.ts` case and caps, a `components/ui/` component, a Go
   flattener case in `uiblocks` plus the shared `testdata/ui_flatten.json` fixture, the base-prompt line in
   `prompts.yaml` and `prompts/ui.go` (drift test), and a `docs/FEATURES.md` mention. Neither needs a
   `HelpModal` `TERMS` entry (no new themed name). No code lands until an issue exists.
