@@ -625,7 +625,7 @@ Brainstormed eight candidates (`mockups/prism-next-blocks.html`): `known`, `view
 `agenda`, `define`, `spread`. **Operator approved `views` and `define`, and in a second round `analogy` and `readings`.** The other six
 (`known`, `changes`, `rank`, `cmd`, `agenda`, `spread`) are not approved and not planned; revisit only if real
 use shows the gap. The inline (tap-a-term) form of `define` was considered and skipped. Mockups for the second
-round are in the same file.
+round are in the same file. Tracking issue #163.
 
 - **`views`** (a contested question, by camp). Container `{"c":"views","title"}`; child lines
   `{"who","stance","t","src"}`, cap 6 camps. No verdict and no strength meter (a model-invented weight of
