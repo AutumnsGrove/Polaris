@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Prism: next blocks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" />
+<style>
+/* ---------------------------------------------------------------
+   Brainstorm companion to docs/plans/intelligent-ui.md (Prism). Tokens copied
+   from web/src/app.css, same as mockups/intelligent-ui.html, so a specimen
+   sits on the real reading surface. All content is SAMPLE data for layout.
+
+   The shipped catalog (callout, stat, compare, choose, steps, checklist,
+   timeline, flow, procon, tabs, claim, facts, disclose, quote) is NOT redrawn
+   here; see intelligent-ui.html for those. Everything below is a candidate.
+
+   Rules every candidate had to clear (from the plan's Decisions):
+   static + local toggles only (1), no computed values or tools-in-a-block (1),
+   no charts (6, code_exec's job), no chips (5), tool-sourced images only (4),
+   sources are named chips and trust ticks are never model-written (17).
+   --------------------------------------------------------------- */
+:root {
+	color-scheme: dark;
+	--color-bg: oklch(15% 0.014 65);
+	--color-surface: oklch(19% 0.014 65);
+	--color-surface-2: oklch(23% 0.016 65);
+	--color-surface-3: oklch(28% 0.018 65);
+	--color-border: oklch(30% 0.016 65);
+	--color-border-strong: oklch(40% 0.02 65);
+	--color-text: oklch(93% 0.01 75);
+	--color-text-dim: oklch(64% 0.014 70);
+	--color-accent: oklch(82% 0.17 78);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+	--color-accent-2: oklch(78% 0.06 235);
+	--color-accent-2-soft: color-mix(in srgb, var(--color-accent-2) 14%, transparent);
+	--color-ok: oklch(78% 0.1 155);
+	--color-ok-soft: color-mix(in srgb, var(--color-ok) 14%, transparent);
+	--color-bad: oklch(74% 0.12 28);
+	--color-bad-soft: color-mix(in srgb, var(--color-bad) 14%, transparent);
+	--radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-xl: 22px; --radius-full: 999px;
+	--space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px; --space-xl: 24px;
+	--font-sans: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: 15px; line-height: 1.55; }
+.page { max-width: 1180px; margin: 0 auto; padding: var(--space-xl) var(--space-lg) 96px; }
+h1 { font-family: var(--font-serif); font-weight: 500; font-size: 30px; margin: var(--space-lg) 0 var(--space-sm); letter-spacing: -0.01em; }
+h2 { font-family: var(--font-serif); font-weight: 500; font-size: 23px; margin: 64px 0 var(--space-xs); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+.lede { color: var(--color-text-dim); max-width: 70ch; margin: 0 0 var(--space-md); }
+.sample { font-size: 12px; color: var(--color-text-dim); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); display: inline-block; margin-top: var(--space-sm); max-width: 78ch; }
+nav.toc { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-lg) 0 0; }
+nav.toc a { color: var(--color-text); text-decoration: none; font-size: 13px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-full); background: var(--color-surface); }
+nav.toc a:hover { border-color: var(--color-accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+/* ---------- specimen layout ---------- */
+.grid { display: grid; gap: var(--space-xl); grid-template-columns: repeat(auto-fill, minmax(min(100%, 390px), 1fr)); margin-top: var(--space-lg); align-items: start; }
+.spec { min-width: 0; }
+.spec-head { display: flex; align-items: baseline; gap: var(--space-sm); margin-bottom: var(--space-sm); flex-wrap: wrap; }
+.opt { font-size: 11px; font-weight: 700; color: var(--color-bg); background: var(--color-accent); border-radius: var(--radius-sm); padding: 1px 7px; letter-spacing: 0.04em; }
+.opt.maybe { background: var(--color-accent-2); }
+.spec-head p { margin: 0; font-size: 12.5px; color: var(--color-text-dim); flex: 1 1 200px; }
+.frame { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: var(--space-lg); max-width: 390px; }
+pre.src { margin: var(--space-sm) 0 0; max-width: 390px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--color-text-dim); overflow-x: auto; white-space: pre; }
+.note { font-size: 13px; color: var(--color-text-dim); max-width: 390px; margin: var(--space-sm) 0 0; }
+.note b { color: var(--color-text); font-weight: 600; }
+.replay { appearance: none; font: inherit; font-size: 12px; color: var(--color-text); background: transparent; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 2px 12px; cursor: pointer; margin-top: var(--space-sm); }
+.replay:hover { border-color: var(--color-accent); }
+.s-item { transition: opacity .3s ease, transform .3s ease; }
+.s-item.off { opacity: 0; transform: translateY(6px); }
+@media (prefers-reduced-motion: reduce) { .s-item { transition: none; } }
+
+/* answer chrome */
+.u { margin: 0; }
+.cite { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; line-height: 1; padding: 3px 7px; margin: 0 2px; border-radius: var(--radius-full); background: var(--color-accent-2-soft); color: var(--color-accent-2); vertical-align: 1px; white-space: nowrap; }
+.cite.ok::after { content: '✓'; color: var(--color-ok); font-weight: 700; }
+.srcs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-xs); }
+.srcs .cite { margin: 0; }
+.eyebrow { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600; }
+.card { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-lg); }
+
+/* views */
+.u-views { display: grid; gap: var(--space-sm); }
+.u-views .vt { font-family: var(--font-serif); font-size: 17px; line-height: 1.35; margin: 0 0 var(--space-xs); }
+.u-views .v { padding: var(--space-md) var(--space-lg); font-size: 13.5px; }
+.u-views .who { display: inline-block; font-size: 11px; letter-spacing: 0.04em; color: var(--color-accent-2); background: var(--color-accent-2-soft); border-radius: var(--radius-full); padding: 1px 10px; margin-bottom: var(--space-xs); }
+.u-views .stance { font-weight: 600; font-size: 14.5px; margin: 0 0 2px; }
+.u-views .v p { margin: 0; color: var(--color-text-dim); }
+.u-views .v .best { margin-top: var(--space-xs); }
+.u-views .v .best b { color: var(--color-text); font-weight: 500; }
+
+/* known */
+.u-known { overflow: hidden; }
+.u-known .kh { padding: var(--space-md) var(--space-lg); background: var(--color-surface-2); font-family: var(--font-serif); font-size: 17px; }
+.u-known .tier { border-top: 1px solid var(--color-border); padding: var(--space-sm) var(--space-lg) var(--space-md); font-size: 13.5px; }
+.u-known .tier:first-of-type { border-top: 0; }
+.u-known .tn { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }
+.u-known .tg { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; line-height: 1; border: 1.5px solid currentColor; }
+.u-known .est .tn { color: var(--color-ok); }
+.u-known .lik .tn { color: var(--color-accent-2); }
+.u-known .dis .tn { color: var(--color-accent); }
+.u-known .unk .tn { color: var(--color-text-dim); }
+.u-known .tier p { margin: 4px 0 0; padding-left: 26px; }
+.u-known .unk p { color: var(--color-text-dim); }
+
+/* spread */
+.u-spread { padding: var(--space-md) var(--space-lg); }
+.u-spread .sh { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); }
+.u-spread .sh b { font-size: 14px; }
+.u-spread .range { font-size: 22px; font-weight: 600; color: var(--color-accent); letter-spacing: -0.01em; margin: 2px 0 var(--space-sm); }
+.u-spread .range small { font-size: 12px; font-weight: 400; color: var(--color-text-dim); margin-left: 6px; letter-spacing: 0; }
+.u-spread .row { padding: 7px 0; border-top: 1px solid var(--color-border); font-size: 13px; }
+.u-spread .rl { display: flex; justify-content: space-between; gap: var(--space-sm); }
+.u-spread .rl > span:last-child { font-family: var(--font-mono); font-size: 12.5px; }
+.u-spread .track { position: relative; height: 2px; background: var(--color-border-strong); margin: 9px 6px 4px; }
+.u-spread .dot { position: absolute; top: -4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-bg); }
+.u-spread .dot.out { background: var(--color-bad); }
+.u-spread .out-note { font-size: 11.5px; color: var(--color-bad); margin-top: 2px; }
+
+/* changes */
+.u-changes { overflow: hidden; }
+.u-changes .ch { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); padding: var(--space-md) var(--space-lg); background: var(--color-surface-2); }
+.u-changes .ch b { font-family: var(--font-serif); font-weight: 500; font-size: 17px; }
+.u-changes .asof { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-dim); }
+.u-changes .r { padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--color-border); font-size: 13.5px; }
+.u-changes .rk { display: flex; align-items: center; gap: var(--space-sm); }
+.u-changes .rk b { font-weight: 600; }
+.u-changes .tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border-radius: var(--radius-full); padding: 0 8px; }
+.u-changes .tag.chg { color: var(--color-accent); background: var(--color-accent-soft); }
+.u-changes .tag.new { color: var(--color-ok); background: var(--color-ok-soft); }
+.u-changes .tag.gone { color: var(--color-bad); background: var(--color-bad-soft); }
+.u-changes .vals { margin-top: 2px; font-family: var(--font-mono); font-size: 13px; }
+.u-changes .was { color: var(--color-text-dim); text-decoration: line-through; text-decoration-color: var(--color-border-strong); }
+.u-changes .arrow { color: var(--color-text-dim); margin: 0 6px; }
+.u-changes .now { color: var(--color-text); font-weight: 600; }
+.u-changes .why { color: var(--color-text-dim); font-size: 12.5px; margin-top: 2px; }
+.u-changes .quiet { padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-dim); }
+
+/* rank */
+.u-rank { display: grid; gap: var(--space-sm); }
+.u-rank .rh { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); padding: 0 2px; }
+.u-rank .rh b { font-family: var(--font-serif); font-weight: 500; font-size: 17px; }
+.u-rank .item { display: grid; grid-template-columns: 34px 1fr; gap: var(--space-md); padding: var(--space-md) var(--space-lg); }
+.u-rank .item.first { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface)); }
+.u-rank .no { font-family: var(--font-serif); font-size: 26px; line-height: 1; color: var(--color-text-dim); }
+.u-rank .first .no { color: var(--color-accent); }
+.u-rank .nm { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); font-weight: 600; font-size: 14.5px; }
+.u-rank .nm .v { font-weight: 500; font-size: 13px; font-family: var(--font-mono); color: var(--color-accent); white-space: nowrap; }
+.u-rank .tg { display: inline-block; font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; color: var(--color-text-dim); margin: 1px 0 2px; }
+.u-rank .first .tg { color: var(--color-accent); }
+.u-rank .why { font-size: 13px; color: var(--color-text-dim); margin: 0; }
+
+/* agenda */
+.u-agenda { display: grid; gap: var(--space-sm); }
+.u-agenda details { overflow: hidden; }
+.u-agenda summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md) var(--space-lg); }
+.u-agenda summary::-webkit-details-marker { display: none; }
+.u-agenda summary::after { content: '▸'; margin-left: auto; color: var(--color-text-dim); transition: transform .2s; }
+.u-agenda details[open] summary::after { transform: rotate(90deg); }
+.u-agenda .dn { font-family: var(--font-serif); font-size: 22px; color: var(--color-accent); line-height: 1; min-width: 20px; }
+.u-agenda .dt { font-weight: 600; font-size: 14px; line-height: 1.25; }
+.u-agenda .dt small { display: block; font-weight: 400; font-size: 12px; color: var(--color-text-dim); }
+.u-agenda ol { list-style: none; margin: 0; padding: 0 var(--space-lg) var(--space-md); }
+.u-agenda li { display: grid; grid-template-columns: 52px 1fr; gap: var(--space-sm); padding: 6px 0; border-top: 1px solid var(--color-border); font-size: 13.5px; }
+.u-agenda .at { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); padding-top: 2px; }
+.u-agenda .dd { color: var(--color-text-dim); font-size: 12.5px; display: block; }
+
+/* cmd */
+.u-cmd { overflow: hidden; }
+.u-cmd .ch { display: flex; justify-content: space-between; align-items: center; padding: var(--space-sm) var(--space-lg); background: var(--color-surface-2); font-size: 13px; font-weight: 600; }
+.u-cmd .ch span { font-weight: 400; font-size: 11.5px; color: var(--color-text-dim); font-family: var(--font-mono); }
+.u-cmd .c { padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--color-border); }
+.u-cmd .c:first-of-type { border-top: 0; }
+.u-cmd .cd { font-size: 12.5px; color: var(--color-text-dim); margin-bottom: 4px; }
+.u-cmd .cl { display: flex; align-items: stretch; gap: var(--space-sm); }
+.u-cmd code { flex: 1; min-width: 0; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 7px 10px; font-size: 12.5px; overflow-x: auto; white-space: pre; }
+.u-cmd code::before { content: '$ '; color: var(--color-text-dim); }
+.u-cmd button { appearance: none; flex: none; font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 0 12px; cursor: pointer; min-width: 58px; }
+.u-cmd button[data-done='true'] { color: var(--color-ok); border-color: var(--color-ok); }
+.u-cmd .warnline { font-size: 11.5px; color: var(--color-accent); margin-top: 4px; }
+
+/* define */
+.u-define { overflow: hidden; }
+.u-define .t { padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--color-border); }
+.u-define .t:first-child { border-top: 0; }
+.u-define .term { font-family: var(--font-serif); font-size: 18px; }
+.u-define .means { font-size: 13.5px; margin: 2px 0 0; }
+.u-define .also { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; font-size: 11.5px; color: var(--color-text-dim); }
+.u-define .also i { font-style: normal; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 0 8px; }
+.u-define .ex { font-size: 12.5px; color: var(--color-text-dim); margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--color-border-strong); }
+
+/* summary tables */
+.tablewrap { overflow-x: auto; margin-top: var(--space-md); }
+table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
+.matrix th, .matrix td { text-align: left; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.matrix th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-dim); font-weight: 600; }
+.matrix td:first-child { font-family: var(--font-mono); color: var(--color-accent); white-space: nowrap; }
+.pill { font-size: 11px; font-weight: 700; border-radius: var(--radius-full); padding: 1px 9px; white-space: nowrap; }
+.pill.build { color: var(--color-ok); background: var(--color-ok-soft); }
+.pill.maybe { color: var(--color-accent-2); background: var(--color-accent-2-soft); }
+.pill.skip { color: var(--color-bad); background: var(--color-bad-soft); }
+ul.cut { max-width: 78ch; padding-left: 20px; color: var(--color-text-dim); font-size: 14px; }
+ul.cut b { color: var(--color-text); font-weight: 600; }
+.verdict { font-size: 13px; border-left: 3px solid var(--color-accent); background: var(--color-accent-soft); padding: var(--space-sm) var(--space-md); border-radius: 0 var(--radius-md) var(--radius-md) 0; margin: var(--space-md) 0; max-width: 78ch; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Prism — next blocks</h1>
+<p class="lede">The shipped catalog covers the <em>shapes</em> of an answer (table, procedure, timeline, chain). The gaps left are mostly about <em>sourcing</em>, which is the thing Polaris is for, plus a few phone-specific shapes. Eight candidates, each shown rendered at phone width beside the fence lines that would produce it.</p>
+<span class="sample">All content is sample data for layout, not real search results. Source chips are drawn the way the real ones render (named, from a <code>[Title](URL)</code> link or a <code>"src"</code> array); a green ✓ on a chip is the verification tick, which the pipeline sets and the model never writes.</span>
+
+<nav class="toc">
+	<a href="#sourcing">Sourcing-native</a>
+	<a href="#shape">Shape gaps</a>
+	<a href="#phone">Phone-native</a>
+	<a href="#rank">Where I'd start</a>
+	<a href="#cut">Considered and cut</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="sourcing">1 · Sourcing-native: show where the answer stands</h2>
+<p class="lede"><code>claim</code> handles "is this one statement true". These four handle the other honest situations: a question with real camps, a mix of firm and shaky facts, sources that give different numbers, and "what changed since I last looked".</p>
+
+<div class="grid">
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>views</code> — a contested question, by camp</p></div>
+		<div class="frame"><div class="u u-views" data-stream>
+			<p class="vt s-item">Does intermittent fasting beat ordinary calorie cutting?</p>
+			<div class="v card s-item"><span class="who">Most trial reviews</span><p class="stance">About the same for weight loss</p><p>Randomised comparisons find similar loss when total calories match.</p><div class="srcs"><span class="cite ok">Cochrane</span><span class="cite">NEJM</span></div></div>
+			<div class="v card s-item"><span class="who">Some metabolic researchers</span><p class="stance">May help blood sugar specifically</p><p>Small studies show better insulin sensitivity, mostly short-term.</p><div class="srcs"><span class="cite">Cell Metabolism</span></div></div>
+			<div class="v card s-item"><span class="who">Clinical guidance</span><p class="stance">Not for everyone</p><p class="best">Advises against it with diabetes medication, pregnancy or a history of disordered eating.</p><div class="srcs"><span class="cite ok">NHS</span></div></div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"views","title":"Does intermittent fasting beat…?"}
+{"who":"Most trial reviews","stance":"About the same…",
+ "t":"Randomised comparisons find…","src":["https://…"]}
+{"who":"Some metabolic researchers","stance":"May help…",
+ "t":"Small studies show…","src":["https://…"]}</pre>
+		<p class="note">For "which side is right" questions where the honest answer is that serious people disagree. Not <code>procon</code> (one thing weighed) and not <code>claim</code> (one statement, a verdict). Deliberately <b>no verdict, no strength meter</b>: a model-invented "weight of evidence" number is exactly the unverifiable claim the sourcing rules exist to prevent. Each camp's sources are checked line by line like <code>claim</code>'s evidence.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>known</code> — firm, likely, disputed, unknown</p></div>
+		<div class="frame"><div class="u u-known card" data-stream>
+			<div class="kh s-item">The 2024 Lisbon tram fire</div>
+			<div class="tier est s-item"><div class="tn"><span class="tg">●</span>Established</div><p>Tram 28 was evacuated; no fatalities reported.<span class="cite ok">Público</span></p></div>
+			<div class="tier lik s-item"><div class="tn"><span class="tg">◐</span>Likely</div><p>An electrical fault in the pantograph started it.<span class="cite">Carris</span></p></div>
+			<div class="tier dis s-item"><div class="tn"><span class="tg">≠</span>Disputed</div><p>Injury count: 3 per the operator, 11 per local press.<span class="cite">Carris</span><span class="cite">Público</span></p></div>
+			<div class="tier unk s-item"><div class="tn"><span class="tg">?</span>Not yet known</div><p>Whether the line reopens before the autumn schedule.</p></div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"known","title":"The 2024 Lisbon tram fire"}
+{"s":"established","i":"Tram 28 was evacuated…","src":["https://…"]}
+{"s":"likely","i":"An electrical fault…"}
+{"s":"disputed","i":"Injury count: 3 vs 11","src":[…,…]}
+{"s":"unknown","i":"Whether the line reopens…"}</pre>
+		<p class="note">For breaking news, health and anything half-settled. Each tier has a glyph <em>and</em> a word, never colour alone, and tiers always render in this fixed order however the model emits them. The tier is the model's read; the ticks on its lines are real. A <code>disputed</code> row naming its two sources is the whole value. Extends the base prompt's "be honest about what is unsettled" into something scannable.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt maybe">MAYBE</span><p><code>spread</code> — same number, different sources</p></div>
+		<div class="frame"><div class="u u-spread card">
+			<div class="sh"><b>12-inch pizza oven, price</b></div>
+			<div class="range">$299 – $349<small>3 of 4 agree within $50</small></div>
+			<div class="row"><div class="rl"><span>Maker's site <span class="cite ok">ooni.com</span></span><span>$349</span></div><div class="track"><span class="dot" style="left:100%"></span></div></div>
+			<div class="row"><div class="rl"><span>Retailer A <span class="cite">Amazon</span></span><span>$329</span></div><div class="track"><span class="dot" style="left:60%"></span></div></div>
+			<div class="row"><div class="rl"><span>Retailer B <span class="cite">Williams Sonoma</span></span><span>$299</span></div><div class="track"><span class="dot" style="left:0%"></span></div></div>
+			<div class="row"><div class="rl"><span>Marketplace <span class="cite">eBay</span></span><span>$189</span></div><div class="track"><span class="dot out" style="left:0%"></span></div><div class="out-note">Used listing · outside the range</div></div>
+		</div></div>
+		<pre class="src">{"c":"spread","label":"12-inch pizza oven, price","unit":"$"}
+{"v":349,"who":"Maker's site","src":["https://…"]}
+{"v":329,"who":"Retailer A","src":["https://…"]}
+{"v":189,"who":"Marketplace","out":"Used listing"}</pre>
+		<p class="note"><b>The borderline one.</b> It is a number line, which brushes against decision 6 (charts are <code>code_exec</code>'s job), so the case for it is narrower: it is <em>per-source values</em>, ≤6 points, each a named, tickable source, never a series or a trend. It is the visual form of what <code>compare_sources</code> already does mid-turn. The range and the "agree within" line are client-derived from the supplied values, so nothing numeric is model-written beyond the inputs. Build last, and only if <code>stat</code> keeps getting used for "it depends who you ask".</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>changes</code> — what's different now</p></div>
+		<div class="frame"><div class="u u-changes card" data-stream>
+			<div class="ch s-item"><b>Since last Monday</b><span class="asof">2026-10</span></div>
+			<div class="r s-item"><div class="rk"><span class="tag chg">Changed</span><b>Starting salary band</b></div><div class="vals"><span class="was">$62–68k</span><span class="arrow">→</span><span class="now">$66–74k</span></div><div class="why">Revised in the October posting.<span class="cite ok">Careers page</span></div></div>
+			<div class="r s-item"><div class="rk"><span class="tag new">New</span><b>Remote option</b></div><div class="why">Hybrid, two days on site, now listed.<span class="cite">Careers page</span></div></div>
+			<div class="r s-item"><div class="rk"><span class="tag gone">Gone</span><b>Relocation grant</b></div><div class="why">No longer mentioned on the benefits page.</div></div>
+			<div class="quiet s-item">Unchanged: location, team size, application deadline.</div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"changes","title":"Since last Monday","asof":"2026-10"}
+{"k":"Starting salary band","was":"$62–68k","now":"$66–74k",
+ "why":"Revised in the October posting.","src":["https://…"]}
+{"new":"Remote option","why":"Hybrid, two days on site."}
+{"gone":"Relocation grant"}
+{"same":"location, team size, application deadline"}</pre>
+		<p class="note">The natural block for a <b>Pulsar pulse</b>, which is already told what it reported last time and states only what is new. It also serves "has this been updated since X" and corrections. Struck-through <em>was</em> plus bold <em>now</em> plus a word tag, so it reads without colour. The <code>was</code> comes from the model's own earlier turn or the pulse's stored memory; only the <code>now</code> side can carry a tick.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="shape">2 · Shape gaps: answers that are neither a table nor a procedure</h2>
+<p class="lede">Two shapes the current set squeezes into the wrong block. "Best X" answers get forced into <code>compare</code> (an attribute grid) and trip plans get forced into a <code>timeline</code> (which is for the past).</p>
+
+<div class="grid">
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>rank</code> — an ordered "best of", one reason each</p></div>
+		<div class="frame"><div class="u u-rank" data-stream>
+			<div class="rh s-item"><b>Best travel kettles</b><span class="eyebrow">for most people</span></div>
+			<div class="item card first s-item"><div class="no">1</div><div><div class="nm"><span>Cuisinart CPK-17</span><span class="v">$45</span></div><span class="tg">Best overall</span><p class="why">Boils fast, auto shut-off, and the handle folds flat.<span class="cite ok">Wirecutter</span></p></div></div>
+			<div class="item card s-item"><div class="no">2</div><div><div class="nm"><span>Bonavita 1L</span><span class="v">$60</span></div><span class="tg">Best for pour-over</span><p class="why">Gooseneck spout and variable temperature.<span class="cite">Serious Eats</span></p></div></div>
+			<div class="item card s-item"><div class="no">3</div><div><div class="nm"><span>Wacaco Pipamoka</span><span class="v">$30</span></div><span class="tg">Lightest</span><p class="why">Collapses to a mug-sized disc, but slower.<span class="cite">OutdoorGearLab</span></p></div></div>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"rank","title":"Best travel kettles","by":"for most people"}
+{"i":"Cuisinart CPK-17","v":"$45","tag":"Best overall",
+ "d":"Boils fast, auto shut-off…","src":["https://…"]}
+{"i":"Bonavita 1L","v":"$60","tag":"Best for pour-over","d":"…"}</pre>
+		<p class="note">Order <em>is</em> the content. Unlike <code>compare</code> there is no attribute grid, so it streams one finished card at a time and holds up at 8 items. The first card is tinted the way <code>compare</code>'s pick ribbon is. <code>v</code> is free text (a price, a score) the model supplies, never computed. Hands off to <code>highlight</code>'s image cards when each item has a verified page.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>agenda</code> — a plan, day by day (tap a day)</p></div>
+		<div class="frame"><div class="u u-agenda" data-stream>
+			<details class="card s-item" open><summary><span class="dn">1</span><span class="dt">Alfama and the river<small>Fri · about 6 hours walking</small></span></summary><ol>
+				<li><span class="at">09:00</span><span>Castelo de S. Jorge <span class="cite">Visit Lisboa</span><span class="dd">Go early; queues start by 10.</span></span></li>
+				<li><span class="at">13:00</span><span>Lunch at Time Out Market</span></li>
+				<li><span class="at">17:30</span><span>Miradouro da Graça at sunset</span></li></ol></details>
+			<details class="card s-item"><summary><span class="dn">2</span><span class="dt">Belém<small>Sat · half a day</small></span></summary><ol>
+				<li><span class="at">09:30</span><span>Jerónimos Monastery</span></li>
+				<li><span class="at">12:00</span><span>Pastéis de Belém</span></li></ol></details>
+			<details class="card s-item"><summary><span class="dn">3</span><span class="dt">Sintra<small>Sun · full day, train from Rossio</small></span></summary><ol>
+				<li><span class="at">08:30</span><span>Train to Sintra <span class="cite ok">CP.pt</span></span></li>
+				<li><span class="at">10:00</span><span>Pena Palace</span></li></ol></details>
+		</div><button class="replay" data-replay>↻ replay streaming</button></div>
+		<pre class="src">{"c":"agenda","title":"3 days in Lisbon"}
+{"day":"Alfama and the river","sub":"Fri · about 6 hours walking"}
+{"at":"09:00","i":"Castelo de S. Jorge","d":"Go early…","src":["https://…"]}
+{"at":"13:00","i":"Lunch at Time Out Market"}
+{"day":"Belém","sub":"Sat · half a day"}</pre>
+		<p class="note">Itineraries, study plans, meal and workout weeks. A <code>day</code> line opens a group, <code>at</code> lines belong to it. Days are native <code>&lt;details&gt;</code> (the <code>disclose</code> trick, no JS), the first open by default, so a long plan opens as three headings instead of a wall. <code>timeline</code> stays for the past; this is the future-facing sibling, and the Oracle option wording must say so.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="phone">3 · Phone-native: made for reading on a phone, over Tailscale</h2>
+<p class="lede">Polaris is used from a phone and the operator runs the box over SSH, so two small blocks do real work there.</p>
+
+<div class="grid">
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>cmd</code> — commands you can copy (try it)</p></div>
+		<div class="frame"><div class="u u-cmd card">
+			<div class="ch">Check the container<span>shell</span></div>
+			<div class="c"><div class="cd">Is it up?</div><div class="cl"><code>docker compose ps</code><button data-copy="docker compose ps">Copy</button></div></div>
+			<div class="c"><div class="cd">Follow the logs</div><div class="cl"><code>docker compose logs -f polaris</code><button data-copy="docker compose logs -f polaris">Copy</button></div></div>
+			<div class="c"><div class="cd">Wipe the volume</div><div class="cl"><code>docker volume rm polaris_polaris-data</code><button data-copy="docker volume rm polaris_polaris-data">Copy</button></div><div class="warnline">⚠ Deletes your database. There is no undo.</div></div>
+		</div></div>
+		<pre class="src">{"c":"cmd","title":"Check the container","lang":"shell"}
+{"$":"docker compose ps","d":"Is it up?"}
+{"$":"docker compose logs -f polaris","d":"Follow the logs"}
+{"$":"docker volume rm polaris_polaris-data",
+ "d":"Wipe the volume","warn":"Deletes your database."}</pre>
+		<p class="note">Today the model puts commands in a fenced code block or a <code>tabs</code> panel; on a phone a long line needs a side-scroll and a long-press to copy. Here every line is its own row with its own Copy button and the line scrolls sideways inside its own box. <b>Copy only, never Run</b>: that keeps it clear of "build a tool" (decision 1). A <code>warn</code> line is a real field, so a destructive command always carries its caveat next to it, and it flattens as "(warning: …)" for read-aloud.</p></div>
+
+	<div class="spec"><div class="spec-head"><span class="opt">NEW</span><p><code>define</code> — terms in plain English</p></div>
+		<div class="frame"><div class="u u-define card">
+			<div class="t"><div class="term">Tailnet</div><p class="means">Your private network of devices, however far apart they are.</p><div class="also">Also called <i>VPN mesh</i><i>overlay network</i></div><p class="ex">Your phone reaches the potato because both are on the same tailnet.</p></div>
+			<div class="t"><div class="term">Exit node</div><p class="means">A device on your tailnet that other devices route all their internet traffic through.</p><div class="also">Also called <i>VPN gateway</i></div></div>
+		</div></div>
+		<pre class="src">{"c":"define"}
+{"term":"Tailnet","means":"Your private network of devices…",
+ "also":["VPN mesh","overlay network"],
+ "ex":"Your phone reaches the potato…"}
+{"term":"Exit node","means":"A device on your tailnet…"}</pre>
+		<p class="note">For explainers heavy in jargon, so the reader meets the term, the plain meaning, and what else it might be called in the next article they read. It is the in-answer version of the sidebar glossary's <code>TERMS</code> idea. Terms are the model's definition, not a quote: <code>quote</code> stays the only block that promises a source's exact words, and <code>define</code> says nothing about whose definition it is.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rank">4 · Where I'd start</h2>
+<p class="lede">Ranked by fit with "sourcing is the product" first, then by how much new machinery each needs. Everything reuses <code>UiText</code>, <code>UiSources</code> and the locator-based verification already built; the new work per block is a parser case, a Svelte component, a Go flattener and <code>sites.go</code> case, an Oracle option plus exemplar, and a <code>TERMS</code> entry only if it needs a themed name (none of these do).</p>
+
+<div class="tablewrap"><table class="matrix">
+	<thead><tr><th>Block</th><th>Why it earns a place</th><th>Oracle option wording (draft)</th><th>Verification</th><th>Effort</th><th>Verdict</th></tr></thead>
+	<tbody>
+		<tr><td>known</td><td>Makes uncertainty visible; the most "Polaris" block. Breaking news and health are where it matters.</td><td>"A situation that is still developing or only partly settled; separate what is firm from what is not."</td><td>Per-line, like <code>claim</code>'s evidence. Tier is unverified; ticks are real.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
+		<tr><td>views</td><td>Fills the gap between <code>procon</code> and <code>claim</code> for contested questions without a model-written verdict.</td><td>"A question where informed people disagree; present the main positions."</td><td>Per-camp line, same as <code>claim</code>.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
+		<tr><td>changes</td><td>Gives Pulsar its missing block; the "states only what's new" contract becomes visible.</td><td>Pulse-only nudge, not a chat option. A normal turn rarely has a "was".</td><td><code>now</code> side only.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
+		<tr><td>rank</td><td>"Best X" is the most common shape <code>compare</code> handles badly.</td><td>"A short ordered list of best picks, each with one reason; order is the point, not attributes."</td><td>Per-item <code>src</code>.</td><td>S</td><td><span class="pill build">Build</span></td></tr>
+		<tr><td>cmd</td><td>Daily use from the phone; fixes copy-from-code-block pain. No Oracle needed.</td><td>None: accent under the base prompt, like <code>quote</code>.</td><td>Not verified (commands are not claims about a source).</td><td>S</td><td><span class="pill build">Build</span></td></tr>
+		<tr><td>agenda</td><td>Plans are a common ask and fit nothing else. Cheap, reuses <code>disclose</code>.</td><td>"A plan over upcoming days or times; <em>not</em> a history (that is <code>timeline</code>)."</td><td>Per-item <code>src</code>.</td><td>M</td><td><span class="pill maybe">Likely</span></td></tr>
+		<tr><td>define</td><td>Nice, low risk, but prose with bold terms already does most of it.</td><td>None: accent.</td><td>None.</td><td>S</td><td><span class="pill maybe">Maybe</span></td></tr>
+		<tr><td>spread</td><td>Valuable for prices and stats, but nearest to a chart and the only one with client-derived numbers.</td><td>"Several sources give different values for the same figure."</td><td>Per-source <code>src</code>.</td><td>M</td><td><span class="pill maybe">Last</span></td></tr>
+	</tbody></table></div>
+
+<div class="verdict"><b>Suggested slicing:</b> one group of four (<code>known</code>, <code>views</code>, <code>rank</code>, <code>cmd</code>) as "P4a", then <code>changes</code> with a Pulsar-only nudge, then <code>agenda</code>. Re-run <code>dev/ui_spike</code> after each group, as before; the risk to watch is that more options split Oracle's probability mass further (<code>choose</code> already slipped under the bar at 11 options). <code>known</code> and <code>views</code> are close cousins of <code>claim</code>, so expect them to compete with it; the option text needs "one specific statement" vs "a topic with several parts" vs "a topic with several camps".</div>
+
+<!-- ============================================================ -->
+<h2 id="cut">5 · Considered and cut</h2>
+<ul class="cut">
+	<li><b>Scorecard / star ratings.</b> Model-invented numbers with nothing to check them against. If a source publishes a score it belongs in <code>facts</code> or <code>rank</code>'s <code>v</code> with that source attached.</li>
+	<li><b>Calculator, converter, countdown.</b> Computed values; decision 1.</li>
+	<li><b>Distribution or composition charts (pie, bars, sparklines).</b> Decision 6. <code>code_exec</code> renders them better. <code>spread</code> is the only near-miss and is marked Last for that reason.</li>
+	<li><b>Map / place card.</b> Already parked on <code>docs/plans/interactive-maps.md</code>; reuse that rather than a second map path.</li>
+	<li><b>FAQ.</b> It is a list of <code>disclose</code> rows; a second block adds a name, not a capability.</li>
+	<li><b>Option chips.</b> Decision 5; the follow-up suggestions already cover them.</li>
+	<li><b>Product cards with images.</b> <code>highlight</code> and Shopper mode own this and have verified pages behind the images (decision 4).</li>
+</ul>
+
+</div>
+<script>
+/* Local toggles only, matching decision 1. Copy writes to the clipboard and
+   falls back to a "copied" flash when the API is blocked (file:// previews). */
+document.querySelectorAll('[data-copy]').forEach((b) => {
+	b.addEventListener('click', async () => {
+		try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { /* preview without clipboard access */ }
+		b.dataset.done = 'true'; const t = b.textContent; b.textContent = 'Copied';
+		setTimeout(() => { b.dataset.done = 'false'; b.textContent = t; }, 1400);
+	});
+});
+/* Replay: hide the specimen's pieces, then bring them back one per 450ms, the
+   way a streamed fence fills line by line. */
+document.querySelectorAll('[data-replay]').forEach((btn) => {
+	btn.addEventListener('click', () => {
+		const items = btn.parentElement.querySelectorAll('.s-item');
+		items.forEach((el) => el.classList.add('off'));
+		items.forEach((el, i) => setTimeout(() => el.classList.remove('off'), 350 + i * 450));
+	});
+});
+</script>
+</body>
+</html>
