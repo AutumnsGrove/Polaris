@@ -38,7 +38,7 @@ GHCR, updated by a host-side watcher. There's no other install path.
 - Required for the `movies` tool: a free [TMDB API key](https://www.themoviedb.org/settings/api) —
   no unauthenticated fallback
 - Required for the `youtube_transcript` tool: [yt-dlp](https://github.com/yt-dlp/yt-dlp) on
-  `PATH` (the Docker image already has it; for local dev, `pip install yt-dlp` — skip the
+  `PATH` (the Docker image already has it; for local dev, `pip install "yt-dlp[default]"` plus Node.js on `PATH` — skip the
   apt/Alpine package, it drags in ffmpeg, +276MB, for functionality this tool doesn't use). Without it,
   `youtube_transcript` returns a clear "yt-dlp is not installed" error; every other tool still works
 - Optional: a local [Ollama](https://ollama.com) instance serving `nomic-embed-text`, for a

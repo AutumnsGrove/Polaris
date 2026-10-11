@@ -93,6 +93,12 @@ FROM alpine:3.20
 # ffmpeg + friends. Worth keeping an eye on if this ever needs to grow
 # (a future tool wanting actual video/audio would need ffmpeg back).
 #
+# nodejs + the `[default]` extra: YouTube now requires solving an "n
+# challenge" in JS before it hands out formats/captions. yt-dlp-ejs (pulled
+# in by `[default]`) carries the solver scripts; nodejs is the runtime that
+# runs them (yt-dlp's preferred deno has no musl build; the tool passes
+# --js-runtimes node, see tools/youtube_transcript.go). Costs ~45MB.
+#
 # YTDLP_REFRESH: yt-dlp ships fixes for YouTube's anti-bot changes
 # constantly, but this RUN line's text never changes, so CI's GHA layer
 # cache (cache-from: type=gha) kept reusing the August install forever —
@@ -101,8 +107,8 @@ FROM alpine:3.20
 # after it, hence the explicit reference below.
 ARG YTDLP_REFRESH=unset
 RUN : "yt-dlp refresh: ${YTDLP_REFRESH}" && \
-    apk add --no-cache ca-certificates python3 py3-pip && \
-    pip install --break-system-packages --no-cache-dir yt-dlp && \
+    apk add --no-cache ca-certificates python3 py3-pip nodejs && \
+    pip install --break-system-packages --no-cache-dir "yt-dlp[default]" && \
     find /usr/lib/python3* -name '__pycache__' -exec rm -rf {} + && \
     rm -rf /root/.cache /usr/lib/python3*/site-packages/pip* && \
     apk del py3-pip && \
