@@ -23,6 +23,7 @@ import (
 	"polaris/prompts"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/tz"
 )
 
 // dailyBlockKind controls how a block's content gets produced.
@@ -929,7 +930,8 @@ func (s *Server) runDailyPipeline(reqCtx context.Context) {
 		return
 	}
 
-	today := time.Now().Format("2006-01-02")
+	// Date in the operator's zone: at 7pm Eastern it is already tomorrow in UTC.
+	today := tz.Now().Format("2006-01-02")
 	location := cfg.DefaultLocation
 
 	writerClient := dailyClient(cfg, cfgRow.WriterModel)

@@ -1,11 +1,15 @@
 package gateway
 
 import (
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"polaris/prompts"
 	"polaris/store"
+	"polaris/tz"
 )
 
 // TestVisualsModes pins the dial's value set. The PUT validation is built from
@@ -85,5 +89,44 @@ func TestOracleGhostEnabledFromStore(t *testing.T) {
 	}
 	if OracleGhostEnabledFromStore(db) {
 		t.Error("want Oracle-in-ghost off after storing \"false\"")
+	}
+}
+
+func TestPutSettingsTimezone(t *testing.T) {
+	t.Cleanup(func() { tz.Set("") })
+	h := newTestHarness(t, "")
+
+	put := func(body string) int {
+		req, _ := http.NewRequest(http.MethodPut, h.url("/api/settings"), strings.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PUT: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if code := put(`{"timezone":"Mars/Olympus"}`); code != http.StatusBadRequest {
+		t.Errorf("invalid zone: status %d, want 400", code)
+	}
+	if code := put(`{"timezone":"America/New_York"}`); code != http.StatusNoContent {
+		t.Fatalf("valid zone: status %d, want 204", code)
+	}
+	if got := tz.Location().String(); got != "America/New_York" {
+		t.Errorf("active zone = %q, want it applied immediately on save", got)
+	}
+
+	// A restart re-reads the persisted value.
+	tz.Set("")
+	ApplyTimezoneFromStore(h.db)
+	if got := tz.Location().String(); got != "America/New_York" {
+		t.Errorf("after ApplyTimezoneFromStore zone = %q", got)
+	}
+
+	if code := put(`{"timezone":""}`); code != http.StatusNoContent {
+		t.Fatalf("clearing: status %d", code)
+	}
+	if tz.Location() != time.Local {
+		t.Errorf("empty should revert to the server zone")
 	}
 }

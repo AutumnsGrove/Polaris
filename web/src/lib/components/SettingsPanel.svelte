@@ -25,6 +25,7 @@
 		Tag,
 		Mic,
 		MapPin,
+		Clock,
 		Galaxy,
 		Gem,
 		Venus,
@@ -116,6 +117,23 @@
 	// GitHub #83). pronounChoice is one of PRONOUN_PRESETS, 'custom', or ''
 	// (nothing picked yet); customPronouns only matters while
 	// pronounChoice === 'custom'.
+	// Curated, not all ~600 IANA names: covers the common cases. An already-saved
+	// zone outside this list (set via the API) still shows up as its own option.
+	const TIMEZONES = [
+		{ id: 'America/New_York', label: 'Eastern · New York' },
+		{ id: 'America/Chicago', label: 'Central · Chicago' },
+		{ id: 'America/Denver', label: 'Mountain · Denver' },
+		{ id: 'America/Phoenix', label: 'Arizona · Phoenix' },
+		{ id: 'America/Los_Angeles', label: 'Pacific · Los Angeles' },
+		{ id: 'America/Anchorage', label: 'Alaska · Anchorage' },
+		{ id: 'Pacific/Honolulu', label: 'Hawaii · Honolulu' },
+		{ id: 'UTC', label: 'UTC' },
+		{ id: 'Europe/London', label: 'London' },
+		{ id: 'Europe/Paris', label: 'Paris' },
+		{ id: 'Asia/Kolkata', label: 'India · Kolkata' },
+		{ id: 'Asia/Tokyo', label: 'Tokyo' },
+		{ id: 'Australia/Sydney', label: 'Sydney' }
+	];
 	const PRONOUN_PRESETS = ['he/him', 'she/her', 'they/them'];
 	let pronounChoice = $state('');
 	let customPronouns = $state('');
@@ -582,6 +600,27 @@
 					{#snippet details()}
 						Used when the browser can't get your real location (it needs https://, not this app's plain
 						Tailscale IP). Ignored automatically once a real GPS fix is available.
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow icon={Clock} title="Time zone" desc="For Pulsar schedules and dates">
+					{#snippet control()}
+						<select
+							aria-label="Time zone"
+							value={appState.settings.timezone}
+							onchange={(e) => appState.settings.setTimezone(e.currentTarget.value)}
+						>
+							<option value="">Server default ({appState.settings.timezoneEffective || 'UTC'})</option>
+							{#each TIMEZONES as zone (zone.id)}
+								<option value={zone.id}>{zone.label}</option>
+							{/each}
+							{#if appState.settings.timezone && !TIMEZONES.some((z) => z.id === appState.settings.timezone)}
+								<option value={appState.settings.timezone}>{appState.settings.timezone}</option>
+							{/if}
+						</select>
+					{/snippet}
+					{#snippet details()}
+						Pulsar and Pulsar Daily fire at their chosen times in this zone, and the assistant's idea
+						of "today" follows it. Daylight saving (EST/EDT) is handled automatically.
 					{/snippet}
 				</SettingsRow>
 			</div>

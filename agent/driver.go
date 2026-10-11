@@ -11,12 +11,12 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"time"
 
 	"polaris/llm"
 	"polaris/logger"
 	"polaris/prompts"
 	"polaris/tools"
+	"polaris/tz"
 )
 
 var log = logger.WithPrefix("agent")
@@ -403,7 +403,7 @@ const deepResearchCheckInMultiplier = 2
 // genuinely need the time (see tools/current_time.go and
 // docs/plans/verbatim-turn-transcripts.md).
 func currentContextPreamble() string {
-	now := time.Now()
+	now := tz.Now()
 	return fmt.Sprintf(
 		"Today's date: %s (timezone: %s). Treat this as ground truth for anything relative — "+
 			"\"today\", \"this week\", \"latest\", \"currently\", how old something is — rather "+
