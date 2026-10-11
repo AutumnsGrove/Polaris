@@ -42,10 +42,17 @@
 # imported in one process" number is a deliberate worst case for setting
 # a safe ceiling, not what a typical single code_exec call (which
 # usually imports 1-3 packages) will actually use.
+# pypdf added 2026-10-11 so code_exec can search inside a PDF that fetch_url
+# saved to the workspace (a car manual, a datasheet) instead of web_read
+# paging through it one page at a time — a real gap: the model reported
+# "no easy way to search within" a manual because the sandbox had no PDF
+# reader at all. Pure Python with no native deps, so like pyyaml it costs
+# nothing until imported; not re-measured against the memory ceiling, so
+# check cgroup peak on the potato after the first rebuild.
 FROM python:3.11-slim
 
 RUN pip install --no-cache-dir \
-        numpy pandas matplotlib scipy scikit-learn pillow sympy seaborn pyarrow pyyaml && \
+        numpy pandas matplotlib scipy scikit-learn pillow sympy seaborn pyarrow pyyaml pypdf && \
     find /usr/local/lib/python3.11 -name '__pycache__' -exec rm -rf {} + && \
     rm -rf /root/.cache
 

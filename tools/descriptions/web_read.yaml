@@ -3,7 +3,9 @@ category: research
 description: >-
   fetch a URL and extract its content (optionally filtered to just what's needed). Long results
   are cut off with a note telling you the offset (web pages) or page (PDFs) to pass back for the
-  next chunk — see "Know when to stop researching" for when that's actually worth doing.
+  next chunk — see "Know when to stop researching" for when that's actually worth doing. For
+  looking something up inside a long PDF, fetch_url + code_exec can search the whole file at
+  once (see fetch_url) instead of paging through it.
 api_description: >-
   Fetch a URL and extract its clean text content. Use when the user shares a link, or a
   web_search result needs deeper investigation. Optionally pass 'instructions' to extract only
