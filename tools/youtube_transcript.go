@@ -230,11 +230,22 @@ func extractYouTubeID(input string) (string, error) {
 // used to be for an httptest server.
 var ytDlpPath = "yt-dlp"
 
-// ytDlpTimeout bounds both yt-dlp invocations below. 30s is generous for
-// two small metadata/subtitle fetches — this isn't downloading any video
-// or audio (--skip-download) — but the potato's weak CPU plus a possibly
-// slow network makes a short fixed timeout the wrong call here.
-const ytDlpTimeout = 30 * time.Second
+// ytDlpJSRuntime names the JS runtime yt-dlp solves YouTube's "n challenge"
+// with. yt-dlp only auto-enables deno, which has no musl build for the
+// Alpine image, so node is installed there and must be opted into
+// explicitly — without it every call fails with "n challenge solving
+// failed" (live, 2026-10). The solver scripts themselves ship in the
+// yt-dlp-ejs pip package (the Dockerfile's `yt-dlp[default]`). If node is
+// missing (bare-metal dev) yt-dlp just warns and carries on as before.
+const ytDlpJSRuntime = "node"
+
+// ytDlpTimeout bounds each of the two yt-dlp invocations below. 60s because
+// every call now also spawns node to solve YouTube's n challenge (see
+// ytDlpJSRuntime), which on the potato's Cortex-A53 is an estimated few
+// seconds of CPU per call on top of a possibly slow network — the old 30s
+// predates the solver and left little headroom. Nothing is downloaded
+// (--skip-download), so a longer ceiling costs nothing on the happy path.
+const ytDlpTimeout = 60 * time.Second
 
 // ytDlpInfo is the subset of `yt-dlp -j`'s dump-json output this needs.
 // subtitles is manually-uploaded tracks; automatic_captions is YouTube's
@@ -525,6 +536,7 @@ func fetchYtDlpInfo(ctx context.Context, videoID string) (*ytDlpInfo, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, ytDlpPath,
+		"--js-runtimes", ytDlpJSRuntime,
 		"--extractor-args", "youtube:player_client=web_embedded",
 		"--ignore-no-formats-error",
 		"--skip-download", "-j", youtubeWatchBaseURL+videoID)
@@ -604,6 +616,7 @@ func fetchYtDlpSubtitle(ctx context.Context, videoID, lang string, isAuto bool) 
 		// Same player_client/--ignore-no-formats-error pair as
 		// fetchYtDlpInfo above, and required for the same reason — see
 		// this file's package doc comment.
+		"--js-runtimes", ytDlpJSRuntime,
 		"--extractor-args", "youtube:player_client=web_embedded",
 		"--ignore-no-formats-error",
 		"--skip-download",
