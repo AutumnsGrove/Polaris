@@ -251,9 +251,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"movies": {Name: "movies", Requires: "tmdb_api_key", Category: "research", Description: "find real movie/TV show recommendations grounded in TMDB's audience-recommendation data.",
 		APIDescription: "Find real movie/TV show recommendations grounded in TMDB's actual audience-recommendation data."},
 	"code_exec": {Name: "code_exec", Requires: "docker_only", Category: "compute",
-		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow preinstalled. Docker-only.",
+		Description: "run Python in a locked-down, network-less sandbox — numpy/pandas/matplotlib/scipy/scikit-learn/pillow/sympy/seaborn/pyarrow/pyyaml/pypdf preinstalled. Docker-only.",
 		APIDescription: "Run Python code in a sandboxed environment for calculations, data analysis, or file processing. " +
-			"numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, and pyarrow are preinstalled — no " +
+			"numpy, pandas, matplotlib, scipy, scikit-learn, pillow, sympy, seaborn, pyarrow, pyyaml, and pypdf are preinstalled — no " +
 			"other packages can be installed, and there is no network access from inside the sandbox at all. Files " +
 			"written to the current directory persist across calls within this conversation. Returns stdout, stderr, " +
 			"and the exit code. A resource or time limit hit is reported back as a normal result, not a crash — " +

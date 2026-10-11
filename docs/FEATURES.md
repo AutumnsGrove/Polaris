@@ -48,7 +48,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Code execution** — runs model-written Python in a locked-down, network-less Docker sandbox
   (numpy/pandas/matplotlib/scipy/scikit-learn preinstalled) for real calculations, data analysis,
   file processing, and charts styled to match the app's own theme, and can pull in a URL you've
-  already been shown as a citation to work with real data. It's also how any generated document
+  already been shown as a citation to work with real data — including searching inside a long PDF
+  like a car manual for the relevant pages. It's also how any generated document
   (a report, a CSV export, anything file-shaped) gets created — there's no separate file-writing
   tool.
 - **Artifacts** — anything the model writes to its workspace can be surfaced inline: an image (a

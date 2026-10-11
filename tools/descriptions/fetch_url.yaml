@@ -11,4 +11,11 @@ api_description: >-
   under the filename you choose — so code_exec can load a real image, CSV, JSON, Parquet, SQLite, or
   PDF file instead of only synthesizing data from scratch. Rejects a URL that wasn't actually shown
   to you, and rejects content whose type isn't a plausible image/data format regardless of source.
+  Searching inside a long PDF (a car manual, a datasheet, a long report): don't page through it
+  with web_read. Fetch it here, then in code_exec use pypdf — `from pypdf import PdfReader`,
+  loop `reader.pages` calling `page.extract_text()`, and search the text with a regex or keywords
+  (try synonyms and the manual's own wording, e.g. "tire pressure" and "inflation"). Print only
+  the matching page numbers with a few lines of context, then read those pages' full text to
+  answer and cite the PDF's URL with the page number. If extract_text() returns almost nothing,
+  the PDF is a scan with no text layer and can't be searched.
 requires: docker_only
