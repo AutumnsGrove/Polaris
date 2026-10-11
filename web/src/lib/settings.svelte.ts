@@ -202,10 +202,10 @@ export class SettingsState {
 	personPronouns = $state('');
 
 	// IANA zone name Pulsar/Pulsar Daily schedules run in ('' = the server's own
-	// zone, UTC in Docker). timezoneEffective is what the server is actually
-	// using right now, so the picker can name the zone behind 'Server default'.
+	// zone, UTC in Docker). serverTimezone is the server's own zone, so the
+	// picker can name what 'Server default' means.
 	timezone = $state('');
-	timezoneEffective = $state('');
+	serverTimezone = $state('');
 
 	// Fallback for nearby_search when the browser's real Geolocation API
 	// isn't available (plain HTTP, permission denied) — a plain-text
@@ -305,7 +305,7 @@ export class SettingsState {
 		this.personName = data.person_name ?? '';
 		this.personPronouns = data.person_pronouns ?? '';
 		this.timezone = data.timezone ?? '';
-		this.timezoneEffective = data.timezone_effective ?? '';
+		this.serverTimezone = data.server_timezone ?? '';
 		this.manualLocation = getManualLocation();
 		this.applyTheme();
 		this.loaded = true;
@@ -402,7 +402,7 @@ export class SettingsState {
 	async setTimezone(value: string) {
 		this.timezone = value;
 		await this.put({ timezone: value });
-		if (value) this.timezoneEffective = value;
+		if (value) this.serverTimezone = value;
 	}
 
 	// Client-side only — no server round trip, unlike the settings above.

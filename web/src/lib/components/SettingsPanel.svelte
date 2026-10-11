@@ -609,7 +609,7 @@
 							value={appState.settings.timezone}
 							onchange={(e) => appState.settings.setTimezone(e.currentTarget.value)}
 						>
-							<option value="">Server default ({appState.settings.timezoneEffective || 'UTC'})</option>
+							<option value="">Server default ({appState.settings.serverTimezone || 'UTC'})</option>
 							{#each TIMEZONES as zone (zone.id)}
 								<option value={zone.id}>{zone.label}</option>
 							{/each}

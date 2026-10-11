@@ -127,16 +127,13 @@ func ApplyTimezoneFromStore(db *store.Store) {
 	tz.Set(name)
 }
 
-// effectiveTimezoneName is the active zone's display name; the unset case is
-// time.Local, whose String() is the unhelpful literal "Local", so show its
-// abbreviation ("UTC") instead.
-func effectiveTimezoneName() string {
-	loc := tz.Location()
-	if loc == time.Local {
-		abbr, _ := time.Now().Zone()
-		return abbr
-	}
-	return loc.String()
+// serverTimezoneName names the server's own zone — what "Server default" in
+// the picker resolves to — as an abbreviation, since time.Local's String() is
+// the unhelpful literal "Local". Deliberately not tz.Location(): once an
+// operator picks a zone, that would relabel the default option with their pick.
+func serverTimezoneName() string {
+	abbr, _ := time.Now().In(time.Local).Zone()
+	return abbr
 }
 
 // DisabledToolsFromStore reads the disabled_tools setting and returns it as
@@ -408,10 +405,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"custom_instructions":  all[settingCustomInstructions],
 		"person_name":          all[settingPersonName],
 		"person_pronouns":      all[settingPersonPronouns],
-		// Effective zone name too, so the panel can show what an unset value
-		// actually resolves to (the server's zone) instead of a blank.
-		"timezone":           all[settingTimezone],
-		"timezone_effective": effectiveTimezoneName(),
+		// Server zone too, so the panel can name what "Server default" means
+		// instead of showing a blank.
+		"timezone":        all[settingTimezone],
+		"server_timezone": serverTimezoneName(),
 	})
 }
 
