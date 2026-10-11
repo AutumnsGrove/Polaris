@@ -393,7 +393,7 @@
 					</button>
 				</div>
 			</div>
-			<p class="hint">Server-local time — no timezone handling.</p>
+			<p class="hint">Uses the time zone set in Settings (default: the server’s, UTC in Docker).</p>
 			<p class="hint">
 				{generateResult || 'Runs today’s edition immediately with the currently-saved settings, not whatever’s still unsaved in this form.'}
 			</p>

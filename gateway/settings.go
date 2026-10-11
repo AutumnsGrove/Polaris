@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"polaris/agent"
 	"polaris/store"
 	"polaris/tools"
+	"polaris/tz"
 	"polaris/voice"
 )
 
@@ -89,6 +91,12 @@ const (
 	// too — see store.go's migration comment for the one-time data copy.
 	settingPersonName     = "person_name"
 	settingPersonPronouns = "person_pronouns"
+	// settingTimezone is an IANA zone name (e.g. "America/New_York") that Pulsar
+	// and Pulsar Daily schedules, the date preamble and current_time are read in.
+	// Empty/unset keeps the server's own zone (UTC inside Docker) — the behavior
+	// before this setting existed. Mirrored into the tz package on save and at
+	// startup (ApplyTimezoneFromStore) so no consumer needs a DB handle.
+	settingTimezone = "timezone"
 )
 
 // maxPersonNameChars/maxPersonPronounsChars mirror the settings-panel
@@ -105,6 +113,28 @@ const maxPersonPronounsChars = 40
 // every request's cost and context usage rather than failing loudly at
 // save time.
 const maxCustomInstructionsChars = 4000
+
+// ApplyTimezoneFromStore loads the saved timezone setting into the tz package.
+// Called once at startup (cmd/run.go); handlePutSettings re-applies on change.
+func ApplyTimezoneFromStore(db *store.Store) {
+	if db == nil {
+		return
+	}
+	name, err := db.GetSetting(settingTimezone)
+	if err != nil {
+		return
+	}
+	tz.Set(name)
+}
+
+// serverTimezoneName names the server's own zone — what "Server default" in
+// the picker resolves to — as an abbreviation, since time.Local's String() is
+// the unhelpful literal "Local". Deliberately not tz.Location(): once an
+// operator picks a zone, that would relabel the default option with their pick.
+func serverTimezoneName() string {
+	abbr, _ := time.Now().In(time.Local).Zone()
+	return abbr
+}
 
 // DisabledToolsFromStore reads the disabled_tools setting and returns it as
 // the lookup set tools.Context.DisabledTools expects — shared by
@@ -375,6 +405,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"custom_instructions":  all[settingCustomInstructions],
 		"person_name":          all[settingPersonName],
 		"person_pronouns":      all[settingPersonPronouns],
+		// Server zone too, so the panel can name what "Server default" means
+		// instead of showing a blank.
+		"timezone":        all[settingTimezone],
+		"server_timezone": serverTimezoneName(),
 	})
 }
 
@@ -393,6 +427,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		CustomInstructions *string   `json:"custom_instructions"`
 		PersonName         *string   `json:"person_name"`
 		PersonPronouns     *string   `json:"person_pronouns"`
+		Timezone           *string   `json:"timezone"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -583,6 +618,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.db.LogEvent("", "info", "settings", "person pronouns changed", map[string]interface{}{"pronouns": *req.PersonPronouns}, "")
+	}
+	if req.Timezone != nil {
+		if !tz.Valid(*req.Timezone) {
+			http.Error(w, "timezone must be an IANA zone name like America/New_York, or empty for the server zone", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.SetSetting(settingTimezone, *req.Timezone); err != nil {
+			log.Warn("saving timezone setting failed", "err", err)
+			s.db.LogEvent("", "error", "settings", "saving timezone setting failed", map[string]interface{}{"err": err.Error()}, "")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		tz.Set(*req.Timezone)
+		s.db.LogEvent("", "info", "settings", "timezone changed", map[string]interface{}{"timezone": *req.Timezone}, "")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

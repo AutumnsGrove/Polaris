@@ -106,6 +106,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+	gateway.ApplyTimezoneFromStore(db)
 	db.LogEvent("", "info", "startup", "server started", map[string]interface{}{"dev": devMode}, "")
 
 	// Runs for the life of the process, roughly once a day (see

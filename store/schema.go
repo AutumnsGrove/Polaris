@@ -707,8 +707,8 @@ CREATE TABLE IF NOT EXISTS pulsar_routines (
 	-- (see the plan doc) is deliberately just these three shapes.
 	schedule_type TEXT NOT NULL,
 	schedule_params TEXT NOT NULL DEFAULT '',
-	-- time_of_day: "HH:MM", 24-hour, server-local — no timezone handling,
-	-- per the plan doc's single-operator framing.
+	-- time_of_day: "HH:MM", 24-hour, in the zone chosen under Settings > Time zone (server-local if unset),
+	-- (see the tz package).
 	time_of_day TEXT NOT NULL,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	-- last_run_at: NULL means never fired yet. Checked by the scheduler on

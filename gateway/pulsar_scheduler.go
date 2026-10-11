@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"polaris/store"
+	"polaris/tz"
 	"polaris/uiblocks"
 )
 
@@ -49,7 +50,7 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 		// need a second ticker of its own.
 		if cfgRow, err := s.db.GetDailyConfig(); err != nil {
 			log.Warn("loading pulsar daily config failed", "err", err)
-		} else if isDailyDue(cfgRow, time.Now()) {
+		} else if isDailyDue(cfgRow, tz.Now()) {
 			if !s.startDailyGenerationIfIdle() {
 				// A manual "Generate now" click won this instant's race —
 				// see startDailyGenerationIfIdle's doc comment. Nothing to
@@ -65,7 +66,7 @@ func (s *Server) RunPulsarScheduler(done <-chan struct{}) {
 			log.Warn("listing active pulsar routines failed", "err", err)
 			return
 		}
-		now := time.Now()
+		now := tz.Now()
 		for _, r := range routines {
 			if isRoutineDue(r, now) {
 				// Concurrent, not sequential — firePulse already calls
