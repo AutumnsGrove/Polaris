@@ -6,7 +6,7 @@
 	import { appState } from '$lib/state.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import PulsarRoutineForm from '$lib/components/PulsarRoutineForm.svelte';
-	import { PanelLeft, ChevronLeft, Pencil, Loader2, Sparkles } from '@lucide/svelte';
+	import { PanelLeft, ChevronLeft, Pencil, Loader2, BellRing } from '@lucide/svelte';
 
 	let routineId = $derived(Number(page.params.id));
 	let routine = $derived(pulsarState.routineById(routineId));
@@ -117,7 +117,7 @@
 						<div class="pulse-title">{pulse.title || 'Untitled'}</div>
 						{#if pulse.alert_reason}
 							<div class="pulse-alert">
-								<Sparkles size={12} strokeWidth={2.5} />
+								<BellRing size={12} strokeWidth={2.5} />
 								<span class="pulse-alert-label">Big news</span>
 								<span class="pulse-alert-reason">{pulse.alert_reason}</span>
 							</div>

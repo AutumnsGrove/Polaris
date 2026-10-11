@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Sparkles } from '@lucide/svelte';
+	import { BellRing } from '@lucide/svelte';
 
 	// One small component, reused at two scopes rather than two separate
 	// indicator concepts — see docs/plans/pulsar-routines.md's "Amber
@@ -20,7 +20,7 @@
 {#if count > 0}
 	{#if alert}
 		<span class="pulsar-alert" title="Big news" aria-label="Big news">
-			<Sparkles size={11} strokeWidth={2.5} color="var(--color-bg)" />
+			<BellRing size={11} strokeWidth={2.5} color="var(--color-bg)" />
 			{#if count > 1}
 				<span class="alert-count">{count > 99 ? '99+' : count}</span>
 			{/if}
@@ -63,7 +63,7 @@
 		color: var(--color-bg);
 	}
 
-	/* Big news: a filled gold chip with a sparkle — one shape, not a
+	/* Big news: a filled gold chip with a bell — one shape, not a
 	   second color, so it stays calm next to the plain dots. */
 	.pulsar-alert {
 		display: inline-flex;
