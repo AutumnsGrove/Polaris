@@ -614,6 +614,9 @@ export interface PulsarPulse {
 	seen: boolean;
 	created_at: string;
 	in_progress: boolean;
+	// Non-empty when the pulse flagged itself as big news (alert_me) — the
+	// one-sentence reason, shown under the title. Empty for an ordinary pulse.
+	alert_reason: string;
 }
 
 // PulsarDailyConfig mirrors store.PulsarDailyConfig's JSON shape — the

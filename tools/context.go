@@ -428,6 +428,13 @@ type Context struct {
 	// chat/pulse turn. Zero value (false) is normal behavior.
 	PulsarDailyItems bool
 
+	// PulseAlert, when non-nil, marks this turn as a user-defined Pulsar
+	// routine's scheduled pulse and is what alert_me calls to flag it as big
+	// news (catalog.go's "pulsar_alert" Requires case). Wired only by
+	// gateway/turn_context.go for a turn carrying a routine id — never a
+	// Pulsar Daily block, a retry, or a normal chat. nil is normal behavior.
+	PulseAlert func(reason string) error
+
 	// DisabledTools is the settings panel's per-tool on/off list (see
 	// gateway.DisabledToolsFromStore) — a tool named here is excluded
 	// regardless of Requires or Category, checked first in offered(). Nil

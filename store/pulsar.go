@@ -182,6 +182,9 @@ type PulsarPulseSummary struct {
 	Title     string `json:"title"`
 	Seen      bool   `json:"seen"`
 	CreatedAt string `json:"created_at"`
+	// AlertReason is non-empty when the pulse flagged itself as big news via
+	// alert_me — see SetThreadAlert.
+	AlertReason string `json:"alert_reason"`
 }
 
 // ListPulsarPulses returns a routine's pulse history newest-first — a
@@ -189,7 +192,7 @@ type PulsarPulseSummary struct {
 // not inference from title text.
 func (s *Store) ListPulsarPulses(routineID int64) ([]PulsarPulseSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, seen, created_at FROM threads
+		`SELECT id, title, seen, created_at, alert_reason FROM threads
 		 WHERE pulsar_routine_id = ? AND disabled = 0 AND fork_root_id = ''
 		 ORDER BY created_at DESC`,
 		routineID,
@@ -202,7 +205,7 @@ func (s *Store) ListPulsarPulses(routineID int64) ([]PulsarPulseSummary, error) 
 	pulses := []PulsarPulseSummary{}
 	for rows.Next() {
 		var p PulsarPulseSummary
-		if err := rows.Scan(&p.ThreadID, &p.Title, &p.Seen, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ThreadID, &p.Title, &p.Seen, &p.CreatedAt, &p.AlertReason); err != nil {
 			return nil, fmt.Errorf("list pulsar pulses: %w", err)
 		}
 		pulses = append(pulses, p)
@@ -293,6 +296,47 @@ func (s *Store) UnreadPulseCounts() (map[int64]int, error) {
 		var n int
 		if err := rows.Scan(&id, &n); err != nil {
 			return nil, fmt.Errorf("unread pulse counts: %w", err)
+		}
+		counts[id] = n
+	}
+	return counts, rows.Err()
+}
+
+// SetThreadAlert records that a pulse flagged itself as big news (the
+// alert_me tool). Scoped to pulsar-routine threads so a stray call can never
+// mark an ordinary chat. A repeat call within one pulse overwrites the
+// reason — the model's latest wording wins, there's still a single flag.
+func (s *Store) SetThreadAlert(threadID, reason string) error {
+	_, err := s.db.Exec(
+		`UPDATE threads SET alert_reason = ? WHERE id = ? AND pulsar_routine_id IS NOT NULL`,
+		reason, threadID,
+	)
+	if err != nil {
+		return fmt.Errorf("set thread alert: %w", err)
+	}
+	return nil
+}
+
+// UnreadAlertPulseCounts is UnreadPulseCounts restricted to pulses that
+// flagged themselves via alert_me — drives the "big news" treatment on a
+// routine row and the sidebar icon. Opening the pulse (seen = 1) clears it.
+func (s *Store) UnreadAlertPulseCounts() (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT pulsar_routine_id, COUNT(*) FROM threads
+		 WHERE pulsar_routine_id IS NOT NULL AND seen = 0 AND alert_reason != '' AND disabled = 0 AND fork_root_id = ''
+		 GROUP BY pulsar_routine_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unread alert pulse counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("unread alert pulse counts: %w", err)
 		}
 		counts[id] = n
 	}

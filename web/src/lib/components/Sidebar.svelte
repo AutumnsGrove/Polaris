@@ -291,7 +291,7 @@
 		>
 			<Orbit size={16} />
 			<span class="pulsar-label">Pulsar</span>
-			<PulsarUnreadBadge count={pulsarState.totalUnread} />
+			<PulsarUnreadBadge count={pulsarState.totalUnread} alert={pulsarState.totalAlerts > 0} />
 			</button>
 		<button
 			class="pulsar-entry daily-entry"

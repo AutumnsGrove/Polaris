@@ -63,6 +63,7 @@ func toolDefsByName() map[string]llm.ToolDef {
 		"ask_user_question": askUserQuestionDef, "memory": memoryDef, "search_chats": searchChatsDef, "stars": starsDef, "spawn_researchers": spawnResearchersDef,
 		"finalize_wizard_prompt": finalizeWizardPromptDef,
 		"finalize_daily_items":   finalizeDailyItemsDef,
+		"alert_me":               alertMeDef,
 		"search_stars":           searchStarsDef, "read_star": readStarDef, "create_star": createStarDef,
 		"update_star": updateStarDef, "link_stars": linkStarsDef,
 		"compare_sources": compareSourcesDef, "save_to_field": saveToFieldDef,
