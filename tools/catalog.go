@@ -27,6 +27,9 @@ var catalogOrder = []string{
 	// field thread — putting it mid-list would shift every later tool's
 	// position for those threads relative to ordinary ones.
 	"save_to_field",
+	// Also appended last, for the same prefix-caching reason: alert_me is
+	// offered only on a Pulsar routine's scheduled pulse.
+	"alert_me",
 }
 
 // catalogDescriptionsDir is where each tool's YAML file lives — read fresh
@@ -182,6 +185,12 @@ func (e catalogEntry) offered(ctx *Context) bool {
 		// PulsarDailyItems doc comment. Never offered on a normal
 		// chat/pulse turn or any other Daily block kind.
 		return ctx.PulsarDailyItems
+	case "pulsar_alert":
+		// A user-defined Pulsar routine's pulse only — keyed off the
+		// closure being wired (gateway/turn_context.go sets it solely
+		// when the turn carries a routine id), so Pulsar Daily blocks
+		// and normal chat structurally never see alert_me.
+		return ctx.PulseAlert != nil
 	case "field_workspace":
 		// save_to_field copies a file into the field's shared directory,
 		// so it needs both a field to copy into and a configured workspace
@@ -298,6 +307,9 @@ var catalogDefaults = map[string]catalogEntry{
 	"finalize_daily_items": {Name: "finalize_daily_items", Requires: "pulsar_daily_items",
 		Description:    "end with a structured list of distinct stories instead of one merged paragraph.",
 		APIDescription: "End with every distinct story found as its own item (title, summary, source) instead of one merged paragraph — this ends the turn."},
+	"alert_me": {Name: "alert_me", Requires: "pulsar_alert",
+		Description:    "flag this scheduled run as important news the user should see first.",
+		APIDescription: "Flag this run as genuinely important, so it stands out as big news. Pass a one-sentence reason."},
 	"search_stars": {Name: "search_stars", Requires: "weaver_run",
 		Description:    "keyword-search Constellation's existing stars, for dedup-checking and link-discovery.",
 		APIDescription: "Keyword search over Constellation's existing stars by title/summary. Always call this before create_star to check whether this topic already has a star."},
@@ -394,7 +406,7 @@ func loadCatalog() map[string]catalogEntry {
 // switch.
 var nonToggleable = map[string]bool{
 	"think": true, "ask_user_question": true, "memory": true,
-	"finalize_wizard_prompt": true, "finalize_daily_items": true,
+	"finalize_wizard_prompt": true, "finalize_daily_items": true, "alert_me": true,
 }
 
 // ToolInfo is one individually toggleable tool's identity, for the

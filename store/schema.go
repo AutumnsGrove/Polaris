@@ -117,6 +117,12 @@ CREATE TABLE IF NOT EXISTS threads (
 	-- uses for Atlas threads. Drives the amber unread indicator; meaningless
 	-- for any non-pulsar thread.
 	seen INTEGER NOT NULL DEFAULT 0,
+	-- alert_reason: set when a Pulsar routine's pulse called alert_me to flag
+	-- itself as big news (one short sentence). Empty for every ordinary pulse
+	-- and every non-pulsar thread. Persists after the pulse is opened — the
+	-- pulse list keeps showing why it was flagged; only the unread "alert"
+	-- indicator clears with seen.
+	alert_reason TEXT NOT NULL DEFAULT '',
 	-- compacted_pending_notice/compacted_pending_cost: a one-shot handoff
 	-- between the turn that compacted this thread and the next turn that
 	-- runs on it. Compaction is detached from the triggering turn's own

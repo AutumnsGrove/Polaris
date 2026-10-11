@@ -6,7 +6,7 @@
 	import { appState } from '$lib/state.svelte';
 	import { pulsarState } from '$lib/pulsar.svelte';
 	import PulsarRoutineForm from '$lib/components/PulsarRoutineForm.svelte';
-	import { PanelLeft, ChevronLeft, Pencil, Loader2 } from '@lucide/svelte';
+	import { PanelLeft, ChevronLeft, Pencil, Loader2, Sparkles } from '@lucide/svelte';
 
 	let routineId = $derived(Number(page.params.id));
 	let routine = $derived(pulsarState.routineById(routineId));
@@ -105,6 +105,7 @@
 				<div
 					class="pulse-row"
 					class:unread={!pulse.seen}
+					class:alert={!!pulse.alert_reason}
 					onclick={() => openPulse(pulse.thread_id)}
 					onkeydown={(e) => e.key === 'Enter' && openPulse(pulse.thread_id)}
 					role="button"
@@ -112,7 +113,16 @@
 					in:fly={{ y: 8, duration: 220, delay: Math.min(i, 10) * 22, easing: quintOut }}
 				>
 					<span class="pulse-dot" aria-hidden="true"></span>
-					<div class="pulse-title">{pulse.title || 'Untitled'}</div>
+					<div class="pulse-text">
+						<div class="pulse-title">{pulse.title || 'Untitled'}</div>
+						{#if pulse.alert_reason}
+							<div class="pulse-alert">
+								<Sparkles size={12} strokeWidth={2.5} />
+								<span class="pulse-alert-label">Big news</span>
+								<span class="pulse-alert-reason">{pulse.alert_reason}</span>
+							</div>
+						{/if}
+					</div>
 					{#if pulse.in_progress}
 						<span class="pulse-status">
 							<Loader2 size={13} class="spin" />
@@ -228,8 +238,58 @@
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
 	}
 
-	.pulse-title {
+	/* A flagged pulse stays full-weight even after it's been opened — the
+	   "why" is worth rereading; only the amber dot clears with seen. */
+	.pulse-row.alert {
+		opacity: 1;
+		background: var(--color-accent-soft);
+	}
+
+	.pulse-row.alert:hover {
+		background: var(--color-accent-soft-strong);
+	}
+
+	.pulse-text {
 		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+	}
+
+	.pulse-alert {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-xs);
+		min-width: 0;
+		font-size: 12px;
+		color: var(--color-accent);
+	}
+
+	.pulse-alert :global(svg) {
+		margin-top: 2px;
+		flex-shrink: 0;
+	}
+
+	.pulse-alert-label {
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
+	.pulse-alert-reason {
+		min-width: 0;
+		color: var(--color-text-dim);
+		/* The reason is the point of the flag — let it wrap to two lines
+		   instead of cutting it off after a few words on a phone. */
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		line-height: 1.4;
+	}
+
+	.pulse-title {
 		min-width: 0;
 		font-size: 14px;
 		white-space: nowrap;

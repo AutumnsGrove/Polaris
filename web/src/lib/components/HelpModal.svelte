@@ -51,6 +51,11 @@
 			detail: 'A saved question that runs on a schedule and tells you only what’s new.'
 		},
 		{
+			name: 'Big news',
+			means: 'Important-run flag',
+			detail: 'A Pulsar run can flag itself when it finds something worth seeing first; it shows a sparkle and the reason.'
+		},
+		{
 			name: 'The Daily',
 			means: 'Your morning newspaper',
 			detail: 'One edition a day: weather, headlines, a quote, and any topics you add.'

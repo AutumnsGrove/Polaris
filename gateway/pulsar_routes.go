@@ -250,6 +250,23 @@ func (s *Server) handlePulsarUnreadCounts(w http.ResponseWriter, r *http.Request
 	writeJSON(w, byString)
 }
 
+// handlePulsarAlertCounts is the "big news" subset of handlePulsarUnreadCounts
+// — unread pulses that flagged themselves via alert_me, same string-keyed
+// shape so the frontend can look both up the same way.
+func (s *Server) handlePulsarAlertCounts(w http.ResponseWriter, r *http.Request) {
+	counts, err := s.db.UnreadAlertPulseCounts()
+	if err != nil {
+		log.Warn("getting pulsar alert counts failed", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	byString := make(map[string]int, len(counts))
+	for id, n := range counts {
+		byString[fmt.Sprintf("%d", id)] = n
+	}
+	writeJSON(w, byString)
+}
+
 // handleGetPulsarStats mirrors handleGetConstellationStats
 // (constellation_routes.go) exactly — same ?period_days query param, same
 // validation, same shape of call into the store.

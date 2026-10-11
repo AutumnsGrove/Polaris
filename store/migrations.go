@@ -223,4 +223,7 @@ var migrations = []string{
 	// pulsar_routines.use_oracle — see the schema comment above (issue
 	// #141). Appended at the end, same positional-index rule as above.
 	`ALTER TABLE pulsar_routines ADD COLUMN use_oracle INTEGER NOT NULL DEFAULT 1`,
+	// threads.alert_reason — see the schema comment above. Appended at the
+	// end, same positional-index rule as above.
+	`ALTER TABLE threads ADD COLUMN alert_reason TEXT NOT NULL DEFAULT ''`,
 }

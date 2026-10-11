@@ -131,6 +131,22 @@ func (t *turnRun) buildAgentContext() {
 	t.wireMemory()
 	t.wireWeaver()
 	t.wireResearchers()
+	t.wirePulseAlert()
+}
+
+// wirePulseAlert offers alert_me on a user-defined Pulsar routine's
+// scheduled pulse only. Keyed off the routine id the scheduler stamps on its
+// ClientMessage (never present on a JSON-decoded client request, see
+// protocol.go), so normal chat and Pulsar Daily blocks — which build their
+// own tools.Context — can't reach it.
+func (t *turnRun) wirePulseAlert() {
+	if t.msg.PulsarRoutineID == 0 {
+		return
+	}
+	threadID := t.threadID
+	t.agentCtx.PulseAlert = func(reason string) error {
+		return t.s.db.SetThreadAlert(threadID, reason)
+	}
 }
 
 // wirePersonalization attaches the persisted-store reads (custom

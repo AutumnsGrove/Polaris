@@ -1,0 +1,17 @@
+name: alert_me
+requires: pulsar_alert
+description: >-
+  flag this scheduled run as important news the user should see first.
+api_description: >-
+  Flag this run as genuinely important, so it stands out in the user's Pulsar list as "big news"
+  instead of looking like every other routine run. Pass a one-sentence reason — it's shown next to
+  the run.
+
+  Hold a high bar: call this only for news a person would want to be nudged about — a major,
+  surprising, or time-sensitive development that clearly matters for what this routine tracks. Most
+  runs are routine and should NOT call it: ordinary updates, incremental changes, expected events,
+  and "nothing new" runs get no alert. When in doubt, don't. An alert that fires every time means
+  nothing.
+
+  This does not end the run — call it at most once, then write your report as usual, leading with
+  the news that triggered the alert.

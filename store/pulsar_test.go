@@ -282,3 +282,70 @@ func mustLatestPulseReport(t *testing.T, s *Store, routineID int64) (report stri
 	}
 	return report, at, ok
 }
+
+func TestPulsarAlert_FlagsPulseAndClearsWithSeen(t *testing.T) {
+	s := openTestStore(t)
+
+	routineID, err := s.CreatePulsarRoutine("Markets", "markets", "deepseek", "", false, true, "daily", "", "07:00")
+	if err != nil {
+		t.Fatalf("CreatePulsarRoutine: %v", err)
+	}
+	for _, id := range []string{"quiet", "loud"} {
+		if err := s.CreateThread(id, id, "deepseek", "pulsar"); err != nil {
+			t.Fatalf("CreateThread: %v", err)
+		}
+		if err := s.SetThreadPulsarRoutine(id, routineID); err != nil {
+			t.Fatalf("SetThreadPulsarRoutine: %v", err)
+		}
+	}
+	// An ordinary chat thread must never be markable.
+	if err := s.CreateThread("chat", "chat", "deepseek", "web"); err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+
+	if err := s.SetThreadAlert("loud", "Fed cut rates 50bp"); err != nil {
+		t.Fatalf("SetThreadAlert: %v", err)
+	}
+	if err := s.SetThreadAlert("chat", "should not stick"); err != nil {
+		t.Fatalf("SetThreadAlert(chat): %v", err)
+	}
+
+	pulses, err := s.ListPulsarPulses(routineID)
+	if err != nil {
+		t.Fatalf("ListPulsarPulses: %v", err)
+	}
+	reasons := map[string]string{}
+	for _, p := range pulses {
+		reasons[p.ThreadID] = p.AlertReason
+	}
+	if reasons["loud"] != "Fed cut rates 50bp" || reasons["quiet"] != "" {
+		t.Errorf("alert reasons = %+v, want only loud flagged", reasons)
+	}
+	var chatReason string
+	if err := s.db.QueryRow(`SELECT alert_reason FROM threads WHERE id = 'chat'`).Scan(&chatReason); err != nil || chatReason != "" {
+		t.Errorf("non-pulsar thread alert_reason = %q (err %v), want empty", chatReason, err)
+	}
+
+	counts, err := s.UnreadAlertPulseCounts()
+	if err != nil {
+		t.Fatalf("UnreadAlertPulseCounts: %v", err)
+	}
+	if counts[routineID] != 1 {
+		t.Errorf("alert count = %d, want 1 (quiet pulse must not count)", counts[routineID])
+	}
+
+	// Opening the pulse clears the unread indicator but keeps the reason.
+	if err := s.MarkPulseSeen("loud"); err != nil {
+		t.Fatalf("MarkPulseSeen: %v", err)
+	}
+	counts, _ = s.UnreadAlertPulseCounts()
+	if counts[routineID] != 0 {
+		t.Errorf("alert count after seen = %d, want 0", counts[routineID])
+	}
+	pulses, _ = s.ListPulsarPulses(routineID)
+	for _, p := range pulses {
+		if p.ThreadID == "loud" && p.AlertReason == "" {
+			t.Errorf("alert_reason should persist after the pulse is opened")
+		}
+	}
+}

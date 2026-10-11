@@ -132,7 +132,8 @@ schedule and turns into something you read rather than something you type into.
 on demand, running through the same turn pipeline as a normal message. Each firing reports only
 what's new since last time, not a repeat of settled facts. A "help me write this" wizard turns a
 vague idea into a tuned prompt through a short interview. Catches up on any fire it missed while
-Polaris was offline.
+Polaris was offline. A pulse can flag itself as important with an `alert_me` tool; flagged pulses
+get a "Big news" marker and reason in the list, and a gold sparkle on the routine and sidebar.
 
 **Pulsar Daily** (`/daily`) — one daily "morning newspaper" edition: a week's weather range, word
 of the day, on-this-day, a quote, picture of the day, headlines, trending/local/sports news, plus

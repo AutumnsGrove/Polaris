@@ -49,6 +49,11 @@ export class PulsarState {
 	// (see totalUnread below), not a second fetch.
 	unreadCounts = $state<Record<string, number>>({});
 
+	// The "big news" subset of unreadCounts — unread pulses that flagged
+	// themselves via alert_me, same string-keyed shape. Fetched alongside
+	// unreadCounts (see loadUnreadCounts) so the two never drift apart.
+	alertCounts = $state<Record<string, number>>({});
+
 	// Set once both loadRoutines() and loadArchivedRoutines() have
 	// resolved at least once — /pulsar/[id] uses this to distinguish
 	// "still loading" from "no such routine" when looking a routine up
@@ -92,6 +97,10 @@ export class PulsarState {
 	// across every routine combined, per the plan doc's "Amber indicator
 	// semantics".
 	totalUnread = $derived(Object.values(this.unreadCounts).reduce((sum, n) => sum + n, 0));
+
+	// Across every routine — the sidebar badge switches to its "big news"
+	// look when any unread pulse is flagged.
+	totalAlerts = $derived(Object.values(this.alertCounts).reduce((sum, n) => sum + n, 0));
 
 	// suggestSeed asks the server to derive a standalone routine prompt (kind
 	// 'pulsar') or Daily custom-block instructions (kind 'daily') from a whole
@@ -151,9 +160,16 @@ export class PulsarState {
 	async loadUnreadCounts() {
 		this.unreadCountsError = false;
 		try {
-			const res = await fetch('/api/pulsar/unread');
+			const [res, alertRes] = await Promise.all([
+				fetch('/api/pulsar/unread'),
+				fetch('/api/pulsar/alerts').catch(() => null)
+			]);
 			if (!res.ok) throw new Error('unread counts fetch failed');
 			this.unreadCounts = (await res.json()) ?? {};
+			// Alerts are an enhancement over the plain unread dot — a failure
+			// here leaves the last-known alert state rather than flagging the
+			// whole unread fetch as errored.
+			if (alertRes?.ok) this.alertCounts = (await alertRes.json()) ?? {};
 		} catch {
 			this.unreadCountsError = true;
 		}

@@ -48,6 +48,7 @@ func TestToolsPrompt_OrderMatchesCatalogOrder(t *testing.T) {
 	ctx.SpawnResearchers = func(ctx *Context, tasks []SubAgentTask) []SubAgentReport { return nil }
 	ctx.Wizard = &WizardTarget{Kind: WizardPulsarRoutine}
 	ctx.PulsarDailyItems = true
+	ctx.PulseAlert = func(string) error { return nil }
 	ctx.CodeExecEnabled = true
 	ctx.CodeExecWorkspaceDir = "/ws"
 	ctx.FieldID = "proj" // save_to_field's "field_workspace" gate
