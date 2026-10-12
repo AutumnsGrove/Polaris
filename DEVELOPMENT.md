@@ -141,11 +141,12 @@ request does show up.
 polaris search "what's the current stable version of Go?"
 polaris search --model deepseek "find a coffee shop near the Space Needle"
 polaris stats --days 30    # cost, tool-call counts/error rates, research-loop tuning signals, paid-API monthly cap usage (also `api_caps` in GET /api/stats)
+polaris export <thread-id> --trail --thinking -o thread.md   # one thread as Markdown/JSON, same options as the Export modal
 polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
 ```
 
-`search`/`stats`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
+`search`/`stats`/`export`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
 backfill` are all thin HTTP clients hitting the running container's own REST API
 (`cmd/docker_client.go`) — none of them assume a local `config.yaml`/git checkout. `backup
 restore`/`restore-remote` are the exception: there's no safe way to swap a live database file over

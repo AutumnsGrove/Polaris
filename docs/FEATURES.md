@@ -127,7 +127,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   Update/Restart button — see [Self-update](../SETUP.md#self-update).
 - **Automatic backups** — a daily, pruned-automatically database snapshot, with a CLI to
   list/create/restore, optionally mirrored to Cloudflare R2 — see [Backups](../SETUP.md#backups).
-- **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed.
+- **CLI mode** — `polaris search "..."` answers straight from the terminal, no browser needed;
+  `polaris export <thread-id>` downloads a thread with the same options as the Export modal.
 - **Installable** — a web manifest and iOS meta tags let you add Polaris to your phone's
   homescreen as a standalone app, since [mobile is the primary surface](../PRODUCT.md).
 

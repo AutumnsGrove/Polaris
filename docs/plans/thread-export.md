@@ -2,9 +2,11 @@
 
 **Added: 2026-10-12.**
 
-**Status:** planning only. Decisions below were settled in a design conversation on 2026-10-12; the
-"Decisions" and "Open items" sections record the rest. No export code yet (only the retention
-change: events are now never pruned).
+**Status:** shipped (2026-10-12). All four phases are in: the `threadexport` builder and
+renderers, the store read helper, the `GET /api/threads/{id}/export` endpoint, the export modal,
+and the `polaris export` CLI. Decisions below were settled in a design conversation on 2026-10-12;
+the "Decisions" and "Open items" sections record the rest. Events are now never pruned (see
+"Retention").
 
 ## Goal
 
@@ -216,7 +218,7 @@ worse than not having one.
    their regression tests. Shipped with the store read helper (`store.ThreadExportInput`).
 3. **Endpoint, modal, delivery.** [done] The route, `ExportModal.svelte`, download and copy, token
    estimate, handoff scope.
-4. **CLI and docs.** [remaining] `polaris export`, FEATURES.md.
+4. **CLI and docs.** [done] `polaris export`, FEATURES.md.
 
 ## Verification
 
