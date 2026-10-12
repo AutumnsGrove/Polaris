@@ -8,7 +8,7 @@
 	import PulsarRoutineForm from '$lib/components/PulsarRoutineForm.svelte';
 	import PulsarUnreadBadge from '$lib/components/PulsarUnreadBadge.svelte';
 	import PulsarUsageModal from '$lib/components/PulsarUsageModal.svelte';
-	import { PanelLeft, Plus, Archive, Info, RotateCcw, Trash2 } from '@lucide/svelte';
+	import { PanelLeft, Plus, Archive, Info } from '@lucide/svelte';
 	import type { PulsarRoutine } from '$lib/types';
 
 	// Oracle mode's "Set up as Pulsar" offer chip (see pulsarState.pendingSeed's
@@ -54,29 +54,6 @@
 		const period = h < 12 ? 'AM' : 'PM';
 		const hour12 = h % 12 === 0 ? 12 : h % 12;
 		return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
-	}
-
-	// Which archived row is mid-"are you sure?" for a permanent delete, and
-	// any failure message (e.g. a pulse still running) shown under the list.
-	let confirmingDeleteId = $state<number | null>(null);
-	let busyId = $state<number | null>(null);
-	let archiveError = $state('');
-
-	async function restore(id: number) {
-		busyId = id;
-		archiveError = '';
-		const ok = await pulsarState.unarchiveRoutine(id);
-		busyId = null;
-		if (!ok) archiveError = "Couldn't restore that routine — try again.";
-	}
-
-	async function deleteForever(id: number) {
-		busyId = id;
-		archiveError = '';
-		const result = await pulsarState.deleteRoutinePermanently(id);
-		busyId = null;
-		confirmingDeleteId = null;
-		if (!result.ok) archiveError = result.error || "Couldn't delete that routine — try again.";
 	}
 
 	function openRoutine(id: number) {
@@ -156,39 +133,9 @@
 						<div class="routine-name">{routine.name}</div>
 						<div class="routine-schedule">{scheduleSummary(routine)}</div>
 					</div>
-					<!-- Stop propagation so a tap on an action doesn't also open the row. -->
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-					<div class="row-actions" onclick={(e) => e.stopPropagation()}>
-						{#if confirmingDeleteId === routine.id}
-							<button class="btn btn-danger" disabled={busyId === routine.id} onclick={() => deleteForever(routine.id)}>
-								Delete forever
-							</button>
-							<button class="btn" disabled={busyId === routine.id} onclick={() => (confirmingDeleteId = null)}>
-								Cancel
-							</button>
-						{:else}
-							<button class="btn" disabled={busyId === routine.id} onclick={() => restore(routine.id)} title="Restore this routine">
-								<RotateCcw size={13} />
-								Restore
-							</button>
-							<button
-								class="icon-btn danger"
-								disabled={busyId === routine.id}
-								onclick={() => (confirmingDeleteId = routine.id)}
-								title="Delete forever"
-								aria-label="Delete {routine.name} forever"
-							>
-								<Trash2 size={15} />
-							</button>
-						{/if}
-					</div>
 				</div>
 			{/each}
 		</div>
-		{#if archiveError}
-			<p class="archive-error">{archiveError}</p>
-		{/if}
-		<p class="archive-hint">Deleting forever also removes every pulse this routine produced.</p>
 	{/if}
 </div>
 
@@ -292,43 +239,8 @@
 		background: var(--color-surface-2);
 	}
 
-	/* Dim the text only — dimming the whole row would also wash out the
-	   Restore / Delete forever buttons. */
-	.routine-row.archived .routine-meta {
+	.routine-row.archived {
 		opacity: 0.55;
-	}
-
-	.row-actions {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		flex-shrink: 0;
-	}
-
-	.row-actions :global(.btn) {
-		padding: var(--space-xs) var(--space-md);
-		font-size: 12.5px;
-	}
-
-	.row-actions :global(.btn-danger) {
-		background: var(--color-danger-bg);
-		color: var(--color-danger);
-	}
-
-	.icon-btn.danger:hover {
-		color: var(--color-danger);
-	}
-
-	.archive-error {
-		margin: var(--space-sm) var(--space-md) 0;
-		font-size: 12.5px;
-		color: var(--color-danger);
-	}
-
-	.archive-hint {
-		margin: var(--space-sm) var(--space-md) 0;
-		font-size: 11.5px;
-		color: var(--color-text-dim);
 	}
 
 	.routine-meta {

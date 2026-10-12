@@ -95,7 +95,7 @@ A pulse is a real thread, not a second-class record needing its own viewer or ci
 - **Delete is soft first, hard only from the archive.** Deleting a routine from its edit screen
   moves it to an archived state rather than removing the row — its `pulsar_routines` record and
   every pulse (thread) it ever produced stay intact and readable, just out of the active list.
-  From the archive section, **Restore** brings it back and **Delete forever** (`DELETE
+  From an archived routine's edit form, **Restore** brings it back and **Delete forever** (`DELETE
   /api/pulsar/routines/{id}`, 409 unless already archived) removes the routine, all its pulses and
   their workspace dirs for good (`store.DeleteArchivedPulsarRoutine`).
 - **Archive lives at the bottom of `/pulsar`**, below the active routines list — a routine you

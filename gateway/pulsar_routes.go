@@ -203,7 +203,7 @@ func (s *Server) handleUnarchivePulsarRoutine(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleDeletePulsarRoutine is the archive section's "Delete forever" —
+// handleDeletePulsarRoutine is the archived routine's edit form "Delete forever" —
 // the one hard-delete path, deliberately only reachable for an already
 // archived routine (409 otherwise) so it's always a second, explicit step
 // after the soft delete.
