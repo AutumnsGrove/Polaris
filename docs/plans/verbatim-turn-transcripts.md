@@ -65,7 +65,7 @@ Request for turn N+1 (`agent.Run`, `agent/driver.go:491`):
 | `spawn_researchers` sub-agents' own tool calls | — | **replayed as if the parent made them**: sub-agents share the parent's `Emit` (`agent/subagent.go:80`), so their events land under the parent's turn |
 | The final answer | the answer **plus an appended `[Polaris note ...]`** | same, and the note is exactly what the model then started imitating (`StripFakeSourcesNote`, commit b2e60f0) |
 | ask_user_question options | appended as "Options offered:" text | same |
-| Events older than 90 days | — | gone; falls back to answer-only |
+| Events older than the retention window (now 1 year) | — | gone; falls back to answer-only |
 
 Most of the extra machinery exists to patch over what the rebuild loses. That includes
 `appendCitedSources`, `polarisNoteMarker`, `StripFakeSourcesNote`, `appendPendingQuestionOptions`,
@@ -95,7 +95,7 @@ whole turn, including the model-facing user message. Keeping it on the assistant
 
 - `ForkThread` carries it into edit/retry forks by adding one column to its `INSERT ... SELECT`.
 - Compaction's `compacted_through_id` still works unchanged.
-- The `events` table goes back to being only a UI/debug trail, with its 20 KB cap and 90-day pruning.
+- The `events` table goes back to being only a UI/debug trail, with its 20 KB cap and one-year pruning.
 
 Go's `encoding/json` is deterministic for a fixed struct, so a stored transcript marshals back to
 the same bytes every time.

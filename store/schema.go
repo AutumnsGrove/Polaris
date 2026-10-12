@@ -375,7 +375,7 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 -- candidate list from earlier turns, but tools.Context is rebuilt every
 -- turn — without this, "show images 2 and 3" on a follow-up turn cites
 -- numbers the server no longer knows. Its own table rather than reading
--- events back: events are pruned after 90 days, threads never are.
+-- events back: events are pruned after a year, threads never are.
 CREATE TABLE IF NOT EXISTS image_candidates (
 	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
 	num       INTEGER NOT NULL, -- 1-based, the number the model was told
