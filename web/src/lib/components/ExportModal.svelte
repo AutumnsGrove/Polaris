@@ -188,38 +188,38 @@
 
 			<section>
 				<h3>Include</h3>
-				<label class="row">
+				<div class="row">
 					<span>Sources and citations</span>
 					<Switch checked={sources} label="Sources and citations" onchange={(v) => (sources = v)} />
-				</label>
-				<label class="row">
+				</div>
+				<div class="row">
 					<span>Attachments <span class="dim">(names and types only)</span></span>
 					<Switch checked={attachments} label="Attachments" onchange={(v) => (attachments = v)} />
-				</label>
-				<label class="row">
+				</div>
+				<div class="row">
 					<span>Cost and model metadata</span>
 					<Switch checked={meta} label="Cost and model metadata" onchange={(v) => (meta = v)} />
-				</label>
-				<label class="row">
+				</div>
+				<div class="row">
 					<span>Research trail <span class="dim">(searches, pages, tool calls)</span></span>
 					<Switch checked={trail} label="Research trail" onchange={(v) => (trail = v)} />
-				</label>
-				<label class="row">
+				</div>
+				<div class="row">
 					<span>Thinking traces</span>
 					<Switch checked={thinking} label="Thinking traces" onchange={(v) => (thinking = v)} />
-				</label>
+				</div>
 			</section>
 
 			<section>
 				<h3>Privacy</h3>
-				<label class="row">
+				<div class="row">
 					<span>Leave out memories and custom instructions</span>
 					<Switch checked={privateMode} label="Leave out memories and custom instructions" onchange={(v) => (privateMode = v)} />
-				</label>
-				<label class="row">
+				</div>
+				<div class="row">
 					<span>Also leave out chat search, star reads and save-to-field</span>
 					<Switch checked={privatePersonal} label="Also leave out personalization tools" onchange={(v) => (privatePersonal = v)} />
-				</label>
+				</div>
 				<p class="hint">
 					Privacy drops those tool calls from the trail and never reads the system prompt. It can't stop an
 					answer, a thinking trace or a summary from quoting a memory, or scrub text you typed.
@@ -322,7 +322,6 @@
 		gap: var(--space-lg);
 		padding: var(--space-sm) 0;
 		font-size: 14px;
-		cursor: pointer;
 	}
 
 	.dim {
