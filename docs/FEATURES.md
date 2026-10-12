@@ -139,6 +139,8 @@ vague idea into a tuned prompt through a short interview. Catches up on any fire
 Polaris was offline. Schedules run in the time zone chosen under Settings (EST/EDT and other
 zones, DST handled; defaults to the server's, UTC in Docker). A pulse can flag itself as important with an `alert_me` tool; flagged pulses
 get a "Big news" marker and reason in the list, and a gold bell on the routine and sidebar.
+Deleting a routine archives it; from the Archived list you can restore it or delete it forever
+(which also removes its pulses).
 
 **Pulsar Daily** (`/daily`) — one daily "morning newspaper" edition: a week's weather range, word
 of the day, on-this-day, a quote, picture of the day, headlines, trending/local/sports news, plus

@@ -92,9 +92,12 @@ A pulse is a real thread, not a second-class record needing its own viewer or ci
 - **Edit**: opening a routine gets an edit button (top right) that reopens the same
   creation-screen form, pre-filled with its current name/prompt/model/focus/deep-research/
   schedule — one form doing double duty as both create and edit, not two separate UIs.
-- **Delete is always soft.** No hard-delete path in v1. Deleting a routine from its edit screen
+- **Delete is soft first, hard only from the archive.** Deleting a routine from its edit screen
   moves it to an archived state rather than removing the row — its `pulsar_routines` record and
   every pulse (thread) it ever produced stay intact and readable, just out of the active list.
+  From the archive section, **Restore** brings it back and **Delete forever** (`DELETE
+  /api/pulsar/routines/{id}`, 409 unless already archived) removes the routine, all its pulses and
+  their workspace dirs for good (`store.DeleteArchivedPulsarRoutine`).
 - **Archive lives at the bottom of `/pulsar`**, below the active routines list — a routine you
   archived is still one tap away, and its pulse history opens exactly like an active routine's
   would. Whether archived routines ever get purged for real is an open question for later, not

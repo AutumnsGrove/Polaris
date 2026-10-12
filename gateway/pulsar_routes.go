@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -198,6 +200,60 @@ func (s *Server) handleUnarchivePulsarRoutine(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.db.LogEvent("", "info", "pulsar", "routine unarchived", map[string]interface{}{"routine_id": id}, "")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeletePulsarRoutine is the archive section's "Delete forever" —
+// the one hard-delete path, deliberately only reachable for an already
+// archived routine (409 otherwise) so it's always a second, explicit step
+// after the soft delete.
+func (s *Server) handleDeletePulsarRoutine(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	// An archived routine can still have a pulse mid-turn (archived while it
+	// ran). Deleting its thread out from under agent.Run would leave the turn
+	// writing messages into a vanished row, so refuse and let the user retry.
+	pulses, err := s.db.ListPulsarPulses(id)
+	if err != nil {
+		log.Warn("listing pulsar pulses before delete failed", "id", id, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, p := range pulses {
+		if s.IsTurnInFlight(p.ThreadID) {
+			http.Error(w, "a pulse is still running — try again in a moment", http.StatusConflict)
+			return
+		}
+	}
+
+	threadIDs, err := s.db.DeleteArchivedPulsarRoutine(id)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrPulsarRoutineNotFound):
+			http.Error(w, "routine not found", http.StatusNotFound)
+		case errors.Is(err, store.ErrPulsarRoutineNotArchived):
+			http.Error(w, "only an archived routine can be permanently deleted", http.StatusConflict)
+		default:
+			log.Warn("deleting pulsar routine failed", "id", id, "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Pulses' code_exec/attachment workspace dirs are filesystem state the DB
+	// delete can't reach — same cleanup ws.go does for abandoned ghost threads.
+	if workspaceDir := s.liveConfig().CodeExec.WorkspaceDir; workspaceDir != "" {
+		for _, tid := range threadIDs {
+			if err := os.RemoveAll(filepath.Join(workspaceDir, tid)); err != nil {
+				log.Warn("failed to clean up deleted pulse workspace directory", "thread", tid, "err", err)
+			}
+		}
+	}
+	s.db.LogEvent("", "info", "pulsar", "routine permanently deleted", map[string]interface{}{"routine_id": id, "pulses_deleted": len(threadIDs)}, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

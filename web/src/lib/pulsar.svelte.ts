@@ -268,6 +268,21 @@ export class PulsarState {
 		}
 	}
 
+	// Permanent delete — the server only allows this for an already-archived
+	// routine, and takes its pulse threads with it (store.DeleteArchivedPulsarRoutine).
+	// Returns the server's message on failure (e.g. a pulse is still running)
+	// so the caller can show why instead of a generic retry prompt.
+	async deleteRoutinePermanently(id: number): Promise<{ ok: boolean; error: string }> {
+		try {
+			const res = await fetch(`/api/pulsar/routines/${id}`, { method: 'DELETE' });
+			if (!res.ok) return { ok: false, error: (await res.text()).trim() };
+			await Promise.all([this.loadRoutines(), this.loadArchivedRoutines()]);
+			return { ok: true, error: '' };
+		} catch {
+			return { ok: false, error: 'Could not reach the server — try again.' };
+		}
+	}
+
 	async unarchiveRoutine(id: number): Promise<boolean> {
 		try {
 			const res = await fetch(`/api/pulsar/routines/${id}/unarchive`, { method: 'POST' });

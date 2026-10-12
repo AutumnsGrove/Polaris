@@ -112,6 +112,78 @@ func (s *Store) UnarchivePulsarRoutine(id int64) error {
 	return rowsAffectedOrNotFound(res, ErrPulsarRoutineNotFound)
 }
 
+// ErrPulsarRoutineNotArchived is returned by DeleteArchivedPulsarRoutine
+// when the routine is still active — permanent delete is only reachable
+// from the archive, so a stray request can't skip the soft-delete step.
+var ErrPulsarRoutineNotArchived = errors.New("pulsar routine is not archived")
+
+// DeleteArchivedPulsarRoutine permanently removes an archived routine, every
+// pulse (thread) it produced, and those threads' hidden fork variants, in
+// one transaction. Returns the deleted thread ids so the caller can purge
+// their on-disk workspace directories (not a DB resource) afterward.
+//
+// star_sources and shooting_star_runs reference threads(id) with no ON
+// DELETE CASCADE (foreign_keys=on), so a pulse Weaver already processed
+// would make the thread DELETE fail outright; those rows are removed first.
+// That drops the "Linked articles" entry on any star the pulse fed, but the
+// star itself survives — it's a derived artifact, not owned by the thread.
+func (s *Store) DeleteArchivedPulsarRoutine(id int64) ([]string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("delete pulsar routine: %w", err)
+	}
+	defer tx.Rollback()
+
+	var archivedAt *time.Time
+	if err := tx.QueryRow(`SELECT archived_at FROM pulsar_routines WHERE id = ?`, id).Scan(&archivedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrPulsarRoutineNotFound
+		}
+		return nil, fmt.Errorf("delete pulsar routine: %w", err)
+	}
+	if archivedAt == nil {
+		return nil, ErrPulsarRoutineNotArchived
+	}
+
+	const pulseIDs = `SELECT id FROM threads WHERE pulsar_routine_id = ?
+		UNION SELECT id FROM threads WHERE fork_root_id IN (SELECT id FROM threads WHERE pulsar_routine_id = ?)`
+	rows, err := tx.Query(pulseIDs, id, id)
+	if err != nil {
+		return nil, fmt.Errorf("delete pulsar routine: listing pulses: %w", err)
+	}
+	var threadIDs []string
+	for rows.Next() {
+		var tid string
+		if err := rows.Scan(&tid); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("delete pulsar routine: %w", err)
+		}
+		threadIDs = append(threadIDs, tid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("delete pulsar routine: %w", err)
+	}
+
+	for _, stmt := range []string{
+		`DELETE FROM star_sources WHERE thread_id IN (` + pulseIDs + `)`,
+		`DELETE FROM shooting_star_runs WHERE thread_id IN (` + pulseIDs + `)`,
+		// Variants first: a root's active_variant_id is plain text, not an
+		// FK, so order here is only tidiness, not a constraint.
+		`DELETE FROM threads WHERE id IN (` + pulseIDs + `)`,
+	} {
+		if _, err := tx.Exec(stmt, id, id); err != nil {
+			return nil, fmt.Errorf("delete pulsar routine: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM pulsar_routines WHERE id = ?`, id); err != nil {
+		return nil, fmt.Errorf("delete pulsar routine: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("delete pulsar routine: %w", err)
+	}
+	return threadIDs, nil
+}
+
 // SetPulsarRoutineLastRun records that a pulse just fired — called by the
 // scheduler right before (not after) running the pulse's turn, so a crash
 // mid-turn doesn't leave last_run_at stale and cause the very next

@@ -22,7 +22,8 @@
 		initialPrompt,
 		initialName,
 		onClose,
-		onSaved
+		onSaved,
+		onDeleted
 	}: {
 		routine?: PulsarRoutine | null;
 		// initialPrompt: only meaningful on create (routine null) — set by
@@ -38,6 +39,10 @@
 		initialName?: string;
 		onClose: () => void;
 		onSaved: () => void;
+		// Fires instead of onSaved after a permanent delete, for a caller
+		// (the /pulsar/[id] route) whose own page no longer exists afterward
+		// and needs to navigate away. Falls back to onSaved when omitted.
+		onDeleted?: () => void;
 	} = $props();
 
 	const weekdays = [
@@ -84,6 +89,7 @@
 	let saving = $state(false);
 	let error = $state('');
 	let confirmingDelete = $state(false);
+	let confirmingPermanentDelete = $state(false);
 	let showWizard = $state(false);
 
 	// onAccept never overwrites a name the user already typed — only fills
@@ -139,6 +145,18 @@
 		saving = false;
 		if (ok) onSaved();
 		else error = "Couldn't archive this routine — try again.";
+	}
+
+	async function deleteForever() {
+		if (!routine) return;
+		saving = true;
+		const result = await pulsarState.deleteRoutinePermanently(routine.id);
+		saving = false;
+		if (result.ok) (onDeleted ?? onSaved)();
+		else {
+			confirmingPermanentDelete = false;
+			error = result.error || "Couldn't delete this routine — try again.";
+		}
 	}
 
 	async function unarchive() {
@@ -277,6 +295,18 @@
 					{/if}
 				{:else if routine}
 					<button type="button" class="btn" disabled={saving} onclick={unarchive}>Restore</button>
+					{#if confirmingPermanentDelete}
+						<button type="button" class="btn btn-danger" disabled={saving} onclick={deleteForever}>
+							Confirm delete
+						</button>
+						<button type="button" class="btn" disabled={saving} onclick={() => (confirmingPermanentDelete = false)}>
+							Cancel
+						</button>
+					{:else}
+						<button type="button" class="btn btn-ghost-danger" disabled={saving} onclick={() => (confirmingPermanentDelete = true)}>
+							Delete forever
+						</button>
+					{/if}
 				{/if}
 				<button type="submit" class="btn btn-accent save-btn" disabled={saving}>
 					{saving ? 'Saving…' : routine ? 'Save' : 'Create'}

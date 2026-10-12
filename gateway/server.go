@@ -594,6 +594,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("PATCH /api/pulsar/routines/{id}", s.handleUpdatePulsarRoutine)
 	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/archive", s.handleArchivePulsarRoutine)
 	s.mux.HandleFunc("POST /api/pulsar/routines/{id}/unarchive", s.handleUnarchivePulsarRoutine)
+	s.mux.HandleFunc("DELETE /api/pulsar/routines/{id}", s.handleDeletePulsarRoutine)
 	s.mux.HandleFunc("GET /api/pulsar/routines/{id}/pulses", s.handleListPulsarPulses)
 	s.mux.HandleFunc("GET /api/pulsar/unread", s.handlePulsarUnreadCounts)
 	s.mux.HandleFunc("GET /api/pulsar/alerts", s.handlePulsarAlertCounts)
