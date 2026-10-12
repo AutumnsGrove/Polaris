@@ -51,23 +51,7 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// preserves chat mode instead of always re-enabling research for that
 	// reply. See ChatView.svelte's ChatTurnView invocation and
 	// AskUserQuestionCard's answer()/enableWebSearch() split.
-	// deepResearch/focusMode: same pass-through for the composer's other two
-	// per-send toggles. Without them an answered question's reply went out
-	// with neither flag, silently dropping Deep Research mid-flow — the plan
-	// confirmation's "Run it" then ran a turn with no spawn_researchers tool.
-	let {
-		turn,
-		index,
-		noResearch,
-		deepResearch,
-		focusMode
-	}: {
-		turn: ChatTurn;
-		index: number;
-		noResearch: boolean;
-		deepResearch: boolean;
-		focusMode: FocusMode;
-	} = $props();
+	let { turn, index, noResearch }: { turn: ChatTurn; index: number; noResearch: boolean } = $props();
 
 	// Editing/regenerating always replaces starting at the preceding user
 	// message's position (see gateway/turn.go's ForkThread call) — so an
@@ -531,8 +515,6 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 				<AskUserQuestionCard
 					{turn}
 					{noResearch}
-					{deepResearch}
-					{focusMode}
 					isLast={index === appState.turns.length - 1}
 					answeredWith={appState.turns[index + 1]?.role === 'user' ? appState.turns[index + 1].content : undefined}
 				/>

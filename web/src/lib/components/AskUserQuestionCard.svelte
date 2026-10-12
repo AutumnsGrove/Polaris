@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ChatTurn, FocusMode } from '$lib/types';
+	import type { ChatTurn } from '$lib/types';
 	import { appState } from '$lib/state.svelte';
 	import { requestFreshLocation } from '$lib/geolocation';
 	import { Send, MapPin, Globe, Loader2, Check, Users } from '@lucide/svelte';
@@ -21,17 +21,8 @@
 		turn,
 		isLast,
 		answeredWith,
-		noResearch,
-		deepResearch,
-		focusMode
-	}: {
-		turn: ChatTurn;
-		isLast: boolean;
-		answeredWith?: string;
-		noResearch: boolean;
-		deepResearch: boolean;
-		focusMode: FocusMode;
-	} = $props();
+		noResearch
+	}: { turn: ChatTurn; isLast: boolean; answeredWith?: string; noResearch: boolean } = $props();
 
 	// Exact match against the offered options — a freeform reply (typed
 	// instead of tapped, or a shared location) won't match any of them,
@@ -101,11 +92,7 @@
 	function answer(text: string, noResearchOverride?: boolean) {
 		const trimmed = text.trim();
 		if (!trimmed || appState.busy) return;
-		// deepResearch/focusMode must ride along: the server writes every
-		// turn's flags back as the thread's sticky config and gates tools per
-		// turn, so omitting them made the Deep Research plan's "Run it" reply a
-		// non-Deep-Research turn (no spawn_researchers) and reset the thread.
-		appState.send(trimmed, undefined, focusMode, deepResearch, undefined, noResearchOverride ?? noResearch);
+		appState.send(trimmed, undefined, undefined, undefined, undefined, noResearchOverride ?? noResearch);
 		freeform = '';
 	}
 

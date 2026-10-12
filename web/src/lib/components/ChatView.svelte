@@ -532,7 +532,7 @@
 				     pending question (AskUserQuestionCard) preserves chat mode
 				     instead of silently re-enabling research — see that
 				     component's answer()/enableWebSearch() split. -->
-				<ChatTurnView {turn} index={i} noResearch={!research} {deepResearch} {focusMode} />
+				<ChatTurnView {turn} index={i} noResearch={!research} />
 			{/each}
 			{#if appState.threadTurnInProgress && appState.turns[appState.turns.length - 1]?.role !== 'assistant'}
 				<!-- A pulse (or any other turn with no live client attached)
