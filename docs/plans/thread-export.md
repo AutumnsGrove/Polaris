@@ -3,7 +3,8 @@
 **Added: 2026-10-12.**
 
 **Status:** planning only. Decisions below were settled in a design conversation on 2026-10-12; the
-"Decisions" and "Open items" sections record the rest. No export code yet (only the retention change).
+"Decisions" and "Open items" sections record the rest. No export code yet (only the retention
+change: events are now never pruned).
 
 ## Goal
 
@@ -53,7 +54,7 @@ Notes on the modal:
 - The modal shows a rough token estimate for the chosen output (characters / 4) so it's clear
   whether it will fit a context window.
 - The modal shows **availability notes** when an option can't be fully honoured, e.g. "Thinking
-  traces: available for 14 of 40 turns (older ones were pruned)". See "Retention".
+  traces: available for 14 of 40 turns (older ones predate the retention change)". See "Retention".
 - The privacy toggle is labelled exactly what it does. It is not "redact personal information";
   see "Leave out memories and instructions" for what it does and does not guarantee.
 
@@ -65,8 +66,8 @@ Notes on the modal:
 | Citations / sources | `messages.citations` | permanent |
 | Cards, chart, pending question, verification marks, Oracle result | `messages.cards/chart/pending_question/verification/oracle_result` | permanent |
 | Attachment filename and type | `messages.attachments` (fall back to the legacy single-attachment columns, as `GetMessages` does) | permanent (the files themselves are not exported in v1) |
-| Tool calls and results | `messages.transcript` (untruncated), falling back to `events` (`tool_call` / `tool_result`) | transcript permanent, events pruned after 1 year |
-| Thinking traces | `events` rows with `source == "turn"`, `message == "reasoning"`, `data.content`, `data.agent_id` | **pruned with events (1 year)** |
+| Tool calls and results | `messages.transcript` (untruncated), falling back to `events` (`tool_call` / `tool_result`) | permanent |
+| Thinking traces | `events` rows with `source == "turn"`, `message == "reasoning"`, `data.content`, `data.agent_id` | **permanent (never pruned)** |
 | Compaction summary | `threads.compacted_summary`, `compacted_through_id` | permanent |
 | Cost, model, duration | `messages.cost_usd`, `duration_ms`, `threads.model` | permanent |
 
@@ -84,17 +85,17 @@ Two facts that shape the design (verified against the code on 2026-10-12):
 
 ### Retention
 
-Events used to be pruned after 90 days (mirroring the log files). **Changed 2026-10-12:**
-`cmd/run.go`'s `eventRetentionDays` is now 365, because thinking traces survive only in `events` and
-an audit export that loses them after three months defeats its purpose. Event rows are still capped
-at `maxEventDataBytes` (20 KB), so growth is bounded. Threads and messages are never pruned (see
-`store/events.go`'s `PruneEvents` doc).
+Events used to be pruned after 90 days (mirroring the log files), then briefly after a year.
+**Changed 2026-10-12: events are never pruned.** Thinking traces survive only in `events`, so a
+thread's audit trail should live exactly as long as the thread — a hard-deleted thread's events
+cascade away with its row (`events.thread_id`'s `ON DELETE CASCADE`), a soft-deleted thread keeps
+them, and there is no timer. Event rows are still capped at `maxEventDataBytes` (20 KB), so the
+table grows with usage rather than per-row size. Threads and messages are never pruned either.
 
-Even at a year, older turns and any turn whose events were already pruned under the 90-day rule
-(before this change shipped) have no thinking available. The export must say so (availability
-notes in the modal, `omitted` manifest in the file) instead of silently producing a thread with
-gaps. Worth checking real table size on the potato after a few months (`SELECT count(*),
-sum(length(data)) FROM events`).
+Turns whose events were already pruned under the old 90-day rule (before this change shipped) have
+no thinking available. The export must say so (availability notes in the modal, `omitted` manifest
+in the file) instead of silently producing a thread with gaps. Worth checking real table size on the
+potato after a few months (`SELECT count(*), sum(length(data)) FROM events`).
 
 ## Output formats
 
@@ -122,7 +123,7 @@ Turn {
 ```
 
 `omitted` is what makes the JSON auditable. Each note records a category and a reason, for example
-`{"what":"thinking","turns":["t12","t13"],"reason":"events pruned"}` or
+`{"what":"thinking","turns":["t12","t13"],"reason":"events pruned before 2026-10-12"}` or
 `{"what":"tool_calls","tools":["write_memory"],"reason":"privacy: memories left out"}`. A reader can
 tell "nothing happened here" from "it was removed".
 
@@ -215,7 +216,7 @@ worse than not having one.
    regression test.
 3. **Endpoint, modal, delivery.** The route, `ExportModal.svelte`, download and copy, token
    estimate, handoff scope.
-4. **CLI and docs.** `polaris export`, FEATURES.md, then optionally the retention change.
+4. **CLI and docs.** `polaris export`, FEATURES.md.
 
 ## Verification
 
@@ -223,7 +224,7 @@ Following the repo's live-verification culture, not just unit tests:
 
 - Unit/golden tests for both renderers over a fixture thread covering: citations, attachments,
   a card, a chart, a compacted thread, a forked/variant thread, a Deep Research turn with
-  sub-agent thinking, and a turn whose events have been pruned.
+  sub-agent thinking, and a turn whose events were pruned before the retention change.
 - Regression tests that fail without the fix: a memory tool call must not appear when `private=1`,
   and must appear when it's off (reverting the filter should make the first fail).
 - Round-trip the JSON through a schema check and compare turn/message counts to `GET /api/threads/{id}`.
@@ -249,7 +250,9 @@ Settled 2026-10-12:
   building the full file. The modal debounces toggle changes.
 - **Attachments v1:** names and types only. Inlining text attachments or a `.zip` bundle is a
   follow-up.
-- **Retention:** `eventRetentionDays` raised from 90 to 365 (shipped on this branch).
+- **Retention:** events are never pruned (shipped on `main`, 2026-10-12). A thread's trail lives
+  exactly as long as the thread: hard deletion cascades it away, soft deletion keeps it, and no
+  timer touches it.
 
 - **Unanswered last message.** A user message is saved when a turn starts and the assistant message
   only when it finishes (`gateway/turn_message.go`, `gateway/turn_persist.go`), so a streaming,

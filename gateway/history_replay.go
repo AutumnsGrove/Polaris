@@ -38,9 +38,8 @@ type replayedCall struct {
 //
 // Turns from before transcripts existed (Transcript == "") fall back to
 // the older reconstruction: that turn's tool calls rebuilt from the events
-// log — each result capped at store's maxEventDataBytes, gone entirely
-// once past the events' one-year retention (store.PruneEvents) — ahead of
-// its answer, which carries store.appendCitedSources' source note. A
+// log — each result capped at store's maxEventDataBytes — ahead of its
+// answer, which carries store.appendCitedSources' source note. A
 // thread can mix both shapes: an old thread continued today gets verbatim
 // turns from here on. The legacy part is still deterministic (no
 // per-request filtering), so it caches too once it's been sent once.

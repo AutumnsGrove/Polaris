@@ -349,7 +349,12 @@ CREATE TABLE IF NOT EXISTS settings (
 -- every tool call/result, turn start/finish/failure, compaction, config
 -- reload, and self-update, persisted here (not just to the log files) so
 -- there's durable evidence of what happened even if the process crashed
--- mid-turn or the log directory was never checked.
+-- mid-turn or the log directory was never checked. Unlike the log files
+-- (90-day retention, see logger.rotatingWriter), events are NEVER pruned on
+-- a timer: a thread's trail lives exactly as long as the thread, cascading
+-- away only when its row is hard-deleted (the ON DELETE CASCADE below).
+-- Thread-less events (startup, self-update, config reload) have no thread to
+-- outlive and simply accumulate.
 CREATE TABLE IF NOT EXISTS events (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	-- thread_id is NULL for events with no single thread to attach to
@@ -374,8 +379,10 @@ CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 -- thread (see image_candidates.go). The model's history keeps the numbered
 -- candidate list from earlier turns, but tools.Context is rebuilt every
 -- turn — without this, "show images 2 and 3" on a follow-up turn cites
--- numbers the server no longer knows. Its own table rather than reading
--- events back: events are pruned after a year, threads never are.
+-- numbers the server no longer knows. Its own table rather than
+-- reconstructing from the events audit trail: the pool needs a stable,
+-- indexed (thread_id, num) upsert, which the event log's opaque tool-blob
+-- shape doesn't offer.
 CREATE TABLE IF NOT EXISTS image_candidates (
 	thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
 	num       INTEGER NOT NULL, -- 1-based, the number the model was told
