@@ -64,8 +64,8 @@ Notes on the modal:
 | Citations / sources | `messages.citations` | permanent |
 | Cards, chart, pending question, verification marks, Oracle result | `messages.cards/chart/pending_question/verification/oracle_result` | permanent |
 | Attachment filename and type | `messages.attachments` (fall back to the legacy single-attachment columns, as `GetMessages` does) | permanent (the files themselves are not exported in v1) |
-| Tool calls and results | `messages.transcript` (untruncated), falling back to `events` (`tool_call` / `tool_result`) | transcript permanent, events pruned |
-| Thinking traces | `events` rows with `source == "turn"`, `message == "reasoning"`, `data.content`, `data.agent_id` | **pruned with events** |
+| Tool calls and results | `messages.transcript` (untruncated), falling back to `events` (`tool_call` / `tool_result`) | transcript permanent, events pruned after 1 year |
+| Thinking traces | `events` rows with `source == "turn"`, `message == "reasoning"`, `data.content`, `data.agent_id` | **pruned with events (1 year)** |
 | Compaction summary | `threads.compacted_summary`, `compacted_through_id` | permanent |
 | Cost, model, duration | `messages.cost_usd`, `duration_ms`, `threads.model` | permanent |
 
@@ -83,19 +83,17 @@ Two facts that shape the design (verified against the code on 2026-10-12):
 
 ### Retention
 
-`cmd/run.go` currently sets `eventRetentionDays = 90`, mirroring the log files. Threads and messages
-are never pruned (`store/events.go`'s `PruneEvents` doc explains why events are disposable).
+Events used to be pruned after 90 days (mirroring the log files). **Changed 2026-10-12:**
+`cmd/run.go`'s `eventRetentionDays` is now 365, because thinking traces survive only in `events` and
+an audit export that loses them after three months defeats its purpose. Event rows are still capped
+at `maxEventDataBytes` (20 KB), so growth is bounded. Threads and messages are never pruned (see
+`store/events.go`'s `PruneEvents` doc).
 
-This plan makes thinking-trace export auditable only as far back as events survive. Options:
-
-- Raise `eventRetentionDays` to 365 as a separate small change. Event data is already capped at
-  `maxEventDataBytes` (20 KB) per row, so growth is bounded, but check the real table size on the
-  potato first (`SELECT count(*), sum(length(data)) FROM events`).
-- Or leave retention alone and accept that thinking exports only cover recent turns.
-
-Either way the export must **say so** (availability notes in the modal, `omitted` manifest in the
-file) instead of silently producing a thread with gaps. Recommendation: raise retention, since an
-audit export that quietly loses its thinking after 90 days defeats the point.
+Even at a year, older turns and any turn whose events were already pruned under the 90-day rule
+(before this change shipped) have no thinking available. The export must say so (availability
+notes in the modal, `omitted` manifest in the file) instead of silently producing a thread with
+gaps. Worth checking real table size on the potato after a few months (`SELECT count(*),
+sum(length(data)) FROM events`).
 
 ## Output formats
 
@@ -235,8 +233,6 @@ Following the repo's live-verification culture, not just unit tests:
 
 ## Open items
 
-- **Retention.** Raise `eventRetentionDays` to 365, or accept recent-turns-only thinking exports?
-  (Recommendation: raise it. Check events table size first.)
 - **Variants / forks.** Export the currently selected variant path only (as the chat view shows),
   not every variant. Confirm which store function defines that path (`EffectiveHistory` vs. the
   variants code) and test a thread with a swapped variant.

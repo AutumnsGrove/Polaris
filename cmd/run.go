@@ -27,10 +27,14 @@ var log = logger.WithPrefix("cmd")
 var configPath string
 var devMode bool
 
-// eventRetentionDays mirrors the log files' own 90-day retention (see
-// logger.rotatingWriter) so the events table's durable evidence trail
-// doesn't grow forever on a long-running install.
-const eventRetentionDays = 90
+// eventRetentionDays is deliberately longer than the log files' own 90-day
+// retention (see logger.rotatingWriter): events are the only place a turn's
+// thinking traces survive (messages.transcript holds tool calls and results
+// but no reasoning), so a thread export meant for auditing
+// (docs/plans/thread-export.md) needs them to outlast the ops logs. Each row
+// is already capped at store's maxEventDataBytes, so a year is bounded growth
+// rather than the unbounded kind this prune exists to prevent.
+const eventRetentionDays = 365
 
 // attachmentMaxAge is generous on purpose — this only ever catches an
 // upload that was written to disk but never actually sent in a message

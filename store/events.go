@@ -172,9 +172,8 @@ func scanEvents(rows *sql.Rows) ([]Event, error) {
 }
 
 // PruneEvents deletes events older than olderThanDays — called once at
-// startup, mirroring the log files' own 90-day retention (see
-// logger.rotatingWriter) so this durable trail doesn't grow forever on a
-// long-running install.
+// startup (cmd/run.go's eventRetentionDays, a year) so this durable trail
+// doesn't grow forever on a long-running install.
 //
 // Deliberately asymmetric with threads/messages, which are NEVER pruned —
 // events are disposable operational evidence (tool calls, thinking steps,
