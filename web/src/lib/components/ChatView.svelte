@@ -83,6 +83,12 @@
 	let focusModeManual = $state(false);
 	let deepResearch = $state(false);
 	let research = $state(true);
+	// Relay the live toggles to AppState so send() callers that don't pass
+	// them (question-card answers, suggestion chips) inherit them — see
+	// AppState.composerConfig.
+	$effect(() => {
+		appState.composerConfig = { focusMode, deepResearch, noResearch: !research };
+	});
 	// Ghost mode (issue #67) — unlike focusMode/deepResearch/research, this
 	// has no persisted thread config to round-trip (a ghost thread writes
 	// nothing to store.Store at all — see gateway/protocol.go's Anonymous

@@ -63,6 +63,51 @@ describe('AppState.send / dispatch', () => {
 			expect.objectContaining({ type: 'message', content: 'a question', model: 'test-model', thread_id: 'thread-1' })
 		);
 	});
+
+	// Regression: answering the Deep Research plan question ("Run it") goes
+	// through send() with no toggles, and the reply used to go out without
+	// deep_research — so the turn had no spawn_researchers tool and reset the
+	// thread's sticky config.
+	describe("falls back to the composer's live toggles", () => {
+		const live = { focusMode: 'academic' as const, deepResearch: true, noResearch: false };
+
+		it('inherits them on an existing thread when the caller passes none', () => {
+			state.currentThreadId = 'thread-1';
+			state.composerConfig = live;
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('Run it');
+
+			expect(sendSpy).toHaveBeenCalledWith(
+				expect.objectContaining({ deep_research: true, focus_mode: 'academic' })
+			);
+		});
+
+		it('lets an explicit argument, including false, win over the composer', () => {
+			state.currentThreadId = 'thread-1';
+			state.composerConfig = { ...live, noResearch: true };
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('no deep please', undefined, 'off', false, undefined, false);
+
+			const sent = sendSpy.mock.calls[0][0] as Record<string, unknown>;
+			expect(sent.deep_research).toBeUndefined();
+			expect(sent.focus_mode).toBeUndefined();
+			expect(sent.no_research).toBeUndefined();
+		});
+
+		it('does not leak a stale composer toggle into a brand-new thread', () => {
+			state.currentThreadId = null;
+			state.composerConfig = live;
+			const sendSpy = vi.spyOn((state as any).socket, 'send');
+
+			state.send('seed', undefined, undefined, undefined, undefined, undefined, 'constellation');
+
+			const sent = sendSpy.mock.calls[0][0] as Record<string, unknown>;
+			expect(sent.deep_research).toBeUndefined();
+			expect(sent.focus_mode).toBeUndefined();
+		});
+	});
 });
 
 describe('AppState.retry / editMessage', () => {

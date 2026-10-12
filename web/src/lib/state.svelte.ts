@@ -72,6 +72,15 @@ export class AppState {
 	threadFocusMode = $state<FocusMode>('off');
 	threadDeepResearch = $state(false);
 	threadNoResearch = $state(false);
+	// The composer's live focusMode/deepResearch/noResearch, mirrored from
+	// ChatView.svelte (which still owns the real state) by an effect there.
+	// send() falls back to these for any caller that doesn't pass its own
+	// (answering an ask_user_question card, suggestion chips, voice), so a
+	// reply can't silently drop a toggle the user has on: the server gates
+	// tools per turn and writes each turn's flags back as the thread's
+	// sticky config, so a dropped deep_research meant the Deep Research
+	// plan's "Run it" ran a turn with no spawn_researchers tool.
+	composerConfig = $state<{ focusMode: FocusMode; deepResearch: boolean; noResearch: boolean } | null>(null);
 	// Bumped by openThread()/newThread() — the two places that are a real,
 	// user-initiated thread switch — so ChatView's config-restoring effect
 	// reacts to an actual switch instead of to currentThreadId changing for
@@ -963,15 +972,20 @@ export class AppState {
 	) {
 		const trimmed = content.trim();
 		if (!trimmed || this.busy) return;
+		// Only when continuing an existing thread: callers that start a fresh
+		// thread (Daily expand-to-chat, Constellation, Fields) deliberately
+		// pass nothing, and must not inherit a stale composer toggle. Explicit
+		// arguments, including an explicit false, always win.
+		const live = this.currentThreadId !== null ? this.composerConfig : null;
 		this.dispatch(
 			trimmed,
 			undefined,
 			undefined,
 			sttCostUsd,
-			focusMode,
-			deepResearch,
+			focusMode ?? live?.focusMode,
+			deepResearch ?? live?.deepResearch,
 			attachments,
-			noResearch,
+			noResearch ?? live?.noResearch,
 			source,
 			titleSeed,
 			ghostMode,
