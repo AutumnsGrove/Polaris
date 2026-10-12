@@ -251,11 +251,17 @@ Settled 2026-10-12:
   follow-up.
 - **Retention:** `eventRetentionDays` raised from 90 to 365 (shipped on this branch).
 
+- **Unanswered last message.** A user message is saved when a turn starts and the assistant message
+  only when it finishes (`gateway/turn_message.go`, `gateway/turn_persist.go`), so a streaming,
+  failed or cancelled turn leaves a trailing user message with no answer. Export includes it,
+  marked "no answer recorded" in Markdown and `"assistant": null` plus an `omitted` note in JSON.
+  Exporting during a live turn therefore gives a snapshot of what is stored so far.
+- **Ghost threads.** Unpromoted ghost threads are refused: the Export menu item is hidden and the
+  endpoint returns 404, matching how `GetThread` already excludes them (issue #67). Promote first.
+- **Dry-run cost.** Not a concern: a dry-run is a few SQLite reads plus string handling on a few
+  hundred KB. It builds the same `Doc` as a real export and skips only the final render, with no
+  separate count-only path.
+
 ## Open items
 
-- **Mid-turn threads.** If a turn is streaming when the user exports, include only completed turns
-  and note it.
-- **Ghost threads** (issue #67's no-memory threads): no special handling expected, but confirm they
-  export like normal threads.
-- **Dry-run cost.** If building the estimate server-side proves slow on a 50k-token thread, fall
-  back to a cheap count-only pass rather than rendering the whole file.
+None.
