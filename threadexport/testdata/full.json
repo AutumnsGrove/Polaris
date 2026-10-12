@@ -1,0 +1,93 @@
+{
+  "polaris_export": 1,
+  "exported_at": "2026-10-12T12:00:00Z",
+  "app_version": "r200.test",
+  "options": {
+    "format": "json",
+    "scope": "full",
+    "sources": true,
+    "attachments": true,
+    "meta": true,
+    "trail": false,
+    "thinking": false,
+    "private": false,
+    "private_personal": false
+  },
+  "thread": {
+    "id": "th_abc",
+    "title": "Question about tea",
+    "created_at": "2026-10-10T09:00:00Z",
+    "updated_at": "2026-10-10T11:00:00Z",
+    "model": "anthropic/claude-sonnet-4.5",
+    "source": "web"
+  },
+  "turns": [
+    {
+      "turn_id": "turn-1",
+      "user": {
+        "id": 1,
+        "created_at": "2026-10-10T09:00:00Z",
+        "content": "What is oolong?"
+      },
+      "assistant": {
+        "id": 2,
+        "created_at": "2026-10-10T09:00:05Z",
+        "content": "Oolong is a semi-oxidized tea.\n\nSemi-oxidized (as of Oct 2026)\n",
+        "citations": [
+          {
+            "title": "Oolong - Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Oolong",
+            "site_name": "Wikipedia"
+          }
+        ]
+      },
+      "meta": {
+        "cost_usd": 0.0123,
+        "duration_ms": 4200,
+        "model": "anthropic/claude-sonnet-4.5"
+      }
+    },
+    {
+      "turn_id": "turn-2",
+      "user": {
+        "id": 3,
+        "created_at": "2026-10-10T09:01:00Z",
+        "content": "Here are my tasting notes.",
+        "attachments": [
+          {
+            "filename": "notes.txt",
+            "content_type": "text/plain"
+          }
+        ]
+      },
+      "assistant": {
+        "id": 4,
+        "created_at": "2026-10-10T09:02:00Z",
+        "content": "Thanks — noted."
+      },
+      "meta": {
+        "cost_usd": 0.001,
+        "duration_ms": 1200,
+        "model": "anthropic/claude-sonnet-4.5"
+      }
+    },
+    {
+      "turn_id": "turn-3",
+      "user": {
+        "id": 5,
+        "created_at": "2026-10-10T09:03:00Z",
+        "content": "And green tea?"
+      },
+      "assistant": null
+    }
+  ],
+  "omitted": [
+    {
+      "what": "answer",
+      "turns": [
+        "turn-3"
+      ],
+      "reason": "no answer recorded"
+    }
+  ]
+}
