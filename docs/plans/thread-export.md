@@ -3,7 +3,7 @@
 **Added: 2026-10-12.**
 
 **Status:** planning only. Decisions below were settled in a design conversation on 2026-10-12; the
-"Open items" section lists what is still undecided. No code yet.
+"Decisions" and "Open items" sections record the rest. No export code yet (only the retention change).
 
 ## Goal
 
@@ -39,6 +39,7 @@ Opened from a new **Export** item in the thread menu (next to Favorite / Promote
 | Include | Attachments (filename and type only, v1) | off |
 | Include | Cost and model metadata | off |
 | Privacy | Leave out memories and custom instructions | on |
+| Privacy | Also leave out chat search, star reads and save-to-field calls | off |
 | Delivery | Download / Copy | Download |
 
 Notes on the modal:
@@ -60,7 +61,7 @@ Notes on the modal:
 
 | Export content | Source | Lifetime |
 |---|---|---|
-| Messages, order, roles, timestamps | `messages` (follow the effective variant path, see Open items) | permanent |
+| Messages, order, roles, timestamps | `messages` (selected variant path only, see Decisions) | permanent |
 | Citations / sources | `messages.citations` | permanent |
 | Cards, chart, pending question, verification marks, Oracle result | `messages.cards/chart/pending_question/verification/oracle_result` | permanent |
 | Attachment filename and type | `messages.attachments` (fall back to the legacy single-attachment columns, as `GetMessages` does) | permanent (the files themselves are not exported in v1) |
@@ -231,17 +232,30 @@ Following the repo's live-verification culture, not just unit tests:
 - Real data: export the actual ~50k-token thread on the potato (`ssh potato-remote`), upload it to
   Claude, and confirm it's usable and that the token estimate was in the right ballpark.
 
+## Decisions
+
+Settled 2026-10-12:
+
+- **Variants and forks:** export the selected path only, what the chat view shows. Confirm which
+  store function defines that path (`EffectiveHistory` vs. the variants code) and test a thread
+  with a swapped variant.
+- **Privacy scope:** two toggles. "Leave out memories and custom instructions" (default on) covers
+  the memory tools. A second "Also leave out chat search, star reads and save-to-field" (default
+  off) covers the other personalization tools. Both record their omissions in `omitted`. The tool
+  list for each comes from the registry or a flag on the tool definition, not a duplicated string
+  list.
+- **Modal estimate and availability:** server dry-run, `GET .../export?dry_run=1` with the chosen
+  options returns token estimate and per-option availability ("thinking: 14 of 40 turns") without
+  building the full file. The modal debounces toggle changes.
+- **Attachments v1:** names and types only. Inlining text attachments or a `.zip` bundle is a
+  follow-up.
+- **Retention:** `eventRetentionDays` raised from 90 to 365 (shipped on this branch).
+
 ## Open items
 
-- **Variants / forks.** Export the currently selected variant path only (as the chat view shows),
-  not every variant. Confirm which store function defines that path (`EffectiveHistory` vs. the
-  variants code) and test a thread with a swapped variant.
-- **Other personalization tools.** Should the privacy toggle also drop chat-search, Constellation
-  star reads, and save-to-field calls? Current plan: memories only, as decided.
-- **Attachments.** v1 exports names and types. Embedding file contents (inline text, or a `.zip`
-  with the files alongside) is a follow-up; text attachments are the likely first case.
-- **Dry-run endpoint vs. client-side estimate** for the modal's size and availability notes.
 - **Mid-turn threads.** If a turn is streaming when the user exports, include only completed turns
   and note it.
 - **Ghost threads** (issue #67's no-memory threads): no special handling expected, but confirm they
   export like normal threads.
+- **Dry-run cost.** If building the estimate server-side proves slow on a 50k-token thread, fall
+  back to a cheap count-only pass rather than rendering the whole file.
