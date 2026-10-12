@@ -34,7 +34,7 @@ const MAX_DEFINE_TERMS = 12;
 /** Other names shown after a defined term ("Also called"). */
 const MAX_DEFINE_ALSO = 4;
 /** X is like Y: at most this many mapping rows. */
-const MAX_ANALOGY_PAIRS = 6;
+const MAX_ANALOGY_PAIRS = 20;
 /** A contested question: at most this many camps. */
 const MAX_VIEW_CAMPS = 6;
 /** Pages to read: at most this many entries. */

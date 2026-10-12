@@ -637,7 +637,7 @@ round are in the same file. Tracking issue #163.
   `{"term","means","also":[...],"ex"}`, cap 12 terms. An accent under the base prompt, like `quote`: no
   Oracle option, no verification (the model's own definition, never presented as a quote of a source).
 - **`analogy`** (X is like Y). Container `{"c":"analogy","x":"On the network","y":"In the post","like":"A postal system"}`;
-  child lines `{"x","y"}` (cap 6 pairs) and one optional `{"breaks"}` line, the point of the block (an analogy that
+  child lines `{"x","y"}` (cap 20 pairs) and one optional `{"breaks"}` line, the point of the block (an analogy that
   never says where it fails teaches something false). Accent under the base prompt: no Oracle option, no
   verification (the model's own teaching device).
 - **`readings`** (pages to read, in order). Container `{"c":"readings","title"}`; child lines
@@ -731,8 +731,10 @@ Ran against the local dev stack (`dev/stack.sh`, real OpenRouter, the default `d
   last two degrade to raw rows. **Raised the cap to 12** (2026-10-11, operator call) to match `facts`, so a
   typical jargon-heavy explainer renders whole; a much longer list would still spill, which is the intended
   over-cap behavior.
-- **`analogy`** — the same prompt used a prose analogy instead of the block (it is an accent, so that is
-  legal). Not yet observed firing live; `define` shows the accent path works.
+- **`analogy`** — fired live once asked for it ("explain how a blockchain works, use the analogy block"): a
+  valid container, 9 mapping rows, and a real where-it-breaks line. 9 pairs against the cap of 6 spilled three
+  to raw rows, so **the cap was raised to 20** (2026-10-11, operator call) — a rich analogy wants a dozen-plus
+  mappings, and 20 still sits under the 40-line fence cap.
 - **No regressions** — `mermaid` still rendered and built up mid-stream in the `readings` answer, and the
   existing prose-claim verification path still marked normally.
 

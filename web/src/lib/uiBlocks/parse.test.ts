@@ -224,6 +224,10 @@ describe('parseUi', () => {
 		// a half pair, a both-sided line, and a second breaks line are raw
 		const kinds = (s: string) => parseUi(s).map((b) => b.kind);
 		expect(kinds('{"c":"analogy","like":"L"}\n{"x":"a"}\n{"x":"a","y":"b","breaks":"c"}\n{"breaks":"d"}\n{"breaks":"e"}\n')).toEqual(['analogy', 'raw', 'raw', 'raw']);
+		// A rich analogy wants a dozen-plus mappings; the cap is 20 (raised
+		// after a live blockchain answer used 9 against the original 6).
+		const many = '{"c":"analogy","like":"L"}\n' + Array.from({ length: 23 }, (_, i) => `{"x":"a${i}","y":"b${i}"}\n`).join('');
+		expect(parseUi(many).map((b) => b.kind)).toEqual(['analogy', 'raw', 'raw', 'raw']);
 	});
 
 	it('parses views camps, each with its own stance, detail and sources', () => {

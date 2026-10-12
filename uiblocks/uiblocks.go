@@ -52,7 +52,7 @@ const (
 	maxDefineAlso  = 4
 
 	// Mirror parse.ts's analogy cap.
-	maxAnalogyPairs = 6
+	maxAnalogyPairs = 20
 
 	// Mirror parse.ts's views cap.
 	maxViewCamps = 6
