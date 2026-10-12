@@ -113,6 +113,23 @@ func (s *Store) ListEvents(threadID string, limit int) ([]Event, error) {
 	return scanEvents(rows)
 }
 
+// AllEventsForThread returns every event for threadID, oldest first, with
+// no limit — unlike ListEvents, whose 500-row default would silently
+// truncate a long researched thread's trail exactly where an export needs
+// it complete (the newest rows are the ones LIMIT would drop).
+func (s *Store) AllEventsForThread(threadID string) ([]Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(thread_id, ''), level, source, message, data, turn_id, created_at
+		 FROM events WHERE thread_id = ? ORDER BY id ASC`,
+		threadID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 // ToolEventsForThread returns every tool call started/finished event
 // logged under threadID, oldest first — the raw material gateway's
 // loadHistory rebuilds tool calls and results from for turns stored before

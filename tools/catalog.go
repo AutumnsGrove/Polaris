@@ -60,6 +60,12 @@ type catalogEntry struct {
 	Category       string `yaml:"category"`
 	Description    string `yaml:"description"`
 	APIDescription string `yaml:"api_description"`
+	// ExportPrivacy classifies a tool for thread export's privacy toggles:
+	// "" (not sensitive), "memory" (the memory tool), or "personal" (chat
+	// search, star reads, save-to-field). Declared on the catalog entry
+	// rather than a string list somewhere in the exporter, so a new
+	// memory-adjacent tool only has to declare itself here to be covered.
+	ExportPrivacy string `yaml:"export_privacy"`
 }
 
 // offered reports whether ctx has whatever key entry.Requires needs — the
@@ -288,14 +294,14 @@ var catalogDefaults = map[string]catalogEntry{
 	"ask_user_question": {Name: "ask_user_question", Requires: "interactive_chat",
 		Description:    "ask the user a single focused clarifying question when a genuinely necessary detail is missing.",
 		APIDescription: "Ask the user a single focused clarifying question when a genuinely necessary detail is missing — this ends the turn."},
-	"memory": {Name: "memory", Requires: "memory_store",
+	"memory": {Name: "memory", Requires: "memory_store", ExportPrivacy: "memory",
 		Description:    "write, edit, view, or forget durable memories about the user or ongoing work.",
 		APIDescription: "Write, edit, view, or forget durable memories about the user or ongoing work, carried across threads."},
-	"search_chats": {Name: "search_chats", Requires: "chat_search",
+	"search_chats": {Name: "search_chats", Requires: "chat_search", ExportPrivacy: "personal",
 		Description: "search or list your own past conversations, and read one back in full.",
 		APIDescription: "Search your own past conversations by keyword, or list your most recent ones when no " +
 			"query is given, and read one back in full (filtered to what you ask for, or raw)."},
-	"stars": {Name: "stars", Requires: "stars_library",
+	"stars": {Name: "stars", Requires: "stars_library", ExportPrivacy: "personal",
 		Description:    "search the person's Constellation library — facts Weaver has synthesized about them — and read one back in full.",
 		APIDescription: "Search the person's Constellation library (facts Weaver has synthesized about them across past conversations) and read one star back in full by ID."},
 	"spawn_researchers": {Name: "spawn_researchers", Requires: "deep_research", Category: "research",
@@ -310,10 +316,10 @@ var catalogDefaults = map[string]catalogEntry{
 	"alert_me": {Name: "alert_me", Requires: "pulsar_alert",
 		Description:    "flag this scheduled run as important news the user should see first.",
 		APIDescription: "Flag this run as genuinely important, so it stands out as big news. Pass a one-sentence reason."},
-	"search_stars": {Name: "search_stars", Requires: "weaver_run",
+	"search_stars": {Name: "search_stars", Requires: "weaver_run", ExportPrivacy: "personal",
 		Description:    "keyword-search Constellation's existing stars, for dedup-checking and link-discovery.",
 		APIDescription: "Keyword search over Constellation's existing stars by title/summary. Always call this before create_star to check whether this topic already has a star."},
-	"read_star": {Name: "read_star", Requires: "weaver_run",
+	"read_star": {Name: "read_star", Requires: "weaver_run", ExportPrivacy: "personal",
 		Description:    "read one star's full card.",
 		APIDescription: "Read one star's full card (title, category, tags, status, confidence, summary, body). Mandatory before update_star or link_stars."},
 	"create_star": {Name: "create_star", Requires: "weaver_run",
@@ -328,7 +334,7 @@ var catalogDefaults = map[string]catalogEntry{
 	"compare_sources": {Name: "compare_sources", Requires: "jev", Category: "research",
 		Description:    "check whether two or more of your own cited sources actually agree on a specific fact.",
 		APIDescription: "Check whether two or more sources you've already read this turn (via web_read) actually agree on a specific fact, using a calibrated comparison rather than your own read of them. Use this when you notice sources might conflict on something specific — not as a routine double-check of everything."},
-	"save_to_field": {Name: "save_to_field", Requires: "field_workspace",
+	"save_to_field": {Name: "save_to_field", Requires: "field_workspace", ExportPrivacy: "personal",
 		Description: "copy a file from your workspace into this field's shared files, so every other conversation in the field can read it.",
 		APIDescription: "Copy a file from your own workspace into this field's shared file pool, where every other conversation in the field can read it (read-only, under /field in code_exec). " +
 			"The file stays in your workspace too. If the field already has a file with that name, the copy is saved under a numbered name instead of replacing it — the result tells you the name it actually got."},
@@ -347,6 +353,27 @@ var (
 // given tool (missing/unreadable/unparseable file, or a name: mismatch
 // against the filename), keeps serving the last-known-good entry for that
 // tool, falling back to catalogDefaults if none has ever loaded.
+// ExportPrivacyClass returns the tool names threadexport's two privacy
+// toggles suppress, read from each catalog entry's own export_privacy field.
+// Reading the catalog rather than a literal list here is the point: a new
+// tool declares export_privacy in its own YAML (and in catalogDefaults, for
+// the broken-descriptions-directory fallback) and lands in the right set with
+// no second list to keep in sync.
+func ExportPrivacyClass() (memory, personal map[string]bool) {
+	catalog := loadCatalog()
+	memory = map[string]bool{}
+	personal = map[string]bool{}
+	for name, entry := range catalog {
+		switch entry.ExportPrivacy {
+		case "memory":
+			memory[name] = true
+		case "personal":
+			personal[name] = true
+		}
+	}
+	return memory, personal
+}
+
 func loadCatalog() map[string]catalogEntry {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()

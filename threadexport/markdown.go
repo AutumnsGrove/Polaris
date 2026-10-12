@@ -51,6 +51,15 @@ func RenderMarkdown(d Doc) string {
 		if t.Meta != nil {
 			b.WriteString(metaLine(*t.Meta) + "\n\n")
 		}
+		// Trail and thinking come before the answer they belong to, in
+		// quoted blocks that read as clearly separate from the output so a
+		// model pasting this in can tell reasoning from the final answer.
+		if len(t.Trace) > 0 {
+			writeTrail(&b, t.Trace)
+		}
+		if len(t.Thinking) > 0 {
+			writeThinking(&b, t.Thinking)
+		}
 		writeBlock(&b, t.Assistant.Content)
 		writeSources(&b, t.Assistant.Citations)
 	}
@@ -82,6 +91,50 @@ func writeSources(b *strings.Builder, citations []Citation) {
 			label = "(untitled)"
 		}
 		fmt.Fprintf(b, "%d. [%s](%s)\n", i+1, label, c.URL)
+	}
+	b.WriteString("\n")
+}
+
+// writeTrail renders the research trail as a quoted, itemized list of tool
+// calls with their results, so it is visibly not part of the answer text.
+func writeTrail(b *strings.Builder, steps []TraceStep) {
+	b.WriteString("> **Research trail**\n>\n")
+	for _, s := range steps {
+		args := strings.TrimSpace(s.Args)
+		if args == "" || args == "{}" {
+			fmt.Fprintf(b, "> - **%s**\n", s.Tool)
+		} else {
+			fmt.Fprintf(b, "> - **%s** `%s`\n", s.Tool, args)
+		}
+		if r := strings.TrimSpace(s.Result); r != "" {
+			b.WriteString(">\n")
+			for _, line := range strings.Split(r, "\n") {
+				fmt.Fprintf(b, ">   %s\n", line)
+			}
+		}
+	}
+	b.WriteString("\n")
+}
+
+// writeThinking renders reasoning bursts as a quoted block, labeling each
+// with its agent so a Deep Research turn's sub-agent thinking is
+// distinguishable from the orchestrator's.
+func writeThinking(b *strings.Builder, bursts []Thinking) {
+	b.WriteString("> **Thinking**\n>\n")
+	for _, th := range bursts {
+		if th.Agent != "" || th.DurationMs > 0 {
+			label := th.Agent
+			if label == "" {
+				label = "main"
+			}
+			if th.DurationMs > 0 {
+				label += fmt.Sprintf(", %.1fs", float64(th.DurationMs)/1000)
+			}
+			fmt.Fprintf(b, "> _%s_\n>\n", label)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(th.Content), "\n") {
+			fmt.Fprintf(b, "> %s\n", line)
+		}
 	}
 	b.WriteString("\n")
 }

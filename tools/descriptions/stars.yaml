@@ -1,5 +1,6 @@
 name: stars
 requires: stars_library
+export_privacy: personal
 description: >-
   search the person's Constellation library — facts Weaver has synthesized about them across past
   conversations — and read one back in full.

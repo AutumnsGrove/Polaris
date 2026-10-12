@@ -37,6 +37,13 @@ func fixtureThread() Input {
 				Content:   "Oolong is a semi-oxidized tea.\n\n```ui\n{\"c\":\"callout\",\"tone\":\"answer\",\"text\":\"Semi-oxidized\",\"asof\":\"2026-10\"}\n```\n",
 				Citations: `[{"title":"Oolong - Wikipedia","url":"https://en.wikipedia.org/wiki/Oolong","site_name":"Wikipedia"}]`,
 				CostUSD:   0.0123, DurationMs: 4200, AppliedModel: "anthropic/claude-sonnet-4.5",
+				Transcript: `[
+				  {"role":"user","content":"What is oolong?"},
+				  {"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"oolong\"}"}}]},
+				  {"role":"tool","tool_call_id":"c1","content":"1. Oolong — Wikipedia: semi-oxidized tea."},
+				  {"role":"assistant","content":"","tool_calls":[{"id":"c2","type":"function","function":{"name":"memory","arguments":"{\"action\":\"write\",\"name\":\"tea\"}"}}]},
+				  {"role":"tool","tool_call_id":"c2","content":"Saved memory: tea"}
+				]`,
 			},
 			{
 				ID: 3, Role: "user", TurnID: "turn-2", CreatedAt: created.Add(time.Minute),
@@ -48,6 +55,13 @@ func fixtureThread() Input {
 				Content: "Thanks — noted.", CostUSD: 0.001, DurationMs: 1200,
 			},
 			{ID: 5, Role: "user", TurnID: "turn-3", CreatedAt: created.Add(3 * time.Minute), Content: "And green tea?"},
+		},
+		Events: []Event{
+			{TurnID: "turn-1", Source: "turn", Message: "reasoning", Data: `{"content":"I should search for oolong.","duration_ms":1500}`},
+			{TurnID: "turn-1", Source: "turn", Message: "reasoning", Data: `{"content":"Checking a second angle.","duration_ms":800,"agent_id":"researcher-1"}`},
+			// turn-2 predates transcripts, so its trail comes from events.
+			{TurnID: "turn-2", Source: "tool.web_read", Message: "tool call started", Data: `{"args":{"url":"https://example.com/notes"},"call_id":"r1"}`},
+			{TurnID: "turn-2", Source: "tool.web_read", Message: "tool call finished", Data: `{"result":"Some page text.","call_id":"r1"}`},
 		},
 	}
 }
@@ -293,6 +307,175 @@ func TestRenderJSON_Golden(t *testing.T) {
 		t.Fatalf("RenderJSON: %v", err)
 	}
 	checkGolden(t, "full.json", string(b))
+}
+
+func TestBuild_TrailFromTranscript(t *testing.T) {
+	doc := build(fixtureThread(), Options{Trail: true}, fixedNow)
+
+	trace := doc.Turns[0].Trace
+	if len(trace) != 2 {
+		t.Fatalf("got %d trace steps, want 2: %+v", len(trace), trace)
+	}
+	if trace[0].Tool != "web_search" || !strings.Contains(trace[0].Args, "oolong") {
+		t.Errorf("step 0 = %+v, want web_search with its args", trace[0])
+	}
+	if !strings.Contains(trace[0].Result, "Oolong — Wikipedia") {
+		t.Errorf("step 0 result = %q, want the transcript's tool result", trace[0].Result)
+	}
+	if trace[1].Tool != "memory" {
+		t.Errorf("step 1 = %+v, want the memory call", trace[1])
+	}
+}
+
+func TestBuild_TrailFallsBackToEventsWithoutTranscript(t *testing.T) {
+	doc := build(fixtureThread(), Options{Trail: true}, fixedNow)
+
+	trace := doc.Turns[1].Trace
+	if len(trace) != 1 || trace[0].Tool != "web_read" {
+		t.Fatalf("got %+v, want one web_read step from the event log", trace)
+	}
+	if !strings.Contains(trace[0].Result, "Some page text") {
+		t.Errorf("result = %q, want the event result", trace[0].Result)
+	}
+}
+
+// TestBuild_PrivacyDropsMemoryToolCall is the regression test for the
+// privacy toggle: with Private on the memory tool call and its result must
+// be gone from the trail and recorded as an omission, and with it off the
+// same call must be present. Reverting the filter makes the first half fail.
+func TestBuild_PrivacyDropsMemoryToolCall(t *testing.T) {
+	in := fixtureThread()
+	in.MemoryTools = map[string]bool{"memory": true}
+
+	private := build(in, Options{Trail: true, Private: true}, fixedNow)
+	assertToolAbsent(t, private.Turns[0].Trace, "memory")
+	assertToolPresent(t, private.Turns[0].Trace, "web_search")
+	o := findOmission(private.Omitted, "tool_calls")
+	if o == nil || o.Reason != "privacy: memories left out" || len(o.Tools) != 1 || o.Tools[0] != "memory" {
+		t.Errorf("omission = %+v, want the dropped memory tool recorded", o)
+	}
+
+	// Toggle off: the same call is exported in full.
+	open := build(in, Options{Trail: true}, fixedNow)
+	assertToolPresent(t, open.Turns[0].Trace, "memory")
+}
+
+func TestBuild_PrivacyPersonalDropsPersonalTools(t *testing.T) {
+	in := Input{
+		Thread: Thread{ID: "t"},
+		Messages: []Message{
+			{ID: 1, Role: "user", TurnID: "a", Content: "what did we decide?"},
+			{ID: 2, Role: "assistant", TurnID: "a", Content: "We decided X.",
+				Transcript: `[{"role":"assistant","content":"","tool_calls":[{"id":"x","function":{"name":"search_chats","arguments":"{}"}}]},{"role":"tool","tool_call_id":"x","content":"past thread contents"}]`},
+		},
+		PersonalTools: map[string]bool{"search_chats": true},
+	}
+
+	doc := build(in, Options{Trail: true, PrivatePersonal: true}, fixedNow)
+	assertToolAbsent(t, doc.Turns[0].Trace, "search_chats")
+	o := findOmission(doc.Omitted, "tool_calls")
+	if o == nil || o.Reason != "privacy: personalization left out" {
+		t.Errorf("omission = %+v, want the personalization omission", o)
+	}
+
+	open := build(in, Options{Trail: true}, fixedNow)
+	assertToolPresent(t, open.Turns[0].Trace, "search_chats")
+}
+
+func TestBuild_ThinkingGroupsByAgent(t *testing.T) {
+	doc := build(fixtureThread(), Options{Thinking: true}, fixedNow)
+
+	thinking := doc.Turns[0].Thinking
+	if len(thinking) != 2 {
+		t.Fatalf("got %d bursts, want 2: %+v", len(thinking), thinking)
+	}
+	if thinking[0].Agent != "" || !strings.Contains(thinking[0].Content, "search for oolong") {
+		t.Errorf("burst 0 = %+v, want the orchestrator's", thinking[0])
+	}
+	if thinking[1].Agent != "researcher-1" {
+		t.Errorf("burst 1 agent = %q, want researcher-1", thinking[1].Agent)
+	}
+	if thinking[0].DurationMs != 1500 || thinking[1].DurationMs != 800 {
+		t.Errorf("durations = %d/%d, want 1500/800", thinking[0].DurationMs, thinking[1].DurationMs)
+	}
+}
+
+func TestBuild_AvailabilityCountsOnlyAnsweredTurns(t *testing.T) {
+	doc := build(fixtureThread(), Options{Trail: true, Thinking: true}, fixedNow)
+
+	if doc.Availability.Turns != 3 {
+		t.Errorf("Turns = %d, want 3 (including the unanswered one)", doc.Availability.Turns)
+	}
+	if doc.Availability.TurnsWithTrail != 2 {
+		t.Errorf("TurnsWithTrail = %d, want 2", doc.Availability.TurnsWithTrail)
+	}
+	if doc.Availability.TurnsWithThinking != 1 {
+		t.Errorf("TurnsWithThinking = %d, want 1", doc.Availability.TurnsWithThinking)
+	}
+}
+
+func TestBuild_ThinkingOmissionListsAnsweredTurnsWithoutReasoning(t *testing.T) {
+	doc := build(fixtureThread(), Options{Thinking: true}, fixedNow)
+
+	o := findOmission(doc.Omitted, "thinking")
+	if o == nil {
+		t.Fatalf("omitted = %+v, want a thinking note for the turn with none", doc.Omitted)
+	}
+	if len(o.Turns) != 1 || o.Turns[0] != "turn-2" {
+		t.Errorf("omission turns = %v, want [turn-2] (the unanswered turn-3 is skipped)", o.Turns)
+	}
+	if o.Reason != "no thinking recorded" {
+		t.Errorf("reason = %q", o.Reason)
+	}
+}
+
+func TestRenderJSON_IncludesTraceThinkingAndAvailability(t *testing.T) {
+	doc := build(fixtureThread(), Options{Trail: true, Thinking: true}, fixedNow)
+	b, err := RenderJSON(doc)
+	if err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	for _, want := range []string{`"trace"`, `"web_search"`, `"thinking"`, `"researcher-1"`, `"availability"`, `"turns_with_thinking": 1`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("JSON missing %s\n%s", want, b)
+		}
+	}
+}
+
+func TestRenderMarkdown_TrailAndThinkingGolden(t *testing.T) {
+	doc := build(fixtureThread(), Options{
+		Format: FormatMarkdown, Sources: true, Trail: true, Thinking: true,
+	}, fixedNow)
+	checkGolden(t, "full-trail.md", RenderMarkdown(doc))
+}
+
+func assertToolPresent(t *testing.T, steps []TraceStep, tool string) {
+	t.Helper()
+	for _, s := range steps {
+		if s.Tool == tool {
+			return
+		}
+	}
+	t.Errorf("expected tool %q in trail %+v", tool, steps)
+}
+
+func assertToolAbsent(t *testing.T, steps []TraceStep, tool string) {
+	t.Helper()
+	for _, s := range steps {
+		if s.Tool == tool {
+			t.Errorf("tool %q should have been dropped, got %+v", tool, steps)
+			return
+		}
+	}
+}
+
+func findOmission(omissions []Omission, what string) *Omission {
+	for i := range omissions {
+		if omissions[i].What == what {
+			return &omissions[i]
+		}
+	}
+	return nil
 }
 
 func checkGolden(t *testing.T, name, got string) {

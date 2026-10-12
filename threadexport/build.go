@@ -51,6 +51,7 @@ func build(in Input, opts Options, now time.Time) Doc {
 				pending.costUSD = m.CostUSD
 				pending.durationMs = m.DurationMs
 				pending.model = m.AppliedModel
+				pending.transcript = m.Transcript
 				turns = append(turns, *pending)
 				pending = nil
 			} else {
@@ -62,6 +63,7 @@ func build(in Input, opts Options, now time.Time) Doc {
 					costUSD:    m.CostUSD,
 					durationMs: m.DurationMs,
 					model:      m.AppliedModel,
+					transcript: m.Transcript,
 				})
 			}
 			continue
@@ -74,6 +76,19 @@ func build(in Input, opts Options, now time.Time) Doc {
 		pending = &Turn{TurnID: m.TurnID, User: entryFor(m, opts)}
 	}
 	flushPending()
+
+	// Group the audit trail by turn once, so each turn sees only its own
+	// events (thinking, and the pre-transcript tool fallback).
+	eventsByTurn := map[string][]Event{}
+	for _, e := range in.Events {
+		if e.TurnID != "" {
+			eventsByTurn[e.TurnID] = append(eventsByTurn[e.TurnID], e)
+		}
+	}
+
+	priv := privacy{memory: in.MemoryTools, personal: in.PersonalTools}
+	var droppedMemory, droppedPersonal, missingThinking []string
+	doc.Availability.Turns = len(turns)
 
 	for i := range turns {
 		t := &turns[i]
@@ -93,6 +108,54 @@ func build(in Input, opts Options, now time.Time) Doc {
 			}
 			t.Meta = &TurnMeta{CostUSD: t.costUSD, DurationMs: t.durationMs, Model: model}
 		}
+
+		// Trail and thinking describe how an answer was reached, so an
+		// unanswered turn (no answer) has neither — counting it as
+		// "missing thinking" would just be noise in the manifest.
+		if t.Assistant != nil {
+			evs := eventsByTurn[t.TurnID]
+			if opts.Trail {
+				kept, mem, pers := priv.filter(buildTrail(t.transcript, evs), opts)
+				for _, name := range mem {
+					droppedMemory = appendUnique(droppedMemory, name)
+				}
+				for _, name := range pers {
+					droppedPersonal = appendUnique(droppedPersonal, name)
+				}
+				if len(kept) > 0 {
+					t.Trace = kept
+					doc.Availability.TurnsWithTrail++
+				}
+			}
+			if opts.Thinking {
+				bursts := thinkingFromEvents(evs)
+				if len(bursts) > 0 {
+					t.Thinking = bursts
+					doc.Availability.TurnsWithThinking++
+				} else {
+					missingThinking = append(missingThinking, t.TurnID)
+				}
+			}
+		}
+	}
+
+	// Privacy omissions are aggregated across turns (which tools were left
+	// out, never which turn each appeared in) so the manifest stays a short,
+	// tool-scoped statement rather than a per-turn delta.
+	if len(droppedMemory) > 0 {
+		doc.Omitted = append(doc.Omitted, Omission{
+			What: "tool_calls", Tools: droppedMemory, Reason: "privacy: memories left out",
+		})
+	}
+	if len(droppedPersonal) > 0 {
+		doc.Omitted = append(doc.Omitted, Omission{
+			What: "tool_calls", Tools: droppedPersonal, Reason: "privacy: personalization left out",
+		})
+	}
+	if len(missingThinking) > 0 {
+		doc.Omitted = append(doc.Omitted, Omission{
+			What: "thinking", Turns: missingThinking, Reason: "no thinking recorded",
+		})
 	}
 
 	doc.Turns = turns

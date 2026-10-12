@@ -159,6 +159,58 @@ func TestCatalogDefaults_HasEntryForEveryToolInOrder(t *testing.T) {
 	}
 }
 
+// TestExportPrivacyClass_ReadsRealCatalogFlags validates the export_privacy
+// declarations in the real tools/descriptions/*.yaml files (chdir to the repo
+// root, same as TestCatalog_AllFilesLoadAndNamesMatch) — a tool that gains a
+// memory or personalization surface but forgets to declare it here would
+// otherwise leak into a private export.
+func TestExportPrivacyClass_ReadsRealCatalogFlags(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	memory, personal := ExportPrivacyClass()
+	if !memory["memory"] {
+		t.Errorf("memory tool not classified as memory: %v", memory)
+	}
+	for _, name := range []string{"search_chats", "stars", "read_star", "search_stars", "save_to_field"} {
+		if !personal[name] {
+			t.Errorf("%s not classified as personal", name)
+		}
+	}
+	for _, name := range []string{"web_search", "web_read", "think"} {
+		if memory[name] || personal[name] {
+			t.Errorf("%s should not be privacy-classified", name)
+		}
+	}
+}
+
+// TestCatalogDefaults_ExportPrivacyMatchesYAML guards the fallback path: if a
+// YAML file can't be loaded, catalogDefaults is used instead, so any tool whose
+// YAML declares export_privacy must declare the same value there or a broken
+// descriptions directory would quietly stop filtering it from a private export.
+func TestCatalogDefaults_ExportPrivacyMatchesYAML(t *testing.T) {
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(".."); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	for name, entry := range loadCatalog() {
+		if want := catalogDefaults[name].ExportPrivacy; entry.ExportPrivacy != want {
+			t.Errorf("%s: YAML export_privacy=%q, catalogDefaults=%q — the two must agree", name, entry.ExportPrivacy, want)
+		}
+	}
+}
+
 func TestCatalogEntry_Offered(t *testing.T) {
 	withKeys := newTestContext()
 	withKeys.LastFMAPIKey = "x"

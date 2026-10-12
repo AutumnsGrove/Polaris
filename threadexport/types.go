@@ -69,6 +69,34 @@ type Input struct {
 
 	Thread   Thread
 	Messages []Message // effective variant path only, oldest first
+
+	// Events is the thread's full audit trail (never pruned — see the
+	// package's retention note in store/events.go), oldest first. Thinking
+	// lives only here, so an export that needs reasoning needs this.
+	Events []Event
+
+	// MemoryTools and PersonalTools are the tool-name sets the two privacy
+	// toggles suppress. The caller fills them from the tool catalog
+	// (tools.ExportPrivacyClass) rather than this package hardcoding a list
+	// that a new tool could silently fall outside of.
+	MemoryTools   map[string]bool
+	PersonalTools map[string]bool
+
+	// CompactedSummary/CompactedThroughID mirror the thread's stored
+	// compaction fields, for handoff scope (phase 3).
+	CompactedSummary   string
+	CompactedThroughID int64
+}
+
+// Event is one stored audit-trail row in the neutral shape Build consumes
+// (see store.Event). Data is the raw JSON detail blob, parsed lazily by
+// whichever phase needs a given field.
+type Event struct {
+	TurnID    string
+	Source    string // e.g. "turn", "tool.web_search"
+	Message   string // e.g. "reasoning", "tool call started"
+	Data      string
+	CreatedAt time.Time
 }
 
 // Thread is a thread's identifying metadata, carried verbatim into the
@@ -101,6 +129,10 @@ type Message struct {
 	// Empty for user messages, and for assistant messages from before the
 	// column existed; Build falls back to the thread's model.
 	AppliedModel string
+	// Transcript is the turn's exact wire messages as stored JSON
+	// (llm.EncodeTranscript) — the preferred source for the research trail.
+	// Empty for turns that predate transcripts, which fall back to Events.
+	Transcript string
 }
 
 // Doc is the neutral intermediate document: Build produces it once, then
@@ -114,6 +146,9 @@ type Doc struct {
 	// Summary is present only for handoff scope (phase 3).
 	Summary *Summary `json:"summary,omitempty"`
 	Turns   []Turn   `json:"turns"`
+	// Availability reports how fully an included option could be honored,
+	// for the modal's "thinking: 14 of 40 turns" note.
+	Availability Availability `json:"availability"`
 	// Omitted records what was left out and why, so a reader can tell "this
 	// never happened" apart from "this was removed" — the point of the JSON
 	// export being auditable rather than just lossy.
@@ -129,12 +164,21 @@ type Turn struct {
 	User      *Entry    `json:"user"`
 	Assistant *Entry    `json:"assistant"`
 	Meta      *TurnMeta `json:"meta,omitempty"`
+	// Trace is the research trail (tool calls and results), present only
+	// when Options.Trail is on. Thinking is separate and independently
+	// toggled; both render before the answer they belong to.
+	Trace    []TraceStep `json:"trace,omitempty"`
+	Thinking []Thinking  `json:"thinking,omitempty"`
 
 	// Raw metadata lifted into Meta only when Options.Meta is on. Unexported
 	// so it never leaks into the JSON export outside the meta object.
 	costUSD    float64
 	durationMs int64
 	model      string
+	// transcript is the assistant message's stored wire transcript, kept
+	// for the trail pass so Entry itself need not carry a field that would
+	// bloat every turn's JSON output.
+	transcript string
 }
 
 // Entry is one side of a turn.
@@ -160,6 +204,34 @@ type Citation struct {
 type Attachment struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
+}
+
+// TraceStep is one normalized tool call in a turn's research trail — what
+// was called, with what arguments, and what came back. Built from the
+// turn's transcript when it has one, else reconstructed from events.
+type TraceStep struct {
+	Tool   string `json:"tool"`
+	Args   string `json:"args,omitempty"`   // JSON object as the model sent it
+	Result string `json:"result,omitempty"` // tool output text
+}
+
+// Thinking is one reasoning burst. Agent is "" for the orchestrator and a
+// sub-agent id for Tier 2 Deep Research (the per-agent reasoning buffers in
+// gateway/turn_emit.go), so a reader can tell the main thread of thought
+// from a researcher's.
+type Thinking struct {
+	Agent      string `json:"agent,omitempty"`
+	Content    string `json:"content"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+}
+
+// Availability reports how fully an included option could be honored.
+// Counts are only meaningful for options that were on: an option left off
+// is not "unavailable", it just wasn't asked for.
+type Availability struct {
+	Turns             int `json:"turns"`
+	TurnsWithTrail    int `json:"turns_with_trail,omitempty"`
+	TurnsWithThinking int `json:"turns_with_thinking,omitempty"`
 }
 
 // TurnMeta is a turn's cost/duration/model, present only when Options.Meta

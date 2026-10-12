@@ -81,6 +81,9 @@
       "assistant": null
     }
   ],
+  "availability": {
+    "turns": 3
+  },
   "omitted": [
     {
       "what": "answer",
