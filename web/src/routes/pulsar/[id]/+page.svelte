@@ -142,6 +142,7 @@
 		onSaved={() => {
 			showForm = false;
 		}}
+		onDeleted={() => void goto('/pulsar')}
 	/>
 {/if}
 

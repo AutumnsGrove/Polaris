@@ -349,3 +349,70 @@ func TestPulsarAlert_FlagsPulseAndClearsWithSeen(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteArchivedPulsarRoutine(t *testing.T) {
+	s := openTestStore(t)
+
+	id, err := s.CreatePulsarRoutine("Doomed", "prompt", "deepseek", "", false, true, "daily", "", "07:00")
+	if err != nil {
+		t.Fatalf("CreatePulsarRoutine: %v", err)
+	}
+	keepID, err := s.CreatePulsarRoutine("Keeper", "prompt", "deepseek", "", false, true, "daily", "", "07:00")
+	if err != nil {
+		t.Fatalf("CreatePulsarRoutine(keeper): %v", err)
+	}
+	for _, th := range []struct {
+		id      string
+		routine int64
+	}{{"doomed-pulse", id}, {"kept-pulse", keepID}} {
+		if err := s.CreateThread(th.id, th.id, "deepseek", "pulsar"); err != nil {
+			t.Fatalf("CreateThread(%s): %v", th.id, err)
+		}
+		if err := s.SetThreadPulsarRoutine(th.id, th.routine); err != nil {
+			t.Fatalf("SetThreadPulsarRoutine(%s): %v", th.id, err)
+		}
+	}
+	// The case that would make a naive thread DELETE fail: Weaver already
+	// processed this pulse, so FK rows without ON DELETE CASCADE point at it.
+	starID, err := s.CreateStar(Star{Title: "From a pulse"})
+	if err != nil {
+		t.Fatalf("CreateStar: %v", err)
+	}
+	if err := s.LinkStarSource(starID, "doomed-pulse"); err != nil {
+		t.Fatalf("LinkStarSource: %v", err)
+	}
+	if _, err := s.StartShootingStarRun("doomed-pulse", 0); err != nil {
+		t.Fatalf("StartShootingStarRun: %v", err)
+	}
+
+	// Active routines can't be hard-deleted — only the archive's second step.
+	if _, err := s.DeleteArchivedPulsarRoutine(id); err != ErrPulsarRoutineNotArchived {
+		t.Fatalf("delete of active routine = %v, want ErrPulsarRoutineNotArchived", err)
+	}
+	if _, err := s.DeleteArchivedPulsarRoutine(999999); err != ErrPulsarRoutineNotFound {
+		t.Fatalf("delete of missing routine = %v, want ErrPulsarRoutineNotFound", err)
+	}
+
+	if err := s.ArchivePulsarRoutine(id); err != nil {
+		t.Fatalf("ArchivePulsarRoutine: %v", err)
+	}
+	ids, err := s.DeleteArchivedPulsarRoutine(id)
+	if err != nil {
+		t.Fatalf("DeleteArchivedPulsarRoutine: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "doomed-pulse" {
+		t.Errorf("deleted thread ids = %v, want [doomed-pulse]", ids)
+	}
+	if _, err := s.GetPulsarRoutine(id); err != ErrPulsarRoutineNotFound {
+		t.Errorf("routine still present after delete: %v", err)
+	}
+	if _, err := s.GetThreadRaw("doomed-pulse"); err == nil {
+		t.Error("pulse thread still present after routine delete")
+	}
+	if _, err := s.GetThreadRaw("kept-pulse"); err != nil {
+		t.Errorf("another routine's pulse was deleted: %v", err)
+	}
+	if _, err := s.GetPulsarRoutine(keepID); err != nil {
+		t.Errorf("another routine was deleted: %v", err)
+	}
+}

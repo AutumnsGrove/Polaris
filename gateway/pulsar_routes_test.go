@@ -472,3 +472,44 @@ func TestHandlePulsarUnreadCounts_EmptyByDefault(t *testing.T) {
 func idString(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
+
+func TestHandleDeletePulsarRoutine_OnlyWhenArchived(t *testing.T) {
+	h := newTestHarness(t, "http://127.0.0.1:1")
+	resp := postPulsarRoutine(t, h, validRoutineBody())
+	var created store.PulsarRoutine
+	json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+
+	del := func() int {
+		req, _ := http.NewRequest(http.MethodDelete, h.url("/api/pulsar/routines/"+idString(created.ID)), nil)
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("DELETE: %v", err)
+		}
+		r.Body.Close()
+		return r.StatusCode
+	}
+
+	if got := del(); got != http.StatusConflict {
+		t.Fatalf("delete of an active routine: status = %d, want 409", got)
+	}
+	if _, err := h.db.GetPulsarRoutine(created.ID); err != nil {
+		t.Fatalf("active routine must survive a rejected delete: %v", err)
+	}
+
+	arc, err := http.Post(h.url("/api/pulsar/routines/"+idString(created.ID)+"/archive"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	arc.Body.Close()
+
+	if got := del(); got != http.StatusNoContent {
+		t.Fatalf("delete of an archived routine: status = %d, want 204", got)
+	}
+	if _, err := h.db.GetPulsarRoutine(created.ID); err != store.ErrPulsarRoutineNotFound {
+		t.Errorf("routine still present after delete: %v", err)
+	}
+	if got := del(); got != http.StatusNotFound {
+		t.Errorf("second delete: status = %d, want 404", got)
+	}
+}
