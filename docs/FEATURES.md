@@ -102,6 +102,10 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
 - **Retry & edit, with branching** — regenerate a reply or fix a typo and re-run from that point;
   old versions stay reachable behind a `‹ 2/3 ›` switcher on the reply.
 - **Persistent threads** with per-thread and per-turn cost tracking.
+- **Thread export** — from the thread menu, download or copy one thread as Markdown or JSON, with
+  options for scope (full or a handoff built from the stored summary), sources, attachments, cost
+  metadata, the research trail, thinking traces, and two privacy toggles; shows a token estimate
+  before you export.
 - **Follow-ups that remember the research** — later turns see the sources behind earlier answers;
   an opt-in setting also replays every earlier search result and page read, so follow-ups don't
   re-search (costs more per turn, and raises the auto-compaction limit to 200K tokens).

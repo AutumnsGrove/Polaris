@@ -209,14 +209,14 @@ worse than not having one.
 
 ## Phases
 
-1. **Core builder.** `threadexport` with Markdown and JSON, full scope, sources, metadata,
+1. **Core builder.** [done] `threadexport` with Markdown and JSON, full scope, sources, metadata,
    attachments (names only), and the `omitted` manifest. Golden-file tests.
-2. **Trail and thinking.** Normalize tool steps from `transcript` with `events` fallback; thinking
-   from `events` with per-`agent_id` grouping; availability reporting. Privacy toggle and its
-   regression test.
-3. **Endpoint, modal, delivery.** The route, `ExportModal.svelte`, download and copy, token
+2. **Trail and thinking.** [done] Normalize tool steps from `transcript` with `events` fallback;
+   thinking from `events` with per-`agent_id` grouping; availability reporting. Privacy toggles and
+   their regression tests. Shipped with the store read helper (`store.ThreadExportInput`).
+3. **Endpoint, modal, delivery.** [done] The route, `ExportModal.svelte`, download and copy, token
    estimate, handoff scope.
-4. **CLI and docs.** `polaris export`, FEATURES.md.
+4. **CLI and docs.** [remaining] `polaris export`, FEATURES.md.
 
 ## Verification
 

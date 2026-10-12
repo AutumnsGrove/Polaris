@@ -28,6 +28,23 @@ func build(in Input, opts Options, now time.Time) Doc {
 		Turns:   []Turn{},
 		Omitted: []Omission{},
 	}
+	doc.Availability.HandoffAvailable = in.CompactedSummary != ""
+
+	// Handoff reuses the stored compaction summary verbatim and appends only
+	// the messages after it. It never generates a summary: a thread with none
+	// exports full scope instead, with the reason recorded rather than a
+	// silently empty document.
+	messages := in.Messages
+	if opts.Scope == ScopeHandoff {
+		if in.CompactedSummary != "" {
+			doc.Summary = &Summary{Text: in.CompactedSummary, ThroughMessageID: in.CompactedThroughID}
+			messages = messagesAfterID(in.Messages, in.CompactedThroughID)
+		} else {
+			doc.Omitted = append(doc.Omitted, Omission{
+				What: "summary", Reason: "no stored summary; exported full scope",
+			})
+		}
+	}
 
 	// Pairs messages sequentially rather than grouping by turn_id: a
 	// thread from before turn_id existed has "" on every row, and grouping
@@ -44,7 +61,7 @@ func build(in Input, opts Options, now time.Time) Doc {
 		}
 	}
 
-	for _, m := range in.Messages {
+	for _, m := range messages {
 		if m.Role == "assistant" {
 			if pending != nil {
 				pending.Assistant = entryFor(m, opts)
@@ -181,6 +198,18 @@ func entryFor(m Message, opts Options) *Entry {
 		e.Attachments = parseAttachments(m.Attachments)
 	}
 	return e
+}
+
+// messagesAfterID returns the messages whose id is greater than throughID,
+// preserving order — the post-compaction tail of a handoff export.
+func messagesAfterID(msgs []Message, throughID int64) []Message {
+	var out []Message
+	for _, m := range msgs {
+		if m.ID > throughID {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // parseCitations decodes the stored citations JSON. A malformed or empty

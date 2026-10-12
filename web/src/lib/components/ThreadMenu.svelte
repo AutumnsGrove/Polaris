@@ -12,12 +12,14 @@
 		Zap,
 		FolderInput,
 		Check,
-		ChevronLeft
+		ChevronLeft,
+		Download
 	} from '@lucide/svelte';
 	import { fieldsState, fieldColorVar } from '$lib/fields.svelte';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import EditTextModal from './EditTextModal.svelte';
+	import ExportModal from './ExportModal.svelte';
 
 	// Header-level equivalent of the Sidebar's per-row rename/delete —
 	// same two actions, surfaced here for whoever's already looking at the
@@ -77,6 +79,7 @@
 
 	let open = $state(false);
 	let renaming = $state(false);
+	let exporting = $state(false);
 	let confirmingDelete = $state(false);
 	let regeneratingTitle = $state(false);
 	// The "Move to field" picker replaces the dropdown's contents, same
@@ -258,6 +261,17 @@
 					<FolderInput size={14} />
 					<span>Move to <span class="wordmark">Field</span></span>
 				</button>
+				<button
+					class="dropdown-item"
+					onclick={() => {
+						exporting = true;
+						close();
+					}}
+					role="menuitem"
+				>
+					<Download size={14} />
+					<span>Export</span>
+				</button>
 				<button class="dropdown-item danger" onclick={askDelete} role="menuitem">
 					<Trash2 size={14} />
 					<span>Delete</span>
@@ -297,6 +311,9 @@
 		onSave={saveRename}
 		onCancel={close}
 	/>
+{/if}
+{#if exporting}
+	<ExportModal threadId={threadId} onClose={() => (exporting = false)} />
 {/if}
 
 <style>

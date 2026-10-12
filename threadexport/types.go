@@ -232,6 +232,11 @@ type Availability struct {
 	Turns             int `json:"turns"`
 	TurnsWithTrail    int `json:"turns_with_trail,omitempty"`
 	TurnsWithThinking int `json:"turns_with_thinking,omitempty"`
+	// HandoffAvailable reports whether the thread has a stored compaction
+	// summary. The modal uses it to disable the handoff option with a reason
+	// rather than offering a scope that would export nothing (the summary is
+	// never generated on demand — see docs/plans/thread-export.md).
+	HandoffAvailable bool `json:"handoff_available,omitempty"`
 }
 
 // TurnMeta is a turn's cost/duration/model, present only when Options.Meta

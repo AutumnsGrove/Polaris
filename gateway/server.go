@@ -562,6 +562,7 @@ func (s *Server) routes(staticFS fs.FS) {
 	s.mux.HandleFunc("DELETE /api/fields/{id}/files/{filename}", s.handleDeleteFieldFile)
 	s.mux.HandleFunc("DELETE /api/threads/{id}", s.handleDeleteThread)
 	s.mux.HandleFunc("GET /api/threads/{id}/events", s.handleThreadEvents)
+	s.mux.HandleFunc("GET /api/threads/{id}/export", s.handleThreadExport)
 	s.mux.HandleFunc("GET /api/events", s.handleRecentEvents)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("POST /api/transcribe", s.handleTranscribe)

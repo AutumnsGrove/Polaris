@@ -382,6 +382,39 @@ func TestBuild_PrivacyPersonalDropsPersonalTools(t *testing.T) {
 	assertToolPresent(t, open.Turns[0].Trace, "search_chats")
 }
 
+func TestBuild_HandoffScopeUsesStoredSummaryAndTail(t *testing.T) {
+	in := fixtureThread()
+	in.CompactedSummary = "Earlier we established what oolong is."
+	in.CompactedThroughID = 2 // the first turn, before the attachment turn
+
+	doc := build(in, Options{Scope: ScopeHandoff}, fixedNow)
+	if doc.Summary == nil || doc.Summary.ThroughMessageID != 2 {
+		t.Fatalf("summary = %+v, want the stored one through message 2", doc.Summary)
+	}
+	if len(doc.Turns) != 2 || doc.Turns[0].TurnID != "turn-2" {
+		t.Errorf("turns = %+v, want only the post-compaction tail (turn-2, turn-3)", doc.Turns)
+	}
+	if !doc.Availability.HandoffAvailable {
+		t.Errorf("HandoffAvailable = false, want true when a summary is stored")
+	}
+}
+
+func TestBuild_HandoffWithoutSummaryFallsBackToFullAndRecordsIt(t *testing.T) {
+	doc := build(fixtureThread(), Options{Scope: ScopeHandoff}, fixedNow)
+	if doc.Summary != nil {
+		t.Errorf("summary = %+v, want nil when none is stored", doc.Summary)
+	}
+	if len(doc.Turns) != 3 {
+		t.Errorf("turns = %d, want the full 3 after falling back", len(doc.Turns))
+	}
+	if doc.Availability.HandoffAvailable {
+		t.Errorf("HandoffAvailable = true, want false with no stored summary")
+	}
+	if o := findOmission(doc.Omitted, "summary"); o == nil {
+		t.Errorf("omitted = %+v, want a no-summary note", doc.Omitted)
+	}
+}
+
 func TestBuild_ThinkingGroupsByAgent(t *testing.T) {
 	doc := build(fixtureThread(), Options{Thinking: true}, fixedNow)
 
