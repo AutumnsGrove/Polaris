@@ -41,6 +41,22 @@ export const GOLDEN: Record<string, string> = {
 		'{"e":["b","a"]}\n',
 	tabs: '{"c":"tabs"}\n{"tab":"macOS","text":"Use `brew install`."}\n{"tab":"Linux","text":"Use apt."}\n',
 	disclose: '{"c":"disclose","title":"Why this works","hint":"3 min read"}\n{"p":"First reason."}\n{"p":"Second reason."}\n',
+	define:
+		'{"c":"define"}\n' +
+		'{"term":"Tailnet","means":"Your private network.","also":["VPN mesh"],"ex":"Your phone reaches it."}\n' +
+		'{"term":"Exit node","means":"Routes your traffic."}\n',
+	analogy:
+		'{"c":"analogy","x":"On the network","y":"In the post","like":"A postal system"}\n' +
+		'{"x":"Packet","y":"Letter"}\n' +
+		'{"breaks":"A letter arrives once."}\n',
+	views:
+		'{"c":"views","title":"Does X beat Y?"}\n' +
+		'{"who":"Most reviews","stance":"About the same","t":"Trials find similar loss.","src":["https://example.com/a"]}\n' +
+		'{"who":"Some researchers","stance":"May help","t":"Small studies."}\n',
+	readings:
+		'{"c":"readings","title":"Read up"}\n' +
+		'{"lvl":"start","t":"Basics","why":"Start here.","src":["https://example.com/a"]}\n' +
+		'{"t":"No level"}\n',
 	quote: '{"c":"quote","text":"The only way out is through.","by":"Robert Frost","src":["https://example.com/frost"]}\n',
 	claim:
 		'{"c":"claim","text":"Cracking knuckles causes arthritis","verdict":"false"}\n' +
@@ -178,6 +194,64 @@ describe('parseUi', () => {
 		});
 		const seven = '{"c":"tabs"}\n' + Array.from({ length: 7 }, (_, i) => `{"tab":"T${i}","text":"x"}\n`).join('');
 		expect(parseUi(seven).map((b) => b.kind)).toEqual(['tabs', 'raw']);
+	});
+
+	it('parses define terms with also-names and an example, dropping a term with no meaning', () => {
+		expect(parseUi(GOLDEN.define)[0]).toEqual({
+			kind: 'define',
+			entries: [
+				{ term: 'Tailnet', means: 'Your private network.', also: ['VPN mesh'], ex: 'Your phone reaches it.' },
+				{ term: 'Exit node', means: 'Routes your traffic.', also: [], ex: undefined }
+			]
+		});
+		expect(parseUi('{"c":"define"}\n{"term":"only a term"}\n').map((b) => b.kind)).toEqual(['define', 'raw']);
+		const many = '{"c":"define"}\n' + Array.from({ length: 14 }, (_, i) => `{"term":"T${i}","means":"m"}\n`).join('');
+		expect(parseUi(many).map((b) => b.kind)).toEqual(['define', 'raw', 'raw']);
+	});
+
+	it('parses an analogy mapping and its where-it-breaks line', () => {
+		expect(parseUi(GOLDEN.analogy)[0]).toEqual({
+			kind: 'analogy',
+			x: 'On the network',
+			y: 'In the post',
+			like: 'A postal system',
+			pairs: [{ x: 'Packet', y: 'Letter' }],
+			breaks: 'A letter arrives once.'
+		});
+		// `like` is required; x/y are optional headings.
+		expect(parseUi('{"c":"analogy","x":"a","y":"b"}\n')[0].kind).toBe('raw');
+		expect(parseUi('{"c":"analogy","like":"L"}\n')[0]).toEqual({ kind: 'analogy', x: undefined, y: undefined, like: 'L', pairs: [], breaks: undefined });
+		// a half pair, a both-sided line, and a second breaks line are raw
+		const kinds = (s: string) => parseUi(s).map((b) => b.kind);
+		expect(kinds('{"c":"analogy","like":"L"}\n{"x":"a"}\n{"x":"a","y":"b","breaks":"c"}\n{"breaks":"d"}\n{"breaks":"e"}\n')).toEqual(['analogy', 'raw', 'raw', 'raw']);
+	});
+
+	it('parses views camps, each with its own stance, detail and sources', () => {
+		expect(parseUi(GOLDEN.views)[0]).toEqual({
+			kind: 'views',
+			title: 'Does X beat Y?',
+			camps: [
+				{ who: 'Most reviews', stance: 'About the same', t: 'Trials find similar loss.', src: ['https://example.com/a'] },
+				{ who: 'Some researchers', stance: 'May help', t: 'Small studies.', src: [] }
+			]
+		});
+		expect(parseUi('{"c":"views"}\n{"who":"no stance"}\n').map((b) => b.kind)).toEqual(['views', 'raw']);
+		const many = '{"c":"views"}\n' + Array.from({ length: 8 }, (_, i) => `{"who":"C${i}","stance":"s"}\n`).join('');
+		expect(parseUi(many).map((b) => b.kind)).toEqual(['views', 'raw', 'raw']);
+	});
+
+	it('parses readings, fixing an unknown level to next', () => {
+		expect(parseUi(GOLDEN.readings)[0]).toEqual({
+			kind: 'readings',
+			title: 'Read up',
+			items: [
+				{ lvl: 'start', t: 'Basics', why: 'Start here.', src: ['https://example.com/a'] },
+				{ lvl: 'next', t: 'No level', why: undefined, src: [] }
+			]
+		});
+		expect(parseUi('{"c":"readings"}\n{"lvl":"start"}\n').map((b) => b.kind)).toEqual(['readings', 'raw']);
+		const many = '{"c":"readings"}\n' + Array.from({ length: 8 }, (_, i) => `{"t":"R${i}"}\n`).join('');
+		expect(parseUi(many).map((b) => b.kind)).toEqual(['readings', 'raw', 'raw']);
 	});
 
 	it('parses quote and claim; an unknown verdict is unverified, and a both-sided line is raw', () => {

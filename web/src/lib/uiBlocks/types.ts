@@ -63,6 +63,58 @@ export interface TabItem {
 	text: string;
 }
 
+/** One row of a `define` block: a term, its plain-English meaning, what else it is called, and an example. */
+export interface DefineEntry {
+	term: string;
+	/** The plain-English meaning, in the model's own words, never a quote. */
+	means: string;
+	/** Other names for the same thing ("Also called"), at most 4. */
+	also: string[];
+	/** An example sentence, optional. */
+	ex?: string;
+}
+
+/** One mapping row of an `analogy` block: the thing on the left ↔ the familiar one on the right. */
+export interface AnalogyPair {
+	x: string;
+	y: string;
+}
+
+/**
+ * One camp in a `views` block: who holds a position, a short stance headline,
+ * the sentence saying it, and the sources for that line. `t` and `src` are
+ * verified per line, like `claim`'s evidence lines; there is deliberately no
+ * verdict and no strength meter (a model-invented weight of evidence is
+ * unverifiable).
+ */
+export interface ViewCamp {
+	who: string;
+	stance: string;
+	t: string;
+	src: string[];
+}
+
+/**
+ * A `readings` line's level, rendered in this fixed order however the model
+ * emits them: start here, next, go deeper.
+ */
+export const READING_LEVELS = ['start', 'next', 'deep'] as const;
+export type ReadingLevel = (typeof READING_LEVELS)[number];
+
+/**
+ * One page to read. `src` is the page's URL and must be a page web_read
+ * actually fetched this turn — the renderer drops any line it can't match to
+ * an opened page and counts it in a muted note. The minutes/page count shown
+ * beside it are measured server-side (tools/page_stats.go), never written by
+ * the model.
+ */
+export interface ReadingItem {
+	lvl: ReadingLevel;
+	t: string;
+	why?: string;
+	src: string[];
+}
+
 export const CLAIM_VERDICTS = ['true', 'mixed', 'misleading', 'false', 'unverified'] as const;
 export type ClaimVerdict = (typeof CLAIM_VERDICTS)[number];
 
@@ -88,6 +140,19 @@ export type UiBlock =
 	| { kind: 'flow'; nodes: FlowNode[]; edges: FlowEdge[] }
 	| { kind: 'tabs'; tabs: TabItem[] }
 	| { kind: 'disclose'; title?: string; hint?: string; paras: string[] }
+	// Terms in plain English: the model's own definition, not a quote of a
+	// source, so no source and no verification (accent block).
+	| { kind: 'define'; entries: DefineEntry[] }
+	// "X is like Y", with where the analogy stops being true. The model's own
+	// teaching device: no source and no verification (accent block). `x`/`y` are
+	// the two column headings; `breaks` is the point of the block.
+	| { kind: 'analogy'; x?: string; y?: string; like: string; pairs: AnalogyPair[]; breaks?: string }
+	// A contested question, by camp. No verdict and no strength meter on
+	// purpose: only each camp's own line and sources are checked.
+	| { kind: 'views'; title?: string; camps: ViewCamp[] }
+	// Pages to read, in order: `lvl` fixes the display order and only pages
+	// Polaris actually opened (a measured citation) get rendered.
+	| { kind: 'readings'; title?: string; items: ReadingItem[] }
 	| { kind: 'quote'; text: string; by?: string; src: string[] }
 	// `verdict` is the model's own read, never a verified result: only the
 	// evidence lines' sources get "found in source" ticks (decision 17).

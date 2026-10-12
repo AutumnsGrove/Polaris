@@ -37,7 +37,11 @@ func uiDefaults(d *Set) {
 		"  word from a source you read. Never paraphrase inside a quote block.\n" +
 		"- `{\"c\":\"claim\",\"text\":\"...\",\"verdict\":\"misleading\"}` then `{\"+\":\"supporting point\",\"src\":[\"https://...\"]}`\n" +
 		"  and `{\"-\":\"disputing point\",\"src\":[\"https://...\"]}` lines, at most 6 of each — checking one specific\n" +
-		"  claim. verdict is true, mixed, misleading, false or unverified: your own read of the evidence.\n\n" +
+		"  claim. verdict is true, mixed, misleading, false or unverified: your own read of the evidence.\n" +
+		"- `{\"c\":\"views\",\"title\":\"...\"}` then `{\"who\":\"who holds it\",\"stance\":\"the position in a line\",\"t\":\"the sentence saying it\",\"src\":[\"https://...\"]}` lines, at most 6 — a question where informed people genuinely disagree. State each position as its own proponents would, cite each camp's sources, and give no verdict and no ranking.\n" +
+		"- `{\"c\":\"define\"}` then `{\"term\":\"Term\",\"means\":\"plain English\",\"also\":[\"other name\"],\"ex\":\"an example\"}` lines, at most 12 — terms in plain English. These are your own definitions, never a quote of a source.\n" +
+		"- `{\"c\":\"analogy\",\"x\":\"On the network\",\"y\":\"In the post\",\"like\":\"A postal system\"}` then `{\"x\":\"Packet\",\"y\":\"Letter\"}` mapping lines (at most 6) and one optional `{\"breaks\":\"where the analogy stops being true\"}` line — \"X is like Y\". Always give the breaks line: an analogy that never says where it fails teaches something false.\n" +
+		"- `{\"c\":\"readings\",\"title\":\"...\"}` then `{\"lvl\":\"start\",\"t\":\"page title\",\"why\":\"why read it\",\"src\":[\"https://...\"]}` lines, at most 6, level start, next or deep — pages to read, in order. Every src must be a page you actually opened with web_read this turn.\n\n" +
 		"A line with a \"c\" key opens a new block; a line without one belongs to the block above it. Text\n" +
 		"fields take **bold**, `code` and [Title](URL) citations just like prose; keep each under about 300\n" +
 		"characters. Don't repeat a block's content in the prose around it, and keep any caveat that changes\n" +

@@ -234,11 +234,13 @@ How careful to be, and where to look.
 | `choose` | The person asks which to pick or what to do, and the best answer depends on their own situation (usage, budget, location, goals), so a few if-then rules serve them better than a table of attributes. | Yes |
 | `checklist` | Things to prepare, pack or tick off. | Yes |
 | `timeline` | A sequence of dated events, a history, or a schedule. Not a price, number or trend over time. | Yes |
-| `procon` | One thing weighed for and against. | Yes |
+| `procon` | The person is weighing a personal decision or asking for the pros and cons of one thing; give arguments for and against. Not a public question where different camps disagree. | Yes |
 | `facts` | An at-a-glance summary of one named thing (a product, place, person or organization). | Yes |
 | `flow` | A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps. | Yes |
 | `tabs` | Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them. | Yes |
 | `claim` | Checking whether one specific claim holds up, with evidence on both sides. | Yes |
+| `views` | A genuinely contested question of fact or policy where credible experts, camps or institutions disagree - present who holds each position. Not a question of taste or a joke, not one true/false claim to check, not a personal decision to weigh up, and not two named products or plans to choose between. | Yes |
+| `readings` | The person wants to learn a topic; give pages to read, in order. Not a best-of list for choosing between things. | Yes |
 
 *fires at **70%+**, or **85%+** when the Prism setting is Low; never asked when Prism is Off or in a voice call; skipped under Brief and Safari focus; when it fires, holds back: `format`.*
 

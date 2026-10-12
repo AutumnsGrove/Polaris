@@ -23,6 +23,22 @@ type Citation struct {
 	// same static image on every arXiv citation on purpose, so it reads
 	// as "this came from arXiv" at a glance rather than nothing at all.
 	ImageURL string `json:"image_url,omitempty"`
+
+	// Opened is true when web_read actually fetched this URL's text this turn,
+	// not just when a web_search snippet mentioned it. The Prism `readings`
+	// block (docs/plans/intelligent-ui.md) will only list a page Polaris
+	// really opened; a snippet-only hit has no evidence and no measurement,
+	// so it is left out of the list.
+	Opened bool `json:"opened,omitempty"`
+	// Words is the full extracted word count measured at fetch time, before
+	// the summarizing filter and the display window. Zero for a PDF (see
+	// Pages) or a fetch too unreliable to measure. The frontend turns it into
+	// minutes at ~230 wpm.
+	Words int `json:"words,omitempty"`
+	// Pages is a PDF's own page count, measured from the file; 0 for anything
+	// else. Shown instead of minutes, since only one page's text was ever
+	// extracted (see tools/page_stats.go).
+	Pages int `json:"pages,omitempty"`
 }
 
 // AddCitation appends a citation unless its URL is already present —
@@ -33,8 +49,17 @@ type Citation struct {
 func (c *Context) AddCitation(cit Citation) {
 	c.citationsMu.Lock()
 	defer c.citationsMu.Unlock()
-	for _, existing := range c.Citations {
+	for i, existing := range c.Citations {
 		if existing.URL == cit.URL {
+			// A snippet citation (web_search) may already be here. A later
+			// web_read of the same URL carries the page measurement, so fold
+			// those facts in rather than dropping them — the reading list
+			// needs "opened + how long", which only the read has.
+			if cit.Opened {
+				c.Citations[i].Opened = true
+				c.Citations[i].Words = cit.Words
+				c.Citations[i].Pages = cit.Pages
+			}
 			return
 		}
 	}

@@ -1,4 +1,14 @@
-import { CLAIM_VERDICTS, type CalloutTone, type ClaimVerdict, type CompareRow, type StepItem, type UiBlock } from './types';
+import {
+	CLAIM_VERDICTS,
+	READING_LEVELS,
+	type AnalogyPair,
+	type CalloutTone,
+	type ClaimVerdict,
+	type CompareRow,
+	type ReadingLevel,
+	type StepItem,
+	type UiBlock
+} from './types';
 
 // Caps from docs/plans/intelligent-ui.md "Grammar". Enforced here and nowhere
 // else, so a component can trust what it is handed.
@@ -20,6 +30,15 @@ const MAX_FLOW_NODES = 10;
 const MAX_FLOW_EDGES = 20;
 const MAX_TABS = 6;
 const MAX_DISCLOSE_PARAS = 8;
+const MAX_DEFINE_TERMS = 12;
+/** Other names shown after a defined term ("Also called"). */
+const MAX_DEFINE_ALSO = 4;
+/** X is like Y: at most this many mapping rows. */
+const MAX_ANALOGY_PAIRS = 6;
+/** A contested question: at most this many camps. */
+const MAX_VIEW_CAMPS = 6;
+/** Pages to read: at most this many entries. */
+const MAX_READINGS = 6;
 // Prose-body fields get a bigger clip than the 400-char default: a real model
 // answering "how do I install X on each OS" puts a fenced command block in each
 // tab (seen live), and a 400-char clip cut it off mid-command. These are hard
@@ -50,6 +69,17 @@ function text(v: unknown, max = MAX_TEXT_CHARS): string | undefined {
 function sources(v: unknown): string[] {
 	if (!Array.isArray(v)) return [];
 	return v.filter((s): s is string => typeof s === 'string' && s.trim() !== '').slice(0, 6);
+}
+
+// A plain list of short strings (not URLs): trimmed, non-empty, capped. Never
+// pass `text` point-free to a map here — its second argument is `max`, so the
+// array index would become the clip length (the compare-column bug, again).
+function stringList(v: unknown, max: number): string[] {
+	if (!Array.isArray(v)) return [];
+	return v
+		.map((s) => text(s))
+		.filter((s): s is string => s !== undefined)
+		.slice(0, max);
 }
 
 function raw(line: string): UiBlock {
@@ -102,6 +132,24 @@ function openContainer(obj: Json): UiBlock | null {
 			return { kind: 'tabs', tabs: [] };
 		case 'disclose':
 			return { kind: 'disclose', title: text(obj.title), hint: text(obj.hint), paras: [] };
+		// Terms in plain English: the model's own definition, not a quote (accent).
+		case 'define':
+			return { kind: 'define', entries: [] };
+		// "X is like Y": `like` is the analogy's name and is required; x/y are
+		// the two column headings and may be absent. The mapping and the
+		// where-it-breaks line are all in child lines.
+		case 'analogy': {
+			const like = text(obj.like);
+			if (!like) return null;
+			return { kind: 'analogy', x: text(obj.x), y: text(obj.y), like, pairs: [] };
+		}
+		// A contested question, by camp. No required field beyond the container
+		// itself: all the data is in child lines.
+		case 'views':
+			return { kind: 'views', title: text(obj.title), camps: [] };
+		// Pages to read, in order: all the data is in child lines.
+		case 'readings':
+			return { kind: 'readings', title: text(obj.title), items: [] };
 		case 'quote': {
 			const body = text(obj.text);
 			if (!body) return null;
@@ -212,6 +260,46 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		block.paras.push(p);
 		return true;
 	}
+	if (block.kind === 'define') {
+		const term = text(obj.term);
+		const means = text(obj.means);
+		if (!term || !means || block.entries.length >= MAX_DEFINE_TERMS) return false;
+		block.entries.push({ term, means, also: stringList(obj.also, MAX_DEFINE_ALSO), ex: text(obj.ex) });
+		return true;
+	}
+	if (block.kind === 'analogy') {
+		// One line is either the where-it-breaks note or a mapping pair, never
+		// both; a second breaks line is dropped as raw.
+		const breaks = text(obj.breaks);
+		const x = text(obj.x);
+		const y = text(obj.y);
+		if (breaks && !x && !y) {
+			if (block.breaks) return false;
+			block.breaks = breaks;
+			return true;
+		}
+		if (x && y && !breaks && block.pairs.length < MAX_ANALOGY_PAIRS) {
+			block.pairs.push({ x, y });
+			return true;
+		}
+		return false;
+	}
+	if (block.kind === 'views') {
+		const who = text(obj.who);
+		const stance = text(obj.stance);
+		if (!who || !stance || block.camps.length >= MAX_VIEW_CAMPS) return false;
+		block.camps.push({ who, stance, t: text(obj.t) ?? '', src: sources(obj.src) });
+		return true;
+	}
+	if (block.kind === 'readings') {
+		const t = text(obj.t);
+		if (!t || block.items.length >= MAX_READINGS) return false;
+		// An unknown or missing level is "next" rather than a dropped line: the
+		// renderer fixes the order anyway, so the level is presentation, not data.
+		const lvl = READING_LEVELS.includes(obj.lvl as ReadingLevel) ? (obj.lvl as ReadingLevel) : 'next';
+		block.items.push({ lvl, t, why: text(obj.why), src: sources(obj.src) });
+		return true;
+	}
 	if (block.kind === 'claim') {
 		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
 		const pro = text(obj['+']);
@@ -226,7 +314,7 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		}
 		return false;
 	}
-	// callout / stat / quote / raw take no children.
+	// callout / stat / quote / define / analogy / raw take no children.
 	return false;
 }
 

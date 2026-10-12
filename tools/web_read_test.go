@@ -894,3 +894,68 @@ func TestHandleWebRead_NoFallbackConfigured_ReturnsError(t *testing.T) {
 		t.Errorf("result = %q, want an error when every fallback is unavailable", result)
 	}
 }
+
+// A successful read measures the page for the `readings` block: words counted
+// off the raw extracted text (before the filter pass and the display window),
+// recorded on the context and carried on the citation so the frontend can
+// render "≈ N min".
+func TestHandleWebRead_RecordsPageStats(t *testing.T) {
+	words := strings.Repeat("word ", 60) // 300 chars, over looksEmpty's 200-char floor
+	html := "<html><body><article>" + words + "</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
+
+	stats, ok := ctx.PageStatsForURL(srv.URL)
+	if !ok {
+		t.Fatal("web_read recorded no page stats for a normal page")
+	}
+	if !stats.Reliable || stats.Words != 60 {
+		t.Errorf("stats = %+v, want a reliable 60-word measurement", stats)
+	}
+	cit := ctx.CitationsSnapshot()[0]
+	if !cit.Opened || cit.Words != 60 {
+		t.Errorf("citation = %+v, want Opened with 60 words", cit)
+	}
+}
+
+// A page that looks like an empty JS shell is still "opened" (there is real
+// evidence to verify against) but carries no word count: "1 min" off a stub
+// would be a lie for a long article.
+func TestHandleWebRead_EmptyShellHasNoMeasurement(t *testing.T) {
+	html := "<html><body><article>tiny</article></body></html>"
+	srv := fakeHTMLPage(t, http.StatusOK, html)
+
+	ctx := &Context{Ctx: context.Background(), Emit: func(string, map[string]interface{}) {}}
+	handleWebRead(`{"url":"`+srv.URL+`"}`, ctx, "test-call")
+
+	stats, ok := ctx.PageStatsForURL(srv.URL)
+	if !ok {
+		t.Fatal("an opened page should still be recorded")
+	}
+	if stats.Reliable || stats.Words != 0 {
+		t.Errorf("stats = %+v, want unreliable with no word count", stats)
+	}
+	cit := ctx.CitationsSnapshot()[0]
+	if !cit.Opened || cit.Words != 0 {
+		t.Errorf("citation = %+v, want Opened with no words", cit)
+	}
+}
+
+// web_search cites a URL from its snippet; a later web_read of the same page
+// must fold the measurement into that existing citation rather than being
+// dropped by the URL dedupe (the reading list needs "opened + how long").
+func TestAddCitation_MergesReadMeasurementIntoExistingCitation(t *testing.T) {
+	ctx := &Context{}
+	ctx.AddCitation(Citation{Title: "Snippet", URL: "https://a.example/p"})
+	ctx.AddCitation(Citation{Title: "Read", URL: "https://a.example/p", Opened: true, Words: 460})
+
+	cits := ctx.CitationsSnapshot()
+	if len(cits) != 1 {
+		t.Fatalf("got %d citations, want the dedupe to keep one", len(cits))
+	}
+	if !cits[0].Opened || cits[0].Words != 460 {
+		t.Errorf("citation = %+v, want the read's measurement merged in", cits[0])
+	}
+}

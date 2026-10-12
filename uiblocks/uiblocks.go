@@ -17,6 +17,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -45,6 +46,19 @@ const (
 	// Mirror parse.ts's MAX_TAB_TEXT_CHARS / MAX_DISCLOSE_PARA_CHARS.
 	maxTabTextChars      = 2000
 	maxDiscloseParaChars = 1200
+
+	// Mirror parse.ts's define caps.
+	maxDefineTerms = 12
+	maxDefineAlso  = 4
+
+	// Mirror parse.ts's analogy cap.
+	maxAnalogyPairs = 6
+
+	// Mirror parse.ts's views cap.
+	maxViewCamps = 6
+
+	// Mirror parse.ts's readings cap.
+	maxReadings = 6
 )
 
 type block struct {
@@ -82,6 +96,15 @@ type block struct {
 	// disclose (title is shared with steps)
 	hint  string
 	paras []string
+	// define
+	entries []defineEntry
+	// analogy: anX/anY are the column headings, like is the analogy's name
+	anX, anY, like, breaks string
+	pairs                  []analogyPair
+	// views
+	camps []viewCamp
+	// readings
+	readings []readingItem
 	// quote (text/src are shared with callout)
 	by string
 	// claim (text is shared): the model's own verdict, never a verified result
@@ -106,6 +129,29 @@ type tab struct{ name, text string }
 type event struct {
 	when, i string
 	src     []string
+}
+
+// One row of a `define` block: term, plain-English meaning, other names, an
+// optional example. Mirrors parse.ts's DefineEntry.
+type defineEntry struct {
+	term, means string
+	also        []string
+	ex          string
+}
+
+// One mapping row of an `analogy` block. Mirrors parse.ts's AnalogyPair.
+type analogyPair struct{ x, y string }
+
+// One camp of a `views` block. Mirrors parse.ts's ViewCamp.
+type viewCamp struct {
+	who, stance, t string
+	src            []string
+}
+
+// One page to read in a `readings` block. Mirrors parse.ts's ReadingItem.
+type readingItem struct {
+	lvl, t, why string
+	src         []string
 }
 
 type rule struct {
@@ -210,6 +256,25 @@ func sources(v any) []string {
 	return out
 }
 
+// stringList mirrors parse.ts's stringList: a plain list of short text strings
+// (not URLs), trimmed, non-empty elements only, capped.
+func stringList(v any, max int) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, e := range arr {
+		if s, ok := text(e); ok {
+			out = append(out, s)
+			if len(out) == max {
+				break
+			}
+		}
+	}
+	return out
+}
+
 func rawBlock(line string) block {
 	return block{kind: "raw", text: clip(strings.TrimSpace(line), maxRawChars)}
 }
@@ -279,6 +344,23 @@ func openContainer(o map[string]any) (*block, bool) {
 		return &block{kind: "tabs"}, true
 	case "disclose":
 		return &block{kind: "disclose", title: optText(o["title"]), hint: optText(o["hint"])}, true
+	case "define":
+		// Terms in plain English: the model's own definition, never a quote.
+		return &block{kind: "define"}, true
+	case "analogy":
+		// "X is like Y": like is the analogy's name and is required; x/y are
+		// the two column headings and may be absent.
+		like, ok := text(o["like"])
+		if !ok {
+			return nil, false
+		}
+		return &block{kind: "analogy", like: like, anX: optText(o["x"]), anY: optText(o["y"])}, true
+	case "views":
+		// A contested question, by camp: all the data is in child lines.
+		return &block{kind: "views", title: optText(o["title"])}, true
+	case "readings":
+		// Pages to read, in order: all the data is in child lines.
+		return &block{kind: "readings", title: optText(o["title"])}, true
 	case "quote":
 		body, ok := text(o["text"])
 		if !ok {
@@ -410,6 +492,53 @@ func addChild(b *block, o map[string]any) bool {
 			return false
 		}
 		b.paras = append(b.paras, p)
+		return true
+	case "define":
+		term, ok1 := text(o["term"])
+		means, ok2 := text(o["means"])
+		if !ok1 || !ok2 || len(b.entries) >= maxDefineTerms {
+			return false
+		}
+		b.entries = append(b.entries, defineEntry{term: term, means: means, also: stringList(o["also"], maxDefineAlso), ex: optText(o["ex"])})
+		return true
+	case "analogy":
+		// One line is either the where-it-breaks note or a mapping pair, never
+		// both; a second breaks line is dropped as raw.
+		breaks, hasBreaks := text(o["breaks"])
+		x, hasX := text(o["x"])
+		y, hasY := text(o["y"])
+		if hasBreaks && !hasX && !hasY {
+			if b.breaks != "" {
+				return false
+			}
+			b.breaks = breaks
+			return true
+		}
+		if hasX && hasY && !hasBreaks && len(b.pairs) < maxAnalogyPairs {
+			b.pairs = append(b.pairs, analogyPair{x: x, y: y})
+			return true
+		}
+		return false
+	case "views":
+		who, ok1 := text(o["who"])
+		stance, ok2 := text(o["stance"])
+		if !ok1 || !ok2 || len(b.camps) >= maxViewCamps {
+			return false
+		}
+		b.camps = append(b.camps, viewCamp{who: who, stance: stance, t: optText(o["t"]), src: sources(o["src"])})
+		return true
+	case "readings":
+		t, ok := text(o["t"])
+		if !ok || len(b.readings) >= maxReadings {
+			return false
+		}
+		// An unknown/missing level is "next": the renderer fixes the order, so
+		// the level is presentation, not data worth dropping a line over.
+		lvl := "next"
+		if l, _ := o["lvl"].(string); l == "start" || l == "next" || l == "deep" {
+			lvl = l
+		}
+		b.readings = append(b.readings, readingItem{lvl: lvl, t: t, why: optText(o["why"]), src: sources(o["src"])})
 		return true
 	case "claim":
 		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
@@ -569,6 +698,11 @@ func parse(src string) []*block {
 }
 
 var months = [...]string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+// readings: the fixed level order (start, next, deep) and the labels both
+// implementations print, so Go and TS flatteners can't drift.
+var readingRank = map[string]int{"start": 0, "next": 1, "deep": 2}
+var readingLabel = map[string]string{"start": "Start here", "next": "Next", "deep": "Go deeper"}
 
 // asofLabel turns "2026-10" into "Oct 2026" with a fixed table, not locale
 // formatting, so both implementations print the same thing everywhere.
@@ -738,6 +872,57 @@ func flattenBlocks(blocks []*block) []string {
 				out = append(out, b.title+":")
 			}
 			out = append(out, b.paras...)
+		case "define":
+			for _, e := range b.entries {
+				s := e.term + ": " + e.means
+				if len(e.also) > 0 {
+					s += " (also called " + strings.Join(e.also, ", ") + ")"
+				}
+				if e.ex != "" {
+					s += " For example, " + e.ex
+				}
+				out = append(out, s)
+			}
+		case "analogy":
+			if len(b.pairs) > 0 {
+				parts := make([]string, len(b.pairs))
+				for i, p := range b.pairs {
+					parts[i] = p.x + " ↔ " + p.y
+				}
+				out = append(out, b.like+": "+strings.Join(parts, "; "))
+			} else {
+				out = append(out, b.like)
+			}
+			if b.breaks != "" {
+				out = append(out, "Where it breaks: "+b.breaks)
+			}
+		case "views":
+			if b.title != "" {
+				out = append(out, b.title+":")
+			}
+			for _, c := range b.camps {
+				claim := c.stance
+				if c.t != "" {
+					claim += " — " + c.t
+				}
+				out = append(out, withSources(c.who+": "+claim, c.src))
+			}
+		case "readings":
+			if b.title != "" {
+				out = append(out, b.title+":")
+			}
+			// Fixed level order (start, next, deep), stable within a level,
+			// matching the client's render order.
+			items := make([]readingItem, len(b.readings))
+			copy(items, b.readings)
+			sort.SliceStable(items, func(i, j int) bool { return readingRank[items[i].lvl] < readingRank[items[j].lvl] })
+			for _, r := range items {
+				s := readingLabel[r.lvl] + ": " + r.t
+				if r.why != "" {
+					s += " — " + r.why
+				}
+				out = append(out, withSources(s, r.src))
+			}
 		case "quote":
 			s := `"` + b.text + `"`
 			if b.by != "" {

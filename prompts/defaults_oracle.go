@@ -207,11 +207,13 @@ func oracleDefaults(d *Set) {
 				"choose":    "The person asks which to pick or what to do, and the best answer depends on their own situation (usage, budget, location, goals), so a few if-then rules serve them better than a table of attributes.",
 				"checklist": "Things to prepare, pack or tick off.",
 				"timeline":  "A sequence of dated events, a history, or a schedule. Not a price, number or trend over time.",
-				"procon":    "One thing weighed for and against.",
+				"procon":    "The person is weighing a personal decision or asking for the pros and cons of one thing; give arguments for and against. Not a public question where different camps disagree.",
 				"facts":     "An at-a-glance summary of one named thing (a product, place, person or organization).",
 				"flow":      "A process or decision chain where the next step depends on an answer, so it branches, rather than a straight list of steps.",
 				"tabs":      "Parallel versions of one answer (per operating system, per language, per plan) where the reader needs only one of them.",
 				"claim":     "Checking whether one specific claim holds up, with evidence on both sides.",
+				"views":     "A genuinely contested question of fact or policy where credible experts, camps or institutions disagree - present who holds each position. Not a question of taste or a joke, not one true/false claim to check, not a personal decision to weigh up, and not two named products or plans to choose between.",
+				"readings":  "The person wants to learn a topic; give pages to read, in order. Not a best-of list for choosing between things.",
 			},
 			Inject: map[string]string{
 				"compare": "The user is choosing between options. A compare block fits: write one ui fence with " +
@@ -245,6 +247,15 @@ func oracleDefaults(d *Set) {
 					"{\"c\":\"claim\",\"text\":\"the claim\",\"verdict\":\"mixed\"} then {\"+\":\"what supports it\",\"src\":[\"https://...\"]} " +
 					"and {\"-\":\"what disputes it\",\"src\":[\"https://...\"]} lines. verdict is true, mixed, misleading, false " +
 					"or unverified. Cite only sources you read, and say in the prose what the evidence adds up to.",
+				"views": "This is a question where informed people genuinely disagree. A views block fits: write one ui " +
+					"fence with {\"c\":\"views\",\"title\":\"...\"} then one {\"who\":\"who holds it\",\"stance\":\"the position in " +
+					"a line\",\"t\":\"the sentence saying it\",\"src\":[\"https://...\"]} line per camp, at most 6. State " +
+					"each position as its own proponents would and cite each camp's sources; give no verdict and no " +
+					"ranking, and keep what is factual separate from what is a value judgment.",
+				"readings": "The person wants to learn this topic. A readings block fits: write one ui fence with " +
+					"{\"c\":\"readings\",\"title\":\"...\"} then one {\"lvl\":\"start\",\"t\":\"page title\",\"why\":\"why read it\", " +
+					"\"src\":[\"https://...\"]} line per page, at most 6, with level start, next or deep. Every src must be " +
+					"a page you actually opened with web_read this turn; say in the prose what the set adds up to.",
 			},
 		},
 		"depth": {

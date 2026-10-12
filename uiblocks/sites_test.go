@@ -92,6 +92,21 @@ func TestSites_ClaimEvidenceLinesAreTheirOwnClaims(t *testing.T) {
 	}
 }
 
+func TestSites_ViewCampsAreTheirOwnClaims(t *testing.T) {
+	content := "```ui\n{\"c\":\"views\",\"title\":\"Q\"}\n" +
+		"{\"who\":\"Camp A\",\"stance\":\"It is X\",\"t\":\"Because [why](https://a.example/w)\",\"src\":[\"https://b.example/s\"]}\n```\n"
+	s := Sites(content, all)
+	got := locators(s)
+	want := []string{"0.0.0.t#0 https://a.example/w", "0.0.0.src#0 https://b.example/s"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	// The whole camp line is the claim, so Jev sees who said it.
+	if want := "Camp A: It is X — Because why"; s[0].Text != want {
+		t.Errorf("claim text = %q, want %q", s[0].Text, want)
+	}
+}
+
 func TestSites_FenceOrdinal(t *testing.T) {
 	one := "```ui\n{\"c\":\"callout\",\"text\":\"x [l](https://a.example/1)\"}\n```\n"
 	content := strings.Repeat(one, 3) + "```mermaid\ngraph TD\n```\n" + one
@@ -146,6 +161,8 @@ func TestSites_FieldNamesMatchTheComponents(t *testing.T) {
 		{"quote", "UiQuote", `{"c":"quote","text":"q ` + l + `","by":"b ` + l + `","src":[` + u + `]}`, []string{"src"}, []string{`loc="{loc}.0.src"`}},
 		{"claim", "UiClaim", `{"c":"claim","text":"a ` + l + `"}` + "\n" + `{"+":"p ` + l + `","src":[` + u + `]}` + "\n" + `{"-":"m ` + l + `","src":[` + u + `]}`,
 			[]string{"text", "plus", "plus.src", "minus", "minus.src"}, []string{`loc="{loc}.0.text"`, `loc="{loc}.{i}.plus"`, `loc="{loc}.{i}.plus.src"`, `loc="{loc}.{i}.minus"`, `loc="{loc}.{i}.minus.src"`}},
+		{"views", "UiViews", `{"c":"views","title":"Q"}` + "\n" + `{"who":"Camp","stance":"s ` + l + `","t":"d ` + l + `","src":[` + u + `]}`,
+			[]string{"stance", "t", "src"}, []string{`loc="{loc}.{i}.stance"`, `loc="{loc}.{i}.t"`, `loc="{loc}.{i}.src"`}},
 	}
 	for _, tc := range cases {
 		sites := Sites("```ui\n"+tc.body+"\n```\n", all)

@@ -183,6 +183,19 @@ func collect(b *block, loc string, tracked func(string) bool, out *[]Site) {
 		for i, p := range b.paras {
 			c.text(i, "p", p, stripLinks(p), false)
 		}
+	case "define":
+		// The model's own definitions, not quotes: no site to check. (Never
+		// presented as a source's exact words, so verification has nothing to do.)
+	case "analogy":
+		// The model's own teaching device: no source and no verification.
+	case "views":
+		// Each camp is its own claim, the way a claim block's evidence lines are.
+		for i, camp := range b.camps {
+			claim := stripLinks(join(camp.who+":", camp.stance, dash(camp.t)))
+			c.text(i, "stance", camp.stance, claim, false)
+			c.text(i, "t", camp.t, claim, false)
+			c.src(i, "src", camp.src, claim, false)
+		}
 	case "quote":
 		// A quote is a stronger promise than a claim: its sources are checked
 		// for the passage itself. Links in its attribution are ordinary prose.

@@ -597,6 +597,15 @@ type Context struct {
 	evidenceMu sync.Mutex
 	evidence   map[string][]string
 
+	// pageStats records what web_read measured from each URL's *full* extracted
+	// text at fetch time — a reading list (`readings` block) shows the reader a
+	// real length, so the number must come from the page itself, never from what
+	// the summarizing filter handed the model. See AddPageStats/
+	// PageStatsForURL and tools/page_stats.go. Same parallel-tool-dispatch
+	// concurrency shape as evidence, so its own mutex.
+	pageStatsMu sync.Mutex
+	pageStats   map[string]PageStats
+
 	// jevCostMu/jevCostUSD track this turn's own running Jev spend,
 	// separately from ExtraCostUSD (which mixes in every other tool's
 	// extra LLM spend too) — see AddJevCost/JevSpentThisTurn. This is what

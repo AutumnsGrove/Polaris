@@ -10,6 +10,11 @@ import type { UiBlock } from './types';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// readings: the fixed level order (start, next, deep) and the labels both
+// flatteners print (Go: readingRank/readingLabel), so the two can't drift.
+const READING_LABEL: Record<string, string> = { start: 'Start here', next: 'Next', deep: 'Go deeper' };
+const READING_RANK: Record<string, number> = { start: 0, next: 1, deep: 2 };
+
 // "2026-10" -> "Oct 2026" from a fixed table, not Intl: locale formatting
 // would make this differ from the Go side on some machines.
 function asofLabel(a: string): string {
@@ -111,6 +116,36 @@ function flattenBlocks(blocks: UiBlock[]): string[] {
 				if (b.title) out.push(`${b.title}:`);
 				for (const p of b.paras) out.push(p);
 				break;
+			case 'define':
+				for (const e of b.entries) {
+					let s = `${e.term}: ${e.means}`;
+					if (e.also.length) s += ` (also called ${e.also.join(', ')})`;
+					if (e.ex) s += ` For example, ${e.ex}`;
+					out.push(s);
+				}
+				break;
+			case 'analogy':
+				out.push(b.pairs.length ? `${b.like}: ${b.pairs.map((p) => `${p.x} ↔ ${p.y}`).join('; ')}` : b.like);
+				if (b.breaks) out.push(`Where it breaks: ${b.breaks}`);
+				break;
+			case 'views':
+				if (b.title) out.push(`${b.title}:`);
+				for (const c of b.camps) {
+					const claim = c.t ? `${c.stance} — ${c.t}` : c.stance;
+					out.push(withSources(`${c.who}: ${claim}`, c.src));
+				}
+				break;
+			case 'readings': {
+				if (b.title) out.push(`${b.title}:`);
+				// Fixed level order (start, next, deep), stable within a level.
+				const items = [...b.items].sort((a, c) => READING_RANK[a.lvl] - READING_RANK[c.lvl]);
+				for (const r of items) {
+					let s = `${READING_LABEL[r.lvl]}: ${r.t}`;
+					if (r.why) s += ` — ${r.why}`;
+					out.push(withSources(s, r.src));
+				}
+				break;
+			}
 			case 'quote':
 				out.push(withSources(b.by ? `"${b.text}" — ${b.by}` : `"${b.text}"`, b.src));
 				break;

@@ -634,7 +634,7 @@ round are in the same file. Tracking issue #163.
   specific statement) and `procon` (one thing weighed): "a question where informed people disagree; present
   the main positions". Expect it to compete with `claim`; re-run `dev/ui_spike`, false-positive rate first.
 - **`define`** (terms in plain English). Container `{"c":"define"}`; child lines
-  `{"term","means","also":[...],"ex"}`, cap 8 terms. An accent under the base prompt, like `quote`: no
+  `{"term","means","also":[...],"ex"}`, cap 12 terms. An accent under the base prompt, like `quote`: no
   Oracle option, no verification (the model's own definition, never presented as a quote of a source).
 - **`analogy`** (X is like Y). Container `{"c":"analogy","x":"On the network","y":"In the post","like":"A postal system"}`;
   child lines `{"x","y"}` (cap 6 pairs) and one optional `{"breaks"}` line, the point of the block (an analogy that
@@ -665,6 +665,76 @@ round are in the same file. Tracking issue #163.
   flattener case in `uiblocks` plus the shared `testdata/ui_flatten.json` fixture, the base-prompt line in
   `prompts.yaml` and `prompts/ui.go` (drift test), and a `docs/FEATURES.md` mention. Neither needs a
   `HelpModal` `TERMS` entry (no new themed name). No code lands until an issue exists.
+
+**As built (all four shipped):**
+
+- `readings`' measurement reaches the client as three optional `Citation` fields — `opened`, `words`,
+  `pages` — rather than a separate event: citations are already persisted with the message and decoded
+  on reload, so the list survives a refresh for free. `AddCitation` folds a later `web_read`'s measurement
+  into a citation a `web_search` snippet already created, which the URL dedupe would otherwise drop. A
+  page that looked like a paywall/empty shell is still `opened` but carries no `words`, so minutes are
+  suppressed without dropping the line; a PDF carries `pages` instead (only one page was ever extracted).
+- Level order (start, next, deep) is applied at render and flatten time, not in the parser: `parse.ts`
+  and `uiblocks.go` keep arrival order, and `UiReadings.svelte` plus both flatteners sort by the same
+  rank, so client and server agree.
+- `define`, `analogy` and `readings` have no `sites.go` case (no verification). `views` has one — a claim
+  per camp, checked against that line's own sources, like `claim`'s evidence lines. Ticks are local state
+  only on `readings`, like `checklist`.
+- The Oracle `ui` check gains `views` and `readings` options; `docs/oracle.md` lists both (its drift test).
+  Re-running `dev/ui_spike` for the false-positive rate is still owed, as the section above asks.
+
+## Spike results: `views` and `readings` added (2026-10-11)
+
+Corpus grew from 128 to 165 messages (+12 `views`, +10 `readings`, new claim/procon/facts/choose negatives and
+taste/joke controls); $0.032, 0 Jev failures. `define` and `analogy` are accents (no Oracle option), so this
+spike cannot measure them — only the base prompt offers them.
+
+| Dial (bar) | False positives | Block hit rate | Wrong block |
+|---|---|---|---|
+| Normal (0.70) | 5 / 56 (8.9%) | 87 / 101 (86.1%) | 2 |
+| Low (0.85) | **4 / 56 (7.1%)** | 72 / 101 (71.3%) | **0** |
+
+- `readings` is well-calibrated on the first try: 10/10 on Normal, 8/10 on Low (the two misses sit at 0.74/0.76),
+  and **0 false positives** — no "best-of / shopping" message fired it. The option's "not a best-of list for
+  choosing between things" clause does the separating work.
+- `views` needed two wording passes. The first version ("a question where informed people disagree") was eaten by
+  `procon`/`compare` (2/12 hits) and, once sharpened, started firing on taste/joke questions (pineapple on pizza,
+  "is a hot dog a sandwich?"). Final wording — "a genuinely contested question of fact or policy where credible
+  experts, camps or institutions disagree … not a question of taste or a joke" — gives 8/12 hits on Normal with
+  **0 false positives**. The one wrong pick is "intermittent fasting vs calorie counting" -> `compare`, which is
+  a defensible read of two named approaches.
+- `procon`'s option was sharpened to "a personal decision or an explicit pros-and-cons request", which kept all 5
+  procon positives while releasing the public-debate questions to `views`.
+- The Normal false positives are the same known-marginal set as before (affect/effect `compare`, TCP-vs-UDP
+  `compare`, bill-becomes-law `steps` x2, aqueducts `timeline`); none is new, and none is `views`/`readings`.
+  Two of them ("is a hot dog a sandwich?", "why did the Roman Empire fall?") are arguably fair uses the corpus
+  labels `none`; the latter is duplicated in the corpus, which double-counts its false positive.
+- Shipped as-is. Re-tuning further on this corpus would be overfitting, per the group (a) note.
+
+- Shipped as-is. Re-tuning further on this corpus would be overfitting, per the group (a) note.
+
+## Live verification via `/api/ask` (2026-10-11)
+
+Ran against the local dev stack (`dev/stack.sh`, real OpenRouter, the default `deepseek` model) with
+`wait_verification: true`:
+
+- **`views`** — "Was the 2008 financial crisis mainly the fault of the banks or of the government?" produced a
+  valid 4-camp fence. Two camps sourced pages it had actually `web_read` (the Federal Reserve FEDS note and
+  the FCIC conclusions page) and both got `locator` verification marks (`0.0.0.src#0`, `0.0.3.src#0`,
+  confidence 0.96 and 1.0); the two camps citing a Wikipedia page it only saw as a search snippet got none. A
+  prose claim on the same page also marked (`claim_index` 0, no locator), so the two schemes coexist.
+- **`readings`** — "I want to learn how TCP/IP actually works from scratch. Where should I start reading, in
+  order?" produced a valid fence in level order. All four listed URLs came back `opened: true` with measured
+  word counts (457 / 8,485 / 38,729 / 1,035); the six snippet-only pages the model did *not* read were
+  correctly left out of the block. This is the whole point of the block working end to end.
+- **`define`** — a jargon-heavy explainer emitted a valid fence, but *ten* terms against the cap of 8, so the
+  last two degrade to raw rows. **Raised the cap to 12** (2026-10-11, operator call) to match `facts`, so a
+  typical jargon-heavy explainer renders whole; a much longer list would still spill, which is the intended
+  over-cap behavior.
+- **`analogy`** — the same prompt used a prose analogy instead of the block (it is an accent, so that is
+  legal). Not yet observed firing live; `define` shows the accent path works.
+- **No regressions** — `mermaid` still rendered and built up mid-stream in the `readings` answer, and the
+  existing prose-claim verification path still marked normally.
 
 ## Open questions
 

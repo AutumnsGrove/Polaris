@@ -232,6 +232,18 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 	// summary would be circular) or a truncated display window.
 	if strings.TrimSpace(text) != "" {
 		ctx.AddEvidence(args.URL, text)
+		// Measure the page here, before the filter pass and windowText below
+		// (tools/page_stats.go explains why the measurement can't be derived
+		// from what the model was handed). A PDF only ever had one page's text
+		// extracted, so it shows its own page count instead of a word count.
+		stats := PageStats{Pages: totalPages}
+		if isPDF {
+			stats.Reliable = true
+		} else if !looksLikePaywall(text) && !looksEmpty(text) {
+			stats.Words = len(strings.Fields(text))
+			stats.Reliable = true
+		}
+		ctx.AddPageStats(args.URL, stats)
 	}
 
 	result := text
@@ -284,7 +296,7 @@ func handleWebRead(argsJSON string, ctx *Context, callID string) string {
 		result += fmt.Sprintf("\n\n[Page image: %s]", imageURL)
 	}
 	log.Info("web_read", "url", args.URL, "title", title, "extracted_chars", len(result), "instructions", args.Instructions)
-	ctx.AddCitation(Citation{Title: title, URL: args.URL, SiteName: siteName, ImageURL: imageURL})
+	ctx.AddCitation(citationWithMeasurement(ctx, Citation{Title: title, URL: args.URL, SiteName: siteName, ImageURL: imageURL}))
 	ctx.Emit("tool_result", map[string]interface{}{
 		"tool":      "web_read",
 		"result":    result,

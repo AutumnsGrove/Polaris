@@ -162,6 +162,31 @@
       "want": "Claim: X\nSupports: Y\nClaim: Z\n"
     },
     {
+      "name": "define: term, plain meaning, also-names and an example; a term without a meaning is dropped",
+      "input": "```ui\n{\"c\":\"define\"}\n{\"term\":\"Tailnet\",\"means\":\"Your private network of devices.\",\"also\":[\"VPN mesh\",\"overlay network\"],\"ex\":\"Your phone reaches the potato.\"}\n{\"term\":\"Exit node\",\"means\":\"A device other traffic routes through.\"}\n{\"term\":\"missing means\"}\n```\n",
+      "want": "Tailnet: Your private network of devices. (also called VPN mesh, overlay network) For example, Your phone reaches the potato.\nExit node: A device other traffic routes through.\n"
+    },
+    {
+      "name": "analogy: the mapping and its where-it-breaks line; a both-sided or duplicate line is raw",
+      "input": "```ui\n{\"c\":\"analogy\",\"x\":\"On the network\",\"y\":\"In the post\",\"like\":\"A postal system\"}\n{\"x\":\"Packet\",\"y\":\"Letter\"}\n{\"x\":\"Router\",\"y\":\"Sorting office\"}\n{\"breaks\":\"A letter arrives once and in one piece.\"}\n{\"x\":\"Port\",\"y\":\"Flat number\",\"breaks\":\"ambiguous\"}\n{\"breaks\":\"a second breaks line\"}\n```\n",
+      "want": "A postal system: Packet ↔ Letter; Router ↔ Sorting office\nWhere it breaks: A letter arrives once and in one piece.\n"
+    },
+    {
+      "name": "analogy: no like is not a block, and one with no pairs still names itself",
+      "input": "```ui\n{\"c\":\"analogy\",\"x\":\"a\",\"y\":\"b\"}\n```\n```ui\n{\"c\":\"analogy\",\"like\":\"Pipes\"}\n```\n",
+      "want": "Pipes\n"
+    },
+    {
+      "name": "views: a camp per line, its own sources, and a camp without a stance dropped",
+      "input": "```ui\n{\"c\":\"views\",\"title\":\"Does X beat Y?\"}\n{\"who\":\"Most reviews\",\"stance\":\"About the same\",\"t\":\"Randomised trials find similar loss.\",\"src\":[\"https://example.com/a\"]}\n{\"who\":\"Some researchers\",\"stance\":\"May help\",\"t\":\"Small studies show better sensitivity.\"}\n{\"who\":\"missing stance\"}\n```\n",
+      "want": "Does X beat Y?:\nMost reviews: About the same — Randomised trials find similar loss. [example.com](https://example.com/a)\nSome researchers: May help — Small studies show better sensitivity.\n"
+    },
+    {
+      "name": "readings: fixed level order however the lines arrive, missing level is next",
+      "input": "```ui\n{\"c\":\"readings\",\"title\":\"How Tailscale connects your devices\"}\n{\"lvl\":\"deep\",\"t\":\"WireGuard whitepaper\",\"why\":\"Dense; skim it last.\",\"src\":[\"https://wireguard.com/wg.pdf\"]}\n{\"lvl\":\"start\",\"t\":\"How Tailscale works\",\"why\":\"The whole picture.\",\"src\":[\"https://tailscale.com/how\"]}\n{\"t\":\"No level defaults to next\",\"src\":[\"https://example.com/x\"]}\n```\n",
+      "want": "How Tailscale connects your devices:\nStart here: How Tailscale works — The whole picture. [tailscale.com](https://tailscale.com/how)\nNext: No level defaults to next [example.com](https://example.com/x)\nGo deeper: WireGuard whitepaper — Dense; skim it last. [wireguard.com](https://wireguard.com/wg.pdf)\n"
+    },
+    {
       "name": "a ui fence with extra info text is an ordinary code block",
       "input": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n",
       "want": "```ui title\n{\"c\":\"stat\",\"value\":\"1\"}\n```\n"

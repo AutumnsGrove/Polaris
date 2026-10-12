@@ -14,6 +14,10 @@
 	import UiFlow from './UiFlow.svelte';
 	import UiTabs from './UiTabs.svelte';
 	import UiDisclose from './UiDisclose.svelte';
+	import UiDefine from './UiDefine.svelte';
+	import UiAnalogy from './UiAnalogy.svelte';
+	import UiViews from './UiViews.svelte';
+	import UiReadings from './UiReadings.svelte';
 	import UiQuote from './UiQuote.svelte';
 	import UiClaim from './UiClaim.svelte';
 
@@ -70,6 +74,14 @@
 			<UiTabs {block} {loc} />
 		{:else if block.kind === 'disclose'}
 			<UiDisclose {block} {loc} />
+		{:else if block.kind === 'define'}
+			<UiDefine {block} />
+		{:else if block.kind === 'analogy'}
+			<UiAnalogy {block} />
+		{:else if block.kind === 'views'}
+			<UiViews {block} {loc} />
+		{:else if block.kind === 'readings'}
+			<UiReadings {block} />
 		{:else if block.kind === 'quote'}
 			<UiQuote {block} {loc} />
 		{:else if block.kind === 'claim'}

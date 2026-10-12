@@ -88,6 +88,9 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   step rail, a timeline, a tick-off checklist, pros and cons, "if you…, pick…" decision rules, an
   at-a-glance facts card, a branching flow chart (tap a step for detail), per-OS tabs, a
   collapsible detail section, a fact-check card (verdict, evidence for and against), a pull-quote, a
+  contested-question card with one position per camp, plain-English definitions of the terms an
+  answer uses, an analogy with the line where it stops being true, an ordered "read these next" list
+  whose lengths Polaris measured from the pages themselves, a
   callout, or a big number when that is clearly easier to scan than prose. A source cited inside a
   block gets the same "found in source" tick as one in prose, and a quote is only ticked when the
   passage really appears in the page. Blocks fill

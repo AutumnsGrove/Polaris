@@ -10,6 +10,17 @@ export interface Citation {
 	// comment. Rendered by the source list in place of the numbered index
 	// badge when present.
 	image_url?: string;
+	// True when web_read actually fetched this URL's text this turn, not just
+	// when a search snippet mentioned it. The `readings` Prism block only lists
+	// pages Polaris really opened.
+	opened?: boolean;
+	// Full extracted word count measured at fetch time (before the summarizing
+	// filter and the display window). Rendered as minutes at ~230 wpm. Absent
+	// for a PDF (see pages) or a fetch too unreliable to measure.
+	words?: number;
+	// A PDF's own page count; shown instead of minutes, since only one page's
+	// text was ever extracted.
+	pages?: number;
 	// True when at least one claim citing this URL was checked and found
 	// "found in source" (see VerificationMark, docs/plans/
 	// source-verification-badge.md) — the aggregate mark shown on the
