@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { marked } from '$lib/markdown';
-	import DOMPurify from 'dompurify';
+	import { renderAnswer } from '$lib/uiBlocks/renderAnswer';
+	import UiBlocks from './ui/UiBlocks.svelte';
+	import MermaidBlock from './MermaidBlock.svelte';
 	import hljs from '$lib/highlightjs';
 	import { reasoningStatsLabel } from '$lib/reasoningStats';
 	import type { TimelineItem, Card } from '$lib/types';
@@ -186,14 +187,17 @@
 		return item.tool;
 	}
 
-	// Commentary is genuine assistant reply text (not private reasoning),
-	// so it's rendered as real markdown — same sanitize-then-parse
-	// treatment as the final answer in ChatTurnView.svelte, duplicated
-	// here rather than shared since Svelte's per-component style scoping
-	// means that component's .prose rules can't reach markup rendered by
-	// this one regardless of class name.
-	let commentaryHtml = $derived(
-		item.kind === 'commentary' ? DOMPurify.sanitize(marked.parse(item.content) as string) : ''
+	// Commentary is genuine assistant reply text (not private reasoning), so
+	// it goes through the same segment renderer as the final answer: a ```ui
+	// or ```mermaid fence in it becomes its component, not a code block. This
+	// matters because 'commentary' is a re-classification of text that already
+	// streamed in live as the answer (see turnEvents.ts) — a ui block the user
+	// watched build up must look the same once a tool call turns it into
+	// commentary, instead of collapsing into its raw JSON. No citations or
+	// verification: those belong to the final answer, not to mid-turn text.
+	// Not streaming: commentary only exists once the model moved on to a tool.
+	let commentarySegments = $derived(
+		item.kind === 'commentary' ? renderAnswer(item.content, false, []) : []
 	);
 
 	// The exact Python source a code_exec call ran — tools/code_exec.go's
@@ -214,7 +218,17 @@
 {#if item.kind === 'thinking'}
 	<div class="thinking">{item.content}</div>
 {:else if item.kind === 'commentary'}
-	<div class="commentary">{@html commentaryHtml}</div>
+	<div class="commentary">
+		{#each commentarySegments as seg, i (i)}
+			{#if seg.kind === 'md'}
+				{@html seg.html}
+			{:else if seg.kind === 'ui'}
+				<UiBlocks src={seg.src} citations={[]} fence={seg.fence ?? 0} />
+			{:else}
+				<MermaidBlock src={seg.src} closed={seg.closed} />
+			{/if}
+		{/each}
+	</div>
 {:else if item.kind === 'reasoning'}
 	<div class="tool-event">
 		<button class="tool-header" onclick={() => (open = !open)}>
@@ -456,7 +470,7 @@
 
 	/* Same treatment as ChatTurnView.svelte's .prose :global(pre) — kept in
 	   sync by eye since scoped styles can't be shared directly, see the
-	   doc comment on commentaryHtml above for why this duplicates. */
+	   doc comment on commentarySegments above for why this duplicates. */
 	.commentary :global(pre) {
 		background: var(--color-surface-2);
 		border: none;
