@@ -67,7 +67,7 @@ Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (
 in the chat view) and `/api/ask` (`ClientMessage.OffersVisuals`, so the API exercises the real
 behaviour; its raw `Answer` keeps the fence and `polaris search` flattens it on print), never to voice
 calls or Atlas's plain-text Quick Answer. Oracle's `ui` check follows the same gate. Design and phases:
-`docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`.
+`docs/plans/intelligent-ui.md`. To watch a stream fill in, run `dev/fakeopenrouter` with `-chunk-delay`. A queued response may carry both `content` and `tool_calls` (text streams first, then the call) — the shape that makes streamed text become mid-turn commentary, which must render ui blocks the same way the final answer does.
 
 "Found in source" ticks inside a block use a different rule from prose: a block link is named by where it
 sits (`<fence>.<block>.<item>.<field>#<n>`), not by "the nth time this URL is cited". The server lists them
