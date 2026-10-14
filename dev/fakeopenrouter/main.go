@@ -48,6 +48,9 @@
 //	  {"content":"Here is the answer now that research is back on."}
 //	]}'
 //
+// A single response may carry both "content" and "tool_calls": the text
+// streams first, then the tool call (the "narrate, then call a tool" shape).
+//
 // Responses are served FIFO, one per call to /chat/completions, then it
 // falls back to the generic reply again once the queue drains — so a
 // multi-turn scenario (a tool call, then the follow-up answer once the
@@ -129,10 +132,10 @@ type queuedToolCall struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-// queuedResponse is one scripted turn: either Content (a plain-text final
-// answer) or ToolCalls (ending the turn in a tool_calls finish, same as a
-// real model choosing to call a tool instead of answering) — never both,
-// mirroring how a real completion is one or the other.
+// queuedResponse is one scripted turn: Content (streamed text), ToolCalls
+// (ending the turn in a tool_calls finish, same as a real model choosing to
+// call a tool), or both — text first, then the calls, like a real model that
+// narrates before reaching for a tool.
 type queuedResponse struct {
 	Content   string           `json:"content,omitempty"`
 	ToolCalls []queuedToolCall `json:"tool_calls,omitempty"`
@@ -254,7 +257,43 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	// Content streams first whenever present, tool calls after — a real model
+	// routinely narrates ("let me search for that") or even starts an answer
+	// before calling a tool, and the app treats that pre-tool text specially
+	// (turnEvents.ts reclassifies it as commentary). A response with both
+	// reproduces that path; content alone is the plain-answer case, and with
+	// neither set the generic reply is used.
+	content := resp.Content
+	if content == "" && len(resp.ToolCalls) == 0 {
+		content = defaultReply
+	}
+	// Chunked rather than sent whole — exercises the frontend's live
+	// token-by-token rendering path instead of one giant "token" event.
+	const chunkSize = 24
+	for len(content) > 0 {
+		n := chunkSize
+		if n > len(content) {
+			n = len(content)
+		}
+		chunk, _ := json.Marshal(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"delta":         map[string]interface{}{"content": content[:n]},
+				"finish_reason": "",
+			}},
+			"model": "fake-openrouter",
+		})
+		sseLine(string(chunk))
+		content = content[n:]
+		// Pacing between chunks, so progressive rendering (a diagram or
+		// `ui` block filling in as it streams) is observable rather than
+		// finishing inside one frame.
+		if s.chunkDelay > 0 && len(content) > 0 {
+			time.Sleep(s.chunkDelay)
+		}
+	}
+	finish := "stop"
 	if len(resp.ToolCalls) > 0 {
+		finish = "tool_calls"
 		for i, tc := range resp.ToolCalls {
 			args := string(tc.Arguments)
 			if args == "" {
@@ -279,48 +318,13 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 			sseLine(string(chunk))
 		}
-		finishChunk, _ := json.Marshal(map[string]interface{}{
-			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "tool_calls"}},
-			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
-			"model":   "fake-openrouter",
-		})
-		sseLine(string(finishChunk))
-	} else {
-		content := resp.Content
-		if content == "" {
-			content = defaultReply
-		}
-		// Chunked rather than sent whole — exercises the frontend's live
-		// token-by-token rendering path instead of one giant "token" event.
-		const chunkSize = 24
-		for len(content) > 0 {
-			n := chunkSize
-			if n > len(content) {
-				n = len(content)
-			}
-			chunk, _ := json.Marshal(map[string]interface{}{
-				"choices": []map[string]interface{}{{
-					"delta":         map[string]interface{}{"content": content[:n]},
-					"finish_reason": "",
-				}},
-				"model": "fake-openrouter",
-			})
-			sseLine(string(chunk))
-			content = content[n:]
-			// Pacing between chunks, so progressive rendering (a diagram or
-			// `ui` block filling in as it streams) is observable rather than
-			// finishing inside one frame.
-			if s.chunkDelay > 0 && len(content) > 0 {
-				time.Sleep(s.chunkDelay)
-			}
-		}
-		finishChunk, _ := json.Marshal(map[string]interface{}{
-			"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": "stop"}},
-			"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
-			"model":   "fake-openrouter",
-		})
-		sseLine(string(finishChunk))
 	}
+	finishChunk, _ := json.Marshal(map[string]interface{}{
+		"choices": []map[string]interface{}{{"delta": map[string]interface{}{}, "finish_reason": finish}},
+		"usage":   map[string]interface{}{"prompt_tokens": resp.PromptTokens, "completion_tokens": 0, "total_tokens": resp.PromptTokens, "cost": resp.Cost},
+		"model":   "fake-openrouter",
+	})
+	sseLine(string(finishChunk))
 	sseLine("[DONE]")
 }
 
