@@ -1,5 +1,7 @@
 # Polaris
 
+<p align="center"><img src="web/static/icon-512.png" alt="The Polaris app icon: a field of stars" width="160"></p>
+
 A private, self-hosted, search-augmented AI assistant — the "Kagi Assistant" / Perplexity idea,
 but pointed at your own [SearXNG](https://github.com/searxng/searxng) instance instead of a paid
 search API, running as a single Go binary with the web UI embedded inside it.
