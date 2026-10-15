@@ -67,6 +67,10 @@ type Sample struct {
 type CaseRun struct {
 	Case    Case
 	Samples []Sample
+	// Judgments are the judge's reads of selected checks, keyed by check. A
+	// Residual judgment's quality replaces that check's verdict/closeness
+	// credit; an audit one only feeds the label-quality stats.
+	Judgments map[string]Judgment
 }
 
 // nudgeExpectation is what a label implies about whether a nudge should arrive.
@@ -389,6 +393,15 @@ func ScoreCase(w Weights, p *prompts.Set, cr CaseRun, budget time.Duration) Case
 	sort.Strings(keys)
 	for _, key := range keys {
 		check := scoreCheck(w, p, key, c.Expect[key].Acceptable(), false, samples, errored)
+		// Only an answered check can be judged. A call that ran late is
+		// Oracle-off here, so it has no answer and keeps its zero credit.
+		if j, ok := cr.Judgments[key]; ok && check.Answered {
+			q := j.Quality
+			check.JudgeQuality = &q
+			if j.Residual {
+				check.Earned = check.Credit * q
+			}
+		}
 		cs.Checks = append(cs.Checks, check)
 		cs.Max += check.Credit
 		cs.Earned += check.Earned
@@ -451,7 +464,17 @@ type ModelScore struct {
 	LatencyP95 time.Duration `json:"latency_p95"`
 	LatencyMax time.Duration `json:"latency_max"`
 
-	CostUSD float64 `json:"cost_usd"`
+	CostUSD      float64 `json:"cost_usd"`
+	JudgeCostUSD float64 `json:"judge_cost_usd"`
+
+	// JudgeAudited and JudgeDisagreed measure the bank's own error rate: of
+	// the checks the judge read only as a spot check, how many it called
+	// differently from the deterministic verdict. ReviewCases lists the cases
+	// a human should look at (a disagreement, or a judge who thought the
+	// model beat the label).
+	JudgeAudited   int      `json:"judge_audited"`
+	JudgeDisagreed int      `json:"judge_disagreed"`
+	ReviewCases    []string `json:"review_cases,omitempty"`
 
 	ByTrack      map[string]TrackScore `json:"by_track"`
 	Disqualified []string              `json:"disqualified,omitempty"`
@@ -517,6 +540,26 @@ func Summarize(w Weights, p *prompts.Set, runs []CaseRun) ModelScore {
 	for _, cr := range runs {
 		cs := ScoreCase(w, p, cr, 0)
 		bs := ScoreCase(w, p, cr, w.LatencyBudget)
+		review := false
+		for key, j := range cr.Judgments {
+			ms.JudgeCostUSD += j.CostUSD
+			review = review || j.ModelBetter
+			if j.Residual {
+				continue
+			}
+			for _, ck := range cs.Checks {
+				if ck.Key == key && !ck.Quiet {
+					ms.JudgeAudited++
+					if j.Acceptable != (ck.Verdict == 1) {
+						ms.JudgeDisagreed++
+						review = true
+					}
+				}
+			}
+		}
+		if review {
+			ms.ReviewCases = append(ms.ReviewCases, cs.ID)
+		}
 		if cs.Disputed {
 			disputed = append(disputed, cs)
 			ms.Disputed++
