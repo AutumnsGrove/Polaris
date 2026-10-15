@@ -1,0 +1,201 @@
+package oraclebench
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"polaris/gateway"
+	"polaris/jev"
+)
+
+// Asker is the one decision-model call the runner makes. *jev.Client satisfies
+// it; tests pass stubs. It is the same shape gateway.RunOracleRaw accepts,
+// which is the point: the bench drives the real Oracle code path.
+type Asker interface {
+	AskChoice(ctx context.Context, state interface{}, questions map[string]jev.ChoiceQuestion) (*jev.Response, error)
+}
+
+// Model is one candidate: its catalog id and a client already pointed at it.
+type Model struct {
+	ID    string
+	Asker Asker
+}
+
+// ModelRuns is everything one model did across the bank.
+type ModelRuns struct {
+	Model string
+	// NA is non-empty when the model can't take part at all (it rejects Choice
+	// questions). Such a model is reported as N/A, not scored 0.
+	NA   string
+	Runs []CaseRun
+}
+
+// CallEvent is one finished call, delivered as it completes so a long run
+// leaves a usable record even if it is interrupted.
+type CallEvent struct {
+	Model  string
+	CaseID string
+	Repeat int
+	Sample Sample
+}
+
+// RunConfig configures a run. Concurrency is recorded with the results: a
+// latency figure measured at one load is not comparable to one at another
+// (spike round 2: one provider went from 1.4s sequential to 4.1s at 5 workers).
+type RunConfig struct {
+	Cases       []Case
+	Models      []Model
+	Repeats     int
+	Timeout     time.Duration
+	Concurrency int
+	// OnCall, if set, is called once per finished call, serialised.
+	OnCall func(CallEvent)
+	// OnProgress, if set, is called after each call with (done, total).
+	OnProgress func(done, total int)
+}
+
+// fixtureFieldIDs gives every FixtureFields name an id. RunOracle drops a field
+// chip whose winner has no id ("moving a thread needs the id"), so without
+// these every chip_field case would silently never offer.
+func fixtureFieldIDs() map[string]string {
+	ids := make(map[string]string, len(FixtureFields))
+	for name := range FixtureFields {
+		ids[name] = "fixture-" + strings.ReplaceAll(strings.ToLower(name), " ", "-")
+	}
+	return ids
+}
+
+// BuildInput turns a case into the OracleInput production would have built for
+// that turn. The environment is fixed (and documented in the plan) so results
+// are comparable: Prism dial normal, a web thread, no ghost, no manual focus,
+// the fixture Fields, and production's own thresholds (Rules left zero means
+// config.DefaultOracle).
+func BuildInput(c Case) gateway.OracleInput {
+	source := c.State.ThreadSource
+	if source == "" {
+		source = "web"
+	}
+	return gateway.OracleInput{
+		CurrentMessage:       c.State.Latest,
+		PrevUserMessage:      c.State.Previous,
+		IsFirstMessage:       c.State.IsFirst(),
+		PriorOracleFocusMode: c.State.PriorOracleFocus,
+		FieldOptions:         FixtureFields,
+		FieldIDs:             fixtureFieldIDs(),
+		ThreadSource:         source,
+		Visuals:              "normal",
+	}
+}
+
+// notChoiceCapable recognises the answer a model that only takes free-text
+// questions gives to a Choice question (the respan/span-01 family): a 400, not
+// a refusal, and not worth counting 280 times.
+func notChoiceCapable(text string) bool { return strings.Contains(text, "only accepts noul") }
+
+// callOnce makes one real call and classifies the outcome.
+func callOnce(ctx context.Context, m Model, c Case, timeout time.Duration) Sample {
+	start := time.Now()
+	res, err := gateway.RunOracleRaw(ctx, m.Asker, BuildInput(c), timeout)
+	s := Sample{Result: res, Latency: time.Since(start), Err: ClassifyError(err)}
+	if err != nil {
+		s.ErrText = err.Error()
+	}
+	return s
+}
+
+type job struct{ model, cas, repeat int }
+
+// Run executes every (model, case, repeat) call and returns the results in
+// input order. Failures are recorded as samples, never retried: a refusal or a
+// timeout is that model's result.
+func Run(ctx context.Context, cfg RunConfig) ([]ModelRuns, error) {
+	if len(cfg.Cases) == 0 || len(cfg.Models) == 0 {
+		return nil, fmt.Errorf("oraclebench: need at least one case and one model (got %d cases, %d models)", len(cfg.Cases), len(cfg.Models))
+	}
+	repeats := max(1, cfg.Repeats)
+	workers := max(1, cfg.Concurrency)
+
+	out := make([]ModelRuns, len(cfg.Models))
+	var jobs []job
+	for mi, m := range cfg.Models {
+		out[mi] = ModelRuns{Model: m.ID, Runs: make([]CaseRun, len(cfg.Cases))}
+		for ci, c := range cfg.Cases {
+			out[mi].Runs[ci] = CaseRun{Case: c, Samples: make([]Sample, repeats)}
+		}
+		// One probe before committing hundreds of calls to a model that can't
+		// take Choice questions at all.
+		if probe := callOnce(ctx, m, cfg.Cases[0], cfg.Timeout); probe.Err == ErrOther && notChoiceCapable(probe.ErrText) {
+			out[mi].NA = "rejects Choice questions"
+			continue
+		}
+		for ci := range cfg.Cases {
+			for r := 0; r < repeats; r++ {
+				jobs = append(jobs, job{mi, ci, r})
+			}
+		}
+	}
+
+	var (
+		mu   sync.Mutex
+		done int
+		wg   sync.WaitGroup
+	)
+	queue := make(chan job)
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range queue {
+				m, c := cfg.Models[j.model], cfg.Cases[j.cas]
+				s := callOnce(ctx, m, c, cfg.Timeout)
+				mu.Lock()
+				out[j.model].Runs[j.cas].Samples[j.repeat] = s
+				done++
+				if cfg.OnCall != nil {
+					cfg.OnCall(CallEvent{Model: m.ID, CaseID: c.ID, Repeat: j.repeat, Sample: s})
+				}
+				if cfg.OnProgress != nil {
+					cfg.OnProgress(done, len(jobs))
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+feed:
+	for _, j := range jobs {
+		select {
+		case queue <- j:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(queue)
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return out, fmt.Errorf("run interrupted: %w", err)
+	}
+	return out, nil
+}
+
+// ResolvedModels lists the distinct builds that answered a model's calls, so a
+// result recorded for an alias stays interpretable after the alias moves.
+func (mr ModelRuns) ResolvedModels() []string {
+	seen := map[string]bool{}
+	for _, cr := range mr.Runs {
+		for _, s := range cr.Samples {
+			if s.Result.ResolvedModel != "" {
+				seen[s.Result.ResolvedModel] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for m := range seen {
+		out = append(out, m)
+	}
+	sort.Strings(out)
+	return out
+}
