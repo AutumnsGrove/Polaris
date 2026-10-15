@@ -144,7 +144,23 @@ polaris stats --days 30    # cost, tool-call counts/error rates, research-loop t
 polaris export <thread-id> --trail --thinking -o thread.md   # one thread as Markdown/JSON, same options as the Export modal
 polaris backup list        # see SETUP.md's Backups
 polaris benchmark --dataset browse_comp_test_set.csv --n 20   # run a BrowseComp sample, graded by an LLM judge
+polaris oracle-bench --models jev-1.13,jev-1.14               # compare decision models on Oracle's task, see below
 ```
+
+### Oracle benchmark
+
+`polaris oracle-bench` is a dev tool (not a user feature) for choosing the decision model Oracle mode
+runs on. It runs the committed case bank (`oraclebench/cases`, ~280 hand-labeled messages) through the
+real `gateway.RunOracleRaw` once per model, so "fired" means exactly what it does in a live turn, then
+scores each model on raw-answer accuracy, whether the nudge actually reached the user, false nudges on
+sensitive checks, and latency. Output is a leaderboard plus a latency ranking; every run also lands in
+a tracking SQLite file (one table per run). Cost is about $0.0002 per decision call, so the default
+two-model run is well under a dollar; `--all-decisions` runs the live OpenRouter catalog. Use `--n` and
+`--repeats 1` for a quick sanity pass.
+
+Scoring weights and the latency budget are in `oraclebench/weights.yaml` (`--weights` overrides);
+adding cases is documented in `oraclebench/AUTHORING.md`, and `go test ./oraclebench/` validates every
+label against `prompts.yaml`'s real options. Design and decisions: `docs/plans/oracle-benchmark.md`.
 
 `search`/`stats`/`export`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
 backfill` are all thin HTTP clients hitting the running container's own REST API

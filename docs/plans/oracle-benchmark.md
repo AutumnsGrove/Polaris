@@ -1,11 +1,28 @@
 # Oracle benchmark (`oracle-bench`)
 
-**Status: in progress, 2026-10-15.** Client groundwork is done; the case schema, strict loader and
-validator (`oraclebench/case.go`) are built, with ~21 seed cases, and the 200-case bank is being
-authored track by track (`oraclebench/AUTHORING.md` is the rulebook). Scorer, gateway refactor, and
-runner are not started. This is the design for a home-built, 200-question benchmark whose only job
-is to compare **decision models** against the Oracle-mode task, so we can pick the model Oracle
-actually runs on instead of keeping the `jev-latest` alias.
+**Status: built, 2026-10-15; first full run in progress.** Everything below the "Milestones"
+heading through the runner exists: the case bank (281 cases, `oraclebench/cases`, rulebook in
+`oraclebench/AUTHORING.md`), `RunOracleRaw`, the scorer and `weights.yaml`, the judge, the runner,
+tracking DB and leaderboard, and `polaris oracle-bench`. Left: the full-roster run and pinning the
+winner in `jev/jev.go`. This is the design for a home-built benchmark whose only job is to compare
+**decision models** against the Oracle-mode task, so we can pick the model Oracle actually runs on
+instead of keeping the `jev-latest` alias.
+
+**Decisions made while building (they supersede the text below where they differ):**
+- The bank is 281 cases, not 200 ("a bit over is fine"); ~43% are professional-register messages,
+  the rest phone-style, because the operator mostly types on a phone but a bank of only terse
+  lowercase prompts would flatter models that cope with it.
+- **The latency budget is 5s, not 2.5s**, set in `weights.yaml` (`latency_budget`). It only affects
+  the within-budget score and the latency ranking; production's `oracleTimeout` is still 2.5s.
+  The leaderboard prints a latency ranking (p50/p95 bars against the budget) next to accuracy.
+- Weights are exactly the table below, plus `recall` 1.0/1.0 (the plan omitted it). They live in
+  the embedded `oraclebench/weights.yaml`; `--weights` overrides, and the file's hash is stored with
+  each run so scores made under different weights are never compared by accident.
+- Chips are scored through the generic nudge logic (their own `chips` weights), not a separate
+  `chip_credit` term; focus keeps a separate action credit because the sticky rule makes the
+  *outcome* differ from the raw answer.
+- Disputed-label cases are excluded from the headline and reported separately; hard filters
+  (error/refusal rate, dangerous false-nudge rate) are flagged on the leaderboard, not hidden.
 
 ## Why
 
@@ -538,9 +555,13 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
    existing Oracle tests pass untouched; new tests (`gateway/oracle_raw_test.go`) cover error
    surfacing, caller timeout, raw-vs-prod equivalence, chip outcomes, and the JSON exclusion, and
    were confirmed to fail when the timeout wiring or `Fired` flag is broken.
-3. **Case format + loader + scorer** with ~20 seed cases; verify scores by hand.
-4. **Author the 200 cases**, track by track, with `rationale` review pass.
-5. **Runner + judge + tracking DB + leaderboard**; run 1.13 vs 1.14 end to end.
+3. ~~**Case format + loader + scorer**~~ — **done** (`case.go`, `weights.go`, `score.go`; tests
+   assert hand-computed numbers, and were confirmed to fail on the "Fired is not a nudge" mistake).
+4. ~~**Author the cases**~~ — **done**: 281, authored track by track by parallel agents, then
+   rebalanced for register and disputed-label count.
+5. ~~**Runner + judge + tracking DB + leaderboard**~~ — **built and live-smoke-tested** (12 cases,
+   1.13 vs 1.14; resolved builds `jev-1.13-20260917` / `jev-1.14-20261014` recorded). The full-bank
+   1.13 vs 1.14 run is the next step.
 6. **Full roster run**, write up the results, and pin the winner in `jev/jev.go`.
 
 ## Open questions / risks
