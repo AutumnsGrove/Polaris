@@ -39,8 +39,39 @@ type ModelRuns struct {
 type CallEvent struct {
 	Model  string
 	CaseID string
+	Track  string
 	Repeat int
 	Sample Sample
+}
+
+// CallRecord is one call as written to --out (JSONL): enough to re-score it or
+// investigate a surprising result without re-spending the call.
+type CallRecord struct {
+	Model         string                 `json:"model"`
+	ResolvedModel string                 `json:"resolved_model,omitempty"`
+	CaseID        string                 `json:"case"`
+	Track         string                 `json:"track"`
+	Repeat        int                    `json:"repeat"`
+	LatencyMS     int64                  `json:"latency_ms"`
+	Err           ErrKind                `json:"err,omitempty"`
+	ErrText       string                 `json:"err_text,omitempty"`
+	CostUSD       float64                `json:"cost_usd,omitempty"`
+	Checks        []gateway.CheckOutcome `json:"checks,omitempty"`
+	ChipOutcomes  []gateway.CheckOutcome `json:"chip_outcomes,omitempty"`
+	FocusMode     string                 `json:"focus_mode,omitempty"`
+	FocusCleared  bool                   `json:"focus_cleared,omitempty"`
+}
+
+// Record flattens the event. OracleResult's bench-only fields are json:"-" so
+// they never reach the persisted production payload; the bench copies them out
+// here, where they belong.
+func (ev CallEvent) Record() CallRecord {
+	r := ev.Sample.Result
+	return CallRecord{
+		Model: ev.Model, ResolvedModel: r.ResolvedModel, CaseID: ev.CaseID, Track: ev.Track, Repeat: ev.Repeat,
+		LatencyMS: ev.Sample.Latency.Milliseconds(), Err: ev.Sample.Err, ErrText: ev.Sample.ErrText, CostUSD: r.CostUSD,
+		Checks: r.Checks, ChipOutcomes: r.ChipOutcomes, FocusMode: r.FocusMode, FocusCleared: r.FocusCleared,
+	}
 }
 
 // RunConfig configures a run. Concurrency is recorded with the results: a
@@ -156,7 +187,7 @@ func Run(ctx context.Context, cfg RunConfig) ([]ModelRuns, error) {
 				out[j.model].Runs[j.cas].Samples[j.repeat] = s
 				done++
 				if cfg.OnCall != nil {
-					cfg.OnCall(CallEvent{Model: m.ID, CaseID: c.ID, Repeat: j.repeat, Sample: s})
+					cfg.OnCall(CallEvent{Model: m.ID, CaseID: c.ID, Track: c.Track, Repeat: j.repeat, Sample: s})
 				}
 				if cfg.OnProgress != nil {
 					cfg.OnProgress(done, len(jobs))
