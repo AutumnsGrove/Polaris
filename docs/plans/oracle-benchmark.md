@@ -294,6 +294,11 @@ Response parity must be confirmed live before building (see "Spikes").
 `type` field). `gateway.RunOracle` needs no interface change — the bench passes the configured
 client straight through.
 
+**Done 2026-10-15: `jev.Model` is now `typesafe/jev-1.14`** (full-bank 1.13 vs 1.14 was a statistical
+tie, 88.0 vs 86.5 with overlapping intervals; the pin freezes what `jev-latest` already resolved to,
+verified live through the default client: answered by `typesafe/jev-1.14-20261014`). Version-level
+rather than the dated id on purpose: a retired snapshot would 400 and Oracle would silently go off.
+
 **Pin, don't alias, in production.** The bench intentionally probes `~typesafe/jev-latest`, but the
 recorded result must include the response's resolved `model` (the dated snapshot). The follow-up
 change is to replace `jev/jev.go`'s `"jev-latest"` with the winning pinned id.

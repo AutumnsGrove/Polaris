@@ -32,12 +32,23 @@ import (
 	"time"
 )
 
-// Model is the default OpenRouter model id — "jev-latest", what production has
-// always sent (also "jev-1.13"/"typesafe/jev-1.13" work; "typesafe/jev-latest"
-// and bare "jev" both 400 "does not exist" on the System One surface). The
-// Decisions API takes the vendor-prefixed catalog ids instead, e.g.
-// "typesafe/jev-1.14" — see WithModel.
-const Model = "jev-latest"
+// Model is the default OpenRouter model id, pinned to Jev 1.14 (2026-10-15).
+// Production used to send the "jev-latest" alias, which silently moves to
+// whatever Typesafe releases next; Oracle fires on every turn and nobody watches
+// its answers, so an unannounced model swap would be invisible. The Oracle
+// benchmark (docs/plans/oracle-benchmark.md) measured 1.14 and 1.13 as a tie at
+// ~300ms p50, with 1.14 marginally ahead, so this freezes what the alias already
+// resolved to rather than changing behavior.
+//
+// "typesafe/jev-1.14" follows 1.14 patch builds (currently
+// typesafe/jev-1.14-20261014, the build that was benchmarked). Pinning the
+// dated id instead is also accepted and fully reproducible, but a retired
+// snapshot would 400 and Oracle would quietly go off, so the version-level id
+// is the safer pin. Both this and the bare "jev-1.14" work on the System One
+// surface; "typesafe/jev-latest" and bare "jev" both 400 "does not exist" there.
+// The Decisions API takes the same vendor-prefixed catalog ids — see WithModel.
+// To move to a new release, re-run `polaris oracle-bench` first.
+const Model = "typesafe/jev-1.14"
 
 // Client is nil-safe like brave.Client/parallel.Client/tavily.Client — see
 // NewClient. Its setters are nil-safe too, so a chain started on an

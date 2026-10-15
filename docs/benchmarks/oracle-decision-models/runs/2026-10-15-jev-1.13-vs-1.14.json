@@ -1,0 +1,237 @@
+{
+  "run_at": "2026-10-15T18:40:36Z",
+  "cases": 281,
+  "repeats": 3,
+  "concurrency": 2,
+  "latency_budget": 5000000000,
+  "weights_hash": "3d182474aaa8",
+  "entries": [
+    {
+      "model": "typesafe/jev-1.14",
+      "resolved_models": [
+        "typesafe/jev-1.14-20261014"
+      ],
+      "score": {
+        "cases": 261,
+        "disputed_cases": 20,
+        "headline": 88.03444316877153,
+        "headline_lo": 82.80088987764181,
+        "headline_hi": 92.26298427311083,
+        "headline_within_budget": 88.03444316877153,
+        "headline_disputed": 74.21052631578947,
+        "verdict": 0.9574468085106383,
+        "closeness": 0.9375975177304973,
+        "trigger": 0.9653739612188366,
+        "focus": 0.975,
+        "brier": 0.16756920803782493,
+        "dangerous_fp": 2,
+        "dangerous_opportunities": 366,
+        "dangerous_fp_rate": 0.00546448087431694,
+        "calls": 843,
+        "error_rate": 0,
+        "refusal_rate": 0,
+        "within_budget": 0.9988137603795967,
+        "latency_p50": 286144750,
+        "latency_p95": 519305417,
+        "latency_max": 5135974917,
+        "cost_usd": 0.17092630800000036,
+        "judge_cost_usd": 0.023414634935999993,
+        "judge_audited": 32,
+        "judge_disagreed": 1,
+        "review_cases": [
+          "fo-researcher-loan-vs-index"
+        ],
+        "by_track": {
+          "chips": {
+            "cases": 16,
+            "score": 99.70666666666666
+          },
+          "claim_check": {
+            "cases": 8,
+            "score": 100
+          },
+          "clarify": {
+            "cases": 9,
+            "score": 66.15238095238095
+          },
+          "contested": {
+            "cases": 7,
+            "score": 67.33333333333333
+          },
+          "depth": {
+            "cases": 6,
+            "score": 96.57777777777778
+          },
+          "emotional": {
+            "cases": 14,
+            "score": 85.95238095238095
+          },
+          "focus": {
+            "cases": 38,
+            "score": 92.92747967479671
+          },
+          "format": {
+            "cases": 10,
+            "score": 95.61666666666669
+          },
+          "high_stakes": {
+            "cases": 24,
+            "score": 80.8183574879227
+          },
+          "intent": {
+            "cases": 22,
+            "score": 95.80350877192983
+          },
+          "locale": {
+            "cases": 5,
+            "score": 61.47692307692307
+          },
+          "premise": {
+            "cases": 13,
+            "score": 78.83589743589745
+          },
+          "private_person": {
+            "cases": 8,
+            "score": 87.5
+          },
+          "recall": {
+            "cases": 7,
+            "score": 76.60740740740741
+          },
+          "recency": {
+            "cases": 8,
+            "score": 92.94193548387098
+          },
+          "research": {
+            "cases": 19,
+            "score": 96.97089201877934
+          },
+          "source_type": {
+            "cases": 20,
+            "score": 77.89333333333335
+          },
+          "task": {
+            "cases": 11,
+            "score": 92.4148148148148
+          },
+          "ui": {
+            "cases": 16,
+            "score": 93.48641975308642
+          }
+        }
+      }
+    },
+    {
+      "model": "typesafe/jev-1.13",
+      "resolved_models": [
+        "typesafe/jev-1.13-20260917"
+      ],
+      "score": {
+        "cases": 261,
+        "disputed_cases": 20,
+        "headline": 86.49889016456181,
+        "headline_lo": 81.36445497630334,
+        "headline_hi": 91.16055684454761,
+        "headline_within_budget": 86.49889016456181,
+        "headline_disputed": 77.5,
+        "verdict": 0.9574468085106383,
+        "closeness": 0.9411347517730504,
+        "trigger": 0.9598337950138505,
+        "focus": 0.95,
+        "brier": 0.16471572104018908,
+        "dangerous_fp": 3,
+        "dangerous_opportunities": 366,
+        "dangerous_fp_rate": 0.00819672131147541,
+        "calls": 843,
+        "error_rate": 0,
+        "refusal_rate": 0,
+        "within_budget": 1,
+        "latency_p50": 301392959,
+        "latency_p95": 497963250,
+        "latency_max": 2783463250,
+        "cost_usd": 0.17092630800000036,
+        "judge_cost_usd": 0.01639227744,
+        "judge_audited": 32,
+        "judge_disagreed": 0,
+        "by_track": {
+          "chips": {
+            "cases": 16,
+            "score": 99.82400000000001
+          },
+          "claim_check": {
+            "cases": 8,
+            "score": 100
+          },
+          "clarify": {
+            "cases": 9,
+            "score": 61.45396825396825
+          },
+          "contested": {
+            "cases": 7,
+            "score": 67.23809523809523
+          },
+          "depth": {
+            "cases": 6,
+            "score": 97.11111111111111
+          },
+          "emotional": {
+            "cases": 14,
+            "score": 70.51428571428572
+          },
+          "focus": {
+            "cases": 38,
+            "score": 93.10959349593497
+          },
+          "format": {
+            "cases": 10,
+            "score": 95.7875
+          },
+          "high_stakes": {
+            "cases": 24,
+            "score": 78.07342995169083
+          },
+          "intent": {
+            "cases": 22,
+            "score": 95.84912280701757
+          },
+          "locale": {
+            "cases": 5,
+            "score": 61.57948717948718
+          },
+          "premise": {
+            "cases": 13,
+            "score": 73.58461538461539
+          },
+          "private_person": {
+            "cases": 8,
+            "score": 97.66666666666666
+          },
+          "recall": {
+            "cases": 7,
+            "score": 77.02222222222223
+          },
+          "recency": {
+            "cases": 8,
+            "score": 92.80860215053764
+          },
+          "research": {
+            "cases": 19,
+            "score": 92.8244131455399
+          },
+          "source_type": {
+            "cases": 20,
+            "score": 76.34666666666666
+          },
+          "task": {
+            "cases": 11,
+            "score": 92.36543209876544
+          },
+          "ui": {
+            "cases": 16,
+            "score": 91.70864197530862
+          }
+        }
+      }
+    }
+  ]
+}
