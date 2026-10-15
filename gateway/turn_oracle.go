@@ -68,7 +68,7 @@ func (t *turnRun) runOracleStage() {
 			// not already on, Research not switched off, no voice call, and a
 			// worker model configured for the sub-agents.
 			_, hasWorker := t.cfg.ResearchWorkerModel()
-			offersDeepResearch := t.agentCtx.RequestLocation != nil && !t.msg.DeepResearch && !t.msg.NoResearch && !t.msg.VoiceMode && hasWorker
+			offersDeepResearch := t.agentCtx.RequestLocation != nil && !t.agentCtx.DeepResearch && !t.msg.NoResearch && !t.msg.VoiceMode && hasWorker
 			t.oracleAttempted = true
 			t.oracleResult = RunOracle(t.ctx, t.s.jev, OracleInput{
 				CurrentMessage:       t.msg.Content,

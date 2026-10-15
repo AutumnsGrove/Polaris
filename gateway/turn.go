@@ -166,6 +166,7 @@ func (s *Server) handleTurn(ctx context.Context, msg ClientMessage, send func(Se
 	t.emitter = newTurnEmitter(s, send, t.threadID, t.storageThreadID, t.turnID)
 	t.appendPulsarReport()
 	t.buildAgentContext()
+	t.carryDeepResearch()
 	t.runOracleStage()
 	t.announceOracle()
 	if !t.runAgent() {

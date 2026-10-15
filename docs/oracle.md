@@ -90,6 +90,13 @@ Research is already on, Research is switched off, on a voice call, over the API,
 research worker model configured. Safari and Brief skip it, and a message that's ambiguous
 (`clarify`) or distressed (`emotional`) never gets it.
 
+**The plan-confirmation reply stays in Deep Research too.** A promoted turn usually ends by asking
+you to confirm its researcher plan, and your answer ("Run it", or a change to the plan) wouldn't
+earn Deep Research on its own — so the turn right after a pending plan automatically keeps it on, and
+keeps doing so for each re-plan until the researchers actually run. This doesn't depend on Oracle
+(it also covers a manual toggle you switched off after the plan was proposed) and, like the
+promotion, never changes the thread's own setting.
+
 ### High stakes — `high_stakes`
 
  Would acting on a wrong answer to this message risk someone's health, legal standing, money, or physical safety?
