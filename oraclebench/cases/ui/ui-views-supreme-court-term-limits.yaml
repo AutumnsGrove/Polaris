@@ -5,7 +5,7 @@ rationale: >-
   court defenders) disagree: views. Not claim (no single true/false claim), not procon (not a
   personal decision), not compare (no two named products). contested=yes is the pairing.
 state:
-  latest: "should the supreme court have term limits? what do the different sides say"
+  latest: "Should the Supreme Court have term limits? I would like to understand what the different sides say."
 expect:
   ui: {answer: views, accept: [views, procon]}
   contested: {answer: "yes"}

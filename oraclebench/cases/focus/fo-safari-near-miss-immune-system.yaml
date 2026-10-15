@@ -2,12 +2,11 @@ id: fo-safari-near-miss-immune-system
 track: focus
 rationale: >-
   Near-miss: a broad topic, but a plain how-does-X-work question with no request for an
-  interactive multi-turn tour. first_principles or off, not safari (which is explicit-only).
-  Split between the two modes, hence disputed.
+  interactive multi-turn tour, so not safari (which is explicit-only). The person asks to
+  understand the mechanism from the basics, which is the first_principles description.
 state:
-  latest: "how does the immune system work"
+  latest: "Could you explain how the immune system works, starting from the basics? I would like to understand the underlying mechanism."
 expect:
-  focus: {answer: first_principles, accept: [first_principles, "off"]}
+  focus: {answer: first_principles}
 quiet:
   - emotional
-disputed_label: true

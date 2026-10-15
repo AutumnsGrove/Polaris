@@ -4,7 +4,7 @@ rationale: >-
   A question about what a specific official technical specification says. `academic` ("technical
   question best answered from... official documentation"). Stable text, no news angle.
 state:
-  latest: "what does rfc 9110 actually say about idempotent http methods"
+  latest: "What does RFC 9110 actually say about idempotent HTTP methods?"
 expect:
   focus: {answer: academic}
 quiet:

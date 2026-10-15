@@ -1,0 +1,11 @@
+id: st-academic-fasting-trials
+track: source_type
+rationale: >-
+  Asks specifically for randomized controlled trial evidence, which lives in peer-reviewed papers
+  (academic), not in diet-blog or news summaries.
+state:
+  latest: "What do randomized controlled trials show about intermittent fasting versus standard calorie restriction for weight loss?"
+expect:
+  source_type: {answer: academic}
+quiet:
+  - emotional

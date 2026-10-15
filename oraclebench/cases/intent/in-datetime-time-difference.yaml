@@ -2,9 +2,9 @@ id: in-datetime-time-difference
 track: intent
 rationale: >-
   Time zone conversion for scheduling a call: datetime ("current time somewhere, time zone
-  conversion"). Clean positive, terse.
+  conversion"). Clean positive, short.
 state:
-  latest: "its 3pm here in chicago whats that in tokyo"
+  latest: "It is 3 PM here in Chicago. What time is that in Tokyo?"
 expect:
   intent: {answer: datetime}
   task: {answer: calculate, accept: [calculate, answer]}

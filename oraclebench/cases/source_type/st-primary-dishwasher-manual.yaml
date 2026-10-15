@@ -1,0 +1,13 @@
+id: st-primary-dishwasher-manual
+track: source_type
+rationale: >-
+  Asks what an error code means according to the manual: the manufacturer's own published material
+  (primary_docs). Near-miss with st-vacuum-common-problems, where "common problems" wants owner
+  experience instead.
+state:
+  latest: "bosch dishwasher showing E15, what does the manual say it means"
+expect:
+  source_type: {answer: primary_docs}
+quiet:
+  - emotional
+  - private_person

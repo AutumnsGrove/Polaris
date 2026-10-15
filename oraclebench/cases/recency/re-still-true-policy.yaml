@@ -5,7 +5,7 @@ rationale: >-
   recent. Whether a live story is running (breaking) is plausible for some policies, so recent is
   the label with breaking tolerated.
 state:
-  latest: "is the penny still being made or did they stop"
+  latest: "Is the U.S. penny still being made, or did the Mint stop producing it?"
 expect:
   recency: {answer: recent, accept: [recent, breaking]}
   research: {answer: "yes"}

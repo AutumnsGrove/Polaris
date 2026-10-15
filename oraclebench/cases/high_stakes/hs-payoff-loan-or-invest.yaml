@@ -1,10 +1,10 @@
 id: hs-payoff-loan-or-invest
 track: high_stakes
 rationale: >-
-  Lowercase, unpunctuated phone message weighing debt payoff against investing; debt and
+  Short message weighing debt payoff against investing; debt and
   investing are both named in the financial option.
 state:
-  latest: "got 15k bonus. pay off 6.8% student loan or put it all in index funds"
+  latest: "I received a $15k bonus. Should I pay off my 6.8% student loan with it, or put the whole amount into index funds?"
 expect:
   high_stakes: {answer: financial}
   task: {answer: decide}

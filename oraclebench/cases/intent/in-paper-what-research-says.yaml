@@ -5,7 +5,7 @@ rationale: >-
   Narrow topic (weighted blankets and sleep) with an explicit ask for studies. It is health
   adjacent, so a defensible alternative is general, but the studies framing is the point.
 state:
-  latest: "are there actual studies on whether a weighted blanket improves sleep quality, not just reviews"
+  latest: "Are there actual studies on whether a weighted blanket improves sleep quality, rather than just consumer reviews?"
 expect:
   intent: {answer: academic_paper, accept: [academic_paper, general]}
 quiet:

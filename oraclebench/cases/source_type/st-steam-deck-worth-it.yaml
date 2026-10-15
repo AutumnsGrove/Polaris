@@ -4,7 +4,7 @@ rationale: >-
   "Is it worth it" and "what's it like" is lived experience: owners and forums beat the
   manufacturer's page (community).
 state:
-  latest: "is the steam deck oled actually worth it? whats it like to live with after a few months"
+  latest: "Is the Steam Deck OLED actually worth it? What is it like to live with after a few months of use?"
 expect:
   source_type: {answer: community}
 quiet:

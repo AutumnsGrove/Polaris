@@ -3,13 +3,12 @@ track: focus
 rationale: >-
   Trap: a very short message that looks brief-worthy but asks "why", which is the
   first_principles description ("understand why or how something works"). The message never
-  asks for a short answer and is not a single-fact lookup. Some would call it a plain balanced
-  question, hence disputed with `off` accepted.
+  asks for a short answer and is not a single-fact lookup. The added "why, not just that it
+  is" makes the wish to understand the mechanism explicit.
 state:
-  latest: "why is the sky blue"
+  latest: "why is the sky blue? i want the actual reason, not just that it is"
 expect:
-  focus: {answer: first_principles, accept: [first_principles, "off"]}
+  focus: {answer: first_principles}
 quiet:
   - emotional
   - private_person
-disputed_label: true

@@ -2,12 +2,12 @@ id: fo-sticky-safari-side-fact
 track: focus
 rationale: >-
   Mid-safari, the latest message is a mini fact lookup ("what's a guild") that on its own
-  would read brief. But safari is sticky and brief must clear 0.85 to switch; a side question
-  is part of the tour. Decision models could split, hence disputed.
+  would read brief. The label is the raw answer to the focus question (single fact lookup:
+  `brief`); whether safari's stickiness holds against it is the scorer's separate sticky rule,
+  not this label.
 state:
   previous: "walk me through how medieval trade worked, stop by stop"
   prior_oracle_focus: safari
   latest: "wait whats a guild"
 expect:
-  focus: {answer: safari, accept: [safari, brief]}
-disputed_label: true
+  focus: {answer: brief}

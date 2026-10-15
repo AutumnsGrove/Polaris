@@ -5,7 +5,7 @@ rationale: >-
   the best-of list case (ui-none-best-sci-fi-books), where the person is choosing between
   things rather than learning.
 state:
-  latest: "i want to actually understand how transformers work in ml. what should i read, in what order"
+  latest: "I want to genuinely understand how transformers work in machine learning. What should I read, and in what order?"
 expect:
   ui: {answer: readings, accept: [readings, "none"]}
 quiet:

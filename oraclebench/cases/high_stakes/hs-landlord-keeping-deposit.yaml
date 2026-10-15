@@ -5,7 +5,7 @@ rationale: >-
   legal option. Money is involved, but the question is about legal entitlement and process, so
   legal is the best fit; financial is not a defensible primary label here.
 state:
-  latest: "my landlord is keeping my whole security deposit for 'normal wear and tear'. can he legally do that in texas and what do i do"
+  latest: "I moved out of my apartment last month, and my landlord is keeping my entire security deposit for 'normal wear and tear'. Can he legally do that in Texas, and what should I do about it?"
 expect:
   high_stakes: {answer: legal}
 quiet:

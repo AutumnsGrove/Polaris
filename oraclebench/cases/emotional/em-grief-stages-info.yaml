@@ -4,7 +4,7 @@ rationale: >-
   Neutral informational question about grief with no personal framing. Topic is heavy but the
   person is not describing their own hardship, so emotional=no.
 state:
-  latest: "what are the five stages of grief and is there actually research backing them up"
+  latest: "What are the five stages of grief, and is there actually any research that backs them up?"
 expect:
   emotional: {answer: "no"}
 quiet:

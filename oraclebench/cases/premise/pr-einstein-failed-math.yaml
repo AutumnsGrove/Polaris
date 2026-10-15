@@ -4,6 +4,6 @@ rationale: >-
   Einstein did not fail math (a common myth). The question builds in a false fact, so
   premise=yes.
 state:
-  latest: "since einstein failed math in school how did he end up becoming a physicist"
+  latest: "Since Einstein failed math in school, how did he end up becoming one of the most celebrated physicists in history?"
 expect:
   premise: {answer: "yes"}

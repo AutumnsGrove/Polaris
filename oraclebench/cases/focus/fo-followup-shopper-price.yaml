@@ -4,8 +4,8 @@ rationale: >-
   Follow-up with no product named: "which one is cheaper" only resolves through the previous
   message about robot vacuums. shopper via state.previous.
 state:
-  previous: "looking at robot vacuums, roomba j7 vs roborock q revo"
-  latest: "which one is cheaper rn"
+  previous: "I am looking at robot vacuums, specifically the Roomba j7 versus the Roborock Q Revo."
+  latest: "Which one is cheaper right now?"
 expect:
   focus: {answer: shopper}
   research: {answer: "yes"}

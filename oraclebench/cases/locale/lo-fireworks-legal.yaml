@@ -3,7 +3,7 @@ track: locale
 rationale: >-
   Firework legality varies by country, state, and city, and no place is given: locale=yes.
 state:
-  latest: "are fireworks legal to buy and set off"
+  latest: "Are fireworks legal to buy and set off?"
 expect:
   locale: {answer: "yes"}
 quiet:

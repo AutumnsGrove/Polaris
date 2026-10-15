@@ -1,0 +1,17 @@
+id: rs-no-rewrite-paragraph
+track: research
+rationale: >-
+  Writing help on pasted text. It mentions a dated deliverable and a vendor name, which look like
+  checkable facts, but the user supplied them and wants the tone changed only. research=no.
+state:
+  latest: |-
+    Please rewrite the paragraph below so it sounds more professional and a little less apologetic:
+
+    Sorry for the delay, I know the Northwind report was supposed to be done by Friday the 14th but
+    my laptop died and I lost a bunch of work. I think I can have it to you by Wednesday, maybe
+    Thursday if the charts take a while.
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

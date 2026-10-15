@@ -1,0 +1,14 @@
+id: rs-no-water-still-boils
+track: research
+rationale: >-
+  Trap: "still" makes it sound like a does-this-hold-today question, but the boiling point of
+  water at sea level is a settled physical fact. research=no ("genuinely stable general
+  knowledge"). Twin of the current-sounding but changing questions rs-minimum-wage-california and
+  rs-marathon-world-record.
+state:
+  latest: "does water still boil at 100 celsius at sea level or did they change that"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

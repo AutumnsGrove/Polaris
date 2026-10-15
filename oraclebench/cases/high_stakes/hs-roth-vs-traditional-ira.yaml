@@ -4,7 +4,7 @@ rationale: >-
   Retirement-account choice: investing and taxes as a money decision, clearly financial. Not
   "taxes as a legal matter", so legal is not the label.
 state:
-  latest: "im 29 making about 85k, should i put my extra savings in a roth ira or traditional ira this year"
+  latest: "I'm 29 and earn about $85k a year. Would it be better to put my extra savings into a Roth IRA or a traditional IRA this year?"
 expect:
   high_stakes: {answer: financial}
   research: {answer: "yes"}

@@ -3,7 +3,7 @@ track: research
 rationale: >-
   Writing help, no facts needed. research=no ("writing help, brainstorming"). task=write bonus.
 state:
-  latest: "write me a short funny poem for my sisters 30th birthday, she loves cats and hates mondays"
+  latest: "Please write a short, funny poem for my sister's 30th birthday. She loves cats and hates Mondays."
 expect:
   research: {answer: "no"}
   task: {answer: write}

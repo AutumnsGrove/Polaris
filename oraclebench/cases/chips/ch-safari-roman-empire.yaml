@@ -4,7 +4,7 @@ rationale: >-
   A wide subject (a period of history) the person wants to understand in depth, with many parts
   to take one at a time: chip_safari=yes. It is not a changing number or a daily story.
 state:
-  latest: "i want to really understand the roman empire, like how it all fits together"
+  latest: "I want to really understand the Roman Empire and how all of it fits together."
 expect:
   chip_safari: {answer: "yes"}
 quiet:

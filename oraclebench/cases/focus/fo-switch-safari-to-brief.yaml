@@ -2,11 +2,12 @@ id: fo-switch-safari-to-brief
 track: focus
 rationale: >-
   Safari active, but the person gives an explicit tl;dr/just-the-year request for a single
-  fact. A clear explicit signal; brief should win and take over from safari.
+  fact. A clear explicit signal; the raw answer is `brief` (the person asks for a short answer
+  and a single fact). Whether it clears the switch bar over sticky safari is the scorer's
+  separate rule.
 state:
   previous: "explore the history of photography with me, stop by stop"
   prior_oracle_focus: safari
   latest: "tl;dr, what year was the first daguerreotype made, i just need the year"
 expect:
-  focus: {answer: brief, accept: [brief, safari]}
-disputed_label: true
+  focus: {answer: brief}

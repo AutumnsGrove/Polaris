@@ -4,6 +4,6 @@ rationale: >-
   Frames nuclear as "so dangerous compared to coal", which is backwards on deaths per unit of
   energy. One-sided framing with a questionable assumption, premise=yes.
 state:
-  latest: "why is nuclear power so much more dangerous than burning coal"
+  latest: "Why is nuclear power so much more dangerous than burning coal for electricity?"
 expect:
   premise: {answer: "yes"}

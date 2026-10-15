@@ -1,0 +1,11 @@
+id: st-any-red-wine-carpet
+track: source_type
+rationale: >-
+  Everyday household how-to where any reasonable guide works; it is not about product reliability
+  or an authority, so any (quiet).
+state:
+  latest: "how do i get red wine out of a carpet"
+expect:
+  source_type: {answer: any}
+quiet:
+  - emotional

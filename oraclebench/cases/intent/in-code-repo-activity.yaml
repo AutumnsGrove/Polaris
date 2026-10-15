@@ -4,7 +4,7 @@ rationale: >-
   Asks about a library's maintenance status: code ("a code repository, library, or programming
   project"). Clean positive; github_repo would be the tool.
 state:
-  latest: "is the htmx repo still actively maintained or has it slowed down"
+  latest: "Is the htmx repo still actively maintained, or has development slowed down?"
 expect:
   intent: {answer: code}
   research: {answer: "yes"}

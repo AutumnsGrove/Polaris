@@ -4,7 +4,7 @@ rationale: >-
   Clean positive: finding the best product under a budget. `shopper`, intent product, needs
   current prices so research yes.
 state:
-  latest: "best noise cancelling headphones under 300"
+  latest: "What are the best noise-cancelling headphones available for under $300?"
 expect:
   focus: {answer: shopper}
   intent: {answer: product}

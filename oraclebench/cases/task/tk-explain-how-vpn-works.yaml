@@ -3,7 +3,7 @@ track: task
 rationale: >-
   "How does X actually work" wants understanding, not a fact: explain. Clean positive.
 state:
-  latest: "can you explain how a vpn actually works, like what happens to my traffic"
+  latest: "Can you explain how a VPN actually works? In particular, I'd like to know what happens to my traffic."
 expect:
   task: {answer: explain}
 quiet:

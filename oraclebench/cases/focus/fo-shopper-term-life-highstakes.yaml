@@ -5,7 +5,7 @@ rationale: >-
   with real consequences. shopper fits the buy framing; researcher fits "consequences if wrong".
   Informed people split. high_stakes financial either way.
 state:
-  latest: "which term life policy should i buy for 500k coverage, im 34 with two kids"
+  latest: "I am 34 years old with two young children. Which term life insurance policy should I buy for $500,000 of coverage?"
 expect:
   focus: {answer: researcher, accept: [researcher, shopper]}
   high_stakes: {answer: financial}

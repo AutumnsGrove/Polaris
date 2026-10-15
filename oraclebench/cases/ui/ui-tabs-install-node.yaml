@@ -4,7 +4,7 @@ rationale: >-
   Parallel versions of one answer per operating system where the reader needs only their own:
   tabs. format=steps is the plain-shape counterpart (steps is defensible with code).
 state:
-  latest: "how do i install node on windows, mac and linux"
+  latest: "How do I install Node.js on Windows, macOS, and Linux?"
 expect:
   ui: {answer: tabs, accept: [tabs, steps]}
   format: {answer: steps, accept: [steps, code]}

@@ -3,7 +3,7 @@ track: clarify
 rationale: >-
   Clear, short, answerable on the spot. clarify=no, with definition or general intent acceptable.
 state:
-  latest: "how do you say thank you very much in spanish"
+  latest: "How do you say \"thank you very much\" in Spanish?"
 expect:
   clarify: {answer: "no"}
 quiet:

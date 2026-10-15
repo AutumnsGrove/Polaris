@@ -4,7 +4,7 @@ rationale: >-
   Loneliness after relocating, no factual ask. Clear emotional=yes; the "feel so lonely" is
   sincere, not hyperbole.
 state:
-  latest: "moved to a new city 3 months ago and havent really talked to anyone in weeks. i feel so lonely"
+  latest: "I moved to a new city three months ago, and I haven't really spoken to anyone in weeks. I feel so lonely."
 expect:
   emotional: {answer: "yes"}
 quiet:

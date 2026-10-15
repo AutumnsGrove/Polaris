@@ -3,7 +3,7 @@ track: chips
 rationale: >-
   Itinerary and lodging for an upcoming trip: chip_field=Trip Planning.
 state:
-  latest: "3 days in lisbon in march, which neighborhood should i stay in"
+  latest: "I'm spending three days in Lisbon in March. Which neighborhood should I stay in?"
 expect:
   chip_field: {answer: Trip Planning}
 quiet:

@@ -1,9 +1,9 @@
 id: in-definition-word-origin
 track: intent
 rationale: >-
-  Meaning and origin of a word: definition. Clean positive, lowercase phone style.
+  Meaning and origin of a word: definition. Clean positive, plain formal style.
 state:
-  latest: "where does the word serendipity come from"
+  latest: "Where does the word \"serendipity\" come from?"
 expect:
   intent: {answer: definition}
 quiet:

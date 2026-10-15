@@ -4,7 +4,7 @@ rationale: >-
   Everyday cooking question where any decent source is fine; no particular kind of source is
   clearly better, so source_type=any (quiet).
 state:
-  latest: "how long do i boil an egg for a jammy yolk"
+  latest: "How long should I boil an egg for a jammy yolk?"
 expect:
   source_type: {answer: any}
 quiet:

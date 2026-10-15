@@ -4,8 +4,8 @@ rationale: >-
   Trap: "like you said" and "the second point" refer to the immediately previous message in this
   same conversation, not a past one. recall=no.
 state:
-  previous: "explain how a vpn works in simple terms"
-  latest: "going back to what you said in the second point, does that mean my isp cant see anything"
+  previous: "Explain how a VPN works in simple terms."
+  latest: "Going back to what you said in the second point: does that mean my ISP cannot see anything I do online?"
 expect:
   recall: {answer: "no"}
 quiet:

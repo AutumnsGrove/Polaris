@@ -4,7 +4,7 @@ rationale: >-
   Asks for an email to be written: write. Research is not needed, but it is not labeled
   because a lease-law angle could arguably want a lookup.
 state:
-  latest: "write a polite email to my landlord asking when the broken heater will be fixed, its been a week"
+  latest: "Please write a polite email to my landlord asking when the broken heater will be fixed. It has been a week since I reported it."
 expect:
   task: {answer: write}
 quiet:

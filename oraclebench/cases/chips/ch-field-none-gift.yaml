@@ -3,7 +3,7 @@ track: chips
 rationale: >-
   A gift idea belongs to none of Home Lab, Cooking, Trip Planning, or Health: chip_field=none.
 state:
-  latest: "gift ideas for my moms 60th, she likes gardening and mystery novels"
+  latest: "Do you have any gift ideas for my mother's 60th birthday? She enjoys gardening and mystery novels."
 expect:
   chip_field: {answer: none}
 quiet:

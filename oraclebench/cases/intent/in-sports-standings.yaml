@@ -3,7 +3,7 @@ track: intent
 rationale: >-
   Standings question: sports ("score, schedule, standing, roster, or result"). Clean positive.
 state:
-  latest: "where are the lakers in the western conference standings"
+  latest: "Where do the Lakers currently sit in the Western Conference standings?"
 expect:
   intent: {answer: sports}
 quiet:

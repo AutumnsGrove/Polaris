@@ -4,7 +4,7 @@ rationale: >-
   Weighing a concrete choice and asking for help making it: decide. Money is involved but the
   message is calm, so emotional stays quiet.
 state:
-  latest: "i got two offers, one pays 15k more but has a 90 min commute, the other is 10 min away. help me decide"
+  latest: "I have received two job offers. One pays $15,000 more but has a 90-minute commute, while the other is only 10 minutes from home. Can you help me decide between them?"
 expect:
   task: {answer: decide}
 quiet:

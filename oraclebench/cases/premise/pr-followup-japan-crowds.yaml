@@ -4,8 +4,8 @@ rationale: >-
   Multi-turn near-miss: the previous message sets up April travel and the latest assumes cherry
   blossom season is crowded, which is accurate. premise=no.
 state:
-  previous: "planning a trip to japan in april"
-  latest: "why is it so crowded then, is it the cherry blossoms"
+  previous: "I am planning a trip to Japan in April."
+  latest: "Why is it so crowded at that time of year? Is it because of the cherry blossoms?"
 expect:
   premise: {answer: "no"}
 quiet:

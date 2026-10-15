@@ -5,7 +5,7 @@ rationale: >-
   textbook table. Nobody is asking for a pick, so table beats comparison. ui=compare is the
   matching block shape.
 state:
-  latest: "make me a table of the weight, battery life and price of the thinkpad x1 carbon, dell xps 13 and lg gram 14"
+  latest: "Please make me a table comparing the weight, battery life, and price of the ThinkPad X1 Carbon, the Dell XPS 13, and the LG Gram 14."
 expect:
   format: {answer: table}
   ui: {answer: compare}

@@ -4,7 +4,7 @@ rationale: >-
   Explicitly asks not to be given the answer but to be guided through a proof: the socratic
   description verbatim.
 state:
-  latest: "dont tell me the answer, guide me through proving sqrt 2 is irrational"
+  latest: "Please do not simply tell me the answer. Guide me through proving that the square root of 2 is irrational."
 expect:
   focus: {answer: socratic}
   research: {answer: "no"}

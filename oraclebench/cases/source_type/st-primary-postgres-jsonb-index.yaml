@@ -1,0 +1,13 @@
+id: st-primary-postgres-jsonb-index
+track: source_type
+rationale: >-
+  The person asks which index types PostgreSQL supports for jsonb and requests the documentation
+  by name: the project's own manual is the authority (primary_docs, "official documentation ...
+  specifications").
+state:
+  latest: "Which index types does PostgreSQL support on jsonb columns, and when is GIN preferable to B-tree? Please cite the documentation."
+expect:
+  source_type: {answer: primary_docs}
+quiet:
+  - emotional
+  - private_person

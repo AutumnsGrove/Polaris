@@ -5,7 +5,7 @@ rationale: >-
   of manufacturing, not flow). Latest message assumes it and asks for a timeline. Multi-turn
   premise carry-over, premise=yes.
 state:
-  previous: "does glass flow slowly over centuries, like in old church windows"
-  latest: "so how many years until my window sags"
+  previous: "Does glass flow slowly over centuries, as seen in old church windows?"
+  latest: "In that case, how many years will it take before my own window sags?"
 expect:
   premise: {answer: "yes"}

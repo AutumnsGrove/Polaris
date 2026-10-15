@@ -5,7 +5,7 @@ rationale: >-
   what to get. The best answer is a set of if-then rules, which is the choose description
   exactly, not a compare table of named options. format=list or comparison is acceptable.
 state:
-  latest: "what kind of laptop should i get, i edit photos on the weekends and travel a lot, budget around 1500"
+  latest: "What kind of laptop should I get? I edit photos on the weekends, I travel frequently, and my budget is around $1,500."
 expect:
   ui: {answer: choose, accept: [choose, compare]}
   task: {answer: decide}

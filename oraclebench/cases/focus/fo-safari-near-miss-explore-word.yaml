@@ -4,7 +4,7 @@ rationale: >-
   False friend: "explore" appears, but the person wants a single concrete itinerary, not an
   interactive learning tour of a subject. Not safari. Balanced answer.
 state:
-  latest: "want to explore lisbon for a long weekend, what should i do"
+  latest: "I would like to explore Lisbon over a long weekend. What would you recommend that I do?"
 expect:
   focus: {answer: "off"}
   intent: {answer: travel}

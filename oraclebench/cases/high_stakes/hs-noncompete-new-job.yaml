@@ -4,6 +4,6 @@ rationale: >-
   Enforceability of a non-compete before taking a new job. Contracts are named in the legal
   option; jurisdiction matters. Clear legal positive.
 state:
-  latest: "my old company has a 12 month noncompete in my contract and i got an offer from a competitor. is it even enforceable in california"
+  latest: "My current employer included a 12-month noncompete clause in my contract, and I have just received an offer from one of their competitors. Is that clause even enforceable in California?"
 expect:
   high_stakes: {answer: legal}

@@ -6,7 +6,7 @@ rationale: >-
   loss, so the person is in grief while asking. Resolves only via state.previous. Labeled yes,
   but informed people split: some would treat the latest turn as a plain how-to (no).
 state:
-  previous: "my grandma passed away last week"
-  latest: "how do i write an obituary"
+  previous: "My grandma passed away last week."
+  latest: "How do I write an obituary?"
 expect:
   emotional: {answer: "yes"}

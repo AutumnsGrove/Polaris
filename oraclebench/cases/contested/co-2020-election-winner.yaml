@@ -4,7 +4,7 @@ rationale: >-
   Sounds political but is a matter of record (certified results, courts): contested=no. Some
   graders may think the topic is too charged, but the question asked is factual.
 state:
-  latest: "who won the 2020 us presidential election"
+  latest: "Who won the 2020 U.S. presidential election?"
 expect:
   contested: {answer: "no"}
 quiet:

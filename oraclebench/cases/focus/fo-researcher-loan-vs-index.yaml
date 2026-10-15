@@ -5,7 +5,7 @@ rationale: >-
   returns, taxes). `researcher` ("careful cross-checking... real consequences if wrong").
   high_stakes financial. Not brief despite the conversational tone.
 state:
-  latest: "is it smarter to pay off my 6.5% student loan early or put the extra 15k into an index fund"
+  latest: "I have an extra $15,000 and a student loan at 6.5% interest. Would it be wiser to pay the loan off early, or to put the money into an index fund?"
 expect:
   focus: {answer: researcher}
   high_stakes: {answer: financial}

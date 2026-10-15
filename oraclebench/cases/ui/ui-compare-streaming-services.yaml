@@ -4,7 +4,7 @@ rationale: >-
   Three named plans compared across shared attributes (price, ad tier, resolution): compare.
   Not procon (several named options) and not views. format=table pairs naturally.
 state:
-  latest: "netflix vs hulu vs max, compare price ad tiers and streaming quality"
+  latest: "Netflix vs. Hulu vs. Max: please compare them on price, ad tiers, and streaming quality."
 expect:
   ui: {answer: compare}
   format: {answer: table, accept: [table, comparison]}

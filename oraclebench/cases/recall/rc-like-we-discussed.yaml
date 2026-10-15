@@ -4,7 +4,7 @@ rationale: >-
   An explicit back-reference ("like we discussed last week") to a conversation the assistant
   can't see in-thread. recall=yes (1.00 on Jev 1.13/1.14 and Mercury in spike round 3).
 state:
-  latest: "like we discussed last week, can you remind me what the fix was for the docker bind mount thing"
+  latest: "Like we discussed last week, can you remind me what the fix was for the Docker bind mount permissions problem?"
 expect:
   recall: {answer: "yes"}
   task: {answer: troubleshoot, accept: [troubleshoot, answer]}

@@ -1,0 +1,11 @@
+id: ch-daily-no-sky-blue
+track: chips
+rationale: >-
+  Idle curiosity with a stable answer. It is not worth a daily glance, so chip_daily=no, and with
+  nothing that changes, chip_pulsar is quiet as well.
+state:
+  latest: "why is the sky blue but sunsets are red"
+expect:
+  chip_daily: {answer: "no"}
+quiet:
+  - chip_pulsar

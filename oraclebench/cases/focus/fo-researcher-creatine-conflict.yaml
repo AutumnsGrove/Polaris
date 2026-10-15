@@ -1,11 +1,10 @@
 id: fo-researcher-creatine-conflict
 track: focus
 rationale: >-
-  The person explicitly wants sources cross-checked ("different sites say different things"),
-  which is the researcher description verbatim. But it is also a health question best answered
-  from studies, so academic is defensible: disputed.
+  The person explicitly asks for conflicting sources to be cross-checked ("different websites
+  disagree... cross-check"), which is the researcher description verbatim: the request is about
+  reconciling sources, not about reading the literature itself.
 state:
-  latest: "different sites say different things about whether creatine causes hair loss, can you cross check what is actually established"
+  latest: "Different websites say conflicting things about whether creatine causes hair loss. Could you cross-check the sources and tell me what is actually established?"
 expect:
-  focus: {answer: researcher, accept: [researcher, academic]}
-disputed_label: true
+  focus: {answer: researcher}

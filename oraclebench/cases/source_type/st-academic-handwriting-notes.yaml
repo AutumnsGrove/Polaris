@@ -1,0 +1,12 @@
+id: st-academic-handwriting-notes
+track: source_type
+rationale: >-
+  "What does the research say" is a request for the study evidence: academic. Near-miss twin of
+  st-community-obsidian-notion, which asks "what do people think" about the same general domain
+  and wants lived experience instead.
+state:
+  latest: "What does the research say about taking notes by hand versus typing them on a laptop?"
+expect:
+  source_type: {answer: academic}
+quiet:
+  - emotional

@@ -1,11 +1,11 @@
 id: hs-tylenol-nyquil-together
 track: high_stakes
 rationale: >-
-  Clear medical positive in terse phone voice: combining two over-the-counter drugs that share
+  Clear medical positive: combining two over-the-counter drugs that share
   acetaminophen is a dosage/medication question where a wrong answer risks liver harm.
   Matches the medical option ("medications, dosages"). Focus is left unlabeled.
 state:
-  latest: "can i take tylenol and nyquil together or is that too much acetaminophen"
+  latest: "Is it safe to take Tylenol and NyQuil together, or would that be too much acetaminophen?"
 expect:
   high_stakes: {answer: medical}
   research: {answer: "yes"}

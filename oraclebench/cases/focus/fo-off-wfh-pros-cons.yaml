@@ -4,7 +4,7 @@ rationale: >-
   A balanced opinion/tradeoff question about team work arrangements. Normal balanced answer
   is the best fit; nothing here is high-stakes or shopping. `off`.
 state:
-  latest: "pros and cons of remote vs in office for a small team of 8"
+  latest: "I manage a small team of eight people. What are the main pros and cons of working remotely versus in the office?"
 expect:
   focus: {answer: "off"}
 quiet:

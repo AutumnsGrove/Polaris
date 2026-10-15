@@ -3,7 +3,7 @@ track: chips
 rationale: >-
   Personal sleep trouble belongs to the Health field (sleep is named in its description).
 state:
-  latest: "been waking up at 3am every night for two weeks, anything that actually helps"
+  latest: "I have been waking up at 3am every night for the past two weeks. Is there anything that actually helps?"
 expect:
   chip_field: {answer: Health}
 quiet:

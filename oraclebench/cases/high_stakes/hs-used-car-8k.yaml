@@ -6,7 +6,7 @@ rationale: >-
   $8k on a used car is an everyday decision rather than a risk to someone's standing. All 7
   models said "financial" in spike round 2; "none" is equally defensible.
 state:
-  latest: "is an $8k used 2012 civic a good deal? thinking of buying it this weekend"
+  latest: "Is $8k a good price for a used 2012 Honda Civic? I am thinking of buying one this weekend."
 expect:
   high_stakes: {answer: financial, accept: [financial, "none"]}
   intent: {answer: product}

@@ -6,7 +6,7 @@ rationale: >-
   (no two named options), not choose (they want the weighing, not rules by situation).
   Distressed-sounding words are absent, so emotional stays quiet.
 state:
-  latest: "my partner got a job in portland and wants me to move with her. pros and cons of going vs staying here in ohio"
+  latest: "My partner has accepted a job in Portland and would like me to move with her. Could you lay out the pros and cons of going versus staying here in Ohio?"
 expect:
   ui: {answer: procon, accept: [procon, compare]}
   task: {answer: decide}

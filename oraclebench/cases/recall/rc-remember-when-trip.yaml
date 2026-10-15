@@ -4,7 +4,7 @@ rationale: >-
   Explicit "remember when we talked about" a past conversation the assistant cannot see in-thread.
   recall=yes.
 state:
-  latest: "remember when we talked about my japan trip a few weeks ago? what was the rail pass you recommended"
+  latest: "Do you remember when we talked about my Japan trip a few weeks ago? I am trying to recall which rail pass you recommended."
 expect:
   recall: {answer: "yes"}
 quiet:

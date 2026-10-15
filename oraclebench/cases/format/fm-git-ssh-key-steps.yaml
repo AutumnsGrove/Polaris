@@ -5,7 +5,7 @@ rationale: >-
   because the answer is mostly commands. Overlaps with ui=steps by design (ui holds format
   back when it fires), so ui is labeled separately.
 state:
-  latest: "how do i set up an ssh key for github on mac, step by step"
+  latest: "How do I set up an SSH key for GitHub on a Mac? Please go through it step by step."
 expect:
   format: {answer: steps, accept: [steps, code]}
   ui: {answer: steps}

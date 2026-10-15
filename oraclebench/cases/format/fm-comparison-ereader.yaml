@@ -3,9 +3,9 @@ track: format
 rationale: >-
   Choosing between two specific options and wanting to know which to pick is the "comparison"
   option (a verdict at the end), not a neutral table. ui=compare per its description (choosing
-  between specific options). Phone-style lowercase.
+  between specific options). Proper-register phrasing.
 state:
-  latest: "kindle paperwhite or kobo clara which one should i buy i read mostly library books"
+  latest: "I'm trying to decide between the Kindle Paperwhite and the Kobo Clara. Which one should I buy? I read mostly library books."
 expect:
   format: {answer: comparison, accept: [comparison, table]}
   ui: {answer: compare, accept: [compare, choose]}

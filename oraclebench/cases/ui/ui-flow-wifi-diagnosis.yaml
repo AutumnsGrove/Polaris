@@ -6,7 +6,7 @@ rationale: >-
   also lag? is it all devices?) - a branching chain, so flow rather than a straight steps
   list. Disputed because many would accept steps or none for a troubleshooting answer.
 state:
-  latest: "my wifi is slow, walk me through figuring out whether its the router, my isp, or my laptop. what to check depending on what i find"
+  latest: "My Wi-Fi has been slow lately. Please walk me through figuring out whether the problem is the router, my ISP, or my laptop, including what to check next depending on what I find at each stage."
 expect:
   ui: {answer: flow, accept: [flow, steps]}
   task: {answer: troubleshoot}

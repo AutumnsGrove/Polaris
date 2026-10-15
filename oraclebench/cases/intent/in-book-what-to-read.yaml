@@ -4,7 +4,7 @@ rationale: >-
   "What to read" after enjoying a named author: book option ("a book, author, or what to read").
   Clean positive.
 state:
-  latest: "just finished the Dispossessed by ursula le guin, what should i read next"
+  latest: "I just finished The Dispossessed by Ursula K. Le Guin and loved it. What should I read next?"
 expect:
   intent: {answer: book}
 quiet:

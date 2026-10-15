@@ -1,0 +1,11 @@
+id: ch-daily-no-baking-soda
+track: chips
+rationale: >-
+  A one-off knowledge question. Once answered, there is nothing to check on tomorrow morning, so
+  chip_daily=no ("Not something to follow day to day"). Pulsar is quiet too: the answer never changes.
+state:
+  latest: "What is the difference between baking soda and baking powder, and can I substitute one for the other?"
+expect:
+  chip_daily: {answer: "no"}
+quiet:
+  - chip_pulsar

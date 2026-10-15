@@ -4,7 +4,7 @@ rationale: >-
   Asks when something happens (deadline/schedule): event ("a release date, showtimes, an event, a
   deadline"). The wording is about a tax filing deadline, so it is not film or sports.
 state:
-  latest: "when is the deadline to file federal taxes this year"
+  latest: "When is the deadline to file federal income taxes this year?"
 expect:
   intent: {answer: event}
 quiet:

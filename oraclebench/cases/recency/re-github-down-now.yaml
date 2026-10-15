@@ -4,7 +4,7 @@ rationale: >-
   "Right now" outage status is the textbook breaking case: the answer is wrong within the
   hour, so recency=breaking and research=yes.
 state:
-  latest: "is github down right now? my push keeps timing out"
+  latest: "Is GitHub down right now? My push keeps timing out."
 expect:
   recency: {answer: breaking}
   research: {answer: "yes"}

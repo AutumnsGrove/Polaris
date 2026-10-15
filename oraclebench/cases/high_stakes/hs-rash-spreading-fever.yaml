@@ -5,7 +5,7 @@ rationale: >-
   "symptoms, medications" under the medical option. The person is practical rather than
   distressed, so emotional is not labeled either way.
 state:
-  latest: "started amoxicillin 3 days ago and now i have a red rash on my torso and a low fever. is this an allergic reaction or normal"
+  latest: "I started taking amoxicillin three days ago, and I now have a red rash on my torso along with a low fever. Is this an allergic reaction, or is it a normal side effect?"
 expect:
   high_stakes: {answer: medical}
   focus: {answer: researcher, accept: [researcher, academic]}

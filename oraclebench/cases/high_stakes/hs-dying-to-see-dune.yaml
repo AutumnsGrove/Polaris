@@ -5,7 +5,7 @@ rationale: >-
   stay "none" and emotional must stay quiet. All 7 models in spike round 2 got this right, so
   it is a floor check, not a discriminator.
 state:
-  latest: "im dying to see dune part three, when does it come out"
+  latest: "I'm dying to see Dune: Part Three. Do you know when it comes out?"
 expect:
   high_stakes: {answer: "none"}
   intent: {answer: event, accept: [event, film_tv]}

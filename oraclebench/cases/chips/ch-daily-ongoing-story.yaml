@@ -4,7 +4,7 @@ rationale: >-
   An ongoing news story the person says they are following: worth a daily glance, so
   chip_daily=yes. Not a Safari-style learning request.
 state:
-  latest: "ive been following the port strike negotiations, whats the latest"
+  latest: "I've been following the port strike negotiations. What is the latest?"
 expect:
   chip_daily: {answer: "yes"}
   recency: {answer: breaking, accept: [breaking, recent]}

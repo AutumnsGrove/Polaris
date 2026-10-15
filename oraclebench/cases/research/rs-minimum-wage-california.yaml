@@ -1,0 +1,13 @@
+id: rs-minimum-wage-california
+track: research
+rationale: >-
+  Trap: reads like a settled lookup, but statutory minimum wages are adjusted on a schedule and
+  vary by city, so memory is often a year stale. research=yes ("specifics ... anything that could
+  have changed recently"). A false "no" here is the harmful error.
+state:
+  latest: "whats the minimum wage in california"
+expect:
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person
