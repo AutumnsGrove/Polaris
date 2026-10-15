@@ -115,6 +115,13 @@ type OracleInput struct {
 	// the surface can't show, would be a wasted question and a wrong nudge. On
 	// "low" its bar rises by VisualsLowOffset.
 	Visuals string
+	// OffersDeepResearch means this turn could actually be promoted to Deep
+	// Research: an interactive chat (the plan-confirmation step needs someone to
+	// answer it), Deep Research not already on, Research not switched off, and a
+	// worker model configured for the sub-agents. The deep_research check is only
+	// asked when it is — a "yes" that gateway/turn_oracle.go couldn't act on would
+	// be a wasted question and a misleading note.
+	OffersDeepResearch bool
 	// Rules is config.yaml's oracle: block (thresholds, sticky/skip lists —
 	// see config.OracleConfig), already merged with the shipped defaults by
 	// config.Load. The zero value means "use the shipped defaults", so a
@@ -175,6 +182,11 @@ type OracleResult struct {
 	// Distinct from FocusMode == "": that means "Oracle had no opinion".
 	FocusCleared   bool `json:"focus_cleared,omitempty"`
 	NoResearchHint bool `json:"no_research_hint,omitempty"`
+	// DeepResearch means the deep_research check fired "yes" and nothing held it
+	// back: gateway/turn_oracle.go promotes this one turn to Deep Research. Per
+	// turn only — the thread's sticky Deep Research toggle is left alone, so one
+	// big question doesn't leave every later message on the expensive tier.
+	DeepResearch bool `json:"deep_research,omitempty"`
 	// Injections is every fired check's resolved text, in the order the
 	// ## Oracle section should list them — one paragraph each.
 	Injections []string       `json:"injections,omitempty"`
@@ -186,6 +198,10 @@ type OracleResult struct {
 // uiCheckKey is the Prism check: would a visual block beat prose. Named once
 // because the engine special-cases it (see OracleInput.Visuals).
 const uiCheckKey = "ui"
+
+// deepResearchCheckKey is the Deep Research promotion check. Named once because
+// the engine special-cases it (see OracleInput.OffersDeepResearch).
+const deepResearchCheckKey = "deep_research"
 
 // RunOracle fires every enabled check (plus chips) as one Jev AskChoice
 // call and applies each answer's threshold/sticky/focus rules — see
@@ -236,6 +252,11 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		// Special-cased by key, like the field chip below: whether to ask at
 		// all depends on the Prism dial, which no generic rule field expresses.
 		if key == uiCheckKey && in.Visuals != "low" && in.Visuals != "normal" {
+			continue
+		}
+		// Same shape as the ui gate: whether to ask depends on the turn's own
+		// capabilities, which no generic rule field expresses.
+		if key == deepResearchCheckKey && !in.OffersDeepResearch {
 			continue
 		}
 		if sliceContains(rule.SkipForFocus, in.ActiveFocusMode) {
@@ -339,7 +360,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	suppressed := map[string]bool{}
 	for key, rule := range rules.Checks {
 		ans, ok := resp.Answers[key]
-		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) || uiSkippedByOwnFocus(key, rule, effectiveFocus) {
+		if !ok || len(rule.Suppresses) == 0 || !checkFired(rule, ans) || skippedByOwnFocus(key, rule, effectiveFocus) {
 			continue
 		}
 		for _, held := range rule.Suppresses {
@@ -400,7 +421,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		fired := ans.Probabilities[ans.Choice] >= rule.Threshold
 		// A nudge for a mode Oracle picked THIS turn: the question-time
 		// skip_for_focus above only saw the mode decided before Oracle ran.
-		if fired && uiSkippedByOwnFocus(key, rule, effectiveFocus) {
+		if fired && skippedByOwnFocus(key, rule, effectiveFocus) {
 			result.Checks = append(result.Checks, CheckOutcome{Key: key, Winner: ans.Choice, Probabilities: ans.Probabilities})
 			continue
 		}
@@ -414,6 +435,9 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		}
 		if key == "research" && ans.Choice == "no" {
 			result.NoResearchHint = true
+		}
+		if key == deepResearchCheckKey && ans.Choice == "yes" {
+			result.DeepResearch = true
 		}
 		if sliceContains(rule.SkipOptionForFocus[ans.Choice], effectiveFocus) {
 			continue
@@ -445,15 +469,16 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	return result
 }
 
-// uiSkippedByOwnFocus is true when the ui check's skip_for_focus lists the mode
-// this turn will actually run under, including one Oracle picked itself. Found
+// skippedByOwnFocus is true when the ui or deep_research check's skip_for_focus
+// lists the mode this turn will actually run under, including one Oracle picked
+// itself (Brief picked alongside a deep_research "yes" must not promote). Found
 // by the Prism spike (dev/ui_spike): "take me on a safari of ..." got a steps
 // nudge at 0.84 because Safari was only chosen by this same Oracle call, after
-// the question-time skip had already looked. Scoped to the ui check on purpose;
+// the question-time skip had already looked. Scoped to these two checks on purpose;
 // the older checks have the same gap but changing their behaviour is not part
 // of adding this one.
-func uiSkippedByOwnFocus(key string, rule config.OracleCheckRules, effectiveFocus string) bool {
-	return key == uiCheckKey && sliceContains(rule.SkipForFocus, effectiveFocus)
+func skippedByOwnFocus(key string, rule config.OracleCheckRules, effectiveFocus string) bool {
+	return (key == uiCheckKey || key == deepResearchCheckKey) && sliceContains(rule.SkipForFocus, effectiveFocus)
 }
 
 // checkFired reports whether a yes/no-style check's winner is a real answer

@@ -176,6 +176,11 @@ export function buildOracleNote(
 		}
 	}
 
+	// Straight off the result's own flag, not the check outcome: the flag is
+	// only set when the promotion actually took effect (not held back by
+	// clarify/emotional, not overridden by Brief/Safari).
+	const deepClause = oracleResult.deep_research ? 'promoted to <b>Deep Research</b>' : undefined;
+
 	const ui = oracleResult.checks?.find((c) => c.key === 'ui');
 	const uiClause =
 		ui?.fired && UI_BLOCK_LABELS[ui.winner] && hasUiBlock(answer)
@@ -188,6 +193,7 @@ export function buildOracleNote(
 	const parts: string[] = [];
 	if (readAs) parts.push(`Read as <b>${readAs}</b>`);
 	if (focusClause) parts.push(focusClause);
+	if (deepClause) parts.push(deepClause);
 	if (uiClause) parts.push(uiClause);
 	if (parts.length) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + parts.slice(1).map((p) => ` · ${p}`).join('');
 
@@ -209,6 +215,7 @@ export const CHECK_DISPLAY: { key: string; name: string }[] = [
 	{ key: 'high_stakes', name: 'High stakes' },
 	{ key: 'intent', name: 'Topic' },
 	{ key: 'research', name: 'Research' },
+	{ key: 'deep_research', name: 'Deep Research' },
 	{ key: 'clarify', name: 'Clarify first' },
 	{ key: 'recall', name: 'Past chats' },
 	{ key: 'task', name: 'Task' },
@@ -270,6 +277,7 @@ const OPTION_LABELS: Record<string, Record<string, string>> = {
 		datetime: 'Time'
 	},
 	research: { yes: 'Needed', no: 'Not needed' },
+	deep_research: { yes: 'Deep question', no: 'Normal' },
 	clarify: { yes: 'Yes', no: 'No' },
 	recall: { yes: 'Yes', no: 'No' },
 	task: {
@@ -333,6 +341,7 @@ export function optionLabel(checkKey: string, option: string): string {
 // injected guidance into this turn's system prompt or it didn't).
 export function checkStateLabel(checkKey: string, fired: boolean): string {
 	if (checkKey === 'focus') return fired ? 'Set' : 'Not set';
+	if (checkKey === 'deep_research') return fired ? 'Promoted' : 'Quiet';
 	return fired ? 'Nudged' : 'Quiet';
 }
 

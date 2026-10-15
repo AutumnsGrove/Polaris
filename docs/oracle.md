@@ -29,8 +29,9 @@ Guarantees worth knowing:
   runs exactly as if Oracle were off.
 - **Manual always wins.** A focus mode you pick for a message is never overridden; Oracle still reports
   what it would have picked.
-- **It only nudges.** Oracle never removes tools from a turn, and it never turns on deep research —
-  that stays a deliberate choice.
+- **It mostly nudges.** Oracle never removes tools from a turn. The one thing it can switch on is
+  Deep Research, for that single message and only when the dedicated `deep_research` check is very
+  confident (see below); your thread's own Deep Research toggle is never touched.
 - **Ghost threads are your call.** By default a ghost (ephemeral) conversation skips Oracle entirely. Settings → Oracle mode has a second switch, **Also in ghost conversations**, that lets Oracle read and steer those turns too — but only the checks and focus mode: the offer chips that create something permanent (Pulsar, Daily, Field) stay hidden there, since a conversation meant to leave no trace shouldn't offer to file itself somewhere. Only the opening of long messages is sent to the classifier either way.
 
 ## Checks
@@ -71,6 +72,23 @@ How careful to be, and where to look.
 | `no` | Casual conversation, writing help, brainstorming, or genuinely stable general knowledge. | Yes |
 
 *fires at **85%+**.*
+
+### Deep Research — `deep_research`
+
+ Is this a deep, nuanced question that genuinely needs extensive, multi-angle research — many sources compared and cross-checked — rather than one good search? Pick "no" unless a thorough investigation would clearly produce a meaningfully better answer than a normal one.
+
+| Option | When it applies | Nudge |
+|---|---|---|
+| `yes` | Broad, layered, or contested enough that it spans several distinct angles, sub-questions, or bodies of sources (a landscape survey, a multi-factor comparison, a question with competing expert views, an investigation of a complex topic), where an answer from a few searches would be shallow. | Promotes the turn to Deep Research |
+| `no` | A single fact, a focused question, a quick recommendation, casual conversation, or anything a normal search-and-answer handles well, however interesting it is. | — |
+
+*fires at **85%+**.* This is its own question, separate from `focus` and `research`. A "yes" promotes
+just that message to Deep Research — the multi-agent mode that plans a set of sub-researchers and
+asks you to confirm before spawning them — and the reply's margin note says *promoted to Deep
+Research*. It's only asked in a live chat where that confirmation can be answered: not when Deep
+Research is already on, Research is switched off, on a voice call, over the API, or without a
+research worker model configured. Safari and Brief skip it, and a message that's ambiguous
+(`clarify`) or distressed (`emotional`) never gets it.
 
 ### High stakes — `high_stakes`
 

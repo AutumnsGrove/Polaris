@@ -169,6 +169,14 @@ oracle:
       never_with_high_stakes: [brief]   # not picked when high_stakes fired
     research:
       threshold: 0.85
+    # Promotes the turn to Deep Research (the multi-agent fan-out, many times the
+    # cost of a normal answer), so the bar is high. Only asked in an interactive
+    # chat with Deep Research off, Research on, and a worker model configured —
+    # the plan-confirmation step needs someone to answer it. Safari and Brief
+    # skip it; a distressed or ambiguous message never gets it.
+    deep_research:
+      threshold: 0.85
+      skip_for_focus: [safari, brief]
     high_stakes:
       threshold: 0.75
     intent:
@@ -180,6 +188,7 @@ oracle:
       threshold: 0.85
       first_message_only: true
       skip_for_focus: [safari]  # Safari's Embark step already asks
+      suppresses: [deep_research]  # don't fan out research on a question still being clarified
     recall:
       threshold: 0.80
     # Answer shape. Safari owns its own format; Brief is already short.
@@ -225,7 +234,7 @@ oracle:
       # table format, an agency-citation nudge, a step-by-step plan, or a
       # "stop and ask a question first" stacked on top. High-stakes, locale,
       # and freshness stay — those carry facts, not tone.
-      suppresses: [format, depth, source_type, task, clarify, ui]
+      suppresses: [format, depth, source_type, task, clarify, ui, deep_research]
     private_person:
       threshold: 0.85
     premise:

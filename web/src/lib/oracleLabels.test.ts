@@ -29,6 +29,37 @@ describe('buildOracleNote', () => {
 		);
 	});
 
+	describe('the Deep Research clause', () => {
+		const promoted = (extra: Partial<OracleResult> = {}): OracleResult => ({
+			deep_research: true,
+			checks: [{ key: 'deep_research', winner: 'yes', probabilities: { yes: 0.91 }, fired: true }],
+			...extra
+		});
+
+		it('is a note of its own when nothing else fired', () => {
+			expect(buildOracleNote(promoted(), undefined, undefined, undefined)).toBe('Promoted to <b>Deep Research</b>');
+		});
+
+		it('sits between the focus clause and the ui clause', () => {
+			const result = promoted({
+				checks: [
+					{ key: 'high_stakes', winner: 'medical', probabilities: { medical: 0.9 }, fired: true },
+					{ key: 'ui', winner: 'compare', probabilities: { compare: 0.9 }, fired: true },
+					{ key: 'deep_research', winner: 'yes', probabilities: { yes: 0.91 }, fired: true }
+				]
+			});
+			const answer = 'Answer.\n\n```ui\n{"c":"compare","cols":["A","B"]}\n```\n';
+			expect(buildOracleNote(result, 'oracle', 'shopper', undefined, answer)).toBe(
+				'Read as <b>medical</b> · answered as <b>Shopper</b> · promoted to <b>Deep Research</b> · shown as a <b>compare</b> block'
+			);
+		});
+
+		it('is absent when the promotion did not take effect', () => {
+			const held = promoted({ deep_research: undefined });
+			expect(buildOracleNote(held, undefined, undefined, undefined)).toBeNull();
+		});
+	});
+
 	describe('the ui (Prism) clause', () => {
 		const ui = (winner: string, fired = true): OracleResult => ({
 			checks: [{ key: 'ui', winner, probabilities: { [winner]: 0.9 }, fired }]

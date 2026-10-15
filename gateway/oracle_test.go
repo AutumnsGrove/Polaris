@@ -1001,3 +1001,101 @@ func TestRunOracle_EmotionalHoldsBackUI(t *testing.T) {
 		}
 	}
 }
+
+// The deep_research question is its own Jev question, and is only asked where a
+// "yes" could actually be acted on (OracleInput.OffersDeepResearch) and no
+// focus mode already rules it out.
+func TestRunOracle_DeepResearchQuestionOnlyAskedWhenOffered(t *testing.T) {
+	cases := []struct {
+		name    string
+		offers  bool
+		focus   string
+		wantAsk bool
+	}{
+		{"offered asks", true, "", true},
+		{"not offered (API, voice, already on, research off) never asks", false, "", false},
+		{"brief skips it", true, "brief", false},
+		{"safari skips it", true, "safari", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := &recordingJev{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"deep_research": answer("no", 0.9)}}}
+			RunOracle(context.Background(), rec, OracleInput{CurrentMessage: "x", OffersDeepResearch: c.offers, ActiveFocusMode: c.focus})
+			if _, asked := rec.sent["deep_research"]; asked != c.wantAsk {
+				t.Errorf("deep_research question asked = %v, want %v", asked, c.wantAsk)
+			}
+			// Dedicated question: its wording must not be shared with research/focus.
+			if q, ok := rec.sent["deep_research"]; ok && q.Instructions == rec.sent["research"].Instructions {
+				t.Error("deep_research must be its own question, not a copy of research's")
+			}
+		})
+	}
+}
+
+func TestRunOracle_DeepResearchYesPromotesWithoutAnInjection(t *testing.T) {
+	stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{
+		"focus":         answer("off", 0.9),
+		"deep_research": answer("yes", 0.9),
+	}}}
+	result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true})
+	if !result.DeepResearch {
+		t.Fatalf("want DeepResearch promoted at 0.90, got %+v", result)
+	}
+	if len(result.Injections) != 0 {
+		t.Errorf("promotion is the effect, not an injected note, got %v", result.Injections)
+	}
+	if out := outcomeFor(result, "deep_research"); out == nil || !out.Fired || out.Winner != "yes" {
+		t.Errorf("want a fired deep_research outcome with winner yes, got %+v", out)
+	}
+}
+
+func TestRunOracle_DeepResearchNeedsItsOwnBar(t *testing.T) {
+	cases := []struct {
+		name   string
+		choice string
+		prob   float64
+	}{
+		{"yes below the 0.85 bar", "yes", 0.80},
+		{"confident no", "no", 0.99},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubJevClient{resp: &jev.Response{Answers: map[string]jev.ChoiceAnswer{"deep_research": answer(c.choice, c.prob)}}}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true})
+			if result.DeepResearch {
+				t.Errorf("want no promotion, got %+v", result)
+			}
+		})
+	}
+}
+
+// A message that's still ambiguous, or from someone distressed, must not get a
+// multi-agent fan-out — and neither must one Oracle itself picked Brief for in
+// the very same call (the question-time skip only saw the pre-Oracle mode).
+func TestRunOracle_DeepResearchHeldBackOrSkipped(t *testing.T) {
+	cases := []struct {
+		name    string
+		answers map[string]jev.ChoiceAnswer
+		held    bool
+	}{
+		{"clarify yes", map[string]jev.ChoiceAnswer{"clarify": answer("yes", 0.95)}, true},
+		{"emotional yes", map[string]jev.ChoiceAnswer{"emotional": answer("yes", 0.95)}, true},
+		{"oracle picks brief in the same call", map[string]jev.ChoiceAnswer{"focus": answer("brief", 0.95)}, false},
+		{"oracle picks safari in the same call", map[string]jev.ChoiceAnswer{"focus": answer("safari", 0.95)}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.answers["deep_research"] = answer("yes", 0.95)
+			stub := stubJevClient{resp: &jev.Response{Answers: c.answers}}
+			result := RunOracle(context.Background(), stub, OracleInput{CurrentMessage: "x", OffersDeepResearch: true, IsFirstMessage: true})
+			if result.DeepResearch {
+				t.Errorf("want no promotion, got %+v", result)
+			}
+			if out := outcomeFor(result, "deep_research"); out != nil && out.Fired {
+				t.Errorf("want deep_research not reported as fired, got %+v", out)
+			} else if c.held && (out == nil || !out.Suppressed) {
+				t.Errorf("want deep_research reported as held back, got %+v", out)
+			}
+		})
+	}
+}

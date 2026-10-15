@@ -304,7 +304,7 @@ func (t *turnRun) wireResearchers() {
 	// of the orchestrator's own `client` above — same reasoning as
 	// generateSuggestions/generateTitle building their own dedicated
 	// clients rather than sharing the thread's.
-	if t.msg.DeepResearch {
+	if t.agentCtx.DeepResearch {
 		if workerModelCfg, ok := t.cfg.ResearchWorkerModel(); ok {
 			workerClient := llm.NewClient(t.cfg.OpenRouter.BaseURL, t.cfg.OpenRouter.APIKey, workerModelCfg.Model, workerModelCfg.Temperature, workerModelCfg.MaxTokens).
 				// AllowFallbacks(true) — see the main client's construction
