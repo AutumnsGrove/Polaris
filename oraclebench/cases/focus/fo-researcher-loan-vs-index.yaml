@@ -1,0 +1,11 @@
+id: fo-researcher-loan-vs-index
+track: focus
+rationale: >-
+  A money decision with real consequences and several inputs to cross-check (rates, expected
+  returns, taxes). `researcher` ("careful cross-checking... real consequences if wrong").
+  high_stakes financial. Not brief despite the conversational tone.
+state:
+  latest: "is it smarter to pay off my 6.5% student loan early or put the extra 15k into an index fund"
+expect:
+  focus: {answer: researcher}
+  high_stakes: {answer: financial}

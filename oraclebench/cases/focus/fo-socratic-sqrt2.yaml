@@ -1,0 +1,12 @@
+id: fo-socratic-sqrt2
+track: focus
+rationale: >-
+  Explicitly asks not to be given the answer but to be guided through a proof: the socratic
+  description verbatim.
+state:
+  latest: "dont tell me the answer, guide me through proving sqrt 2 is irrational"
+expect:
+  focus: {answer: socratic}
+  research: {answer: "no"}
+quiet:
+  - emotional

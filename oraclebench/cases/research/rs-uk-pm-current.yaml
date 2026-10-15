@@ -1,0 +1,15 @@
+id: rs-uk-pm-current
+track: research
+rationale: >-
+  "Current" office-holder question. It sounds like simple general knowledge, but the answer
+  changes and a stale memory answer is wrong. research=yes ("anything that could have changed
+  recently"). A false "no" (skip the search) here is the harmful error, so it is the label, not
+  a quiet entry. Contrast rs-mona-lisa-painter, which looks similar but is stable.
+state:
+  latest: "who is the current pm of the uk"
+expect:
+  research: {answer: "yes"}
+  recency: {answer: recent, accept: [recent, breaking]}
+quiet:
+  - emotional
+  - private_person

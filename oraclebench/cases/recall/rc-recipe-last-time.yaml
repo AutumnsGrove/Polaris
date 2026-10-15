@@ -1,0 +1,13 @@
+id: rc-recipe-last-time
+track: recall
+rationale: >-
+  Terse back-reference to "that recipe you gave me last time". recall=yes ("clearly refers to
+  something discussed before"); intent=recipe bonus.
+state:
+  latest: "that chili recipe u gave me last time, whats it again"
+expect:
+  recall: {answer: "yes"}
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

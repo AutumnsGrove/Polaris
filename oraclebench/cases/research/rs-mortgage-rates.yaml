@@ -1,0 +1,13 @@
+id: rs-mortgage-rates
+track: research
+rationale: >-
+  Interest rates change weekly; this is a "current number" question. research=yes. It is also a
+  money matter, but the research label is the one this case stresses.
+state:
+  latest: "what are 30 year fixed mortgage rates right now"
+expect:
+  research: {answer: "yes"}
+  recency: {answer: recent, accept: [recent, breaking]}
+quiet:
+  - emotional
+  - private_person

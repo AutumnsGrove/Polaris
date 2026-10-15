@@ -1,0 +1,12 @@
+id: fo-shopper-term-life-highstakes
+track: focus
+rationale: >-
+  Cross-mode trap: choosing an insurance policy is a "buy" but also a large financial decision
+  with real consequences. shopper fits the buy framing; researcher fits "consequences if wrong".
+  Informed people split. high_stakes financial either way.
+state:
+  latest: "which term life policy should i buy for 500k coverage, im 34 with two kids"
+expect:
+  focus: {answer: researcher, accept: [researcher, shopper]}
+  high_stakes: {answer: financial}
+disputed_label: true

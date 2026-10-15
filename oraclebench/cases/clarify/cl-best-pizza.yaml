@@ -1,0 +1,14 @@
+id: cl-best-pizza
+track: clarify
+rationale: >-
+  Trap: looks vague ("best pizza", no place or style) but has an obvious default (near the user,
+  or a general best-of answer), so asking would be annoying. clarify=no ("any ambiguity has an
+  obvious default"). Twin of cl-how-do-i-fix-it.
+state:
+  latest: "best pizza"
+expect:
+  clarify: {answer: "no"}
+  intent: {answer: place, accept: [place, recipe, general]}
+quiet:
+  - emotional
+  - private_person

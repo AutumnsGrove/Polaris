@@ -1,0 +1,11 @@
+id: hs-rash-spreading-fever
+track: high_stakes
+rationale: >-
+  Symptom triage: a spreading rash with fever after starting a new antibiotic. Squarely
+  "symptoms, medications" under the medical option. The person is practical rather than
+  distressed, so emotional is not labeled either way.
+state:
+  latest: "started amoxicillin 3 days ago and now i have a red rash on my torso and a low fever. is this an allergic reaction or normal"
+expect:
+  high_stakes: {answer: medical}
+  focus: {answer: researcher, accept: [researcher, academic]}

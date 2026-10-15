@@ -1,0 +1,12 @@
+id: in-music-similar-artists
+track: intent
+rationale: >-
+  Asks what to listen to based on an artist: music ("a song, album, artist, or what to listen
+  to"). Terse phone typing.
+state:
+  latest: "bands like khruangbin? been on repeat"
+expect:
+  intent: {answer: music}
+quiet:
+  - emotional
+  - private_person

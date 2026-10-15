@@ -1,0 +1,12 @@
+id: cc-fact-check-given-source
+track: claim_check
+rationale: >-
+  The person pastes a claim from an article and asks for it to be fact-checked. The source
+  being supplied doesn't make it a plain question: they want the specific claim verified.
+state:
+  latest: |-
+    A blog post I read says "goldfish have a three-second memory, which is why they never get bored in a small bowl." Can you fact check that for me?
+expect:
+  claim_check: {answer: "yes"}
+quiet:
+  - emotional

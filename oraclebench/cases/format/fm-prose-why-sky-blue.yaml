@@ -1,0 +1,15 @@
+id: fm-prose-why-sky-blue
+track: format
+rationale: >-
+  A why-question whose answer is a causal chain (scattering, wavelength, our eyes) that reads
+  best as connected paragraphs; fragments would lose the reasoning. format=prose per its
+  description. Not a procedure, list or table.
+state:
+  latest: "why is the sky blue but sunsets are red"
+expect:
+  format: {answer: prose, accept: [prose, "none"]}
+  ui: {answer: "none"}
+  task: {answer: explain, accept: [explain, answer]}
+quiet:
+  - emotional
+  - private_person

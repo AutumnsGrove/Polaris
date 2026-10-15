@@ -1,0 +1,13 @@
+id: hs-my-lawyer-says-lunch
+track: high_stakes
+rationale: >-
+  Legal-adjacent chatter that is really casual: "my lawyer" is only the speaker's friend, and
+  the question is where to eat. No law, rights, contracts, or disputes. High_stakes none.
+state:
+  latest: "my lawyer says the best ramen in chicago is at that place on fulton, anyone agree? looking for lunch spots"
+expect:
+  high_stakes: {answer: "none"}
+  intent: {answer: place}
+quiet:
+  - emotional
+  - private_person

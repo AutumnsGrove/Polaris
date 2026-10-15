@@ -1,0 +1,12 @@
+id: ch-safari-specific-question
+track: chips
+rationale: >-
+  Same topic as a Safari-worthy one (Rome) but a specific question one reply can answer, so
+  chip_safari=no.
+state:
+  latest: "how many legions did augustus keep after actium"
+expect:
+  chip_safari: {answer: "no"}
+quiet:
+  - chip_pulsar
+  - chip_daily

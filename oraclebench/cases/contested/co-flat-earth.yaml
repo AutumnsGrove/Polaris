@@ -1,0 +1,11 @@
+id: co-flat-earth
+track: contested
+rationale: >-
+  Some people loudly dispute it but credible sources do not; the shape of the Earth is settled
+  fact. contested=no.
+state:
+  latest: "is the earth actually flat? my uncle keeps insisting"
+expect:
+  contested: {answer: "no"}
+quiet:
+  - private_person

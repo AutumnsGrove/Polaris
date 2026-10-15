@@ -1,0 +1,10 @@
+id: lo-universal-compound-interest
+track: locale
+rationale: >-
+  How compound interest works is the same everywhere: locale=no.
+state:
+  latest: "how does compound interest work"
+expect:
+  locale: {answer: "no"}
+quiet:
+  - emotional

@@ -1,0 +1,11 @@
+id: pr-sky-blue-day
+track: premise
+rationale: >-
+  Obviously true premise (the daytime sky is blue). Clear negative: asking why is not
+  presupposing anything false. premise=no.
+state:
+  latest: "why is the sky blue during the day"
+expect:
+  premise: {answer: "no"}
+quiet:
+  - emotional

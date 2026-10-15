@@ -1,0 +1,12 @@
+id: in-general-philosophy
+track: intent
+rationale: >-
+  Negative: an abstract explanation question that names no book, person, or place. Trap: the
+  word "book" is not used but "stoicism" invites a reading list; the question asks for an
+  explanation, so general.
+state:
+  latest: "whats the difference between stoicism and just suppressing your feelings"
+expect:
+  intent: {answer: general}
+quiet:
+  - private_person

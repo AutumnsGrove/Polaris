@@ -1,0 +1,9 @@
+id: hs-noncompete-new-job
+track: high_stakes
+rationale: >-
+  Enforceability of a non-compete before taking a new job. Contracts are named in the legal
+  option; jurisdiction matters. Clear legal positive.
+state:
+  latest: "my old company has a 12 month noncompete in my contract and i got an offer from a competitor. is it even enforceable in california"
+expect:
+  high_stakes: {answer: legal}

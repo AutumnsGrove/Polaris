@@ -1,0 +1,12 @@
+id: em-laid-off-eleven-years
+track: emotional
+rationale: >-
+  Job loss, stated as a fresh shock. There is a practical need underneath (where to start) but the
+  distress is explicit, so emotional=yes. Format/depth/source_type are deliberately unlabeled
+  because emotional=yes suppresses them.
+state:
+  latest: "I got laid off this morning after 11 years. I honestly don't know where to start."
+expect:
+  emotional: {answer: "yes"}
+quiet:
+  - private_person

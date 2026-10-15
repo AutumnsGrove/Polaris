@@ -1,0 +1,12 @@
+id: fo-off-bakery-names
+track: focus
+rationale: >-
+  Brainstorming names; many options wanted, no research or special style. `off`.
+state:
+  latest: "ideas for a name for my bakery, something warm not corny"
+expect:
+  focus: {answer: "off"}
+  task: {answer: brainstorm}
+  research: {answer: "no"}
+quiet:
+  - emotional

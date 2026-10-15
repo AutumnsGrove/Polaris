@@ -1,0 +1,11 @@
+id: re-roman-empire-fall
+track: recency
+rationale: >-
+  A settled historical fact; older sources are fine, so recency=evergreen (no inject).
+  A clear negative for the freshness nudge.
+state:
+  latest: "when did the western roman empire fall"
+expect:
+  recency: {answer: evergreen}
+quiet:
+  - emotional

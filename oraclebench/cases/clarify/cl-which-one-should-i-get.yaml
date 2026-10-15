@@ -1,0 +1,12 @@
+id: cl-which-one-should-i-get
+track: clarify
+rationale: >-
+  First message asking a "which one" decision with no options named at all. The missing referent
+  makes any research useless. clarify=yes.
+state:
+  latest: "ok so which one should i get"
+expect:
+  clarify: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

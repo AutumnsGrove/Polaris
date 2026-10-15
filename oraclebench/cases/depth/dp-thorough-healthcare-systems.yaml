@@ -1,0 +1,12 @@
+id: dp-thorough-healthcare-systems
+track: depth
+rationale: >-
+  A big multi-part comparison (cost, coverage, outcomes across four countries, plus reform
+  options) where a short answer would leave out what matters: thorough.
+state:
+  latest: "How do the healthcare systems of the US, UK, Germany and Japan differ in how they're funded, who they cover, what they cost per person, and health outcomes? And what would it realistically take for the US to move toward one of them?"
+expect:
+  depth: {answer: thorough}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,10 @@
+id: st-any-capital-australia
+track: source_type
+rationale: >-
+  Simple general fact; "government" is not a meaningful authority distinction here, so any.
+state:
+  latest: "capital of australia"
+expect:
+  source_type: {answer: any}
+quiet:
+  - emotional

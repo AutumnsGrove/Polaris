@@ -1,0 +1,11 @@
+id: ch-field-none-gift
+track: chips
+rationale: >-
+  A gift idea belongs to none of Home Lab, Cooking, Trip Planning, or Health: chip_field=none.
+state:
+  latest: "gift ideas for my moms 60th, she likes gardening and mystery novels"
+expect:
+  chip_field: {answer: none}
+quiet:
+  - chip_safari
+  - chip_pulsar

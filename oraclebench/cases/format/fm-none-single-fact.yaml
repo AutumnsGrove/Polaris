@@ -1,0 +1,14 @@
+id: fm-none-single-fact
+track: format
+rationale: >-
+  A single fact lookup with a one-line answer. No shape is clearly better than a sentence;
+  format should be none even though the topic (history/date) superficially invites a timeline.
+state:
+  latest: "what year did the berlin wall come down"
+expect:
+  format: {answer: "none"}
+  ui: {answer: "none"}
+  task: {answer: answer}
+quiet:
+  - emotional
+  - private_person

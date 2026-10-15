@@ -1,0 +1,14 @@
+id: fm-table-laptop-specs
+track: format
+rationale: >-
+  Several named items compared across the same attributes (weight, battery, price) is the
+  textbook table. Nobody is asking for a pick, so table beats comparison. ui=compare is the
+  matching block shape.
+state:
+  latest: "make me a table of the weight, battery life and price of the thinkpad x1 carbon, dell xps 13 and lg gram 14"
+expect:
+  format: {answer: table}
+  ui: {answer: compare}
+quiet:
+  - emotional
+  - private_person

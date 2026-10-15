@@ -1,0 +1,14 @@
+id: fo-off-dinner-ideas
+track: focus
+rationale: >-
+  Ordinary everyday cooking question; no style is clearly better than a balanced answer.
+  Clear negative for every special focus mode.
+state:
+  latest: "what should i make for dinner with chicken thighs and rice"
+expect:
+  focus: {answer: "off"}
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person
+  - high_stakes

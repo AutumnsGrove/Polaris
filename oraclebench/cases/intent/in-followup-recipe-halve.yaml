@@ -1,0 +1,13 @@
+id: in-followup-recipe-halve
+track: intent
+rationale: >-
+  Follow-up with no food words of its own: "halve it" and "how long" only make sense given the
+  previous cooking message. Resolved via state.previous to recipe.
+state:
+  previous: "give me a simple recipe for banana bread"
+  latest: "how do i halve it for one loaf pan and how long in the oven"
+expect:
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

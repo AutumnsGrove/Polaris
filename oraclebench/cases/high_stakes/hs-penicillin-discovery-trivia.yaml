@@ -1,0 +1,12 @@
+id: hs-penicillin-discovery-trivia
+track: high_stakes
+rationale: >-
+  Medical-sounding trivia. A history-of-science question about a drug, not a decision about
+  anyone's health; a wrong answer is at most a lost pub quiz. High_stakes none.
+state:
+  latest: "who discovered penicillin and was it really an accident"
+expect:
+  high_stakes: {answer: "none"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,13 @@
+id: ui-readings-learn-transformers
+track: ui
+rationale: >-
+  The person wants to learn a topic and asks what to read, in order: readings. Contrast with
+  the best-of list case (ui-none-best-sci-fi-books), where the person is choosing between
+  things rather than learning.
+state:
+  latest: "i want to actually understand how transformers work in ml. what should i read, in what order"
+expect:
+  ui: {answer: readings, accept: [readings, "none"]}
+quiet:
+  - emotional
+  - private_person

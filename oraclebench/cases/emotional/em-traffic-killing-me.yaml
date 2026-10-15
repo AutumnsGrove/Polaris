@@ -1,0 +1,11 @@
+id: em-traffic-killing-me
+track: emotional
+rationale: >-
+  False-friend hyperbole: "killing me" is an idiom about annoyance. The real ask is routing, so
+  emotional=no and no tone nudge should land.
+state:
+  latest: "this traffic is killing me lol, any way around the 405 right now"
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

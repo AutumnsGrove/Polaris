@@ -1,0 +1,15 @@
+id: fo-short-why-not-brief
+track: focus
+rationale: >-
+  Trap: a very short message that looks brief-worthy but asks "why", which is the
+  first_principles description ("understand why or how something works"). The message never
+  asks for a short answer and is not a single-fact lookup. Some would call it a plain balanced
+  question, hence disputed with `off` accepted.
+state:
+  latest: "why is the sky blue"
+expect:
+  focus: {answer: first_principles, accept: [first_principles, "off"]}
+quiet:
+  - emotional
+  - private_person
+disputed_label: true

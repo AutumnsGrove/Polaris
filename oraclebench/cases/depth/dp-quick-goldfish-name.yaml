@@ -1,0 +1,12 @@
+id: dp-quick-goldfish-name
+track: depth
+rationale: >-
+  Casual, low-effort ask where a couple of sentences is the right size: quick. Phone voice.
+state:
+  latest: "lol need a funny name for my goldfish"
+expect:
+  depth: {answer: quick}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

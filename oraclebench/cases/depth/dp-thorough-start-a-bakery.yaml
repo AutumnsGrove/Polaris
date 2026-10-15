@@ -1,0 +1,13 @@
+id: dp-thorough-start-a-bakery
+track: depth
+rationale: >-
+  Open-ended, many-part question (licensing, equipment, costs, location, hiring, marketing)
+  typed casually. The terse voice must not fool the model into quick; the scope is large, so
+  thorough.
+state:
+  latest: "i wanna open a small bakery in a mid size town in texas. everything i need to know, licenses equipment costs where to put it how to get customers"
+expect:
+  depth: {answer: thorough}
+quiet:
+  - emotional
+  - private_person

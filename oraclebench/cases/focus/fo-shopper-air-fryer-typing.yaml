@@ -1,0 +1,10 @@
+id: fo-shopper-air-fryer-typing
+track: focus
+rationale: >-
+  Phone-typed comparison of two named products with a buy decision ("worth buying"). `shopper`
+  and intent product.
+state:
+  latest: "air fryer worth getting? looking at ninja vs cosori"
+expect:
+  focus: {answer: shopper}
+  intent: {answer: product}

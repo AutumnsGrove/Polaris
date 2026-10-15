@@ -1,0 +1,14 @@
+id: fm-steps-sourdough-terse
+track: format
+rationale: >-
+  Terse phone-style how-to where order obviously matters (feeding a starter, mixing, rising,
+  baking). format=steps; ui=steps for the matching block. Intent recipe is unambiguous.
+state:
+  latest: "how do i make sourdough bread from scratch never done it"
+expect:
+  format: {answer: steps}
+  ui: {answer: steps}
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

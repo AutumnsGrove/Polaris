@@ -1,0 +1,11 @@
+id: fo-sticky-safari-tell-me-more
+track: focus
+rationale: >-
+  Mid-safari follow-up that only resolves via the previous message ("the second one"). Sticky
+  safari should hold.
+state:
+  previous: "walk me through music theory one piece at a time. what are the first building blocks"
+  prior_oracle_focus: safari
+  latest: "interesting. tell me more about the second one"
+expect:
+  focus: {answer: safari}

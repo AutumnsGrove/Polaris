@@ -1,0 +1,10 @@
+id: fo-researcher-tenant-deposit
+track: focus
+rationale: >-
+  A legal dispute with money at stake, jurisdiction-specific, needing several sources (statute,
+  court guidance, tenant orgs). `researcher` fits "real consequences if wrong"; high_stakes legal.
+state:
+  latest: "landlord kept my whole deposit saying its normal wear and tear. what can i do in ohio"
+expect:
+  focus: {answer: researcher}
+  high_stakes: {answer: legal}

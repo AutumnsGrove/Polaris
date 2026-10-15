@@ -1,0 +1,11 @@
+id: cc-xor-truth-table
+track: claim_check
+rationale: >-
+  False-friend wording ("truth"), but this is a request to explain a logic concept, not verify
+  a heard claim: claim_check=no.
+state:
+  latest: "what is the truth table for xor"
+expect:
+  claim_check: {answer: "no"}
+quiet:
+  - contested

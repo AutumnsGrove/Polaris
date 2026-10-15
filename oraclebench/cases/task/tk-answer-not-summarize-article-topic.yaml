@@ -1,0 +1,12 @@
+id: tk-answer-not-summarize-article-topic
+track: task
+rationale: >-
+  False friend: the word "summary" appears, but nothing is pasted or linked and the person
+  just wants a factual answer about when something happened. Task is answer.
+state:
+  latest: "whats the short version of when the euro started being used as actual cash"
+expect:
+  task: {answer: answer, accept: [answer, explain]}
+quiet:
+  - emotional
+  - private_person

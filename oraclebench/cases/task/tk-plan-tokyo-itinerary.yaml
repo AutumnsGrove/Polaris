@@ -1,0 +1,13 @@
+id: tk-plan-tokyo-itinerary
+track: task
+rationale: >-
+  An itinerary request is the plan description verbatim. Intent travel is the unambiguous
+  bonus label.
+state:
+  latest: "plan me a 3 day tokyo itinerary, first time there, i like food and old temples"
+expect:
+  task: {answer: plan}
+  intent: {answer: travel}
+quiet:
+  - emotional
+  - private_person

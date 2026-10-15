@@ -1,0 +1,11 @@
+id: em-font-stressed
+track: emotional
+rationale: >-
+  "So stressed" about a trivial design choice is casual mild hyperbole, not something hard. The
+  check wants real pain or overwhelm, so emotional=no.
+state:
+  latest: "ugh so stressed about picking a font for our wedding invites. serif or sans for a garden party"
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

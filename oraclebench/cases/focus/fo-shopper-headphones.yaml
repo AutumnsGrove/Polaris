@@ -1,0 +1,14 @@
+id: fo-shopper-headphones
+track: focus
+rationale: >-
+  Clean positive: finding the best product under a budget. `shopper`, intent product, needs
+  current prices so research yes.
+state:
+  latest: "best noise cancelling headphones under 300"
+expect:
+  focus: {answer: shopper}
+  intent: {answer: product}
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

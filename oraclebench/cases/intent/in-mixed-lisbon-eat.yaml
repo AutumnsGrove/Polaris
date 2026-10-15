@@ -1,0 +1,12 @@
+id: in-mixed-lisbon-eat
+track: intent
+rationale: >-
+  Mixed intent: a trip (travel) plus restaurants at a location (place). Reasonable people split,
+  so both are accepted; recipe is a trap (food words, but the ask is where to eat).
+state:
+  latest: "going to lisbon in may, where should i eat"
+expect:
+  intent: {answer: place, accept: [place, travel]}
+quiet:
+  - emotional
+  - private_person

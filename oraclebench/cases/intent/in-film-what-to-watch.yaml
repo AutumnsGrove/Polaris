@@ -1,0 +1,12 @@
+id: in-film-what-to-watch
+track: intent
+rationale: >-
+  "What to watch" with a taste anchor: film_tv ("a movie, TV show, actor, or what to watch").
+  Clean positive.
+state:
+  latest: "need something to watch tonight, loved severance and silo"
+expect:
+  intent: {answer: film_tv}
+quiet:
+  - emotional
+  - private_person

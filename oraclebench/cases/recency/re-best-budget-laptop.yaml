@@ -1,0 +1,10 @@
+id: re-best-budget-laptop
+track: recency
+rationale: >-
+  "Best X" with a price cap is the textbook "recent" case: rankings and prices shift over months.
+  Not a last-few-days event, so breaking is wrong.
+state:
+  latest: "whats the best laptop under 700 rn"
+expect:
+  recency: {answer: recent}
+  research: {answer: "yes"}

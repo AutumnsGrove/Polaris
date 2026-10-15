@@ -1,0 +1,14 @@
+id: ui-views-supreme-court-term-limits
+track: ui
+rationale: >-
+  A genuinely contested policy question where credible camps (legal scholars, politicians,
+  court defenders) disagree: views. Not claim (no single true/false claim), not procon (not a
+  personal decision), not compare (no two named products). contested=yes is the pairing.
+state:
+  latest: "should the supreme court have term limits? what do the different sides say"
+expect:
+  ui: {answer: views, accept: [views, procon]}
+  contested: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

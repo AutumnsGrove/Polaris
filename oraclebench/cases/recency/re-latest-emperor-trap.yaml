@@ -1,0 +1,11 @@
+id: re-latest-emperor-trap
+track: recency
+rationale: >-
+  Trap: "latest" appears, but it means the last emperor in a closed historical period, not
+  anything about now. The knowledge is stable, so recency=evergreen.
+state:
+  latest: "who was the latest emperor of the western roman empire before odoacer took over"
+expect:
+  recency: {answer: evergreen}
+quiet:
+  - emotional

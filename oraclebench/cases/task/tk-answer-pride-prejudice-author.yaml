@@ -1,0 +1,12 @@
+id: tk-answer-pride-prejudice-author
+track: task
+rationale: >-
+  Ordinary fact question: answer, the quiet option. Intent could read book, but task is an
+  answer either way. Guards against explain/summarize false positives.
+state:
+  latest: "who wrote pride and prejudice"
+expect:
+  task: {answer: answer}
+quiet:
+  - emotional
+  - private_person

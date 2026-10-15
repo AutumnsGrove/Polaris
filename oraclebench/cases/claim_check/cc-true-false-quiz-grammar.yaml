@@ -1,0 +1,11 @@
+id: cc-true-false-quiz-grammar
+track: claim_check
+rationale: >-
+  Trap: "is it true that" phrasing, but it is a quiz-writing task about the "true or false"
+  format, not a rumor or viral claim. claim_check=no.
+state:
+  latest: "help me write 5 true or false questions about the water cycle for my 4th graders"
+expect:
+  claim_check: {answer: "no"}
+quiet:
+  - emotional

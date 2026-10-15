@@ -1,0 +1,11 @@
+id: em-grief-stages-info
+track: emotional
+rationale: >-
+  Neutral informational question about grief with no personal framing. Topic is heavy but the
+  person is not describing their own hardship, so emotional=no.
+state:
+  latest: "what are the five stages of grief and is there actually research backing them up"
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

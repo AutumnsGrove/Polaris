@@ -1,0 +1,12 @@
+id: cl-code-doesnt-work
+track: clarify
+rationale: >-
+  Troubleshooting with no code, language, or error message: the missing detail changes
+  everything. clarify=yes. The task=troubleshoot nudge also asks for the error, but clarify is
+  the check stressed.
+state:
+  latest: "my code doesnt work any idea why"
+expect:
+  clarify: {answer: "yes"}
+quiet:
+  - private_person

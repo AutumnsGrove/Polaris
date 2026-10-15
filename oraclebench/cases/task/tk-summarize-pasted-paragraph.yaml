@@ -1,0 +1,15 @@
+id: tk-summarize-pasted-paragraph
+track: task
+rationale: >-
+  Pasted text with a request to condense it: summarize. The paragraph is invented and well
+  under the truncation limit. The topic (a city council vote) is incidental; the verb decides.
+state:
+  latest: |-
+    tldr this for me
+
+    The Harlow Falls city council voted 5-2 on Tuesday night to approve a revised zoning plan for the riverfront district, ending nearly two years of debate. The plan allows buildings up to six stories along Mill Street, requires that at least 15 percent of new housing units be priced below market rate, and sets aside a two-acre parcel for a public park. Supporters said the change would ease a housing shortage and bring foot traffic to a district that has lost several businesses. Opponents, including two council members, argued that the height limit was too generous and that traffic studies had not accounted for a planned bridge repair. The plan takes effect in January, and the first development applications are expected in the spring.
+expect:
+  task: {answer: summarize}
+quiet:
+  - emotional
+  - private_person

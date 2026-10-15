@@ -1,0 +1,13 @@
+id: ui-none-short-fact
+track: ui
+rationale: >-
+  A one-fact lookup; any block (facts, claim) would be overkill for a single word answer.
+state:
+  latest: "capital of australia?"
+expect:
+  ui: {answer: "none"}
+  format: {answer: "none"}
+  task: {answer: answer}
+quiet:
+  - emotional
+  - private_person

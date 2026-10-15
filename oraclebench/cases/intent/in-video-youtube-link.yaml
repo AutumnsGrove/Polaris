@@ -1,0 +1,12 @@
+id: in-video-youtube-link
+track: intent
+rationale: >-
+  A specific YouTube video and a question about its contents: video ("a specific YouTube video or
+  its contents"). The URL itself is handled by the regex detector, not scored here.
+state:
+  latest: "what does he say about the sleep part in this https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+expect:
+  intent: {answer: video}
+quiet:
+  - emotional
+  - private_person

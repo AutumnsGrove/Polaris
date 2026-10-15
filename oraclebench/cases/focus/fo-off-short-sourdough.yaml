@@ -1,0 +1,14 @@
+id: fo-off-short-sourdough
+track: focus
+rationale: >-
+  Trap: a terse fragment that merely looks short. It does not ask for brevity and the answer
+  (ideal hydration range with caveats) benefits from a little context, so `off`. Some would
+  treat it as a single-fact lookup and accept brief; disputed.
+state:
+  latest: "sourdough hydration for open crumb?"
+expect:
+  focus: {answer: "off", accept: ["off", brief]}
+quiet:
+  - emotional
+  - high_stakes
+disputed_label: true

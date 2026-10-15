@@ -1,0 +1,13 @@
+id: fm-timeline-roman-empire
+track: format
+rationale: >-
+  A history asked for as a sequence of dated events. format=timeline and ui=timeline are both
+  clean; this is a dated-events case, not a price/trend over time.
+state:
+  latest: "give me the major events in the fall of the western roman empire in order with dates"
+expect:
+  format: {answer: timeline}
+  ui: {answer: timeline}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,10 @@
+id: cc-plain-honey-shelf-life
+track: claim_check
+rationale: >-
+  A plain factual question; no rumor, screenshot, or "I heard" frame. claim_check=no.
+state:
+  latest: "how long does honey last in the pantry"
+expect:
+  claim_check: {answer: "no"}
+quiet:
+  - contested

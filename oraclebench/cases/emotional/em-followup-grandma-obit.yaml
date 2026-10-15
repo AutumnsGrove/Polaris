@@ -1,0 +1,12 @@
+id: em-followup-grandma-obit
+track: emotional
+disputed_label: true
+rationale: >-
+  The latest message is a practical writing task, but the previous message establishes a fresh
+  loss, so the person is in grief while asking. Resolves only via state.previous. Labeled yes,
+  but informed people split: some would treat the latest turn as a plain how-to (no).
+state:
+  previous: "my grandma passed away last week"
+  latest: "how do i write an obituary"
+expect:
+  emotional: {answer: "yes"}

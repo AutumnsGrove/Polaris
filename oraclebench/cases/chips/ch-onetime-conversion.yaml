@@ -1,0 +1,12 @@
+id: ch-onetime-conversion
+track: chips
+rationale: >-
+  A one-time conversion that never changes: no scheduled-update offer, no daily briefing, no
+  safari, no field. All four chips quiet.
+state:
+  latest: "how many tablespoons in a quarter cup"
+expect:
+  chip_pulsar: {answer: "no"}
+quiet:
+  - chip_daily
+  - chip_safari

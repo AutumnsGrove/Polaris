@@ -1,0 +1,10 @@
+id: hs-ssri-stop-cold-turkey
+track: high_stakes
+rationale: >-
+  Lowercase medication question: stopping an SSRI abruptly. Treatment/medication, clearly
+  medical; wrong advice (withdrawal, relapse) has real health consequences.
+state:
+  latest: "what happens if i just stop taking sertraline cold turkey, been on 50mg for a year"
+expect:
+  high_stakes: {answer: medical}
+  research: {answer: "yes"}

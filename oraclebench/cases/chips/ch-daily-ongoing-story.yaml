@@ -1,0 +1,12 @@
+id: ch-daily-ongoing-story
+track: chips
+rationale: >-
+  An ongoing news story the person says they are following: worth a daily glance, so
+  chip_daily=yes. Not a Safari-style learning request.
+state:
+  latest: "ive been following the port strike negotiations, whats the latest"
+expect:
+  chip_daily: {answer: "yes"}
+  recency: {answer: breaking, accept: [breaking, recent]}
+quiet:
+  - chip_safari

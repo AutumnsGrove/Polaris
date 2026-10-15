@@ -1,0 +1,11 @@
+id: ch-field-home-lab
+track: chips
+rationale: >-
+  Docker plus Tailscale routing is plainly self-hosting and networking: chip_field=Home Lab.
+state:
+  latest: "tailscale subnet router in docker not advertising my lan routes, compose file below. what am i missing"
+expect:
+  chip_field: {answer: Home Lab}
+quiet:
+  - chip_safari
+  - chip_pulsar

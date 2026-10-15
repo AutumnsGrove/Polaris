@@ -1,0 +1,23 @@
+id: rs-summarize-pasted
+track: research
+rationale: >-
+  Trap: the message is full of dates and names that look like checkable facts, but the user pasted
+  the content and wants it condensed, so everything needed is already there. research=no,
+  task=summarize.
+state:
+  latest: |-
+    summarize this for me in 2 sentences:
+
+    The Harbor Street Bridge closure, announced Tuesday by the county, will begin on March 3 and
+    last roughly eleven weeks. Officials say the deck needs full replacement after an inspection
+    found corrosion in several support girders. A detour will route traffic along Mill Road, and
+    the county expects commute times to rise by about fifteen minutes during peak hours. The
+    project is budgeted at 4.2 million dollars, funded by a state grant covering 60 percent.
+    Local businesses on Harbor Street have asked for signage and a reduced parking fee during the
+    closure, and the council will vote on that request next month.
+expect:
+  research: {answer: "no"}
+  task: {answer: summarize}
+quiet:
+  - emotional
+  - private_person

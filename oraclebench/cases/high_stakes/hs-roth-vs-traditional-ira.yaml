@@ -1,0 +1,10 @@
+id: hs-roth-vs-traditional-ira
+track: high_stakes
+rationale: >-
+  Retirement-account choice: investing and taxes as a money decision, clearly financial. Not
+  "taxes as a legal matter", so legal is not the label.
+state:
+  latest: "im 29 making about 85k, should i put my extra savings in a roth ira or traditional ira this year"
+expect:
+  high_stakes: {answer: financial}
+  research: {answer: "yes"}

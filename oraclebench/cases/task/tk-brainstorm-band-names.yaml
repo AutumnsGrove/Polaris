@@ -1,0 +1,12 @@
+id: tk-brainstorm-band-names
+track: task
+rationale: >-
+  Wants ideas with no single correct answer: brainstorm. Lowercase phone voice.
+state:
+  latest: "ideas for a band name, we play kinda sleepy indie folk, 4 people from maine"
+expect:
+  task: {answer: brainstorm}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

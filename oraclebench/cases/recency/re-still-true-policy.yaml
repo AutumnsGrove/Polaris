@@ -1,0 +1,11 @@
+id: re-still-true-policy
+track: recency
+rationale: >-
+  "Is X still true" about a policy asks whether something changed. Policies are named under
+  recent. Whether a live story is running (breaking) is plausible for some policies, so recent is
+  the label with breaking tolerated.
+state:
+  latest: "is the penny still being made or did they stop"
+expect:
+  recency: {answer: recent, accept: [recent, breaking]}
+  research: {answer: "yes"}

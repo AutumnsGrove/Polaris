@@ -1,0 +1,11 @@
+id: lo-place-stated-oregon
+track: locale
+rationale: >-
+  Varies by place in general, but the message names Oregon, so the place is clear. The yes
+  option requires that the message not make the place clear: locale=no.
+state:
+  latest: "What is the minimum wage in Portland, Oregon right now?"
+expect:
+  locale: {answer: "no"}
+quiet:
+  - emotional

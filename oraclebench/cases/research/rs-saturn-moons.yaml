@@ -1,0 +1,15 @@
+id: rs-saturn-moons
+track: research
+rationale: >-
+  Looks like stable astronomy, but the confirmed moon count has jumped repeatedly in recent
+  years as new moons are announced, so memory is often stale. The option description calls out
+  statistics that are "easy to get subtly wrong from memory". Others would call this stable
+  textbook knowledge, so it is disputed.
+state:
+  latest: "how many moons does saturn have"
+expect:
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person
+disputed_label: true

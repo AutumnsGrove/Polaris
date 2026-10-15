@@ -1,0 +1,11 @@
+id: cc-great-wall-space
+track: claim_check
+rationale: >-
+  "Supposedly" plus a widely repeated factoid: asks whether a specific claim is true.
+state:
+  latest: "supposedly you can see the great wall of china from space, is that real"
+expect:
+  claim_check: {answer: "yes"}
+quiet:
+  - contested
+  - emotional

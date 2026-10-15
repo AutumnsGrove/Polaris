@@ -1,0 +1,11 @@
+id: st-steam-deck-worth-it
+track: source_type
+rationale: >-
+  "Is it worth it" and "what's it like" is lived experience: owners and forums beat the
+  manufacturer's page (community).
+state:
+  latest: "is the steam deck oled actually worth it? whats it like to live with after a few months"
+expect:
+  source_type: {answer: community}
+quiet:
+  - emotional

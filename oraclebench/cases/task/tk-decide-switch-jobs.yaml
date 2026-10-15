@@ -1,0 +1,12 @@
+id: tk-decide-switch-jobs
+track: task
+rationale: >-
+  Weighing a concrete choice and asking for help making it: decide. Money is involved but the
+  message is calm, so emotional stays quiet.
+state:
+  latest: "i got two offers, one pays 15k more but has a 90 min commute, the other is 10 min away. help me decide"
+expect:
+  task: {answer: decide}
+quiet:
+  - emotional
+  - private_person

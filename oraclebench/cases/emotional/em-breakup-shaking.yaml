@@ -1,0 +1,12 @@
+id: em-breakup-shaking
+track: emotional
+rationale: >-
+  Fresh breakup with physical distress and no factual question at all. Clear emotional=yes
+  ("clearly distressed or dealing with something hard"). Lowercase phone voice.
+state:
+  latest: "she left me last night and i cant stop shaking. idk what to do"
+expect:
+  emotional: {answer: "yes"}
+quiet:
+  - premise
+  - private_person

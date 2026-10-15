@@ -1,0 +1,12 @@
+id: em-airline-angry
+track: emotional
+rationale: >-
+  Angry but practical consumer complaint. Anger about a lost bag is not distress about something
+  painful; the user wants their rights. emotional=no. Some models may read "furious" as
+  emotional, which is the failure this case catches.
+state:
+  latest: "furious. airline lost my bag 4 days ago and keeps stonewalling me. what am i actually entitled to for delayed baggage"
+expect:
+  emotional: {answer: "no"}
+quiet:
+  - private_person

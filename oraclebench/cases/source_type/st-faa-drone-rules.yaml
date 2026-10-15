@@ -1,0 +1,11 @@
+id: st-faa-drone-rules
+track: source_type
+rationale: >-
+  Aviation rules are set by a regulator, so the agency's own page is the authority (official).
+  A vendor-docs reading (primary_docs) is not defensible since the FAA is not a vendor.
+state:
+  latest: "what are the faa rules for flying a drone over people"
+expect:
+  source_type: {answer: official}
+quiet:
+  - emotional

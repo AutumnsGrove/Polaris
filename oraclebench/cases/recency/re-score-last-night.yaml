@@ -1,0 +1,11 @@
+id: re-score-last-night
+track: recency
+rationale: >-
+  A score from last night is the "scores, live events" half of breaking.
+state:
+  latest: "who won the warriors game last night"
+expect:
+  recency: {answer: breaking}
+  research: {answer: "yes"}
+quiet:
+  - emotional

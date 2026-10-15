@@ -1,0 +1,10 @@
+id: re-photosynthesis
+track: recency
+rationale: >-
+  Textbook science that hasn't changed; clear evergreen negative, with a phone-style voice.
+state:
+  latest: "how does photosynthesis work in simple terms"
+expect:
+  recency: {answer: evergreen}
+quiet:
+  - emotional

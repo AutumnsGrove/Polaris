@@ -1,0 +1,11 @@
+id: co-minimum-wage-jobs
+track: contested
+rationale: >-
+  Actively disputed economics: credible economists and studies split on the employment effect
+  of minimum wage hikes, and it is politically charged. Some would call it an empirical matter
+  of fact with a mixed-evidence answer rather than contested, hence disputed_label.
+state:
+  latest: "does raising the minimum wage kill jobs"
+expect:
+  contested: {answer: "yes"}
+disputed_label: true

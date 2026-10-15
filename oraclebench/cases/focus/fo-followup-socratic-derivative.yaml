@@ -1,0 +1,10 @@
+id: fo-followup-socratic-derivative
+track: focus
+rationale: >-
+  The person asked earlier to be guided rather than told. This turn is their attempt at the
+  next step ("what next"), which only reads as socratic through the previous message.
+state:
+  previous: "dont just tell me, help me work out why the derivative of x^2 is 2x"
+  latest: "ok i think its because the slope keeps changing? what next"
+expect:
+  focus: {answer: socratic}

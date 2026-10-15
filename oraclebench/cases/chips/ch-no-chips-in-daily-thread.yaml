@@ -1,0 +1,15 @@
+id: ch-no-chips-in-daily-thread
+track: chips
+rationale: >-
+  A Pulsar Daily thread is itself a scheduled output, so every chip is withheld server-side
+  even though the content (a price) would otherwise attract a Pulsar offer.
+state:
+  latest: "what is the current price of gold per ounce"
+  thread_source: pulsar-daily
+expect:
+  research: {answer: "yes"}
+quiet:
+  - chip_pulsar
+  - chip_daily
+  - chip_safari
+  - chip_field

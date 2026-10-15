@@ -1,0 +1,13 @@
+id: cl-boil-an-egg
+track: clarify
+rationale: >-
+  Clear, self-contained how-to. clarify=no. Doneness is a detail but any answer can cover soft
+  and hard in one reply, so no question is needed.
+state:
+  latest: "How long do I boil an egg?"
+expect:
+  clarify: {answer: "no"}
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

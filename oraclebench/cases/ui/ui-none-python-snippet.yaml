@@ -1,0 +1,13 @@
+id: ui-none-python-snippet
+track: ui
+rationale: >-
+  A request for a code snippet. The ui none option names code as the right shape. A steps
+  block would be a false positive (the user wants one line, not a procedure).
+state:
+  latest: "python one liner to flatten a list of lists"
+expect:
+  ui: {answer: "none"}
+  format: {answer: code}
+quiet:
+  - emotional
+  - private_person

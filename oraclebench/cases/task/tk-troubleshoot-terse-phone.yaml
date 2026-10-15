@@ -1,0 +1,13 @@
+id: tk-troubleshoot-terse-phone
+track: task
+rationale: >-
+  No error text, but something is plainly misbehaving and the person wants it fixed:
+  troubleshoot. Terse phone voice. The inject would ask for the exact error, which is the
+  right behavior here.
+state:
+  latest: "my plex server wont let me stream anything it just spins and then says playback error"
+expect:
+  task: {answer: troubleshoot}
+quiet:
+  - emotional
+  - private_person

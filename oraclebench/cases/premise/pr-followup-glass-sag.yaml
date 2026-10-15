@@ -1,0 +1,11 @@
+id: pr-followup-glass-sag
+track: premise
+rationale: >-
+  Earlier turn raises the old-windows-flow myth (medieval glass is thicker at the bottom because
+  of manufacturing, not flow). Latest message assumes it and asks for a timeline. Multi-turn
+  premise carry-over, premise=yes.
+state:
+  previous: "does glass flow slowly over centuries, like in old church windows"
+  latest: "so how many years until my window sags"
+expect:
+  premise: {answer: "yes"}

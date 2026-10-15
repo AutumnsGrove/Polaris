@@ -1,0 +1,13 @@
+id: rs-mona-lisa-painter
+track: research
+rationale: >-
+  Trap: a "who is/was" factual question that LOOKS like a lookup but is settled history.
+  research=no ("genuinely stable general knowledge"). The twin is rs-uk-pm-current, which needs a
+  search because the answer can change.
+state:
+  latest: "who painted the mona lisa"
+expect:
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

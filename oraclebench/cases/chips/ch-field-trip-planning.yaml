@@ -1,0 +1,10 @@
+id: ch-field-trip-planning
+track: chips
+rationale: >-
+  Itinerary and lodging for an upcoming trip: chip_field=Trip Planning.
+state:
+  latest: "3 days in lisbon in march, which neighborhood should i stay in"
+expect:
+  chip_field: {answer: Trip Planning}
+quiet:
+  - chip_safari

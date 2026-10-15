@@ -1,0 +1,14 @@
+id: in-followup-film-cast
+track: intent
+rationale: >-
+  "whos in it" has no subject alone; the previous turn names a film. Resolved via state.previous.
+  film_tv is the label; person_org is defensible since it asks about actors, but the thing asked
+  about is the film's cast.
+state:
+  previous: "is the movie Past Lives worth watching"
+  latest: "whos in it"
+expect:
+  intent: {answer: film_tv, accept: [film_tv, person_org]}
+quiet:
+  - emotional
+  - private_person

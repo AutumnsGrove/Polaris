@@ -1,0 +1,13 @@
+id: in-datetime-time-difference
+track: intent
+rationale: >-
+  Time zone conversion for scheduling a call: datetime ("current time somewhere, time zone
+  conversion"). Clean positive, terse.
+state:
+  latest: "its 3pm here in chicago whats that in tokyo"
+expect:
+  intent: {answer: datetime}
+  task: {answer: calculate, accept: [calculate, answer]}
+quiet:
+  - emotional
+  - private_person

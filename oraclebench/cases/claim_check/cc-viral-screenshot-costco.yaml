@@ -1,0 +1,11 @@
+id: cc-viral-screenshot-costco
+track: claim_check
+rationale: >-
+  A viral screenshot being asked about ("legit?") is named directly in the claim_check
+  instructions.
+state:
+  latest: "saw a screenshot on twitter saying costco is ending membership refunds starting next month, legit?"
+expect:
+  claim_check: {answer: "yes"}
+quiet:
+  - emotional

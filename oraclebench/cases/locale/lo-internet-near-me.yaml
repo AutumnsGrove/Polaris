@@ -1,0 +1,8 @@
+id: lo-internet-near-me
+track: locale
+rationale: >-
+  "Near me" is a local-services question with no place the model can see: locale=yes.
+state:
+  latest: "best internet provider near me"
+expect:
+  locale: {answer: "yes"}

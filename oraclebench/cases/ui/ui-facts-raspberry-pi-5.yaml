@@ -1,0 +1,14 @@
+id: ui-facts-raspberry-pi-5
+track: ui
+disputed_label: true
+rationale: >-
+  An at-a-glance rundown of one named product: facts per its description. Disputed because
+  "tell me about" is open-ended enough that none (prose) is also defensible.
+state:
+  latest: "quick rundown on the raspberry pi 5, specs and price and stuff"
+expect:
+  ui: {answer: facts, accept: [facts, "none"]}
+  intent: {answer: product}
+quiet:
+  - emotional
+  - private_person

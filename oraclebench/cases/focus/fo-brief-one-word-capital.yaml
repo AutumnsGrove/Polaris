@@ -1,0 +1,14 @@
+id: fo-brief-one-word-capital
+track: focus
+rationale: >-
+  Explicit "one word" request on a stable fact lookup. `brief` matches both halves of its
+  description (asks for a short answer, single fact). No search needed for a capital city.
+state:
+  latest: "capital of australia, one word"
+expect:
+  focus: {answer: brief}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person
+  - contested

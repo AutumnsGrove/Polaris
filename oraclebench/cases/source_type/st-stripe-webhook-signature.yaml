@@ -1,0 +1,12 @@
+id: st-stripe-webhook-signature
+track: source_type
+rationale: >-
+  A question about how a specific vendor's API behaves: the vendor's own docs are the authority
+  (primary_docs: "official documentation... a company's own published material").
+state:
+  latest: "how do i verify the signature on a stripe webhook, what header does it use"
+expect:
+  source_type: {answer: primary_docs}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,12 @@
+id: in-place-ramen-nearby
+track: intent
+rationale: >-
+  "Near me" restaurant search: the place option ("a business, restaurant, or something nearby").
+  Clean positive. Food is mentioned, but the ask is for a venue, not a recipe.
+state:
+  latest: "good ramen place near me thats open late"
+expect:
+  intent: {answer: place}
+quiet:
+  - emotional
+  - private_person

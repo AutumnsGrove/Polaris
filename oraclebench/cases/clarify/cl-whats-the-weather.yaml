@@ -1,0 +1,15 @@
+id: cl-whats-the-weather
+track: clarify
+rationale: >-
+  Trap: no location is stated, but the obvious default is the user's own location (memory or
+  stored location), and the weather tool handles it. clarify=no. Reasonable people might ask
+  "where", hence disputed.
+state:
+  latest: "whats the weather"
+expect:
+  clarify: {answer: "no"}
+  intent: {answer: weather}
+quiet:
+  - emotional
+  - private_person
+disputed_label: true

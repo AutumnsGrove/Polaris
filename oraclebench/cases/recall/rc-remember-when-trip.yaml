@@ -1,0 +1,12 @@
+id: rc-remember-when-trip
+track: recall
+rationale: >-
+  Explicit "remember when we talked about" a past conversation the assistant cannot see in-thread.
+  recall=yes.
+state:
+  latest: "remember when we talked about my japan trip a few weeks ago? what was the rail pass you recommended"
+expect:
+  recall: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

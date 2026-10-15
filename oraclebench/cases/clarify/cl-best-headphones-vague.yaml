@@ -1,0 +1,15 @@
+id: cl-best-headphones-vague
+track: clarify
+rationale: >-
+  Trap: "best headphones" is open (budget, use, wired or wireless) but there is an obvious
+  default: a best-of overview covering the main picks per use. clarify=no. Many would ask about
+  budget, so this is disputed.
+state:
+  latest: "best noise cancelling headphones 2026"
+expect:
+  clarify: {answer: "no"}
+  intent: {answer: product}
+quiet:
+  - emotional
+  - private_person
+disputed_label: true

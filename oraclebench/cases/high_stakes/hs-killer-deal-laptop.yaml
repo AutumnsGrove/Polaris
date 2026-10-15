@@ -1,0 +1,14 @@
+id: hs-killer-deal-laptop
+track: high_stakes
+rationale: >-
+  False-friend trap ("killer deal") on a cheap consumer purchase. Nothing at stake beyond an
+  inconvenience; none. A modest laptop price check is not the "large purchases" the
+  financial option has in mind.
+state:
+  latest: "saw a killer deal on a 14 inch lenovo laptop, 349 at best buy. anything better right now"
+expect:
+  high_stakes: {answer: "none"}
+  intent: {answer: product}
+quiet:
+  - emotional
+  - private_person

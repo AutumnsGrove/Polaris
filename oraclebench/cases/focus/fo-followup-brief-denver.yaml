@@ -1,0 +1,12 @@
+id: fo-followup-brief-denver
+track: focus
+rationale: >-
+  One-word follow-up "denver?" resolves via the previous single-fact question about boiling
+  point. A single fact lookup so brief fits, but with no explicit brevity ask a balanced
+  answer is defensible; disputed.
+state:
+  previous: "whats the boiling point of water at altitude"
+  latest: "denver?"
+expect:
+  focus: {answer: brief, accept: [brief, "off"]}
+disputed_label: true

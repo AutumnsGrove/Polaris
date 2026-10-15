@@ -1,0 +1,12 @@
+id: in-image-show-photos
+track: intent
+rationale: >-
+  Explicit request to see pictures: image ("wants to see photos or pictures of something").
+  Subject is a place, but the ask is visual, so image wins; place is the defensible alternative.
+state:
+  latest: "show me pics of the faroe islands"
+expect:
+  intent: {answer: image, accept: [image, travel]}
+quiet:
+  - emotional
+  - private_person

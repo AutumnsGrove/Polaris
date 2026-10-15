@@ -1,0 +1,12 @@
+id: rc-movie-we-talked-about
+track: recall
+rationale: >-
+  Lowercase, no explicit "remember" but "that movie we talked about the other day" clearly refers
+  to a past conversation. recall=yes.
+state:
+  latest: "what was that movie we talked about the other day, the one with the heist on a train"
+expect:
+  recall: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

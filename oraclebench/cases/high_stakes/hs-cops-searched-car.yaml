@@ -1,0 +1,9 @@
+id: hs-cops-searched-car
+track: high_stakes
+rationale: >-
+  Terse phone message about rights during a police stop (search without a warrant). Rights and
+  legal procedure, clear legal positive. Brevity of the message does not lower the stakes.
+state:
+  latest: "cop searched my car without a warrant at a traffic stop, i said no. was that legal"
+expect:
+  high_stakes: {answer: legal}

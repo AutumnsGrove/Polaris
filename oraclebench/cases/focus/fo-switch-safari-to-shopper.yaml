@@ -1,0 +1,13 @@
+id: fo-switch-safari-to-shopper
+track: focus
+rationale: >-
+  Safari was active, but the person explicitly changes subject to a purchase decision with two
+  named products. A clearly different request, strong enough to clear the 0.85 switch bar:
+  shopper.
+state:
+  previous: "explore the history of photography with me, stop by stop"
+  prior_oracle_focus: safari
+  latest: "actually unrelated, im trying to buy a mirrorless camera under 1000, compare the sony a6700 and fuji xs20"
+expect:
+  focus: {answer: shopper}
+  intent: {answer: product}

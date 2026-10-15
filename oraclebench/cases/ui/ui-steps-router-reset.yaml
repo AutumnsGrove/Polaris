@@ -1,0 +1,13 @@
+id: ui-steps-router-reset
+track: ui
+rationale: >-
+  A straight how-to where order matters and there is no branching: steps (not flow). Phone
+  typing, no punctuation.
+state:
+  latest: "how do i factory reset my tp link router and set it back up"
+expect:
+  ui: {answer: steps}
+  format: {answer: steps}
+quiet:
+  - emotional
+  - private_person

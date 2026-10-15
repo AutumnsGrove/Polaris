@@ -1,0 +1,13 @@
+id: rs-iphone-price
+track: research
+rationale: >-
+  A price question, typed fast on a phone. research=yes ("prices ... anything that could have
+  changed recently"). No source can be answered from memory reliably.
+state:
+  latest: "how much is the newest iphone rn"
+expect:
+  research: {answer: "yes"}
+  intent: {answer: product}
+quiet:
+  - emotional
+  - private_person

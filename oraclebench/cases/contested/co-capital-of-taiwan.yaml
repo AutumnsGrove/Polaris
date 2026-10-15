@@ -1,0 +1,11 @@
+id: co-capital-of-taiwan
+track: contested
+rationale: >-
+  Geopolitically sensitive framing, but the question is a simple lookup: the seat of
+  government is Taipei and nobody seriously disputes the city. Others would say anything about
+  Taiwan's status is contested, hence disputed_label. Label is no (a factual question).
+state:
+  latest: "whats the capital of taiwan"
+expect:
+  contested: {answer: "no"}
+disputed_label: true

@@ -1,0 +1,11 @@
+id: fo-followup-news-government
+track: focus
+rationale: >-
+  The latest message has no topic on its own; "the government responded" only resolves through
+  the previous message about an ongoing rail strike. news via state.previous.
+state:
+  previous: "whats going on with the rail strike"
+  latest: "and has the government responded yet"
+expect:
+  focus: {answer: news}
+  research: {answer: "yes"}

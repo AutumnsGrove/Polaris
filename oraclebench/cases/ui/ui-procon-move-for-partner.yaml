@@ -1,0 +1,14 @@
+id: ui-procon-move-for-partner
+track: ui
+rationale: >-
+  A personal decision being weighed (moving cities for a partner's job) wanting arguments for
+  and against: procon. Not views (not a public question where camps disagree), not compare
+  (no two named options), not choose (they want the weighing, not rules by situation).
+  Distressed-sounding words are absent, so emotional stays quiet.
+state:
+  latest: "my partner got a job in portland and wants me to move with her. pros and cons of going vs staying here in ohio"
+expect:
+  ui: {answer: procon, accept: [procon, compare]}
+  task: {answer: decide}
+quiet:
+  - private_person

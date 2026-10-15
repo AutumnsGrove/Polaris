@@ -1,0 +1,14 @@
+id: fm-list-board-games
+track: format
+rationale: >-
+  A set of discrete recommendations with no ordering: format=list. Not a comparison (no
+  attributes, no pick between two) so table and comparison are wrong. ui is none: the ui
+  none option says a short list serves this best.
+state:
+  latest: "some good 2 player board games for a couple that isnt into long strategy stuff"
+expect:
+  format: {answer: list}
+  ui: {answer: "none", accept: ["none", compare]}
+quiet:
+  - emotional
+  - private_person

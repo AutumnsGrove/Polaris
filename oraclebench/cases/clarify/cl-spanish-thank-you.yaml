@@ -1,0 +1,11 @@
+id: cl-spanish-thank-you
+track: clarify
+rationale: >-
+  Clear, short, answerable on the spot. clarify=no, with definition or general intent acceptable.
+state:
+  latest: "how do you say thank you very much in spanish"
+expect:
+  clarify: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

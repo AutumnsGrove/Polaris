@@ -1,0 +1,11 @@
+id: in-recipe-substitution
+track: intent
+rationale: >-
+  Ingredient substitution is named in the recipe option. Clean positive, phone style.
+state:
+  latest: "out of buttermilk, what can i use instead for pancakes"
+expect:
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

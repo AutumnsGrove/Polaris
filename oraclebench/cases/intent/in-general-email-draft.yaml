@@ -1,0 +1,13 @@
+id: in-general-email-draft
+track: intent
+rationale: >-
+  Negative: a writing request with no topical category (no place/book/product etc.). intent=general
+  ("none of the other options clearly fits"), which is a quiet option, not a nudge.
+state:
+  latest: "help me word an email to my landlord asking to push the lease renewal back two weeks"
+expect:
+  intent: {answer: general}
+  task: {answer: write}
+quiet:
+  - private_person
+  - emotional

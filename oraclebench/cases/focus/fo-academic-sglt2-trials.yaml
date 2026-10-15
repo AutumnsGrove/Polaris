@@ -1,0 +1,11 @@
+id: fo-academic-sglt2-trials
+track: focus
+rationale: >-
+  Asks what randomized trials show on a medical topic: papers and journals are the right
+  source. `academic`. Medical subject, but framed as evidence review rather than personal advice.
+state:
+  latest: "what do the big randomized trials show for sglt2 inhibitors and heart failure outcomes"
+expect:
+  focus: {answer: academic, accept: [academic, researcher]}
+  intent: {answer: academic_paper}
+disputed_label: true

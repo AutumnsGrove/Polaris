@@ -1,0 +1,12 @@
+id: fo-safari-explicit-roman-republic
+track: focus
+rationale: >-
+  Explicit request to explore a broad topic stop by stop over several turns: the safari
+  description verbatim. Must clear safari's 0.85 option bar. No ui/depth/format labels since
+  safari skips them.
+state:
+  latest: "i want to explore the history of the roman republic with you, stop by stop, lets take it slow"
+expect:
+  focus: {answer: safari}
+quiet:
+  - emotional

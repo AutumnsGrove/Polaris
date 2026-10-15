@@ -1,0 +1,12 @@
+id: hs-landlord-keeping-deposit
+track: high_stakes
+rationale: >-
+  Tenant dispute about a withheld security deposit: "rights, disputes, legal procedure" in the
+  legal option. Money is involved, but the question is about legal entitlement and process, so
+  legal is the best fit; financial is not a defensible primary label here.
+state:
+  latest: "my landlord is keeping my whole security deposit for 'normal wear and tear'. can he legally do that in texas and what do i do"
+expect:
+  high_stakes: {answer: legal}
+quiet:
+  - private_person

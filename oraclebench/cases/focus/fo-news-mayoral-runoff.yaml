@@ -1,0 +1,12 @@
+id: fo-news-mayoral-runoff
+track: focus
+rationale: >-
+  Asks about a result "last night": a recent event where only fresh news coverage can answer.
+  `news`; model memory cannot know this.
+state:
+  latest: "who won the mayoral runoff last night"
+expect:
+  focus: {answer: news}
+  research: {answer: "yes"}
+quiet:
+  - emotional

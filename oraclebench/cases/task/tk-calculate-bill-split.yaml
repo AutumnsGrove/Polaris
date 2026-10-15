@@ -1,0 +1,11 @@
+id: tk-calculate-bill-split
+track: task
+rationale: >-
+  A number to be worked out (split plus tip): calculate. Not a fact lookup, so not answer.
+state:
+  latest: "bill was 187.40 split 5 ways with 20% tip, what does each person pay"
+expect:
+  task: {answer: calculate}
+quiet:
+  - emotional
+  - private_person
