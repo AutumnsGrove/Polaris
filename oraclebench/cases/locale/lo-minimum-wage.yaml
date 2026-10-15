@@ -1,0 +1,13 @@
+id: lo-minimum-wage
+track: locale
+rationale: >-
+  The minimum wage differs by country, state, and sometimes city, and the message names no
+  place, so locale=yes (the answer varies by place and the place isn't clear).
+state:
+  latest: "what's the minimum wage"
+expect:
+  locale: {answer: "yes"}
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

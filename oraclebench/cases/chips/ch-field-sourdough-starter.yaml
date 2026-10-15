@@ -1,0 +1,14 @@
+id: ch-field-sourdough-starter
+track: chips
+rationale: >-
+  A cooking question that clearly belongs to the "Cooking" fixture field. Other fixture fields
+  (Home Lab, Trip Planning, Health) don't fit, and "Health" is a distractor only if the model
+  keys on "smells".
+state:
+  latest: "my sourdough starter smells like nail polish remover, is it dead"
+expect:
+  chip_field: {answer: Cooking}
+  intent: {answer: recipe}
+quiet:
+  - emotional
+  - private_person

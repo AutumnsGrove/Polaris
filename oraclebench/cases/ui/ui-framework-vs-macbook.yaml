@@ -1,0 +1,15 @@
+id: ui-framework-vs-macbook
+track: ui
+rationale: >-
+  A two-product head-to-head for a stated use (programming). A compare block fits; choose is
+  defensible since the best pick depends on the person. format is a table or a comparison.
+state:
+  latest: "framework 13 vs macbook air m4, which one should i get for programming"
+expect:
+  ui: {answer: compare, accept: [compare, choose]}
+  format: {answer: comparison, accept: [comparison, table]}
+  intent: {answer: product}
+  task: {answer: decide}
+quiet:
+  - emotional
+  - private_person

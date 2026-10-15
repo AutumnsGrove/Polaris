@@ -1,9 +1,11 @@
 # Oracle benchmark (`oracle-bench`)
 
-**Status: planned (draft for review), 2026-10.** Nothing implemented yet. This is the design for a
-home-built, 200-question benchmark whose only job is to compare **decision models** against the
-Oracle-mode task, so we can pick the model Oracle actually runs on instead of keeping the
-`jev-latest` alias.
+**Status: in progress, 2026-10-15.** Client groundwork is done; the case schema, strict loader and
+validator (`oraclebench/case.go`) are built, with ~21 seed cases, and the 200-case bank is being
+authored track by track (`oraclebench/AUTHORING.md` is the rulebook). Scorer, gateway refactor, and
+runner are not started. This is the design for a home-built, 200-question benchmark whose only job
+is to compare **decision models** against the Oracle-mode task, so we can pick the model Oracle
+actually runs on instead of keeping the `jev-latest` alias.
 
 ## Why
 
@@ -94,34 +96,44 @@ One YAML file per case, committed under `oraclebench/cases/`, following `eval/ca
 convention (readable block scalars for pasted text, one diffable unit). Loaded by
 `oraclebench.LoadCases`.
 
-### Case schema (v1 sketch)
+### Case schema (built — `oraclebench/case.go`)
 
 ```yaml
-id: focus-brief-explicit-tldr
+id: fo-brief-explicit-tldr       # = filename stem; kebab-case; unique across the bank
 track: focus                     # reporting bucket; a case may stress checks from other tracks
 rationale: >-                    # required — why this label is right, for the judge and for review
-  An explicit brevity request. `brief` should win and clear its 0.80 option bar;
-  a generic answer shape is the failure mode.
+  An explicit brevity request. `brief` should win and clear its 0.80 option bar.
 state:
-  latest: "tl;dr — is glass a liquid or a solid?"
-  previous: ""                   # optional; required for follow-up/pronoun cases
-  is_first: true
+  latest: "tl;dr is glass a liquid or a solid"
+  previous: ""                   # optional; set for follow-up/pronoun cases (this IS how
+                                 # is_first is derived — there is no separate is_first field)
+  prior_oracle_focus: safari     # optional; sticky/switch cases; needs previous
+  thread_source: pulsar          # optional; pulsar/pulsar-daily withhold every chip
 expect:
-  focus: {answer: brief, accept: [brief], must_fire: true}
-  research: {answer: no, must_fire: false}
-  high_stakes: {answer: none, must_fire: false}
-quiet:                           # expected NOT to fire; FP is scored against w_FP[k]
+  focus: {answer: brief}
+  research: {answer: "no"}
+quiet:                           # must NOT deliver a nudge; FP is scored against w_FP[k]
   - emotional
-  - private_person
-  - premise
-  - intent
-  - contested
+disputed_label: true             # optional; scored separately and always judged
 ```
 
 - `expect[k].answer` is the single labeled option; `accept` (optional) widens it to a defensible
-  set. `must_fire` disambiguates border-line confidence and is also what Layer 2 checks.
+  set and must include `answer`. Chip keys are `chip_<name>`; `chip_field`'s answers are the
+  fixture fields in `case.go` plus `none`.
+- **There is no `must_fire`.** `gateway.CheckOutcome.Fired` is true for *any* winner clearing the
+  check's bar, quiet options included (`high_stakes=none` at 0.9 is `Fired` with nothing
+  injected). So the bench's "fired" means "a nudge was delivered", and whether a label should
+  produce one is derived from `prompts.yaml` (`oraclebench.ExpectsNudge`: the answer has `inject`
+  text). A hand-written flag could only contradict that. Layer 2 must compute
+  `Fired && Nudge != ""` (plus `NoResearchHint` for `research=no`), not `Fired` alone.
 - `quiet` is a list only of checks a human can confidently call quiet for this prompt; unsafe or
-  irrelevant checks are simply omitted.
+  irrelevant checks are simply omitted. `focus` can't be listed (it never injects) — label
+  `focus: off` instead.
+- The loader decodes strictly (`KnownFields`) and validates every check and option against
+  `prompts.yaml`; `TestLoadCases_RealBank` makes a renamed option turn the bank red.
+- **Suppression/skip rules and scoring.** Layer 1 (raw answer) is scored whenever a check is
+  labeled; Layer 2 (trigger) only counts a check when production's rules let it run. Authors avoid
+  labeling checks a sibling label suppresses or skips (`AUTHORING.md` lists them).
 - Bench environment is fixed per run (documented so results are comparable): `Visuals: "normal"`
   (so the `ui` check is asked), `ThreadSource: "web"`, `Ghost: false`, a small fixture
   `FieldOptions`/`FieldIDs` set, `IsFirstMessage` from the case, `IsManualFocus: false`, no prior

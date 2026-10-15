@@ -1,0 +1,12 @@
+id: hs-used-car-8k
+track: high_stakes
+disputed_label: true
+rationale: >-
+  A mid-size purchase decision. "Large purchases" is in the financial option's description, but
+  $8k on a used car is an everyday decision rather than a risk to someone's standing. All 7
+  models said "financial" in spike round 2; "none" is equally defensible.
+state:
+  latest: "is an $8k used 2012 civic a good deal? thinking of buying it this weekend"
+expect:
+  high_stakes: {answer: financial, accept: [financial, "none"]}
+  intent: {answer: product}

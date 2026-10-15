@@ -1,0 +1,15 @@
+id: hs-dying-to-see-dune
+track: high_stakes
+rationale: >-
+  False-friend trap ("dying"). Nothing here risks health, money, or safety; high_stakes must
+  stay "none" and emotional must stay quiet. All 7 models in spike round 2 got this right, so
+  it is a floor check, not a discriminator.
+state:
+  latest: "im dying to see dune part three, when does it come out"
+expect:
+  high_stakes: {answer: "none"}
+  intent: {answer: event, accept: [event, film_tv]}
+quiet:
+  - emotional
+  - private_person
+  - premise

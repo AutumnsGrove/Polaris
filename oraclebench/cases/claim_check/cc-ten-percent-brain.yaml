@@ -1,0 +1,13 @@
+id: cc-ten-percent-brain
+track: claim_check
+rationale: >-
+  "Is it true that" about a viral factoid is exactly what claim_check describes. It is
+  settled science, so contested stays quiet.
+state:
+  latest: "is it true that we only use 10% of our brains"
+expect:
+  claim_check: {answer: "yes"}
+quiet:
+  - contested
+  - emotional
+  - private_person

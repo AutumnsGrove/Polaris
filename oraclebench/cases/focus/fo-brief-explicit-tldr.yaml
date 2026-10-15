@@ -1,0 +1,15 @@
+id: fo-brief-explicit-tldr
+track: focus
+rationale: >-
+  An explicit brevity request ("tl;dr") on a stable single-fact question. `brief` should win
+  (and has to clear its 0.80 option bar); a generic balanced answer is the failure mode.
+  Stable knowledge, so no web search is needed.
+state:
+  latest: "tl;dr is glass a liquid or a solid"
+expect:
+  focus: {answer: brief}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person
+  - contested

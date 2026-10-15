@@ -1,0 +1,16 @@
+id: in-followup-thinkpad-after-framework
+track: intent
+rationale: >-
+  Pronoun-free follow-up that only makes sense with the previous message: the comparison is
+  between laptops. The previous turn resolves it, so intent=product and focus=shopper (spike
+  round 3). clarify is deliberately unlabeled: production never asks it mid-thread, and Jev
+  still answers "yes" here (0.89-0.94).
+state:
+  previous: "what's the battery life like on the framework laptop 13"
+  latest: "and how does the thinkpad compare?"
+expect:
+  intent: {answer: product}
+  focus: {answer: shopper}
+quiet:
+  - emotional
+  - private_person

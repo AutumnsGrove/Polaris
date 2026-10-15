@@ -1,0 +1,14 @@
+id: in-followup-weather-next-week
+track: intent
+rationale: >-
+  "What about next week?" has no subject on its own; the previous turn makes it a weather
+  question. intent=weather and research=yes (spike round 3).
+state:
+  previous: "what's the weather in tokyo tomorrow?"
+  latest: "what about next week?"
+expect:
+  intent: {answer: weather}
+  research: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

@@ -1,0 +1,13 @@
+id: pr-sky-green-at-night
+track: premise
+rationale: >-
+  The question presupposes a false fact (the night sky is not green), so premise=yes and the
+  answer should check the assumption first. 6 of 7 models fired in spike round 2; Luna said
+  "no" at 0.62.
+state:
+  latest: "why is the sky green at night"
+expect:
+  premise: {answer: "yes"}
+quiet:
+  - emotional
+  - private_person

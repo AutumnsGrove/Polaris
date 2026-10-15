@@ -1,0 +1,13 @@
+id: em-dog-died
+track: emotional
+rationale: >-
+  Plain grief. The person is not only asking for information, so emotional=yes and the
+  nudge should lead with acknowledgement. All 7 models fired in spike round 2.
+state:
+  latest: "my dog died yesterday. how do people even get through this"
+expect:
+  emotional: {answer: "yes"}
+quiet:
+  - private_person
+  - premise
+  - contested
