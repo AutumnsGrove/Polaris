@@ -52,6 +52,12 @@ The bench runs the real `gateway.RunOracle`, so production's rules apply:
 - Chips: keys are `chip_pulsar`, `chip_daily`, `chip_safari`, `chip_field`. `chip_field`'s answers
   are the fixture fields in `case.go` (`Home Lab`, `Cooking`, `Trip Planning`, `Health`) or
   `"none"`. `thread_source: pulsar` withholds every chip (use for "no chip" cases).
+- `deep_research` (yes/no) is an **action**, not a nudge: a `yes` that clears 0.85 promotes the
+  turn to Deep Research (expensive sub-agents), so a false `yes` costs real money (fp 2.5) while a
+  missed one just gives a normal answer (fn 1.0). It has no inject text; the bench counts the
+  promotion itself. It is held back by `emotional=yes` and `clarify=yes` (don't label
+  `deep_research` alongside either) and skipped under focus `brief`/`safari` (don't pair them).
+  The bench environment offers it on every case (`OffersDeepResearch`).
 - Each message is truncated to 2000 runes; keep pasted-document cases under ~1500 characters.
 - The bench runs with the Prism dial at `normal`, so `ui` is always asked.
 - `has_url` is a regex, not a model question — never labeled. A message containing a URL is still
@@ -80,7 +86,7 @@ Don't use real private individuals; invent names.
 - Prefixes: focus `fo`, high_stakes `hs`, emotional `em`, premise `pr`, private_person `pp`,
   research `rs`, intent `in`, clarify `cl`, format `fm`, ui `ui`, depth `dp`, recency `re`,
   source_type `st`, contested `co`, claim_check `cc`, locale `lo`, task `tk`, recall `rc`,
-  chips `ch`.
+  deep_research `dr`, chips `ch`.
 - Ids are unique across the whole bank. Read the existing files in your track dir first and
   don't duplicate a seed's scenario.
 

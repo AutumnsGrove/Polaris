@@ -1,0 +1,14 @@
+id: dr-summarize-pasted-paragraph
+track: deep_research
+rationale: >-
+  A long-looking message whose content is already in hand: the person pasted the text and wants
+  it condensed. Length is not depth; no outside research is needed at all.
+state:
+  latest: "Please summarize this in two sentences: The city council voted 6 to 3 on Tuesday to approve a revised zoning plan that allows mixed-use buildings of up to six stories along the Riverside corridor. Supporters argued the change would add around 1,200 housing units over a decade and revive empty storefronts, while opponents raised concerns about traffic, parking, and the loss of the corridor's low-rise character. The plan takes effect in January, and the council will review its effects after two years."
+expect:
+  deep_research: {answer: "no"}
+  task: {answer: summarize}
+  research: {answer: "no"}
+quiet:
+  - emotional
+  - private_person

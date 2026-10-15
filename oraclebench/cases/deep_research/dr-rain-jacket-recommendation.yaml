@@ -1,0 +1,13 @@
+id: dr-rain-jacket-recommendation
+track: deep_research
+rationale: >-
+  A focused quick recommendation with a budget. Product shopping can sprawl, but one good search
+  and a few options answers it, and the no option lists "a quick recommendation".
+state:
+  latest: "can you recommend a good lightweight rain jacket for hiking, under $150?"
+expect:
+  deep_research: {answer: "no"}
+  intent: {answer: product}
+quiet:
+  - emotional
+  - private_person

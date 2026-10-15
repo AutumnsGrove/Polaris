@@ -1,0 +1,15 @@
+id: dr-last-night-score
+track: deep_research
+rationale: >-
+  A current-events lookup. It needs fresh data, so research=yes, but it is one fact from one
+  authoritative source, not a multi-angle investigation. Needing the web is not the same as
+  needing deep research; this separates the two checks.
+state:
+  latest: "did the lakers win last night"
+expect:
+  deep_research: {answer: "no"}
+  research: {answer: "yes"}
+  recency: {answer: breaking}
+quiet:
+  - emotional
+  - private_person

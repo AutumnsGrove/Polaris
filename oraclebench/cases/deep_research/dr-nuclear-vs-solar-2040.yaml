@@ -1,0 +1,14 @@
+id: dr-nuclear-vs-solar-2040
+track: deep_research
+rationale: >-
+  Phone-typed, but explicitly asks for a deep dive with the strongest arguments on both sides of
+  a question where credible energy analysts disagree. Competing expert views plus several
+  sub-questions (cost, reliability, build time) make this deep_research=yes despite the casual
+  voice.
+state:
+  latest: "need a real deep dive on whether nuclear or solar plus storage is the better bet for the grid by 2040, with the strongest arguments on both sides and who actually disagrees about what"
+expect:
+  deep_research: {answer: "yes"}
+  contested: {answer: "yes"}
+quiet:
+  - emotional

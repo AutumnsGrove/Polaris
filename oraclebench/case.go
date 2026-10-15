@@ -44,7 +44,7 @@ import (
 var Tracks = []string{
 	"focus", "high_stakes", "emotional", "premise", "private_person", "research",
 	"intent", "clarify", "format", "ui", "depth", "recency", "source_type",
-	"contested", "claim_check", "locale", "task", "recall", "chips",
+	"contested", "claim_check", "locale", "task", "recall", "deep_research", "chips",
 }
 
 // ChipPrefix is how chips are keyed in expect/quiet, matching the question
