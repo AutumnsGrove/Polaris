@@ -132,7 +132,7 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 
 	calls := len(roster) * len(cases) * obRepeats
 	fmt.Printf("cases: %d of %d (seed %d), models: %d, repeats: %d, concurrency: %d\n", len(cases), len(bank), obSeed, len(roster), obRepeats, obConcurrency)
-	fmt.Printf("about %d calls, roughly $%.2f for the decision calls (judge extra); weights %s, latency budget %s\n\n", calls, float64(calls)*0.0002, weights.Hash, weights.LatencyBudget)
+	fmt.Printf("about %d calls, roughly $%.3f for the decision calls (judge extra); weights %s, latency budget %s\n\n", calls, float64(calls)*0.0002, weights.Hash, weights.LatencyBudget)
 
 	out, err := os.Create(obOut)
 	if err != nil {

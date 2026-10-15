@@ -111,9 +111,14 @@ func (l Leaderboard) Render(w io.Writer) {
 	}
 	tw.Flush()
 
-	fmt.Fprintln(w, "\n≈ within", tieGap, "points of the leader: treat as a tie and prefer the faster or pinned model. x = disqualified:")
+	fmt.Fprintln(w, "\n≈ within", tieGap, "points of the leader: treat as a tie and prefer the faster or pinned model.")
+	header := false
 	for _, e := range l.Entries {
 		for _, reason := range e.Score.Disqualified {
+			if !header {
+				fmt.Fprintln(w, "x = disqualified:")
+				header = true
+			}
 			fmt.Fprintf(w, "  %s: %s\n", e.Model, reason)
 		}
 	}
