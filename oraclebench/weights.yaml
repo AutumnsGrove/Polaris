@@ -1,0 +1,61 @@
+# Scoring weights for the Oracle benchmark (docs/plans/oracle-benchmark.md).
+#
+# This file is embedded as the default and can be overridden per run with
+# `polaris oracle-bench --weights path.yaml`. Everything that is a judgment call
+# about what matters lives here, not in code, so retuning is an edit and a re-run.
+# Changing a weight changes scores, so compare runs only against runs made with
+# the same file (the tracking DB stores the file's hash with every run).
+
+# Share of a labeled check's credit that comes from the all-or-nothing verdict
+# (the model's winner is an acceptable answer). The rest comes from closeness
+# (probability mass the model put on acceptable answers).
+alpha: 0.6
+
+# Calls slower than this are treated as Oracle-off in the "within budget" score,
+# which is the same scorer run with late calls replaced by an empty result.
+# Production's own timeout is 2.5s (gateway/oracle.go); the bench is deliberately
+# more generous so a slower-but-accurate model still shows up, and the latency
+# ranking says how slow.
+latency_budget: 5s
+
+# Hard filters, applied by the leaderboard (a model over either is flagged
+# disqualified, not silently ranked down).
+#  - refusal_max_rate: share of calls that errored or were refused. A model that
+#    refuses on sensitive prompts can't run Oracle: those are the turns where
+#    the dangerous checks matter most.
+#  - dangerous_fp_max_rate: share of quiet opportunities on the dangerous
+#    checks where the model delivered a nudge anyway.
+refusal_max_rate: 0.05
+dangerous_fp_max_rate: 0.05
+dangerous_checks: [high_stakes, emotional, private_person, premise]
+
+# Credit for getting the focus *action* right (the mode production actually
+# ends up in), on top of the focus check's own verdict/closeness credit.
+focus_action_credit: 1.0
+
+# Per-check penalties. fp = a nudge delivered where none was wanted (a quiet
+# check, or a label whose answer injects nothing); fn = a wanted nudge that never
+# arrived. `credit` is what a perfect answer to a labeled check earns; it
+# defaults to fn (missing it is what getting it right is worth). `chips` applies
+# to every chip_* key.
+default: {fp: 1.0, fn: 1.0}
+checks:
+  high_stakes:    {fp: 3.0, fn: 2.0}
+  emotional:      {fp: 3.0, fn: 1.0}
+  private_person: {fp: 3.0, fn: 1.5}
+  premise:        {fp: 2.5, fn: 2.0}
+  claim_check:    {fp: 2.0, fn: 1.5}
+  contested:      {fp: 2.0, fn: 1.5}
+  clarify:        {fp: 2.0, fn: 1.0}
+  focus:          {fp: 2.0, fn: 1.0}
+  research:       {fp: 1.5, fn: 1.5}
+  depth:          {fp: 1.0, fn: 0.5}
+  format:         {fp: 1.0, fn: 0.5}
+  ui:             {fp: 1.0, fn: 0.5}
+  intent:         {fp: 0.5, fn: 0.5}
+  recency:        {fp: 1.0, fn: 1.0}
+  source_type:    {fp: 1.5, fn: 1.0}
+  locale:         {fp: 1.5, fn: 1.0}
+  task:           {fp: 1.0, fn: 1.0}
+  recall:         {fp: 1.0, fn: 1.0}   # not in the plan's table; same as the default
+  chips:          {fp: 0.5, fn: 0.5}
