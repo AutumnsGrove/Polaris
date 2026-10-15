@@ -34,6 +34,8 @@ func (t *turnRun) carryDeepResearch() {
 		return
 	}
 	t.agentCtx.DeepResearch = true
+	t.deepResearchCarried = true
+	t.oracleResult.DeepResearchCarried = true
 	t.wireResearchers()
 	t.s.db.LogEvent(t.threadID, "info", "oracle", "deep research carried over from a pending plan confirmation", nil, t.turnID)
 }

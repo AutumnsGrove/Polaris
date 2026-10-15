@@ -63,6 +63,7 @@ type turnRun struct {
 	oracleResult          OracleResult
 	oracleFocusModeSource string
 	oracleAttempted       bool
+	deepResearchCarried   bool // see carryDeepResearch; survives RunOracle replacing oracleResult
 	oracleResultForEvent  *OracleResult
 	appliedFocusMode      string
 

@@ -54,6 +54,11 @@ describe('buildOracleNote', () => {
 			);
 		});
 
+		it('says it is continuing when the mode was carried over a plan confirmation, even with no checks', () => {
+			const carried: OracleResult = { deep_research_carried: true };
+			expect(buildOracleNote(carried, undefined, undefined, undefined)).toBe('Continuing <b>Deep Research</b>');
+		});
+
 		it('is absent when the promotion did not take effect', () => {
 			const held = promoted({ deep_research: undefined });
 			expect(buildOracleNote(held, undefined, undefined, undefined)).toBeNull();

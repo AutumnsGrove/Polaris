@@ -97,6 +97,9 @@ export interface OracleResult {
 	// turn ran as Deep Research (the multi-agent mode) without the composer
 	// toggle being on.
 	deep_research?: boolean;
+	// Ran as Deep Research only because the previous turn ended on a plan
+	// confirmation; Oracle may be off, in which case this is all the result holds.
+	deep_research_carried?: boolean;
 	injections?: string[];
 	checks?: OracleCheckOutcome[];
 	chips?: OracleChip[];

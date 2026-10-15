@@ -129,6 +129,13 @@ type OracleInput struct {
 	Rules config.OracleConfig
 }
 
+// hasContent reports whether there is anything about Oracle's side of this turn
+// worth persisting or sending: a live classification (Checks is only non-empty
+// when Jev actually answered) or a carried-over Deep Research note.
+func (r OracleResult) hasContent() bool {
+	return len(r.Checks) > 0 || r.DeepResearchCarried
+}
+
 // CheckOutcome is one check's raw result, kept regardless of whether it
 // fired — the "why" sheet's collapsed list needs the ones that didn't
 // fire too, not just the ones that did.
@@ -187,6 +194,12 @@ type OracleResult struct {
 	// turn only — the thread's sticky Deep Research toggle is left alone, so one
 	// big question doesn't leave every later message on the expensive tier.
 	DeepResearch bool `json:"deep_research,omitempty"`
+	// DeepResearchCarried means this turn runs as Deep Research only because the
+	// previous turn ended on a plan confirmation (gateway/turn_deep_research.go),
+	// not because Oracle judged it deep. Set by the turn, not RunOracle, and it
+	// can be the only thing in the result: it travels even when Oracle is off or
+	// never ran, so the reply can say why it's running the expensive mode.
+	DeepResearchCarried bool `json:"deep_research_carried,omitempty"`
 	// Injections is every fired check's resolved text, in the order the
 	// ## Oracle section should list them — one paragraph each.
 	Injections []string       `json:"injections,omitempty"`

@@ -88,6 +88,7 @@ func (t *turnRun) runOracleStage() {
 				Visuals: t.agentCtx.Visuals,
 				Rules:   t.cfg.Oracle,
 			})
+			t.oracleResult.DeepResearchCarried = t.deepResearchCarried
 			// Recorded on the shared Jev ledger the monthly cap sums (issue
 			// #125) — only when the call actually completed and billed, the
 			// same convention verification.go follows. CostUSD stays zero on
@@ -169,8 +170,8 @@ func (t *turnRun) announceOracle() {
 	// duplicate, never persisted, exactly like "cost_update" (see
 	// protocol.go's "oracle" doc comment). Absent entirely for a turn
 	// Oracle never ran on; the frontend treats that as normal.
-	if t.oracleAttempted {
-		if len(t.oracleResult.Checks) > 0 {
+	if t.oracleAttempted || t.deepResearchCarried {
+		if t.oracleResult.hasContent() {
 			t.oracleResultForEvent = &t.oracleResult
 		}
 		t.send(ServerEvent{

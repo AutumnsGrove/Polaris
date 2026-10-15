@@ -26,3 +26,17 @@ func TestAwaitingResearchPlan(t *testing.T) {
 		})
 	}
 }
+
+// A carried-only result (Oracle off, or it never answered) must still be
+// persisted and sent, or the reply could never say why it ran as Deep Research.
+func TestOracleResultHasContent(t *testing.T) {
+	if (OracleResult{}).hasContent() {
+		t.Error("empty result should have no content")
+	}
+	if !(OracleResult{DeepResearchCarried: true}).hasContent() {
+		t.Error("carried-only result should have content")
+	}
+	if !(OracleResult{Checks: []CheckOutcome{{Key: "focus"}}}).hasContent() {
+		t.Error("a result with checks should have content")
+	}
+}

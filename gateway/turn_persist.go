@@ -82,7 +82,7 @@ func (t *turnRun) persistAnswer() bool {
 	// — persisting only then keeps oracle_result "" for every ordinary
 	// Oracle-off turn, matching its schema comment, rather than storing
 	// an empty-but-marshaled "{}".
-	if len(t.oracleResult.Checks) > 0 {
+	if t.oracleResult.hasContent() {
 		if oracleResultJSON, err := json.Marshal(t.oracleResult); err != nil {
 			log.Warn("failed to marshal oracle result", "err", err)
 		} else if err := t.s.db.SetMessageOracleResult(t.assistantMsgID, string(oracleResultJSON), t.oracleFocusModeSource); err != nil {
@@ -99,7 +99,7 @@ func (t *turnRun) persistAnswer() bool {
 	// carried a focus mode whose provenance the next turn's sticky/retract
 	// logic reads back — losing it here would make an Oracle-set mode look
 	// like a plain default after one Jev hiccup.
-	if len(t.oracleResult.Checks) == 0 && t.oracleFocusModeSource != "" {
+	if !t.oracleResult.hasContent() && t.oracleFocusModeSource != "" {
 		if err := t.s.db.SetMessageFocusModeSource(t.assistantMsgID, t.oracleFocusModeSource); err != nil {
 			log.Warn("failed to record focus mode source", "err", err)
 		}

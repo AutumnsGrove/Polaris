@@ -179,7 +179,11 @@ export function buildOracleNote(
 	// Straight off the result's own flag, not the check outcome: the flag is
 	// only set when the promotion actually took effect (not held back by
 	// clarify/emotional, not overridden by Brief/Safari).
-	const deepClause = oracleResult.deep_research ? 'promoted to <b>Deep Research</b>' : undefined;
+	const deepClause = oracleResult.deep_research
+		? 'promoted to <b>Deep Research</b>'
+		: oracleResult.deep_research_carried
+			? 'continuing <b>Deep Research</b>'
+			: undefined;
 
 	const ui = oracleResult.checks?.find((c) => c.key === 'ui');
 	const uiClause =
