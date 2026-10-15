@@ -61,6 +61,14 @@ func (t *turnRun) runOracleStage() {
 					fieldOptions, fieldIDs = OracleFieldOptions(fields)
 				}
 			}
+			// Deep Research promotion is only offered where it can actually run
+			// and be confirmed: an interactive chat (RequestLocation is the same
+			// "live client on the other end" signal the interactive_chat tool
+			// gate uses — the plan-confirmation step is an ask_user_question),
+			// not already on, Research not switched off, no voice call, and a
+			// worker model configured for the sub-agents.
+			_, hasWorker := t.cfg.ResearchWorkerModel()
+			offersDeepResearch := t.agentCtx.RequestLocation != nil && !t.agentCtx.DeepResearch && !t.msg.NoResearch && !t.msg.VoiceMode && hasWorker
 			t.oracleAttempted = true
 			t.oracleResult = RunOracle(t.ctx, t.s.jev, OracleInput{
 				CurrentMessage:       t.msg.Content,
@@ -72,6 +80,7 @@ func (t *turnRun) runOracleStage() {
 				FieldOptions:         fieldOptions,
 				FieldIDs:             fieldIDs,
 				Ghost:                t.ghost,
+				OffersDeepResearch:   offersDeepResearch,
 				ThreadSource:         t.threadSource,
 				// agentCtx.Visuals is already "" for a voice call or an entry
 				// point that never offers blocks, so the ui check follows the
@@ -79,6 +88,7 @@ func (t *turnRun) runOracleStage() {
 				Visuals: t.agentCtx.Visuals,
 				Rules:   t.cfg.Oracle,
 			})
+			t.oracleResult.DeepResearchCarried = t.deepResearchCarried
 			// Recorded on the shared Jev ledger the monthly cap sums (issue
 			// #125) — only when the call actually completed and billed, the
 			// same convention verification.go follows. CostUSD stays zero on
@@ -124,6 +134,14 @@ func (t *turnRun) runOracleStage() {
 			} else if t.msg.FocusMode != "" {
 				t.oracleFocusModeSource = carriedFocusModeSource(isManualFocus, t.msg.FocusMode, priorOracleFocus)
 			}
+			// Promoted for this turn only: agentCtx (not t.msg) is flipped, so the
+			// thread's sticky Deep Research toggle — persisted from t.msg above —
+			// stays as the operator left it. wireResearchers re-reads agentCtx to
+			// build the sub-agent client the turn now needs.
+			if t.oracleResult.DeepResearch {
+				t.agentCtx.DeepResearch = true
+				t.wireResearchers()
+			}
 			if len(t.oracleResult.Injections) > 0 {
 				t.agentCtx.OracleSection = strings.ReplaceAll(prompts.Get().Oracle.Section, "{items}", strings.Join(t.oracleResult.Injections, "\n\n"))
 			}
@@ -152,8 +170,8 @@ func (t *turnRun) announceOracle() {
 	// duplicate, never persisted, exactly like "cost_update" (see
 	// protocol.go's "oracle" doc comment). Absent entirely for a turn
 	// Oracle never ran on; the frontend treats that as normal.
-	if t.oracleAttempted {
-		if len(t.oracleResult.Checks) > 0 {
+	if t.oracleAttempted || t.deepResearchCarried {
+		if t.oracleResult.hasContent() {
 			t.oracleResultForEvent = &t.oracleResult
 		}
 		t.send(ServerEvent{

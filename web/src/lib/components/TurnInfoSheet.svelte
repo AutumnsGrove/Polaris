@@ -36,7 +36,10 @@
 	// "general", clarify "no") clears its threshold too but injects nothing,
 	// and used to get a card labeled "Nudged" with no nudge under it. Focus
 	// counts when it fired, since a pick or a clear is itself the change.
+	// Deep Research counts too: its change is the promotion itself, which has
+	// no injected nudge text (the result's own flag says it took effect).
 	function changedSomething(key: string, check: { fired: boolean; nudge?: string }): boolean {
+		if (key === 'deep_research') return check.fired && !!turn.oracleResult?.deep_research;
 		return check.fired && (key === 'focus' || !!check.nudge);
 	}
 	let firedChecks = $derived(
@@ -243,6 +246,12 @@
 						{/each}
 						{#if check.nudge}
 							<div class="nudge-text">{check.nudge}</div>
+						{/if}
+						{#if display.key === 'deep_research'}
+							<div class="nudge-text">
+								A deep, many-angled question — this message ran as Deep Research, with sub-researchers
+								planned for your go-ahead. Your thread's own Deep Research setting is unchanged.
+							</div>
 						{/if}
 						{#if display.key === 'focus'}
 							{@const alt = runnerUp(check.probabilities, check.winner)}

@@ -43,6 +43,20 @@ func oracleDefaults(d *Set) {
 					"specific fact, in which case search as normal.",
 			},
 		},
+		"deep_research": {
+			Instructions: "Is this a deep, nuanced question that genuinely needs extensive, multi-angle " +
+				"research — many sources compared and cross-checked — rather than one good search? Pick " +
+				"\"no\" unless a thorough investigation would clearly produce a meaningfully better answer " +
+				"than a normal one.",
+			Options: map[string]string{
+				"yes": "Broad, layered, or contested enough that it spans several distinct angles, " +
+					"sub-questions, or bodies of sources (a landscape survey, a multi-factor comparison, a " +
+					"question with competing expert views, an investigation of a complex topic), where an " +
+					"answer from a few searches would be shallow.",
+				"no": "A single fact, a focused question, a quick recommendation, casual conversation, or " +
+					"anything a normal search-and-answer handles well, however interesting it is.",
+			},
+		},
 		"high_stakes": {
 			Instructions: "Would acting on a wrong answer to this message risk someone's health, legal standing, " +
 				"money, or physical safety?",

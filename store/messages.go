@@ -268,6 +268,19 @@ func (s *Store) LastUserMessage(threadID string) (string, error) {
 	return content, err
 }
 
+// LastAssistantPendingQuestionBefore returns the pending_question and
+// oracle_result JSON of the nearest assistant message in threadID with an id
+// below beforeID, "" for each if there is none or it has none. Bounded by beforeID (the current turn's user
+// message) rather than "latest overall" so an edit/retry deeper into a thread
+// reads the question that turn actually answers, not a later one.
+func (s *Store) LastAssistantPendingQuestionBefore(threadID string, beforeID int64) (pending, oracleResult string, err error) {
+	err = s.db.QueryRow(`SELECT pending_question, oracle_result FROM messages WHERE thread_id = ? AND role = 'assistant' AND id < ? ORDER BY id DESC LIMIT 1`, threadID, beforeID).Scan(&pending, &oracleResult)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return pending, oracleResult, err
+}
+
 // LastAssistantFocusModeSource returns the most recent assistant message's
 // focus_mode_source in threadID, "" if there is none — Oracle mode's
 // stickiness/switch-threshold logic (gateway.RunOracle's PriorOracleFocusMode)

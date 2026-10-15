@@ -80,7 +80,8 @@ here (and, if it has its own name in the UI, to the in-app glossary, see CLAUDE.
   main thread stays readable. Their spend is included in the thread's cost.
 - **Oracle mode** (opt-in) — reads each message first and quietly adjusts how it's answered
   (extra care with sources on a health question, a table for a comparison, fresher sources for
-  breaking news), with every change shown and undoable right on the reply. It can also offer to
+  breaking news), with every change shown and undoable right on the reply. It can promote a
+  deep, many-angled question to Deep Research for that message, and offer to
   turn a broad topic into an interactive Safari. Off by default in ghost conversations, with a
   switch to opt those in too (still without the offer to set up a Pulsar, add to Daily, or file
   the chat into a Field). See [oracle.md](oracle.md) for every check and what it does.

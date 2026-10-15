@@ -106,12 +106,16 @@ func DefaultOracle() OracleConfig {
 				Sticky:              []string{"safari"},
 				NeverWithHighStakes: []string{"brief"},
 			},
-			"research":    {Threshold: 0.85},
-			"high_stakes": {Threshold: 0.75},
+			"research": {Threshold: 0.85},
+			// Promotes the turn to Deep Research — the multi-agent fan-out, many times
+			// the cost of a normal answer — so the bar is high. Brief wants a short
+			// answer and Safari runs its own pacing.
+			"deep_research": {Threshold: 0.85, SkipForFocus: []string{"safari", "brief"}},
+			"high_stakes":   {Threshold: 0.75},
 			// Shopper mode already carries its own product guidance.
 			"intent": {Threshold: 0.65, SkipOptionForFocus: map[string][]string{"product": {"shopper"}}},
 			// Safari's Embark step already asks its own clarifying question.
-			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}},
+			"clarify": {Threshold: 0.85, FirstMessageOnly: &firstOnly, SkipForFocus: []string{"safari"}, Suppresses: []string{"deep_research"}},
 			"recall":  {Threshold: 0.80},
 			// Answer shape. Safari owns its own format; Brief is already short.
 			"format": {Threshold: 0.75, SkipForFocus: []string{"safari"}},
@@ -134,7 +138,7 @@ func DefaultOracle() OracleConfig {
 			// teach the same way an "explain" nudge would ask for.
 			"task": {Threshold: 0.75, SkipForFocus: []string{"safari"}, SkipOptionForFocus: map[string][]string{"explain": {"first_principles", "socratic"}}},
 			// Sensitivity: wrongly firing these changes tone, so the bar is high.
-			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify", "ui"}},
+			"emotional":      {Threshold: 0.85, Suppresses: []string{"format", "depth", "source_type", "task", "clarify", "ui", "deep_research"}},
 			"private_person": {Threshold: 0.85},
 			"premise":        {Threshold: 0.85},
 		},
