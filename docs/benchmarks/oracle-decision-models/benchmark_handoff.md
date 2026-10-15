@@ -1,8 +1,12 @@
 # Oracle decision-model benchmark: handoff for the full re-run
 
+> **TEMPORARY FILE. Delete it when the benchmark work is finished** (final step, "Clean up", at the
+> bottom). It exists only to hand tomorrow's session everything it needs; it is not permanent docs.
+
 Written 2026-10-15 at the end of day one. Read this top to bottom, then do "The plan for the day". The
-operator (Autumn) wants the full run done and a showcase document written. Everything below was
-verified today; where something is a judgment call it says so.
+operator (Autumn) wants the full run done and a showcase document written. Tomorrow is a **big
+benchmarking day: the goal is to run a LOT of benchmarks**, not a single comparison. Everything below
+was verified today; where something is a judgment call it says so.
 
 ## What this is, in one paragraph
 
@@ -17,18 +21,23 @@ latency ranking. Design and decisions: `docs/plans/oracle-benchmark.md`. Authori
 
 1. **Speed is the whole point.** The operator picked Jev because it is fast. A model that scores higher
    but is dramatically slower is not a candidate: today `perplexity/pplx-decider-v1.1-27b` scored
-   91.6 vs Jev 1.14's 88.0 but runs 7x slower (p50 2.2s vs 0.29s), and the operator said he would never
+   91.6 vs Jev 1.14's 88.0 but runs 7x slower (p50 2.2s vs 0.29s), and the operator said she would never
    use it. Judge candidates on accuracy **and** latency together; lead the write-up with both.
 2. **Production's real Oracle timeout is 2.5s** (`oracleTimeout`, `gateway/oracle.go`). The bench's
    *scoring* budget is 5s (`latency_budget` in `weights.yaml`), set generously on purpose. Always also
    report the share of calls under 2.5s (command below): pplx was only 71%, Jev 99.8%.
-3. The models he cares about: **`typesafe/jev-1.14` (currently pinned in production), `typesafe/jev-1.13`,
-   `microsoft/microsoft-decision-1`, `inception/mercury-decide`, `liquid/d1`.** He expects Mercury and
-   Liquid d1 to be fast. pplx is included for the showcase only.
+3. The models she cares about: **`typesafe/jev-1.14` (currently pinned in production), `typesafe/jev-1.13`,
+   `microsoft/microsoft-decision-1`, `inception/mercury-decide`, `liquid/d1`.** She expects Mercury and
+   Liquid d1 to be fast. **Tomorrow's roster is 7, possibly 8:** those five, plus
+   `perplexity/pplx-decider-v1.1-27b` (showcase only; she'd never use it, it's slow), plus
+   **`cloudflare/clef-flash`** (spike: ~1.0s, $0.000097/call), plus optionally one more, e.g.
+   `cloudflare/clef` or `upstage/solar-decide-flash` (2.4s in the spike, borderline), if she wants an 8th.
+   **Both Jev models and pplx must be RE-RUN**, not reused from today: today's runs used the old
+   281-case bank and old weights, so they are not comparable (see "State of the repo").
 4. **Excluded:** `openai/gpt-6-luna-decisions` (too expensive, and it refuses sensitive prompts because
    the underlying chat model does). `respan/*` can't take Choice questions (the runner marks them N/A).
    Do not run `--all-decisions` without asking: ~20 models is about $4 and an hour.
-5. He wants to be told **what each run costs** every time, and wants progress/ETA when a run is slow.
+5. She wants to be told **what each run costs** every time, and wants progress/ETA when a run is slow.
 
 ## State of the repo when you start
 
@@ -89,31 +98,37 @@ the catalog's current one and say so.
 Proves every model answers Choice questions and the pipeline works before the long run.
 
 ```bash
-mkdir -p /tmp/ob-smoke
-/tmp/oracle-bench-bin oracle-bench --n 12 --repeats 1 --seed 3 \
-  --models typesafe/jev-1.14,inception/mercury-decide,liquid/d1,microsoft/microsoft-decision-1,perplexity/pplx-decider-v1.1-27b \
-  --out /tmp/ob-smoke/calls.jsonl --tracking-db /tmp/ob-smoke/t.db --leaderboard /tmp/ob-smoke/lb.json --label smoke
+/tmp/oracle-bench-bin oracle-bench --n 12 --repeats 1 --seed 3 --label smoke --save-dir /tmp/ob-smoke \
+  --models typesafe/jev-1.14,inception/mercury-decide,liquid/d1,microsoft/microsoft-decision-1,perplexity/pplx-decider-v1.1-27b,cloudflare/clef-flash
 ```
 
-Look for: every model listed with a score (not `N/A`), `err 0%`, and `resolved_models` populated in
-`lb.json` (`jq '.entries[]|[.model,.resolved_models]' /tmp/ob-smoke/lb.json`). A model that errors on
+`--save-dir /tmp/ob-smoke` keeps this throwaway leaderboard out of the repo; its bulky output still goes
+to the gitignored `oraclebench/results/` (delete that directory after the smoke test so the real run
+starts clean: `rm -rf oraclebench/results`).
+
+Look for: every model listed with a score (not `N/A`), `err 0%`, and `resolved_models` populated in the
+saved JSON (`jq '.entries[]|[.model,.resolved_models]' /tmp/ob-smoke/*.json`). A model that errors on
 every call is a finding, not a retry; report it and drop it from the full run if it's unusable.
 
-### 3. The full run (about 1 hour, about $1)
+### 3. The full run (about 1.25 hours, about $1.25, 7 models)
 
 One invocation, so there is one leaderboard, one weights hash, and the same sampled cases for everyone.
 Run it in the **background** and poll with short commands (the operator dislikes long blocking waits).
+**This includes re-running both Jev models and pplx** (see priorities above).
 
 ```bash
 mkdir -p /tmp/ob-full
 nohup /tmp/oracle-bench-bin oracle-bench --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
-  --models typesafe/jev-1.14,typesafe/jev-1.13,inception/mercury-decide,liquid/d1,microsoft/microsoft-decision-1,perplexity/pplx-decider-v1.1-27b \
-  --out /tmp/ob-full/calls.jsonl --tracking-db /tmp/ob-full/t.db --leaderboard /tmp/ob-full/lb.json \
-  --label "full re-run, 295-case bank" > /tmp/ob-full/run.log 2>&1 &
+  --label "full re-run, 295-case bank" \
+  --models typesafe/jev-1.14,typesafe/jev-1.13,inception/mercury-decide,liquid/d1,microsoft/microsoft-decision-1,cloudflare/clef-flash,perplexity/pplx-decider-v1.1-27b \
+  > /tmp/ob-full/run.log 2>&1 &
 # progress:   tr '\r' '\n' < /tmp/ob-full/run.log | tail -2
 ```
 
-Rough budget (895 calls per model at 3 repeats; the judge adds ~2 minutes at the end):
+Put the slow model (pplx) last so the fast models report first. Add an 8th model to `--models` if the
+operator wants one.
+
+Rough budget (895 calls per model at 3 repeats; the judge adds ~2-3 minutes at the end):
 
 | model | per call | time | decision cost |
 |---|---|---|---|
@@ -121,27 +136,35 @@ Rough budget (895 calls per model at 3 repeats; the judge adds ~2 minutes at the
 | mercury-decide | ~1.1-1.4s (spike) | ~9 min | ~$0.09 |
 | liquid/d1 | ~1.1s (spike) | ~8 min | ~$0.08 |
 | microsoft-decision-1 | ~1.1s (spike) | ~9 min | ~$0.13 |
+| cloudflare/clef-flash | ~1.0s (spike) | ~8 min | ~$0.09 |
 | pplx-decider-v1.1-27b | ~2.2s | ~19 min | ~$0.10 |
-| judge (all models) | | | ~$0.10-0.15 |
-| **total** | | **~55-65 min** | **~$1** |
+| judge (all models) | | | ~$0.15-0.20 |
+| **total** | | **~65-75 min** | **~$1.25** |
 
-Tell the operator the estimate before starting and the actual cost after (it's in the leaderboard JSON:
-`jq '.entries[]|[.model,.score.cost_usd,.score.judge_cost_usd]' lb.json`). If the process dies, the raw
-per-call log (`calls.jsonl`) is still written as calls complete, but a half run is never scored (by
-design); re-run it.
+Tell the operator the estimate before starting and the actual cost after (it's in the saved leaderboard
+JSON: `jq '.entries[]|[.model,.score.cost_usd,.score.judge_cost_usd]' <file>`). If the process dies, the
+raw per-call log is still written as calls complete, but a half run is never scored (by design);
+re-run it.
 
-### 4. Save and commit the results
+### 4. Results are saved automatically (verify, then commit)
 
-```bash
-cp /tmp/ob-full/lb.json docs/benchmarks/oracle-decision-models/runs/2026-10-16-full.json
-```
+The command saves everything itself when a run finishes, with no output flags needed. The final lines
+of the run print the exact paths:
 
-Keep the raw `calls.jsonl` (about 6 MB per 1,700 calls) local, and the `.db` is gitignored. Commit only
-the leaderboard JSON. Add the production-timeout column the leaderboard doesn't have yet:
+- `docs/benchmarks/oracle-decision-models/runs/<stamp>-<label>.json` and `.txt`: the leaderboard and
+  the printed table. **Small. Commit these.** Files are timestamped and never overwritten.
+- `oraclebench/results/<stamp>-<label>-calls.jsonl` (raw calls, written as they complete),
+  `...-scores.jsonl` (per-case scores), `oracle-bench.db` (tracking DB): bulky, **gitignored**, kept
+  locally for investigating surprises and for the showcase's per-case detail.
+
+Check that the run ended with the "Saved:" block and no `ERROR: the leaderboard was NOT saved`. If it
+errored, the raw calls are still on disk; do not just re-run without saying so. Then commit the
+leaderboard files. Every run tomorrow (smoke, full, any follow-up) should be committed with its label
+so the showcase can use them all. Add the production-timeout column the leaderboard doesn't have yet:
 
 ```bash
 jq -s '[.[]|select(.err==null)] | group_by(.model)[] | {model: .[0].model, n: length,
-  under_2_5s: (map(select(.latency_ms<=2500))|length), under_5s: (map(select(.latency_ms<=5000))|length)}' /tmp/ob-full/calls.jsonl
+  under_2_5s: (map(select(.latency_ms<=2500))|length), under_5s: (map(select(.latency_ms<=5000))|length)}' oraclebench/results/*-calls.jsonl
 ```
 
 (Optional improvement worth doing: add a `within_production_timeout` field to `ModelScore` that does
@@ -180,6 +203,28 @@ PRODUCT.md's "night sky, not tech neon"):
   about 1-2% of the time); 3 repeats; latency depends on provider load and was measured at concurrency
   2 on one day; one operator's idea of the right label.
 
+### 7. Clean up: delete this file (the last thing you do)
+
+When the full run, its saved results, and the showcase document are all done and committed, **remove
+this handoff**; it is a temporary hand-off, not permanent documentation. Do it as its own commit, and
+only after confirming these three things (check each, don't assume):
+
+1. Every run's leaderboard is committed under `docs/benchmarks/oracle-decision-models/runs/`
+   (`git status` clean, `ls` that directory).
+2. The showcase document exists and was generated from those files.
+3. Anything from this file still worth keeping has a permanent home: the "lessons" (rebase first,
+   `prompts.yaml` hot-reloads mid-run, "Fired is not a nudge", fixed concurrency 2) belong in
+   `DEVELOPMENT.md`'s "Oracle benchmark" section or `docs/plans/oracle-benchmark.md`; the open items
+   belong in that plan doc's "Open questions" or in GitHub issues.
+
+```bash
+git rm docs/benchmarks/oracle-decision-models/benchmark_handoff.md
+git commit -m "Remove oracle benchmark handoff"
+```
+
+Also update the plan doc's status line to say the benchmark is finished, and tell the operator the
+handoff has been removed. Don't push unless she asks.
+
 ## Open items (not blocking the run)
 
 - Weak spots from day one worth a look in the results: Jev 1.14 on `locale` (61), Jev 1.13 on
@@ -191,5 +236,6 @@ PRODUCT.md's "night sky, not tech neon"):
   operator rather than fixing it as a side effect.
 - The `jev.Model` pin is version-level (`typesafe/jev-1.14`); a dated pin
   (`typesafe/jev-1.14-20261014`) is also accepted but a retired snapshot would silently turn Oracle off.
-- Other catalog models worth trying later (the operator said "maybe later"): `cloudflare/clef-flash`,
-  `upstage/solar-decide-flash`, `nace-ai/drex-v2.0`, `~perplexity/pplx-decider-latest`.
+- Other catalog models worth trying later (she said "maybe later"): `cloudflare/clef`,
+  `upstage/solar-decide-flash`, `nace-ai/drex-v2.0`, `~perplexity/pplx-decider-latest`. (`clef-flash`
+  is in tomorrow's roster.)

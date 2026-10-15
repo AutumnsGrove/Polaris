@@ -50,3 +50,8 @@ benchmark-results*.jsonl
 eval-results*.jsonl
 polaris-benchmark.db*
 benchmark-tracking.db*
+
+# polaris oracle-bench's bulky local output: raw per-call logs, per-case scores,
+# and its tracking DB. The finished leaderboards in
+# docs/benchmarks/oracle-decision-models/runs/ ARE meant to be committed.
+oraclebench/results/

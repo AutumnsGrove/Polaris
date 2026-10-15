@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -34,7 +35,7 @@ var (
 	obWeights     string
 	obOut         string
 	obTracking    string
-	obLeaderboard string
+	obSaveDir     string
 	obLabel       string
 )
 
@@ -68,10 +69,10 @@ func init() {
 	f.Float64Var(&obJudgeAudit, "judge-audit", 0.10, "share of ordinary labeled checks the judge spot-checks to measure label quality")
 	f.BoolVar(&obNoJudge, "no-judge", false, "skip the judge entirely (deterministic scores only)")
 	f.StringVar(&obWeights, "weights", "", "weights file (default: the embedded oraclebench/weights.yaml)")
-	f.StringVar(&obOut, "out", "oracle-bench-results.jsonl", "per-call JSONL, written as calls complete")
-	f.StringVar(&obTracking, "tracking-db", "oracle-bench.db", "SQLite file accumulating one table per run")
-	f.StringVar(&obLeaderboard, "leaderboard", "oracle-bench-leaderboard.json", "where to write the machine-readable leaderboard")
-	f.StringVar(&obLabel, "label", "", "free-text note stored with the run")
+	f.StringVar(&obOut, "out", "", "per-call JSONL, written as calls complete (default: "+oraclebench.DefaultResultsDir+"/<run>-calls.jsonl, gitignored)")
+	f.StringVar(&obTracking, "tracking-db", "", "SQLite file accumulating one table per run (default: "+oraclebench.DefaultResultsDir+"/oracle-bench.db, gitignored)")
+	f.StringVar(&obSaveDir, "save-dir", oraclebench.DefaultSaveDir, "where the finished leaderboard (JSON + printed text) is saved, timestamped and never overwritten; meant to be committed")
+	f.StringVar(&obLabel, "label", "", "free-text note stored with the run and used in the saved filenames")
 	rootCmd.AddCommand(oracleBenchCmd)
 }
 
@@ -134,9 +135,23 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 	fmt.Printf("cases: %d of %d (seed %d), models: %d, repeats: %d, concurrency: %d\n", len(cases), len(bank), obSeed, len(roster), obRepeats, obConcurrency)
 	fmt.Printf("about %d calls, roughly $%.3f for the decision calls (judge extra); weights %s, latency budget %s\n\n", calls, float64(calls)*0.0002, weights.Hash, weights.LatencyBudget)
 
-	out, err := os.Create(obOut)
+	// Everything this run saves is named from its start time, fixed once here, so
+	// the raw calls, scores, leaderboard and tracking table all line up.
+	runAt := time.Now().UTC().Format(time.RFC3339)
+	base := oraclebench.BaseName(runAt, obLabel)
+	if err := os.MkdirAll(oraclebench.DefaultResultsDir, 0o755); err != nil {
+		return fmt.Errorf("creating %s: %w", oraclebench.DefaultResultsDir, err)
+	}
+	if obOut == "" {
+		obOut = filepath.Join(oraclebench.DefaultResultsDir, base+"-calls.jsonl")
+	}
+	if obTracking == "" {
+		obTracking = filepath.Join(oraclebench.DefaultResultsDir, "oracle-bench.db")
+	}
+
+	out, err := os.OpenFile(obOut, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", obOut, err)
+		return fmt.Errorf("creating %s (an existing result is never overwritten): %w", obOut, err)
 	}
 	defer out.Close()
 	enc := json.NewEncoder(out)
@@ -170,43 +185,77 @@ func runOracleBench(cmd *cobra.Command, args []string) error {
 		judgeAll(ctx, judge, sel, weights, results)
 	}
 
-	runAt := time.Now().UTC().Format(time.RFC3339)
-	run, err := tracking.StartRun(oraclebench.RunMeta{
-		RunAt: runAt, Label: obLabel, WeightsHash: weights.Hash, Cases: len(cases), Repeats: obRepeats,
-		Concurrency: obConcurrency, Budget: weights.LatencyBudget, Seed: obSeed, JudgeModel: judgeLabel(judge), Models: modelIDs,
-	})
-	if err != nil {
-		return err
-	}
-
+	// Score everything first, then save in order of importance: the committed
+	// leaderboard, then the per-case scores, then the tracking DB. A failure in a
+	// later, bulkier step must never cost the result that matters most.
 	board := oraclebench.Leaderboard{RunAt: runAt, Cases: len(cases), Repeats: obRepeats, Concurrency: obConcurrency, Budget: weights.LatencyBudget, WeightsHash: weights.Hash}
 	p := prompts.Get()
+	type caseRow struct {
+		Model string `json:"model"`
+		oraclebench.CaseScore
+	}
+	var rows []caseRow
 	for _, mr := range results {
 		if mr.NA != "" {
 			board.Entries = append(board.Entries, oraclebench.Entry{Model: mr.Model, NA: mr.NA})
 			continue
 		}
 		for _, cr := range mr.Runs {
-			if err := run.RecordCase(mr.Model, mr.ResolvedModels(), cr, oraclebench.ScoreCase(weights, p, cr, 0)); err != nil {
-				return fmt.Errorf("recording %s/%s: %w", mr.Model, cr.Case.ID, err)
-			}
+			rows = append(rows, caseRow{mr.Model, oraclebench.ScoreCase(weights, p, cr, 0)})
 		}
 		board.Entries = append(board.Entries, oraclebench.Entry{Model: mr.Model, Resolved: mr.ResolvedModels(), Score: oraclebench.Summarize(weights, p, mr.Runs)})
 	}
 	board = oraclebench.BuildLeaderboard(board)
-	board.Render(os.Stdout)
 
-	if js, err := board.JSON(); err == nil {
-		if err := os.WriteFile(obLeaderboard, js, 0o644); err != nil {
-			return fmt.Errorf("writing %s: %w", obLeaderboard, err)
+	saved, saveErr := oraclebench.SaveResults(obSaveDir, runAt, obLabel, board)
+	board.Render(os.Stdout)
+	reportReview(board)
+	if saveErr != nil {
+		// Still print and continue to the other saves, but fail the command: a run
+		// whose headline result wasn't saved is not a finished run.
+		fmt.Fprintf(os.Stderr, "\nERROR: the leaderboard was NOT saved: %v\n", saveErr)
+	}
+
+	scoresPath := filepath.Join(oraclebench.DefaultResultsDir, base+"-scores.jsonl")
+	if f, err := os.OpenFile(scoresPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: per-case scores not saved: %v\n", err)
+	} else {
+		senc := json.NewEncoder(f)
+		for _, r := range rows {
+			_ = senc.Encode(r)
 		}
-		if err := run.SaveLeaderboard(js); err != nil {
-			return err
+		f.Close()
+	}
+
+	tableName := "(not recorded)"
+	run, trackErr := tracking.StartRun(oraclebench.RunMeta{
+		RunAt: runAt, Label: obLabel, WeightsHash: weights.Hash, Cases: len(cases), Repeats: obRepeats,
+		Concurrency: obConcurrency, Budget: weights.LatencyBudget, Seed: obSeed, JudgeModel: judgeLabel(judge), Models: modelIDs,
+	})
+	if trackErr == nil {
+		tableName = run.Table
+		for _, mr := range results {
+			if mr.NA != "" {
+				continue
+			}
+			for _, cr := range mr.Runs {
+				if err := run.RecordCase(mr.Model, mr.ResolvedModels(), cr, oraclebench.ScoreCase(weights, p, cr, 0)); err != nil {
+					trackErr = fmt.Errorf("recording %s/%s: %w", mr.Model, cr.Case.ID, err)
+					break
+				}
+			}
+		}
+		if js, err := board.JSON(); err == nil && trackErr == nil {
+			trackErr = run.SaveLeaderboard(js)
 		}
 	}
-	reportReview(board)
-	fmt.Printf("\nraw calls: %s\nleaderboard: %s\ntracking: %s (table %s)\n", obOut, obLeaderboard, obTracking, run.Table)
-	return nil
+	if trackErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: tracking DB not fully written: %v\n", trackErr)
+	}
+
+	fmt.Printf("\nSaved:\n  leaderboard (commit this): %s\n  printed leaderboard:       %s\n  raw calls (local):         %s\n  per-case scores (local):   %s\n  tracking db (local):       %s (table %s)\n",
+		saved.JSON, saved.Text, obOut, scoresPath, obTracking, tableName)
+	return saveErr
 }
 
 func judgeLabel(j oraclebench.Judge) string {
