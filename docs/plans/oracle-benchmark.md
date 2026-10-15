@@ -530,8 +530,14 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 
 1. ~~**Spikes**~~ and ~~**client groundwork**~~ — **done** (see "Live spike results" and
    "Groundwork done"). Next is the case bank, then the runner.
-2. **Gateway refactor**: `RunOracleRaw` + `ChipOutcomes`, with a unit test that `RunOracle`
-   behavior is unchanged (same result from the same stubbed answers).
+2. ~~**Gateway refactor**~~ — **done**: `RunOracleRaw(ctx, client, in, timeout)` shares one
+   `runOracle` body with `RunOracle` (which keeps its never-fails contract); `ChipOutcomes` carries
+   every chip's raw answer (`Fired` = actually offered, so withheld chips stay scorable); and
+   `ResolvedModel` carries `jev.Response.Model` (new field — the Decisions API's dated build).
+   Both bench fields are `json:"-"` so the persisted/replayed `oracle_result` is unchanged. The 52
+   existing Oracle tests pass untouched; new tests (`gateway/oracle_raw_test.go`) cover error
+   surfacing, caller timeout, raw-vs-prod equivalence, chip outcomes, and the JSON exclusion, and
+   were confirmed to fail when the timeout wiring or `Fired` flag is broken.
 3. **Case format + loader + scorer** with ~20 seed cases; verify scores by hand.
 4. **Author the 200 cases**, track by track, with `rationale` review pass.
 5. **Runner + judge + tracking DB + leaderboard**; run 1.13 vs 1.14 end to end.

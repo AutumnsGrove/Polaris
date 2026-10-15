@@ -39,6 +39,29 @@ func oneQuestion() map[string]ChoiceQuestion {
 	return map[string]ChoiceQuestion{"q": {Instructions: "?", Criteria: map[string]string{"yes": "y", "no": "n"}}}
 }
 
+func TestAskChoiceReportsTheResolvedModel(t *testing.T) {
+	var cap capture
+	srv := recordingServer(t, &cap, http.StatusOK,
+		`{"model":"typesafe/jev-1.14-20261014","answers":{"q":{"choice":"yes","probabilities":{"yes":1},"confidence":1}},"usage":{"cost":0}}`)
+	defer srv.Close()
+
+	resp, err := NewClient(srv.URL, "k").AskChoice(context.Background(), "s", oneQuestion())
+	if err != nil {
+		t.Fatalf("AskChoice: %v", err)
+	}
+	if resp.Model != "typesafe/jev-1.14-20261014" {
+		t.Errorf("Model = %q, want the dated build the server reported", resp.Model)
+	}
+
+	// A server that omits it (System One today) leaves it empty, not an error.
+	srv2 := recordingServer(t, &cap, http.StatusOK, answerBody)
+	defer srv2.Close()
+	resp, err = NewClient(srv2.URL, "k").AskChoice(context.Background(), "s", oneQuestion())
+	if err != nil || resp.Model != "" {
+		t.Errorf("without a model field: Model = %q err = %v, want empty and nil", resp.Model, err)
+	}
+}
+
 func TestNewClientNilWithoutKey(t *testing.T) {
 	if c := NewClient("https://openrouter.ai/api/v1", ""); c != nil {
 		t.Fatalf("NewClient with empty key = %v, want nil", c)

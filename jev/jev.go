@@ -167,6 +167,11 @@ type Usage struct {
 type Response struct {
 	Answers map[string]ChoiceAnswer `json:"answers"`
 	Usage   Usage                   `json:"usage"`
+	// Model is the build that actually answered. The Decisions API resolves an
+	// alias like ~typesafe/jev-latest to a dated snapshot and reports it here;
+	// the Oracle benchmark records it, since a result for an alias is
+	// uninterpretable once the alias moves. Empty if the server omits it.
+	Model string `json:"model,omitempty"`
 }
 
 type errorBody struct {

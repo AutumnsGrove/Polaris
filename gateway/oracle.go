@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"regexp"
 	"sort"
@@ -206,6 +207,21 @@ type OracleResult struct {
 	Checks     []CheckOutcome `json:"checks,omitempty"`
 	Chips      []Chip         `json:"chips,omitempty"`
 	CostUSD    float64        `json:"cost_usd,omitempty"`
+
+	// ChipOutcomes and ResolvedModel exist for the Oracle benchmark
+	// (oraclebench, docs/plans/oracle-benchmark.md) and are json:"-" on
+	// purpose: this struct is persisted per message and replayed to the
+	// frontend, and neither belongs in either.
+	//
+	// ChipOutcomes is every chip's raw answer, offered or not. Chips only
+	// carries the ones that fired, which makes "this chip must stay quiet"
+	// impossible to score. Fired means the chip landed in Chips; a chip the
+	// model said yes to but that was withheld (ghost, routine thread, Safari
+	// already active, no field id) has Fired false, so the raw answer stays
+	// scorable apart from the rules that gated it.
+	ChipOutcomes []CheckOutcome `json:"-"`
+	// ResolvedModel is the model build that answered (jev.Response.Model).
+	ResolvedModel string `json:"-"`
 }
 
 // uiCheckKey is the Prism check: would a visual block beat prose. Named once
@@ -227,7 +243,32 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	if client == nil {
 		return OracleResult{}
 	}
+	result, err := runOracle(ctx, client, in, oracleTimeout)
+	if err != nil {
+		log.Warn("oracle: jev call failed, proceeding as Oracle-off", "err", err)
+		return OracleResult{}
+	}
+	return result
+}
 
+// RunOracleRaw is RunOracle for the Oracle benchmark: the same question
+// assembly, thresholds and rules (it is the same function underneath, which is
+// the whole point — a bench re-deriving any of that could drift from
+// production), but it reports the failure instead of swallowing it and takes
+// its own timeout. The bench has to tell "the model errored or refused" from
+// "the model said nothing fired", and it measures accuracy at a generous
+// timeout rather than the 2.5s production budget (latency is scored apart).
+func RunOracleRaw(ctx context.Context, client jevAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
+	if client == nil {
+		return OracleResult{}, errors.New("oracle: no decision-model client")
+	}
+	return runOracle(ctx, client, in, timeout)
+}
+
+// runOracle is the shared body of RunOracle and RunOracleRaw. A nil error with
+// a zero result means "no questions to ask"; a call failure comes back as the
+// error and a zero result.
+func runOracle(ctx context.Context, client jevAskChoicer, in OracleInput, timeout time.Duration) (OracleResult, error) {
 	p := prompts.Get()
 	rules := in.Rules
 	if rules.Checks == nil && rules.Chips == nil {
@@ -304,7 +345,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		offered["chip_"+key] = optionKeys(options)
 	}
 	if len(questions) == 0 {
-		return OracleResult{}
+		return OracleResult{}, nil
 	}
 
 	current := truncateRunes(in.CurrentMessage, oracleMaxMessageRunes)
@@ -313,15 +354,14 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 		state = "Previous message: " + truncateRunes(in.PrevUserMessage, oracleMaxMessageRunes) + "\n\nLatest message: " + current
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, oracleTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := client.AskChoice(callCtx, state, questions)
 	if err != nil {
-		log.Warn("oracle: jev call failed, proceeding as Oracle-off", "err", err)
-		return OracleResult{}
+		return OracleResult{}, err
 	}
 
-	result := OracleResult{CostUSD: resp.Usage.CostUSD}
+	result := OracleResult{CostUSD: resp.Usage.CostUSD, ResolvedModel: resp.Model}
 	resp.Answers = validAnswers(resp.Answers, offered)
 
 	// high_stakes is resolved first (independent of focus) since the
@@ -398,6 +438,10 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 			if !ok {
 				continue
 			}
+			// Recorded before any gating below so the raw answer survives a
+			// withheld chip; Fired is flipped only where the chip is appended.
+			result.ChipOutcomes = append(result.ChipOutcomes, CheckOutcome{Key: chipKey, Winner: ans.Choice, Probabilities: ans.Probabilities})
+			chipOutcome := &result.ChipOutcomes[len(result.ChipOutcomes)-1]
 			// Ghost turns offer only the chips in oracleGhostChips — see
 			// OracleInput.Ghost and that var's doc comment.
 			if in.Ghost && !oracleGhostChips[chipKey] {
@@ -422,6 +466,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 					}
 				}
 				result.Chips = append(result.Chips, Chip{Key: chipKey, Label: label, FieldID: fieldID})
+				chipOutcome.Fired = true
 			}
 			continue
 		}
@@ -479,7 +524,7 @@ func RunOracle(ctx context.Context, client jevAskChoicer, in OracleInput) Oracle
 	// regardless of Jev's answer-map iteration order.
 	sort.Slice(result.Checks, func(i, j int) bool { return result.Checks[i].Key < result.Checks[j].Key })
 
-	return result
+	return result, nil
 }
 
 // skippedByOwnFocus is true when the ui or deep_research check's skip_for_focus
