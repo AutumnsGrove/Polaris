@@ -103,8 +103,10 @@ func fixtureFieldIDs() map[string]string {
 // BuildInput turns a case into the OracleInput production would have built for
 // that turn. The environment is fixed (and documented in the plan) so results
 // are comparable: Prism dial normal, a web thread, no ghost, no manual focus,
-// the fixture Fields, and production's own thresholds (Rules left zero means
-// config.DefaultOracle).
+// the fixture Fields, a turn that could be promoted to Deep Research (without
+// this the deep_research check is never asked, and a false "yes" there spends
+// real sub-agent money, so it has to be exercised), and production's own
+// thresholds (Rules left zero means config.DefaultOracle).
 func BuildInput(c Case) gateway.OracleInput {
 	source := c.State.ThreadSource
 	if source == "" {
@@ -119,6 +121,7 @@ func BuildInput(c Case) gateway.OracleInput {
 		FieldIDs:             fixtureFieldIDs(),
 		ThreadSource:         source,
 		Visuals:              "normal",
+		OffersDeepResearch:   true,
 	}
 }
 

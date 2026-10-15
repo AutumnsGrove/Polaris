@@ -58,4 +58,8 @@ checks:
   locale:         {fp: 1.5, fn: 1.0}
   task:           {fp: 1.0, fn: 1.0}
   recall:         {fp: 1.0, fn: 1.0}   # not in the plan's table; same as the default
+  # A "yes" promotes the turn to Deep Research (expensive sub-agents), so a wrong
+  # promotion costs real money while a missed one just gives a normal answer.
+  # Not in the plan's table either; a judgment call, tune freely.
+  deep_research:  {fp: 2.5, fn: 1.0}
   chips:          {fp: 0.5, fn: 0.5}

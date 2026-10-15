@@ -51,6 +51,10 @@ var Tracks = []string{
 // names RunOracle sends Jev ("chip_pulsar", ...).
 const ChipPrefix = "chip_"
 
+// DeepResearchKey is the check whose "yes" is an action rather than injected
+// text; see ExpectsNudge.
+const DeepResearchKey = "deep_research"
+
 // FixtureFields is the Field list every bench case runs against, so the
 // field chip is asked (RunOracle skips it with no fields) and chip_field
 // labels have a closed answer set. Names are deliberately distinct in topic
@@ -163,6 +167,12 @@ func Options(p *prompts.Set, key string) []string {
 func ExpectsNudge(p *prompts.Set, key, answer string) bool {
 	if strings.HasPrefix(key, ChipPrefix) {
 		return answer != "no" && answer != "none"
+	}
+	// deep_research has no inject text: a "yes" promotes the turn to Deep
+	// Research (result.DeepResearch), an action that spends sub-agent money.
+	// That action is what a label is expected to produce or not produce.
+	if key == DeepResearchKey {
+		return answer == "yes"
 	}
 	check, ok := p.Oracle.Checks[key]
 	if !ok {

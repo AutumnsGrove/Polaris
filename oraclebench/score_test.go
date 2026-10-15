@@ -136,6 +136,49 @@ func TestScoreCase_QuietListNudgeIsAFalsePositive(t *testing.T) {
 	near(t, "max", cs.Max, 2)
 }
 
+// A deep_research "yes" injects nothing (it sets result.DeepResearch), so the
+// "Fired and Nudge != empty" rule alone would score a costly false promotion as
+// harmless. It must be penalised as the money-spending action it is.
+func TestScoreCase_DeepResearchPromotionIsAnActionNotNudgeText(t *testing.T) {
+	promoted := gateway.CheckOutcome{Key: "deep_research", Winner: "yes", Probabilities: map[string]float64{"yes": 0.95, "no": 0.05}, Fired: true}
+
+	t.Run("false promotion on a quiet case", func(t *testing.T) {
+		c := oneCase("a", map[string]Expectation{"research": {Answer: "yes"}}, "deep_research")
+		cs := score(t, c, 0, sample(time.Second, nudged("research", "yes", map[string]float64{"yes": 0.9}), promoted))
+		var dr CheckScore
+		for _, ck := range cs.Checks {
+			if ck.Key == "deep_research" {
+				dr = ck
+			}
+		}
+		if !dr.FP || dr.Penalty != 2.5 {
+			t.Errorf("a wrongly promoted turn must cost fp 2.5, got %+v", dr)
+		}
+	})
+	t.Run("wanted promotion delivered", func(t *testing.T) {
+		c := oneCase("a", map[string]Expectation{"deep_research": {Answer: "yes"}})
+		ck := score(t, c, 0, sample(time.Second, promoted)).Checks[0]
+		if ck.FN || ck.FP || !ck.Nudged || ck.Verdict != 1 {
+			t.Errorf("a correct promotion is neither FN nor FP: %+v", ck)
+		}
+	})
+	t.Run("wanted promotion missed", func(t *testing.T) {
+		c := oneCase("a", map[string]Expectation{"deep_research": {Answer: "yes"}})
+		under := gateway.CheckOutcome{Key: "deep_research", Winner: "yes", Probabilities: map[string]float64{"yes": 0.7}} // under its 0.85 bar
+		ck := score(t, c, 0, sample(time.Second, under)).Checks[0]
+		if !ck.FN || ck.Penalty != 1 {
+			t.Errorf("right answer but not promoted is a missed action (fn 1.0): %+v", ck)
+		}
+	})
+	t.Run("no on a quiet case is fine", func(t *testing.T) {
+		c := oneCase("a", map[string]Expectation{"deep_research": {Answer: "no"}})
+		no := gateway.CheckOutcome{Key: "deep_research", Winner: "no", Probabilities: map[string]float64{"no": 0.97}, Fired: true}
+		if ck := score(t, c, 0, sample(time.Second, no)).Checks[0]; ck.FP || ck.Nudged {
+			t.Errorf("winning no promotes nothing: %+v", ck)
+		}
+	})
+}
+
 func TestScoreCase_SuppressedCheckIsNotBlamedOnTheModel(t *testing.T) {
 	c := oneCase("a", map[string]Expectation{"format": {Answer: "table"}})
 	held := gateway.CheckOutcome{Key: "format", Winner: "table", Probabilities: map[string]float64{"table": 0.9}, Suppressed: true}

@@ -190,6 +190,11 @@ func nudgeDelivered(key string, o *gateway.CheckOutcome) bool {
 	if strings.HasPrefix(key, ChipPrefix) {
 		return o.Fired
 	}
+	// A deep_research "yes" that cleared its bar and wasn't held back sets
+	// OracleResult.DeepResearch; it never carries nudge text.
+	if key == DeepResearchKey {
+		return o.Fired && o.Winner == "yes"
+	}
 	return o.Fired && o.Nudge != ""
 }
 

@@ -227,6 +227,9 @@ func TestExpectsNudge(t *testing.T) {
 		{"emotional", "no", false},
 		{"intent", "general", false},
 		{"intent", "weather", true},
+		// Deep Research has no inject text; its "yes" is the promotion action.
+		{"deep_research", "yes", true},
+		{"deep_research", "no", false},
 		{"chip_pulsar", "yes", true},
 		{"chip_pulsar", "no", false},
 		{"chip_field", "Cooking", true},

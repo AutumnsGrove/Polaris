@@ -106,6 +106,9 @@ func TestBuildInput(t *testing.T) {
 	if !in.IsFirstMessage || in.PrevUserMessage != "" || in.ThreadSource != "web" || in.Visuals != "normal" {
 		t.Errorf("first-message input = %+v", in)
 	}
+	if !in.OffersDeepResearch {
+		t.Error("without OffersDeepResearch the deep_research check is never asked, so a costly false promotion could never be measured")
+	}
 	if in.Ghost || in.IsManualFocus || in.ActiveFocusMode != "" {
 		t.Errorf("the bench environment is fixed: no ghost, no manual focus, no preset mode: %+v", in)
 	}
