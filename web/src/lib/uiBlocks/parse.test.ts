@@ -294,10 +294,18 @@ describe('parseUi', () => {
 	it('sends a child line that fits its group (a) container to a raw row', () => {
 		const kinds = (s: string) => parseUi(s).map((b) => b.kind);
 		expect(kinds('{"c":"timeline"}\n{"i":"no date"}\n')).toEqual(['timeline', 'raw']);
-		expect(kinds('{"c":"procon"}\n{"+":"a","-":"b"}\n')).toEqual(['procon', 'raw']);
+		expect(kinds('{"c":"claim","text":"c"}\n{"+":"a","-":"b"}\n')).toEqual(['claim', 'raw']);
 		expect(kinds('{"c":"choose"}\n{"if":"x"}\n')).toEqual(['choose', 'raw']);
 		expect(kinds('{"c":"facts"}\n{"k":"only a key"}\n')).toEqual(['facts', 'raw']);
 		expect(kinds('{"c":"checklist"}\n{"row":"wrong schema"}\n')).toEqual(['checklist', 'raw']);
+	});
+
+	it('fills both procon sides from a line carrying both keys', () => {
+		// Seen live: the model wrote one pro and one con on the same line and
+		// every line of the block fell out as raw JSON. Each key now feeds its
+		// own column instead.
+		const [b] = parseUi('{"c":"procon"}\n{"+":"Fast","-":"Costly"}\n{"+":"Quiet"}\n');
+		expect(b).toMatchObject({ kind: 'procon', pros: ['Fast', 'Quiet'], cons: ['Costly'] });
 	});
 
 	it('only keeps asof on an answer callout, in YYYY-MM form', () => {

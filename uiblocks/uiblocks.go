@@ -424,18 +424,22 @@ func addChild(b *block, o map[string]any) bool {
 		b.items = append(b.items, i)
 		return true
 	case "procon":
-		// A line carrying both "+" and "-" is ambiguous: it fits neither.
+		// A line may carry one side or both. The model sometimes puts a paired
+		// pro/con on a single line instead of one line per side; seen live,
+		// an entire four-row block degraded to raw JSON that way. The two
+		// columns are independent lists, so each present key feeds its own side.
 		pro, okPro := text(o["+"])
 		con, okCon := text(o["-"])
-		if okPro && !okCon && len(b.pros) < maxProConPerSide {
+		took := false
+		if okPro && len(b.pros) < maxProConPerSide {
 			b.pros = append(b.pros, pro)
-			return true
+			took = true
 		}
-		if okCon && !okPro && len(b.cons) < maxProConPerSide {
+		if okCon && len(b.cons) < maxProConPerSide {
 			b.cons = append(b.cons, con)
-			return true
+			took = true
 		}
-		return false
+		return took
 	case "choose":
 		cond, ok1 := text(o["if"])
 		then, ok2 := text(o["then"])
@@ -541,7 +545,8 @@ func addChild(b *block, o map[string]any) bool {
 		b.readings = append(b.readings, readingItem{lvl: lvl, t: t, why: optText(o["why"]), src: sources(o["src"])})
 		return true
 	case "claim":
-		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
+		// Marking one evidence line both for and against the claim is
+		// contradictory, so unlike procon a both-keyed line stays raw.
 		pro, okPro := text(o["+"])
 		con, okCon := text(o["-"])
 		if okPro && !okCon && len(b.supports) < maxClaimEvidence {

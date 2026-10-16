@@ -112,9 +112,9 @@
       "want": "Before you fly:\n- Passport\n- Charger\n"
     },
     {
-      "name": "procon: default headings, custom headings, pros and cons interleaved",
+      "name": "procon: default headings, custom headings, paired and interleaved lines",
       "input": "```ui\n{\"c\":\"procon\"}\n{\"+\":\"Fast\"}\n{\"-\":\"Costly\"}\n{\"+\":\"Quiet\"}\n{\"+\":\"both\",\"-\":\"ambiguous\"}\n```\n```ui\n{\"c\":\"procon\",\"pro_h\":\"Why\",\"con_h\":\"Why not\"}\n{\"-\":\"Loud\"}\n```\n",
-      "want": "Pros: Fast; Quiet\nCons: Costly\nWhy not: Loud\n"
+      "want": "Pros: Fast; Quiet; both\nCons: Costly; ambiguous\nWhy not: Loud\n"
     },
     {
       "name": "choose: each rule carries its own sources",

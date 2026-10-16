@@ -202,19 +202,23 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		return true;
 	}
 	if (block.kind === 'procon') {
-		// "+" / "-" are the whole schema; a line carrying both is ambiguous, so
-		// it fits neither and falls out as a raw row.
+		// "+" / "-" are the whole schema; one line may carry one side or both.
+		// A line carrying both used to fall out as a raw row, but the model
+		// writes a paired pro/con that way often enough that an entire
+		// four-row block degraded to visible JSON (seen live), and the two
+		// columns are independent lists, so each present key feeds its own side.
 		const pro = text(obj['+']);
 		const con = text(obj['-']);
-		if (pro && !con && block.pros.length < MAX_PROCON_PER_SIDE) {
+		let took = false;
+		if (pro && block.pros.length < MAX_PROCON_PER_SIDE) {
 			block.pros.push(pro);
-			return true;
+			took = true;
 		}
-		if (con && !pro && block.cons.length < MAX_PROCON_PER_SIDE) {
+		if (con && block.cons.length < MAX_PROCON_PER_SIDE) {
 			block.cons.push(con);
-			return true;
+			took = true;
 		}
-		return false;
+		return took;
 	}
 	if (block.kind === 'choose') {
 		const cond = text(obj.if);
@@ -301,7 +305,8 @@ function addChild(block: UiBlock, obj: Json): boolean {
 		return true;
 	}
 	if (block.kind === 'claim') {
-		// Same "+" / "-" rule as procon: a line carrying both is ambiguous.
+		// Marking one evidence line both for and against the claim is
+		// contradictory, so unlike procon a both-keyed line stays raw.
 		const pro = text(obj['+']);
 		const con = text(obj['-']);
 		if (pro && !con && block.supports.length < MAX_CLAIM_EVIDENCE_PER_SIDE) {
