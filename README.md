@@ -52,7 +52,7 @@ next to Settings at the bottom of the sidebar — it explains each one in plain 
   and files).
 - **[Oracle mode](docs/oracle.md)** (opt-in) reads each question first and quietly adjusts how it's
   answered, showing — and letting you undo — every change. Its decision model was picked with a
-  [benchmark of ten candidates](docs/benchmarks/oracle-decision-models/README.md).
+  [benchmark of thirteen candidates](docs/benchmarks/oracle-decision-models/README.md).
 - **Pulsar** runs a saved question on a schedule and reports only what's new. **The Daily** assembles a
   morning newspaper. **Constellation** keeps a library of durable facts learned from your chats.
 - **Ghost threads** (incognito), retry and edit with branching, per-turn cost tracking, automatic

@@ -602,5 +602,9 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
 - The `jev.Model` pin is version-level (`typesafe/jev-1.14`). A dated pin is also accepted, but a retired
   snapshot would silently turn Oracle off.
 - `openai/gpt-6-luna-decisions` was run afterwards (82.3, 243ms, 1.7% refusals, all on `private_person`).
-- Not yet run: `cloudflare/clef-omni`, `liquid/d1-ultra`, `upstage/solar-decide-flash`,
-  `nace-ai/drex-v2.0`, `~perplexity/pplx-decider-latest`.
+- Also run since: `liquid/d1-ultra` (87.9, ties Jev 1.14, 236ms, best alternative), `scaledown/classify-1`
+  (75.4) and `upstage/solar-decide-flash` (57.3, 4% dangerous false nudges).
+- Could not be scored: `nace-ai/drex-v2.0` rejects calls over 16 questions (Oracle asks 23), and
+  `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
+- Not yet run: `cloudflare/clef-omni`, `nace-ai/drex-v1.5`, `togethercomputer/tev1-4b-experimental`,
+  `jaredpalmer/kev-4b`, `~perplexity/pplx-decider-latest`.

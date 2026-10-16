@@ -195,8 +195,8 @@ func scorecardSVG(l Leaderboard, pinned string, shares map[string]CallStats) str
 // scatterSVG plots accuracy against median latency on a log axis, with the
 // production timeout marked. Up and left is better.
 func scatterSVG(es []Entry, pinned string) string {
-	d := newSVG(920, 524, "Accuracy vs. speed", "Score against median latency, log scale. Up and to the left is better.")
-	const left, right, top, bottom = 64.0, 880.0, 100.0, 430.0
+	d := newSVG(920, 620, "Accuracy vs. speed", "Score against median latency, log scale. Up and to the left is better.")
+	const left, right, top, bottom = 64.0, 880.0, 100.0, 526.0
 	minMS, maxMS := 100.0, 6000.0
 	x := func(ms float64) float64 {
 		return left + (math.Log(clamp(ms, minMS, maxMS))-math.Log(minMS))/(math.Log(maxMS)-math.Log(minMS))*(right-left)
@@ -536,11 +536,17 @@ func (l *labeler) avoid(cx, cy float64) {
 // point it names rather than the neighbour's.
 func (l *labeler) place(d *svgDoc, cx, cy float64, name string, bold bool, crowdedRight func(cx, cy float64) bool) {
 	wd := 7.6 * float64(len(name))
+	// Near spots first; the far ones (with a leader line back to the point) only
+	// matter in a dense cluster like the fast Jev/D1/Microsoft group.
 	spots := []struct {
 		dx, dy float64
 		anchor string
-	}{{12, 5, "start"}, {12, -10, "start"}, {-12, 5, "end"}, {-12, -10, "end"}, {12, 20, "start"}, {-12, 20, "end"}}
+	}{{12, 5, "start"}, {12, -10, "start"}, {-12, 5, "end"}, {-12, -10, "end"}, {12, 20, "start"}, {-12, 20, "end"},
+		{26, -30, "start"}, {-26, -30, "end"}, {26, 36, "start"}, {-26, 36, "end"}, {26, -52, "start"}, {-26, -52, "end"}, {26, 56, "start"}, {-26, 56, "end"}}
 	if crowdedRight(cx, cy) {
+		for i := 0; i+1 < 6; i += 2 {
+			spots[i], spots[i+1] = spots[i+1], spots[i]
+		}
 		spots[0], spots[2], spots[1], spots[3] = spots[2], spots[0], spots[3], spots[1]
 	}
 	for si, sp := range spots {
@@ -554,15 +560,24 @@ func (l *labeler) place(d *svgDoc, cx, cy float64, name string, bold bool, crowd
 				clash = true
 			}
 		}
-		if !clash || si == len(spots)-1 {
-			l.placed = append(l.placed, b)
-			w := 500
-			if bold {
-				w = 700
-			}
-			d.text(cx+sp.dx, cy+sp.dy, 13, w, cInk, sp.anchor, name)
-			return
+		if clash && si != len(spots)-1 {
+			continue
 		}
+		l.placed = append(l.placed, b)
+		if math.Abs(sp.dx) > 14 || math.Abs(sp.dy) > 22 {
+			ex := b.x0
+			if sp.anchor == "end" {
+				ex = b.x1
+			}
+			d.line(cx, cy, ex, cy+sp.dy-4, cDim, 1, "")
+		}
+		d.rect(b.x0-3, b.y0, b.x1-b.x0+6, b.y1-b.y0+2, 3, cBG, "")
+		w := 500
+		if bold {
+			w = 700
+		}
+		d.text(cx+sp.dx, cy+sp.dy, 13, w, cInk, sp.anchor, name)
+		return
 	}
 }
 
@@ -576,8 +591,8 @@ func efficiencySVG(es []Entry, pinned string) string {
 		}
 		return e.Score.CostUSD / float64(e.Score.Calls) * 1000
 	}
-	d := newSVG(920, 524, "Cost efficiency", "Score against decision cost per 1,000 Oracle turns, log scale. Up and to the left is better.")
-	const left, right, top, bottom = 64.0, 880.0, 100.0, 430.0
+	d := newSVG(920, 620, "Cost efficiency", "Score against decision cost per 1,000 Oracle turns, log scale. Up and to the left is better.")
+	const left, right, top, bottom = 64.0, 880.0, 100.0, 526.0
 	minC, maxC := math.Inf(1), 0.0
 	lo, hi := 100.0, 0.0
 	for _, e := range es {
