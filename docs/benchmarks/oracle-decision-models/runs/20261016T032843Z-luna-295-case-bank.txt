@@ -1,0 +1,13 @@
+
+Oracle bench: 295 cases x 3 repeats, concurrency 2, latency budget 5.0s, weights a6cbc140bd53
+
+#   model                        score  95% CI     in-budget  verdict  close  trigger  focus  danger FP  err  p50    p95    cost    
+1   openai/gpt-6-luna-decisions  82.3   76.3-87.5  82.3       94%      92%    96%      95%    1%         2%   243ms  409ms  $0.509  
+
+≈ within 2.5 points of the leader: treat as a tie and prefer the faster or pinned model.
+
+Latency, fastest first (█ p50, ░ out to p95, | = 5.0s budget):
+  openai/gpt-6-luna-decisions  █░                              |         p50 243ms  p95 409ms 
+
+Tracks scoring 25+ points below the model's own headline:
+  openai/gpt-6-luna-decisions: depth 56, emotional 41, private_person 48

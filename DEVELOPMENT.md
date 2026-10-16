@@ -164,9 +164,11 @@ label against `prompts.yaml`'s real options. Design and decisions: `docs/plans/o
 Results and how to read them: `docs/benchmarks/oracle-decision-models/README.md`.
 
 Every finished run saves its leaderboard to `docs/benchmarks/oracle-decision-models/runs/` (commit
-it); `polaris oracle-bench report --run <leaderboard.json> --calls '<calls.jsonl glob>'` regenerates
-that folder's charts and `results.md` from it. The raw per-call log (needed once, for the share of
-calls inside Oracle's real 2.5s timeout) stays local in the gitignored `oraclebench/results/`.
+it); `polaris oracle-bench report --run <a.json>,<b.json> --calls '<calls.jsonl glob>'` regenerates
+that folder's charts and `results.md` from one or more leaderboards (several runs merge into one, but only
+if cases, repeats, concurrency and weights all match). The raw per-call log (needed once, for the share of
+calls inside Oracle's real 2.5s timeout and for refusals by question family) stays local in the gitignored
+`oraclebench/results/`; its tallies are saved as `call-stats.json`.
 
 Lessons that cost time:
 - **Rebase before you run, and do not touch the tree during a run.** `prompts.yaml` hot-reloads, so
@@ -177,6 +179,8 @@ Lessons that cost time:
   simplified.
 - **Keep `--concurrency 2` for any run whose latency you will report**, and never run two invocations
   at once: one model went from 1.4s to 4.1s at concurrency 5.
+- **A refusal is a result, not an error to retry.** Some hosted models decline sensitive questions
+  (Luna, on private-person ones); the call counts as Oracle-off and is tallied by question family.
 - **A model that fails every call is a finding, not a retry.** A provider-side 429 shows up as a 100%
   error rate and disqualifies the model; re-run it later rather than hammering it.
 - **The judging pass is slow and silent.** It runs after every model has finished, 4 calls at a time

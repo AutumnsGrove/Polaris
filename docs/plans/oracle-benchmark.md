@@ -601,5 +601,6 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   `clarify` "obvious default"). Changing them changes live Oracle behavior, so decide that on purpose.
 - The `jev.Model` pin is version-level (`typesafe/jev-1.14`). A dated pin is also accepted, but a retired
   snapshot would silently turn Oracle off.
+- `openai/gpt-6-luna-decisions` was run afterwards (82.3, 243ms, 1.7% refusals, all on `private_person`).
 - Not yet run: `cloudflare/clef-omni`, `liquid/d1-ultra`, `upstage/solar-decide-flash`,
   `nace-ai/drex-v2.0`, `~perplexity/pplx-decider-latest`.

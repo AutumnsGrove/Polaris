@@ -6,7 +6,7 @@ person?", "is the user asking for something deep?") and quietly adjusts how the 
 decision model sits in front of every message, so it has to be **fast, cheap, and right**, in that
 order.
 
-This page records a full run of `polaris oracle-bench` across nine candidate models, and how to
+This page records a full run of `polaris oracle-bench` across ten candidate models, and how to
 repeat it.
 
 <p align="center"><img src="scorecard.svg" alt="Scorecard: nine decision models ranked by score, with median latency, share of calls under Oracle's 2.5 second timeout, and cost" width="860"></p>
@@ -21,6 +21,9 @@ repeat it.
 - **Three models are statistically tied with Jev 1.14:** Microsoft Decision 1 (87.5), Jev 1.13 (86.5),
   and Mercury Decide's free tier (89.0). Microsoft is the credible alternative: same score, 100% of
   calls under 2.5s, about 2x slower than Jev, and about 25% cheaper per turn.
+- **OpenAI's Luna is fast but a poor fit:** 82.3, 5.5 points behind Jev 1.14, the most expensive
+  model per turn (about 2.6x Jev), and the only one that **refuses to answer** some questions: 15
+  calls, all on the private-person family. See [Refusals](#refusals).
 - **Liquid D1 and both Cloudflare Clef models trail by 9 to 14 points,** mostly on *focus actions*
   (68 to 75% right, against 95 to 98% for the leaders).
 - **Paid Mercury Decide could not be scored.** 96% of its calls returned an upstream HTTP 429, so it is
@@ -31,8 +34,9 @@ Recommendation: **keep `typesafe/jev-1.14` pinned.** Details and caveats below.
 ## Results
 
 Run of 2026-10-16: 295 hand-labeled cases (274 count toward the score; 21 with disputed labels are reported separately), 3 repeats each, 2 calls in flight, weights `a6cbc140bd53`.
-The raw leaderboard is saved in [`runs/`](runs/); this table is generated from it
-([`results.md`](results.md)). The two earlier files in `runs/` (2026-10-15) used an older, smaller case
+The raw leaderboards are saved in [`runs/`](runs/); this table is generated from them
+([`results.md`](results.md)). Luna was added in a second invocation with identical settings (same cases,
+repeats, concurrency, weights); the report command refuses to merge runs that differ in any of those. The two earlier files in `runs/` (2026-10-15) used an older, smaller case
 bank and weights, so they are not comparable to this run.
 
 | # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |
@@ -42,16 +46,17 @@ bank and weights, so they are not comparable to this run.
 | 3 | `typesafe/jev-1.14` (pinned) | **87.8** (83.2-92.0) | 96% | 96% | 98% | 1% | 0% | 152ms | 189ms | 100.0% | $0.212 |
 | 4 | `microsoft/microsoft-decision-1` | **87.5** (82.9-91.5) | 95% | 96% | 95% | 1% | 0% | 347ms | 424ms | 100.0% | $0.157 |
 | 5 | `typesafe/jev-1.13` | **86.5** (81.4-90.9) | 96% | 96% | 95% | 1% | 0% | 184ms | 272ms | 99.8% | $0.211 |
-| 6 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
-| 7 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
-| 8 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
+| 6 | `openai/gpt-6-luna-decisions` | **82.3** (76.3-87.5) | 94% | 96% | 95% | 1% | 2% | 243ms | 409ms | 98.3% | $0.555 |
+| 7 | `liquid/d1` | **78.5** (72.7-83.5) | 95% | 95% | 68% | 1% | 0% | 260ms | 411ms | 100.0% | $0.089 |
+| 8 | `cloudflare/clef` | **76.6** (71.2-81.3) | 95% | 94% | 75% | 1% | 0% | 820ms | 1.9s | 98.9% | $0.286 |
+| 9 | `cloudflare/clef-flash` | **73.4** (68.2-78.5) | 94% | 94% | 72% | 1% | 0% | 596ms | 1.3s | 100.0% | $0.118 |
 | x | `inception/mercury-decide` | 4.6 (2.4-7.5) | 4% | 97% | 100% | 0% | 96% | 3.9s | 13.3s | 1.2% | $0.004 |
 
 *Under 2.5s* is the share of all calls that returned an answer inside Oracle's real timeout
 (`oracleTimeout` in `gateway/oracle.go`); a call over that is dropped and the turn runs without Oracle.
 *$/1k turns* is the decision-call cost for 1,000 Oracle turns (one call each). Trigger and focus
 describe what production's rules *did* with the answer, not just the raw answer. The whole run cost
-**$1.22** ($1.06 for decision calls, $0.16 for the judge).
+**$1.73** in total ($1.22 for the first nine models, $0.51 for Luna), of which about $0.18 was the judge.
 
 ### Overall quality
 
@@ -82,10 +87,28 @@ calls are exactly the ones Oracle throws away.
 
 <p align="center"><img src="cost.svg" alt="Cost per 1000 Oracle turns, ranked" width="860"></p>
 
-Cost is a rounding error at this scale: even the priciest model is about $0.29 per 1,000 turns, so a
-heavy month of use costs cents. The frontier is only useful for the free-versus-paid question: Mercury
+Cost is a rounding error at this scale: even the priciest model (Luna) is about $0.56 per 1,000 turns,
+so a heavy month of use costs cents. The frontier is only useful for the free-versus-paid question: Mercury
 free and Perplexity are the only models nothing beats on both price and score. Jev 1.14 is off the
 frontier on cost, which is the price of its speed.
+
+### Refusals
+
+Some hosted models decline to answer a question outright, and a refused call can't run Oracle: the
+turn proceeds with Oracle off. The bench records a refusal as that model's result and never retries it.
+
+<p align="center"><img src="refusals.svg" alt="Refusal rate per model, and which question families the refusals landed on" width="860"></p>
+
+**Only Luna refused anything:** 15 of 885 calls (1.7%), under the 5% disqualification line, so it stays
+in the ranking, but every one of those 15 was on the **private-person** family (questions like finding
+a classmate, an ex's workplace, a neighbor's phone number, or an HOA head's address). It refused 5 of that
+family's 11 cases on all three repeats, which is 45% of the family's calls, and nothing anywhere else. No
+other model refused a single call, on this or any other family, so this is a property of Luna's underlying
+chat model, not of the question. The error text only names a question key, so which exact question tripped it is
+not recorded; what the log does show is the pattern by family. Luna also scores 48 on that family because a
+refused call counts as Oracle-off.
+
+Paid Mercury's failures are not refusals: those were upstream 429s and are tracked as errors, not here.
 
 ### Every axis
 
@@ -111,6 +134,7 @@ Where a model is unusually weak (25+ points below its own overall score):
 - **Microsoft Decision 1:** `clarify` (43), `locale` (62) and `private_person` (62).
 - **Mercury free:** `clarify` (62) and `emotional` (43).
 - **Clef:** `emotional` (42).
+- **Luna:** `depth` (56), `emotional` (41) and `private_person` (48, mostly refusals).
 
 ## Recommendation
 
@@ -125,7 +149,9 @@ Judged on the operator's stated priorities (speed first, then accuracy):
 3. **Perplexity only wins if Oracle's timeout is raised.** To use it without dropping turns, the 2.5s
    cutoff would have to rise to roughly 4s, which adds seconds of dead air before every answer. At
    today's 2.5s it would turn Oracle off for about 11% of turns. Not recommended.
-4. **Skip D1 and the Clef models.** They are fast enough but lose 9 to 14 points, mostly on focus
+4. **Skip Luna.** Fast (243ms median) but 5.5 points behind Jev 1.14, about 2.6x the cost per turn,
+   and it refuses the private-person questions Oracle most needs to classify.
+5. **Skip D1 and the Clef models.** They are fast enough but lose 9 to 14 points, mostly on focus
    actions.
 
 `jev.Model` and `oracleTimeout` were not changed by this run.
@@ -181,17 +207,19 @@ Mercury has two entries and neither is a clean result:
 
 ```bash
 # one invocation so every model sees the same cases, weights and load
+# (Luna, openai/gpt-6-luna-decisions, was a second invocation with the same flags)
 polaris oracle-bench --repeats 3 --seed 1 --concurrency 2 --timeout 15s \
   --label "full run" \
   --models typesafe/jev-1.14,typesafe/jev-1.13,liquid/d1,microsoft/microsoft-decision-1,cloudflare/clef-flash,cloudflare/clef,inception/mercury-decide,inception/mercury-decide:free,perplexity/pplx-decider-v1.1-27b
 
 # regenerate every chart and results.md from the saved leaderboard
 polaris oracle-bench report \
-  --run docs/benchmarks/oracle-decision-models/runs/<stamp>-<label>.json \
-  --calls 'oraclebench/results/<stamp>-<label>-calls.jsonl'
+  --run docs/benchmarks/oracle-decision-models/runs/<first>.json,docs/benchmarks/oracle-decision-models/runs/<second>.json \
+  --calls 'oraclebench/results/*-calls.jsonl'
 ```
 
-The run saves its leaderboard to `runs/` on its own. Do not edit `prompts.yaml` or pull while a run is
+The run saves its leaderboard to `runs/` on its own, and `report` saves the per-model call tallies (timeout
+share, refusals by family) to `call-stats.json` so charts can be rebuilt without the raw log. Do not edit `prompts.yaml` or pull while a run is
 in flight, because it hot-reloads and would change the questions for the remaining calls. About 8,000
 calls take roughly 50 minutes plus a judging pass, and cost about $1.20. Design notes and the scoring
 rules are in [`docs/plans/oracle-benchmark.md`](../../plans/oracle-benchmark.md); how to write cases is
