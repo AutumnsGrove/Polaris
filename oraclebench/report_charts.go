@@ -41,6 +41,8 @@ func ReportCharts(l Leaderboard, pinned string, shares map[string]LatencyShare) 
 	}
 	return map[string]string{
 		"scorecard.svg":           scorecardSVG(l, pinned, shares),
+		"overall-quality.svg":     overallSVG(ok, pinned),
+		"metrics.svg":             metricsSVG(ok, pinned),
 		"accuracy-vs-latency.svg": scatterSVG(ok, pinned),
 		"tracks.svg":              trackTableSVG(ok, pinned),
 		"breakdown.svg":           breakdownTableSVG(ok, pinned),
@@ -436,4 +438,89 @@ func costSVG(es []Entry, pinned string) string {
 		func(v float64) string { return fmt.Sprintf("$%.2f", v) },
 		per1k, nil,
 		func(e Entry) string { return fmt.Sprintf("$%.3f", per1k(e)) }, 0, "")
+}
+
+// overallSVG is the single-number view: the headline quality score, ranked, with
+// its 95% interval. It is deliberately latency-blind (the scorecard and scatter
+// bring speed back in), so "best answers" and "best answers fast enough" stay
+// separate questions.
+func overallSVG(es []Entry, pinned string) string {
+	rows := append([]Entry(nil), es...)
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Score.Headline > rows[j].Score.Headline })
+	return barChart("Overall quality", "Headline score out of 100. Speed is not counted here.",
+		"Score combines raw answer accuracy with whether production's rules delivered the right nudge. Whiskers are 95% intervals; gaps under 2.5 points are ties.", rows, pinned, 100,
+		[]float64{0, 20, 40, 60, 80, 100},
+		func(v float64) string { return fmt.Sprintf("%.0f", v) },
+		func(e Entry) float64 { return e.Score.Headline },
+		func(e Entry) float64 { return e.Score.HeadlineHi },
+		func(e Entry) string {
+			return fmt.Sprintf("%.1f  (%.1f-%.1f)", e.Score.Headline, e.Score.HeadlineLo, e.Score.HeadlineHi)
+		}, 0, "")
+}
+
+// metricsSVG is a grid of small ranked-bar panels, one per axis the leaderboard
+// records, each sorted best first. Panels whose lower numbers are better say so
+// in their title, since a bar chart otherwise reads longer as better.
+func metricsSVG(es []Entry, pinned string) string {
+	type metric struct {
+		title, note string
+		lowerBetter bool
+		val         func(Score ModelScore) float64
+		format      func(float64) string
+		max         float64 // fixed axis max; 0 = scale to the data
+	}
+	pct := func(v float64) string { return fmt.Sprintf("%.0f%%", v) }
+	pct1 := func(v float64) string { return fmt.Sprintf("%.1f%%", v) }
+	metrics := []metric{
+		{"Raw answer accuracy", "share of verdicts correct", false, func(s ModelScore) float64 { return 100 * s.Verdict }, pct, 100},
+		{"Closeness", "how near the probabilities sit to the label", false, func(s ModelScore) float64 { return 100 * s.Closeness }, pct, 100},
+		{"Trigger decisions", "right call on whether to nudge", false, func(s ModelScore) float64 { return 100 * s.Trigger }, pct, 100},
+		{"Focus actions", "right call on which action to take", false, func(s ModelScore) float64 { return 100 * s.Focus }, pct, 100},
+		{"Contested cases", "score on the disputed-label cases", false, func(s ModelScore) float64 { return s.DisputedHL }, func(v float64) string { return fmt.Sprintf("%.0f", v) }, 100},
+		{"Calibration (Brier)", "lower is better", true, func(s ModelScore) float64 { return s.Brier }, func(v float64) string { return fmt.Sprintf("%.3f", v) }, 0},
+		{"Dangerous false nudges", "lower is better", true, func(s ModelScore) float64 { return 100 * s.DangerousFPRate }, pct1, 0},
+		{"Errors and refusals", "lower is better", true, func(s ModelScore) float64 { return 100 * s.ErrorRate }, pct1, 0},
+	}
+	const cols, panelW, panelGap, top = 2, 420.0, 20.0, 100.0
+	rowH := 24.0
+	panelH := 64 + rowH*float64(len(es)) + 16
+	nRows := (len(metrics) + cols - 1) / cols
+	h := int(top+panelH*float64(nRows)) + 40
+	d := newSVG(920, h, "More ways to compare", "Each panel ranks the models on one axis, best first.")
+	for mi, m := range metrics {
+		px := 24 + float64(mi%cols)*(panelW+panelGap)
+		py := top + float64(mi/cols)*panelH
+		d.rect(px, py, panelW, panelH-16, 10, cPanel, "")
+		d.text(px+16, py+26, 15, 700, cInk, "start", m.title)
+		d.text(px+16, py+44, 11, 400, cDim, "start", m.note)
+		rows := append([]Entry(nil), es...)
+		sort.SliceStable(rows, func(i, j int) bool {
+			a, b := m.val(rows[i].Score), m.val(rows[j].Score)
+			if m.lowerBetter {
+				return a < b
+			}
+			return a > b
+		})
+		axis := m.max
+		if axis == 0 {
+			for _, e := range rows {
+				axis = math.Max(axis, m.val(e.Score))
+			}
+			axis = math.Max(axis*1.15, 1e-9)
+		}
+		const nameW, barMax = 128.0, 190.0
+		for i, e := range rows {
+			mid := py + 64 + rowH*float64(i) + rowH/2 - 4
+			fill, wt := cInk, 400
+			if e.Model == pinned {
+				fill, wt = cStar, 700
+			}
+			d.text(px+16+nameW, mid+4, 12, wt, fill, "end", shortName(e.Model))
+			v := m.val(e.Score)
+			d.rect(px+24+nameW, mid-6, math.Max(2, barMax*clamp(v, 0, axis)/axis), 12, 3, barColor(e.Model, pinned), e.Model)
+			d.text(px+24+nameW+math.Max(2, barMax*clamp(v, 0, axis)/axis)+8, mid+4, 12, 600, cInk, "start", m.format(v))
+		}
+	}
+	d.footnote("Trigger and focus score what production's rules did with the answer. Dangerous false nudges are nudges fired where one would do harm.")
+	return d.String()
 }

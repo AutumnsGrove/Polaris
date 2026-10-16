@@ -37,8 +37,8 @@ func TestReportChartsSkipDisqualified(t *testing.T) {
 		LatencyP50: 200 * time.Millisecond, LatencyP95: 400 * time.Millisecond, ByTrack: map[string]TrackScore{"chips": {Cases: 5, Score: 88}}}}
 	bad := Entry{Model: "v/broken", Score: ModelScore{Disqualified: []string{"error rate"}}}
 	charts := ReportCharts(Leaderboard{Entries: []Entry{good, bad}}, "v/good", nil)
-	if len(charts) != 6 {
-		t.Fatalf("want 6 charts, got %d", len(charts))
+	if len(charts) != 8 {
+		t.Fatalf("want 8 charts, got %d", len(charts))
 	}
 	for name, svg := range charts {
 		if !strings.HasPrefix(svg, "<svg") || !strings.HasSuffix(strings.TrimSpace(svg), "</svg>") {
