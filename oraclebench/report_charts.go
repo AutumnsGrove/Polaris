@@ -48,6 +48,7 @@ func ReportCharts(l Leaderboard, pinned string, shares map[string]LatencyShare) 
 		"breakdown.svg":           breakdownTableSVG(ok, pinned),
 		"latency.svg":             latencySVG(ok, pinned),
 		"cost.svg":                costSVG(ok, pinned),
+		"cost-efficiency.svg":     efficiencySVG(ok, pinned),
 	}
 }
 
@@ -206,11 +207,7 @@ func scatterSVG(es []Entry, pinned string) string {
 	d.line(bx, top, bx, bottom, cDim, 1, "5 4")
 	d.text(bx-6, top+14, 12, 400, cDim, "end", "bench budget 5s")
 
-	// Labels try six spots around their point and take the first that doesn't
-	// overlap one already placed; near-identical models (the two Jev versions)
-	// would otherwise print on top of each other.
-	type box struct{ x0, x1, y0, y1 float64 }
-	var placed []box
+	lab := newLabeler()
 	rows := append([]Entry(nil), es...)
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Score.LatencyP50 < rows[j].Score.LatencyP50 })
 	for _, e := range rows {
@@ -220,41 +217,16 @@ func scatterSVG(es []Entry, pinned string) string {
 		d.line(cx, y(s.HeadlineLo), cx, y(s.HeadlineHi), col, 2, "")
 		fmt.Fprintf(&d.b, `<circle cx="%.1f" cy="%.1f" r="7" fill="%s" stroke="%s" stroke-width="2"><title>%s: %.1f (%.1f-%.1f), p50 %s</title></circle>`,
 			cx, cy, col, cBG, html.EscapeString(e.Model), s.Headline, s.HeadlineLo, s.HeadlineHi, fmtDur(s.LatencyP50))
-		name := shortName(e.Model)
-		wd := 7.6 * float64(len(name))
-		spots := []struct {
-			dx, dy float64
-			anchor string
-		}{{12, 5, "start"}, {12, -10, "start"}, {-12, 5, "end"}, {-12, -10, "end"}, {12, 20, "start"}, {-12, 20, "end"}}
-		// A point with a close neighbour on its right labels on the left, so the
-		// text sits beside the point it names rather than the neighbour's.
-		for _, o := range es {
-			if ox := x(float64(o.Score.LatencyP50.Milliseconds())); o.Model != e.Model && ox > cx && ox-cx < 24 && math.Abs(y(o.Score.Headline)-cy) < 20 {
-				spots[0], spots[2], spots[1], spots[3] = spots[2], spots[0], spots[3], spots[1]
-				break
-			}
-		}
-		for si, sp := range spots {
-			b := box{cx + sp.dx, cx + sp.dx + wd, cy + sp.dy - 12, cy + sp.dy + 4}
-			if sp.anchor == "end" {
-				b.x0, b.x1 = cx+sp.dx-wd, cx+sp.dx
-			}
-			clash := false
-			for _, o := range placed {
-				if b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0 {
-					clash = true
+		lab.place(d, cx, cy, shortName(e.Model), e.Model == pinned, func(ox, oy float64) bool {
+			for _, o := range es {
+				if o.Model != e.Model {
+					if px := x(float64(o.Score.LatencyP50.Milliseconds())); px > cx && px-cx < 24 && math.Abs(y(o.Score.Headline)-oy) < 20 {
+						return true
+					}
 				}
 			}
-			if !clash || si == len(spots)-1 {
-				placed = append(placed, b)
-				w := 500
-				if e.Model == pinned {
-					w = 700
-				}
-				d.text(cx+sp.dx, cy+sp.dy, 13, w, cInk, sp.anchor, name)
-				break
-			}
-		}
+			return false
+		})
 	}
 	d.footnote("Vertical lines are 95% intervals. Amber is the model pinned in production.")
 	return d.String()
@@ -522,5 +494,135 @@ func metricsSVG(es []Entry, pinned string) string {
 		}
 	}
 	d.footnote("Trigger and focus score what production's rules did with the answer. Dangerous false nudges are nudges fired where one would do harm.")
+	return d.String()
+}
+
+// labeler places point labels without overlap: each label tries six spots around
+// its point and takes the first that is clear of the labels already placed.
+// Near-identical models (the two Jev versions) would otherwise print on top of
+// each other.
+type labeler struct {
+	placed []struct{ x0, x1, y0, y1 float64 }
+}
+
+func newLabeler() *labeler { return &labeler{} }
+
+// place draws name beside (cx, cy). crowdedRight reports a close neighbour on the
+// point's right, in which case the label goes left so the text sits beside the
+// point it names rather than the neighbour's.
+func (l *labeler) place(d *svgDoc, cx, cy float64, name string, bold bool, crowdedRight func(cx, cy float64) bool) {
+	wd := 7.6 * float64(len(name))
+	spots := []struct {
+		dx, dy float64
+		anchor string
+	}{{12, 5, "start"}, {12, -10, "start"}, {-12, 5, "end"}, {-12, -10, "end"}, {12, 20, "start"}, {-12, 20, "end"}}
+	if crowdedRight(cx, cy) {
+		spots[0], spots[2], spots[1], spots[3] = spots[2], spots[0], spots[3], spots[1]
+	}
+	for si, sp := range spots {
+		b := struct{ x0, x1, y0, y1 float64 }{cx + sp.dx, cx + sp.dx + wd, cy + sp.dy - 12, cy + sp.dy + 4}
+		if sp.anchor == "end" {
+			b.x0, b.x1 = cx+sp.dx-wd, cx+sp.dx
+		}
+		clash := false
+		for _, o := range l.placed {
+			if b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0 {
+				clash = true
+			}
+		}
+		if !clash || si == len(spots)-1 {
+			l.placed = append(l.placed, b)
+			w := 500
+			if bold {
+				w = 700
+			}
+			d.text(cx+sp.dx, cy+sp.dy, 13, w, cInk, sp.anchor, name)
+			return
+		}
+	}
+}
+
+// efficiencySVG plots quality against cost per 1,000 turns on a log axis and
+// draws the efficient frontier: the models no other model beats on both axes.
+// A model off the frontier has a cheaper-and-better alternative.
+func efficiencySVG(es []Entry, pinned string) string {
+	per1k := func(e Entry) float64 {
+		if e.Score.Calls == 0 {
+			return 0
+		}
+		return e.Score.CostUSD / float64(e.Score.Calls) * 1000
+	}
+	d := newSVG(920, 524, "Cost efficiency", "Score against decision cost per 1,000 Oracle turns, log scale. Up and to the left is better.")
+	const left, right, top, bottom = 64.0, 880.0, 100.0, 430.0
+	minC, maxC := math.Inf(1), 0.0
+	lo, hi := 100.0, 0.0
+	for _, e := range es {
+		if c := per1k(e); c > 0 {
+			minC, maxC = math.Min(minC, c), math.Max(maxC, c)
+		}
+		lo, hi = math.Min(lo, e.Score.HeadlineLo), math.Max(hi, e.Score.HeadlineHi)
+	}
+	if maxC == 0 {
+		return d.String()
+	}
+	minC, maxC = minC/1.6, maxC*1.6
+	lo, hi = math.Floor(lo/5)*5-5, math.Min(100, math.Ceil(hi/5)*5)
+	x := func(c float64) float64 {
+		return left + (math.Log(clamp(c, minC, maxC))-math.Log(minC))/(math.Log(maxC)-math.Log(minC))*(right-left)
+	}
+	y := func(v float64) float64 { return bottom - (clamp(v, lo, hi)-lo)/(hi-lo)*(bottom-top) }
+	for v := math.Ceil(lo/5) * 5; v <= hi; v += 5 {
+		d.line(left, y(v), right, y(v), cGrid, 1, "")
+		d.text(left-10, y(v)+4, 12, 400, cDim, "end", fmt.Sprintf("%.0f", v))
+	}
+	lastTick := math.Inf(-1)
+	for _, t := range []float64{0.01, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1, 2, 5} {
+		if t >= minC && t <= maxC && x(t)-lastTick >= 52 {
+			d.text(x(t), bottom+22, 12, 400, cDim, "middle", fmt.Sprintf("$%g", t))
+			lastTick = x(t)
+		}
+	}
+	d.text((left+right)/2, bottom+46, 12, 400, cDim, "middle", "cost per 1,000 turns")
+
+	// Frontier: walk models from cheapest up, keeping each that beats every
+	// cheaper one on score.
+	rows := append([]Entry(nil), es...)
+	sort.SliceStable(rows, func(i, j int) bool { return per1k(rows[i]) < per1k(rows[j]) })
+	var front []Entry
+	best := math.Inf(-1)
+	for _, e := range rows {
+		if e.Score.Headline > best {
+			front = append(front, e)
+			best = e.Score.Headline
+		}
+	}
+	if len(front) > 1 {
+		var pts []string
+		for _, e := range front {
+			pts = append(pts, fmt.Sprintf("%.1f,%.1f", x(per1k(e)), y(e.Score.Headline)))
+		}
+		fmt.Fprintf(&d.b, `<polyline points="%s" fill="none" stroke="%s" stroke-width="1.5" stroke-dasharray="5 4"/>`, strings.Join(pts, " "), cStar)
+		d.text(right, top+14, 12, 600, cStar, "end", "dashed line: the efficient frontier")
+	}
+	lab := newLabeler()
+	for _, e := range rows {
+		s := e.Score
+		cx, cy := x(per1k(e)), y(s.Headline)
+		col := barColor(e.Model, pinned)
+		d.line(cx, y(s.HeadlineLo), cx, y(s.HeadlineHi), col, 2, "")
+		fmt.Fprintf(&d.b, `<circle cx="%.1f" cy="%.1f" r="7" fill="%s" stroke="%s" stroke-width="2"><title>%s: %.1f at $%.3f per 1,000 turns</title></circle>`,
+			cx, cy, col, cBG, html.EscapeString(e.Model), s.Headline, per1k(e))
+		lab.place(d, cx, cy, shortName(e.Model), e.Model == pinned, func(ox, oy float64) bool {
+			for _, o := range es {
+				if o.Model != e.Model {
+					if px := x(per1k(o)); px > cx && px-cx < 24 && math.Abs(y(o.Score.Headline)-oy) < 20 {
+						return true
+					}
+				}
+			}
+			return false
+		})
+	}
+	d.footnote("Vertical lines are 95% intervals. A model off the dashed frontier has another that is both cheaper and better.")
 	return d.String()
 }
