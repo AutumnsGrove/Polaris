@@ -208,6 +208,9 @@ func scatterSVG(es []Entry, pinned string) string {
 	d.text(bx-6, top+14, 12, 400, cDim, "end", "bench budget 5s")
 
 	lab := newLabeler()
+	for _, e := range es {
+		lab.avoid(x(float64(e.Score.LatencyP50.Milliseconds())), y(e.Score.Headline))
+	}
 	rows := append([]Entry(nil), es...)
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Score.LatencyP50 < rows[j].Score.LatencyP50 })
 	for _, e := range rows {
@@ -220,7 +223,7 @@ func scatterSVG(es []Entry, pinned string) string {
 		lab.place(d, cx, cy, shortName(e.Model), e.Model == pinned, func(ox, oy float64) bool {
 			for _, o := range es {
 				if o.Model != e.Model {
-					if px := x(float64(o.Score.LatencyP50.Milliseconds())); px > cx && px-cx < 24 && math.Abs(y(o.Score.Headline)-oy) < 20 {
+					if px := x(float64(o.Score.LatencyP50.Milliseconds())); px > cx && px-cx < 48 && math.Abs(y(o.Score.Headline)-oy) < 20 {
 						return true
 					}
 				}
@@ -507,6 +510,11 @@ type labeler struct {
 
 func newLabeler() *labeler { return &labeler{} }
 
+// avoid reserves the space around a plotted point so no label is drawn over it.
+func (l *labeler) avoid(cx, cy float64) {
+	l.placed = append(l.placed, struct{ x0, x1, y0, y1 float64 }{cx - 9, cx + 9, cy - 9, cy + 9})
+}
+
 // place draws name beside (cx, cy). crowdedRight reports a close neighbour on the
 // point's right, in which case the label goes left so the text sits beside the
 // point it names rather than the neighbour's.
@@ -583,6 +591,13 @@ func efficiencySVG(es []Entry, pinned string) string {
 		}
 	}
 	d.text((left+right)/2, bottom+46, 12, 400, cDim, "middle", "cost per 1,000 turns")
+	// A log axis has no zero: free models sit on the left edge, labelled as such.
+	for _, e := range es {
+		if per1k(e) == 0 {
+			d.text(left, bottom+22, 12, 600, cStar, "middle", "free")
+			break
+		}
+	}
 
 	// Frontier: walk models from cheapest up, keeping each that beats every
 	// cheaper one on score.
@@ -605,6 +620,9 @@ func efficiencySVG(es []Entry, pinned string) string {
 		d.text(right, top+14, 12, 600, cStar, "end", "dashed line: the efficient frontier")
 	}
 	lab := newLabeler()
+	for _, e := range es {
+		lab.avoid(x(per1k(e)), y(e.Score.Headline))
+	}
 	for _, e := range rows {
 		s := e.Score
 		cx, cy := x(per1k(e)), y(s.Headline)
@@ -615,7 +633,7 @@ func efficiencySVG(es []Entry, pinned string) string {
 		lab.place(d, cx, cy, shortName(e.Model), e.Model == pinned, func(ox, oy float64) bool {
 			for _, o := range es {
 				if o.Model != e.Model {
-					if px := x(per1k(o)); px > cx && px-cx < 24 && math.Abs(y(o.Score.Headline)-oy) < 20 {
+					if px := x(per1k(o)); px > cx && px-cx < 48 && math.Abs(y(o.Score.Headline)-oy) < 20 {
 						return true
 					}
 				}
