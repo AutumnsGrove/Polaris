@@ -36,9 +36,9 @@ func TestReportChartsSkipDisqualified(t *testing.T) {
 	good := Entry{Model: "v/good", Score: ModelScore{Headline: 90, HeadlineLo: 85, HeadlineHi: 95, Calls: 10, CostUSD: 0.01,
 		LatencyP50: 200 * time.Millisecond, LatencyP95: 400 * time.Millisecond, ByTrack: map[string]TrackScore{"chips": {Cases: 5, Score: 88}}}}
 	bad := Entry{Model: "v/broken", Score: ModelScore{Disqualified: []string{"error rate"}}}
-	charts := ReportCharts(Leaderboard{Entries: []Entry{good, bad}}, "v/good")
-	if len(charts) != 5 {
-		t.Fatalf("want 5 charts, got %d", len(charts))
+	charts := ReportCharts(Leaderboard{Entries: []Entry{good, bad}}, "v/good", nil)
+	if len(charts) != 6 {
+		t.Fatalf("want 6 charts, got %d", len(charts))
 	}
 	for name, svg := range charts {
 		if !strings.HasPrefix(svg, "<svg") || !strings.HasSuffix(strings.TrimSpace(svg), "</svg>") {
@@ -47,7 +47,9 @@ func TestReportChartsSkipDisqualified(t *testing.T) {
 		if !strings.Contains(svg, "good") {
 			t.Errorf("%s is missing the eligible model", name)
 		}
-		if strings.Contains(svg, "broken") {
+		// The scorecard deliberately lists a disqualified model (dimmed, with its
+		// reason) so a failed run is visible; the comparison charts must not plot it.
+		if name != "scorecard.svg" && strings.Contains(svg, "broken") {
 			t.Errorf("%s plots a disqualified model", name)
 		}
 	}

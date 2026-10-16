@@ -72,7 +72,7 @@ func runOracleBenchReport(cmd *cobra.Command, args []string) error {
 		_ = json.Unmarshal(b, &shares)
 	}
 
-	for name, svg := range oraclebench.ReportCharts(board, obrPinned) {
+	for name, svg := range oraclebench.ReportCharts(board, obrPinned, shares) {
 		if err := os.WriteFile(filepath.Join(obrOut, name), []byte(svg), 0o644); err != nil {
 			return err
 		}
