@@ -1,10 +1,11 @@
 # Oracle benchmark (`oracle-bench`)
 
-**Status: built, 2026-10-15; first full run in progress.** Everything below the "Milestones"
+**Status: built and run, 2026-10-16.** The full 9-model run is saved under
+`docs/benchmarks/oracle-decision-models/` (write-up in its README); the pinned model stays
+`typesafe/jev-1.14`. Everything below the "Milestones"
 heading through the runner exists: the case bank (281 cases, `oraclebench/cases`, rulebook in
 `oraclebench/AUTHORING.md`), `RunOracleRaw`, the scorer and `weights.yaml`, the judge, the runner,
-tracking DB and leaderboard, and `polaris oracle-bench`. Left: the full-roster run and pinning the
-winner in `jev/jev.go`. This is the design for a home-built benchmark whose only job is to compare
+tracking DB and leaderboard, and `polaris oracle-bench`. Jev is pinned in `jev/jev.go`. This is the design for a home-built benchmark whose only job is to compare
 **decision models** against the Oracle-mode task, so we can pick the model Oracle actually runs on
 instead of keeping the `jev-latest` alias.
 
@@ -586,3 +587,24 @@ Both prerequisites are in and verified; only the case bank remains (deliberately
   scored only on the prompts it answered will look better than one that attempts everything. The
   refusal/error rate and per-track coverage must be reported next to the composite, not buried in a
   log (spike round 3).
+
+### Open items after the 2026-10-16 run
+
+- Re-run `inception/mercury-decide` (paid): 96% of calls hit an upstream HTTP 429, so it was
+  disqualified without a real score. The `:free` variant scored 89.0 but has a 4.3s p95.
+- Jev 1.14 scores 61 on the `locale` family where Perplexity and Mercury free score 97 to 99. Worth a
+  look at whether that is a labeling quirk or a real Jev gap.
+- The judge flagged `dr-remote-work-relocation`, `fo-researcher-loan-vs-index` and
+  `pr-followup-japan-crowds` as bank problems to review.
+- Real option overlaps in `prompts.yaml` make some labels ambiguous (`brief` vs `off`,
+  `place`/`travel`/`image`, `private_person`'s `no` vs its inject text, `legal` vs `financial`,
+  `clarify` "obvious default"). Changing them changes live Oracle behavior, so decide that on purpose.
+- The `jev.Model` pin is version-level (`typesafe/jev-1.14`). A dated pin is also accepted, but a retired
+  snapshot would silently turn Oracle off.
+- `openai/gpt-6-luna-decisions` was run afterwards (82.3, 243ms, 1.7% refusals, all on `private_person`).
+- Also run since: `liquid/d1-ultra` (87.9, ties Jev 1.14, 236ms, best alternative), `scaledown/classify-1`
+  (75.4) and `upstage/solar-decide-flash` (57.3, 4% dangerous false nudges).
+- Could not be scored: `nace-ai/drex-v2.0` rejects calls over 16 questions (Oracle asks 23), and
+  `upstage/solar-decide` takes 13 to 21s per call (probed, not run in full).
+- Not yet run: `cloudflare/clef-omni`, `nace-ai/drex-v1.5`, `togethercomputer/tev1-4b-experimental`,
+  `jaredpalmer/kev-4b`, `~perplexity/pplx-decider-latest`.

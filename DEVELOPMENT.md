@@ -150,7 +150,7 @@ polaris oracle-bench --models jev-1.13,jev-1.14               # compare decision
 ### Oracle benchmark
 
 `polaris oracle-bench` is a dev tool (not a user feature) for choosing the decision model Oracle mode
-runs on. It runs the committed case bank (`oraclebench/cases`, ~280 hand-labeled messages) through the
+runs on. It runs the committed case bank (`oraclebench/cases`, ~295 hand-labeled messages) through the
 real `gateway.RunOracleRaw` once per model, so "fired" means exactly what it does in a live turn, then
 scores each model on raw-answer accuracy, whether the nudge actually reached the user, false nudges on
 sensitive checks, and latency. Output is a leaderboard plus a latency ranking; every run also lands in
@@ -161,6 +161,30 @@ two-model run is well under a dollar; `--all-decisions` runs the live OpenRouter
 Scoring weights and the latency budget are in `oraclebench/weights.yaml` (`--weights` overrides);
 adding cases is documented in `oraclebench/AUTHORING.md`, and `go test ./oraclebench/` validates every
 label against `prompts.yaml`'s real options. Design and decisions: `docs/plans/oracle-benchmark.md`.
+Results and how to read them: `docs/benchmarks/oracle-decision-models/README.md`.
+
+Every finished run saves its leaderboard to `docs/benchmarks/oracle-decision-models/runs/` (commit
+it); `polaris oracle-bench report --run <a.json>,<b.json> --calls '<calls.jsonl glob>'` regenerates
+that folder's charts and `results.md` from one or more leaderboards (several runs merge into one, but only
+if cases, repeats, concurrency and weights all match). The raw per-call log (needed once, for the share of
+calls inside Oracle's real 2.5s timeout and for refusals by question family) stays local in the gitignored
+`oraclebench/results/`; its tallies are saved as `call-stats.json`.
+
+Lessons that cost time:
+- **Rebase before you run, and do not touch the tree during a run.** `prompts.yaml` hot-reloads, so
+  pulling or editing it mid-run changes the questions for the remaining calls. Build a binary
+  (`go build -o /tmp/oracle-bench-bin .`) and run that rather than `go run`.
+- **"Fired" is not "a nudge was delivered".** `gateway.CheckOutcome.Fired` is true for any winner that
+  clears its bar, including quiet options; the scorer uses "delivered", and tests fail if that is
+  simplified.
+- **Keep `--concurrency 2` for any run whose latency you will report**, and never run two invocations
+  at once: one model went from 1.4s to 4.1s at concurrency 5.
+- **A refusal is a result, not an error to retry.** Some hosted models decline sensitive questions
+  (Luna, on private-person ones); the call counts as Oracle-off and is tallied by question family.
+- **A model that fails every call is a finding, not a retry.** A provider-side 429 shows up as a 100%
+  error rate and disqualifies the model; re-run it later rather than hammering it.
+- **The judging pass is slow and silent.** It runs after every model has finished, 4 calls at a time
+  through one judge model, with no progress output; expect ~20 minutes for ~8,000 calls.
 
 `search`/`stats`/`export`/`update`/`restart`/`backup create`/`backup list`/`atlas search`/`constellation
 backfill` are all thin HTTP clients hitting the running container's own REST API
