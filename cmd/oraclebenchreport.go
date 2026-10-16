@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	obrRun    string
+	obrRun    []string
 	obrCalls  string
 	obrOut    string
 	obrPinned string
@@ -26,42 +26,50 @@ var oracleBenchReportCmd = &cobra.Command{
 	Short: "Regenerate the oracle-bench charts and results table from a saved leaderboard",
 	Long: "Reads one saved leaderboard JSON (docs/benchmarks/oracle-decision-models/runs/*.json) and writes the\n" +
 		"SVG charts plus results.md (a markdown table) into --out.\n\n" +
-		"The share of calls inside production's 2.5s Oracle timeout needs the raw per-call log, which is\n" +
-		"gitignored. Pass it once with --calls and the tally is saved to latency-share.json beside the charts;\n" +
+		"The share of calls inside production's 2.5s Oracle timeout, and where refusals landed, need the raw per-call log, which is\n" +
+		"gitignored. Pass it once with --calls (all runs' logs) and the tally is saved to call-stats.json beside the charts;\n" +
 		"later runs of this command reuse that file.",
 	RunE: runOracleBenchReport,
 }
 
 func init() {
 	f := oracleBenchReportCmd.Flags()
-	f.StringVar(&obrRun, "run", "", "saved leaderboard JSON to report on (required)")
+	f.StringSliceVar(&obrRun, "run", nil, "saved leaderboard JSON(s) to report on, comma-separated or repeated; several runs are merged (required)")
 	f.StringVar(&obrCalls, "calls", "", "raw calls JSONL (glob) used to tally the share of calls under the production timeout")
-	f.StringVar(&obrOut, "out", "docs/benchmarks/oracle-decision-models", "directory the SVGs, results.md and latency-share.json are written to")
+	f.StringVar(&obrOut, "out", "docs/benchmarks/oracle-decision-models", "directory the SVGs, results.md and call-stats.json are written to")
 	f.StringVar(&obrPinned, "pinned", "typesafe/jev-1.14", "model currently pinned in production, highlighted in the charts")
 	oracleBenchCmd.AddCommand(oracleBenchReportCmd)
 }
 
 func runOracleBenchReport(cmd *cobra.Command, args []string) error {
-	if obrRun == "" {
+	if len(obrRun) == 0 {
 		return fmt.Errorf("--run is required")
 	}
-	raw, err := os.ReadFile(obrRun)
+	var boards []oraclebench.Leaderboard
+	for _, path := range obrRun {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var b oraclebench.Leaderboard
+		if err := json.Unmarshal(raw, &b); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+		boards = append(boards, b)
+	}
+	board, err := oraclebench.MergeLeaderboards(boards)
 	if err != nil {
 		return err
 	}
-	var board oraclebench.Leaderboard
-	if err := json.Unmarshal(raw, &board); err != nil {
-		return fmt.Errorf("parsing %s: %w", obrRun, err)
-	}
 
-	sharePath := filepath.Join(obrOut, "latency-share.json")
-	shares := map[string]oraclebench.LatencyShare{}
+	sharePath := filepath.Join(obrOut, "call-stats.json")
+	shares := map[string]oraclebench.CallStats{}
 	if obrCalls != "" {
 		paths, err := filepath.Glob(obrCalls)
 		if err != nil || len(paths) == 0 {
 			return fmt.Errorf("no calls files match %q", obrCalls)
 		}
-		if shares, err = oraclebench.TallyLatency(paths); err != nil {
+		if shares, err = oraclebench.TallyCalls(paths); err != nil {
 			return err
 		}
 		js, _ := json.MarshalIndent(shares, "", "  ")
@@ -86,7 +94,7 @@ func runOracleBenchReport(cmd *cobra.Command, args []string) error {
 
 // resultsTable is the headline leaderboard as markdown, generated from the same
 // JSON as the charts so the numbers in the README can't drift from the saved run.
-func resultsTable(b oraclebench.Leaderboard, shares map[string]oraclebench.LatencyShare) string {
+func resultsTable(b oraclebench.Leaderboard, shares map[string]oraclebench.CallStats) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Run %s: %d cases x %d repeats, concurrency %d, weights `%s`.\n\n", b.RunAt, b.Cases, b.Repeats, b.Concurrency, b.WeightsHash)
 	sb.WriteString("| # | Model | Score (95% CI) | Verdict | Trigger | Focus | Danger FP | Errors | p50 | p95 | Under 2.5s | $/1k turns |\n")

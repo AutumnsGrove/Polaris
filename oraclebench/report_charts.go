@@ -32,7 +32,7 @@ const (
 // scorecard lists every model, disqualified ones dimmed with their reason, so
 // nothing vanishes; the comparison charts leave disqualified runs out, since
 // their numbers describe a broken run rather than a model.
-func ReportCharts(l Leaderboard, pinned string, shares map[string]LatencyShare) map[string]string {
+func ReportCharts(l Leaderboard, pinned string, shares map[string]CallStats) map[string]string {
 	var ok []Entry
 	for _, e := range l.Entries {
 		if e.NA == "" && len(e.Score.Disqualified) == 0 {
@@ -49,6 +49,7 @@ func ReportCharts(l Leaderboard, pinned string, shares map[string]LatencyShare) 
 		"latency.svg":             latencySVG(ok, pinned),
 		"cost.svg":                costSVG(ok, pinned),
 		"cost-efficiency.svg":     efficiencySVG(ok, pinned),
+		"refusals.svg":            refusalsSVG(l, shares),
 	}
 }
 
@@ -116,22 +117,23 @@ func barColor(model, pinned string) string {
 // near-ties look like near-ties, not a dramatic gap), with the facts that decide
 // a winner beside each bar: speed, the share of calls inside production's
 // timeout, and cost.
-func scorecardSVG(l Leaderboard, pinned string, shares map[string]LatencyShare) string {
+func scorecardSVG(l Leaderboard, pinned string, shares map[string]CallStats) string {
 	const top, rowH = 112.0, 40.0
 	n := len(l.Entries)
-	d := newSVG(920, int(top+rowH*float64(n))+56, "Oracle decision models", fmt.Sprintf("%d hand-labeled cases, %d repeats each. Score is out of 100; whiskers are 95%% intervals.", l.Cases, l.Repeats))
+	d := newSVG(980, int(top+rowH*float64(n))+56, "Oracle decision models", fmt.Sprintf("%d hand-labeled cases, %d repeats each. Score is out of 100; whiskers are 95%% intervals.", l.Cases, l.Repeats))
 	const barX, barW = 232.0, 300.0
-	for _, c := range []struct {
+	cols := []struct {
 		x     float64
 		label string
-	}{{barX, "SCORE"}, {640, "MEDIAN"}, {728, "UNDER 2.5s"}, {836, "$ / 1K TURNS"}} {
+	}{{barX, "SCORE"}, {680, "MEDIAN"}, {778, "UNDER 2.5s"}, {868, "REFUSED"}, {956, "$ / 1K TURNS"}}
+	for _, c := range cols {
 		anchor := "start"
 		if c.x > barX {
 			anchor = "end"
 		}
 		d.text(c.x, top-16, 11, 600, cDim, anchor, c.label)
 	}
-	d.line(24, top-6, 896, top-6, cGrid, 1, "")
+	d.line(24, top-6, 956, top-6, cGrid, 1, "")
 	for i, e := range l.Entries {
 		y := top + rowH*float64(i)
 		mid := y + rowH/2
@@ -141,38 +143,52 @@ func scorecardSVG(l Leaderboard, pinned string, shares map[string]LatencyShare) 
 			nameFill, nameW = cStar, 700
 		}
 		s := e.Score
-		if e.NA != "" || len(s.Disqualified) > 0 {
-			reason := e.NA
-			if reason == "" {
-				reason = strings.Join(s.Disqualified, "; ")
-			}
+		sh, haveStats := shares[e.Model]
+		if e.NA != "" {
 			d.text(24, mid+5, 15, nameW, cDim, "start", name)
-			d.text(barX, mid+5, 13, 400, cDanger, "start", "disqualified: "+reason)
-			d.line(24, y+rowH, 896, y+rowH, cGrid, 1, "")
+			d.text(barX, mid+5, 13, 400, cDanger, "start", "not run: "+e.NA)
+			d.line(24, y+rowH, 956, y+rowH, cGrid, 1, "")
 			continue
 		}
-		d.text(24, mid+5, 15, nameW, nameFill, "start", name)
-		d.rect(barX, mid-9, barW, 18, 4, cPanel, "")
-		d.rect(barX, mid-9, math.Max(3, barW*clamp(s.Headline, 0, 100)/100), 18, 4, barColor(e.Model, pinned), fmt.Sprintf("%s: %.1f (%.1f-%.1f)", e.Model, s.Headline, s.HeadlineLo, s.HeadlineHi))
-		lo, hi := barX+barW*clamp(s.HeadlineLo, 0, 100)/100, barX+barW*clamp(s.HeadlineHi, 0, 100)/100
-		d.line(lo, mid, hi, mid, cInk, 1.5, "")
-		d.line(lo, mid-5, lo, mid+5, cInk, 1.5, "")
-		d.line(hi, mid-5, hi, mid+5, cInk, 1.5, "")
-		d.text(barX+barW+10, mid+5, 15, 700, cInk, "start", fmt.Sprintf("%.1f", s.Headline))
-		d.text(640, mid+5, 14, 400, cInk, "end", fmtDur(s.LatencyP50))
+		disq := len(s.Disqualified) > 0
+		if disq {
+			// Keep the row's numbers: a disqualified model's refusal rate and
+			// speed are exactly what the reader came to see.
+			d.text(24, mid+5, 15, nameW, cDim, "start", name)
+			d.text(barX, mid+5, 13, 400, cDanger, "start", "disqualified: "+strings.Join(s.Disqualified, "; "))
+		} else {
+			d.text(24, mid+5, 15, nameW, nameFill, "start", name)
+			d.rect(barX, mid-9, barW, 18, 4, cPanel, "")
+			d.rect(barX, mid-9, math.Max(3, barW*clamp(s.Headline, 0, 100)/100), 18, 4, barColor(e.Model, pinned), fmt.Sprintf("%s: %.1f (%.1f-%.1f)", e.Model, s.Headline, s.HeadlineLo, s.HeadlineHi))
+			lo, hi := barX+barW*clamp(s.HeadlineLo, 0, 100)/100, barX+barW*clamp(s.HeadlineHi, 0, 100)/100
+			d.line(lo, mid, hi, mid, cInk, 1.5, "")
+			d.line(lo, mid-5, lo, mid+5, cInk, 1.5, "")
+			d.line(hi, mid-5, hi, mid+5, cInk, 1.5, "")
+			d.text(barX+barW+10, mid+5, 15, 700, cInk, "start", fmt.Sprintf("%.1f", s.Headline))
+		}
+		fill := cInk
+		if disq {
+			fill = cDim
+		}
+		d.text(680, mid+5, 14, 400, fill, "end", fmtDur(s.LatencyP50))
 		under := "-"
-		if sh, ok := shares[e.Model]; ok && s.Calls > 0 {
+		if haveStats && s.Calls > 0 {
 			under = fmt.Sprintf("%.1f%%", 100*float64(sh.Under2_5s)/float64(s.Calls))
 		}
-		d.text(728, mid+5, 14, 400, cInk, "end", under)
+		d.text(778, mid+5, 14, 400, fill, "end", under)
+		refFill := fill
+		if s.RefusalRate > 0.005 {
+			refFill = cDanger
+		}
+		d.text(868, mid+5, 14, 400, refFill, "end", fmt.Sprintf("%.1f%%", 100*s.RefusalRate))
 		per1k := 0.0
 		if s.Calls > 0 {
 			per1k = s.CostUSD / float64(s.Calls) * 1000
 		}
-		d.text(836, mid+5, 14, 400, cInk, "end", fmt.Sprintf("$%.2f", per1k))
-		d.line(24, y+rowH, 896, y+rowH, cGrid, 1, "")
+		d.text(956, mid+5, 14, 400, fill, "end", fmt.Sprintf("$%.2f", per1k))
+		d.line(24, y+rowH, 956, y+rowH, cGrid, 1, "")
 	}
-	d.footnote("Gaps under 2.5 points are ties. Amber is the model pinned in production. Under 2.5s = share of calls inside Oracle's real timeout.")
+	d.footnote("Gaps under 2.5 points are ties. Amber is the model pinned in production. Under 2.5s = share of calls inside Oracle's real timeout. Refused = calls the model declined to answer.")
 	return d.String()
 }
 
@@ -642,5 +658,115 @@ func efficiencySVG(es []Entry, pinned string) string {
 		})
 	}
 	d.footnote("Vertical lines are 95% intervals. A model off the dashed frontier has another that is both cheaper and better.")
+	return d.String()
+}
+
+// refusalsSVG tracks the calls a model declined to answer. A refusal can't run
+// Oracle (the turn proceeds with Oracle off), so it is recorded as a result and
+// never retried. Top: refusal rate per model. Below: for each model that refused
+// anything, the question families it refused on, since sensitive-topic checks
+// (medical, private people) are exactly where a general chat model's safety
+// training and an Oracle classifier's job collide.
+func refusalsSVG(l Leaderboard, shares map[string]CallStats) string {
+	var rows []Entry
+	for _, e := range l.Entries {
+		if e.NA == "" {
+			rows = append(rows, e)
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Score.RefusalRate > rows[j].Score.RefusalRate })
+
+	const left, right, top, rowH = 200.0, 700.0, 112.0, 34.0
+	// Models with refusals get a per-track breakdown underneath.
+	var refusers []Entry
+	tracks := map[string]bool{}
+	for _, e := range rows {
+		if sh := shares[e.Model]; sh.Refused > 0 {
+			refusers = append(refusers, e)
+			for t := range sh.RefusedByTrack {
+				tracks[t] = true
+			}
+		}
+	}
+	var trackList []string
+	for t := range tracks {
+		trackList = append(trackList, t)
+	}
+	// Worst track first, by refusals summed over models; ties alphabetical.
+	sum := func(t string) int {
+		n := 0
+		for _, e := range refusers {
+			n += shares[e.Model].RefusedByTrack[t]
+		}
+		return n
+	}
+	sort.SliceStable(trackList, func(i, j int) bool {
+		if a, b := sum(trackList[i]), sum(trackList[j]); a != b {
+			return a > b
+		}
+		return trackList[i] < trackList[j]
+	})
+	if len(trackList) > 12 {
+		trackList = trackList[:12]
+	}
+
+	barsH := top + rowH*float64(len(rows))
+	tableTop := barsH + 70
+	h := int(barsH) + 60
+	if len(trackList) > 0 {
+		h = int(tableTop) + 24*len(trackList) + 80
+	}
+	d := newSVG(920, h, "Refusals", "Calls a model declined to answer. A refusal turns Oracle off for that turn, so it is counted, never retried.")
+	maxR := 0.05
+	for _, e := range rows {
+		maxR = math.Max(maxR, e.Score.RefusalRate)
+	}
+	x := func(v float64) float64 { return left + clamp(v, 0, maxR)/maxR*(right-left) }
+	d.line(x(0.05), top-8, x(0.05), barsH, cStar, 1.5, "5 4")
+	d.text(x(0.05)+6, top-14, 12, 600, cStar, "start", "5%: disqualifying")
+	for i, e := range rows {
+		mid := top + rowH*float64(i) + rowH/2
+		d.text(left-14, mid+5, 14, 500, cInk, "end", shortName(e.Model))
+		r := e.Score.RefusalRate
+		fill := cBar
+		if r > 0.05 {
+			fill = cDanger
+		}
+		d.rect(left, mid-9, math.Max(3, x(r)-left), 18, 4, fill, e.Model)
+		label := fmt.Sprintf("%.1f%%", 100*r)
+		if sh, ok := shares[e.Model]; ok && sh.Refused > 0 {
+			label = fmt.Sprintf("%.1f%%  (%d of %d calls)", 100*r, sh.Refused, sh.Calls)
+		}
+		d.text(x(r)+10, mid+5, 13, 600, cInk, "start", label)
+	}
+	if len(trackList) > 0 {
+		d.text(24, tableTop-22, 15, 700, cInk, "start", "Where the refusals landed")
+		d.text(24, tableTop-4, 11, 400, cDim, "start", "Share of each question family's calls that were refused.")
+		const lw, cw = 190.0, 130.0
+		for ci, e := range refusers {
+			d.text(lw+cw*float64(ci)+cw/2, tableTop+18, 12, 600, cDim, "middle", shortName(e.Model))
+		}
+		for ri, t := range trackList {
+			y := tableTop + 30 + 24*float64(ri)
+			d.text(24, y+16, 13, 500, cInk, "start", t)
+			for ci, e := range refusers {
+				sh := shares[e.Model]
+				cx := lw + cw*float64(ci) + cw/2
+				tot := sh.CallsByTrack[t]
+				if tot == 0 {
+					d.text(cx, y+16, 13, 400, cDim, "middle", "-")
+					continue
+				}
+				v := float64(sh.RefusedByTrack[t]) / float64(tot)
+				if v == 0 {
+					d.text(cx, y+16, 13, 400, cDim, "middle", "0%")
+					continue
+				}
+				d.rect(cx-30, y+1, 60, 20, 4, cPanel, "")
+				d.text(cx, y+16, 13, 700, cDanger, "middle", fmt.Sprintf("%.0f%%", 100*v))
+			}
+		}
+	}
+	d.footnote("Refusal is classified from the provider's own \"refused to answer\" response. Timeouts and other errors are not counted here.")
 	return d.String()
 }
