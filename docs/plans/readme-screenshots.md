@@ -24,6 +24,7 @@ Status: `[x]` captured + published, `[-]` dropped.
 - [x] Answer with citations + tool trace (hero) — phone + desktop, dark + light, **diagonal split composite**
 - [x] Recommendation carousel (books)
 - [x] `code_exec`: inline themed chart + CSV document card
+- [x] Prism (immersive UI) blocks: flow, compare, claim, steps — phone + desktop
 - [x] Weather range card + personalized verdict (inside the Pulsar report)
 - [x] Atlas (`/search`) — phone + desktop
 - [x] Memory panel with 4 memories — phone + desktop
