@@ -403,33 +403,9 @@
 		color: var(--color-text);
 	}
 
-	.settings-group {
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		overflow: hidden;
-		/* Tight on purpose — see SettingsPanel.svelte's identical comment. */
-		margin-bottom: var(--space-xs);
-	}
 
-	.settings-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-md) var(--space-lg);
-		border-bottom: 1px solid var(--color-border);
-		font-size: 14px;
-	}
 
-	.settings-row:last-child {
-		border-bottom: none;
-	}
 
-	.row-label {
-		font-size: 14px;
-		font-weight: 500;
-	}
 
 	.settings-row select,
 	.settings-row input[type='time'],
