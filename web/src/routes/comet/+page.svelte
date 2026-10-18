@@ -16,7 +16,8 @@
 		TrendingDown,
 		ChevronLeft,
 		ChevronRight,
-		Ghost
+		Ghost,
+		Sparkles
 	} from '@lucide/svelte';
 	import CometConfigModal from '$lib/components/CometConfigModal.svelte';
 	import CometIcon from '$lib/components/icons/Comet.svelte';
@@ -93,6 +94,7 @@
 	const faded = $derived(data?.faded ?? []);
 	const stars = $derived(data?.stars ?? []);
 	const highlights = $derived(data?.highlights ?? []);
+	const firsts = $derived(data?.firsts ?? []);
 	const tools = $derived(data?.tools ?? []);
 	const rhythm = $derived(data?.rhythm ?? null);
 	const growth = $derived(data?.growth ?? { new_stars: 0, grown_stars: 0, new_links: 0 });
@@ -307,6 +309,23 @@
 							<div class="bar-fill" style="width:{Math.round((cat.count / max) * 100)}%;background:{colorForCategory(cat.name)}"></div>
 						</div>
 						<span class="count">{cat.count}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- New ground — topics explored for the first time -->
+		{#if firsts.length > 0}
+			<div class="card">
+				<div class="card-head">
+					<h2>New ground</h2>
+					<span class="meta">first time this month</span>
+				</div>
+				{#each firsts as f (f.name)}
+					<div class="first-row">
+						<Sparkles size={13} />
+						<span class="first-name">{f.name}</span>
+						<span class="first-count">{f.count} conversation{f.count === 1 ? '' : 's'}</span>
 					</div>
 				{/each}
 			</div>
@@ -838,6 +857,27 @@
 
 	.split-row.single {
 		grid-template-columns: 1fr;
+	}
+
+	.first-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		padding: var(--space-sm) 0;
+		border-bottom: 1px solid var(--color-border);
+		color: var(--color-accent);
+	}
+	.first-row:last-child {
+		border-bottom: none;
+	}
+	.first-name {
+		flex: 1;
+		font-size: 0.85rem;
+		color: var(--color-text);
+	}
+	.first-count {
+		font-size: 0.72rem;
+		color: var(--color-text-dim);
 	}
 
 	.heat-head,

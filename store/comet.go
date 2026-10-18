@@ -199,6 +199,16 @@ type CometEditionData struct {
 	// UnresolvedCount is how many of the period's trails ended 'no' or
 	// 'partial' — feeds the hook's framing, not (yet) its own block.
 	UnresolvedCount int `json:"unresolved_count"`
+	// Firsts are topics explored this period that appeared in no earlier
+	// period — the "new ground" block. Empty when this is the first period
+	// with any trails (everything would be new).
+	Firsts []CometFirst `json:"firsts"`
+}
+
+// CometFirst is a topic explored for the first time this period.
+type CometFirst struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 // CometHighlight is one conversation picked as defining the month.
@@ -1033,4 +1043,45 @@ func (s *Store) CometPeriodUnresolvedTopics(period string, limit int) (topics []
 		topics = append(topics, t)
 	}
 	return topics, total, rows.Err()
+}
+
+// CometPeriodFirstTopics returns this period's topics that appear in no
+// earlier period, most-common first — the "new ground" block. It returns
+// nothing when the period is the first with any classified trails at all,
+// since everything would read as "new" and the block would say nothing.
+func (s *Store) CometPeriodFirstTopics(period string, limit int) ([]CometFirst, error) {
+	var prior int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM trails WHERE period < ? AND classified_at IS NOT NULL`, period,
+	).Scan(&prior); err != nil {
+		return nil, fmt.Errorf("comet period firsts (prior check): %w", err)
+	}
+	if prior == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 6
+	}
+	rows, err := s.db.Query(
+		`SELECT tr.topic, COUNT(*) FROM trails tr
+		 WHERE tr.period = ? AND tr.classified_at IS NOT NULL AND tr.topic != ''
+		   AND NOT EXISTS (
+		     SELECT 1 FROM trails p
+		     WHERE p.topic = tr.topic AND p.classified_at IS NOT NULL AND p.period < ?)
+		 GROUP BY tr.topic ORDER BY COUNT(*) DESC, tr.topic ASC LIMIT ?`,
+		period, period, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("comet period first topics: %w", err)
+	}
+	defer rows.Close()
+	var out []CometFirst
+	for rows.Next() {
+		var f CometFirst
+		if err := rows.Scan(&f.Name, &f.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }

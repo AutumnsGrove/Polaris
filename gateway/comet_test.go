@@ -189,6 +189,19 @@ func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 	if _, err := h.db.CreateStar(store.Star{Title: "Runs Docker Compose", Category: "software engineering", Status: "auto"}); err != nil {
 		t.Fatal(err)
 	}
+	// A trail in an earlier period, so this period's topic reads as new
+	// ground rather than "the first period, everything is new".
+	priorThread := "a2222222-2222-2222-2222-222222222222"
+	if err := h.db.CreateThread(priorThread, "prior", "mimo-pro", "web"); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := h.db.StartTrail(priorThread, "2026-09")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.FinishTrail(pid, "technology", "curious", "x", "yes", 0); err != nil {
+		t.Fatal(err)
+	}
 	h.db.LogEvent(threadID, "info", "tool.web_search", "tool call started", map[string]interface{}{"args": map[string]interface{}{"query": "docker compose networking"}}, "turn-1")
 	h.db.LogEvent(threadID, "info", "tool.web_search", "tool call finished", map[string]interface{}{}, "turn-1")
 	h.db.LogEvent(threadID, "info", "tool.create_star", "tool call finished", map[string]interface{}{}, "turn-1")
@@ -227,6 +240,9 @@ func TestRunCometGeneration_BuildsEdition(t *testing.T) {
 	}
 	if len(edition.Data.Tools) == 0 || edition.Data.Tools[0].Name != "web_search" {
 		t.Errorf("tools = %+v, want web_search counted", edition.Data.Tools)
+	}
+	if len(edition.Data.Firsts) != 1 || edition.Data.Firsts[0].Name != "software engineering" {
+		t.Errorf("firsts = %+v, want software engineering as new ground", edition.Data.Firsts)
 	}
 	if edition.CostUSD <= 0 {
 		t.Errorf("edition cost = %v, want the synthesis spend recorded", edition.CostUSD)

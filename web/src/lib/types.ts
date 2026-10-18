@@ -787,6 +787,12 @@ export interface CometToolCount {
 	count: number;
 }
 
+// CometFirst is a topic explored for the first time this period.
+export interface CometFirst {
+	name: string;
+	count: number;
+}
+
 // CometGrowth is Constellation's month (all zero when Constellation is off).
 export interface CometGrowth {
 	new_stars: number;
@@ -812,6 +818,7 @@ export interface CometEditionData {
 	tools: CometToolCount[];
 	growth: CometGrowth;
 	unresolved_count: number;
+	firsts: CometFirst[];
 }
 
 // CometEdition mirrors store.CometEdition — one assembled period page.

@@ -164,6 +164,10 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 	if err != nil {
 		return fmt.Errorf("comet generation: %w", err)
 	}
+	firsts, err := s.db.CometPeriodFirstTopics(period, 6)
+	if err != nil {
+		return fmt.Errorf("comet generation: %w", err)
+	}
 	candidates, err := s.db.CometPeriodCandidateThreads(startStr, endStr, period, cometTrendCandidateCap)
 	if err != nil {
 		return fmt.Errorf("comet generation: %w", err)
@@ -174,7 +178,7 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 	// failure here degrades rather than failing the edition — everything
 	// else on the page is real aggregation regardless.
 	spiked, faded, hook, highlights, synthCost, terr := s.synthesizeCometTrends(
-		reqCtx, client, period, categories, stars, tools, unresolvedTopics, candidates,
+		reqCtx, client, period, categories, stars, tools, unresolvedTopics, firsts, candidates,
 	)
 	if terr != nil {
 		log.Warn("comet: trend synthesis failed, generating without hook/spikes/highlights", "period", period, "err", terr)
@@ -207,6 +211,9 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 	if highlights == nil {
 		highlights = []store.CometHighlight{}
 	}
+	if firsts == nil {
+		firsts = []store.CometFirst{}
+	}
 	if tools == nil {
 		tools = []store.CometToolCount{}
 	}
@@ -235,6 +242,7 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 			Featured:   featuredStar,
 		},
 		UnresolvedCount: unresolvedCount,
+		Firsts:          firsts,
 	}
 	if err := s.db.UpsertCometEdition(period, "monthly", hook, data, synthCost); err != nil {
 		return fmt.Errorf("comet generation: %w", err)
@@ -260,6 +268,7 @@ func (s *Server) synthesizeCometTrends(
 	stars []store.CometStar,
 	tools []store.CometToolCount,
 	unresolvedTopics []string,
+	firsts []store.CometFirst,
 	candidates []store.CometThreadCandidate,
 ) (spiked, faded []store.CometTrend, hook string, highlights []store.CometHighlight, cost float64, err error) {
 	startStr, endStr, ok := cometPeriodDB(period)
@@ -309,6 +318,13 @@ func (s *Server) synthesizeCometTrends(
 	}
 	if len(unresolvedTopics) > 0 {
 		b.WriteString("\nTopics that ended unresolved: " + strings.Join(unresolvedTopics, ", ") + "\n")
+	}
+	if len(firsts) > 0 {
+		names := make([]string, 0, len(firsts))
+		for _, f := range firsts {
+			names = append(names, f.Name)
+		}
+		b.WriteString("\nTopics explored for the first time this month: " + strings.Join(names, ", ") + "\n")
 	}
 
 	fmt.Fprintf(&b, "\nSearches during the month:\n")

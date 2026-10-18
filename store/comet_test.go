@@ -310,3 +310,42 @@ func TestCometPeriodToolCounts_ExcludesAutomatedTools(t *testing.T) {
 		t.Errorf("tool list should be sorted most-used first, got %+v", tools)
 	}
 }
+
+func TestCometPeriodFirstTopics(t *testing.T) {
+	s := openTestStore(t)
+	mk := func(id, period, topic string) {
+		t.Helper()
+		if err := s.CreateThread(id, "t", "m", "web"); err != nil {
+			t.Fatal(err)
+		}
+		tid, err := s.StartTrail(id, period)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.FinishTrail(tid, topic, "curious", "x", "yes", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("a1111111-1111-1111-1111-111111111111", "2026-08", "technology")
+	mk("b1111111-1111-1111-1111-111111111111", "2026-09", "technology") // repeat
+	mk("c1111111-1111-1111-1111-111111111111", "2026-09", "history")    // first
+	mk("d1111111-1111-1111-1111-111111111111", "2026-09", "history")    // first
+
+	firsts, err := s.CometPeriodFirstTopics("2026-09", 6)
+	if err != nil {
+		t.Fatalf("CometPeriodFirstTopics: %v", err)
+	}
+	if len(firsts) != 1 || firsts[0].Name != "history" || firsts[0].Count != 2 {
+		t.Errorf("firsts = %+v, want history:2 only (technology repeats an earlier period)", firsts)
+	}
+
+	// The earliest period with trails reports nothing — everything would be
+	// "new", which says nothing.
+	none, err := s.CometPeriodFirstTopics("2026-08", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Errorf("firsts for the earliest period = %+v, want none", none)
+	}
+}
