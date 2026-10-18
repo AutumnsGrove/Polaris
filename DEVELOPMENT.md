@@ -61,6 +61,14 @@ index so a growing block updates in place. A `ui` fence is one JSON object per l
 `components/ui/`. `mermaid.ts`'s `mountMermaidStream` re-renders a diagram on each new complete line
 and keeps the last good render when a prefix doesn't parse.
 
+Diagrams are drawn by [Pele](https://pele.run) (`pele` on npm, Obsidian's Mermaid-syntax renderer),
+not mermaid.js — the model still writes ` ```mermaid ` fences. Pele picks its layout from the width
+it is given (`mermaid.ts` passes the container's width and re-lays out on resize, so a wide
+`flowchart LR` stacks vertically on a phone), and it themes through `--pele-*` CSS variables that
+`ChatTurnView.svelte` maps onto the app's `--color-*` tokens, so a theme switch needs no re-render.
+It has no `securityLevel`: links/images are turned off per render and it never emits HTML or
+scripts. Pele does no label-contrast correction, hence `ensureStyleContrast` in `mermaid.ts`.
+
 Anything that is not the chat renderer must not see the raw JSON: `flatten.ts` (TS) and
 `uiblocks` (Go) turn a block into readable text, and both are tested against
 `testdata/ui_flatten.json`. Blocks are taught to live WebSocket chat turns, Pulsar pulses (real threads

@@ -1,31 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// happy-dom has no SVG renderer, so the real 'mermaid' package can't run in
-// this test environment — mock it and drive the DOM-pass logic in
+// happy-dom has no SVG renderer, so the real 'pele' package can't lay anything
+// out in this test environment — mock it and drive the DOM-pass logic in
 // mermaid.ts directly. render() succeeds for any source containing "graph"
-// and rejects otherwise, standing in for a real parse error. It also
-// rejects an unquoted `ID[label]` node whose label contains punctuation
-// mermaid's real grammar reserves for other syntax — the same failure mode
-// confirmed live against the actual mermaid package (see mermaid.ts's
-// autoQuoteLabels doc comment) — so the auto-quote-retry tests below
-// exercise the same condition renderMermaidIn's real fallback logic reacts
-// to, not a fictional stand-in for it.
-const initialize = vi.fn();
+// and throws otherwise, standing in for a real PeleError. It also throws on
+// an unquoted `ID[label]` node whose label contains punctuation mermaid's
+// grammar reserves for other syntax — the same failure mode confirmed live
+// against the real pele package (see mermaid.ts's autoQuoteLabels doc
+// comment) — so the auto-quote-retry tests below exercise the same condition
+// renderMermaidIn's real fallback logic reacts to, not a fictional stand-in.
 const UNQUOTED_RISKY_LABEL = /[A-Za-z][\w-]*\[[^[\]"]*[()#|:{}][^[\]"]*\]/;
-const render = vi.fn(async (id: string, source: string) => {
+const render = vi.fn((source: string, _opts?: Record<string, unknown>) => {
 	if (!source.includes('graph')) throw new Error('Parse error: bad diagram');
 	if (UNQUOTED_RISKY_LABEL.test(source)) throw new Error('Parse error: unquoted punctuation in label');
-	return { svg: `<svg data-id="${id}">${source}</svg>` };
+	return { svg: `<svg>${source}</svg>` };
 });
 
-vi.mock('mermaid', () => ({
-	default: { initialize, render }
-}));
+vi.mock('pele', () => ({ render }));
 
 const copyToClipboard = vi.fn(async () => {});
 vi.mock('./clipboard', () => ({ copyToClipboard }));
 
-// Imported after the mocks so mermaid.ts's `import('mermaid')` and
+// Imported after the mocks so mermaid.ts's `import('pele')` and
 // `import('./clipboard')` resolve to them.
 const { renderMermaidIn } = await import('./mermaid');
 
@@ -55,10 +51,8 @@ function containerWith(...blocks: HTMLElement[]): HTMLDivElement {
 }
 
 beforeEach(() => {
-	initialize.mockClear();
 	render.mockClear();
 	copyToClipboard.mockClear();
-	delete document.documentElement.dataset.theme;
 });
 
 describe('renderMermaidIn', () => {
@@ -133,9 +127,9 @@ describe('renderMermaidIn', () => {
 		);
 		await renderMermaidIn(container);
 
-		// A light fill (#ffe08a) with no explicit `color:` would otherwise
-		// render with this app's light default label text on top of it —
-		// legible on neither. Dark text gets added automatically.
+		// Pele leaves the label at the theme text color, which is illegible on
+		// a custom fill of the opposite lightness in one of the two themes.
+		// Text color follows the fill instead.
 		const wrapper = container.querySelector<HTMLElement>('.mermaid-diagram');
 		expect(wrapper?.dataset.mermaidSource).toContain('style A fill:#ffe08a,stroke:#b8860b,color:#000000');
 	});
@@ -157,12 +151,6 @@ describe('renderMermaidIn', () => {
 		expect(wrapper?.dataset.mermaidSource).toBe(source);
 	});
 
-	// classDef hits a worse version of the same problem than a plain style
-	// line: confirmed live against the real mermaid package, `classDef X
-	// fill:#hex` with no `color:` puts that same fill on the label's own
-	// span too (`.X span{fill:...}`), so the text isn't just low-contrast —
-	// it's the exact same color as its own background and disappears
-	// completely, in either theme.
 	it('adds an explicit contrasting color to a classDef fill that is missing one', async () => {
 		const source = 'graph TD; A["Step 1"];\n  classDef pastel fill:#f5f5f0,stroke:#ccc\n  class A pastel';
 		const container = containerWith(fenceBlock(source));
@@ -190,51 +178,31 @@ describe('renderMermaidIn', () => {
 		expect(container.innerHTML).toBe('<p>ordinary prose</p>');
 	});
 
-	it('caches the lazy mermaid import across calls', async () => {
+	it('renders each diagram once per pass, with links and images off', async () => {
 		const a = containerWith(fenceBlock('graph TD; A-->B;'));
 		await renderMermaidIn(a);
 
 		const b = containerWith(fenceBlock('graph TD; C-->D;'));
 		await renderMermaidIn(b);
 
-		// initialize() re-runs every pass (cheap, theme-live), but the
-		// underlying import('mermaid') itself only resolves once — asserted
-		// indirectly here since both calls succeeded against the same
-		// mocked module without re-registering it.
 		expect(render).toHaveBeenCalledTimes(2);
+		// Model-written source must never be able to navigate or fetch.
+		expect(render).toHaveBeenLastCalledWith(
+			'graph TD; C-->D;',
+			expect.objectContaining({ links: false, images: false })
+		);
 	});
 
-	// Regression test for a real bug found live-testing: a loaded thread's
-	// mermaid blocks render immediately (content is already in hand from
-	// the DB), but SettingsState.load() sets data-theme asynchronously
-	// after mount — so the first pass can easily run before the user's
-	// real theme preference is applied. Without re-rendering already-
-	// converted diagrams on a later pass, a light-theme user reopening an
-	// old thread was stuck seeing dark-mermaid-themed diagrams forever.
-	it('re-renders an already-converted diagram when the theme changes on a later pass', async () => {
+	it('does not re-render an already-converted diagram on a later pass', async () => {
 		const container = containerWith(fenceBlock('graph TD; A-->B;'));
-
-		document.documentElement.dataset.theme = 'dark';
 		await renderMermaidIn(container);
-		expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'dark' }));
 		expect(render).toHaveBeenCalledTimes(1);
 
-		document.documentElement.dataset.theme = 'light';
+		// Theming is CSS variables now, so there is no theme-triggered
+		// second pass to do (see mermaid.ts's theming comment).
 		await renderMermaidIn(container);
-		expect(initialize).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'default' }));
-		expect(render).toHaveBeenCalledTimes(2);
+		expect(render).toHaveBeenCalledTimes(1);
 		expect(container.querySelectorAll('.mermaid-diagram').length).toBe(1);
-	});
-
-	it('does not re-render when a later pass sees the same theme', async () => {
-		const container = containerWith(fenceBlock('graph TD; A-->B;'));
-
-		document.documentElement.dataset.theme = 'light';
-		await renderMermaidIn(container);
-		expect(render).toHaveBeenCalledTimes(1);
-
-		await renderMermaidIn(container);
-		expect(render).toHaveBeenCalledTimes(1);
 	});
 
 	it('does not retry a block that already failed to parse on a later pass', async () => {
@@ -243,7 +211,6 @@ describe('renderMermaidIn', () => {
 		await renderMermaidIn(container);
 		expect(render).toHaveBeenCalledTimes(1);
 
-		document.documentElement.dataset.theme = 'light';
 		await renderMermaidIn(container);
 		expect(render).toHaveBeenCalledTimes(1);
 		expect(container.querySelectorAll('.mermaid-error-note').length).toBe(1);
@@ -291,21 +258,6 @@ describe('renderMermaidIn toolbar', () => {
 		expect(sourcePane?.hidden).toBe(true);
 		expect(toggleBtn.getAttribute('aria-pressed')).toBe('false');
 	});
-
-	it('preserves the toolbar and its click handlers across a theme-triggered re-render', async () => {
-		const container = containerWith(fenceBlock('graph TD; A-->B;'));
-
-		document.documentElement.dataset.theme = 'dark';
-		await renderMermaidIn(container);
-
-		document.documentElement.dataset.theme = 'light';
-		await renderMermaidIn(container);
-
-		expect(container.querySelectorAll('.mermaid-btn').length).toBe(2);
-		const [copyBtn] = container.querySelectorAll<HTMLButtonElement>('.mermaid-btn');
-		copyBtn.click();
-		expect(copyToClipboard).toHaveBeenCalledWith('graph TD; A-->B;');
-	});
 });
 
 // The lightbox itself is a single pooled overlay appended to
@@ -335,6 +287,16 @@ describe('mermaid lightbox', () => {
 		backdrop.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!.click();
 		expect(backdrop.hidden).toBe(true);
 		expect(document.body.style.overflow).toBe('');
+	});
+
+	it('lays the diagram out at natural size, not at the inline column width', async () => {
+		await openedLightbox('graph TD; A-->B;');
+
+		// Inline renders get a maxWidth so Pele can stack a wide chart for a
+		// phone; the lightbox pans/zooms the full-size drawing instead.
+		const opts = render.mock.lastCall?.[1];
+		expect(opts?.maxWidth).toBeUndefined();
+		expect(opts?.responsive).toBe(false);
 	});
 
 	it('closes on a click on the scrim (the modal-backdrop-close button behind the content), but not on a click that hits the diagram itself', async () => {

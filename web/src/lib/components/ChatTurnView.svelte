@@ -116,27 +116,20 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	// Runs after segments (re)paint proseEl's DOM. This DOM pass only covers
 	// what the segment split leaves inside Markdown: a mermaid fence nested
 	// in a list item (indented, so not a column-0 fence) still reaches here
-	// as a data-mermaid <pre>, plus the theme re-render for every diagram on
-	// screen, MermaidBlock's included. Gated on !turn.streaming: marked
-	// renders an unclosed nested fence as a full code block the instant it
-	// opens, and parsing that half-diagram live would flash a render-failure
-	// note that vanishes once the fence closes. (Column-0 fences stream
-	// through MermaidBlock instead, which knows open from closed.)
-	// Retry/regenerate and variant switching all replace turn.content
-	// wholesale, so this just re-runs on the fresh DOM with no manual cleanup
-	// of the old pass's output needed.
+	// as a data-mermaid <pre>. Gated on !turn.streaming: marked renders an
+	// unclosed nested fence as a full code block the instant it opens, and
+	// parsing that half-diagram live would flash a render-failure note that
+	// vanishes once the fence closes. (Column-0 fences stream through
+	// MermaidBlock instead, which knows open from closed.) Retry/regenerate
+	// and variant switching all replace turn.content wholesale, so this just
+	// re-runs on the fresh DOM with no manual cleanup of the old pass's
+	// output needed.
 	//
-	// Also re-tracks appState.settings.theme, not just renderedHtml — a
-	// real bug found live: SettingsState.load() sets data-theme
-	// asynchronously after mount (it's an /api/settings fetch), while a
-	// loaded thread's content is already there on first render. Without
-	// this dependency, a turn's mermaid blocks render once against
-	// whatever data-theme happened to be set at that first paint (theme
-	// defaults to 'dark' until the fetch resolves) and never get a second
-	// chance — a light-theme user reopening an old thread saw dark-themed
-	// diagrams stuck in their light UI permanently. Reading the theme here
-	// makes the effect re-fire (and mermaid.ts re-render) once the real
-	// preference lands, and again on any later in-session theme toggle.
+	// No theme dependency: diagrams are themed by CSS variables (see the
+	// --pele-* block in this file's styles), so a theme change — including
+	// the settings fetch landing after a loaded thread's first paint, which
+	// used to leave a light-theme user's old threads stuck with dark
+	// diagrams — repaints them with no re-render.
 	let proseEl = $state<HTMLElement>();
 	$effect(() => {
 		void segments;
@@ -1029,8 +1022,11 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		overflow-x: auto;
 	}
 
-	/* SPIKE: pele themes through CSS variables, so mapping them onto the app's
-	   own tokens makes a theme switch free (no re-render). */
+	/* Pele (mermaid.ts) emits var(--pele-*) everywhere; pointing those at the
+	   app's own tokens themes diagrams in both light and dark with no
+	   render-time option. Series colors (pie slices, gantt/xy categories) are
+	   the app's category hues plus accent so a chart doesn't arrive in
+	   Pele's stock blue/orange palette. */
 	.prose :global(.mermaid-render) {
 		--pele-bg: var(--color-bg);
 		--pele-fg: var(--color-text);
@@ -1040,6 +1036,15 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 		--pele-surface-alt: var(--color-surface);
 		--pele-border: var(--color-border-strong);
 		--pele-accent: var(--color-accent);
+		--pele-series-1: var(--color-cat-technology);
+		--pele-series-2: var(--color-cat-space-astronomy);
+		--pele-series-3: var(--color-cat-politics-world-affairs);
+		--pele-series-4: var(--color-cat-internet-social-media);
+		--pele-series-5: var(--color-cat-film-tv);
+		--pele-series-6: var(--color-cat-food-drink);
+		--pele-series-7: var(--color-cat-home-diy);
+		--pele-series-8: var(--color-cat-relationships-family);
+		--pele-critical: var(--color-danger);
 	}
 
 	.prose :global(.mermaid-render svg) {
