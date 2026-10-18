@@ -653,9 +653,15 @@
 		font-size: 0.85rem;
 		width: 15ch;
 		flex-shrink: 0;
+		/* Category names are model-generated and can be long ("ai & machine learning
+		   research"); wrap up to 3 lines rather than chopping to one. */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
 		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
+		line-height: 1.3;
 	}
 	.cat-row .bar-track {
 		flex: 1;
