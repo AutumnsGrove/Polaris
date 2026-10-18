@@ -1130,6 +1130,9 @@ import { CHECK_DISPLAY, buildOracleNote, escapeHtml, focusSwitch } from '$lib/or
 	   throws — a syntax error degrades to exactly today's plain-code-block
 	   behavior, plus this note explaining why it isn't a diagram. */
 	.prose :global(.mermaid-error-note) {
+		/* The note lives inside the <pre>, which doesn't wrap: on a phone the
+		   sentence ran off the edge and had to be scrolled to read. */
+		white-space: normal;
 		margin-top: var(--space-sm);
 		font-size: 11.5px;
 		font-style: italic;
