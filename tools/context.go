@@ -45,8 +45,9 @@ type Context struct {
 	// BraveUsageThisMonth/IncrementBraveUsage back the monthly cap on
 	// Brave calls (store.Store's api_usage table), same shape and same
 	// reasoning as ParallelUsageThisMonth/IncrementParallelUsage below —
-	// Brave has no ongoing free tier at all (just a one-time signup
-	// credit), so this cap matters even more than Parallel's.
+	// Brave's free allowance is a recurring $5/mo credit (~1,000 queries)
+	// rather than an unmetered tier, and past it every query bills the
+	// account's card on file, so the cap keeps usage inside the credit.
 	BraveUsageThisMonth func() (int, error)
 	IncrementBraveUsage func() error
 

@@ -182,12 +182,13 @@ pattern for new work here, not just the Docker-specific cases above.
   `tools/web_search.go` reaches for once SearXNG confirms itself degraded (Brave first, since it's
   the only one returning real multi-result listings rather than an AI-pre-summarized answer — a
   better fit for anything Atlas surfaces, not just the assistant's own citations; then Parallel,
-  since its free tier of 5,000/mo is 5x Tavily's 1,000/mo; then Tavily). Brave has no ongoing free
-  tier at all (a one-time $5/mo signup credit only) and Parallel's account has a card on file, so
-  `store.Store`'s `api_usage` table enforces a hard monthly cap for each (`brave.MonthlyCap`,
-  `parallelMonthlyCap` in `tools/web_search.go`) before ever calling them — never raise or bypass
-  either cap without confirming real usage with the user first. Every result set is tagged
-  `[via <provider>]` so a fallback firing is visible in the transcript, not just server logs. Atlas's
+  since its free tier of 5,000/mo is 5x Tavily's 1,000/mo; then Tavily). Brave's free allowance is
+  a recurring $5/mo credit (~1,000 queries), not an unmetered tier, and both it and Parallel have a
+  card on file, so `store.Store`'s `api_usage` table enforces a hard monthly cap for each
+  (`brave.MonthlyCap`, `parallelMonthlyCap` in `tools/web_search.go`) before ever calling them —
+  never raise or bypass either cap without confirming real usage with the user first. Every result
+  set is tagged `[via <provider>]` so a fallback firing is visible in the transcript, not just
+  server logs. Atlas's
   own results-browsing page (`gateway/search.go`'s `handleSearch`) has a *separate* Brave fallback
   from the assistant's `web_search` tool, with its own virtual sub-pagination: one real Brave fetch
   (`count=20`, Brave's own per-request max) is split into two 10-result Atlas pages

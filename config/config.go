@@ -81,10 +81,11 @@ type Config struct {
 		// (SearXNG -> Brave -> Parallel -> Tavily, see tools/web_search.go
 		// and gateway/search.go), since it's the only one returning real,
 		// multi-result listings rather than an AI-pre-summarized answer —
-		// what Atlas's browsing UI actually needs. No ongoing free tier
-		// (just a one-time $5/mo signup credit), so every query bills the
-		// account's card on file — see store.Store's api_usage table,
-		// which enforces the monthly cap this key alone doesn't.
+		// what Atlas's browsing UI actually needs. Its free allowance is a
+		// recurring $5/mo credit (~1,000 queries), not an unmetered tier,
+		// so past that credit every query bills the account's card on file
+		// — see store.Store's api_usage table, which enforces the monthly
+		// cap this key alone doesn't.
 		// https://brave.com/search/api/
 		APIKey string `yaml:"api_key"`
 	} `yaml:"brave"`

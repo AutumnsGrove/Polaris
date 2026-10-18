@@ -21,8 +21,9 @@ GHCR, updated by a host-side watcher. There's no other install path.
   **Search** (the last tier of the web-search fallback chain). Free tier: 1,000 credits/month
   total, no card required
 - Optional: a [Brave Search API](https://brave.com/search/api/) key, tried first in the web-search
-  fallback chain (SearXNG → Brave → Parallel → Tavily Search). **No ongoing free tier** (a
-  one-time $5/mo credit, ~1,000 queries), so usage is capped at 1,000/mo in the DB
+  fallback chain (SearXNG → Brave → Parallel → Tavily Search). Free tier: a recurring **$5/month
+  credit** (~1,000 queries), but past it every query bills the card on file, so usage is capped at
+  1,000/mo in the DB
 - Optional: a [Parallel](https://parallel.ai) API key, second in that fallback chain. Free tier:
   5,000 requests/month, but the account has a card on file, so usage is capped in the DB a little
   under that limit

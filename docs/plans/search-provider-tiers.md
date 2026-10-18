@@ -222,14 +222,12 @@ behavior is genuinely different and may stay a thin wrapper over the Brave step.
 
 Brave's pricing changed: the `$5` is a **recurring monthly credit** (1,000 free queries/month), not
 a one-time signup credit. The cap *value* (`brave.MonthlyCap = 1000`) is correct; only the
-reasoning is wrong. Fix:
+reasoning was wrong.
 
-- `brave/brave.go:8–9` (package doc) and `:41–43` (`MonthlyCap` comment)
-- `tools/context.go:48` ("no ongoing free tier at all...")
-- `SETUP.md:25` ("one-time $5/mo credit")
-- `CLAUDE.md:185–186` (same claim)
-
-This is a comment-only change and can ship on its own day.
+**Done** (comment-only, refreshed alongside closing #159/#163) — corrected in `brave/brave.go`
+(package doc + `MonthlyCap`), `tools/context.go`, `SETUP.md`, `CLAUDE.md`, and
+`config/config.go` (the same claim, not listed in the original TODO). Nothing left to do here;
+the rest of this doc is untouched and still unbuilt.
 
 ## Phasing
 
