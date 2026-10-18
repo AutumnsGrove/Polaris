@@ -10,6 +10,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,6 +19,12 @@ import (
 	"polaris/prompts"
 	"polaris/store"
 )
+
+// ErrCometNoData is returned when the requested period has no messages at
+// all. Comet refuses to assemble an edition of zeros for it — callers turn
+// this into a clear "nothing to generate" message (manual paths) or a quiet
+// skip (the scheduler), never a stored empty edition.
+var ErrCometNoData = errors.New("no conversations in this period")
 
 // cometBaselineDays is the trailing window a period's spiked/faded pass
 // compares against — see cometBaselineStart.
@@ -119,6 +126,14 @@ func (s *Server) runCometGeneration(reqCtx context.Context, period string) error
 	startStr, endStr, ok := cometPeriodDB(period)
 	if !ok {
 		return fmt.Errorf("comet generation: invalid period %q", period)
+	}
+
+	hasData, err := s.db.CometPeriodHasMessages(startStr, endStr)
+	if err != nil {
+		return fmt.Errorf("comet generation: %w", err)
+	}
+	if !hasData {
+		return fmt.Errorf("comet generation: %w", ErrCometNoData)
 	}
 
 	turns, searches, err := s.db.CometPeriodCounts(startStr, endStr)

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -403,5 +404,65 @@ func TestRunCometGeneration_DropsBogusHighlightsAndNeverStoresNullCollections(t 
 	d := edition.Data
 	if d.Categories == nil || d.Spiked == nil || d.Faded == nil || d.Stars == nil || d.Highlights == nil || d.Tools == nil || d.Firsts == nil {
 		t.Errorf("stored edition has a null collection: %+v", d)
+	}
+}
+
+func TestHandleGenerateCometNow_EmptyPeriod_Is422WithAReadableReason(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	code, body := cometPost(t, h, "/api/comet/generate?period=2026-09")
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("generate for a month with no messages = %d (%s), want 422", code, body)
+	}
+	if !strings.Contains(body, "No conversations in September 2026") {
+		t.Errorf("body = %q, want a message naming the month", body)
+	}
+	if h.srvObj.cometGenerationRunning.Load() {
+		t.Error("an empty-period refusal must not leave the single-flight flag held")
+	}
+}
+
+func TestRunCometGeneration_EmptyPeriod_ReturnsErrCometNoDataAndStoresNothing(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid") // any LLM call would fail loudly
+	err := h.srvObj.runCometGeneration(context.Background(), "2026-09")
+	if !errors.Is(err, ErrCometNoData) {
+		t.Fatalf("runCometGeneration over an empty month = %v, want ErrCometNoData", err)
+	}
+	if _, gerr := h.db.GetCometEdition("2026-09"); !errors.Is(gerr, store.ErrCometEditionNotFound) {
+		t.Errorf("GetCometEdition = %v, want no edition stored for an empty month", gerr)
+	}
+}
+
+func TestRunCometPipeline_EmptyPeriod_SkipsQuietlyAndIsNotDueAgain(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	if err := h.db.UpdateCometConfig(true, "06:00", ""); err != nil {
+		t.Fatal(err)
+	}
+	h.srvObj.runCometPipeline(context.Background(), "2026-09")
+
+	cfg, err := h.db.GetCometConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LastGeneratedAt == nil {
+		t.Error("an empty month should be stamped as handled, or cometDue re-offers it every hour until the 1st")
+	}
+	if _, gerr := h.db.GetCometEdition("2026-09"); !errors.Is(gerr, store.ErrCometEditionNotFound) {
+		t.Errorf("GetCometEdition = %v, want no edition stored", gerr)
+	}
+}
+
+func TestBackfillComet_SkipsMonthsWithNoMessages(t *testing.T) {
+	h := newTestHarness(t, "http://unused.invalid")
+	results, err := h.srvObj.BackfillComet(context.Background(), "2026-07", "2026-08")
+	if err != nil {
+		t.Fatalf("BackfillComet: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results = %+v, want one per month", results)
+	}
+	for _, r := range results {
+		if !r.Skipped || r.Error != "" || r.Generated {
+			t.Errorf("result %+v, want skipped with no error and nothing generated", r)
+		}
 	}
 }

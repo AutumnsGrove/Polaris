@@ -658,6 +658,20 @@ func (s *Store) EarliestMessageAt() (at string, ok bool, err error) {
 	return v.String, true, nil
 }
 
+// CometPeriodHasMessages reports whether any message exists in [startStr,
+// endStr) — Comet's "is there anything to look back on" gate, checked before
+// any classify or generate work so an empty month produces a clear
+// "nothing to generate" outcome rather than an edition of zeros.
+func (s *Store) CometPeriodHasMessages(startStr, endStr string) (bool, error) {
+	var has bool
+	if err := s.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM messages WHERE created_at >= ? AND created_at < ?)`, startStr, endStr,
+	).Scan(&has); err != nil {
+		return false, fmt.Errorf("comet period has messages: %w", err)
+	}
+	return has, nil
+}
+
 // CometPeriodCounts returns the stat row's raw counts for [startStr,
 // endStr): distinct turns asked and web_search calls run. Both are the same
 // shape GetStats aggregates, just over a calendar period rather than a

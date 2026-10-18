@@ -149,7 +149,9 @@ func runCometBackfill(cmd *cobra.Command, args []string) error {
 	}
 	for _, r := range body.Results {
 		status := "ok"
-		if r.Error != "" {
+		if r.Skipped {
+			status = "no conversations, skipped"
+		} else if r.Error != "" {
 			status = "FAILED: " + r.Error
 		} else if !r.Generated {
 			status = "classified, not generated"

@@ -128,6 +128,25 @@ func (s *Server) runCometPipeline(reqCtx context.Context, period string) {
 		return
 	}
 
+	// An empty month is a normal outcome, not a failure: skip it before any
+	// classify/generate work, and stamp last_generated_at so cometDue doesn't
+	// re-offer the same empty month every hour until the next 1st.
+	startStr, endStr, ok := cometPeriodDB(period)
+	if !ok {
+		log.Warn("comet: invalid period", "period", period)
+		return
+	}
+	if has, herr := s.db.CometPeriodHasMessages(startStr, endStr); herr != nil {
+		log.Warn("comet: checking period for data failed", "period", period, "err", herr)
+		return
+	} else if !has {
+		log.Info("comet: no conversations in period, nothing to generate", "period", period)
+		if serr := s.db.SetCometLastGenerated(time.Now().UTC().Format("2006-01-02 15:04:05")); serr != nil {
+			log.Warn("comet: recording skipped period failed", "err", serr)
+		}
+		return
+	}
+
 	processed, err := s.RunCometClassify(period, 0)
 	if err != nil {
 		log.Warn("comet: classify pass failed", "period", period, "err", err)
@@ -140,11 +159,6 @@ func (s *Server) runCometPipeline(reqCtx context.Context, period string) {
 	// now would produce a retrospective that silently omits it. Skip this
 	// attempt and let the scheduler retry after cometRetryBackoff; a manual
 	// `polaris comet classify` can be run to see what's failing.
-	startStr, endStr, ok := cometPeriodDB(period)
-	if !ok {
-		log.Warn("comet: invalid period", "period", period)
-		return
-	}
 	if remaining, rerr := s.db.EligibleCometThreads(startStr, endStr, period); rerr != nil {
 		log.Warn("comet: re-checking eligible threads failed", "err", rerr)
 	} else if len(remaining) > 0 {

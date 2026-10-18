@@ -221,6 +221,17 @@ func (s *Server) handleGenerateCometNow(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid period — expected YYYY-MM", http.StatusBadRequest)
 		return
 	}
+	// Checked synchronously (the run itself is async) so the person gets the
+	// reason immediately instead of a "started" that quietly produces nothing.
+	startStr, endStr, _ := cometPeriodDB(period)
+	if has, err := s.db.CometPeriodHasMessages(startStr, endStr); err != nil {
+		log.Warn("comet generate: checking period for data failed", "period", period, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else if !has {
+		http.Error(w, "No conversations in "+cometPeriodLabel(period)+" — nothing to generate.", http.StatusUnprocessableEntity)
+		return
+	}
 	if !s.startCometGenerationIfIdle(period) {
 		http.Error(w, "a comet generation is already running", http.StatusConflict)
 		return

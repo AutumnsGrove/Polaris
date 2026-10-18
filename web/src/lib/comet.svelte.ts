@@ -158,7 +158,9 @@ export class CometState {
 		try {
 			const url = period ? `/api/comet/generate?period=${encodeURIComponent(period)}` : '/api/comet/generate';
 			const res = await fetch(url, { method: 'POST' });
-			if (!res.ok) return { error: await res.text() };
+			// The server's reason is plain text, e.g. "No conversations in
+			// September 2026 — nothing to generate." — shown as-is.
+			if (!res.ok) return { error: (await res.text()).trim() };
 			return { error: '' };
 		} catch {
 			return { error: 'Could not reach the server — try again.' };
